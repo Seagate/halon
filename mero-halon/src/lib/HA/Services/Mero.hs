@@ -12,6 +12,7 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE ViewPatterns          #-}
+{-# OPTIONS_GHC -Wall -Werror      #-}
 
 module HA.Services.Mero
     ( MeroChannel(..)
@@ -46,7 +47,7 @@ import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState)
+import HA.Resources.Mero.Note (ConfObjectState, NotifyFailureEndpoints(..))
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
@@ -55,14 +56,16 @@ import qualified HA.ResourceGraph as G
 import qualified Mero.Notification
 import Mero.Notification (Set, NIRef)
 import Mero.Notification.HAState (Note(..))
-import Mero.ConfC (Fid, ServiceType(..), fidToStr, strToFid)
+import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
 import Control.Concurrent (threadDelay)
+import Control.Monad.Fix (fix)
+import Control.Monad.Trans.Reader
 import Control.Exception (SomeException)
-import qualified Control.Distributed.Process.Timeout as PT (timeout)
+import qualified Control.Distributed.Process.Internal.Types as DI
 import Control.Distributed.Process.Closure
   ( remotableDecl
   , mkStatic
@@ -70,14 +73,14 @@ import Control.Distributed.Process.Closure
   )
 import Control.Distributed.Static
   ( staticApply )
-import Control.Distributed.Process hiding (catch, onException, bracket_)
-import Control.Monad.Catch (catch, onException, bracket_)
+import Control.Distributed.Process hiding (catch, bracket_)
+import Control.Monad.Catch (catch, bracket_)
 import Control.Monad (forever, join, void, when)
 import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (for_)
 import Data.Traversable (forM)
 import Data.List (partition)
 import Data.Maybe (catMaybes, listToMaybe, maybeToList)
@@ -112,14 +115,13 @@ statusProcess niRef pid rp = do
     forever $ do
       msg@(NotificationMessage set _ subs) <- receiveChan rp
       traceM0d $ "statusProcess: notification msg received: " ++ show msg
+      -- We crecreate process, this is highly unsafe and it's not allowed
+      -- to do receive read calls. also this thread will not be killed when
+      -- status process is killed.
+      lproc <- DI.Process ask
       Mero.Notification.notifyMero niRef set
-      -- XXX: This is not correct as we need to store tags, and notify only when
-      -- callback received.
-      -- We need to have a mechanism to notify about failed to delivery when
-      -- callback is called also.
-      -- unless (null failedAddrs) $ do
-      --  void . promulgate . NotifyFailureEndpoints $ nub failedAddrs
-      traverse_ (flip usend $ NotificationAck ()) subs
+            (DI.runLocalProcess lproc $ for_ subs $ flip usend $ NotificationAck ())
+            (DI.runLocalProcess lproc $ for_ subs $ flip usend $ NotifyFailureEndpoints [])
    `catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
@@ -428,18 +430,22 @@ notifyMeroAndThen setEvent fsucc ffail = do
   where
     -- Send a message to all channels and block until each has replied
     sendChansBlocking :: [(SendPort NotificationMessage, [String])] -> Process ()
-    sendChansBlocking chans =
-      ((callLocal $ PT.timeout 1000000 $ do
-          selfLocal <- getSelfPid
-          for_ chans $ \(chan, recipients) ->
-            sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
-          for_ chans $ const (expect :: Process NotificationAck)
-       ) `onException` ffail)
-      >>= maybe ffail (const fsucc)
+    sendChansBlocking [] = fsucc
+    sendChansBlocking chans = do
+      selfLocal <- getSelfPid
+      for_ chans $ \(chan, recipients) ->
+        sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
+      fix (\loop i -> receiveWait
+          [ match $ \NotificationAck{} -> do
+             if i <= 1
+             then fsucc
+             else loop (i-1)
+          , match $ \NotifyFailureEndpoints{} -> ffail
+          ]) (length chans)
 
 notifyMero :: Set -> PhaseM LoopState l ()
 notifyMero setEvent = do
-  phaseLog "action" $ "Sending configuration update to mero services: "
+  phaseLog "action" $ "Sending non-blocking configuration update to mero services: "
                    ++ show setEvent
   chans <- getNotificationChannels
   for_ chans $ \(sp, recipients) -> liftProcess $

@@ -13,6 +13,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 
 module Mero.Notification
     ( Set(..)
@@ -35,12 +37,11 @@ module Mero.Notification
     ) where
 
 import Control.Distributed.Process
-import Control.SpineSeq (spineSeq)
 
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid, ServiceType(..), Word128)
+import Mero.ConfC (Fid, ServiceType(..))
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
@@ -60,26 +61,30 @@ import Network.RPC.RPCLite
 import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
 
 import Control.Arrow ((***))
+import Control.Lens
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad (void, join)
+import Control.Monad ( void, join, when )
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TChan (TChan, readTChan, newTChanIO, writeTChan)
 import qualified Control.Monad.Catch as Catch
-import Data.Foldable (forM_)
+import Data.Foldable (for_, traverse_)
 import Data.Binary (Binary(..))
 import Data.Hashable (Hashable)
-import Data.List (delete, nub)
+import Data.List (nub)
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import Data.Maybe (listToMaybe)
+import Data.Monoid ((<>))
+import Data.Tuple (swap)
 import Data.Typeable (Typeable)
-import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef', atomicModifyIORef)
+import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef')
 import Data.Word
 import qualified Data.HashPSQ as PSQ
-import Foreign.Ptr
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Clock
@@ -370,8 +375,19 @@ data CacheState = Pending Note
                 | Cancelled Note
                 | Sent Note
 
+-- | Callback to be executed when notification was delivered or not.
+data Callback = Callback
+  { onDelivered :: IO ()
+  , onCancelled :: IO ()
+  }
 
-newtype NIRef = NIRef (IORef [HALink])
+instance Monoid Callback where
+  mempty = Callback (return ()) (return ())
+  Callback a b `mappend` Callback c d = Callback (a>>c) (b>>d)
+
+type NIState = IORef (Map HALink (Map Word64 Callback))
+
+data NIRef = NIRef NIState
 
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
@@ -381,7 +397,7 @@ initializeHAStateCallbacks :: LocalNode
                            -> Fid -- ^ Profile Fid.
                            -> IO (MVar (Either SomeException ()), NIRef)
 initializeHAStateCallbacks lnode addr processFid profileFid = do
-    links <- newIORef []
+    links <- newIORef Map.empty
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
              er <- Catch.try $ initHAState addr processFid profileFid
@@ -392,6 +408,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                             (ha_connected links)
                             (ha_reused links)
                             (ha_disconnecting links)
+                            (ha_disconnected links)
+                            (ha_delivered links)
+                            (ha_cancelled links)
              putMVar barrier er
     return (barrier, NIRef links)
   where
@@ -404,11 +423,12 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
                Just nvec' ->
-                 liftGlobalM0 $ notify hl idx nvec'
+                 liftGlobalM0 $ void $ notify hl idx nvec'
                Nothing   -> do
                  _ <- promulgate (Get self fids)
                  GetReply nvec' <- expect
-                 liftGlobalM0 $ notify hl idx nvec'
+                 _ <- liftGlobalM0 $ notify hl idx nvec'
+                 return ()
       liftIO $ traceEventIO "STOP ha_state_get"
 
     ha_process_event_set :: NIState -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
@@ -419,7 +439,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
         for_ mv $ traverse_ onDelivered
       void $ CH.forkProcess lnode $ promulgateWait (meta, pe)
 
-    ha_state_set :: IORef [HALink] -> NVec -> IO ()
+    ha_state_set :: NIState -> NVec -> IO ()
     ha_state_set _ nvec = do
       traceEventIO "START ha_state_set"
       atomically $ writeTChan notificationChannel nvec
@@ -453,16 +473,36 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                    liftGlobalM0 $ entrypointNoReply reqId
       liftIO $ traceEventIO "STOP ha_entrypoint"
 
-    ha_connected :: IORef [HALink] -> ReqId -> HALink -> IO ()
-    ha_connected links _ hl = atomicModifyIORef links $ \xs -> (hl : xs, ())
+    ha_connected :: NIState -> ReqId -> HALink -> IO ()
+    ha_connected links _ hl = do
+      atomicModifyIORef' links $ \x -> (Map.insert hl Map.empty x, ())
 
-    ha_reused :: IORef [HALink] -> ReqId -> HALink -> IO ()
+    ha_reused :: NIState -> ReqId -> HALink -> IO ()
     ha_reused _ _ _ = return ()
 
-    ha_disconnecting :: IORef [HALink] -> HALink -> IO ()
+    ha_disconnecting :: NIState -> HALink -> IO ()
     ha_disconnecting links hl = do
-      atomicModifyIORef' links $ \xs -> (spineSeq $ delete hl xs, ())
+      atomicModifyIORef' links $ \x -> (Map.delete hl x, ())
       -- TODO: call ha_state_disconnect hl when safe
+
+    ha_disconnected :: NIState -> HALink -> IO ()
+    ha_disconnected links hl = do
+      atomicModifyIORef' links $ \x -> (Map.delete hl x, ())
+      -- TODO: call ha_state_disconnect hl when safe
+
+
+    ha_delivered :: NIState -> HALink -> Word64 -> IO ()
+    ha_delivered ref hlink tag = do
+      mv <- atomicModifyIORef' ref $ \mp ->
+              swap $ mp & at hlink . _Just . at tag <<.~ Nothing
+      for_ mv $ \x -> do
+        onDelivered x
+
+    ha_cancelled :: NIState -> HALink -> Word64 -> IO ()
+    ha_cancelled ref hlink tag = do
+      mv <- atomicModifyIORef' ref $ \mp ->
+              swap $ mp & at hlink . _Just . at tag <<.~ Nothing
+      for_ mv $ onCancelled
 
 -- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
 getRPCMachine :: IO (Maybe RPCMachine)
@@ -503,10 +543,32 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
       | otherwise -> putMVar globalEndpointRef $ ref { _erWantsFinalize = True }
 
 -- | Send notification to all connected mero processes
-notifyMero :: NIRef -> Set -> Process ()
-notifyMero (NIRef linksRef) (Set nvec) = liftIO $ do
-    links <- readIORef linksRef
-    sendM0Task (forM_ links $ \l -> notify l 0 nvec)
+notifyMero :: NIRef -- ^ Internal storage with information about connections.
+           -> Set   -- ^ Set of notifications to be send.
+           -> IO () -- ^ What to do when all messages are delivered.
+           -> IO () -- ^ What to do when any of messages failed to be delivered.
+           -> Process ()
+notifyMero (NIRef linksRef) (Set nvec) onOk onFail = liftIO $
+    sendM0Task $ do
+      links <- readIORef linksRef
+      tags <- mdo
+        storage <- liftIO $ newIORef tags
+        let mkCallback l = Callback
+              (do (mv, p) <- atomicModifyIORef' storage
+                    $ (\(mv,p) -> (p,(mv,p))) . Map.updateLookupWithKey (\_ _ -> Nothing) l
+                  when (Map.null p) $
+                    for_ mv $ const $ do
+                      onOk)
+              (do mold <- atomicModifyIORef' storage
+                    $ swap . Map.updateLookupWithKey (\_ _ -> Nothing) l
+                  for_ mold $ const onFail)
+        tags <- ifor links $ \l _ ->
+           Map.singleton <$> notify l 0 nvec
+                         <*> pure (mkCallback l)
+        return tags
+      atomicModifyIORef' linksRef $ \pm ->
+        (Map.unionWith (Map.unionWith (<>)) pm tags, ())
+
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: Bool -- Allow returning dead services

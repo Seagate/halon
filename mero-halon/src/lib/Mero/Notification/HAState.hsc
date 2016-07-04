@@ -3,7 +3,7 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 {-# OPTIONS_GHC -Wall -Werror #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -37,7 +37,7 @@ import Mero.ConfC             (Fid, Word128)
 import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, liftM3, liftM4, void )
+import Control.Monad          ( liftM2, liftM3, liftM4 )
 import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -118,7 +118,7 @@ type NVec = [Note]
 
 -- | Link to communicate with a mero process
 newtype HALink = HALink (Ptr HALink)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 -- | Id of the incomming entrypoint/link connected request.
 newtype ReqId = ReqId Word128
@@ -165,9 +165,18 @@ initHAState :: RPCAddress
                -- ^ The link is no longer needed by the remote peer.
                -- It is safe to call 'disconnect' when all 'notify' calls
                -- using the link have completed.
+            -> (HALink -> IO ())
+               -- ^ The link was removed, no other calls should be done on this link.
+            -> (HALink -> Word64 -> IO ())
+               -- ^ Message on the given link was delivered.
+            -> (HALink -> Word64 -> IO ())
+               -- ^ Message on the given link will never be delivered.
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set ha_state_set
-            ha_state_entry ha_state_link_connected ha_state_link_reused ha_state_link_disconnecting =
+            ha_state_entry
+            ha_state_link_connected ha_state_link_reused 
+            ha_state_link_disconnecting ha_state_link_disconnected
+            ha_state_is_delivered ha_state_is_cancelled =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -178,6 +187,9 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wconnected <- wrapConnectedCB
       wreused    <- wrapReconnectedCB
       wdisconnecting <- wrapDisconnectingCB
+      wdisconnected <- wrapDisconnectedCB
+      wisdelivered <- wrapIsDeliveredCB
+      wiscancelled <- wrapIsCancelledCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
@@ -186,6 +198,10 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wconnected
       #{poke ha_state_callbacks_t, ha_state_link_disconnecting} pcbs
          wdisconnecting
+      #{poke ha_state_callbacks_t, ha_state_link_disconnected} pcbs
+         wdisconnected
+      #{poke ha_state_callbacks_t, ha_state_is_delivered} pcbs wisdelivered
+      #{poke ha_state_callbacks_t, ha_state_is_cancelled} pcbs wiscancelled
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
@@ -194,6 +210,9 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         . (SomeFunPtr wconnected:)
         . (SomeFunPtr wreused:)
         . (SomeFunPtr wdisconnecting:)
+        . (SomeFunPtr wdisconnected:)
+        . (SomeFunPtr wisdelivered:)
+        . (SomeFunPtr wiscancelled:)
         )
       rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
               ha_state_init cRPCAddr procPtr profPtr pcbs
@@ -205,7 +224,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
                   "initHAState.wrapGetCB: " ++ show (e :: SomeException)
 
     wrapSetProcessCB = cwrapProcessSetCB $ \hl m' pe -> catch
-      (do  m <- peek m'
+      (do  m <- peek m' 
            free m'
            pr <- peek pe
            ha_process_event_set (HALink hl) m pr)
@@ -236,6 +255,18 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
             "initHAState.wrapReconnectedCB: " ++ show (e :: SomeException)
     wrapDisconnectingCB = cwrapDisconnectingCB $ \hl ->
         catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+    wrapDisconnectedCB = cwrapDisconnectingCB $ \hl ->
+        catch (ha_state_link_disconnected (HALink hl)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapDisconnectedCB: " ++ show (e :: SomeException)
+    wrapIsDeliveredCB = cwrapIsDeliveredCB $ \hl tag ->
+        catch (ha_state_is_delivered (HALink hl) tag) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+    wrapIsCancelledCB = cwrapIsDeliveredCB $ \hl tag ->
+        catch (ha_state_is_cancelled (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
 
@@ -273,6 +304,9 @@ foreign import ccall "wrapper" cwrapConnectedCB ::
                   (Ptr Word128 -> Ptr HALink -> IO ())
     -> IO (FunPtr (Ptr Word128 -> Ptr HALink -> IO ()))
 
+foreign import ccall "wrapper" cwrapIsDeliveredCB ::
+    (Ptr HALink -> Word64 -> IO ()) -> IO (FunPtr (Ptr HALink -> Word64 -> IO ()))
+
 instance Storable Note where
 
   sizeOf _ = #{size struct m0_ha_note}
@@ -298,11 +332,11 @@ finiHAState = do
   where
     freeCB (SomeFunPtr ptr) = freeHaskellFunPtr ptr
 
-foreign import capi unsafe ha_state_fini :: IO ()
+foreign import capi safe ha_state_fini :: IO ()
 
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
-notify :: HALink -> Word64 -> NVec -> IO ()
+notify :: HALink -> Word64 -> NVec -> IO Word64
 notify (HALink hl) idx nvec =
   allocaBytesAligned #{size struct m0_ha_msg_nvec}
                      #{alignment struct m0_ha_msg_nvec} $ \pnvec -> do
@@ -311,9 +345,9 @@ notify (HALink hl) idx nvec =
     #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
         (fromIntegral $ length nvec :: Word64)
     pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_vec} pnvec) nvec
-    void $ ha_state_notify hl pnvec
+    ha_state_notify hl pnvec
 
-foreign import capi ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
+foreign import capi safe ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
 
 -- | Disconnects a link.
 disconnect :: HALink -> IO ()

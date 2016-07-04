@@ -37,7 +37,7 @@ typedef struct ha_state_callbacks {
 
 	/**
 	 * Called when m0_conf_ha_process event is received.
-         *
+         * 
          * * hl   - corresponding ha_link
          * * meta - metadata associated with connection
          * * proc - process event
@@ -94,6 +94,22 @@ typedef struct ha_state_callbacks {
 	 * calls using the link have completed.
 	 */
 	void (*ha_state_link_disconnecting)(struct m0_ha_link *hl);
+
+	/**
+	 * The link was finally closed.
+	 */
+	void (*ha_state_link_disconnected)(struct m0_ha_link *hl);
+
+	/**
+	 * The message on the given link was delivered to the endpoint
+	 */
+	void (*ha_state_is_delivered)(struct m0_ha_link *hl, uint64_t tag);
+
+	/**
+	 * The message on the given link will never be delivered to the
+         * endpoint.
+	 */
+	void (*ha_state_is_cancelled)(struct m0_ha_link *hl, uint64_t tag);
 
 } ha_state_callbacks_t;
 

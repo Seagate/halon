@@ -64,12 +64,14 @@ void msg_is_delivered_cb ( struct m0_halon_interface *hi
                          , struct m0_ha_link         *hl
                          , uint64_t                   tag
                          ) {
+  ha_state_cbs.ha_state_is_delivered(hl, tag);
 }
 
 void msg_is_not_delivered_cb ( struct m0_halon_interface *hi
                              , struct m0_ha_link         *hl
                              , uint64_t                   tag
                              ) {
+  ha_state_cbs.ha_state_is_cancelled(hl, tag);
 }
 
 void link_connected_cb ( struct m0_halon_interface *hi
@@ -95,6 +97,7 @@ void link_is_disconnecting_cb ( struct m0_halon_interface *hi
 void link_disconnected_cb ( struct m0_halon_interface *hi
                           , struct m0_ha_link         *link
                           ) {
+    ha_state_cbs.ha_state_link_disconnected(link);
 }
 
 // Initializes the ha_state interface.
