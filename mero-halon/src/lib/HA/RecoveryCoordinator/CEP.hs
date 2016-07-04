@@ -50,10 +50,10 @@ import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
-import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, m0d)
 import           HA.Services.SSPL (sendNodeCmd)
@@ -161,10 +161,10 @@ ruleNodeUp argv = define "node-up" $ do
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
         known <- case hasFailed of
           False -> do
-            liftProcess . sayRC $ "Potentially new node, no revival: " ++ show node
+            phaseLog "info" $ "Potentially new node, no revival: " ++ show node
             knownResource node
           True -> do
-            liftProcess . sayRC $ "Reviving old node: " ++ show node
+            phaseLog "info" $ "Reviving old node: " ++ show node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
             syncGraph $ return () -- XXX: maybe we need barrier here
@@ -319,23 +319,28 @@ ruleRecoverNode argv = define "recover-node" $ do
       timeout_host <- phaseHandle "timeout_host"
       finalize_rule <- phaseHandle "finalize_rule"
 
+      -- TODO: This is stupid, just use better local state
+      let ackMsg m = if Data.UUID.null m
+                     then return ()
+                     else done m
+
       setPhase start_recover $ \(RecoverNode uuid n1) -> do
         todo uuid
         g <- getLocalGraph
 
         case listToMaybe (G.connectedFrom Runs n1 g) of
-          Nothing -> return ()
+          Nothing -> do
+            phaseLog "warn" $ "Couldn't find host for " ++ show n1
+            ackMsg uuid
           Just host@(Host _hst) -> hasHostAttr M0.HA_TRANSIENT host >>= \case
             -- Node not already marked as down so mark it as such and
             -- notify mero
             False -> do
               setHostAttr host M0.HA_TRANSIENT
 #ifdef USE_MERO
-              let nodes = [ n
-                          | (c :: M0.Controller) <- G.connectedFrom M0.At host g
-                          , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c g
-                          ]
-              applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> nodes
+              case nodeToM0Node n1 g of
+                [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
+                ns -> applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> ns
               -- if the node is a mero server then power-cycle it.
               -- Client nodes can run client-software that may not be
               -- OK with reboots so we only reboot servers.
@@ -350,13 +355,9 @@ ruleRecoverNode argv = define "recover-node" $ do
             -- long as the RC doesn't die more often than a full node
             -- timeout happens, we'll finish the recovery eventually
             True -> put Local (uuid, Just (n1, host, 0))
-        liftProcess $ sayRC $ "Marked node transient: " ++ show n1
+        phaseLog "info" $ "Marked transient: " ++ show n1
 
         continue try_recover
-
-      let ackMsg m = if Data.UUID.null m
-                     then return ()
-                     else done m
 
       directly try_recover $ do
         get Local >>= \case
@@ -365,24 +366,23 @@ ruleRecoverNode argv = define "recover-node" $ do
             hasHostAttr M0.HA_TRANSIENT h >>= \case
               False -> ackMsg uuid
               True -> do
-                liftProcess $ sayRC "Inside try_recover"
+                phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
                 put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
                 let t' = expirySeconds `div` maxRetries
-                liftProcess $ sayRC $ "try_recover again in " ++ show t' ++ " seconds for " ++ show h
+                phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
                 continue $ timeout t' try_recover
           _ -> return ()
 
       directly timeout_host $ do
-        let log' = liftProcess . sayRC
         (uuid, st) <- get Local
+        phaseLog "warn" $ "Node recovery timed out, local state: " ++ show st
         case st of
-          Just (n1, h, i) -> do
-            log' $ "timeout_host Just " ++ show (n1, h, i)
+          Just (_, h, _) -> do
             timeoutHost h
             put Local (nil, Nothing)
-          _ -> log' "timeout_host nothing" >> return ()
+          _ -> return ()
         syncGraphProcess $ \self -> usend self $ RecoverNodeAck uuid
         continue finalize_rule
 
