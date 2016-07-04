@@ -146,7 +146,7 @@ initHAState :: RPCAddress
                --
                -- When the requested state is available, 'notify' must
                -- be called by passing the given link.
-            -> (HAMsgMeta -> ProcessEvent -> IO ())
+            -> (HALink -> HAMsgMeta -> ProcessEvent -> IO ())
                -- ^ Called when process event notification is received
             -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
@@ -204,8 +204,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapGetCB: " ++ show (e :: SomeException)
 
-    wrapSetProcessCB = cwrapProcessSetCB $ \m' pe -> catch
-      (peek m' >>= \m -> free m' >> peek pe >>= ha_process_event_set m)
+    wrapSetProcessCB = cwrapProcessSetCB $ \hl m' pe -> catch
+      (do  m <- peek m'
+           free m'
+           pr <- peek pe
+           ha_process_event_set (HALink hl) m pr)
       $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetProcessCB: " ++ show (e :: SomeException)
 
@@ -252,8 +255,8 @@ foreign import ccall "wrapper" cwrapGetCB ::
     -> IO (FunPtr (Ptr HALink -> Word64 -> Ptr NVec -> IO ()))
 
 foreign import ccall "wrapper" cwrapProcessSetCB ::
-  (Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
-  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
+                (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
+  -> IO (FunPtr (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
 
 foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))

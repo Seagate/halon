@@ -45,7 +45,7 @@ import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
 import Mero.M0Worker
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (promulgate, promulgateWait)
 import HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
@@ -386,7 +386,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
              er <- Catch.try $ initHAState addr processFid profileFid
                             ha_state_get
-                            ha_process_event_set
+                            (ha_process_event_set links)
                             (ha_state_set links)
                             ha_entrypoint
                             (ha_connected links)
@@ -411,9 +411,13 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                  liftGlobalM0 $ notify hl idx nvec'
       liftIO $ traceEventIO "STOP ha_state_get"
 
-    ha_process_event_set :: HAMsgMeta -> ProcessEvent -> IO ()
-    ha_process_event_set meta pe = void $ CH.forkProcess lnode $ do
-      void $ promulgate (meta, pe)
+    ha_process_event_set :: NIState -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
+    ha_process_event_set ref hlink meta pe = do
+      when (_chp_event pe == TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
+        mv <- atomicModifyIORef' ref $
+          swap . Map.updateLookupWithKey (const $ const $ Nothing) hlink
+        for_ mv $ traverse_ onDelivered
+      void $ CH.forkProcess lnode $ promulgateWait (meta, pe)
 
     ha_state_set :: IORef [HALink] -> NVec -> IO ()
     ha_state_set _ nvec = do

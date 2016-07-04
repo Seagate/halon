@@ -37,8 +37,13 @@ typedef struct ha_state_callbacks {
 
 	/**
 	 * Called when m0_conf_ha_process event is received.
+         *
+         * * hl   - corresponding ha_link
+         * * meta - metadata associated with connection
+         * * proc - process event
+         *
 	 * */
-	void (*ha_process_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
+	void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
 
 
 	/**
