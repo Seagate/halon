@@ -971,7 +971,11 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                   ProcessConfigRemote x _ -> x
       promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
       -- Also send ONLINE for the process
-      promulgateEQ [nid] $ Set [Note fid M0_NC_ONLINE]
+      promulgateEQ [nid]  ( HAMsgMeta fid fid fid 0
+                          , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
+                                         TAG_M0_CONF_HA_PROCESS_M0D
+                                         123
+                          )
 
     debug "Mero process start result sent"
 
