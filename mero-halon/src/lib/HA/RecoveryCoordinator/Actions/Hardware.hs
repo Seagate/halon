@@ -245,11 +245,12 @@ hasHostAttr :: HostAttr
             -> Host
             -> PhaseM LoopState l Bool
 hasHostAttr f h = do
-  phaseLog "rg-query" $ "Checking host "
+  g <- getLocalGraph
+  let result = G.isConnected h Has f g
+  phaseLog "rg-query" $ "Checking "
                       ++ show h
                       ++ " for attribute "
-                      ++ show f
-  g <- getLocalGraph
+                      ++ show f ++ ": " ++ show result
   return $ G.isConnected h Has f g
 
 -- | Set an attribute on a host. Note that this will not replace
