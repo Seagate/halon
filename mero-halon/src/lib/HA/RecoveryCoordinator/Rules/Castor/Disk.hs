@@ -41,6 +41,7 @@ import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset  as Reset
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
 import HA.RecoveryCoordinator.Events.Drive
 import HA.Resources
 import HA.Resources.Castor
@@ -59,6 +60,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Applicative
 import Control.Distributed.Process hiding (catch)
+import Control.Lens ((<&>))
 import Control.Monad
 import Control.Monad.Trans.Maybe
 
@@ -82,6 +84,7 @@ rules = sequence_
   , ruleDriveInserted
   , ruleDriveRemoved
   , ruleDrivePoweredOff
+  , ruleDrivePoweredOn
   , ruleExpanderResetBlip
   , rulePowerDownDriveOnFailure
   , Repair.checkRepairOnClusterStart
@@ -392,6 +395,38 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     done uuid
 
   startFork power_removed Nothing
+
+-- | If a drive is powered on, and it wasn't failed due to Mero issues
+--   or SMART test failures (e.g. it had just been depowered), then mark
+--   it as replaced and start a rebalance.
+ruleDrivePoweredOn :: Definitions LoopState ()
+ruleDrivePoweredOn = defineSimple "drive-powered-on"
+  $ \(DrivePowerChange{..}) -> do
+    todo dpcUUID
+    realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
+    unless realFailure $ do
+      fdev <- lookupStorageDeviceSDev dpcDevice
+              >>= filterMaybeM (\d -> getLocalGraph <&> m0failed . getState d)
+      forM_ fdev $ \m0sdev -> do
+        phaseLog "info" $ "Failed device with no underlying failure has been "
+                        ++ "repowered. Marking as replaced."
+        phaseLog "info" $ "Storage device: " ++ show dpcDevice
+        phaseLog "info" $ "Mero device: " ++ showFid m0sdev
+        markStorageDeviceReplaced dpcDevice
+        -- Start rebalance
+        pool <- getSDevPool m0sdev
+        forM_ pool $ promulgateRC . PoolRebalanceRequest
+    done dpcUUID
+  where
+    filterMaybeM _ Nothing = return Nothing
+    filterMaybeM f j@(Just x) = f x >>= \q -> return $ if q then j else Nothing
+    isRealFailure (StorageDeviceStatus "MERO-FAILED" _) = True
+    isRealFailure (StorageDeviceStatus "FAILED" _) = True
+    isRealFailure _ = False
+    m0failed SDSFailed = True
+    m0failed SDSRepairing = True
+    m0failed SDSRepaired = True
+    m0failed _ = False
 
 -- | This rule handles processing events seen when the expander resets. In
 --   such a case we expect to see many @DriveTransient@ events, as well as
