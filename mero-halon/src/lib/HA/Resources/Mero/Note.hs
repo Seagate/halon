@@ -26,7 +26,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note.TH
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources.Castor as R
 import HA.Resources.TH
 import Mero.ConfC (Fid(..), fidToStr)
 
@@ -371,8 +370,7 @@ instance ShowFidObj M0.Node
 instance ShowFidObj M0.Process
 instance ShowFidObj M0.Service
 instance ShowFidObj M0.Disk
-
-
+instance ShowFidObj M0.SDev
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
