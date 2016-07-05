@@ -305,11 +305,17 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 
      oldDriveStatus <- maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
      isOngoingReset <- hasOngoingReset disk
+     isRemoved <- isStorageDriveRemoved disk
 
-     if isOngoingReset
-     then
-       phaseLog "info" $ "Ignoring DriveManager updates sent during ongoing reset of disk: "
-                      ++ show disk
+     if isOngoingReset || isRemoved
+     then do
+       phaseLog "info" $ unwords [
+                            "Ignoring DriveManager updates for disk:"
+                          , show disk
+                          , "due to disk being"
+                          , if isRemoved then "removed" else "reset"
+                          ]
+       messageProcessed uuid
      else
        case ( T.toUpper disk_status, T.toUpper disk_reason) of
         (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) ->

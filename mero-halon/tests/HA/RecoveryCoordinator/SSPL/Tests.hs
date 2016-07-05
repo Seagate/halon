@@ -221,10 +221,10 @@ testDMRequest = mkHpiTest rules test
         liftProcess $ usend self ()
       defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) ->
         liftProcess $ usend self (uuid, "drive-failed"::String)
-      defineSimple "drive-inserted" $ \(DriveInserted uuid _ _ _ _) ->
-        liftProcess $ usend self (uuid, "drive-inserted"::String)
-      defineSimple "drive-removed" $ \(DriveRemoved uuid _ _ _ _) ->
-        liftProcess $ usend self (uuid, "drive-removed"::String)
+      defineSimple "drive-ok" $ \(DriveOK uuid _ _ _) ->
+        liftProcess $ usend self (uuid, "drive-ok"::String)
+      defineSimple "drive-transient" $ \(DriveTransient uuid _ _ _) ->
+        liftProcess $ usend self (uuid, "drive-transient"::String)
     test rc = do
         me <- getSelfNode
         let requestA = mkHpiMessage "primus.example.com" "enclosure1" "serial1" 0 "loop1" "wwn1"
@@ -241,7 +241,7 @@ testDMRequest = mkHpiTest rules test
         let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0) []
-        "drive-removed" <- await uuid0
+        "drive-transient" <- await uuid0
         say "Unused ok for removed drive"
         let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
         uuid1 <- liftIO $ nextRandom
@@ -261,12 +261,12 @@ testDMRequest = mkHpiTest rules test
         let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
-        await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "nothing"
+        await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "drive-ok"
         say "OK_None smart for bad"
         let request5 = dmRequest "OK" "None" "serial1" 1 "path"
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5) []
-        await uuid5 >>= liftIO . assertEqual "OK_None smart for bad" "drive-inserted"
+        await uuid5 >>= liftIO . assertEqual "OK_None smart for bad" "nothing"
         return ()
       where
         await uuid = receiveWait
