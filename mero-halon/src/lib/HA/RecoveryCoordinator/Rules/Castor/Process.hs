@@ -387,7 +387,7 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
   forM_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
   forM_ (lefts results) $ \x ->
-    phaseLog "error" $ printf "process started: %s" (show x)
+    phaseLog "info" $ printf "process stopped: %s" (show x)
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through
