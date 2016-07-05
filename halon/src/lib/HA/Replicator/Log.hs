@@ -17,6 +17,7 @@
 module HA.Replicator.Log
   ( RLogGroup
   , storageDir
+  , replicasDir
   , __remoteTable
   , __remoteTableDecl
   )  where
@@ -113,8 +114,11 @@ storageDir = unsafePerformIO $ do
   path <- fromMaybe "" <$> lookupEnv "HALON_PERSISTENCE"
   return $ path </> "halon-persistence"
 
+replicasDir :: FilePath
+replicasDir = storageDir </> "replicas"
+
 halonPersistDirectory :: NodeId -> FilePath
-halonPersistDirectory = filepath $ storageDir </> "replicas"
+halonPersistDirectory = filepath replicasDir
 
 halonLogId :: String -> Log.LogId
 halonLogId = Log.toLogId . ("halon-log." ++)

@@ -20,7 +20,7 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 import Network.Transport.TCP as TCP
 #endif
 import HA.RecoveryCoordinator.Definitions
-import HA.Replicator.Log (storageDir)
+import HA.Replicator.Log (replicasDir, storageDir)
 import HA.Startup (startupHalonNode)
 
 import Control.Distributed.Commands.Process (sendSelfNode)
@@ -37,6 +37,7 @@ import System.FilePath ((</>))
 import System.Directory
     ( getCurrentDirectory
     , doesFileExist
+    , doesDirectoryExist
     , createDirectoryIfMissing
     )
 import System.Environment
@@ -110,8 +111,11 @@ main = do
     checkStoredVersion = do
       let versionFile = storageDir </> "version.txt"
       exists <- doesFileExist versionFile
+      stateExists <- doesDirectoryExist replicasDir
       vString <- versionString
-      if exists then do
+      -- We don't want to check the persisted state version if there is no
+      -- persisted state.
+      if exists && stateExists then do
         str <- readFile versionFile
         when (str /= vString) $ do
           hPutStrLn stderr "Version mismatch of the persisted state:"
