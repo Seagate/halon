@@ -91,10 +91,11 @@ stateCascade t pg = doTest t pg [rule] test'
       nid <- getSelfNode
       self <- getSelfPid
       _ <- promulgateEQ [nid] $ RuleHook self
-      Just (Set ns@((Note f _):_)) <- expectTimeout 20000000
-      H.debug $ "Expected: " ++ show ns
-      Set ns' <- H.nextNotificationFor f recv
+      rack <- expect :: Process M0.Rack
+      Set ns' <- H.nextNotificationFor (M0.fid rack) recv
       H.debug $ "Received: " ++ show ns'
+      Set ns <- expect
+      H.debug $ "Expected: " ++ show ns
       liftIO $ assertEqual "Mero gets the expected note set" (sort ns) (sort ns')
 
     rule :: Definitions LoopState ()
@@ -123,6 +124,7 @@ stateCascade t pg = doTest t pg [rule] test'
                       $ (G.connectedTo p M0.IsParentOf rg :: [M0.Enclosure])
             Just ctrl = listToMaybe
                       $ (G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+        liftProcess . usend pid $ p
         applyStateChanges [stateSet p M0_NC_FAILED]
         let notifySet = stateSet p M0_NC_FAILED
                       : stateSet encl M0_NC_TRANSIENT
