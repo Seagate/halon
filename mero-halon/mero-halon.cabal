@@ -103,7 +103,7 @@ Library
                    HA.RecoveryCoordinator.Events.Drive
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
-                   Version
+                   Version.Read
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
                    HA.Services.DecisionLog.CEP
@@ -113,6 +113,7 @@ Library
                    HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
+                   Version
 
   Build-Depends:   base,
                    aeson,
@@ -157,7 +158,7 @@ Library
 
 
   if flag(mero)
-      c-sources:       src/lib/Version.c
+      c-sources:       src/lib/Version/Read.c
       Exposed-Modules: Mero.Epoch
                        Mero.Environment
                        Mero.M0Worker

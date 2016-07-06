@@ -1,7 +1,7 @@
 Summary: halon
 Name: halon
-Version: %{_gitversion}%{?dist}
-Release: %{_buildnumber}
+Version: 0.1%{?dist}
+Release: %{_buildnumber}.%{_gitversion}
 License: All rights reserved
 Group: System Environment/Daemons
 Source: %{name}.tar.gz
