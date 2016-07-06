@@ -33,6 +33,7 @@ import HA.Resources.Mero.Note
 import HA.Multimap
 import HA.Service
 import HA.Services.Mero
+import HA.Services.Mero.Types (NotificationAck(..))
 import HA.Services.SSPL
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
@@ -397,7 +398,10 @@ expectActuatorMsg' f t = do
 
 nextNotificationFor :: Fid -> ReceivePort NotificationMessage -> Process Set
 nextNotificationFor fid recv = fix $ \go -> do
-  s@(Set notes) <- notificationMessage <$> receiveChan recv
+  nm <- receiveChan recv
+  let s@(Set notes) = notificationMessage nm
+  forM_ (notificationAckTo nm) $ \pid ->
+    usend pid (NotificationAck ())
   case (find (\(Note f _) -> f == fid) notes) of
     Just _ -> return s
     Nothing -> do
