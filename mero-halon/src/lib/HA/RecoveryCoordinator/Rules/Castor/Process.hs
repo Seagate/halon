@@ -11,6 +11,7 @@
 module HA.RecoveryCoordinator.Rules.Castor.Process
   ( rules ) where
 
+import           HA.Encode
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Job
@@ -86,10 +87,10 @@ ruleProcessRestarted = define "processes-restarted" $ do
 
       resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, p, Just n, _)) = do
         let mnode = M0.m0nodeToNode n $ lsGraph ls
-        return $ if maybe False (== Node nid) mnode && [M0.fid p] == lefts results
+            resultFids = either id fst <$> results
+        return $ if maybe False (== Node nid) mnode && M0.fid p `elem` resultFids
                  then Just (eid, results) else Nothing
       resetNodeGuard _ _ _ = return Nothing
-
 
       isProcFailed st = case st of
         M0.PSFailed _ -> True
@@ -151,6 +152,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
         switch [restart_result, timeout 180 restart_timeout]
 
   setPhaseIf restart_result resetNodeGuard $ \(eid', results) -> do
+    phaseLog "debug" $ "Got restart results: " ++ show results
     -- Process restart message early: if something goes wrong the rule
     -- starts fresh anyway
     messageProcessed eid'
@@ -188,9 +190,6 @@ ruleProcessRestarted = define "processes-restarted" $ do
   directly end stop
 
   start initialize Nothing
-
-
-
 
 -- | Handle online notifications about processes. Part of process
 -- restart procedure.

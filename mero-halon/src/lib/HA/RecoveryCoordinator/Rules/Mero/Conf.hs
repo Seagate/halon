@@ -412,7 +412,7 @@ stateCascadeRules =
   , AnyCascadeRule processCascadeRule
   , AnyCascadeRule nodeTransient
   , AnyCascadeRule controllerCascadeFailedRule
-  , AnyCascadeRule controllerCascadeOnlineRule
+--  , AnyCascadeRule controllerCascadeOnlineRule
   ]
 
 controllerCascadeFailedRule :: StateCascadeRule M0.Controller M0.Process
@@ -425,6 +425,7 @@ controllerCascadeFailedRule = StateCascadeRule
   -- trigger restart.
   (\_ pst -> M0.PSInhibited pst)
 
+{-
 controllerCascadeOnlineRule :: StateCascadeRule M0.Controller M0.Process
 controllerCascadeOnlineRule = StateCascadeRule
   (M0.M0_NC_FAILED ==)
@@ -434,6 +435,7 @@ controllerCascadeOnlineRule = StateCascadeRule
   -- Controller came back so fail the processes and let halon restart
   -- them
   (\_ _ -> M0.PSFailed "controller came online")
+-}
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule
