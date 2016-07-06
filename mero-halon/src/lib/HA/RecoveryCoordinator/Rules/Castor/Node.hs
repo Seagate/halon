@@ -768,7 +768,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
    directly teardown $ do
      Just node <- getField . rget fldNode <$> get Local
      Just lvl@(M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
-     phaseLog "info" $ "Tearing down " ++ show lvl
+     phaseLog "info" $ "Tearing down " ++ show lvl ++ " on " ++ show node
      cluster_lvl <- fromMaybe M0.MeroClusterStopped
                      . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
      case cluster_lvl of
@@ -837,7 +837,9 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
                           <$> failedProcs
      applyStateChanges [stateSet m0node M0.M0_NC_FAILED]
      modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeTimeout)
-     continue finish
+     -- go back to teardown_exec, let it notice no more processes on
+     -- this level and deal with transition into next
+     continue teardown_exec
 
    setPhaseIf await_barrier (\(BarrierPass i) _ minfo ->
      runMaybeT $ do
