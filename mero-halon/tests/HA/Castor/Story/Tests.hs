@@ -241,7 +241,7 @@ run transport pg interceptor rules test =
   where
     startSSPLService :: ProcessId -> Process ()
     startSSPLService rc = do
-      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
+      subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
       nid <- getSelfNode
       let conf =
             SSPLConf (ConnectionConf (Configured "localhost")
@@ -266,6 +266,7 @@ run transport pg interceptor rules test =
 
       _ <- promulgateEQ [nid] $ encodeP msg
       ("Starting service sspl" :: String) <- expect
+      _ <- expect :: Process (Published (HAEvent DeclareChannels))
 
       return ()
 
@@ -274,12 +275,12 @@ run transport pg interceptor rules test =
                                     , ReceivePort ProcessControlMsg
                                     )
     startMeroServiceMock rc = do
-      subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
+      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
       nid <- getSelfNode
       pid <- getSelfPid
       (recv, recvc, channel) <- newMeroChannel pid
       _ <- promulgateEQ [nid] channel
-      _ <- expect :: Process (Published (HAEvent DeclareChannels))
+      _ <- expect :: Process (Published (HAEvent DeclareMeroChannel))
       return (recv, recvc)
 
     spawnMockRabbitMQ :: ProcessId -> Process ProcessId
@@ -728,13 +729,15 @@ testDrivePoweredDown transport pg = run transport pg interceptor [] test where
     in do
       prepareSubscriptions rc rmq
       subscribe rc (Proxy :: Proxy (DriveFailed))
-      loadInitialData
 
       rg <- G.getGraph mm
       nid <- getSelfNode
       eid <- liftIO $ nextRandom
       disk <- findSDev rg
       usend rc $ DriveFailed eid (Node nid) enc (aDiskSD disk)
+      -- Need to ack the response to Mero
+      forM_ (aDiskMero disk) $ \m0disk ->
+        void $ nextNotificationFor (M0.fid m0disk) recv
 
       debug "Drive failed should be processed"
       _ <- expect :: Process (Published DriveFailed)
