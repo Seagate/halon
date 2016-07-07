@@ -112,6 +112,7 @@ data ThatWhichWeCallADisk = ADisk {
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
   , aDiskSN :: String -- ^ Has a serial number
   , aDiskPath :: String -- ^ Has a path
+  , aDiskWWN :: String -- ^ Has a WWN
 }
 
 newMeroChannel :: ProcessId
@@ -308,12 +309,13 @@ loadInitialData = let
 
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
-  let dvs = [ ADisk storage (Just sdev) serial path
+  let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
             , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
             , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
             , DISerialNumber serial <- G.connectedTo storage Has rg
             , DIPath path <- G.connectedTo storage Has rg
+            , DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     dv:_ -> return dv
@@ -322,12 +324,13 @@ findSDev rg =
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
-  let dvs = [ ADisk storage (Just sdev) serial path
+  let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
             , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
             , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
             , DISerialNumber serial <- G.connectedTo storage Has rg
             , DIPath path <- G.connectedTo storage Has rg
+            , DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     _:dv:_ -> return dv
@@ -435,8 +438,8 @@ loadInitialDataMod f = let
 
 -- | Fail a drive (via Mero notification)
 failDrive :: ReceivePort NotificationMessage -> ThatWhichWeCallADisk -> Process ()
-failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
-failDrive recv (ADisk _ (Just sdev) serial _) = let
+failDrive _ (ADisk _ Nothing _ _ _) = error "Cannot fail a non-Mero disk."
+failDrive recv (ADisk _ (Just sdev) serial _ _) = let
     fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
     tserial = pack serial
   in do
@@ -463,7 +466,7 @@ failDrive recv (ADisk _ (Just sdev) serial _) = let
     debug "failDrive: OK"
 
 resetComplete :: StoreChan -> ThatWhichWeCallADisk -> Process ()
-resetComplete mm (ADisk sdev _ serial _) = let
+resetComplete mm (ADisk sdev _ serial _ _) = let
     tserial = pack serial
     resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
@@ -482,7 +485,7 @@ resetComplete mm (ADisk sdev _ serial _) = let
 
 
 smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> ThatWhichWeCallADisk -> Process ()
-smartTestComplete recv success (ADisk _ msdev serial _) = let
+smartTestComplete recv success (ADisk _ msdev serial _ _) = let
     tserial = pack serial
     smartComplete = CommandAck Nothing
                         (Just $ SmartTest tserial)
@@ -653,16 +656,26 @@ testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
   test (TestArgs _ mm rc) rmq recv _ = do
     prepareSubscriptions rc rmq
     subscribe rc (Proxy :: Proxy DriveRemoved)
+
+    sdev <- G.getGraph mm >>= findSDev
+
     let enclosure = "enclosure_2"
         host      = pack systemHostname
         devIdx    = 1
-        message0 = LBS.toStrict $ encode
-                                $ mkSensorResponse
-                                $ mkResponseHPI host (pack enclosure) "serial21" (fromIntegral devIdx) "/dev/loop21" "wwn21" False True
+        message0 = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
+                    host (pack enclosure)
+                    (pack $ aDiskSN sdev)
+                    (fromIntegral devIdx)
+                    (pack $ aDiskPath sdev)
+                    (pack $ aDiskWWN sdev)
+                    False True
         message = LBS.toStrict $ encode $ mkSensorResponse
            $ emptySensorMessage
               { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosure) "serial21" devIdx "EMPTY" "None" "/path" }
+                Just $ mkResponseDriveManager (pack enclosure)
+                                              (pack $ aDiskSN sdev)
+                                              devIdx "EMPTY" "None"
+                                              (pack $ aDiskPath sdev) }
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
     Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
@@ -670,8 +683,9 @@ testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
     debug "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
     debug "Check notification"
-    Set [Note _ st, Note _ _] <- notificationMessage <$> receiveChan recv
-    liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
+    forM_ (aDiskMero sdev) $ \m0disk -> do
+      Set [Note _ st, Note _ _] <- nextNotificationFor (M0.fid m0disk) recv
+      liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
 #ifdef USE_MERO
 -- | Test that we generate an appropriate pool version in response to
@@ -700,7 +714,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
       }
 
     rg <- G.getGraph mm
-    sdev@(ADisk _ (Just m0sdev) _ _) <- findSDev rg
+    sdev@(ADisk _ (Just m0sdev) _ _ _) <- findSDev rg
     failDrive recv sdev
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
@@ -708,7 +722,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
-    sdev2@(ADisk _ (Just m0sdev2) _ _)  <- find2SDev rg
+    sdev2@(ADisk _ (Just m0sdev2) _ _ _)  <- find2SDev rg
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
@@ -779,11 +793,14 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
       usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
 
       debug "RAID message published"
+      -- Expect the message to be processed by RC
+      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+
       -- We should see a message to SSPL to remove the drive
       liftIO . assertEqual "drive removal command is issued"
         (Just $ ActuatorRequestMessageActuator_request_typeNode_controller
                 $ nodeCmdString (NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")))
-        =<< expectNodeMsg (10*1000000) -- ssplTimeout
+        =<< expectNodeMsg (20*1000000) -- ssplTimeout
       -- The RC should issue a 'ResetAttempt' and should be handled.
       debug "RAID removal for drive received at SSPL"
       _ <- expect :: Process (Published (HAEvent ResetAttempt))
