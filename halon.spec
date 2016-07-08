@@ -33,7 +33,10 @@ Cluster monitoring and recovery for high-availability.
 %{stack} setup
 
 %build
-%{stack} build --extra-include-dirs=/usr/include/mero --flag mero-halon:mero --flag confc:mero
+# If snapshot deps already cached in global location use that instead
+# of default stack root.
+[ -d /stack ] && STACK_ROOT="--stack-root /stack"
+%{stack} build $STACK_ROOT --extra-include-dirs=/usr/include/mero --flag mero-halon:mero --flag confc:mero
 
 %install
 rm -rf %{buildroot}
