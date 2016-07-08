@@ -8,6 +8,7 @@
 
 #define M0_TRACE_SUBSYSTEM M0_TRACE_SUBSYS_HA
 #include "lib/trace.h"
+#include <stdlib.h>       /* malloc */
 #include "lib/memory.h"
 #include "hastate.h"
 #include "m0init.h"       /* m0init_hi */
