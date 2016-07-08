@@ -91,6 +91,7 @@ import System.Exit
 import System.FilePath
 import System.Directory
 import qualified System.SystemD.API as SystemD
+import qualified System.Timeout as ST
 
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
@@ -218,14 +219,21 @@ stopProcess run conf = flip Catch.catch (generalProcFailureHandler conf) $
   case unitString conf run of
     Just unit -> do
       putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
-      ec <- SystemD.stopService unit
+      ec <- ST.timeout ptimeout $ SystemD.stopService unit
       case ec of
-        ExitSuccess -> return $ Left procFid
-        ExitFailure x -> do
+        Nothing -> do
+          putStrLn $ unwords [ "m0d: stopProcess timed out after", show ptimeoutSec, "s for", show unit ]
+          return $ Right (procFid, "Failed to stop after " ++ show ptimeoutSec ++ "s")
+        Just ExitSuccess -> do
+          putStrLn $ "m0d: stopProcess OK for " ++ show unit
+          return $ Left procFid
+        Just (ExitFailure x) -> do
           putStrLn $ "m0d: stopProcess failed."
           return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
     Nothing -> return (Left procFid)
   where
+    ptimeoutSec = 60
+    ptimeout = ptimeoutSec * 1000000
     (procFid, _) = getProcFidAndEndpoint conf
 
 unitString :: ProcessConfig -> ProcessRunType -> Maybe String

@@ -371,8 +371,8 @@ ruleStopMeroProcess = define "stop-process" $ do
   start initial Nothing
 
 ruleProcessControlStop :: Definitions LoopState ()
-ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessControlResultStopMsg node results) -> do
-  phaseLog "info" $ printf "Mero processes stopped on %s" (show node)
+ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessControlResultStopMsg nid results) -> do
+  phaseLog "info" $ printf "Mero processes stopped on %s" (show nid)
   rg <- getLocalGraph
   let
     resultProcs :: [Either M0.Process (M0.Process, String)]
@@ -384,8 +384,15 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
     Left x -> stateSet x M0.PSOffline
     Right (x,s) -> stateSet x (M0.PSFailed $ "Failed to stop: " ++ show s))
     <$> resultProcs
-  forM_ (rights results) $ \(x,s) ->
-    phaseLog "error" $ printf "failed to stop service %s : %s" (show x) s
+
+  let failedProcs = rights results
+  unless (null failedProcs) $ do
+    forM_ failedProcs $ \(x,s) -> do
+      phaseLog "error" $ printf "failed to stop process %s : %s" (show x) s
+    -- We're trying to stop the processes on the node but it's
+    -- failing. Fail the node.
+    applyStateChanges $ (\n -> stateSet n M0_NC_FAILED) <$> nodeToM0Node (Node nid) rg
+
   forM_ (lefts results) $ \x ->
     phaseLog "info" $ printf "process stopped: %s" (show x)
 
