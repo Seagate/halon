@@ -1,6 +1,4 @@
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
 --
 -- This module implements the Haskell bindings to the HA side of the
 -- Notification interface. It contains the functions that pass messages between
@@ -14,7 +12,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 module Mero.Notification
     ( Set(..)
@@ -290,7 +287,7 @@ notificationWorker chan announce = await_event
     -- Invarant: 'tm' should be non-zero, in order to achieve that
     -- await_execute should not be called directly. Use next_step that maintains
     -- invariant.
-    await_execute tm psq = do
+    await_execute tm !psq = do
       mnote <- receiveTimeout tm [ readNoteMsg ]
       now <- liftIO $ getTime Monotonic
       case mnote of
@@ -322,13 +319,13 @@ notificationWorker chan announce = await_event
            next_step psq now
     -- Execute current action.
     -- TODO: batch multiple events?
-    execute (Pending n@(Note fid _)) now psq = do
+    execute (Pending n@(Note fid _)) !now !psq = do
       announce [n]
       next_step (PSQ.insert fid (sentTime now) (Sent n) psq) now
-    execute Sent{} now psq = next_step psq now
-    execute Cancelled{} now psq = next_step psq now
+    execute Sent{} !now !psq = next_step psq now
+    execute Cancelled{} !now !psq = next_step psq now
     -- Decide what to do next
-    next_step psq now =
+    next_step !psq !now =
       case PSQ.minView psq of
         Nothing -> await_event
         Just (_, pri, v, psq') ->
@@ -336,12 +333,12 @@ notificationWorker chan announce = await_event
           then execute v now psq'
           else await_execute (delay pri now) psq
     readNoteMsg = matchSTM (readTChan chan) return
-    pendingTime   now = now + TimeSpec 0 (fromIntegral $ 1000*pendingInterval)
-    cancelledTime now = now + TimeSpec 0 (fromIntegral $ 1000*cancelledInterval)
+    pendingTime   !now = now + TimeSpec 0 (fromIntegral $ 1000*pendingInterval)
+    cancelledTime !now = now + TimeSpec 0 (fromIntegral $ 1000*cancelledInterval)
     -- increase only half of the period on duplicate.
     sentTime now      = now + TimeSpec 0 (fromIntegral $ 500*sentInterval)
-    cancelledTime' now = now + TimeSpec 0 (fromIntegral $ 500*cancelledInterval)
-    delay  p now      = fromIntegral $ (timeSpecAsNanoSecs $ p `diffTimeSpec` now) `div` 1000
+    cancelledTime' !now = now + TimeSpec 0 (fromIntegral $ 500*cancelledInterval)
+    delay  p !now      = fromIntegral $ (timeSpecAsNanoSecs $ p `diffTimeSpec` now) `div` 1000
 
 -- | Time to keep sent value in the cache (remove duplicates).
 sentInterval :: Int
