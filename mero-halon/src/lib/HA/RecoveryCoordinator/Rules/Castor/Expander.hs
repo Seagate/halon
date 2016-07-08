@@ -165,6 +165,7 @@ ruleReassembleRaid =
       nodeup_timeout <- phaseHandle "nodeup_timeout"
       failed <- phaseHandle "failed"
       finish <- phaseHandle "finish"
+      tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
 
       setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc) _) -> do
@@ -179,9 +180,10 @@ ruleReassembleRaid =
                    ]
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe
-          [ node | host <- G.connectedTo enc R.Has rg :: [R.Host]
-                 , node <- G.connectedTo host R.Runs rg
-                 ]
+          [ (host, node)
+          | host <- G.connectedTo enc R.Has rg :: [R.Host]
+          , node <- G.connectedTo host R.Runs rg
+          ]
         raidDevs <- getLocalGraph <&> \rg -> let
             extractRaidDev (R.DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
@@ -194,10 +196,13 @@ ruleReassembleRaid =
         -- that we might not have to deal with Mero (this can happen on the
         -- CMU), so we have to deal with that.
         case (mnode, raidDevs) of
-          (Just node@(R.Node nid), (_:_)) -> do
-            modify Local $ rlens fldHardware . rfield .~ Just (enc, node)
+          (Just (host, node@(R.Node nid)), (_:_)) -> do
+            modify Local $ rlens fldHardware . rfield .~ Just (enc, host, node)
             modify Local $ rlens fldUUID . rfield .~ (Just eid)
             modify Local $ rlens fldRaidDevices . rfield .~ raidDevs
+
+            -- Mark that the host is undergoing RAID reassembly
+            modifyGraph $ G.connect host R.Is R.ReassemblingRaid
 
             -- Set default jump parameters. If no Mero, just stop RAID directly
             modify Local $ rlens fldDispatch . rfield .~
@@ -269,7 +274,7 @@ ruleReassembleRaid =
 
       directly stop_mero_services $ do
         showLocality
-        Just (_, node) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
 
         rg <- getLocalGraph
         let procs = [ p | p <- getNodeProcesses node rg
@@ -303,7 +308,7 @@ ruleReassembleRaid =
 
       directly unmount $ do
         showLocality
-        Just (_, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
         sent <- sendNodeCmd nid (Just cmdUUID) $ Unmount "/var/mero"
 
@@ -322,7 +327,7 @@ ruleReassembleRaid =
 
       directly stop_raid $ do
         showLocality
-        Just (_, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
         raidDevs <- gets Local (^. rlens fldRaidDevices . rfield)
 
         forM_ raidDevs $ \dev -> do
@@ -346,7 +351,7 @@ ruleReassembleRaid =
 
       directly reassemble_raid $ do
         showLocality
-        Just (_, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
         sent <- sendNodeCmd nid (Just cmdUUID) $ NodeRaidCmd "--scan" (RaidAssemble [])
 
@@ -402,9 +407,7 @@ ruleReassembleRaid =
       directly finish $ do
         showLocality
         phaseLog "info" $ "Raid reassembly complete."
-        Just uuid <- gets Local (^. rlens fldUUID . rfield)
-
-        done uuid
+        continue tidyup
 
       directly notify_failed $ do
         showLocality
@@ -417,19 +420,29 @@ ruleReassembleRaid =
         showLocality
         phaseLog "error" $ "Timeout whilst waiting for Mero processes to "
                         ++ "restart."
+        continue failed
 
       directly failed $ do
         showLocality
-        Just uuid <- gets Local (^. rlens fldUUID . rfield)
         phaseLog "error" $ "Error during expander reset handling."
         -- TODO enclosure restart?
+        continue tidyup
+
+      -- Tidy up phase, runs after either a successful or unsuccessful
+      -- completion and:
+      -- - Removes the raid reassembly marker on the host
+      -- - Acknowledges the message
+      directly tidyup $ do
+        Just uuid <- gets Local (^. rlens fldUUID . rfield)
+        Just (_, host, _) <- gets Local (^. rlens fldHardware . rfield)
+        modifyGraph $ G.disconnect host R.Is R.ReassemblingRaid
         done uuid
 
       startFork expander_reset_evt (args expander_reset_evt)
 
   where
     -- Enclosure, node
-    fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Node))
+    fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     fldHardware = Proxy
     -- Notifications to wait for
     fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet])

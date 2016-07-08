@@ -113,29 +113,12 @@ data StorageDeviceStatus = StorageDeviceStatus
 instance Binary StorageDeviceStatus
 instance Hashable StorageDeviceStatus
 
--- | Resource indicating that core mero-server provisioning procedure
--- is going happening on the node.
---
--- The 'Bool' indicates whether the core provisioning process for this
--- node has finished.
-data ServerBootstrapCoreProcess = ServerBootstrapCoreProcess NodeId Bool
+-- | Marker used to indicate that a host is undergoing RAID reassembly.
+data ReassemblingRaid = ReassemblingRaid
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary ServerBootstrapCoreProcess
-instance Hashable ServerBootstrapCoreProcess
-
--- | Resource indicating that mero-server provisioning procedure
--- is going happening on the node, though not the core bootstrap: this
--- can mean extra services being started.
---
--- The 'Bool' indicates whether the provisioning process for this node
--- has finished.
-data ServerBootstrapProcess = ServerBootstrapProcess NodeId Bool
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Binary ServerBootstrapProcess
-instance Hashable ServerBootstrapProcess
-
+instance Binary ReassemblingRaid
+instance Hashable ReassemblingRaid
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
 --------------------------------------------------------------------------------
@@ -163,12 +146,10 @@ $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ServerBootstrapProcess, ''ServerBootstrapCoreProcess
+  , ''MI.BMC, ''UUID, ''ReassemblingRaid
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
-  , (''Cluster, ''Runs, ''ServerBootstrapCoreProcess)
-  , (''Cluster, ''Runs, ''ServerBootstrapProcess)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
@@ -183,6 +164,7 @@ $(mkDicts
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
   , (''Host, ''Has, ''UUID)
+  , (''Host, ''Is, ''ReassemblingRaid)
   ]
   )
 
@@ -190,12 +172,10 @@ $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ServerBootstrapCoreProcess, ''ServerBootstrapProcess
+  , ''MI.BMC, ''UUID, ''ReassemblingRaid
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
-  , (''Cluster, ''Runs, ''ServerBootstrapCoreProcess)
-  , (''Cluster, ''Runs, ''ServerBootstrapProcess)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
@@ -210,6 +190,7 @@ $(mkResRel
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
+  , (''Host, ''Is, ''ReassemblingRaid)
   ]
   []
   )

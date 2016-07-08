@@ -41,6 +41,7 @@ import Control.Distributed.Process
   , say
   , usend
   )
+import Control.Lens ((<&>))
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
@@ -608,6 +609,8 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                   serial <- MaybeT $ (fmap T.pack . listToMaybe) <$> lookupStorageDeviceSerial dev
                   return (dev, path, serial)
 
+          isReassembling <- getLocalGraph
+                            <&> isConnected host Is ReassemblingRaid
           let
             go [] = return ()
             go ((sdev, path, _sn):xs) = do
@@ -629,7 +632,10 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                   continue end
               go xs
 
-          go . fmap fst . filter (\(_,x) -> x == "_") $ catMaybes sdevs
+          if isReassembling
+          then go . fmap fst . filter (\(_,x) -> x == "_") $ catMaybes sdevs
+          else phaseLog "info" $ "RAID device is reassembling; not attempting "
+                              ++ "further action."
       done uid
 
   setPhaseIf reset_success
