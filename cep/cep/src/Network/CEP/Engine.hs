@@ -5,6 +5,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ViewPatterns     #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -18,7 +20,7 @@ import Data.Either (partitionEithers)
 import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
-import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Monad.Trans
 import           Control.Monad.Catch (bracket_)
 import qualified Data.MultiMap       as MM
@@ -28,6 +30,7 @@ import qualified Data.Set            as Set
 import           Data.Traversable (mapAccumL)
 import           Data.Foldable (forM_)
 import           Debug.Trace (traceEventIO)
+import           Control.Lens
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -123,6 +126,9 @@ data InitRule s =
       -- ^ Keep track of type of messages handled by the init rule.
     }
 
+-- | Information required to control SM
+data SMData s = SMData !SMId !RuleKey !(RuleData s)
+
 -- | Main CEP engine state structure.
 data Machine s =
     Machine
@@ -153,12 +159,23 @@ data Machine s =
     , _machTotalProcMsgs :: !Int
     , _machInitRulePassed :: !Bool
       -- ^ Indicates the if the init rule has been executed already.
-    , _machRunningSM :: [(RuleKey,RuleData s)]
+    , _machRunningSM :: [SMData s]
       -- ^ List of SM that is in a runnable state
-    , _machSuspendedSM :: [(RuleKey, RuleData s)]
+    , _machSuspendedSM :: [SMData s]
       -- ^ List of SM that are in suspended state
     , _machDefaultHandler :: !(Maybe (Message -> s -> Process ()))
+      -- ^ Handler for messages of the unknown type
+    , _machMaxThreadId :: SMId
+      -- ^ Maximum SMId
     }
+
+makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
+              ,("_machState", "machineState")]
+              ''Machine
+
+engineState :: Lens' (Machine s) (EngineState s)
+engineState f m = (\(EngineState t' s') -> m{_machMaxThreadId=t',_machState=s'})
+               <$> f (EngineState (_machMaxThreadId m) (_machState m))
 
 -- | Creates CEP engine state with default properties.
 emptyMachine :: s -> Machine s
@@ -179,6 +196,7 @@ emptyMachine s =
     , _machRunningSM      = []
     , _machSuspendedSM    = []
     , _machDefaultHandler = Nothing
+    , _machMaxThreadId    = 0
     }
 
 newEngine :: Machine s -> Engine
@@ -192,7 +210,13 @@ cepInit st i =
           cepCruise nxt_st i
       Just ir -> cepInitRule ir st' i
   where
-    st' = st{_machRunningSM = M.assocs $ _machRuleData st}
+    st' = st{_machRunningSM = sms
+            ,_machMaxThreadId = SMId (m + fromIntegral (length sms))
+            }
+    (SMId m) = _machMaxThreadId st
+    sms = zipWith (\idx (rk,d) -> SMData (SMId idx) rk d)
+                  [m..]
+                  (M.assocs $ _machRuleData st)
 
 cepSubRequest :: Machine g -> Subscribe -> Machine g
 cepSubRequest st@Machine{..} (Subscribe tpe pid) = nxt_st
@@ -234,13 +258,11 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       TimeoutArrived (Timeout k)
         | k == initRuleKey -> go NoMessage _machTotalProcMsgs
         | otherwise        -> defaultHandler st (cepInitRule ir) req
-      Incoming m
-        | interestingMsg (\frp -> M.member frp typs) m ->
-          let tpe       = typs M.! messageFingerprint m
-              msg       = GotMessage tpe m
+      Incoming m@((`M.lookup` typs) . messageFingerprint -> Just tpe) ->
+          let msg       = GotMessage tpe m
               msg_count = _machTotalProcMsgs + 1 in
           go msg msg_count
-        | otherwise -> defaultHandler st (cepInitRule ir) req
+      Incoming _ -> defaultHandler st (cepInitRule ir) req
       _ -> defaultHandler st (cepInitRule ir) req
   where
     go (GotMessage ty m) msg_count = do
@@ -252,11 +274,12 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     go NoMessage msg_count = do
       let stk  = _ruleStack rd
           logs = fmap (const S.empty) _machLogger
-          exe  = SMExecute logs _machSubs _machState
+          exe  = SMExecute logs _machSubs
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      (g, [(SMResult out infos mlogs, nxt_stk)]) <- runSM stk exe
+      ([(SMResult _ out infos mlogs, nxt_stk)], (EngineState mti g)) <-
+          State.runStateT (runSM stk exe) (EngineState _machMaxThreadId _machState)
       let new_rd = rd { _ruleStack = nxt_stk }
           nxt_st = st { _machState = g }
           rinfo = RuleInfo InitRuleName [(out, infos)]
@@ -264,7 +287,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       for_ _machLogger $ \f -> for_ mlogs $ \l -> f l g
       case out of
         SMFinished -> do
-          let final_st = nxt_st { _machInitRulePassed = True}
+          let final_st = nxt_st { _machInitRulePassed = True, _machMaxThreadId = mti}
           return (info, Engine $ cepCruise final_st)
         SMRunning -> cepInitRule (InitRule new_rd typs) nxt_st (Run Tick)
         _ -> return (info, Engine $ cepInitRule (InitRule new_rd typs) nxt_st)
@@ -281,8 +304,8 @@ cepCruise st req@(Run t) =
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived (Timeout key) ->
-          let xs     = filter (\(k,_) -> key == k) $ _machSuspendedSM st
-              nxt_su = filter (\(k,_) -> key /= k) $ _machSuspendedSM st
+          let xs     = filter (\(SMData _ k _) -> key == k) $ _machSuspendedSM st
+              nxt_su = filter (\(SMData _ k _) -> key /= k) $ _machSuspendedSM st
               prev   = _machRunningSM st
               nxt_st = st { _machRunningSM   = prev ++ xs
                           , _machSuspendedSM = nxt_su }
@@ -293,17 +316,17 @@ cepCruise st req@(Run t) =
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st
             (upd,running') = mapAccumL
-              (\u (key, rd) -> case key `lookup` keyInfos of
+              (\u (SMData idx key rd) -> case key `lookup` keyInfos of
                  Just info ->
                    let stack' = runSM (_ruleStack rd) (SMMessage info m) in
-                   (u+1, (key, rd{_ruleStack=stack'}))
-                 Nothing   -> (u,(key,rd))) 0 (_machRunningSM st)
-            splitted = foreach (_machSuspendedSM st) $ \(key, rd) ->
+                   (u+1, (SMData idx key rd{_ruleStack=stack'}))
+                 Nothing   -> (u,SMData idx key rd)) 0 (_machRunningSM st)
+            splitted = foreach (_machSuspendedSM st) $ \(SMData idx key rd) ->
               case key `lookup` keyInfos of
                 Just info ->
                   let stack' = runSM (_ruleStack rd) (SMMessage info m) in
-                  Right (key, rd{_ruleStack=stack'})
-                Nothing   -> Left (key, rd)
+                  Right (SMData idx key rd{_ruleStack=stack'})
+                Nothing   -> Left (SMData idx key rd)
             (susp,running) = partitionEithers splitted
             rinfo = RunInfo (upd+length running)
               $ if upd+length running == 0
@@ -319,7 +342,7 @@ cepCruise st req = defaultHandler st cepCruise req
 executeTick :: State.StateT (Machine g) Process [RuleInfo]
 executeTick = do
     running <- bootstrap
-    info <- traverse (uncurry execute) running
+    info <- traverse execute running
     sti <- State.get
     g_opt <- for (_machRuleFin sti) $ \k -> lift $ k (_machState sti)
     for_ g_opt $ \g -> State.modify $ \n -> n{_machState=g}
@@ -329,29 +352,28 @@ executeTick = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute key sm =
+    execute (SMData _ key sm) =
       bracket_ (liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key)
                (liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key)
                $ do
       sti <- State.get
       let logs = fmap (const S.empty) $ _machLogger sti
-          exe  = SMExecute logs (_machSubs sti) (_machState sti)
-      (g', machines) <- lift $ runSM (_ruleStack sm) exe
-      State.modify $ \nxt_st -> nxt_st{_machState = g'}
-
+          exe  = SMExecute logs (_machSubs sti)
+      machines <- zoom engineState $ (runSM (_ruleStack sm) exe)
       let addRunning   = foldr (\x y -> mkRunningSM x . y) id machines
           addSuspended = foldr (\x y -> mkSuspendedSM x . y) id machines
-          mkRunningSM (SMResult SMRunning  _ _, s) = (mkSM s :)
-          mkRunningSM (SMResult SMFinished _ _, s) = (mkSM s :)
+          mkRunningSM (SMResult idx SMRunning  _ _, s) = (mkSM idx s :)
+          mkRunningSM (SMResult idx SMFinished _ _, s) = (mkSM idx s :)
           mkRunningSM _  = id
-          mkSuspendedSM (SMResult SMSuspended _ _, s) = (mkSM s :)
+          mkSuspendedSM (SMResult idx SMSuspended _ _, s) = (mkSM idx s :)
           mkSuspendedSM _ = id
-          mkSM nxt_stk = (key, sm{_ruleStack=nxt_stk})
+          mkSM idx nxt_stk = SMData idx key sm{_ruleStack=nxt_stk}
           mlogs  = mapMaybe (smResultLogs .fst) machines
       State.modify $ \nxt_st ->
         nxt_st{_machRunningSM = addRunning $ _machRunningSM nxt_st
               ,_machSuspendedSM = addSuspended $ _machSuspendedSM nxt_st
               }
-      lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l g'
+      g <- State.gets _machState
+      lift $ for_ (_machLogger sti) $ \f -> for_ mlogs $ \l -> f l g
       return $ RuleInfo (RuleName $ _ruleDataName sm)
-             $ map ((\(SMResult s r _) -> (s, r)) . fst) machines
+             $ map ((\(SMResult _ s r _) -> (s, r)) . fst) machines

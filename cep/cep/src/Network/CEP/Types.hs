@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -24,7 +25,9 @@ import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
+import           Data.Int
 import           System.Clock
+import           Control.Lens.TH
 
 import Network.CEP.Buffer
 
@@ -63,6 +66,15 @@ data Subscribe =
     } deriving (Show, Typeable, Generic)
 
 instance Binary Subscribe
+
+newtype SMId = SMId { getSMId :: Int64 } deriving (Eq, Show, Ord, Num)
+
+data EngineState g = EngineState
+   { _engineStateMaxId :: {-# UNPACK #-} !SMId
+   , _engineStateGlobal :: !g
+   }
+
+makeLenses ''EngineState
 
 -- | Used as a key for referencing a rule at upmost level of the CEP engine.
 --   The point is to allow the user to refer to rules by their name while

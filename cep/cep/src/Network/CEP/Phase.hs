@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -13,13 +15,18 @@ module Network.CEP.Phase
 import Data.Foldable (for_)
 import Data.Typeable
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
 import           Control.Exception (fromException, throwIO)
 import qualified Control.Monad.Catch as Catch
+import           Control.Monad (unless)
+import           Control.Monad.Trans
+import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
+import           Data.Traversable (for)
+import           Control.Lens hiding (Index)
 
 import Network.CEP.Buffer
 import Network.CEP.Types
@@ -57,16 +64,15 @@ data Extraction b =
 -- | Extracts messages from a 'Buffer' based based on 'PhaseType' need.
 extractMsg :: (Serializable a, Serializable b)
            => PhaseType g l a b
-           -> g
            -> l
            -> Buffer
-           -> Process (Maybe (Extraction b))
-extractMsg typ g l buf =
+           -> State.StateT g Process (Maybe (Extraction b))
+extractMsg typ l buf =
     case typ of
       PhaseWire _  -> error "phaseWire: not implemented yet"
-      PhaseMatch p -> extractMatchMsg p g l buf
-      PhaseNone    -> extractNormalMsg (Proxy :: Proxy a) buf
-      PhaseSeq _ s -> extractSeqMsg s buf
+      PhaseMatch p -> extractMatchMsg p l buf
+      PhaseNone    -> return $! extractNormalMsg (Proxy :: Proxy a) buf
+      PhaseSeq _ s -> return $! extractSeqMsg s buf
 
 -- -- | Extracts messages from a Netwire wire.
 -- extractWireMsg :: forall a b. (Serializable a, Serializable b)
@@ -80,16 +86,15 @@ extractMsg typ g l buf =
 --   to an effectful callback.
 extractMatchMsg :: Serializable a
                 => (a -> g -> l -> Process (Maybe b))
-                -> g
                 -> l
                 -> Buffer
-                -> Process (Maybe (Extraction b))
-extractMatchMsg p g l buf = go (-1)
+                -> State.StateT g Process (Maybe (Extraction b))
+extractMatchMsg p l buf = go (-1)
   where
     go lastIdx =
         case bufferGetWithIndex lastIdx buf of
           Just (newIdx, a, newBuf) -> do
-            res <- mask_ $ trySome $ p a g l
+            res <- State.get >>= \g -> lift (Catch.mask_ $ trySome $ p a g l)
             case res of
               Left _ -> return Nothing
               Right Nothing  -> go newIdx
@@ -108,7 +113,7 @@ extractMatchMsg p g l buf = go (-1)
 extractNormalMsg :: forall a. Serializable a
                  => Proxy a
                  -> Buffer
-                 -> Process (Maybe (Extraction a))
+                 -> Maybe (Extraction a)
 extractNormalMsg _ buf =
     case bufferGet buf of
       Just (newIdx, a, buf') ->
@@ -117,25 +122,25 @@ extractNormalMsg _ buf =
                   , _extractMsg = a
                   , _extractIndex = newIdx
                   } in
-        return $ Just ext
-      _ -> return Nothing
+        Just ext
+      _ -> Nothing
 
 -- | Extracts a message based on messages coming sequentially.
-extractSeqMsg :: PhaseStep a b -> Buffer -> Process (Maybe (Extraction b))
+extractSeqMsg :: PhaseStep a b -> Buffer -> Maybe (Extraction b)
 extractSeqMsg s sbuf = go (-1) sbuf s
   where
     go lastIdx buf (Await k) =
         case bufferGetWithIndex lastIdx buf of
           Just (idx, i, buf') -> go idx buf' $ k i
-          _                   -> return Nothing
+          _                   -> Nothing
     go lastIdx buf (Emit b) =
         let ext = Extraction
                   { _extractBuf = buf
                   , _extractMsg = b
                   , _extractIndex = lastIdx
                   } in
-        return $ Just ext
-    go _ _ _ = return Nothing
+        Just ext
+    go _ _ _ = Nothing
 
 -- | Execute a single 'Phase'
 --
@@ -147,29 +152,27 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --   or 'suspend' or 'commit'.
 runPhase :: Subscribers   -- ^ Subscribers.
          -> Maybe SMLogs  -- ^ Current logger.
-         -> g             -- ^ Global state.
+         -> SMId          -- ^ State machine id.
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
          -> Phase g l     -- ^ Phase handle to interpret.
-         -> Process (g, [(Buffer,PhaseOut l)])
-runPhase subs logs g l buf ph =
+         -> State.StateT (EngineState g) Process [(SMId, (Buffer,PhaseOut l))]
+runPhase subs logs idm l buf ph =
     case _phCall ph of
-      DirectCall action -> runPhaseM pname subs logs g l Nothing buf action
+      DirectCall action -> runPhaseM pname subs logs idm l Nothing buf action
       ContCall tpe k -> do
-        res <- extractMsg tpe g l buf
+        res <- zoom engineStateGlobal $ extractMsg tpe l buf
         case res of
           Just (Extraction new_buf b idx) -> do
-            result <- runPhaseM pname subs logs g l (Just idx) new_buf (k b)
-            for_ (snd result) $ \(_,out) ->
+            result <- runPhaseM pname subs logs idm l (Just idx) new_buf (k b)
+            for_ (snd <$> result) $ \(_,out) ->
               case out of
-                SM_Complete{} -> notifySubscribers subs b
+                SM_Complete{} -> lift $ notifySubscribers subs b
                 _             -> return ()
             return result
-          Nothing -> do
-            return (g, [(buf, SM_Suspend logs)])
+          Nothing -> return [(idm, (buf, SM_Suspend logs))]
   where
     pname = _phName ph
-
 
 -- | 'Phase' state machine execution main loop. Runs until its stack is empty
 --   except if get a 'Suspend' or 'Stop' instruction.
@@ -178,84 +181,88 @@ runPhase subs logs g l buf ph =
 runPhaseM :: forall g l. String  -- ^ Process name.
           -> Subscribers         -- ^ List of events subscribers.
           -> Maybe SMLogs        -- ^ Logs.
-          -> g                   -- ^ Global state.
+          -> SMId                -- ^ Machine index
           -> l                   -- ^ Local state
           -> Maybe Index         -- ^ Current index.
           -> Buffer              -- ^ Buffer
           -> PhaseM g l ()
-          -> Process (g, [(Buffer, PhaseOut l)])
-runPhaseM pname subs plogs pg pl mindex pb action = do
-    (g,t@(_,out), phases, _) <- go pg pl plogs pb action
-    let g' = case out of
-                SM_Complete{} -> g
-                _ -> pg
-    fmap (t:) <$> consume g' phases
-  where
-    consume g []     = return (g, [])
-    consume g ((b,l,p):ps) = do
-      (g',t@(_,out), phases, _) <- go g l plogs b p
-      case out of
-        SM_Complete{} -> fmap (t:) <$> consume g' (ps++phases)
-        _             -> fmap (t:) <$> consume g  (ps++phases)
-    go :: g -> l -> Maybe SMLogs -> Buffer -> PhaseM g l a
-       -> Process (g, (Buffer, PhaseOut l), [(Buffer, l, PhaseM g l ())], Maybe a)
-    go g l lgs buf a = viewT a >>= inner
+          -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
+runPhaseM pname subs plogs idx pl mindex pb action = consume [(idx, (pb,pl,action))] where
+    consume []     = return []
+    consume ((idm, (b,l,p)):ps) = do
+      (t,phases,_) <- reverseOn (\x -> case x ^. _1 . _2 of SM_Complete{} -> True ; _ -> False)
+                                (zoom engineStateGlobal $ go l plogs b p)
+      phases' <- for phases $ \z -> (,z) <$> (engineStateMaxId <<%= (+1))
+      ((idm,t):) <$> consume (ps ++ phases')
+
+    reverseOn :: (a -> Bool) -> State.StateT (EngineState g) Process a -> State.StateT (EngineState g) Process a
+    reverseOn p f = do
+      old <- use engineStateGlobal
+      x <- f
+      unless (p x) (engineStateGlobal .= old)
+      return x
+
+    go :: l -> Maybe SMLogs -> Buffer -> PhaseM g l a
+       -> State.StateT g Process ((Buffer, PhaseOut l), [(Buffer, l, PhaseM g l ())], Maybe a)
+    go l lgs buf a = lift (viewT a) >>= inner
       where
-        inner (Return t) = return (g, (buf, SM_Complete l [] lgs), [], Just t)
+        inner :: ProgramViewT (PhaseInstr g l) Process a
+              -> State.StateT g Process ((Buffer, PhaseOut l), [(Buffer, l, PhaseM g l ())], Maybe a)
+        inner (Return t) = return ((buf, SM_Complete l [] lgs), [], Just t)
         inner (Catch f h :>>= next) = do
-          ef <- try $ go g l lgs buf f
+          ef <- Catch.try $ go l lgs buf f
           case ef of
-            Right (g', (buf', out), sm, mr) -> case (out,mr) of
+            Right ((buf', out), sm, mr) -> case (out,mr) of
               -- XXX: pass sm in continuation passing style
               (SM_Complete l' [] lgs', Just r) -> do
-                  (g'', z, sm',t) <- go g' l' lgs' buf' $ next r
-                  return (g'', z, sm++sm',t)
-              _ -> return (g', (buf, out), sm, Nothing)
+                  (z, sm',t) <- go l' lgs' buf' $ next r
+                  return (z, sm++sm',t)
+              _ -> return ((buf, out), sm, Nothing)
             Left se -> case fromException se of
               -- Rethrow exception if type does not match
               Nothing -> liftIO $ throwIO se
               Just e  -> do
                 -- Run exception handler
-                (g', (buf', out), sm, mr) <- go g l lgs buf (h e)
+                ((buf', out), sm, mr) <- go l lgs buf (h e)
                 case (out, mr) of
                   -- If handler completes and have result, then continue
                   (SM_Complete l' _ lgs', Just r) -> do
-                     (g'', z, sm', s) <- go g' l' lgs' buf' (next r)
-                     return (g'', z, sm++sm',s)
+                     (z, sm', s) <- go l' lgs' buf' (next r)
+                     return (z, sm++sm',s)
                   -- Otherwise return current suspention
-                  _ -> return (g', (buf', out), sm, Nothing)
+                  _ -> return ((buf', out), sm, Nothing)
         inner (Continue ph :>>= _) =
-            return (g, (buf, SM_Complete l [ph] lgs), [], Nothing)
-        inner (Get Global :>>= k)   = go g l lgs buf $ k g
-        inner (Get Local  :>>= k)   = go g l lgs buf $ k l
-        inner (Put Global s :>>= k) = go s l lgs buf $ k ()
-        inner (Put Local  s :>>= k) = go g s lgs buf $ k ()
-        inner (Stop :>>= _)         = return (g, (buf, SM_Stop lgs), [], Nothing)
+          return ((buf, SM_Complete l [ph] lgs), [], Nothing)
+        inner (Get Global :>>= k)   = go l lgs buf . k =<< State.get
+        inner (Get Local  :>>= k)   = go l lgs buf $ k l
+        inner (Put Global s :>>= k) = State.put s >> (go l lgs buf $ k ())
+        inner (Put Local s :>>= k) = go s lgs buf $ k ()
+        inner (Stop :>>= _)        = return ((buf, SM_Stop lgs), [], Nothing)
         inner (Fork typ naction :>>= k) =
           let buf' = case typ of
                       NoBuffer -> emptyFifoBuffer
                       CopyBuffer -> buf
                       CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
-          in do (g', (b', out), sm, s) <- go g l (fmap (const S.empty) lgs) buf (k ())
-                return (g', (b', out), (buf',l,naction):sm, s)
+          in do ((b', out), sm, s) <- go l (fmap (const S.empty) lgs) buf (k ())
+                return ((b', out), (buf',l,naction):sm, s)
         inner (Lift m :>>= k) = do
-          a' <- m
-          go g l lgs buf (k a')
+          a' <- lift m
+          go l lgs buf (k a')
         inner (Suspend :>>= _) =
-          return (g, (buf, SM_Suspend lgs),[], Nothing)
+          return ((buf, SM_Suspend lgs),[], Nothing)
         inner (Publish e :>>= k) = do
-          notifySubscribers subs e
-          go g l lgs buf (k ())
+          lift $ notifySubscribers subs e
+          go l lgs buf (k ())
         inner (PhaseLog ctx lg :>>= k) =
           let new_logs = fmap (S.|> (pname,ctx,lg)) lgs in
-          go g l new_logs buf $ k ()
+          go l new_logs buf $ k ()
         inner (Switch xs :>>= _) =
-          return (g, (buf, SM_Complete l xs lgs), [], Nothing)
-        inner (Peek idx :>>= k) = do
-          case bufferPeek idx buf of
-            Nothing -> return (g, (buf, SM_Suspend lgs), [], Nothing)
-            Just r  -> go g l lgs buf $ k r
-        inner (Shift idx :>>= k) =
-            case bufferGetWithIndex idx buf of
-              Nothing   -> return (g,(buf, SM_Suspend lgs),[], Nothing)
-              Just (r, z, buf') -> go g l lgs buf' $ k (r,z)
+          return ((buf, SM_Complete l xs lgs), [], Nothing)
+        inner (Peek idd :>>= k) = do
+          case bufferPeek idd buf of
+            Nothing -> return ((buf, SM_Suspend lgs), [], Nothing)
+            Just r  -> go l lgs buf $ k r
+        inner (Shift idd :>>= k) =
+            case bufferGetWithIndex idd buf of
+              Nothing   -> return ((buf, SM_Suspend lgs),[], Nothing)
+              Just (r, z, buf') -> go l lgs buf' $ k (r,z)
