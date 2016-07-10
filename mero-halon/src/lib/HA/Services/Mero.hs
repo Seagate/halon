@@ -368,9 +368,8 @@ getNotificationChannels = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
               | host <- G.connectedTo Cluster Has rg :: [Host]
-              , m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
-              , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
               , node <- G.connectedTo host Runs rg :: [Node]
+              , m0node <- G.connectedTo host Runs rg :: [M0.Node]
               ]
   things <- forM nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
