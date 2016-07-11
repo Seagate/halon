@@ -166,10 +166,6 @@ rules = sequence_
   , eventKernelFailed
   ]
 
--- | Timeout to wait for reply from node.
-tearDownTimeout :: Int
-tearDownTimeout = 5*60 -- 5m
-
 -- | Bootlevel that RC procedure is started at.
 maxTeardownLevel :: Int
 maxTeardownLevel = 3 -- XXX: move to cluster constants.
@@ -697,10 +693,8 @@ instance Binary StopProcessesOnNodeResult
 -- level, just advance the node to the next level (in decreasing
 -- order) and start teardown from there. If there are processes, ask
 -- for them to stop and wait for message indicating whether the
--- processes managed to stop. If the message doesn't arrive within
--- 'teardown_timeout', mark the node as failed to tear down. Notify
--- barrier to allow other nodes to proceed with teardown. Mark the
--- processes on the node as failed.
+-- processes managed to stop. If the processes fail to stop (due to
+-- timeout or otherwise), mark the node as failed to teardown.
 --
 -- * Assuming message comes back on time, mark all the proceses on
 -- node as failed, notify the barrier that teardown on this node for
@@ -783,8 +777,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barriers."
                                         (show node) (show lvl) (show s)
               notifyBarrier Nothing
-              switch [ await_barrier
-                     , timeout tearDownTimeout teardown_timeout ]
+              switch [ await_barrier ]
        M0.MeroClusterFailed{}
            | i < 0 -> continue stop_service
            | otherwise -> continue teardown_exec
@@ -818,10 +811,12 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
                   m0svc <- MaybeT $ lookupRunningService node m0d
                   ch    <- MaybeT . return $ meroChannel rg m0svc
                   return $ do
+                    phaseLog "info" $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
                     stopNodeProcesses ch ps
                     nextBootLevel
                 for_ maction id
                 phaseLog "debug" $ printf "Can't find data for %s - continue to timeout" (show node)
+                -- XXX Think if this is the right way to go
                 continue teardown_timeout
 
    directly teardown_timeout $ do

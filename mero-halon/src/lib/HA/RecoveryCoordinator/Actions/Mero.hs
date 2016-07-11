@@ -55,12 +55,12 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, unless, when)
+import Control.Monad (forM, unless)
 
 import Data.Foldable (for_)
 import Data.Proxy
 import Data.List ((\\), partition)
-import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -226,9 +226,10 @@ calculateMeroClusterStatus = do
           x -> M0.PLBootLevel x
 
         stillUnstopped = getLabeledProcesses lbl
-                         ( \proc g -> not . null $
-                         [ () | state <- G.connectedTo proc Is g
-                              , state `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
+                         ( \p g -> not . null $
+                         [ () | M0.getState p g `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
+                              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+                              , M0.getState n g /= M0.M0_NC_FAILED
                          ] ) rg
       in if null $ stillUnstopped
       then case i of
@@ -319,6 +320,7 @@ stopNodeProcesses :: TypedChannel ProcessControlMsg
 stopNodeProcesses (TypedChannel chan) ps = do
    rg <- getLocalGraph
    let msg = StopProcesses $ map (go rg) ps
+   phaseLog "debug" $ "Stop message: " ++ show msg
    liftProcess $ sendChan chan msg
    for_ ps $ \p -> modifyGraph
      $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
@@ -420,12 +422,14 @@ retriggerMeroNodeBootstrap n = do
       rg <- getLocalGraph
       case G.connectedFrom Runs n rg of
         [] -> phaseLog "info" $ "Not a mero node: " ++ show n
-        h : _ -> announceTheseMeroHosts [h]
+        h : _ -> announceTheseMeroHosts [h] (\_ _ -> True)
 
 -- | Send notifications about new mero nodes and new mero servers for
 -- the given set of 'Castor.Host's.
-announceTheseMeroHosts :: [Castor.Host] -> PhaseM LoopState a ()
-announceTheseMeroHosts hosts = do
+announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
+                       -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
+                       -> PhaseM LoopState a ()
+announceTheseMeroHosts hosts p = do
   rg' <- getLocalGraph
   let clientHosts =
         [ host | host <- hosts
@@ -436,7 +440,10 @@ announceTheseMeroHosts hosts = do
                , G.isConnected host Has Castor.HA_M0SERVER rg'
                ]
 
-      hostsToNodes = mapMaybe (\h -> listToMaybe $ G.connectedTo h Runs rg')
+
+      -- Don't announced failed nodes
+      hostsToNodes hs = [ n | h <- hs, n <- G.connectedTo h Runs rg'
+                            , p n rg' ]
 
       serverNodes = hostsToNodes serverHosts :: [M0.Node]
       clientNodes = hostsToNodes clientHosts :: [M0.Node]
@@ -449,8 +456,9 @@ announceTheseMeroHosts hosts = do
 
 
 -- | Send notifications about new mero nodes and new mero servers for
--- every 'Castor.Host' in RG.
+-- every 'Castor.Host' in RG. Does not announce for failed nodes.
 announceMeroNodes :: PhaseM LoopState a ()
 announceMeroNodes = do
   rg' <- getLocalGraph
-  announceTheseMeroHosts $ G.connectedTo Res.Cluster Has rg'
+  announceTheseMeroHosts (G.connectedTo Res.Cluster Has rg')
+                         (\n rg -> M0.getState n rg /= M0.M0_NC_FAILED)
