@@ -632,7 +632,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                   continue end
               go xs
 
-          if isReassembling
+          if (not isReassembling)
           then go . fmap fst . filter (\(_,x) -> x == "_") $ catMaybes sdevs
           else phaseLog "info" $ "RAID device is reassembling; not attempting "
                               ++ "further action."
