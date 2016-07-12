@@ -1,6 +1,7 @@
 # This project uses The Stack build tool. Please refer to the README
 # for build instructions.
 
+BUILD_NUMBER = 000
 VERSION = $(shell git describe --long --always | tr '-' '_')
 MOCK_CONFIG = default
 SRC_RPM_DIR := $(shell mktemp -du)
@@ -9,8 +10,11 @@ RESULT_DIR = rpmbuild
 .PHONY: rpm
 rpm:
 	mkdir -p $(RESULT_DIR)
-	sed -i "s/\$$(gitDescribe)/\"${VERSION}\"/" mero-halon/src/lib/Version.hs
-	sed -i "s/\$$(gitHash)/\"\\\$$Format:%H\\\$$\"/" mero-halon/src/lib/Version.hs
+	echo "module Version where \
+	      gitDescribe = \"$(shell git describe --long --always || echo UNKNOWN)\"; \
+	      gitCommitHash = \"$(shell git rev-parse HEAD || echo UNKNOWN)\"; \
+	      gitCommitDate = \"$(shell git log -1 --format='%cd' || echo UNKNOWN)\";" \
+          > mero-halon/src/lib/Version.hs
 	git archive --format=tar --prefix=halon/ HEAD | gzip > $(RESULT_DIR)/halon.tar.gz
 	mock -r $(MOCK_CONFIG) --buildsrpm \
 		--spec halon.spec --sources $(RESULT_DIR) \

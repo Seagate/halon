@@ -8,7 +8,7 @@ module Main (main) where
 
 import Flags
 import Lookup
-import Version
+import Version.Read
 
 import HA.Network.RemoteTables (haRemoteTable)
 
