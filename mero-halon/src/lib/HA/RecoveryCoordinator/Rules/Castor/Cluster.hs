@@ -54,7 +54,7 @@ import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.Notification (Set(..))
-import           Mero.Notification.HAState (Note(..))
+import           Mero.Notification.HAState
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
@@ -146,6 +146,9 @@ type ClusterTransitionLocal =
 ruleServiceNotificationHandler :: Definitions LoopState ()
 ruleServiceNotificationHandler = define "service-notification-handler" $ do
    start_rule <- phaseHandle "start"
+   service_starting_inv <- phaseHandle "service-starting-inv"
+   service_online <- phaseHandle "service-online"
+   services_failed <- phaseHandle "services-failed"
    services_notified <- phaseHandle "services-notified"
    process_notified <- phaseHandle "process-notified"
    timed_out <- phaseHandle "timed-out"
@@ -165,38 +168,71 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
          lset Nothing _ = Nothing
          lset (Just (a,b,c,d,_)) x = Just (a,b,c,d, maybe [] (mapMaybe unStateSet) x)
 
-       getInterestingSrvs :: HAEvent Set -> PhaseM LoopState l (Maybe (UUID, [(M0.Service, M0.ServiceState)]))
-       getInterestingSrvs (HAEvent eid (Set ns) _) = do
-         rg <- getLocalGraph
-         let convert = \case
-               M0.M0_NC_ONLINE -> Just M0.SSOnline
-               M0.M0_NC_FAILED -> Just M0.SSOffline
-               _ -> Nothing
+       isStateChanged s t rg = M0.getState s rg /= t
+
+       hasFailedSrvs (HAEvent eid (Set ns) _) ls _ = do
+         let rg = lsGraph ls
+             convert M0.M0_NC_FAILED = Just M0.SSOffline
+             convert _               = Nothing
              srvs = mapMaybe (\(Note fid' typ) -> (,) <$> M0.lookupConfObjByFid fid' rg <*> convert typ) ns
-         case srvs of
+
+         case filter (uncurry (\s t -> isStateChanged s t $ lsGraph ls)) srvs of
            [] -> return Nothing
            xs -> return $ Just (eid, xs)
+
+       -- Check that the service has the given tag (predicate) and
+       -- check that it's not in the given state in RG already.
+       serviceTagged p typ (HAEvent eid (m@HAMsgMeta{}, ServiceEvent se st) _) ls _ = do
+         let rg = lsGraph ls
+         return $ case M0.lookupConfObjByFid (_hm_fid m) rg of
+           Just (s :: M0.Service) | p se && isStateChanged s typ rg -> Just (eid, s, typ, st)
+           _ -> Nothing
+
+       isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
+
+       -- Relies on 'serviceTagged' only passing through the guard if
+       -- the service status in RG is different than we're asking to
+       -- deal with. We expect to have the service marked as starting
+       -- in RG already before ever receiving this message so if we do
+       -- pass the guard, something is wrong and we want to log it.
+       notStartingInRG = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTING) M0.SSStarting
 
        ackMsg = get Local >>= \case
          Just (eid, _, _, _, _) -> done eid
          lst -> phaseLog "warn" $ "In finish with strange local state: " ++ show lst
 
-   setPhase start_rule $ \msg@(HAEvent eid (Set _) _) -> do
+       putAndNotify eid services = do
+         put Local $ Just (eid, Nothing, Nothing, services, services)
+         applyStateChanges $ uncurry stateSet <$> services
+         switch [services_notified, timeout 15 timed_out_prefork]
+
+   directly start_rule $ switch [service_starting_inv, service_online, services_failed]
+
+   -- When service starting messages are flying by, check that we have
+   -- them in starting state in RG already. Ideally we never want to
+   -- enter this phase.
+   --
+   -- TODO: Currently it seems we enter this all the time, after
+   -- STARTED messages come. Maybe shoul settle for setPhaseSequenceIf
+   -- instead.
+   setPhaseIf service_starting_inv notStartingInRG $ \msg@(eid, service, _, _) -> do
      todo eid
      rg <- getLocalGraph
-     let isStateChanged s t = M0.getState s rg /= t
-     getInterestingSrvs msg >>= \case
-       Nothing -> done eid
-       Just (_, filter (uncurry isStateChanged) -> services) -> do
-         if null services
-         then done eid
-         else do
-           phaseLog "info" $ "Cluster transition for "
-             ++ "[" ++ intercalate ", " ((\(x,s) -> M0.showFid x ++ ": " ++ show s) <$> services) ++ "]"
-           let msgs = uncurry stateSet <$> services
-           put Local $ Just (eid, Nothing, Nothing, services, services)
-           applyStateChanges msgs
-           switch [services_notified, timeout 15 timed_out_prefork]
+     phaseLog "warn" $ "Expected " ++ M0.showFid service ++ " to be SSStarting in RG but found "
+                    ++ show (M0.getState service rg) ++ "; Message: " ++ show msg
+     done eid
+
+   setPhaseIf service_online isServiceOnline $ \(eid, service, st, typ) -> do
+     todo eid
+     phaseLog "info" $ concat [ "Cluster transition for [", M0.showFid service
+                              , ": ", show st, " (", show typ, ")]" ]
+     putAndNotify eid [(service, st)]
+
+   setPhaseIf services_failed hasFailedSrvs $ \(eid, services) -> do
+     todo eid
+     phaseLog "info" $ "Cluster transition for "
+       ++ "[" ++ intercalate ", " ((\(x,s) -> M0.showFid x ++ ": " ++ show s) <$> services) ++ "]"
+     putAndNotify eid services
 
    setPhaseAllNotified services_notified viewMsgs $ do
      rg <- getLocalGraph
@@ -288,7 +324,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 
    directly end stop
 
-   start start_rule startState
+   startFork start_rule startState
 
 -- | This is a rule which interprets state change events and is responsible for
 -- changing the state of the cluster accordingly'

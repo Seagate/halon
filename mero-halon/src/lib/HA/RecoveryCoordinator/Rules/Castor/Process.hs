@@ -194,7 +194,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
         -- We don't have to do much here: mero should send ONLINE for
         -- services belonging to the process, if all services for the
         -- process are up then process is brought up
-        -- (handleServiceOnlineE). Further, if the process is up (as
+        -- (ruleServiceNotificationHandler). Further, if the process is up (as
         -- per mero) and all the processes on the node are up then
         -- node is up (ruleProcessOnline).
         phaseLog "info" $ "Managed to restart following processes: " ++ show okFids
