@@ -11,6 +11,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
   ( handleProcessFailureE
   , ruleProcessOnline
   , ruleProcessRestarted
+  , ruleProcessConfigured
   , ruleStopMeroProcess
   , ruleProcessControlStop
   , ruleProcessControlStart
@@ -22,7 +23,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
 import           Data.Either (partitionEithers, rights, lefts)
 import           Data.List (nub)
-import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe)
+import           Data.Maybe (listToMaybe, mapMaybe, fromMaybe)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -42,11 +43,12 @@ import           Mero.Notification.HAState
 import           Network.CEP
 
 
+import           Control.Distributed.Process (usend)
+
 import           Control.Monad (when)
 import           Control.Lens
 import           Data.Typeable
 import           Data.Foldable
-import           Data.List (intercalate)
 import           Text.Printf
 
 -- * Process handlers
@@ -309,6 +311,37 @@ ruleProcessOnline = define "rule-process-online" $ do
     notifyProcessStarted p pid = do
       modifyLocalGraph $ return . G.connectUniqueFrom p Has pid
       applyStateChanges [ stateSet p M0.PSOnline ]
+
+-- | Handled process configure event.
+--
+-- Properties:
+--
+--   [Idempotent] yes
+--   [Nonblocking] yes
+--   [Emits] 'ProcessConfigured' events
+ruleProcessConfigured :: Definitions LoopState ()
+ruleProcessConfigured = defineSimpleTask "handle-configured" $
+  \(ProcessControlResultConfigureMsg node results) -> do
+    phaseLog "info" $ printf "Mero process configured on %s" (show node)
+    rg <- getLocalGraph
+    let
+      resultProcs :: [Either M0.Process (M0.Process, String)]
+      resultProcs = mapMaybe (\case
+        Left x -> Left <$> M0.lookupConfObjByFid x rg
+        Right (x,s) ->Right . (,s) <$> M0.lookupConfObjByFid x rg) results
+    unless (null $ rights resultProcs) $ do
+      applyStateChanges $ (\(x, s) -> stateSet x (M0.PSFailed $ "Failed to start: " ++ s))
+        <$> rights resultProcs
+    for_ (rights resultProcs) $ \(p, s) -> do
+       phaseLog "error" $ printf "failed to configure %s : %s" (showFid p) s
+    for_ (lefts resultProcs) $ \p -> do
+       phaseLog "info" $ printf "%s : configured" (showFid p)
+       modifyGraph $ G.connectUniqueFrom p Is M0.ProcessBootstrapped
+    -- XXX: use notification somehow
+    syncGraphProcess $ \rc -> do
+      for_ results $ \r -> case r of
+        Left x -> usend rc (ProcessConfigured x)
+        Right (x,_) -> usend rc (ProcessConfigureFailed x)
 
 -- | Handles halon:m0d reply about service start and set Process
 -- as failed if error occur.

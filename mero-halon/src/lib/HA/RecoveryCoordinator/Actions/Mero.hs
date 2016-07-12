@@ -19,6 +19,8 @@ module HA.RecoveryCoordinator.Actions.Mero
   , createMeroClientConfig
   , startMeroService
   , startNodeProcesses
+  , configureNodeProcesses
+  , configureMeroProcesses
   , restartNodeProcesses
   , stopNodeProcesses
   , announceMeroNodes
@@ -55,7 +57,6 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
-import Control.Monad (forM, unless)
 
 import Data.Foldable (for_)
 import Data.Proxy
@@ -245,9 +246,8 @@ calculateMeroClusterStatus = do
 startNodeProcesses :: Castor.Host
                    -> TypedChannel ProcessControlMsg
                    -> M0.ProcessLabel
-                   -> Bool -- ^ Run mkfs? Ignored for m0t1fs processes.
                    -> PhaseM LoopState a [M0.Process]
-startNodeProcesses host chan label mkfs = do
+startNodeProcesses host chan label = do
     rg <- getLocalGraph
     let allProcs =  [ p
                     | m0node <- G.connectedTo host Runs rg :: [M0.Node]
@@ -269,38 +269,72 @@ startNodeProcesses host chan label mkfs = do
     let (onlineProcs, procs) = partition (\p -> M0.getState p rg == M0.PSOnline) allProcs
     applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
 
-    startMeroProcesses chan procs label mkfs
+    startMeroProcesses chan procs label
     return procs
+
+-- | Configure all Mero processes labelled with the specified process label on
+--   a given node. Returns all the processes which are being configured.
+configureNodeProcesses :: Castor.Host
+                       -> TypedChannel ProcessControlMsg
+                       -> M0.ProcessLabel
+                       -> Bool
+                       -> PhaseM LoopState a [M0.Process]
+configureNodeProcesses host chan label mkfs = do
+    rg <- getLocalGraph
+    let allProcs =  [ p
+                    | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                    , p <- G.connectedTo m0node M0.IsParentOf rg
+                    , G.isConnected p Has label rg
+                    ]
+    if null allProcs
+    then phaseLog "action" $ "No services with label " ++ show label ++ " on host " ++ show host
+    else phaseLog "action" $ "Configure services with label " ++ show label ++ "on host " ++ show host
+
+    configureMeroProcesses chan allProcs label mkfs
+    return allProcs
+
+-- | Send requesrt to all configure all mero processes.
+-- Process configuration consists of creating config file anc calling mkfs if
+-- necessary.
+configureMeroProcesses :: TypedChannel ProcessControlMsg
+                       -> [M0.Process]
+                       -> M0.ProcessLabel
+                       -> Bool
+                       -> PhaseM LoopState a ()
+configureMeroProcesses _ [] _ _ = return ()
+configureMeroProcesses (TypedChannel chan) procs label mkfs = do
+    rg <- getLocalGraph
+    phaseLog "info" $ "configuring processes: " ++ show (M0.fid <$> procs)
+    let (confds, others) = partition (\proc -> runsMgs proc rg) procs
+    msg_confds <- if null confds
+                  then return []
+                  else do config <- syncToBS
+                          return $ (\p -> (p, ProcessConfigLocal (M0.fid p) (M0.r_endpoint p) config)) <$> confds
+    let msg_others = (\p -> (p,ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))) <$> others
+    let msg = ConfigureProcesses $
+         (\(p,conf) -> (toType label, conf, mkfs && not (G.isConnected p Is M0.ProcessBootstrapped rg)))
+         <$> (msg_confds ++ msg_others)
+    liftProcess $ sendChan chan msg
+  where
+    runsMgs proc rg =
+      not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
+                          <- G.connectedTo proc M0.IsParentOf rg ]
+    toType M0.PLM0t1fs = M0T1FS
+    toType _           = M0D
 
 -- | Start given mero processes.
 startMeroProcesses :: TypedChannel ProcessControlMsg -- ^ halon:m0d channel.
                    -> [M0.Process]
                    -> M0.ProcessLabel
-                   -> Bool -- ^ Run mkfs? Ignored for m0t1fs processes
                    -> PhaseM LoopState a ()
-startMeroProcesses (TypedChannel chan) procs' label mkfs = do
-    rg <- getLocalGraph
-    let procs = map (\p -> (p, not $ G.isConnected p Is M0.ProcessBootstrapped rg)) procs'
-    unless (null procs) $ do
-      msg <- StartProcesses <$> case (label, mkfs) of
-              (M0.PLM0t1fs, _) -> forM procs (\(proc,_) -> ([M0T1FS],) <$> runConfig proc rg)
-              (_, True) -> forM procs (\(proc,b) -> ((if b then (M0MKFS:) else id) [M0D],) <$> runConfig proc rg)
-              (_, False) -> forM procs (\(proc,_) -> ([M0D],) <$> runConfig proc rg)
-      phaseLog "debug" $ "starting mero processes: " ++ show (fmap (M0.fid.fst) procs)
-      liftProcess $ sendChan chan msg
-      for_ procs' $ \p -> modifyGraph
-        $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
-                        (M0.setState p M0.PSStarting rg')
-                        (G.connectedTo p M0.IsParentOf rg')
-  where
-    runConfig proc rg
-      | runsMgs proc rg = syncToBS >>= \bs -> return $
-         ProcessConfigLocal (M0.fid proc) (M0.r_endpoint proc) bs
-      | otherwise = return $
-         ProcessConfigRemote (M0.fid proc) (M0.r_endpoint proc)
-    runsMgs proc rg =
-      not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
-                          <- G.connectedTo proc M0.IsParentOf rg ]
+startMeroProcesses _ [] _ = return ()
+startMeroProcesses (TypedChannel chan) procs label = do
+   let msg = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> procs)
+   phaseLog "debug" $ "starting mero processes: " ++ show (fmap M0.fid procs)
+   liftProcess $ sendChan chan msg
+   where
+     toType M0.PLM0t1fs = M0T1FS
+     toType _           = M0D
 
 restartNodeProcesses :: TypedChannel ProcessControlMsg
                      -> [M0.Process]
@@ -311,8 +345,8 @@ restartNodeProcesses (TypedChannel chan) ps = do
    liftProcess $ sendChan chan msg
    where
      go rg p = case G.connectedTo p Has rg of
-        [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
-        _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+        [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
+        _             -> (M0D, M0.fid p)
 
 stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]
@@ -328,8 +362,8 @@ stopNodeProcesses (TypedChannel chan) ps = do
                     (G.connectedTo p M0.IsParentOf rg')
    where
      go rg p = case G.connectedTo p Has rg of
-        [M0.PLM0t1fs] -> ([M0T1FS], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
-        _             -> ([M0D], ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))
+        [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
+        _             -> (M0D, M0.fid p)
 
 getLabeledProcesses :: M0.ProcessLabel
                     -> (M0.Process -> G.Graph -> Bool)

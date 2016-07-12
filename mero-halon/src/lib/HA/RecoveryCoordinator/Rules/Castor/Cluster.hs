@@ -482,6 +482,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
       case m0svc >>= meroChannel rg of
         Just chan -> do
            phaseLog "info" $ "Starting client"
-           startMeroProcesses chan [proc] M0.PLM0t1fs False
+           configureMeroProcesses chan [proc] M0.PLM0t1fs False
+           startMeroProcesses chan [proc] M0.PLM0t1fs
         Nothing -> phaseLog "warning" $ "can't find mero channel."
     else phaseLog "warning" $ show fid ++ " is not a client process."

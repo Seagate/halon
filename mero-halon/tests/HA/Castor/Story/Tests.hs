@@ -942,10 +942,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       StopProcesses pcs <- receiveChan recc
       liftIO $ assertEqual "One process on node" 1 $ length pcs
       -- Reply with successful stoppage
-      let [(_, pc)] = pcs
-          fid = case pc of
-                  ProcessConfigLocal x _ _ -> x
-                  ProcessConfigRemote x _ -> x
+      let [(_, fid)] = pcs
       promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Left fid]
 
     debug "Mero process stop result sent"
@@ -989,10 +986,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       StartProcesses pcs <- receiveChan recc
       liftIO $ assertEqual "One process on node" 1 $ length pcs
       -- Reply with successful stoppage
-      let [(_, pc)] = pcs
-          fid = case pc of
-                  ProcessConfigLocal x _ _ -> x
-                  ProcessConfigRemote x _ -> x
+      let [(_, fid)] = pcs
       promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
       -- Also send ONLINE for the process
       promulgateEQ [nid]  ( HAMsgMeta fid fid fid 0

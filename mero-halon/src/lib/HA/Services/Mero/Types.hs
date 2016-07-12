@@ -90,7 +90,6 @@ instance Hashable NotificationMessage
 data ProcessRunType =
     M0D -- ^ Run 'm0d' service.
   | M0T1FS -- ^ Run 'm0t1fs' service.
-  | M0MKFS -- ^ Run 'mero-mkfs' service.
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessRunType
 instance Hashable ProcessRunType
@@ -107,9 +106,10 @@ instance Hashable ProcessConfig
 
 -- | Control system level m0d processes.
 data ProcessControlMsg =
-    StartProcesses [([ProcessRunType], ProcessConfig)]
-  | StopProcesses [([ProcessRunType], ProcessConfig)]
-  | RestartProcesses [([ProcessRunType], ProcessConfig)]
+    StartProcesses [(ProcessRunType, Fid)]
+  | StopProcesses [(ProcessRunType, Fid)]
+  | RestartProcesses [(ProcessRunType, Fid)]
+  | ConfigureProcesses [(ProcessRunType, ProcessConfig, Bool)]
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
@@ -134,6 +134,11 @@ data ProcessControlResultRestartMsg =
 instance Binary ProcessControlResultRestartMsg
 instance Hashable ProcessControlResultRestartMsg
 
+data ProcessControlResultConfigureMsg =
+      ProcessControlResultConfigureMsg NodeId [Either Fid (Fid,String)]
+  deriving (Eq, Generic, Show, Typeable)
+instance Binary ProcessControlResultConfigureMsg
+instance Hashable ProcessControlResultConfigureMsg
 
 data DeclareMeroChannel =
     DeclareMeroChannel
