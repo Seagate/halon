@@ -51,6 +51,7 @@ module HA.RecoveryCoordinator.Actions.Core
     -- * Utility functions
   , unlessM
   , whenM
+  , mkLoop
   ) where
 
 import HA.Multimap (StoreChan)
@@ -342,3 +343,24 @@ notify :: Serializable a
 notify msg = do
   selfMessage msg
   publish msg
+
+-- | Handle incomming events in a loop.
+mkLoop :: Serializable a => String            -- ^ Rule name suffix.
+       -> Int                                 -- ^ Timeout (in seconds).
+       -> Jump PhaseHandle                    -- ^ Rule to jump to in case of timeout.
+       -> (a -> l -> PhaseM LoopState l (Either (Jump PhaseHandle) l))
+       -- ^ State update function.
+       -> (l -> Maybe [Jump PhaseHandle])     -- ^ Check if loop is finished.
+       -> RuleM LoopState l (Jump PhaseHandle)
+mkLoop name tm tmRule update check = do
+  loop <- phaseHandle $ "_loop:entry:" ++ name
+  inner <- phaseHandle $ "_loop:inner:" ++ name
+  directly loop $ switch [inner, timeout tm tmRule]
+  setPhase inner $ \x -> do
+    l <- get Local
+    ex <- update x l
+    case ex of
+      Right l' -> do put Local l'
+                     maybe (continue loop) switch (check l')
+      Left e -> continue e
+  return loop
