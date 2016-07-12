@@ -37,7 +37,7 @@ typedef struct ha_state_callbacks {
 
 	/**
 	 * Called when m0_conf_ha_process event is received.
-         * 
+         *
          * * hl   - corresponding ha_link
          * * meta - metadata associated with connection
          * * proc - process event
@@ -45,6 +45,14 @@ typedef struct ha_state_callbacks {
 	 * */
 	void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
 
+	/**
+	* Called when m0_conf_ha_service event is received.
+	*
+	* * meta - metadata associated with connection
+	* * ss - service event
+	*
+	* */
+	void (*ha_service_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_service *ss);
 
 	/**
 	 * Called when a request to update the state of some objects is received.
@@ -56,7 +64,7 @@ typedef struct ha_state_callbacks {
 	 * Called when a request to read confd and rm service state is received.
          *
          *  * req_id - id of the request, this Id should be used in order to link
-         *      entrypoint request to the hastate provided in the 
+         *      entrypoint request to the hastate provided in the
          *      ha_state_link_connected request.
          *  * process_fid - Fid of the remote process that is requesting
          *      entrypoint.
@@ -89,7 +97,7 @@ typedef struct ha_state_callbacks {
 	void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
 
 	/**
-	 * The link is no longer needed by the remote peer.  
+	 * The link is no longer needed by the remote peer.
 	 * It is safe to call ha_state_disconnect(..) when all ha_state_notify
 	 * calls using the link have completed.
 	 */
@@ -116,7 +124,7 @@ typedef struct ha_state_callbacks {
 /**
  * Registers ha_state_callbacks so they are used when requests arrive at the
  * given local rpc endpoint.
- *   
+ *
  *   * local_rpc_endpoint - endpoint address that HA interface should be
  *       listening on.
  *   * process_fid - Fid of the local HA process.

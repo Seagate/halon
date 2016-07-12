@@ -12,6 +12,10 @@
 -- Bindings to the hastate interface. This is the HA side of the notification
 -- interface.
 --
+-- TODO: Move various message types sent through new notification
+-- interface into own module or into confc package.
+--
+-- TODO: send @data HAMsg a = HAMsg HAMsgMeta a@ for nicer receiving and access
 module Mero.Notification.HAState
   ( Note(..)
   , NVec
@@ -29,11 +33,13 @@ module Mero.Notification.HAState
   , ProcessEvent(..)
   , ProcessEventType(..)
   , ProcessType(..)
+  , ServiceEvent(..)
+  , ServiceEventType(..)
   ) where
 
 import HA.Resources.Mero.Note
 
-import Mero.ConfC             (Fid, Word128)
+import Mero.ConfC             (Fid, Word128, ServiceType)
 import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
@@ -104,6 +110,25 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
 instance Binary ProcessEventType
 instance Hashable ProcessEventType
 
+data ServiceEvent = ServiceEvent
+  { _chs_event :: ServiceEventType
+  , _chs_type :: ServiceType
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ServiceEvent
+instance Hashable ServiceEvent
+
+data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
+  ServiceEventType = TAG_M0_CONF_HA_SERVICE_STARTING
+                   | TAG_M0_CONF_HA_SERVICE_STARTED
+                   | TAG_M0_CONF_HA_SERVICE_STOPPING
+                   | TAG_M0_CONF_HA_SERVICE_STOPPED
+                   | TAG_M0_CONF_HA_SERVICE_FAILED
+                   deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ServiceEventType
+instance Hashable ServiceEventType
+
 -- | Notes telling the state of a given configuration object
 data Note = Note
     { no_id :: Fid
@@ -148,6 +173,8 @@ initHAState :: RPCAddress
                -- be called by passing the given link.
             -> (HALink -> HAMsgMeta -> ProcessEvent -> IO ())
                -- ^ Called when process event notification is received
+            -> (HAMsgMeta -> ServiceEvent -> IO ())
+               -- ^ Called when service event notification is received
             -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
                -- received.
@@ -172,9 +199,11 @@ initHAState :: RPCAddress
             -> (HALink -> Word64 -> IO ())
                -- ^ Message on the given link will never be delivered.
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set ha_state_set
+initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
+            ha_service_event_set
+            ha_state_set
             ha_state_entry
-            ha_state_link_connected ha_state_link_reused 
+            ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
             ha_state_is_delivered ha_state_is_cancelled =
     useAsCString rpcAddr $ \cRPCAddr ->
@@ -182,6 +211,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
       wget <- wrapGetCB
       wpset <- wrapSetProcessCB
+      wsset <- wrapSetServiceCB
       wset <- wrapSetCB
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
@@ -192,6 +222,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wiscancelled <- wrapIsCancelledCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
+      #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
@@ -205,6 +236,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
+        . (SomeFunPtr wsset:)
         . (SomeFunPtr wset:)
         . (SomeFunPtr wentry:)
         . (SomeFunPtr wconnected:)
@@ -218,18 +250,24 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
               ha_state_init cRPCAddr procPtr profPtr pcbs
       check_rc "initHAState" rc
   where
+    freeing p = peek p >>= \p' -> free p >> return p'
+
     wrapGetCB = cwrapGetCB $ \hl w note -> catch
         (peekNote note >>= ha_state_get (HALink hl) w)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapGetCB: " ++ show (e :: SomeException)
 
     wrapSetProcessCB = cwrapProcessSetCB $ \hl m' pe -> catch
-      (do  m <- peek m' 
-           free m'
+      (do  m <- freeing m'
            pr <- peek pe
            ha_process_event_set (HALink hl) m pr)
       $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetProcessCB: " ++ show (e :: SomeException)
+
+    wrapSetServiceCB = cwrapServiceSetCB $ \m' se -> catch
+      (freeing m' >>= \m -> peek se >>= ha_service_event_set m)
+      $ \e -> hPutStrLn stderr $
+                "initHAState.wrapSetServiceCB: " ++ show (e :: SomeException)
 
     wrapSetCB = cwrapSetCB $ \note -> catch
         (peekNote note >>= ha_state_set)
@@ -288,6 +326,10 @@ foreign import ccall "wrapper" cwrapGetCB ::
 foreign import ccall "wrapper" cwrapProcessSetCB ::
                 (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
   -> IO (FunPtr (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
+
+foreign import ccall "wrapper" cwrapServiceSetCB ::
+                (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ())
+  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ()))
 
 foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))
@@ -428,6 +470,19 @@ instance Enum ProcessEventType where
   fromEnum TAG_M0_CONF_HA_PROCESS_STOPPING = #{const M0_CONF_HA_PROCESS_STOPPING}
   fromEnum TAG_M0_CONF_HA_PROCESS_STOPPED = #{const M0_CONF_HA_PROCESS_STOPPED}
 
+instance Enum ServiceEventType where
+  toEnum #{const M0_CONF_HA_SERVICE_STARTING} = TAG_M0_CONF_HA_SERVICE_STARTING
+  toEnum #{const M0_CONF_HA_SERVICE_STARTED} = TAG_M0_CONF_HA_SERVICE_STARTED
+  toEnum #{const M0_CONF_HA_SERVICE_STOPPING} = TAG_M0_CONF_HA_SERVICE_STOPPING
+  toEnum #{const M0_CONF_HA_SERVICE_STOPPED} = TAG_M0_CONF_HA_SERVICE_STOPPED
+  toEnum #{const M0_CONF_HA_SERVICE_FAILED} = TAG_M0_CONF_HA_SERVICE_FAILED
+  toEnum i = error $ "ServiceEventType toEnum failed with " ++ show i
+
+  fromEnum TAG_M0_CONF_HA_SERVICE_STARTING = #{const M0_CONF_HA_SERVICE_STARTING}
+  fromEnum TAG_M0_CONF_HA_SERVICE_STARTED = #{const M0_CONF_HA_SERVICE_STARTED}
+  fromEnum TAG_M0_CONF_HA_SERVICE_STOPPING = #{const M0_CONF_HA_SERVICE_STOPPING}
+  fromEnum TAG_M0_CONF_HA_SERVICE_STOPPED = #{const M0_CONF_HA_SERVICE_STOPPED}
+  fromEnum TAG_M0_CONF_HA_SERVICE_FAILED = #{const M0_CONF_HA_SERVICE_FAILED}
 
 instance Storable HAMsgMeta where
   sizeOf _ = #{size ha_msg_metadata_t}
@@ -455,8 +510,20 @@ instance Storable ProcessEvent where
       (#{peek struct m0_conf_ha_process, chp_pid} p)
   poke p (ProcessEvent ev et pid) = do
       #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 ev)
-      #{poke struct m0_conf_ha_process, chp_event} p (enumToW64 et)
+      #{poke struct m0_conf_ha_process, chp_type} p (enumToW64 et)
       #{poke struct m0_conf_ha_process, chp_pid} p pid
+
+instance Storable ServiceEvent where
+  sizeOf _ = #{size struct m0_conf_ha_service}
+  alignment _ = #{alignment struct m0_conf_ha_service}
+
+  peek p = liftM2 ServiceEvent
+      (w64ToEnum <$> (#{peek struct m0_conf_ha_service, chs_event} p))
+      (w64ToEnum <$> (#{peek struct m0_conf_ha_service, chs_type} p))
+
+  poke p (ServiceEvent ev et) = do
+      #{poke struct m0_conf_ha_service, chs_event} p (enumToW64 ev)
+      #{poke struct m0_conf_ha_service, chs_type} p (enumToW64 et)
 
 enumToW64 :: Enum a => a -> Word64
 enumToW64 = fromIntegral . fromEnum
