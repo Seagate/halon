@@ -166,6 +166,10 @@ rules = sequence_
   , eventKernelFailed
   ]
 
+-- | Timeout to wait for Mero processes to start.
+startProcTimeout :: Int
+startProcTimeout = 5*60 -- 5m
+
 -- | Bootlevel that RC procedure is started at.
 maxTeardownLevel :: Int
 maxTeardownLevel = 3 -- XXX: move to cluster constants.
@@ -506,7 +510,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
               then return $ Just [boot_level_0]
               else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
                       promulgateRC $ StartHalonM0dRequest m0node
-                      return $ Just [kernel_up, kernel_failed, timeout 180 bootstrap_timeout]
+                      return $ Just [kernel_up, kernel_failed, timeout startProcTimeout bootstrap_timeout]
 
     setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
        case (ks, getField $ rget fldReq l) of
@@ -540,7 +544,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           -- directly
           when (null ps) $ do
             notifyOnClusterTransition (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
-          switch [boot_level_1, timeout 180 bootstrap_timeout]
+          switch [boot_level_1, timeout startProcTimeout bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
@@ -556,7 +560,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           let notifications = (\p -> stateSet p M0.PSOnline) <$> procs
           modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
-          switch [complete, timeout 180 bootstrap_timeout]
+          switch [complete, timeout startProcTimeout bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish
