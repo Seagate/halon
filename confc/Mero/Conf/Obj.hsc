@@ -281,8 +281,7 @@ getProcess po = do
           <*> (#{peek struct m0_conf_process, pc_memlimit_memlock} pp)
           <*> (#{peek struct m0_conf_process, pc_endpoint} pp >>= peekCString)
 
--- | Representation of `m0_conf_service_type`.
-data ServiceType
+data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     = CST_MDS
     | CST_IOS
     | CST_MGS
@@ -295,6 +294,7 @@ data ServiceType
     | CST_ADDB2
     | CST_DS1 -- ^ Dummy service 1
     | CST_DS2 -- ^ Dummy service 2
+    | CST_CAS -- ^ Catalog service
     | CST_UNKNOWN Int
   deriving (Data, Eq, Generic, Ord, Read, Show )
 
@@ -316,6 +316,7 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_ADDB2}    = CST_ADDB2
   toEnum #{const M0_CST_DS1}      = CST_DS1
   toEnum #{const M0_CST_DS2}      = CST_DS2
+  toEnum #{const M0_CST_CAS}      = CST_CAS
   toEnum i                        = CST_UNKNOWN i
 
   fromEnum CST_MDS          = #{const M0_CST_MDS}
@@ -330,6 +331,7 @@ instance Enum ServiceType where
   fromEnum CST_ADDB2        = #{const M0_CST_ADDB2}
   fromEnum CST_DS1          = #{const M0_CST_DS1}
   fromEnum CST_DS2          = #{const M0_CST_DS2}
+  fromEnum CST_CAS          = #{const M0_CST_CAS}
   fromEnum (CST_UNKNOWN i)  = i
 
 data ServiceParams =

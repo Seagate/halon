@@ -400,6 +400,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
              er <- Catch.try $ initHAState addr processFid profileFid
                             ha_state_get
                             (ha_process_event_set links)
+                            ha_service_event_set
                             (ha_state_set links)
                             ha_entrypoint
                             (ha_connected links)
@@ -435,6 +436,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
           swap . Map.updateLookupWithKey (const $ const $ Nothing) hlink
         for_ mv $ traverse_ onDelivered
       void $ CH.forkProcess lnode $ promulgateWait (meta, pe)
+
+    ha_service_event_set :: HAMsgMeta -> ServiceEvent -> IO ()
+    ha_service_event_set m e = void . CH.forkProcess lnode $ promulgateWait (m, e)
 
     ha_state_set :: NIState -> NVec -> IO ()
     ha_state_set _ nvec = do

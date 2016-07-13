@@ -58,6 +58,11 @@ void msg_received_cb ( struct m0_halon_interface *hi
         ha_state_cbs.ha_process_event_set( hl
                                          , get_metadata(msg)
                                          , &msg->hm_data.u.hed_event_process);
+        break;
+      case M0_HA_MSG_EVENT_SERVICE:
+        ha_state_cbs.ha_service_event_set ( get_metadata(msg)
+                                          , &msg->hm_data.u.hed_event_service);
+        break;
     }
     m0_halon_interface_delivered(m0init_hi, hl, msg);
 }
