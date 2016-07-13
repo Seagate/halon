@@ -37,7 +37,6 @@ import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.Service
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -54,12 +53,13 @@ import           HA.Service
   , ServiceStartedMsg
   , encodeP
   , runningService
+  , SyncPing(..)
   )
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
 import           HA.Services.Monitor
 import qualified HA.Services.Monitor as Monitor
-import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..), phaseLog)
+import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..))
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
@@ -346,38 +346,52 @@ testMasterMonitorManagement transport pg = runDefaultTest transport $ do
     _ <- serviceStarted monitorServiceName
     say "Node-local monitor has been restarted"
 
--- | This test verifies that if service start message is interleaved with
--- ServiceStart messages from the old node, that is possibe in case
--- of network failures.
+-- | This test verifies that an old ServiceStart message does not interfere with
+-- registration via nodeUp of respawned satellites.
 testNodeUpRace :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testNodeUpRace transport pg = runTest 2 20 15000000 transport testRemoteTable $ \[node2] -> do
   nid <- getSelfNode
   self <- getSelfPid
---  void $ startEQTracker [nid]
+  registerInterceptor $ \m ->
+      if "received SyncPing" `isInfixOf` m then usend self "SyncPing"
+      else if "started monitor service" `isInfixOf` m
+        then usend self "started monitor service"
+        else return ()
+
 
   say $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs eq mm _) -> do
     subscribe eq (Proxy :: Proxy TrimDone)
 
+    let dummyMonitorPid = nullProcessId (localNodeId node2)
     void . liftIO $ forkProcess node2 $ do
       void $ startEQTracker [nid]
       selfNode <- getSelfNode
+      -- promulgateEQ is asynchronous. This way we intend to test the message posibly arriving after
+      -- the nodeUp call starts.
       _ <- promulgateEQ [nid] . encodeP $ ServiceStarted (Node selfNode)
                                                          Monitor.regularMonitor
                                                          Monitor.emptyMonitorConf
-                                                         (ServiceProcess $ nullProcessId selfNode)
+                                                         (ServiceProcess dummyMonitorPid)
       nodeUp ([nid], 2000000)
       usend self (Node selfNode)
-      usend self (nullProcessId selfNode)
       usend self ((), ())
     ((), ()) <- expect
-    _ <- receiveTimeout 1000000 []
 
     nn <- expect
-    pr <- expect
-    rg <- G.getGraph mm
-    case runningService nn Monitor.regularMonitor rg of
-      Just (ServiceProcess n) -> if n /= pr
-                                 then return ()
-                                 else liftIO $ assertFailure $ "Process should differ: " ++ show n ++ " " ++ show pr
-      Nothing -> return ()
+    -- Test the RG i times until we succeed or run out of attempts.
+    let loop i = do
+          () <- receiveWait
+            [ matchIf (=="started monitor service") (\_ -> return ()) ]
+          -- have the RC synchronize the RG before we check it
+          _ <- promulgateEQ [nid] $ SyncPing ""
+          () <- receiveWait [ matchIf (=="SyncPing") (\_ -> return ()) ]
+          rg <- G.getGraph mm
+          case runningService nn Monitor.regularMonitor rg of
+            Just (ServiceProcess n) | n == dummyMonitorPid ->
+              if (i :: Int) > 0
+                then loop (i -1) -- retry later
+                else liftIO $ assertFailure $
+                       "Process should differ: " ++ show n ++ " " ++ show dummyMonitorPid
+            _ -> return ()
+    loop 4
