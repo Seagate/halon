@@ -47,14 +47,14 @@ import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState, NotifyFailureEndpoints(..))
+import HA.Resources.Mero.Note (ConfObjectState(..), NotifyFailureEndpoints(..))
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
 import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
-import Mero.Notification (Set, NIRef)
+import Mero.Notification (Set(..), NIRef)
 import Mero.Notification.HAState (Note(..))
 import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
@@ -172,10 +172,39 @@ configureProcess mc run conf needsMkfs = do
   if needsMkfs
   then do
     ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
+
+-- | Start multiple processes in a chain. If earlier processes fail,
+--   subsequent ones will not be run.
+startProcesses :: MeroConf
+               -> [ProcessRunType]
+               -> ProcessConfig
+               -> IO [Either Fid (Fid, String)]
+startProcesses _ [] _ = error "No processes to start."
+startProcesses mc [x] pc = (:[]) <$> startProcess mc x pc
+startProcesses mc (x:xc) pc = do
+  res <- startProcess mc x pc
+  case res of
+    Left _ -> startProcesses mc xc pc >>= return . (res:)
+    Right _ -> return $ [res]
+
+startProcess :: MeroConf
+             -> ProcessRunType
+             -> ProcessConfig
+             -> IO (Either Fid (Fid, String))
+startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ do
+    putStrLn $ "m0d: startProcess: " ++ show procFid
+            ++ " with type(s) " ++ show run
+    confXC <- maybeWriteConfXC conf
+    unit <- writeSysconfig mc run procFid m0addr confXC
+    ec <- SystemD.restartService $ unit ++ fidToStr procFid
+    -- XXX: This hack is required to create global barrier between mkfs
+    -- and m0d withing the cluster. mkfs usually takes less than 10s
+    -- thus we choose 20s delay to guarantee protection.
+    -- For more details see HALON-146.
+    when (run == M0MKFS) $ threadDelay (20*1000000)
     return $ case ec of
       ExitSuccess -> Left procFid
       ExitFailure x -> Right (procFid, "Unit failed to start with exit code " ++ show x)
-  else return $ Left procFid
   where
     maybeWriteConfXC (ProcessConfigLocal _ _ bs) = do
       liftIO $ writeConfXC bs
@@ -367,14 +396,24 @@ meroRules = meroRulesF m0d
 -- | Return the set of notification channels available in the cluster.
 --   This function logs, but does not error, if it cannot find channels
 --   for every host in the cluster.
-getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
-getNotificationChannels = do
+getNotificationChannels :: Set -- ^ Set of events we're sending. We
+                               -- can use this to make a smarter
+                               -- decision about the recipients to
+                               -- send to.
+                        -> PhaseM LoopState l [(SendPort NotificationMessage, [String])]
+getNotificationChannels (Set setEvent) = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
               | host <- G.connectedTo Cluster Has rg :: [Host]
               , node <- G.connectedTo host Runs rg :: [Node]
               , m0node <- G.connectedTo host Runs rg :: [M0.Node]
               ]
+      -- Processes we're setting online
+      onlinePs = catMaybes [ M0.lookupConfObjByFid fid' rg
+                           | Note fid' M0_NC_ONLINE <- setEvent ]
+
+      soleOnlineProcess = (== onlinePs) . return
+
   things <- forM nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
      let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
@@ -382,10 +421,17 @@ getNotificationChannels = do
                    [ (endpoint, stype)
                    | m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                    , G.isConnected m0proc Is M0.PSOnline rg
+                     -- Don't send online notification for process to
+                     -- itself. But be careful, if we are sending
+                     -- about multiple processes then just send
+                     -- everything everywhere
+                   , not $ soleOnlineProcess m0proc
                    , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
                    ]
+
+     phaseLog "info" $ "Notifying the folowing recipients: " ++ show recipients
      case (mchan, recipients) of
        (_, x) | Set.null x -> return Nothing
        (Nothing, Set.toList -> r) -> do
@@ -424,7 +470,7 @@ notifyMeroAndThen :: Set
 notifyMeroAndThen setEvent fsucc ffail = do
     phaseLog "action" $ "Sending configuration update to mero services: "
                      ++ show setEvent
-    chans <- getNotificationChannels
+    chans <- getNotificationChannels setEvent
     liftProcess $ do
       self <- getSelfPid
       void $ spawnLocal $ do
@@ -450,7 +496,7 @@ notifyMero :: Set -> PhaseM LoopState l ()
 notifyMero setEvent = do
   phaseLog "action" $ "Sending non-blocking configuration update to mero services: "
                    ++ show setEvent
-  chans <- getNotificationChannels
+  chans <- getNotificationChannels setEvent
   for_ chans $ \(sp, recipients) -> liftProcess $
       sendChan sp $ NotificationMessage setEvent recipients []
 
