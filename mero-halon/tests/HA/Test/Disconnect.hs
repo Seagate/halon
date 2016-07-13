@@ -213,8 +213,9 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
-          str' | "timeout_host Just" `isInfixOf` str' -> usend self "timeout_host"
+          str' | "Marked transient: " `isInfixOf` str' -> usend self "NodeTransient"
+          str' | "Disconnecting " `isInfixOf` str' && " due to timeout" `isInfixOf` str'
+                   -> usend self "timeout_host"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
           str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
@@ -273,13 +274,14 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
     void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
         let t = "Recovery Coordinator: received DummyEvent "
+        -- TODO: Emit messages in RC for these and subscribe to them
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
+          str' | "Marked transient: " `isInfixOf` str' -> usend self "NodeTransient"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
-          str' | "started monitor service on nid" `isInfixOf` str' -> usend self "MonitorStarted"
+          str' | "Recovery call #" `isInfixOf` str' -> usend self "RecoverNode"
+          str' | "started monitor service on" `isInfixOf` str' -> usend self "MonitorStarted"
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
@@ -327,11 +329,10 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait until RC
 -- detects the node is disconnected. Reconnect the node. Check that RC marks the
 -- node as online again.
-testRejoin :: String -- ^ Host used for initial data
-           -> Transport
+testRejoin :: Transport
            -> (EndPointAddress -> EndPointAddress -> IO ())
            -> IO ()
-testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
+testRejoin baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 10 $ \[m0,m1]
@@ -343,11 +344,13 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
+          str' | "Marked transient: " `isInfixOf` str' -> usend self "NodeTransient"
           str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
           str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
+          str' | "Recovery call #" `isInfixOf` str' -> usend self "RecoverNode"
           str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
+          str' | "started monitor service on" `isInfixOf` str' -> usend self "MonitorStarted"
+
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect

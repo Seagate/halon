@@ -118,7 +118,7 @@ it _host transport breakConnection = do
                  , [testCase "Ignore me" $ return ()])
       , testGroup "disconnect" $
         [ MERO_TEST(testCase, "testRejoinTimeout", HA.Test.Disconnect.testRejoinTimeout _host transport breakConnection, return ())
-        , MERO_TEST(testCase, "testRejoin", HA.Test.Disconnect.testRejoin _host transport breakConnection, return ())
+        , MERO_TEST(testCase, "testRejoin", HA.Test.Disconnect.testRejoin transport breakConnection, return ())
 #if !defined(USE_RPC)
         , testCase "testDisconnect" $
             HA.Test.Disconnect.testDisconnect transport breakConnection

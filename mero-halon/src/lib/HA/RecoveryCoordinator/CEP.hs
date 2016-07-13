@@ -165,7 +165,7 @@ ruleNodeUp argv = define "node-up" $ do
             phaseLog "info" $ "Potentially new node, no revival: " ++ show node
             knownResource node
           True -> do
-            phaseLog "info" $ "Reviving old node: " ++ show node
+            liftProcess . sayRC $ "info => Reviving old node: " ++ show node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
             syncGraph $ return () -- XXX: maybe we need barrier here
@@ -240,8 +240,8 @@ ruleNodeUp argv = define "node-up" $ do
 
       setPhase nm_reply $ \StartMonitoringReply -> do
         Starting uuid nid _ _ npid <- get Local
-        phaseLog "info" $ printf "started monitor service on %s with pid %s"
-                            (show (Node nid)) (show npid)
+        liftProcess . sayRC $ printf "info => started monitor service on %s with pid %s"
+                                     (show (Node nid)) (show npid)
         ack npid
 
         phaseLog "debug " $ "Sending NewNodeConnected for " ++ show (Node nid)
@@ -313,8 +313,8 @@ instance Binary RecoverNodeAck
 -- failure rule.
 ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
 ruleRecoverNode argv = define "recover-node" $ do
-      let expirySeconds = 600
-          maxRetries = 10
+      let expirySeconds = 300
+          maxRetries = 5
       start_recover <- phaseHandle "start_recover"
       try_recover <- phaseHandle "try_recover"
       timeout_host <- phaseHandle "timeout_host"
@@ -356,8 +356,8 @@ ruleRecoverNode argv = define "recover-node" $ do
             -- long as the RC doesn't die more often than a full node
             -- timeout happens, we'll finish the recovery eventually
             True -> put Local (uuid, Just (n1, host, 0))
-        phaseLog "info" $ "Marked transient: " ++ show n1
 
+        liftProcess . sayRC $ "info => Marked transient: " ++ show n1
         continue try_recover
 
       directly try_recover $ do
@@ -367,7 +367,7 @@ ruleRecoverNode argv = define "recover-node" $ do
             hasHostAttr M0.HA_TRANSIENT h >>= \case
               False -> ackMsg uuid
               True -> do
-                phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
+                liftProcess . sayRC $ "info => Recovery call #" ++ show i ++ " for " ++ show h
                 put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
