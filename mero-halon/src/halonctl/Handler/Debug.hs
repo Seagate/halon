@@ -57,6 +57,8 @@ eqStats nids (EQStatsOptions t) = do
   where
     display (EQStatResp queueSize) =
       putStrLn $ printf "EQ size: %d" queueSize
+    display EQStatRespCannotBeFetched =
+      putStrLn "Cannot fetch EQ stats."
 
 
 parseEQStatsOptions :: O.Parser EQStatsOptions
