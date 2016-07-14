@@ -124,6 +124,7 @@ import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import qualified HA.RecoveryCoordinator.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
+import           Mero.ConfC (Fid)
 
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync)
 import           Control.Distributed.Process.Closure
@@ -490,7 +491,9 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     kernel_up         <- phaseHandle "kernel_up"
     kernel_failed     <- phaseHandle "kernel_failed"
     boot_level_0      <- phaseHandle "boot_level_0"
+    boot_level_0_conf <- phaseHandle "boot_level_0_conf"
     boot_level_1      <- phaseHandle "boot_level_1"
+    boot_level_1_conf <- phaseHandle "boot_level_1_conf"
     complete          <- phaseHandle "complete"
     bootstrap_timeout <- phaseHandle "bootstrap_timeout"
 
@@ -507,10 +510,33 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
               modify Local $ rlens fldHost .~ (Field $ host)
               modify Local $ rlens fldNode .~ (Field $ Just node)
               if isJust chan
-              then return $ Just [boot_level_0]
+              then return $ Just [boot_level_0_conf]
               else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
                       promulgateRC $ StartHalonM0dRequest m0node
                       return $ Just [kernel_up, kernel_failed, timeout startProcTimeout bootstrap_timeout]
+
+        -- Wait for all process configured notifications.
+    let
+        mkConfigurationAwait name next = mkLoop name 180 bootstrap_timeout
+          (\result l ->
+             case result of
+               ProcessConfigured fid -> return $
+                 Right $ ((rlens fldProcessConfig) %~ fieldMap (fmap (filter (/= fid)))) l
+               ProcessConfigureFailed _fid -> do
+                 Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+                 modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartTimeout m0node)
+                 return $ Left bootstrap_timeout
+          )
+          (\l -> case (getField . rget fldProcessConfig) (l `asTypeOf` args) of
+                   Nothing -> Just [next]
+                   Just [] -> Just [next]
+                   _  -> Nothing
+              )
+
+    directly bootstrap_timeout $ do
+      Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+      modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartTimeout m0node)
+      continue finish
 
     setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
        case (ks, getField $ rget fldReq l) of
@@ -518,7 +544,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
             , Just (StartProcessesOnNodeRequest m0node))
             | node == m0node -> return $ Just ()
          _ -> return Nothing
-      ) $ \() -> continue boot_level_0
+      ) $ \() -> continue boot_level_0_conf
 
     setPhaseIf kernel_failed (\ksf _ l ->
        case (ksf, getField $ rget fldReq l) of
@@ -530,6 +556,25 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
       continue finish
 
+    await_configure_0 <- mkConfigurationAwait "configure::0" boot_level_0
+
+    directly boot_level_0_conf $ do
+      Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+      Just node <- getField . rget fldNode <$> get Local
+      Just host <- getField . rget fldHost <$> get Local
+      g <- getLocalGraph
+      m0svc <- lookupRunningService node m0d
+      case m0svc >>= meroChannel g of
+        Just chan -> do
+          ps <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          when (null ps) $ continue boot_level_0
+          modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> ps)
+          continue await_configure_0
+        Nothing -> do
+          phaseLog "error" $ "Can't find service for node " ++ show node
+          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
+          continue finish
+
     directly boot_level_0 $ do
       Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
       Just node <- getField . rget fldNode <$> get Local
@@ -538,26 +583,45 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel g of
         Just chan -> do
-          ps <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          ps <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0))
           -- We aren't actually starting anything: if this is the only
           -- node, we'd get stuck here so send out a barrier pass
           -- directly
           when (null ps) $ do
             notifyOnClusterTransition (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
-          switch [boot_level_1, timeout startProcTimeout bootstrap_timeout]
+          switch [boot_level_1_conf, timeout startProcTimeout bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
           continue finish
 
-    setPhaseIf boot_level_1 (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
+    await_configure_1 <- mkConfigurationAwait "configure::1" boot_level_1
+
+    setPhaseIf boot_level_1_conf (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
       m0svc <- lookupRunningService node m0d
       case m0svc >>= meroChannel g of
         Just chan -> do
-          procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          procs <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          if null procs
+          then continue finish
+          else do
+            modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> procs)
+            continue await_configure_1
+        Nothing -> do
+          phaseLog "error" $ "Can't find service for node " ++ show node
+          continue finish
+
+    directly boot_level_1 $ do
+      Just node <- getField . rget fldNode <$> get Local
+      Just host <- getField . rget fldHost <$> get Local
+      g <- getLocalGraph
+      m0svc <- lookupRunningService node m0d
+      case m0svc >>= meroChannel g of
+        Just chan -> do
+          procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1))
           let notifications = (\p -> stateSet p M0.PSOnline) <$> procs
           modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
           switch [complete, timeout startProcTimeout bootstrap_timeout]
@@ -574,6 +638,8 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe StartProcessesOnNodeResult)
     fldRep = Proxy
+    fldProcessConfig :: Proxy '("reply", Maybe [Fid])
+    fldProcessConfig = Proxy
     -- Notifications to wait for
     fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet])
     fldNotifications = Proxy
@@ -583,6 +649,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
        <+> fldRep  =: Nothing
        <+> fldHost =: Nothing
        <+> fldNotifications =: Nothing
+       <+> fldProcessConfig =: Nothing
        <+> RNil
 
 
@@ -643,7 +710,9 @@ ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
       case m0svc >>= meroChannel rg of
         Just chan -> do
           phaseLog "info" $ "Starting mero client on " ++ show host
-          _ <- startNodeProcesses host chan M0.PLM0t1fs False
+          -- XXX: implement await
+          _ <- configureNodeProcesses host chan M0.PLM0t1fs False
+          _ <- startNodeProcesses host chan M0.PLM0t1fs
           continue finish
         Nothing -> do
           phaseLog "error" $ "can't find mero channel on " ++ show node

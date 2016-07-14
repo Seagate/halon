@@ -11,8 +11,11 @@ module HA.RecoveryCoordinator.Events.Mero
    , NewMeroClientProcessed(..)
    , NewMeroServer(..)
    , StopMeroServer(..)
+     -- ** Mero kernel.
    , MeroKernelFailed(..)
    , NodeKernelFailed(..)
+     -- ** Process.
+   , ProcessConfigured(..)
    -- * Requests
    , GetSpielAddress(..)
    -- * State changes
@@ -30,6 +33,7 @@ import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
+import qualified Mero.ConfC as M0 (Fid)
 
 import Control.Applicative (many)
 import Control.Distributed.Process (ProcessId, RemoteTable, Static)
@@ -71,6 +75,16 @@ instance Binary NewMeroClientProcessed
 data GetSpielAddress = GetSpielAddress ProcessId
        deriving (Eq, Show, Typeable, Generic)
 instance Binary GetSpielAddress
+
+-- | Event is emitted when some process have been configured
+-- configured, i.e. created config file and mkfs done (if needed).
+--
+-- This may be either succesfull or not.
+data ProcessConfigured
+       = ProcessConfigured M0.Fid
+       | ProcessConfigureFailed M0.Fid
+       deriving (Eq, Show, Typeable, Generic)
+instance Binary ProcessConfigured
 
 -- | Universally quantified state 'set' request.
 --   Typically, one creates a state 'set' request, then

@@ -71,6 +71,7 @@ castorRules = sequence_
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleProcessRestarted
+  , ruleProcessConfigured
   , ruleProcessOnline
   , ruleFailedNotificationFailsProcess
   , Disk.rules
@@ -163,9 +164,6 @@ ruleInternalStateChangeHandler = do
 #endif
 
 #ifdef USE_MERO
-maxGetEntryPointReplies :: Int
-maxGetEntryPointReplies = 5
-
 -- | Timeout between entrypoint retry.
 entryPointTimeout :: Int
 entryPointTimeout = 1 -- 1s
@@ -196,10 +194,7 @@ ruleGetEntryPoint = define "castor-entry-point-request" $ do
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
-        if i > maxGetEntryPointReplies
-        then liftProcess $ usend pid ep
-        else do put Local $ Just (pid, i+1)
-                continue (timeout entryPointTimeout loop)
+        continue (timeout entryPointTimeout loop)
       Just{} -> do
         phaseLog "entrypoint" $ show ep
         liftProcess $ usend pid ep

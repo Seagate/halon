@@ -12,7 +12,6 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE ViewPatterns          #-}
-{-# OPTIONS_GHC -Wall -Werror      #-}
 
 module HA.Services.Mero
     ( MeroChannel(..)
@@ -62,7 +61,6 @@ import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
-import Control.Concurrent (threadDelay)
 import Control.Monad.Fix (fix)
 import Control.Monad.Trans.Reader
 import Control.Exception (SomeException)
@@ -76,7 +74,7 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Distributed.Process hiding (catch, bracket_)
 import Control.Monad.Catch (catch, bracket_)
-import Control.Monad (forever, join, void, when)
+import Control.Monad (forever, void)
 import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
@@ -135,19 +133,21 @@ controlProcess :: MeroConf
                -> ReceivePort ProcessControlMsg
                -> Process ()
 controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
+    ConfigureProcesses procs -> do
+      nid <- getSelfNode
+      results <- liftIO $ mapM (\(a,b,c) -> configureProcess mc a b c) procs
+      promulgateWait $ ProcessControlResultConfigureMsg nid results
     StartProcesses procs -> do
       nid <- getSelfNode
-      results <- liftIO $ join <$> mapM (uncurry $ startProcesses mc) procs
+      results <- liftIO $ mapM (uncurry startProcess) procs
       promulgateWait $ ProcessControlResultMsg nid results
     StopProcesses procs -> do
       nid <- getSelfNode
-      results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
-        forM (reverse roles) $ \role -> stopProcess role conf
+      results <- liftIO $ mapM (uncurry stopProcess) procs
       promulgateWait $ ProcessControlResultStopMsg nid results
     RestartProcesses procs -> do
       nid <- getSelfNode
-      results <- liftIO $ fmap concat $ forM procs $ \(roles, conf) ->
-        forM roles $ \role -> restartProcess role conf
+      results <- liftIO $ mapM (uncurry restartProcess) procs
       promulgateWait $ ProcessControlResultRestartMsg nid results
   )
 
@@ -158,39 +158,24 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
 confXCPath :: FilePath
 confXCPath = "/var/mero/confd/conf.xc"
 
--- | Start multiple processes in a chain. If earlier processes fail,
---   subsequent ones will not be run.
-startProcesses :: MeroConf
-               -> [ProcessRunType]
-               -> ProcessConfig
-               -> IO [Either Fid (Fid, String)]
-startProcesses _ [] _ = error "No processes to start."
-startProcesses mc [x] pc = (:[]) <$> startProcess mc x pc
-startProcesses mc (x:xc) pc = do
-  res <- startProcess mc x pc
-  case res of
-    Left _ -> startProcesses mc xc pc >>= return . (res:)
-    Right _ -> return $ [res]
-
-startProcess :: MeroConf
-             -> ProcessRunType
-             -> ProcessConfig
-             -> IO (Either Fid (Fid, String))
-startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ do
-    putStrLn $ "m0d: startProcess: " ++ show procFid
-            ++ " with type(s) " ++ show run
-    confXC <- maybeWriteConfXC conf
-    unit <- writeSysconfig mc run procFid m0addr confXC
-    ec <- SystemD.startService $ unit ++ fidToStr procFid
-    -- XXX: This hack is required to create global barrier between mkfs
-    -- and m0d withing the cluster. mkfs usually takes less than 10s
-    -- thus we choose 20s delay to guarantee protection.
-    -- For more details see HALON-146.
-    when (run == M0MKFS) $ threadDelay (20*1000000)
+-- | Create configuration for service and run mkfs.
+configureProcess :: MeroConf        -- ^ Mero configuration.
+                 -> ProcessRunType  -- ^ Type of the process.
+                 -> ProcessConfig   -- ^ Process configuration.
+                 -> Bool            -- ^ Is mkfs needed.
+                 -> IO (Either Fid (Fid,String))
+configureProcess mc run conf needsMkfs = do
+  putStrLn $ "m0d: configureProcess: " ++ show procFid
+           ++ " with type(s) " ++ show run
+  confXC <- maybeWriteConfXC conf
+  _unit  <- writeSysconfig mc run procFid m0addr confXC
+  if needsMkfs
+  then do
+    ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
     return $ case ec of
       ExitSuccess -> Left procFid
-      ExitFailure x ->
-        Right (procFid, "Unit failed to start with exit code " ++ show x)
+      ExitFailure x -> Right (procFid, "Unit failed to start with exit code " ++ show x)
+  else return $ Left procFid
   where
     maybeWriteConfXC (ProcessConfigLocal _ _ bs) = do
       liftIO $ writeConfXC bs
@@ -198,49 +183,61 @@ startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ d
     maybeWriteConfXC _ = return Nothing
     (procFid, m0addr) = getProcFidAndEndpoint conf
 
-restartProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
-restartProcess run conf = flip Catch.catch (generalProcFailureHandler conf) $
-  case unitString conf run of
-    Just unit -> do
-      putStrLn $ "m0d: restartProcess: " ++ unit ++ " with type(s) " ++ show run
-      ec <- SystemD.restartService unit
-      case ec of
-        ExitSuccess -> return $ Left procFid
-        ExitFailure x -> do
-          putStrLn $ "m0d: restartProcess failed."
-          return $ Right (procFid, "Unit failed to restart with exit code " ++ show x)
-    Nothing -> return (Left procFid)
-  where
-    (procFid, _) = getProcFidAndEndpoint conf
+-- | Start mero process.
+startProcess :: ProcessRunType   -- ^ Type of the process.
+             -> Fid              -- ^ Process Fid.
+             -> IO (Either Fid (Fid, String))
+startProcess run fid = do
+    putStrLn $ "m0d: startProcess: " ++ show fid ++ " with type(s) " ++ show run
+    ec <- SystemD.startService $ unitString run fid
+    return $ case ec of
+      ExitSuccess -> Left fid
+      ExitFailure x ->
+        Right (fid, "Unit failed to start with exit code " ++ show x)
+
+-- | Restart mero process.
+restartProcess :: ProcessRunType     -- ^ Type of the process.
+               -> Fid                -- ^ Process Fid.
+               -> IO (Either Fid (Fid,String))
+restartProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
+  let unit = unitString run fid
+  putStrLn $ "m0d: restartProcess: " ++ unit ++ " with type(s) " ++ show run
+  ec <- SystemD.restartService unit
+  case ec of
+    ExitSuccess -> return $ Left fid
+    ExitFailure x -> do
+      putStrLn $ "m0d: restartProcess failed."
+      return $ Right (fid, "Unit failed to restart with exit code " ++ show x)
 
 -- | Stop running mero service.
-stopProcess :: ProcessRunType -> ProcessConfig -> IO (Either Fid (Fid,String))
-stopProcess run conf = flip Catch.catch (generalProcFailureHandler conf) $
-  case unitString conf run of
-    Just unit -> do
-      putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
-      ec <- ST.timeout ptimeout $ SystemD.stopService unit
-      case ec of
-        Nothing -> do
-          putStrLn $ unwords [ "m0d: stopProcess timed out after", show ptimeoutSec, "s for", show unit ]
-          return $ Right (procFid, "Failed to stop after " ++ show ptimeoutSec ++ "s")
-        Just ExitSuccess -> do
-          putStrLn $ "m0d: stopProcess OK for " ++ show unit
-          return $ Left procFid
-        Just (ExitFailure x) -> do
-          putStrLn $ "m0d: stopProcess failed."
-          return $ Right (procFid, "Unit failed to stop with exit code " ++ show x)
-    Nothing -> return (Left procFid)
+stopProcess :: ProcessRunType        -- ^ Type of the process.
+            -> Fid                   -- ^ Process Fid.
+            -> IO (Either Fid (Fid,String))
+stopProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
+  let unit = unitString run fid
+  putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
+  ec <- ST.timeout ptimeout $ SystemD.stopService unit
+  case ec of
+    Nothing -> do
+      putStrLn $ unwords [ "m0d: stopProcess timed out after", show ptimeoutSec, "s for", show unit ]
+      return $ Right (fid, "Failed to stop after " ++ show ptimeoutSec ++ "s")
+    Just ExitSuccess -> do
+      putStrLn $ "m0d: stopProcess OK for " ++ show unit
+      return $ Left fid
+    Just (ExitFailure x) -> do
+      putStrLn $ "m0d: stopProcess failed."
+      return $ Right (fid, "Unit failed to stop with exit code " ++ show x)
   where
     ptimeoutSec = 60
     ptimeout = ptimeoutSec * 1000000
-    (procFid, _) = getProcFidAndEndpoint conf
 
-unitString :: ProcessConfig -> ProcessRunType -> Maybe String
-unitString conf run = case run of
-  M0T1FS -> Just $ "m0t1fs@" ++ fidToStr (fst $ getProcFidAndEndpoint conf) ++ ".service"
-  M0D -> Just $ "m0d@" ++ fidToStr (fst $ getProcFidAndEndpoint conf) ++ ".service"
-  M0MKFS -> Nothing
+-- | Generate unit file name.
+unitString :: ProcessRunType       -- ^ Type of the process.
+           -> Fid                  -- ^ Process Fid.
+           -> String
+unitString run fid = case run of
+  M0T1FS -> "m0t1fs@" ++ fidToStr fid ++ ".service"
+  M0D -> "m0d@" ++ fidToStr fid ++ ".service"
 
 -- | Get the process fid and endpoint from the given 'MeroConf'.
 getProcFidAndEndpoint :: ProcessConfig -> (Fid, String)
@@ -248,9 +245,9 @@ getProcFidAndEndpoint (ProcessConfigLocal x y _) = (x, y)
 getProcFidAndEndpoint (ProcessConfigRemote x y) = (x, y)
 
 -- | General failure handler for the process start/stop/restart actions.
-generalProcFailureHandler :: ProcessConfig -> Catch.SomeException
+generalProcFailureHandler :: Fid -> Catch.SomeException
                           -> IO (Either Fid (Fid, String))
-generalProcFailureHandler conf e = return $ Right (fst $ getProcFidAndEndpoint conf, show e)
+generalProcFailureHandler fid e = return $ Right (fid, show e)
 
 -- | Write out the conf.xc file for a confd server.
 writeConfXC :: BS.ByteString -- ^ Contents of conf.xc file
@@ -274,13 +271,12 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
       , ("MERO_HA_EP", mcHAAddress)
       , ("MERO_PROFILE_FID", fidToStr mcProfile)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
-    return $ unit
+    return unit
   where
     fileName = prefix ++ "-" ++ fidToStr procFid
     (prefix, unit) = case run of
       M0T1FS -> ("m0t1fs", "m0t1fs@")
       M0D -> ("m0d", "m0d@")
-      M0MKFS -> ("m0d", "mero-mkfs@")
 
 remotableDecl [ [d|
 
