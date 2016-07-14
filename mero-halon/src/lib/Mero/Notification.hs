@@ -230,11 +230,6 @@ initializeInternal addr processFid profileFid = liftIO (takeMVar globalEndpointR
         say "initializeInternal: error"
         liftIO $ putMVar globalEndpointRef ref )
 
--- | Timeout before handler will decide that it's impossible to find entrypoint
-entryPointTimeout :: Int
-entryPointTimeout = 10000000
-
-
 -- | Get information about Fid states from local graph.
 getNVec :: [Fid] -> Graph -> [Note]
 getNVec fids = fmap (uncurry Note) . lookupConfObjectStates fids
@@ -460,7 +455,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                Nothing        -> do
                  say "ha_entrypoint: request address from RC."
                  void $ promulgate $ GetSpielAddress self
-                 fmap join $ expectTimeout entryPointTimeout
+                 expect
         >>= \case
                  Just ep -> do
                    say $ "ha_entrypoint: succeeded: " ++ show ep
