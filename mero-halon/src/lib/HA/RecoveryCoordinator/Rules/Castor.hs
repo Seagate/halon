@@ -142,12 +142,10 @@ setStateChangeHandlers = do
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-  defineSimple "mero-note-set" $ \(HAEvent uid (Set ns) _) -> do
-    todo uid
+  defineSimpleTask "mero-note-set" $ \(Set ns) -> do
     phaseLog "info" $ "Received " ++ show (Set ns)
     mhandlers <- getStorageRC
     traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
-    done uid
   Repair.querySpiel
   Repair.querySpielHourly
 
