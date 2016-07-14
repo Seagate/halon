@@ -103,6 +103,7 @@ Library
                    HA.RecoveryCoordinator.Events.Drive
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
+                   HA.Resources.HalonVars
                    Version.Read
 
   Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
