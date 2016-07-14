@@ -24,6 +24,7 @@ import HA.Service
 import Mero.ConfC ( Fid )
 import Mero.M0Worker
 
+import Control.Applicative (liftA2)
 import Control.Distributed.Process
   ( getSelfNode
   , getSelfPid
@@ -130,11 +131,11 @@ createMeroWorker = do
   pid <- liftProcess getSelfPid
   node <- liftProcess getSelfNode
   mprocess <- lookupRunningService (R.Node node) m0d
-  case mprocess of
-    Nothing -> do
-      phaseLog "error" "Mero service is not running on the node, can't create worker"
-      return Nothing
-    Just (ServiceProcess _proc)  -> do
+  lprocess <- liftProcess $
+    whereis $ "service." ++ ((\(ServiceName s) -> s) meroServiceName)
+  case liftA2 (,) lprocess mprocess of
+    Just (lproc, ServiceProcess proc)
+      | proc == lproc -> do
       worker <- liftIO newM0Worker
       liftProcess $ do
         whereis halonRCMeroWorkerLabel >>= \case
@@ -151,6 +152,9 @@ createMeroWorker = do
         register halonRCMeroWorkerLabel wrkPid
       putStorageRC worker
       return (Just worker)
+    Nothing -> do
+      phaseLog "error" "Mero service is not running on the node, can't create worker"
+      return Nothing
 
 -- | Try to close mero worker process if it's running.
 -- Do nothing if no process is registered. Blocks until process exit otherwise.

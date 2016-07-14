@@ -28,6 +28,7 @@ module HA.Services.Mero
     , MeroConf(..)
     , MeroKernelConf(..)
     , m0d
+    , meroServiceName
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
     , m0dProcess__sdict
@@ -149,7 +150,6 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
         forM roles $ \role -> restartProcess role conf
       promulgateWait $ ProcessControlResultRestartMsg nid results
   )
-
 
 --------------------------------------------------------------------------------
 -- Mero Process control
