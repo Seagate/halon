@@ -53,7 +53,8 @@ cutLinksAsUser user from tos = forM_ tos $ \to ->
       "for h in " ++ unwords from ++
         "; do iptables -I INPUT -s $h -j DROP; done 2>&1"
       ++ "; echo cutLinksAsUser '" ++ show (user, from, to)
-                                   ++ "'; iptables -L 2>&1"
+                                   ++ "'; iptables -n -L 2>&1"
+                                   ++ "; echo cutLinksAsUser"
 
 -- | Recover communications from some hosts to others, undoing the effect of
 -- 'cutLinksAsUser'.
@@ -65,4 +66,5 @@ reenableLinksAsUser user from tos = forM_ tos $ \to ->
       "for h in " ++ unwords from ++
         "; do iptables -D INPUT -s $h -p all -j DROP; true; done 2>&1"
       ++ "; echo reenableLinksAsUser '" ++ show (user, from, to)
-                                        ++ "'; iptables -L 2>&1"
+                                        ++ "'; iptables -n -L"
+                                        ++ "; echo reenableLinksAsUser 2>&1"
