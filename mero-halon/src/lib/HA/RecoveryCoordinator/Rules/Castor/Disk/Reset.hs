@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase            #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -57,6 +58,7 @@ import Control.Distributed.Process
   ( Process
   , say
   )
+import Control.Lens ((<&>))
 import Control.Monad
   ( forM_
   , when
@@ -156,8 +158,15 @@ handleResetInternal (Set ns) = do
           msdev <- lookupStorageDevice m0sdev
           forM_ msdev $ \sdev ->  do
             mstatus <- driveStatus sdev
+            isDrivePowered <- isStorageDevicePowered sdev
+            isDriveRemoved <- isStorageDriveRemoved sdev
             case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
-              Just "EMPTY" -> phaseLog "info" "drive is physically removed, skipping reset"
+              _ | isDriveRemoved ->
+                phaseLog "info" "Drive is physically removed, skipping reset."
+              _ | not isDrivePowered ->
+                phaseLog "info" "Drive is not powered, skipping reset."
+              Just "EMPTY" ->
+                phaseLog "info" "Expander reset in progress, skipping reset."
               _ -> do phaseLog "info" $ "Starting reset attempt for " ++ show sdev
                       promulgateRC $ ResetAttempt sdev
       _ -> return ()
@@ -248,8 +257,13 @@ ruleResetAttempt = define "reset-attempt" $ do
         markSMARTTestComplete sdev
         promulgateRC $ ResetSuccess sdev
         sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev ->
-          applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
+        forM_ sd $ \m0sdev -> do
+          getLocalGraph <&> getState m0sdev >>= \case
+            M0.SDSTransient _ ->
+              applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
+            x -> do
+              phaseLog "info" $ "Cannot bring drive Online from state "
+                              ++ show x
         messageProcessed eid
         continue end
 
@@ -268,7 +282,12 @@ ruleResetAttempt = define "reset-attempt" $ do
         forM_ sd $ \m0sdev -> do
           updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
           -- Let note handler deal with repair logic
-          applyStateChangesCreateFS [ stateSet m0sdev M0.SDSFailed ]
+          getLocalGraph <&> getState m0sdev >>= \case
+            M0.SDSTransient _ ->
+              applyStateChangesCreateFS [ stateSet m0sdev M0.SDSFailed ]
+            x -> do
+              phaseLog "info" $ "Cannot bring drive Failed from state "
+                              ++ show x
         continue end
 
       directly end $ do
