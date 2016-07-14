@@ -159,6 +159,7 @@ ruleNodeUp argv = define "node-up" $ do
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
+        isDown <- hasHostAttr HA_DOWN (Host h)
         known <- case hasFailed of
           False -> do
             phaseLog "info" $ "Potentially new node, no revival: " ++ show node
@@ -189,7 +190,7 @@ ruleNodeUp argv = define "node-up" $ do
                   put Local (Starting uuid nid conf regularMonitor pid)
                   continue nm_start
                 continue nodeup
-              Just _ | hasFailed -> do
+              Just _ | hasFailed || isDown -> do
                 phaseLog "info" $
                   "Node has failed but has monitor, removing halon services"
                 ack pid
