@@ -319,6 +319,11 @@ ruleProcessStopped = define "rule-process-stopped" $ do
   setPhaseIf rule_init stoppedProc $ \(eid, p, pid) -> do
     todo eid
     getLocalGraph >>= \rg -> case alreadyFailed p rg of
+      -- The process is already in what we consider a failed state:
+      -- either we're already done dealing with it (it's offline or it
+      -- failed) or it's stopping. Even if it's stopping we don't want
+      -- to notify here: ruleProcessControlStop is going to take care
+      -- of that.
       True -> phaseLog "warn" $
                 "Failed notification for already failed process: " ++ show p
 
