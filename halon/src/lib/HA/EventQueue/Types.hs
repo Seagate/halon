@@ -8,6 +8,8 @@ module HA.EventQueue.Types
     , PersistMessage(..)
     , newPersistMessage
     , DoTrimUnknown(..)
+    , EQStatReq(..)
+    , EQStatResp(..)
     ) where
 
 import Control.Distributed.Process
@@ -68,3 +70,18 @@ newPersistMessage msg = liftIO $ do
 data DoTrimUnknown = DoTrimUnknown Message deriving (Typeable, Generic)
 
 instance Binary DoTrimUnknown
+
+-- | Request for EQ statistics
+data EQStatReq = EQStatReq ProcessId
+  deriving (Generic, Typeable)
+
+instance Binary EQStatReq
+
+data EQStatResp =
+    EQStatResp {
+      eqs_queue_size :: Int
+    }
+  | EQStatRespCannotBeFetched
+  deriving (Generic, Typeable)
+
+instance Binary EQStatResp

@@ -187,6 +187,13 @@ eqReadEvents (eqSp, sn) (EventQueue sn' uuidMap snMap) = do
                         ]
                   )
 
+eqReadStats :: (SendPort EQStatResp) -> EventQueue -> Process ()
+eqReadStats sp (EventQueue _sn uuidMap _snMap) = let
+    stats = EQStatResp {
+        eqs_queue_size = M.size uuidMap
+    }
+  in sendChan sp stats
+
 -- A noop read that helps detecting when the replicator groups becomes
 -- responsive again.
 dummyRead :: EventQueue -> Process ()
@@ -196,6 +203,7 @@ remotable [ 'addSerializedEvent
           , 'filterEvent
           , 'filterMessage
           , 'eqReadEvents
+          , 'eqReadStats
           , 'dummyRead
           ]
 
@@ -379,6 +387,15 @@ eqRules rg pool groupMonitor = do
               Nothing -> do
                 eqTrace $ "Recording event failed " ++ show (mid, sender) ++ " - no quorum"
                 sendReply sender False
+
+    -- Debug information
+    defineSimple "dump-stats" $ \(EQStatReq pid) ->
+      liftProcess . void . spawnLocal $ do
+        (sp, rp) <- newChan
+        b <- getStateWith rg $ $(mkClosure 'eqReadStats) sp
+        DP.usend pid =<< if b
+                         then receiveChan rp
+                         else return EQStatRespCannotBeFetched
 
     -- The next two rules are used for testing.
     defineSimple "trim-ack" $ \(TrimAck eid) -> publish (TrimDone eid)

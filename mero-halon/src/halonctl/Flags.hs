@@ -17,6 +17,7 @@ import qualified Options.Applicative.Extras as O
 
 import qualified Handler.Service as Service
 import qualified Handler.Cluster as Cluster
+import qualified Handler.Debug as Debug
 import qualified Handler.Status as Status
 
 import System.Environment (getProgName)
@@ -35,6 +36,7 @@ data Command =
     | Service Service.ServiceCmdOptions
     | Cluster Cluster.ClusterOptions
     | Status Status.StatusOptions
+    | Debug Debug.DebugOptions
   deriving (Eq)
 
 getOptions :: IO (Maybe Options)
@@ -64,6 +66,8 @@ getOptions = do
                     O.withDesc Cluster.parseCluster "Control cluster wide options.")
               <> (O.command "status" $ Status <$>
                     O.withDesc Status.parseStatus "Query node status.")
+              <> (O.command "debug" $ Debug <$>
+                    O.withDesc Debug.parseDebug "Print Halon debugging information.")
             )
     hostname = unsafePerformIO $ readProcess "hostname" [] ""
     listenAddr = hostname ++ ":9001"
