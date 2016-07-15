@@ -128,6 +128,7 @@ rcRules argv additionalRules = do
               , ruleDummyEvent
               , ruleSyncPing
               , ruleStopRequest
+              , rulePidRequest
               ]
     setLogger sendLogs
     serviceRules argv
@@ -158,6 +159,7 @@ ruleNodeUp argv = define "node-up" $ do
         let nid  = processNodeId pid
             node = Node nid
         liftProcess . sayRC $ "New node contacted: " ++ show nid
+        publish $ NewNodeMsg node
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
         isDown <- hasHostAttr HA_DOWN (Host h)
         known <- case hasFailed of
@@ -165,7 +167,8 @@ ruleNodeUp argv = define "node-up" $ do
             phaseLog "info" $ "Potentially new node, no revival: " ++ show node
             knownResource node
           True -> do
-            liftProcess . sayRC $ "info => Reviving old node: " ++ show node
+            phaseLog "info" $ "Reviving old node: " ++ show node
+            notify $ OldNodeRevival node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
             syncGraph $ return () -- XXX: maybe we need barrier here
@@ -240,12 +243,13 @@ ruleNodeUp argv = define "node-up" $ do
 
       setPhase nm_reply $ \StartMonitoringReply -> do
         Starting uuid nid _ _ npid <- get Local
-        liftProcess . sayRC $ printf "info => started monitor service on %s with pid %s"
-                                     (show (Node nid)) (show npid)
+        phaseLog "info" $ printf "started monitor service on %s with pid %s"
+                                 (show (Node nid)) (show npid)
         ack npid
 
         phaseLog "debug " $ "Sending NewNodeConnected for " ++ show (Node nid)
         promulgateRC $ NewNodeConnected (Node nid)
+        publish $ NewNodeConnected (Node nid)
         done uuid
         continue end
 
@@ -357,7 +361,8 @@ ruleRecoverNode argv = define "recover-node" $ do
             -- timeout happens, we'll finish the recovery eventually
             True -> put Local (uuid, Just (n1, host, 0))
 
-        liftProcess . sayRC $ "info => Marked transient: " ++ show n1
+        phaseLog "info" $ "Marked transient: " ++ show n1
+        notify $ NodeTransient n1
         continue try_recover
 
       directly try_recover $ do
@@ -367,7 +372,8 @@ ruleRecoverNode argv = define "recover-node" $ do
             hasHostAttr M0.HA_TRANSIENT h >>= \case
               False -> ackMsg uuid
               True -> do
-                liftProcess . sayRC $ "info => Recovery call #" ++ show i ++ " for " ++ show h
+                phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
+                notify $ RecoveryAttempt (Node nid) i
                 put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
@@ -391,6 +397,20 @@ ruleRecoverNode argv = define "recover-node" $ do
 
       start start_recover (nil, Nothing)
 
+-- | Ask RC for its pid. Send the answer back to given process.
+newtype RequestRCPid = RequestRCPid ProcessId
+  deriving (Show, Eq, Generic, Typeable)
+newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
+  deriving (Show, Eq, Generic, Typeable)
+
+instance Binary RequestRCPid
+instance Binary RequestRCPidAnswer
+
+-- | Asks RC for its own 'ProcessId'.
+rulePidRequest :: Specification LoopState ()
+rulePidRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCPid caller) -> do
+  liftProcess $ getSelfPid >>= usend caller . RequestRCPidAnswer
+
 -- | Send 'Logs' to decision-log services. If no service
 --   is found across all nodes, just defaults to 'printLogs'.
 sendLogs :: Logs -> LoopState -> Process ()
@@ -403,3 +423,20 @@ sendLogs logs ls = do
     nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
                 , n <- G.connectedTo host Runs rg ]
     svcs = catMaybes $ map (\n -> runningService n decisionLog rg) nodes
+
+-- * Messages which may be interesting to any subscribers (disconnect
+-- tests).
+
+newtype OldNodeRevival = OldNodeRevival Node
+  deriving (Show, Eq, Typeable, Generic)
+data RecoveryAttempt = RecoveryAttempt Node Int
+  deriving (Show, Eq, Typeable, Generic)
+newtype NodeTransient = NodeTransient Node
+  deriving (Show, Eq, Typeable, Generic)
+newtype NewNodeMsg = NewNodeMsg Node
+  deriving (Show, Eq, Typeable, Generic)
+
+instance Binary OldNodeRevival
+instance Binary RecoveryAttempt
+instance Binary NodeTransient
+instance Binary NewNodeMsg

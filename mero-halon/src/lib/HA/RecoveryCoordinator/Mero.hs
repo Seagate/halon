@@ -37,6 +37,7 @@ module HA.RecoveryCoordinator.Mero
        , loadNodeMonitorConf
        , buildRCState
        , timeoutHost
+       , HostDisconnected(..)
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -91,15 +92,22 @@ data GetMultimapProcessId =
 
 instance Binary GetMultimapProcessId
 
+-- | Used in 'timeoutHost'
+newtype HostDisconnected = HostDisconnected M0.Host
+  deriving (Show, Eq, Generic, Typeable)
+
+instance Binary HostDisconnected
+
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
 timeoutHost :: M0.Host -> PhaseM LoopState g ()
 timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do
-    liftProcess . sayRC $ "Disconnecting " ++ show h ++ " due to timeout"
+    phaseLog "info" $ "Disconnecting " ++ show h ++ " due to timeout"
     unsetHostAttr h M0.HA_TRANSIENT
     setHostAttr h M0.HA_DOWN
+    publish $ HostDisconnected h
 
 ack :: ProcessId -> PhaseM LoopState l ()
 ack pid = liftProcess $ usend pid ()
