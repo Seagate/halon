@@ -33,7 +33,7 @@ import HA.Resources.Mero.Note
 import HA.Multimap
 import HA.Service
 import HA.Services.Mero
-import HA.Services.Mero.Types (NotificationAck(..))
+import HA.Services.Mero.Types
 import HA.Services.SSPL
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
@@ -72,6 +72,8 @@ import Data.Defaultable
 import qualified Data.UUID as UUID
 import Data.UUID.V4 (nextRandom)
 import Mero.ConfC (Fid(..))
+import Mero.M0Worker
+import HA.RecoveryCoordinator.Actions.Mero.Core
 
 import GHC.Generics (Generic)
 
@@ -129,6 +131,9 @@ newMeroChannel pid = do
               $ DeclareMeroChannel (ServiceProcess pid) sdChan connChan
   return (recv, recv1, notfication)
 
+data MkWorker = MkWorker deriving (Typeable, Generic)
+instance Binary MkWorker
+
 testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
@@ -159,6 +164,10 @@ testRules = do
         (sd:_) -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
         [] -> return ()
       messageProcessed eid
+  defineSimple "mk-worker" $ \(HAEvent eid MkWorker _) -> do
+      worker <- liftIO $ newM0Worker
+      putStorageRC worker
+      liftProcess $ register halonRCMeroWorkerLabel =<< spawnLocal (receiveWait [])
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -902,6 +911,8 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
     debug "RAID devices established"
 
     nid <- getSelfNode
+
+    promulgateEQ [nid] MkWorker
     rg <- G.getGraph mm
     let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
                      , enc <- G.connectedTo rack Has rg]
@@ -983,17 +994,35 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
 
     -- Mero services should be restarted
     do
-      StartProcesses pcs <- receiveChan recc
-      liftIO $ assertEqual "One process on node" 1 $ length pcs
-      -- Reply with successful stoppage
-      let [(_, fid)] = pcs
-      promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
-      -- Also send ONLINE for the process
-      promulgateEQ [nid]  ( HAMsgMeta fid fid fid 0
-                          , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
-                                         TAG_M0_CONF_HA_PROCESS_M0D
-                                         123
-                          )
+      debug "configure process"
+      mconf <- receiveChan recc
+      case mconf of
+        ConfigureProcesses pcs' -> do
+          liftIO $ assertEqual "One process on node" 1 $ length pcs'
+          let [(_,pc,_)] = pcs'
+              fid = case pc of
+                      ProcessConfigLocal x _ _ -> x
+                      ProcessConfigRemote x _ -> x
+          promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid [Left fid]
+          return ()
+        s -> liftIO $ assertFailure $ "Expected configure request, but received " ++ show s
+
+      debug "start process"
+      mstart <- receiveChan recc
+      case mstart of
+        StartProcesses pcs -> do
+          liftIO $ assertEqual "One process on node" 1 $ length pcs
+          -- Reply with successful stoppage
+          let [(_, fid)] = pcs
+          promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
+          -- Also send ONLINE for the process
+          promulgateEQ [nid]  ( HAMsgMeta fid fid fid 0
+                              , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
+                                             TAG_M0_CONF_HA_PROCESS_M0D
+                                             123
+                              )
+          return ()
+        s ->  liftIO $ assertFailure $ "Expected start request, but received " ++ show s
 
     debug "Mero process start result sent"
 

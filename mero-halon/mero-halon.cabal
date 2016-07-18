@@ -180,10 +180,11 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
+                       HA.RecoveryCoordinator.Actions.Mero.Core
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
                        HA.RecoveryCoordinator.Events.Mero
-      Other-Modules:  HA.RecoveryCoordinator.Actions.Mero.Core
+      Other-Modules:  
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
