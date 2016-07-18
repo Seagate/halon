@@ -8,8 +8,8 @@
 --
 -- Process handling.
 module HA.RecoveryCoordinator.Rules.Castor.Process
-  ( handleProcessFailureE
-  , ruleProcessOnline
+  ( ruleProcessOnline
+  , ruleProcessStopped
   , ruleProcessRestarted
   , ruleProcessConfigured
   , ruleStopMeroProcess
@@ -50,41 +50,6 @@ import           Control.Lens
 import           Data.Typeable
 import           Data.Foldable
 import           Text.Printf
-
--- * Process handlers
-
--- | TODO: make it @[(M0.Node, [M0.Process])]@
-getFailedProcs :: [Note] -> G.Graph -> [(M0.Node, M0.Process)]
-getFailedProcs ns rg =
-  [ (n, p) | Note fid' M0_NC_FAILED <- ns
-           , Just p <- [M0.lookupConfObjByFid fid' rg]
-           , n <- G.connectedFrom M0.IsParentOf p rg
-           ]
-
--- | Handle failed process notifications from external sources.
--- Currently just send a failed notification out and let the internal
--- handler deal with the rest of the logic.
-handleProcessFailureE :: Set -> PhaseM LoopState l ()
-handleProcessFailureE (Set ns) = do
-  rg <- getLocalGraph
-  for_ (getFailedProcs ns rg) $ \(_, p) -> case alreadyFailed p rg of
-    True -> phaseLog "warn" $
-              "Failed notification for already failed process: " ++ show p
-
-    -- Make sure we're not in PSStarting state: this means that SSPL
-    -- restarted process or mero sent ONLINE (indicating a potential
-    -- process restart) which means we shouldn't try to restart again
-    False -> if getState p rg == M0.PSStarting
-             then phaseLog "warn" $ "Proceess in starting state, not restarting: "
-                                 ++ show p
-             else applyStateChanges [stateSet p $ M0.PSFailed "MERO-failed"]
-  where
-    alreadyFailed :: M0.Process -> G.Graph -> Bool
-    alreadyFailed p rg = case getState p rg of
-      M0.PSFailed _ -> True
-      M0.PSOffline -> True
-      M0.PSStopping -> True
-      _ -> False
 
 -- | Watch for internal process failure notifications and orchestrate
 -- their restart. Common scenario is:
@@ -297,7 +262,7 @@ ruleProcessOnline = define "rule-process-online" $ do
     phaseLog "warn" "Couldn't notify mero about process starting"
     done eid
 
-  start rule_init Nothing
+  startFork rule_init Nothing
   where
     procNotified = maybe Nothing (Just . snd)
 
@@ -342,6 +307,50 @@ ruleProcessConfigured = defineSimpleTask "handle-configured" $
       for_ results $ \r -> case r of
         Left x -> usend rc (ProcessConfigured x)
         Right (x,_) -> usend rc (ProcessConfigureFailed x)
+
+-- | Listen for process event notifications about a stopped process
+-- and decide whether we want to fail the process. If we do fail the
+-- process, 'ruleProcessRestarted' deals with the internal state
+-- change notification.
+ruleProcessStopped :: Definitions LoopState ()
+ruleProcessStopped = define "rule-process-stopped" $ do
+  rule_init <- phaseHandle "rule_init"
+
+  setPhaseIf rule_init stoppedProc $ \(eid, p, pid) -> do
+    todo eid
+    getLocalGraph >>= \rg -> case alreadyFailed p rg of
+      -- The process is already in what we consider a failed state:
+      -- either we're already done dealing with it (it's offline or it
+      -- failed) or it's stopping. Even if it's stopping we don't want
+      -- to notify here: ruleProcessControlStop is going to take care
+      -- of that.
+      True -> phaseLog "warn" $
+                "Failed notification for already failed process: " ++ show p
+
+      -- Make sure we're not in PSStarting state: this means that SSPL
+      -- restarted process or mero sent ONLINE (indicating a potential
+      -- process restart) which means we shouldn't try to restart again
+      False -> if getState p rg == M0.PSStarting
+               then phaseLog "warn" $ "Proceess in starting state, not restarting: "
+                                   ++ show p
+               else applyStateChanges [stateSet p $ M0.PSFailed "MERO-failed"]
+    done eid
+
+  startFork rule_init ()
+  where
+    alreadyFailed :: M0.Process -> G.Graph -> Bool
+    alreadyFailed p rg = case getState p rg of
+      M0.PSFailed _ -> True
+      M0.PSOffline -> True
+      M0.PSStopping -> True
+      _ -> False
+
+    stoppedProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
+      let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
+      return $ case (t, pt, mpd) of
+        (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        _ -> Nothing
 
 -- | Handles halon:m0d reply about service start and set Process
 -- as failed if error occur.

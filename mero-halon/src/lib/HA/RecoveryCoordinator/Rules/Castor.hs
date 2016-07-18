@@ -73,6 +73,7 @@ castorRules = sequence_
   , ruleProcessRestarted
   , ruleProcessConfigured
   , ruleProcessOnline
+  , ruleProcessStopped
   , ruleFailedNotificationFailsProcess
   , Disk.rules
   , Expander.rules
@@ -132,13 +133,9 @@ setStateChangeHandlers = do
       start setThem ()
   where
     stateChangeHandlersE = concat
-      [ Disk.externalNotificationHandlers
-      , [ handleProcessFailureE
-        ]
-      ]
+      [ Disk.externalNotificationHandlers ]
     stateChangeHandlersI = concat
-      [ Disk.internalNotificationHandlers
-      ]
+      [ Disk.internalNotificationHandlers ]
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
