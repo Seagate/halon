@@ -319,8 +319,8 @@ prettyReport showDevices (ReportClusterState status sns info' hosts) = do
            forM_ (M0.priStateUpdates s) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
              putStrLn $ "        " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "Hosts:"
-      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost st ps sdevs) -> do
-         putStrLn $ "  " ++ qfdn ++ " ["++ M0.prettyConfObjState st ++ "]"
+      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost st ctrls ps sdevs) -> do
+         putStrLn $ "  " ++ qfdn ++ " ["++ M0.prettyConfObjState st ++ "] Controllers: " ++ show ctrls
          forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
            putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t"
                              ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid

@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -9,6 +10,7 @@
 -- Controller handling.
 module HA.RecoveryCoordinator.Rules.Castor.Controller
   ( ruleControllerChanged
+  , ruleShouldFailController
   ) where
 
 import           HA.Encode
@@ -32,6 +34,7 @@ import           HA.Resources.Mero.Note (ConfObjectState(..), getState, showFid)
 import           HA.Services.Mero (m0d)
 import           HA.Services.Mero.CEP (meroChannel)
 import           HA.Services.Mero.Types
+import           Mero.ConfC (ServiceType(CST_HA))
 import           Mero.Notification (Set(..))
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
@@ -39,9 +42,10 @@ import           Network.CEP
 import           Control.Monad (when)
 import           Data.Typeable
 import           Data.Foldable
+import           Data.List (nub)
 import           Text.Printf
 
--- | Controller state changed, handles FAILED and ONLINE
+-- | Controller state changed, handles FAILED and ONLINE.
 ruleControllerChanged :: Definitions LoopState ()
 ruleControllerChanged = define "controller-changed" $ do
   rule_init <- phaseHandle "rule_init"
@@ -81,7 +85,7 @@ ruleControllerChanged = define "controller-changed" $ do
     done eid
     stop
 
-  start rule_init Nothing
+  startFork rule_init Nothing
 
   where
     ctrlState = fmap snd
@@ -91,3 +95,34 @@ ruleControllerChanged = define "controller-changed" $ do
       obj <- HA.RecoveryCoordinator.Actions.Mero.lookupConfObjByFid fid'
       return $ (,) <$> obj <*> pure t
     getCtrl _ = return Nothing
+
+-- | If every process on a controller has failed, fail the controller.
+ruleShouldFailController :: Definitions LoopState ()
+ruleShouldFailController = define "controller-should-fail" $ do
+  rule_init <- phaseHandle "rule_init"
+  setPhaseInternalNotificationWithState rule_init isProcFailed $ \(eid, map fst -> (procs :: [M0.Process])) -> do
+    todo eid
+    rg <- getLocalGraph
+    for_ (nub $ concatMap (`getCtrl` rg) procs) $ \(ctrl, ps) -> when (all (`pFailed` rg) ps) $ do
+      applyStateChanges [stateSet ctrl M0_NC_FAILED]
+    done eid
+
+  startFork rule_init ()
+  where
+    isHalonProcess p rg =
+      any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
+
+    isProcFailed (M0.PSFailed _) = True
+    isProcFailed _ = False
+
+    pFailed p rg = case getState p rg of
+      M0.PSFailed _ -> True
+      -- Ignore state of halon process
+      _ | isHalonProcess p rg -> True
+      _ -> False
+
+    getCtrl p rg = [ (c, (G.connectedTo n M0.IsParentOf rg :: [M0.Process]))
+                   | (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg
+                   , (c :: M0.Controller) <- G.connectedTo n M0.IsOnHardware rg
+                   , getState c rg /= M0_NC_FAILED
+                   ]

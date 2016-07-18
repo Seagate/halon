@@ -355,6 +355,9 @@ instance ConfObj Enclosure where
 newtype Controller = Controller Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
+instance ToJSON Controller
+instance FromJSON Controller
+
 instance ConfObj Controller where
   fidType _ = fromIntegral . ord $ 'c'
   fid (Controller f) = f

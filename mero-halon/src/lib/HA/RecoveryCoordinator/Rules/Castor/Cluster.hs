@@ -83,7 +83,7 @@ import           Control.Lens
 import           Control.Monad (join, unless, when)
 import           Control.Monad.Trans.Maybe
 
-import           Data.List ((\\))
+import           Data.List ((\\), nub)
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe, isJust)
 import           Data.Foldable
 import           Data.Traversable (forM)
@@ -353,6 +353,9 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
             let node_st = maybe M0.M0_NC_UNKNOWN (flip M0.getState rg) $ listToMaybe nodes
+            let ctrls = nub [ (c, M0.getState c rg)
+                            | n <- nodes
+                            , c <- G.connectedTo n M0.IsOnHardware rg ]
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
@@ -367,7 +370,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
                     else Just (sdev, st)
             devs <- fmap (\x -> mapMaybe go x) . traverse lookupStorageDeviceSDev
                       =<< findHostStorageDevices host
-            return (host, ReportClusterHost node_st (join prs) devs)
+            return (host, ReportClusterHost node_st ctrls (join prs) devs)
       liftProcess $ sendChan ch $ ReportClusterState
         { csrStatus = status
         , csrSNS    = repairs

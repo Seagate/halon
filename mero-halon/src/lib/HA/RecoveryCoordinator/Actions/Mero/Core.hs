@@ -161,7 +161,7 @@ createMeroWorker = do
         register halonRCMeroWorkerLabel wrkPid
       putStorageRC worker
       return (Just worker)
-    Nothing -> do
+    _ -> do
       phaseLog "error" "Mero service is not running on the node, can't create worker"
       return Nothing
 

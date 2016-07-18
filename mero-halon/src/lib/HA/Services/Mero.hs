@@ -172,39 +172,10 @@ configureProcess mc run conf needsMkfs = do
   if needsMkfs
   then do
     ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
-
--- | Start multiple processes in a chain. If earlier processes fail,
---   subsequent ones will not be run.
-startProcesses :: MeroConf
-               -> [ProcessRunType]
-               -> ProcessConfig
-               -> IO [Either Fid (Fid, String)]
-startProcesses _ [] _ = error "No processes to start."
-startProcesses mc [x] pc = (:[]) <$> startProcess mc x pc
-startProcesses mc (x:xc) pc = do
-  res <- startProcess mc x pc
-  case res of
-    Left _ -> startProcesses mc xc pc >>= return . (res:)
-    Right _ -> return $ [res]
-
-startProcess :: MeroConf
-             -> ProcessRunType
-             -> ProcessConfig
-             -> IO (Either Fid (Fid, String))
-startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ do
-    putStrLn $ "m0d: startProcess: " ++ show procFid
-            ++ " with type(s) " ++ show run
-    confXC <- maybeWriteConfXC conf
-    unit <- writeSysconfig mc run procFid m0addr confXC
-    ec <- SystemD.restartService $ unit ++ fidToStr procFid
-    -- XXX: This hack is required to create global barrier between mkfs
-    -- and m0d withing the cluster. mkfs usually takes less than 10s
-    -- thus we choose 20s delay to guarantee protection.
-    -- For more details see HALON-146.
-    when (run == M0MKFS) $ threadDelay (20*1000000)
     return $ case ec of
       ExitSuccess -> Left procFid
       ExitFailure x -> Right (procFid, "Unit failed to start with exit code " ++ show x)
+  else return $ Left procFid
   where
     maybeWriteConfXC (ProcessConfigLocal _ _ bs) = do
       liftIO $ writeConfXC bs
@@ -216,7 +187,7 @@ startProcess mc run conf = flip Catch.catch (generalProcFailureHandler conf) $ d
 startProcess :: ProcessRunType   -- ^ Type of the process.
              -> Fid              -- ^ Process Fid.
              -> IO (Either Fid (Fid, String))
-startProcess run fid = do
+startProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
     putStrLn $ "m0d: startProcess: " ++ show fid ++ " with type(s) " ++ show run
     ec <- SystemD.startService $ unitString run fid
     return $ case ec of

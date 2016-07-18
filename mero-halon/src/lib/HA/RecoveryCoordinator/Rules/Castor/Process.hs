@@ -142,6 +142,10 @@ ruleProcessRestarted = define "processes-restarted" $ do
       ch <- MaybeT . return $ meroChannel rg m0svc
       return $ do
         phaseLog "info" $ "Requesting restart for " ++ show p
+        -- TODO: Probably should check that the controller we're on
+        -- (if any) is still online, might not want to try and restart
+        -- the process if it's the last one on controller to fail (and
+        -- therefore failing the controller)
         restartNodeProcesses ch [p]
     case mrunRestart of
       Nothing -> do

@@ -92,6 +92,7 @@ instance FromJSON ReportClusterState
 
 data ReportClusterHost = ReportClusterHost
       { crnNodeStatus :: M0.StateCarrier M0.Node
+      , crnControllerStatus :: [(M0.Controller, M0.ConfObjectState)]
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       , crpDevices    :: [(M0.SDev, M0.StateCarrier M0.SDev)]
       } deriving (Eq, Show, Typeable, Generic)
