@@ -71,17 +71,17 @@ myRemoteTable = HA.Castor.Tests.__remoteTable remoteTable
 
 rGroupTest :: forall g. (Typeable g, RGroup g)
            => Transport ->  Proxy g -> (StoreChan -> Process ()) -> IO ()
-rGroupTest transport _ p =
+rGroupTest transport _ p = withTmpDirectory $ do
   withLocalNode transport myRemoteTable $ \lnid2 ->
-  withLocalNode transport myRemoteTable $ \lnid3 ->
-  tryRunProcessLocal transport myRemoteTable $ do
-    nid <- getSelfNode
-    rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 30 1000000 4000000
-                [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
-                >>= unClosure
-                >>= (`asTypeOf` return (undefined :: g (MetaInfo, Multimap)))
-    (_, mmchan) <- startMultimap rGroup id
-    p mmchan
+    withLocalNode transport myRemoteTable $ \lnid3 ->
+    tryRunProcessLocal transport myRemoteTable $ do
+      nid <- getSelfNode
+      rGroup <- newRGroup $(mkStatic 'mmSDict) "mmtest" 30 1000000 4000000
+                  [nid, localNodeId lnid2, localNodeId lnid3] (defaultMetaInfo, fromList [])
+                  >>= unClosure
+                  >>= (`asTypeOf` return (undefined :: g (MetaInfo, Multimap)))
+      (_, mmchan) <- startMultimap rGroup id
+      p mmchan
 
 tests :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
 tests _host transport pg = map (localOption (mkTimeout $ 10*60*1000000))
