@@ -411,18 +411,7 @@ stateCascadeRules =
   , AnyCascadeRule diskRemoveFromFailureVector
   , AnyCascadeRule processCascadeRule
   , AnyCascadeRule nodeTransient
-  , AnyCascadeRule controllerCascadeFailedRule
   ]
-
-controllerCascadeFailedRule :: StateCascadeRule M0.Controller M0.Process
-controllerCascadeFailedRule = StateCascadeRule
-  (M0.M0_NC_ONLINE ==)
-  (M0.M0_NC_FAILED ==)
-  (\c rg -> [ p | (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
-                , p <- G.connectedTo n M0.IsParentOf rg ])
-  -- Controller failed, inhibit processes. Don't fail processes to not
-  -- trigger restart.
-  (\_ pst -> M0.PSInhibited pst)
 
 rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeRule = StateCascadeRule

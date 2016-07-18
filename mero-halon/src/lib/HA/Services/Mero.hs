@@ -402,7 +402,6 @@ getNotificationChannels (Set setEvent) = do
                    , endpoint <- M0.s_endpoints service
                    ]
 
-     phaseLog "info" $ "Notifying the folowing recipients: " ++ show recipients
      case (mchan, recipients) of
        (_, x) | Set.null x -> return Nothing
        (Nothing, Set.toList -> r) -> do

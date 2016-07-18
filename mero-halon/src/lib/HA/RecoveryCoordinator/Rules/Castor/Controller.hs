@@ -10,40 +10,30 @@
 -- Controller handling.
 module HA.RecoveryCoordinator.Rules.Castor.Controller
   ( ruleControllerChanged
-  , ruleShouldFailController
+  , ruleProcessFailControllerFail
+  , ruleProcessOnlineControllerOnline
   ) where
 
-import           HA.Encode
-import           Control.Monad.Trans.Maybe
-import           Data.Either (partitionEithers, rights)
-import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import           Data.Maybe (catMaybes)
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Castor.Node (StartProcessesOnNodeRequest(..))
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..),  Cluster(..), Runs(..))
+import           HA.Resources (Runs(..))
 import qualified HA.Resources.Castor as R
-import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(..), getState, showFid)
-import           HA.Services.Mero (m0d)
-import           HA.Services.Mero.CEP (meroChannel)
-import           HA.Services.Mero.Types
 import           Mero.ConfC (ServiceType(CST_HA))
 import           Mero.Notification (Set(..))
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
 
 import           Control.Monad (when)
-import           Data.Typeable
 import           Data.Foldable
 import           Data.List (nub)
-import           Text.Printf
 
 -- | Controller state changed, handles FAILED and ONLINE.
 ruleControllerChanged :: Definitions LoopState ()
@@ -96,15 +86,23 @@ ruleControllerChanged = define "controller-changed" $ do
       return $ (,) <$> obj <*> pure t
     getCtrl _ = return Nothing
 
--- | If every process on a controller has failed, fail the controller.
-ruleShouldFailController :: Definitions LoopState ()
-ruleShouldFailController = define "controller-should-fail" $ do
+-- | Create a rule that transitions controller if all processes on the
+-- controller meet the given predicates.
+ruleAllProcessChangesController :: String -- ^ Rule name
+                                -> (M0.ProcessState -> Bool)
+                                -- ^ Process predicate
+                                -> ConfObjectState
+                                -- ^ New state of controller if all
+                                -- the processes meet the predicate
+                                -> Definitions LoopState ()
+ruleAllProcessChangesController rName pGuard ctrlNewState = define rName $ do
   rule_init <- phaseHandle "rule_init"
-  setPhaseInternalNotificationWithState rule_init isProcFailed $ \(eid, map fst -> (procs :: [M0.Process])) -> do
+  setPhaseInternalNotificationWithState rule_init pGuard $ \(eid, map fst -> (procs :: [M0.Process])) -> do
     todo eid
     rg <- getLocalGraph
-    for_ (nub $ concatMap (`getCtrl` rg) procs) $ \(ctrl, ps) -> when (all (`pFailed` rg) ps) $ do
-      applyStateChanges [stateSet ctrl M0_NC_FAILED]
+    for_ (nub $ concatMap (`getCtrl` rg) procs) $ \(ctrl, ps) -> do
+      when (all (\p -> pGuard (getState p rg) || isHalonProcess p rg) ps) $ do
+        applyStateChanges [stateSet ctrl ctrlNewState]
     done eid
 
   startFork rule_init ()
@@ -112,17 +110,26 @@ ruleShouldFailController = define "controller-should-fail" $ do
     isHalonProcess p rg =
       any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
 
-    isProcFailed (M0.PSFailed _) = True
-    isProcFailed _ = False
-
-    pFailed p rg = case getState p rg of
-      M0.PSFailed _ -> True
-      -- Ignore state of halon process
-      _ | isHalonProcess p rg -> True
-      _ -> False
-
     getCtrl p rg = [ (c, (G.connectedTo n M0.IsParentOf rg :: [M0.Process]))
                    | (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg
                    , (c :: M0.Controller) <- G.connectedTo n M0.IsOnHardware rg
-                   , getState c rg /= M0_NC_FAILED
+                   -- if the controller is already in the state we
+                   -- want, just do nothing
+                   , getState c rg /= ctrlNewState
                    ]
+
+
+-- | If every process on controller fails, fail the controller too
+ruleProcessFailControllerFail :: Definitions LoopState ()
+ruleProcessFailControllerFail =
+  ruleAllProcessChangesController "controller-fails-if-all-procs-fail"
+                                  isProcFailed M0_NC_FAILED
+  where
+    isProcFailed (M0.PSFailed _) = True
+    isProcFailed _ = False
+
+-- | If every process on controller comes online, set controller online
+ruleProcessOnlineControllerOnline :: Definitions LoopState ()
+ruleProcessOnlineControllerOnline =
+  ruleAllProcessChangesController "controller-online-if-all-procs-online"
+                                  (== M0.PSOnline) M0_NC_ONLINE

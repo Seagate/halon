@@ -73,7 +73,8 @@ castorRules = sequence_
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , ruleControllerChanged
-  , ruleShouldFailController
+  , ruleProcessFailControllerFail
+  , ruleProcessOnlineControllerOnline
   , Process.rules
   , Disk.rules
   , Expander.rules
