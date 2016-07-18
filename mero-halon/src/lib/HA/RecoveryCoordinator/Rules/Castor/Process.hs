@@ -217,9 +217,8 @@ ruleProcessOnline = define "rule-process-online" $ do
       (M0.PSOnline, Just rgPid) | processPid /= rgPid -> do
         -- We have an online process already but the PIDs don't match
         -- up: the process must have restarted and we didn't get an
-        -- SSPL notification about it yet. Set the process to starting
-        -- and let SSPL message handler deal with setting ONLINE when
-        -- a restart notification comes.
+        -- SSPL notification about it yet. Set the process to starting in
+        -- order to force a connection restart, and then update to ONLINE.
         phaseLog "warn" $ showFid p ++ " restarted, updating PID: "
                        ++ show rgPid ++ " => " ++ show processPid
         modifyLocalGraph $ return . G.connectUniqueFrom p Has processPid
