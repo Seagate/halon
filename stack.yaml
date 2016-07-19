@@ -42,10 +42,6 @@ packages:
     git: https://github.com/nc6/gitrev.git
     commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
   extra-dep: true
-- location:
-    git: https://github.com/tweag/aeson-schema.git
-    commit: 464e1d8b1723a277028e8fbb93a484ff4186cd7a
-  extra-dep: true
 
 extra-deps:
 - directory-1.2.5.0
@@ -54,6 +50,8 @@ extra-deps:
 - rematch-0.2.0.0
 - clock-0.7.1
 - ghc-datasize-0.1.2
+- aeson-schema-0.4.1.1
+- aeson-0.11.2.0
 
 docker:
   enable: true
