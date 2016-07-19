@@ -79,7 +79,8 @@ instance Binary EQStatReq
 
 data EQStatResp =
     EQStatResp {
-      eqs_queue_size :: Int
+        eqs_queue_size :: Int
+      , eqs_uuids :: [UUID]
     }
   | EQStatRespCannotBeFetched
   deriving (Generic, Typeable)

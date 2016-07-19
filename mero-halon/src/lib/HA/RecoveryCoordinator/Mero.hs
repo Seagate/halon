@@ -38,6 +38,7 @@ module HA.RecoveryCoordinator.Mero
        , buildRCState
        , timeoutHost
        , HostDisconnected(..)
+       , labelRecoveryCoordinator
        ) where
 
 import Prelude hiding ((.), id, mapM_)
@@ -138,6 +139,9 @@ buildRCState mm eq = do
 msgProcessedGap :: Int
 msgProcessedGap = 10
 
+labelRecoveryCoordinator :: String
+labelRecoveryCoordinator = "mero-halon.RC"
+
 -- | The entry point for the RC.
 --
 -- Before evaluating 'recoveryCoordinator', the global network variable needs
@@ -150,6 +154,10 @@ makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
    init_st <- buildRCState mm eq
+   self <- getSelfPid
+   maybe (register labelRecoveryCoordinator self)
+         (const $ reregister labelRecoveryCoordinator self)
+         =<< whereis labelRecoveryCoordinator
 #ifdef USE_MERO
    flip Catch.finally tryCloseMeroWorker $ execute init_st $ do
 #else
@@ -166,7 +174,7 @@ makeRecoveryCoordinator mm eq rm = do
            update i
              | i <= 0 = i-1
              | otherwise = i
-           (removed, newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
+           (removed, !newRefCnt) = Map.partition (<(-msgProcessedGap)) refCnt
        for_ (Map.keys removed) $ usend (lsEQPid ls)
 
        return ls { lsGraph = newGraph, lsRefCount = newRefCnt }

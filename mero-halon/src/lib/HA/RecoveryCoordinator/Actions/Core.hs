@@ -313,7 +313,7 @@ todo uuid = do
 done :: UUID -> PhaseM LoopState l ()
 done uuid = do
   st <- get Global
-  put Global st{ lsRefCount = Map.insertWith (flip (-)) uuid 1 (lsRefCount st)}
+  put Global st{ lsRefCount = Map.adjust (\x -> x - 1) uuid (lsRefCount st)}
 
 -- | Check if no rule is already working on this message. Returns event if no
 -- other rule is processing it, or processed not longer than 10 steps ago,

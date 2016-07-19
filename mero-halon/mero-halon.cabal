@@ -90,7 +90,7 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
-                   HA.RecoveryCoordinator.Events.Status
+                   HA.RecoveryCoordinator.Events.Debug
                    HA.RecoveryCoordinator.Events.Cluster
                    HA.RecoveryCoordinator.Actions.Core
                    HA.RecoveryCoordinator.Actions.Storage
@@ -99,6 +99,7 @@ Library
                    HA.RecoveryCoordinator.Actions.Test
                    HA.RecoveryCoordinator.Actions.Job
                    HA.RecoveryCoordinator.Rules.Castor
+                   HA.RecoveryCoordinator.Rules.Debug
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
                    HA.Resources.Castor
@@ -261,6 +262,8 @@ Executable halonctl
                       base >= 4.5,
                       binary,
                       bytestring,
+                      cep,
+                      containers,
                       distributed-process-scheduler,
                       distributed-static,
                       filepath >= 1.3,

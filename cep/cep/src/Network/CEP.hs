@@ -76,6 +76,9 @@ module Network.CEP
     , feedEngine
     , incoming
     , tick
+    , RuntimeInfoRequest(..)
+    , RuntimeInfo(..)
+    , MemoryInfo(..)
     -- * Subscription
     , Published(..)
     , subscribeRequest
@@ -199,6 +202,7 @@ execute s defs = runItForever $ cepEngine s defs
 data AcceptedMsg
     = SubMsg Subscribe
     | TimeoutMsg Timeout
+    | Debug RuntimeInfoRequest
     | SomeMsg Message
 
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
@@ -263,14 +267,20 @@ runItForever start_eng = do
       | stepForward engineIsRunning eng =
         go eng =<< receiveTimeout 0 [ match (return . SubMsg)
                                     , match (return . TimeoutMsg)
+                                    , match (return . Debug)
                                     , matchAny (return . SomeMsg)
                                     ]
       | otherwise =
         go eng . Just =<< receiveWait [ match (return . SubMsg)
                                       , match (return . TimeoutMsg)
+                                      , match (return . Debug)
                                       , matchAny (return . SomeMsg)
                                       ]
       where
+        go inner (Just (Debug (RuntimeInfoRequest pid mem))) = do
+          let info = stepForward (getRuntimeInfo mem) eng
+          usend pid info
+          cruise debug_mode loop eng
         go inner (Just (SubMsg sub)) = do
           liftIO $ traceEventIO "START cruise:add-message"
           (_, nxt_eng) <- stepForward (rawSubRequest sub) inner

@@ -191,6 +191,7 @@ eqReadStats :: (SendPort EQStatResp) -> EventQueue -> Process ()
 eqReadStats sp (EventQueue _sn uuidMap _snMap) = let
     stats = EQStatResp {
         eqs_queue_size = M.size uuidMap
+      , eqs_uuids = M.keys uuidMap
     }
   in sendChan sp stats
 

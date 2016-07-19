@@ -684,3 +684,9 @@ enableDebugMode = singleton $ SetSetting DebugMode True
 -- This method works only in cruise mode.
 setDefaultHandler :: (Message -> s -> Process ()) -> Specification s ()
 setDefaultHandler = singleton . SetSetting DefaultHandler
+
+-- | Request runtime information
+data RuntimeInfoRequest = RuntimeInfoRequest ProcessId Bool -- mem?
+  deriving (Generic, Typeable)
+
+instance Binary RuntimeInfoRequest

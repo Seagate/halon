@@ -33,10 +33,10 @@ import           Network.HostName
 import           HA.EventQueue.Types
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Events.Status
 import           HA.RecoveryCoordinator.Events.Cluster
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
+import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
 import           HA.RecoveryCoordinator.Actions.Monitor
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -51,8 +51,8 @@ import qualified HA.Resources.Castor as M0
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
-import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
+import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, m0d)
@@ -123,7 +123,6 @@ rcRules argv additionalRules = do
 
     initRule $ rcInitRule argv
     sequence_ [ ruleNodeUp argv
-              , ruleNodeStatus argv
               , ruleRecoverNode argv
               , ruleDummyEvent
               , ruleSyncPing
@@ -132,6 +131,7 @@ rcRules argv additionalRules = do
               ]
     setLogger sendLogs
     serviceRules argv
+    Debug.rules argv
     ssplRules
     castorRules
     frontierRules
@@ -266,17 +266,6 @@ ruleNodeUp argv = define "node-up" $ do
       directly end stop
 
       start nodeup None
-
-ruleNodeStatus :: IgnitionArguments -> Definitions LoopState ()
-ruleNodeStatus argv = defineSimple "node-status" $
-      \(HAEvent uuid (NodeStatusRequest n@(Node nid) lis) _) -> do
-        rg <- getLocalGraph
-        let
-          isStation = nid `elem` (eqNodes argv)
-          isSatellite = G.memberResource n rg
-          response = NodeStatusResponse n isStation isSatellite
-        liftProcess $ mapM_ (flip usend response) lis
-        messageProcessed uuid
 
 ruleDummyEvent :: Definitions LoopState ()
 ruleDummyEvent = defineSimple "dummy-event" $

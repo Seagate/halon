@@ -6,7 +6,10 @@
 {-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns     #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -16,6 +19,8 @@ import Data.Maybe
 import Data.Traversable (for)
 import Data.Foldable (for_)
 import Data.Either (partitionEithers)
+import Data.Binary (Binary)
+import Data.Typeable (Typeable)
 
 import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
@@ -31,6 +36,10 @@ import           Data.Traversable (mapAccumL)
 import           Data.Foldable (forM_)
 import           Debug.Trace (traceEventIO)
 import           Control.Lens
+
+import GHC.Generics
+import GHC.DataSize
+import System.IO.Unsafe (unsafePerformIO)
 
 import Network.CEP.Buffer
 import Network.CEP.Execution
@@ -71,6 +80,8 @@ data Request :: Mode -> * -> * where
 
 data Select a = GetSetting (EngineSetting a)
                 -- ^ Get CEP 'Engine' internal setting.
+              | GetRuntimeInfo Bool (RuntimeInfoQuery a)
+                -- ^ Get runtime information
 
 data Action a where
     Tick           :: Action RunInfo
@@ -83,6 +94,29 @@ data EngineSetting a where
     EngineInitRulePassed :: EngineSetting Bool
     EngineIsRunning      :: EngineSetting Bool
 
+data RuntimeInfoQuery a where
+    RuntimeInfoTotal :: RuntimeInfoQuery RuntimeInfo
+
+data MemoryInfo = MemoryInfo
+    { minfoTotalSize :: Int
+    , minfoSMSize :: Int
+    , minfoStateSize :: Int
+    }
+  deriving (Show, Generic, Typeable)
+
+instance Binary MemoryInfo
+
+data RuntimeInfo = RuntimeInfo
+      { infoTotalSM :: Int
+      , infoRunningSM :: Int
+      , infoSuspendedSM :: Int
+      , infoMemory :: Maybe MemoryInfo
+      , infoSMs :: M.Map String Int
+      }
+  deriving (Show, Generic, Typeable)
+
+instance Binary RuntimeInfo
+
 initRulePassedSetting :: Request 'Read Bool
 initRulePassedSetting = Query $ GetSetting EngineInitRulePassed
 
@@ -91,6 +125,10 @@ debugModeSetting = Query $ GetSetting EngineDebugMode
 
 engineIsRunning :: Request 'Read Bool
 engineIsRunning = Query $ GetSetting EngineIsRunning
+
+getRuntimeInfo :: Bool -- ^ Include memory info?
+               -> Request 'Read RuntimeInfo
+getRuntimeInfo mem = Query $ GetRuntimeInfo mem RuntimeInfoTotal
 
 tick :: Request 'Write (Process (RunInfo, Engine))
 tick = Run Tick
@@ -165,7 +203,7 @@ data Machine s =
       -- ^ List of SM that are in suspended state
     , _machDefaultHandler :: !(Maybe (Message -> s -> Process ()))
       -- ^ Handler for messages of the unknown type
-    , _machMaxThreadId :: SMId
+    , _machMaxThreadId :: !SMId
       -- ^ Maximum SMId
     }
 
@@ -244,6 +282,31 @@ defaultHandler st _ (Query (GetSetting s)) =
       EngineDebugMode      -> _machDebugMode st
       EngineInitRulePassed -> _machInitRulePassed st
       EngineIsRunning      -> not (null (_machRunningSM st))
+defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
+    let running = _machRunningSM st
+        suspended = _machSuspendedSM st
+        mRunning = M.fromListWith (+)
+                 $ map (\(SMData _ k _) -> (_ruleKeyName k, 1)) running
+        mSuspended = M.fromListWith (+)
+                   $ map (\(SMData _ k _) -> (_ruleKeyName k, 1)) suspended
+        nRunning = length running
+        nSuspended = length suspended
+        minfo = if mem
+                then Just $ MemoryInfo
+                  { minfoTotalSize = unsafePerformIO $ recursiveSize st
+                  , minfoSMSize = unsafePerformIO (recursiveSize running)
+                                + unsafePerformIO (recursiveSize suspended)
+                  , minfoStateSize
+                      = unsafePerformIO (recursiveSize (_machState st))
+                  }
+                else Nothing
+    in RuntimeInfo
+        { infoTotalSM = nRunning + nSuspended
+        , infoMemory = minfo
+        , infoRunningSM  = nRunning
+        , infoSuspendedSM = nSuspended
+        , infoSMs = M.unionWith (+) mRunning mSuspended
+        }
 
 interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool
 interestingMsg k msg = k $ messageFingerprint msg
@@ -294,7 +357,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
 cepInitRule ir st req = defaultHandler st (cepInitRule ir) req
 
 cepCruise :: Machine s -> Request m a -> a
-cepCruise st req@(Run t) =
+cepCruise !st req@(Run t) =
     case t of
       Tick -> do
         -- XXX: currently only runnable SM are started, so if rule has

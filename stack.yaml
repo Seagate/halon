@@ -53,6 +53,7 @@ extra-deps:
 - genders-0.1.0.1
 - rematch-0.2.0.0
 - clock-0.7.1
+- ghc-datasize-0.1.2
 
 docker:
   enable: true
