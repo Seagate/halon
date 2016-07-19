@@ -17,9 +17,10 @@ module HA.RecoveryCoordinator.Rules.Castor.Expander
 
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses, stopNodeProcesses)
+import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
+import HA.RecoveryCoordinator.Events.Castor.Cluster (StopProcessesRequest(..))
 import HA.RecoveryCoordinator.Events.Drive (ExpanderReset(..))
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.RecoveryCoordinator.Rules.Castor.Node
@@ -275,36 +276,26 @@ ruleReassembleRaid =
       directly stop_mero_services $ do
         showLocality
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, m0node) <- gets Local (^. rlens fldM0 . rfield)
 
         rg <- getLocalGraph
         let procs = [ p | p <- getNodeProcesses node rg
                         , G.isConnected p R.Is M0.PSOnline rg
                         ]
 
-        mch <- runMaybeT $ do
-          m0svc <- MaybeT $ lookupRunningService node m0d
-          MaybeT . return $ meroChannel rg m0svc
-
-        case (mch, procs) of
-          (_, []) -> do
+        case procs of
+          [] -> do
             phaseLog "info" $ "No mero processes on node."
             continue unmount
-          (Just ch, _) -> do
+          _ -> do
             phaseLog "info" $ "Stopping the following processes: "
                             ++ (show procs)
-            stopNodeProcesses ch procs
+            promulgateRC $ StopProcessesRequest m0node procs
             let notifications = (\p -> stateSet p M0.PSOffline) <$> procs
             modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
             waitFor mero_notify_done
             onSuccess unmount
             continue dispatcher
-          _ -> do
-            -- If there is no channel, Mero is not running, so go directly to unmount
-            phaseLog "warning" $ "There are running processes on this node, "
-                              ++ "but we cannot contact the local halon:m0d "
-                              ++ "instance to stop them."
-            phaseLog "warning" $ "Running processes: " ++ show procs
-            continue unmount
 
       directly unmount $ do
         showLocality

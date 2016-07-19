@@ -71,7 +71,6 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      )
 import           HA.RecoveryCoordinator.Rules.Castor.Node
      ( maxTeardownLevel )
-import           HA.RecoveryCoordinator.Rules.Castor.Process
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (ServiceType(..))
@@ -104,9 +103,6 @@ clusterRules = sequence_
   , eventUpdatePrincipalRM
   , eventNodeFailedStart
   , ruleServiceNotificationHandler
-    -- process
-  , ruleStop
-  , ruleProcessControlStart
   ]
 
 -------------------------------------------------------------------------------
@@ -455,11 +451,15 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
 requestStopMeroClient :: Definitions LoopState ()
 requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $ \(StopMeroClientRequest fid) -> do
   phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
-  mproc <- lookupConfObjByFid fid
-  forM_ mproc $ \proc -> do
+  mnp <- runMaybeT $ do
+    proc <- MaybeT $ lookupConfObjByFid fid
+    node <- MaybeT $ getLocalGraph
+                  <&> listToMaybe . G.connectedFrom M0.IsParentOf proc
+    return (node, proc)
+  forM_ mnp $ \(node, proc) -> do
     rg <- getLocalGraph
     if G.isConnected proc R.Has M0.PLM0t1fs rg
-    then applyStateChanges [stateSet (proc::M0.Process) M0.PSQuiescing]
+    then promulgateRC $ StopProcessesRequest node [proc]
     else phaseLog "warning" $ show fid ++ " is not a client process."
 
 -- | Start already existing mero client.
