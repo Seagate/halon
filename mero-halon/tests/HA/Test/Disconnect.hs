@@ -15,6 +15,7 @@ module HA.Test.Disconnect
   , testRejoinRCDeath
   ) where
 
+import Control.Applicative (many)
 import Control.Distributed.Process hiding (bracket_)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
@@ -29,7 +30,9 @@ import Network.Transport (Transport, EndPointAddress)
 
 import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
+import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.CEP
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
@@ -37,7 +40,7 @@ import HA.Service hiding (__remoteTable)
 import qualified HA.Services.Ping as Ping
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
-import Network.CEP (Definitions, defineSimple, liftProcess)
+import Network.CEP (Definitions, defineSimple, liftProcess, subscribe, Published)
 import qualified Network.Transport.Controlled as Controlled
 
 import HA.NodeUp ( nodeUp )
@@ -197,11 +200,10 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
 --
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait
 -- until RC enters timeout routine. Check that we can rejoin the node.
-testRejoinTimeout :: String -- ^ Host used for initial data
-                  -> Transport
+testRejoinTimeout :: Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
                   -> IO ()
-testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
+testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 5 $ \[m0,m1]
@@ -213,11 +215,6 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
-          str' | "timeout_host Just" `isInfixOf` str' -> usend self "timeout_host"
-          str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
-          str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
@@ -228,30 +225,52 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
+      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      subscribe rc (Proxy :: Proxy NodeTransient)
+      subscribe rc (Proxy :: Proxy RecoveryAttempt)
+      subscribe rc (Proxy :: Proxy OldNodeRevival)
+      subscribe rc (Proxy :: Proxy NewNodeMsg)
+      subscribe rc (Proxy :: Proxy HostDisconnected)
+      subscribe rc (Proxy :: Proxy InitialDataLoaded)
+
       say "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
-      "NewNode" :: String <- expect
+      nnm' <- expect :: Process (Published NewNodeMsg)
+      say $ "test_debug => " ++ show nnm'
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
-      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
+      idl <- expect :: Process (Published InitialDataLoaded)
+      say $ "test_debug => " ++ show idl
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      receiveWait [ matchIf (== "NodeTransient") (void . return) ]
+      nt <- expect :: Process (Published NodeTransient)
+      say $ "test_debug => " ++ show nt
       -- wait until timeout happens
-      receiveWait [ matchIf (== "timeout_host") (void . return) ]
+      hd <- expect :: Process (Published HostDisconnected)
+      say $ "test_debug => " ++ show hd
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make bring it back up
+      _ <- emptyMailbox (Proxy :: Proxy (Published NewNodeMsg))
       void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
-      receiveWait [ matchIf (== "NewNode") (void . return) ]
+      nnm <- expect :: Process (Published NewNodeMsg)
+      say $ "test_debug => " ++ show nnm
+
       say "testRejoinTimeout complete"
+
+  where
+    emptyMailbox t@(Proxy :: Proxy t) = expectTimeout 0 >>= \case
+      Nothing -> return ()
+      Just (_ :: t) -> emptyMailbox t
+
 
 -- | Tests that:
 --  * nodes in which we began recovery, continue recover after RC failure
@@ -259,11 +278,10 @@ testRejoinTimeout _host baseTransport connectionBreak = withTmpDirectory $ do
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Kill
 -- the RC. Wait until we see recovery process continue and reconnect
 -- satellite.
-testRejoinRCDeath :: String -- ^ Host used for initial data
-                  -> Transport
+testRejoinRCDeath :: Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
                   -> IO ()
-testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
+testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 5 $ \[m0,m1]
@@ -273,13 +291,9 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
     void . liftIO . forkProcess m1 $ do
       registerInterceptor $ \string -> do
         let t = "Recovery Coordinator: received DummyEvent "
+        -- TODO: Emit messages in RC for these and subscribe to them
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
-          str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
-          str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
-          str' | "started monitor service on nid" `isInfixOf` str' -> usend self "MonitorStarted"
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
@@ -290,35 +304,58 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
+      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      subscribe rc (Proxy :: Proxy NodeTransient)
+      subscribe rc (Proxy :: Proxy RecoveryAttempt)
+      subscribe rc (Proxy :: Proxy OldNodeRevival)
+      subscribe rc (Proxy :: Proxy NewNodeMsg)
+      subscribe rc (Proxy :: Proxy HostDisconnected)
+      subscribe rc (Proxy :: Proxy NewNodeConnected)
+      subscribe rc (Proxy :: Proxy InitialDataLoaded)
+
       say "running NodeUp"
+      emptyMailbox (Proxy :: Proxy (Published NewNodeConnected))
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
-      "MonitorStarted" <- expect
+      nnc <- expect :: Process (Published NewNodeConnected)
+      say $ "test_debug => " ++ show nnc
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
-      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
+      idl <- expect :: Process (Published InitialDataLoaded)
+      say $ "test_debug => " ++ show idl
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      "NodeTransient" :: String <- expect
-      -- wait until recovery starts
-      "RecoverNode" <- expect
+      nt <- expect :: Process (Published NodeTransient)
+      say $ "test_debug => " ++ show nt
+      -- Wait until recovery starts
+      ra <- expect :: Process (Published RecoveryAttempt)
+      say $ "test_debug => " ++ show ra
       _ <- promulgateEQ [localNodeId m1] KillRC
       -- RC restarts but the node is still down
-      "NodeTransient" <- expect
-      -- recovery starts
-      "RecoverNode" <- expect
+      nt' <- expect :: Process (Published NodeTransient)
+      say $ "test_debug => " ++ show nt'
+      -- recovery restarts
+      ra' <- expect :: Process (Published RecoveryAttempt)
+      say $ "test_debug => " ++ show ra'
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make sure it did come back up
-      receiveWait [ matchIf (\msg -> msg == "NodeTransient" || msg == "ReviveNode")
-                   (void . return) ]
+      -- recovery restarts
+      onr <- expect :: Process (Published OldNodeRevival)
+      say $ "test_debug => " ++ show onr
       say "testRejoinRCDeath complete"
+
+  where
+    emptyMailbox t@(Proxy :: Proxy t) = expectTimeout 0 >>= \case
+      Nothing -> return ()
+      Just (_ :: t) -> emptyMailbox t
 
 -- | Tests that:
 -- * The RC detects when a node disconnects.
@@ -327,11 +364,10 @@ testRejoinRCDeath _host baseTransport connectionBreak = withTmpDirectory $ do
 -- Spawn TS with one node. Bring up a satellite. Disconnect it. Wait until RC
 -- detects the node is disconnected. Reconnect the node. Check that RC marks the
 -- node as online again.
-testRejoin :: String -- ^ Host used for initial data
-           -> Transport
+testRejoin :: Transport
            -> (EndPointAddress -> EndPointAddress -> IO ())
            -> IO ()
-testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
+testRejoin baseTransport connectionBreak = withTmpDirectory $ do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 10 $ \[m0,m1]
@@ -343,11 +379,8 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "Marked node transient: " `isInfixOf` str' -> usend self "NodeTransient"
-          str' | "Loaded initial data" `isInfixOf` str' -> usend self "InitialLoad"
-          str' | "Reviving old node" `isInfixOf` str' -> usend self "ReviveNode"
-          str' | "Inside try_recover" `isInfixOf` str' -> usend self "RecoverNode"
           str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
+
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
@@ -358,31 +391,42 @@ testRejoin _host baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      say "running NodeUp"
+      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      subscribe rc (Proxy :: Proxy NodeTransient)
+      subscribe rc (Proxy :: Proxy RecoveryAttempt)
+      subscribe rc (Proxy :: Proxy OldNodeRevival)
+      subscribe rc (Proxy :: Proxy NewNodeConnected)
+      subscribe rc (Proxy :: Proxy InitialDataLoaded)
 
+      say "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
 
-      "NewNode" :: String <- expect
-
+      nnc <- expect :: Process (Published NewNodeConnected)
+      say $ "test_debug => " ++ show nnc
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
       promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
-      receiveWait [ matchIf (("InitialLoad" :: String) ==) $ const $ return () ]
+      idl <- expect :: Process (Published InitialDataLoaded)
+      say $ "test_debug => " ++ show idl
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      receiveWait [ matchIf (== "NodeTransient") (void . return) ]
+      nt <- expect :: Process (Published NodeTransient)
+      say $ "test_debug => " ++ show nt
       -- Wait until recovery starts
-      receiveWait [ matchIf (== "RecoverNode") (void . return) ]
+      ra <- expect :: Process (Published RecoveryAttempt)
+      say $ "test_debug => " ++ show ra
       -- Bring one node back up straight away…
       restoreNet (map localNodeId [m0, m1])
       -- …which gives us a revival of it, swallow recovery messages
       -- until the node comes back up
-      receiveWait [ matchIf (== "ReviveNode") (void . return) ]
+      onr <- expect :: Process (Published OldNodeRevival)
+      say $ "test_debug => " ++ show onr
 
       say "testRejoin complete"
 
