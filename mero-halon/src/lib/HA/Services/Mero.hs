@@ -367,23 +367,14 @@ meroRules = meroRulesF m0d
 -- | Return the set of notification channels available in the cluster.
 --   This function logs, but does not error, if it cannot find channels
 --   for every host in the cluster.
-getNotificationChannels :: Set -- ^ Set of events we're sending. We
-                               -- can use this to make a smarter
-                               -- decision about the recipients to
-                               -- send to.
-                        -> PhaseM LoopState l [(SendPort NotificationMessage, [String])]
-getNotificationChannels (Set setEvent) = do
+getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
+getNotificationChannels = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
               | host <- G.connectedTo Cluster Has rg :: [Host]
               , node <- G.connectedTo host Runs rg :: [Node]
               , m0node <- G.connectedTo host Runs rg :: [M0.Node]
               ]
-      -- Processes we're setting online
-      onlinePs = catMaybes [ M0.lookupConfObjByFid fid' rg
-                           | Note fid' M0_NC_ONLINE <- setEvent ]
-
-      soleOnlineProcess = (== onlinePs) . return
 
   things <- forM nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
@@ -392,11 +383,6 @@ getNotificationChannels (Set setEvent) = do
                    [ (endpoint, stype)
                    | m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                    , G.isConnected m0proc Is M0.PSOnline rg
-                     -- Don't send online notification for process to
-                     -- itself. But be careful, if we are sending
-                     -- about multiple processes then just send
-                     -- everything everywhere
-                   , not $ soleOnlineProcess m0proc
                    , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
@@ -440,7 +426,7 @@ notifyMeroAndThen :: Set
 notifyMeroAndThen setEvent fsucc ffail = do
     phaseLog "action" $ "Sending configuration update to mero services: "
                      ++ show setEvent
-    chans <- getNotificationChannels setEvent
+    chans <- getNotificationChannels
     liftProcess $ do
       self <- getSelfPid
       void $ spawnLocal $ do
@@ -466,7 +452,7 @@ notifyMero :: Set -> PhaseM LoopState l ()
 notifyMero setEvent = do
   phaseLog "action" $ "Sending non-blocking configuration update to mero services: "
                    ++ show setEvent
-  chans <- getNotificationChannels setEvent
+  chans <- getNotificationChannels
   for_ chans $ \(sp, recipients) -> liftProcess $
       sendChan sp $ NotificationMessage setEvent recipients []
 
