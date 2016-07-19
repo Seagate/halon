@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- | 
+-- |
 -- Module for generation log events in Telemetry message format.
 --
 -- For full specificaiton refer to <http:\/\/goo.gl\/uM0J24>.
@@ -72,7 +72,7 @@ instance Hashable IEM
 -- | Interestng event message log.
 data IEMLog = IEMLog IEM LogLevel deriving (Eq, Show)
 
--- | 
+-- |
 data LogLevel = LOG_EMERG -- ^ A panic condition was reported to all processes.
                           -- Examples: Something that will cause the node to immediately go down
               | LOG_ALERT -- ^ A condition that should be corrected immediately
@@ -105,8 +105,8 @@ logLevelToText LOG_DEBUG  = "LOG_DEBUG"
 
 -- | Convert IEM to text representation.
 iemToText :: IEM -> Text
-iemToText iem = Text.concat 
-  ["IEM: ", iemEventCode iem , " : ", iemEventText iem , " : ", iemObject iem]
+iemToText iem = Text.concat
+  ["IEC: ", iemEventCode iem , " : ", iemEventText iem , " : ", iemObject iem]
 
 iemToBytes :: IEM -> ByteString
 iemToBytes = Text.encodeUtf8  . iemToText
@@ -130,14 +130,14 @@ type family Generator l where Generator (Log a b c d) = d -> IEM
 type family Generators l where
   Generators '[]           = ()
   Generators (l ': ls) = (Generator l, Generators ls)
-  
+
 class Eta (a :: [*]) where mkCommands :: Proxy a -> (Generators a)
 instance Eta '[] where mkCommands _ = ()
 instance forall z s c m a as . (KnownSymbol s, KnownSymbol c, KnownSymbol m, ToMetadata a, Eta as) => Eta (Log '(z,s) c m a ': as) where
   mkCommands _ = ((IEM (halonId <> subsystemId <> messageId) shortMessage . toMetadata), mkCommands (Proxy :: Proxy as)) where
     subsystemId  = Text.pack $ symbolVal (Proxy :: Proxy s)
     messageId    = Text.pack $ symbolVal (Proxy :: Proxy c)
-    shortMessage = Text.pack $ symbolVal (Proxy :: Proxy m) 
+    shortMessage = Text.pack $ symbolVal (Proxy :: Proxy m)
 
 class Kappa (a :: [*]) where mkCSV :: Proxy a -> String
 instance Kappa '[] where mkCSV _ = ""
@@ -152,7 +152,7 @@ instance forall z s c m a as . (KnownSymbol s, KnownSymbol z, KnownSymbol c, Kno
      messageId     = symbolVal (Proxy :: Proxy c)
 
 dumpCSV :: String
-dumpCSV = 
+dumpCSV =
   "#Application name, Application id, Subsystem name, Subsystem id, Event description, Event id\n"
   ++ mkCSV (Proxy :: Proxy IECList)
 
