@@ -414,6 +414,12 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_status"
                                 -> Ptr (Ptr SnsStatus)
                                 -> IO CInt
 
+foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_abort"
+  c_spiel_pool_rebalance_abort :: Ptr SpielContextV
+                               -> Ptr Fid
+                               -> IO CInt
+
+
 ---------------------------------------------------------------
 -- Utility                                                   --
 ---------------------------------------------------------------

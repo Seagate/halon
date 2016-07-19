@@ -809,12 +809,10 @@ poolRebalanceQuiesce (SpielContext sc _) fid =
 poolRebalanceAbort :: SpielContext
                    -> Fid
                    -> IO ()
-poolRebalanceAbort sc fid =
+poolRebalanceAbort (SpielContext sc _) fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot abort pool rebalance: " ++ show rc)
       $ c_spiel_pool_rebalance_abort sc fid_ptr
-  where
-    c_spiel_pool_rebalance_abort = error "c_spiel_pool_rebalance_abort not implemented"
 
 poolRebalanceStatus :: SpielContext
                     -> Fid
