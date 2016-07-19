@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic (dynamicStrategy)
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple  (simpleStrategy)
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic (formulaicStrategy)
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import qualified HA.Resources.Castor.Initial as CI
 
@@ -25,5 +26,6 @@ getCurrentStrategy :: PhaseM LoopState l (Maybe Strategy)
 getCurrentStrategy = fmap (mkStrategy . CI.m0_failure_set_gen) <$> getM0Globals
    where
      mkStrategy CI.Dynamic = dynamicStrategy
-     mkStrategy ( CI.Preloaded df cf cfe) = simpleStrategy df cf cfe
+     mkStrategy (CI.Preloaded df cf cfe) = simpleStrategy df cf cfe
+     mkStrategy (CI.Formulaic fs) = formulaicStrategy fs
 

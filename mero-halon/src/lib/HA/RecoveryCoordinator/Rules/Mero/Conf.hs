@@ -447,7 +447,7 @@ diskFailsPVer = StateCascadeRule
   (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
+   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
@@ -464,6 +464,7 @@ diskFailsPVer = StateCascadeRule
                                     ]
          when (broken > limit) $ Left pver
          return next
+   checkBroken rg _ = Right ()
    checkBroken _ _ = Right ()
 
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
@@ -481,7 +482,7 @@ diskFixesPVer = StateCascadeRule
   (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ [_, frack, fenc, fctrl, fdisk] _)) = do
+   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
      (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
@@ -498,6 +499,7 @@ diskFixesPVer = StateCascadeRule
                                     ]
          when (broken <= limit) $ Left pver
          return next
+   checkBroken rg _ = Right ()
    checkBroken _ _ = Right ()
 
 -- | This is a rule which interprets state change events and is responsible for

@@ -21,7 +21,7 @@ import qualified HA.Resources as R
 import HA.Services.Mero
 import HA.Service
 
-import Mero.ConfC ( Fid )
+import Mero.ConfC ( Fid(..) )
 import Mero.M0Worker
 
 import Control.Applicative (liftA2)
@@ -42,10 +42,11 @@ import Control.Distributed.Process
   )
 import Control.Monad.IO.Class
 import Control.Monad.Catch (finally)
+import Data.Bits (setBit)
 import Data.Maybe (listToMaybe)
 import Data.Foldable
 import Data.Proxy
-import Data.Word ( Word64 )
+import Data.Word ( Word64, Word32 )
 
 import Network.CEP
 
@@ -74,6 +75,14 @@ newFid p rg = (M0.fidInit p 1 w, rg') where
 
 newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
+
+uniquePVerCounter :: G.Graph -> (Word32, G.Graph)
+uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
+   [] -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
+   ((M0.PVerCounter i):_) -> (i+1, G.connectUnique Cluster Has (M0.PVerCounter (i+1)) rg)
+
+mkVirtualFid :: Fid -> Fid
+mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 
 --------------------------------------------------------------------------------
 -- Core configuration

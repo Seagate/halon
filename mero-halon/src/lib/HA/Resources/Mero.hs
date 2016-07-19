@@ -347,14 +347,28 @@ instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
   fid (Disk f) = f
 
+data PVerType = PVerActual {
+    v_tolerance :: [Word32]
+  , v_attrs :: PDClustAttr
+} | PVerFormulaic {
+    v_id :: Word32
+  , v_allowance :: [Word32]
+  , v_base  :: Fid
+} deriving (Eq, Generic, Show, Typeable)
+
+instance Binary PVerType
+instance Hashable PVerType
+
 data PVer = PVer {
     v_fid :: Fid
-  , v_failures :: [Word32]
-  , v_attrs :: PDClustAttr
+  , v_type :: PVerType
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary PVer
 instance Hashable PVer
+
+newtype PVerCounter = PVerCounter Word32
+  deriving (Binary, Eq, Generic, Show, Typeable, Ord, Hashable)
 
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
@@ -599,11 +613,12 @@ $(mkDicts
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState
+  , ''SDevState, ''PVerCounter
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
   , (''R.Cluster, ''R.Has, ''MeroClusterState)
+  , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
@@ -659,11 +674,12 @@ $(mkResRel
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState
+  , ''SDevState, ''PVerCounter
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
   , (''R.Cluster, ''R.Has, ''MeroClusterState)
+  , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)

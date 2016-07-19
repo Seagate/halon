@@ -46,13 +46,14 @@ import Mero.Notification hiding (notifyMero)
 import Mero.Notification.HAState (Note(..))
 #endif
 import Data.Foldable
+import Control.Category
 
 
 import Control.Monad
 import Data.Maybe
 
 import Network.CEP
-import Prelude hiding (id)
+import Prelude hiding (id, (.))
 
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
@@ -100,7 +101,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           syncGraphBlocking
           Just strategy <- getCurrentStrategy
           let update = onInit strategy graph
-          forM_ update $ \updateGraph -> do
+          for_ update $ \updateGraph -> do
             graph' <- updateGraph $ \rg -> do
               putLocalGraph rg
               syncGraphBlocking

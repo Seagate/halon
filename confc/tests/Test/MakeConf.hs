@@ -96,8 +96,8 @@ transaction server1_endpoint server2_endpoint tx = do
   addDisk tx (fids "disk1") (fids "ctrl")
   addDisk tx (fids "disk2") (fids "ctrl")
   addDisk tx (fids "disk3") (fids "ctrl")
-  addPVer tx (fids "pver") (fids "pool") [0, 0, 0, 0, 1]
-    $ PDClustAttr 2 1 4 (1024*1024) (Word128 0x01 0x2)
+  addPVerActual tx (fids "pver") (fids "pool")
+     (PDClustAttr 2 1 4 (1024*1024) (Word128 0x01 0x2)) [0, 0, 0, 0, 1]
   addRackV tx (fids "rackv") (fids "pver") (fids "rack")
   addEnclosureV tx (fids "enclv") (fids "rackv") (fids "encl")
   addControllerV tx (fids "ctrlv") (fids "enclv") (fids "ctrl")
@@ -134,5 +134,5 @@ transaction server1_endpoint server2_endpoint tx = do
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop1"
   addDevice tx (fids "sdev2") (fids "ios") (Just $ fids "disk2") 3 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop2"
-  addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") 4 M0_CFG_DEVICE_INTERFACE_SCSI 
+  addDevice tx (fids "sdev3") (fids "ios") (Just $ fids "disk3") 4 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop3"

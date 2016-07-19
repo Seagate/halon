@@ -27,6 +27,7 @@ module Mero.Conf.Obj
   , Pool(..)
   , getPool
   , PVer(..)
+  , PVerType(..)
   , getPVer
   , ObjV(..)
   , getObjV
@@ -52,6 +53,7 @@ module Mero.Conf.Obj
   , getSdev
   , Disk(..)
   , getDisk
+  , confPVerLvlDisks
   ) where
 
 #include "confc_helpers.h"
@@ -160,36 +162,66 @@ getPool po = do
     , pl_order = o
   }
 
+data PVerKind = PVerKindActual
+              | PVerKindFormulaic
+              | PVerKindVirtual
+              deriving (Eq, Show)
+
+instance Enum PVerKind where
+  toEnum #{const M0_CONF_PVER_ACTUAL} = PVerKindActual
+  toEnum #{const M0_CONF_PVER_FORMULAIC} = PVerKindFormulaic
+  toEnum #{const M0_CONF_PVER_VIRTUAL} = PVerKindVirtual
+  toEnum i = error $ "PVerKind: unknown kind: " ++ show i
+
+  fromEnum PVerKindActual = #{const M0_CONF_PVER_ACTUAL}
+  fromEnum PVerKindFormulaic = #{const M0_CONF_PVER_FORMULAIC}
+  fromEnum PVerKindVirtual = #{const M0_CONF_PVER_VIRTUAL}
+
 -- | Stub implementation of pool version object
 
 -- @m0_conf_pver@
 data PVer = PVer {
     pv_ptr :: Ptr Obj
   , pv_fid :: Fid
-  , pv_ver :: Word32
-  , pv_failed :: Word32 -- ^ Number of failed devices.
-  , pv_attr :: PDClustAttr
-  , pv_failures :: [Word32] -- ^ Allowed failures.
+  , pv_type :: PVerType
 } deriving (Show)
+
+data PVerType
+  = PVerSubtree
+    { pvs_attr :: PDClustAttr   -- ^ Layout attributes.
+    , pvs_tolerance :: [Word32] -- ^ Allowed failures.
+    }
+  | PVerFormulaic
+    { pvf_id :: Word32          -- ^ Cluster wide unique identifier.
+    , pvf_base :: Fid           -- ^ Fid of the base pool version.
+    , pvf_allowance :: [Word32] -- ^ Objects failed in this version.
+    }
+  deriving (Show)
+
+confPVerHeight :: Int
+confPVerHeight = #{const M0_CONF_PVER_HEIGHT}
+
+confPVerLvlDisks :: Int
+confPVerLvlDisks = #{const M0_CONF_PVER_LVL_DISKS}
 
 getPVer :: Ptr Obj -> IO PVer
 getPVer po = do
   pv <- confc_cast_pver po
   fid <- #{peek struct m0_conf_obj, co_id} po
-  ver <- #{peek struct m0_conf_pver, pv_ver} pv
-  nfailed <- #{peek struct m0_conf_pver, pv_nfailed} pv
-  attr <- #{peek struct m0_conf_pver, pv_attr} pv
-  failures_ptr <- #{peek struct m0_conf_pver, pv_nr_failures} pv
-  failures_nr <- #{peek struct m0_conf_pver, pv_nr_failures_nr} pv
-  failures <- peekArray failures_nr failures_ptr
-  return PVer
-    { pv_ptr = po
-    , pv_fid = fid
-    , pv_ver = ver
-    , pv_failed = nfailed
-    , pv_attr = attr
-    , pv_failures = failures
-    }
+  kind <- #{peek struct m0_conf_pver, pv_kind} pv :: IO CInt
+  tp <- if toEnum (fromIntegral kind) == PVerKindFormulaic
+        then do
+          let formulaic = #{ptr struct m0_conf_pver, pv_u.formulaic} pv
+          pvfid <- #{peek struct m0_conf_pver_formulaic, pvf_id} formulaic
+          pvfbase <- #{peek struct m0_conf_pver_formulaic, pvf_base} formulaic
+          failures <- peekArray confPVerHeight (#{ptr struct m0_conf_pver_formulaic, pvf_allowance} formulaic)
+          return PVerFormulaic{pvf_id = pvfid, pvf_base = pvfbase, pvf_allowance = failures}
+        else do
+          let subtree = #{ptr struct m0_conf_pver, pv_u.subtree} pv
+          attr <- #{peek struct m0_conf_pver_subtree, pvs_attr} subtree
+          failures <- peekArray confPVerHeight (#{ptr struct m0_conf_pver_subtree, pvs_tolerance} subtree)
+          return PVerSubtree{pvs_attr  = attr, pvs_tolerance = failures }
+  return PVer { pv_ptr = po, pv_fid = fid, pv_type = tp }
 
 -- @m0_conf_objv@
 data ObjV = ObjV
