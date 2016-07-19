@@ -40,6 +40,7 @@ import Data.Char (ord)
 import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
+import Data.Ord (comparing)
 import Data.Proxy (Proxy(..))
 import Data.Scientific
 import Data.Typeable (Typeable)
@@ -230,6 +231,8 @@ instance FromJSON Bitmap
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
+instance Ord Process where
+  compare = comparing r_fid
 
 data Service = Service {
     s_fid :: Fid

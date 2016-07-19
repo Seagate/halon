@@ -105,8 +105,7 @@ clusterRules = sequence_
   , eventNodeFailedStart
   , ruleServiceNotificationHandler
     -- process
-  , ruleStopMeroProcess
-  , ruleProcessControlStop
+  , ruleStop
   , ruleProcessControlStart
   ]
 

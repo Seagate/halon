@@ -18,12 +18,16 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StartCastorNodeRequest(..)
   , StartProcessesOnNodeRequest(..)
   , StopProcessesOnNodeRequest(..)
+  , StopProcessesOnNodeResult(..)
   , StartHalonM0dRequest(..)
   , StopHalonM0dRequest(..)
   , StartClientsOnNodeRequest(..)
   , StopClientsOnNodeRequest(..)
   , M0KernelResult(..)
   , StartProcessesOnNodeResult(..)
+  -- * Process
+  , StopProcessesRequest(..)
+  , StopProcessesResult(..)
   -- * Cluster state report
   , ReportClusterState(..)
   , ReportClusterHost(..)
@@ -121,6 +125,14 @@ newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
 newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest M0.Node
           deriving (Eq, Show, Generic, Binary, Ord)
 
+data StopProcessesOnNodeResult
+       = StopProcessesOnNodeOk
+       | StopProcessesOnNodeTimeout
+       | StopProcessesOnNodeStateChanged M0.MeroClusterState
+       deriving (Eq, Show, Generic)
+
+instance Binary StopProcessesOnNodeResult
+
 newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
          deriving (Eq, Show, Generic, Binary, Ord)
 
@@ -144,3 +156,23 @@ data StartProcessesOnNodeResult
   deriving (Eq, Show, Generic)
 
 instance Binary StartProcessesOnNodeResult
+
+-- | Request to stop specific processes on a node. This event
+--   differs from @StopProcessesOnNodeRequest@ as that stops
+--   all processes on the node in a staged manner. This event
+--   should stop the precise processes without caring about the
+--   overall cluster state.
+data StopProcessesRequest = StopProcessesRequest M0.Node [M0.Process]
+  deriving (Eq, Ord, Show, Generic)
+
+instance Binary StopProcessesRequest
+
+-- | Result of stopping processes. Note that in general most
+--   downstream rules will not care about this, as they will
+--   directly use the process state change notification.
+data StopProcessesResult =
+    StopProcessesResult M0.Node [(M0.Process, M0.ProcessState)]
+  | StopProcessesTimeout M0.Node [M0.Process]
+  deriving (Eq, Show, Generic)
+
+instance Binary StopProcessesResult

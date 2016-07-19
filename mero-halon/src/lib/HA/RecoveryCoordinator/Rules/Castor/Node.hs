@@ -735,14 +735,6 @@ ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
 processStopProcessesOnNode :: Job StopProcessesOnNodeRequest  StopProcessesOnNodeResult
 processStopProcessesOnNode = Job "castor::node::stop-processes"
 
-data StopProcessesOnNodeResult
-       = StopProcessesOnNodeOk
-       | StopProcessesOnNodeTimeout
-       | StopProcessesOnNodeStateChanged M0.MeroClusterState
-       deriving (Eq, Show, Generic)
-
-instance Binary StopProcessesOnNodeResult
-
 -- | Procedure for tearing down mero services. Starts by each node
 -- received 'StopMeroNode' message.
 --
@@ -870,7 +862,8 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      let stillUnstopped = getLabeledProcesses lbl
                           ( \proc g -> not . null $
                           [ () | state <- G.connectedTo proc R.Is g
-                               , state `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
+                               , state `elem` [ M0.PSOnline, M0.PSQuiescing
+                                              , M0.PSStopping, M0.PSStarting ]
                                , m0node <- G.connectedFrom M0.IsParentOf proc g
                                , Just n <- [M0.m0nodeToNode m0node g]
                                , n == node
