@@ -373,7 +373,7 @@ ruleStopMeroProcess = define "stop-process" $ do
                       Just Refl -> Just (new, a)
                       Nothing   -> Nothing) chs
     forM_ (changes :: [(M0.ProcessState, M0.Process)]) $
-      \(change, p) -> when (change == M0.PSStopping) $ do
+      \(change, p) -> when (change == M0.PSQuiescing) $ do
         put Local $ Just p
         continue (timeout 30 stop_service)
     done eid

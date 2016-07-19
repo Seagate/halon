@@ -460,7 +460,7 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
   forM_ mproc $ \proc -> do
     rg <- getLocalGraph
     if G.isConnected proc R.Has M0.PLM0t1fs rg
-    then applyStateChanges [stateSet (proc::M0.Process) M0.PSStopping]
+    then applyStateChanges [stateSet (proc::M0.Process) M0.PSQuiescing]
     else phaseLog "warning" $ show fid ++ " is not a client process."
 
 -- | Start already existing mero client.

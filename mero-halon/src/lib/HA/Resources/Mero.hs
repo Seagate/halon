@@ -520,6 +520,7 @@ data ProcessState =
   | PSOffline       -- ^ Process is stopped.
   | PSStarting      -- ^ Process is starting but we have not confirmed started.
   | PSOnline        -- ^ Process is online.
+  | PSQuiescing     -- ^ Process is online, but should reject any further requests.
   | PSStopping      -- ^ Process is currently stopping.
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
@@ -535,6 +536,7 @@ prettyProcessState PSUnknown = "N/A"
 prettyProcessState PSOffline = "offline"
 prettyProcessState PSStarting = "starting"
 prettyProcessState PSOnline   = "online"
+prettyProcessState PSQuiescing   = "quiescing"
 prettyProcessState PSStopping = "stopping"
 prettyProcessState (PSFailed reason) = "failed (" ++ reason ++ ")"
 prettyProcessState (PSInhibited st) = "inhibited (" ++ prettyProcessState st ++ ")"
