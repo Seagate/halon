@@ -41,6 +41,7 @@ import           HA.RecoveryCoordinator.Actions.Monitor
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
+import           HA.Resources.HalonVars
 import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, printLogs)
 import           HA.Services.Monitor
@@ -306,8 +307,6 @@ instance Binary RecoverNodeAck
 -- failure rule.
 ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
 ruleRecoverNode argv = define "recover-node" $ do
-      let expirySeconds = 300
-          maxRetries = 5
       start_recover <- phaseHandle "start_recover"
       try_recover <- phaseHandle "try_recover"
       timeout_host <- phaseHandle "timeout_host"
@@ -355,6 +354,7 @@ ruleRecoverNode argv = define "recover-node" $ do
         continue try_recover
 
       directly try_recover $ do
+        maxRetries <- getHalonVar _hv_recovery_max_retries
         get Local >>= \case
           (uuid, Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
                                         | otherwise -> do
@@ -366,6 +366,7 @@ ruleRecoverNode argv = define "recover-node" $ do
                 put Local (uuid, Just (Node nid, h, i + 1))
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
+                expirySeconds <- getHalonVar _hv_recovery_expiry_seconds
                 let t' = expirySeconds `div` maxRetries
                 phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
                 continue $ timeout t' try_recover
