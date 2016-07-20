@@ -129,6 +129,7 @@ rcRules argv additionalRules = do
               , ruleSyncPing
               , ruleStopRequest
               , rulePidRequest
+              , ruleSetHalonVars
               ]
     setLogger sendLogs
     serviceRules argv
@@ -354,9 +355,12 @@ ruleRecoverNode argv = define "recover-node" $ do
         continue try_recover
 
       directly try_recover $ do
+        -- If max retries is negative, we keep doing recovery
+        -- indefinitely.
         maxRetries <- getHalonVar _hv_recovery_max_retries
         get Local >>= \case
-          (uuid, Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
+          (uuid, Just (Node nid, h, i)) | maxRetries > 0 && i >= maxRetries
+                                            -> continue timeout_host
                                         | otherwise -> do
             hasHostAttr M0.HA_TRANSIENT h >>= \case
               False -> ackMsg uuid
@@ -367,7 +371,10 @@ ruleRecoverNode argv = define "recover-node" $ do
                 void . liftProcess . callLocal . spawnAsync nid $
                   $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
                 expirySeconds <- getHalonVar _hv_recovery_expiry_seconds
-                let t' = expirySeconds `div` maxRetries
+                -- Even if maxRetries is negative to indicate infinite
+                -- recovery time, we use it to work out a sensible
+                -- frequency between retries.
+                let t' = expirySeconds `div` abs maxRetries
                 phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
                 continue $ timeout t' try_recover
           _ -> return ()
