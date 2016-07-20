@@ -76,6 +76,7 @@ castorRules = sequence_
   , ruleProcessOnline
   , ruleProcessStopped
   , ruleFailedNotificationFailsProcess
+  , ruleProcessRecoveryFailure
   , Disk.rules
   , Expander.rules
   , Node.rules

@@ -16,6 +16,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
   , ruleProcessControlStop
   , ruleProcessControlStart
   , ruleFailedNotificationFailsProcess
+  , ruleProcessRecoveryFailure
   ) where
 
 import           HA.Encode
@@ -28,6 +29,7 @@ import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
+import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
@@ -70,27 +72,18 @@ ruleProcessRestarted = define "processes-restarted" $ do
   finish <- phaseHandle "finish"
   end <- phaseHandle "end"
 
-  let viewNotifySet :: Lens' (Maybe (a,b,c,d,[AnyStateSet])) (Maybe [AnyStateSet])
+  let viewNotifySet :: Lens' (Maybe (a,b,c,[AnyStateSet])) (Maybe [AnyStateSet])
       viewNotifySet = lens lget lset where
         lset Nothing _ = Nothing
-        lset (Just (a,b,c,d,_)) x = Just (a,b,c,d,fromMaybe [] x)
+        lset (Just (a,b,c,_)) x = Just (a,b,c,fromMaybe [] x)
         lget Nothing = Nothing
-        lget (Just (_,_,_,_,x)) = Just x
-      viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
+        lget (Just (_,_,_,x)) = Just x
 
-      resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, _, Just n, _, _)) = do
+      resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, _, Just n, _)) = do
         let mnode = M0.m0nodeToNode n $ lsGraph ls
         return $ if maybe False (== Node nid) mnode then Just (eid, results) else Nothing
       resetNodeGuard _ _ _ = return Nothing
 
-      nodeChange st = get Local >>= \case
-        Just (eid, p, Just m0node, _, nset) -> do
-          put Local $ Just (eid, p, Just m0node, Just st, nset)
-          applyStateChanges [stateSet m0node st]
-          switch [node_notified, timeout 5 notification_timeout]
-        _ -> do
-          phaseLog "warn" $ "Couldn't lookup node in local state"
-          continue finish
 
       isProcFailed st = case st of
         M0.PSFailed _ -> True
@@ -110,7 +103,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
         _ -> return ()
 
 
-      put Local $ Just (eid, p, Nothing, Nothing, [])
+      put Local $ Just (eid, p, Nothing, [])
       case listToMaybe $ G.connectedTo Cluster Has rg of
         Just M0.MeroClusterRunning -> do
           let srvs = [ stateSet srv (M0.SSInhibited M0.SSFailed)
@@ -122,7 +115,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
               phaseLog "warn" $ "Couldn't find node associated with " ++ show p
               continue finish
             Just (m0node :: M0.Node) -> do
-              put Local $ Just (eid, p, Just m0node, Nothing, notificationSet)
+              put Local $ Just (eid, p, Just m0node, notificationSet)
               applyStateChanges notificationSet
               switch [services_notified, timeout 5 notification_timeout]
         cst -> do
@@ -132,7 +125,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
     done eid
 
   setPhaseAllNotified services_notified viewNotifySet $ do
-    Just (_, p, Just m0node, _, _) <- get Local
+    Just (_, p, Just m0node, _) <- get Local
     phaseLog "info" $ "Notification for " ++ show (M0.fid p) ++ " landed."
 
     rg <- getLocalGraph
@@ -149,7 +142,7 @@ ruleProcessRestarted = define "processes-restarted" $ do
         continue finish
       Just act -> do
         act
-        switch [restart_result, timeout 15 restart_timeout]
+        switch [restart_result, timeout 180 restart_timeout]
 
   setPhaseIf restart_result resetNodeGuard $ \(eid', results) -> do
     -- Process restart message early: if something goes wrong the rule
@@ -169,27 +162,19 @@ ruleProcessRestarted = define "processes-restarted" $ do
 
       (_, failures) -> do
         phaseLog "warn" $ "Following processes failed to restart: " ++ show failures
-        nodeChange M0_NC_FAILED
-
-  setPhaseNotified node_notified viewNode $ \(n, nst) -> do
-    phaseLog "info" $ "Node notification in restart delivered: "
-                   ++ show n ++ " => " ++ show nst
-    continue finish
+        for_ failures $ promulgateRC . ProcessRecoveryFailure
+        continue finish
 
   directly restart_timeout $ do
-    Just (_, p, _, _, _) <- get Local
+    Just (_, p, _, _) <- get Local
     phaseLog "warn" $ "Restart for " ++ show p ++ " taking too long, bailing."
-    nodeChange M0_NC_FAILED
-
-  directly notification_timeout $ do
-    Just (_, p, _, _, _) <- get Local
-    phaseLog "warn" $ "Notification for " ++ show p ++ " timed out."
+    promulgateRC $ ProcessRecoveryFailure (M0.fid p, "Restart timed out")
     continue finish
 
   directly finish $ do
     get Local >>= \case
       Nothing -> phaseLog "warn" $ "Finish without local state"
-      Just (eid, p, _, _, _) -> do
+      Just (eid, p, _, _) -> do
         phaseLog "info" $ "Process restart rule finish for " ++ show p
         done eid
     continue end
@@ -436,6 +421,18 @@ ruleProcessControlStop = defineSimpleTask "handle-process-stop" $ \(ProcessContr
 
   forM_ (lefts results) $ \x ->
     phaseLog "info" $ printf "process stopped: %s" (show x)
+
+-- | We have failed to restart the process of the given fid with due
+-- to the provided reason.
+--
+-- Currently just fails the node the process is on.
+ruleProcessRecoveryFailure :: Definitions LoopState ()
+ruleProcessRecoveryFailure = defineSimpleTask "process-recovery-failure" $ \(ProcessRecoveryFailure (pfid, r)) -> do
+  phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
+  rg <- getLocalGraph
+  let m0ns = [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
+                 , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
+  applyStateChanges $ map (`stateSet` M0_NC_FAILED) m0ns
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

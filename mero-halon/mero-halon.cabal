@@ -185,8 +185,9 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Core
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
+                       HA.RecoveryCoordinator.Events.Castor.Process
                        HA.RecoveryCoordinator.Events.Mero
-      Other-Modules:  
+      Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
