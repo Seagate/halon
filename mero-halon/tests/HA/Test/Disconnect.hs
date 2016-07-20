@@ -158,11 +158,11 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      promulgateEQ (localNodeId <$> [m0, m1, m2]) $ RequestRCPid self
+      _ <- promulgateEQ (localNodeId <$> [m0, m1, m2]) $ RequestRCPid self
       RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
 
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
-      promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
+      _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       dhv <- expect :: Process (Published HalonVarsUpdated)
 
       say "running NodeUp"
@@ -237,7 +237,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
       RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
@@ -247,7 +247,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
 
-      promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
+      _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       dhv <- expect :: Process (Published HalonVarsUpdated)
       say $ "test_debug => " ++ show dhv
 
@@ -260,7 +260,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
+      _ <- promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       idl <- expect :: Process (Published InitialDataLoaded)
       say $ "test_debug => " ++ show idl
 #endif
@@ -321,7 +321,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
       RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
@@ -332,7 +332,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
 
-      promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
+      _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       dhv <- expect :: Process (Published HalonVarsUpdated)
       say $ "test_debug => " ++ show dhv
 
@@ -346,7 +346,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
+      _ <- promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       idl <- expect :: Process (Published InitialDataLoaded)
       say $ "test_debug => " ++ show idl
 #endif
@@ -413,7 +413,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      promulgateEQ [localNodeId m1] $ RequestRCPid self
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
       RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
@@ -422,7 +422,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
 
-      promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
+      _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       dhv <- expect :: Process (Published HalonVarsUpdated)
       say $ "test_debug => " ++ show dhv
 
@@ -435,7 +435,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       say $ "test_debug => " ++ show nnc
 #ifdef USE_MERO
       let wait = void (expect :: Process ProcessMonitorNotification)
-      promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
+      _ <- promulgateEQ [localNodeId m1] defaultInitialData >>= (`withMonitor` wait)
       idl <- expect :: Process (Published InitialDataLoaded)
       say $ "test_debug => " ++ show idl
 #endif
