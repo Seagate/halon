@@ -94,7 +94,7 @@ main = withMeroRoot $ \mero_root -> do
                                   "Got a bad status after starting the cluster."
       putStrLn "Calling dd ..."
       callProcess "sudo"
-        ["dd", "if=/dev/zero", "of=/mnt/m0t1fs/0:1006001", "bs=512K", "count=10"]
+        ["dd", "if=/dev/zero", "of=/mnt/m0t1fs/0:1006001", "bs=1K", "count=10"]
 
       callProcess (buildDir </> "halonctl/halonctl")
         ["-l", ip ++ ":9010", "-a", ip ++ ":9000", "cluster", "stop"]
@@ -111,7 +111,7 @@ main = withMeroRoot $ \mero_root -> do
   where
     checkStatus validProcState msg (rc, st, _) = do
       let parseStatus = join $
-            (`fmap` Data.Aeson.eitherDecode (BSL.dropWhile (/= '\n') st)) $
+            (`fmap` Data.Aeson.eitherDecode st) $
               \cs ->
                 let valid = all validProcState
                       [ crpState proc
