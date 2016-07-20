@@ -40,6 +40,7 @@ import Data.Char (ord)
 import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
+import Data.Ord (comparing)
 import Data.Proxy (Proxy(..))
 import Data.Scientific
 import Data.Typeable (Typeable)
@@ -230,6 +231,8 @@ instance FromJSON Bitmap
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
+instance Ord Process where
+  compare = comparing r_fid
 
 data Service = Service {
     s_fid :: Fid
@@ -520,6 +523,7 @@ data ProcessState =
   | PSOffline       -- ^ Process is stopped.
   | PSStarting      -- ^ Process is starting but we have not confirmed started.
   | PSOnline        -- ^ Process is online.
+  | PSQuiescing     -- ^ Process is online, but should reject any further requests.
   | PSStopping      -- ^ Process is currently stopping.
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
@@ -535,6 +539,7 @@ prettyProcessState PSUnknown = "N/A"
 prettyProcessState PSOffline = "offline"
 prettyProcessState PSStarting = "starting"
 prettyProcessState PSOnline   = "online"
+prettyProcessState PSQuiescing   = "quiescing"
 prettyProcessState PSStopping = "stopping"
 prettyProcessState (PSFailed reason) = "failed (" ++ reason ++ ")"
 prettyProcessState (PSInhibited st) = "inhibited (" ++ prettyProcessState st ++ ")"

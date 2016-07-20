@@ -413,6 +413,9 @@ processCascadeRule = StateCascadeRule
             M0.PSFailed _
               | o == M0.SSFailed -> o
               | otherwise -> M0.SSInhibited o
+            M0.PSQuiescing
+              | o `elem` [M0.SSFailed, M0.SSOffline] -> o
+              | otherwise -> M0.SSInhibited o
             M0.PSStopping
               | o == M0.SSFailed -> o
               | otherwise -> M0.SSStopping

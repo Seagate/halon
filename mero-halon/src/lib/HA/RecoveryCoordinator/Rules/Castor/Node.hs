@@ -735,14 +735,6 @@ ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
 processStopProcessesOnNode :: Job StopProcessesOnNodeRequest  StopProcessesOnNodeResult
 processStopProcessesOnNode = Job "castor::node::stop-processes"
 
-data StopProcessesOnNodeResult
-       = StopProcessesOnNodeOk
-       | StopProcessesOnNodeTimeout
-       | StopProcessesOnNodeStateChanged M0.MeroClusterState
-       deriving (Eq, Show, Generic)
-
-instance Binary StopProcessesOnNodeResult
-
 -- | Procedure for tearing down mero services. Starts by each node
 -- received 'StopMeroNode' message.
 --
@@ -870,7 +862,8 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      let stillUnstopped = getLabeledProcesses lbl
                           ( \proc g -> not . null $
                           [ () | state <- G.connectedTo proc R.Is g
-                               , state `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
+                               , state `elem` [ M0.PSOnline, M0.PSQuiescing
+                                              , M0.PSStopping, M0.PSStarting ]
                                , m0node <- G.connectedFrom M0.IsParentOf proc g
                                , Just n <- [M0.m0nodeToNode m0node g]
                                , n == node
@@ -880,17 +873,11 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
        [] -> do phaseLog "info" $ printf "%s R.Has no services on level %s - skipping to the next level"
                                           (show node) (show lvl)
                 nextBootLevel
-       ps -> do maction <- runMaybeT $ do
-                  m0svc <- MaybeT $ lookupRunningService node m0d
-                  ch    <- MaybeT . return $ meroChannel rg m0svc
-                  return $ do
-                    phaseLog "info" $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
-                    stopNodeProcesses ch ps
-                    nextBootLevel
-                for_ maction id
-                phaseLog "debug" $ printf "Can't find data for %s - continue to timeout" (show node)
-                -- XXX Think if this is the right way to go
-                continue teardown_timeout
+       ps -> do
+          Just (StopProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+          phaseLog "info" $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
+          promulgateRC $ StopProcessesRequest m0node ps
+          nextBootLevel
 
    directly teardown_timeout $ do
      Just node <- getField . rget fldNode <$> get Local

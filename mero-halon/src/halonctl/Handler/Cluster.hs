@@ -90,12 +90,9 @@ cluster nids' opt = do
   -- using that instead
   rnids <- findEQFromNodes 5000000 nids' >>= \case
     [] -> do
-      liftIO . putStrLn $ "cluster command requested but no known EQ, trying specified nids anyway"
+      liftIO . putStrLn $ "Cluster command requested but no known EQ; trying specified nids anyway."
       return nids'
-    ns -> if all (`notElem` ns) nids'
-          then do liftIO . putStrLn $ "not all of the specified nodes are a known EQ, using " ++ show ns
-                  return ns
-          else return ns
+    ns -> return ns
   cluster' rnids opt
 
   where
