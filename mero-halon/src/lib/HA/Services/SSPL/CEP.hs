@@ -321,7 +321,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
        case ( T.toUpper disk_status, T.toUpper disk_reason) of
         (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) ->
           messageProcessed uuid
-        ("FAILED", "SMART") -> do
+        ("FAILED", _) -> do
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           selfMessage $ DriveFailed uuid (Node nid) enc disk
         ("EMPTY", "NONE") -> do
