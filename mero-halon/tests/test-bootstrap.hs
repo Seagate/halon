@@ -99,8 +99,8 @@ main = withMeroRoot $ \mero_root -> do
       callProcess (buildDir </> "halonctl/halonctl")
         ["-l", ip ++ ":9010", "-a", ip ++ ":9000", "cluster", "stop"]
 
-      putStrLn "Waiting 60 seconds ..."
-      threadDelay (60 * 1000000)
+      putStrLn "Waiting 180 seconds ..."
+      threadDelay (180 * 1000000)
       BSL.readProcessWithExitCode (buildDir </> "halonctl/halonctl")
         [ "-l", ip ++ ":9010", "-a", ip ++ ":9000"
         , "cluster", "status", "--json"
