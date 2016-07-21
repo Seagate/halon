@@ -385,7 +385,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
              -- number of times, keep trying to recovery but now
              -- only every full duration of
              -- _hv_recovery_expiry_seconds..
-             let t' = if abs maxRetries >= i
+             let t' = if abs maxRetries <= i
                       then expirySeconds
                       else expirySeconds `div` abs maxRetries
              phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
