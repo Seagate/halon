@@ -16,6 +16,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types
   ( EQStatResp(..)
   , EQStatReq(..)
+  , PoolStats(..)
   )
 import HA.RecoveryCoordinator.Events.Debug
 import Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
@@ -70,10 +71,13 @@ eqStats nids (EQStatsOptions t) = do
       nsendRemote eq eventQueueLabel $ EQStatReq self
     expect >>= liftIO . display
   where
-    display (EQStatResp queueSize uuids) = do
-      putStrLn $ printf "EQ size: %d" queueSize
+    display (EQStatResp{..}) = do
+      putStrLn $ printf "EQ size: %d" eqs_queue_size
+      putStrLn $ printf "Worker pool max threads: %d" $ poolProcessBound eqs_pool_stats
+      putStrLn $ printf "Worker pool current threads: %d" $ poolProcessCount eqs_pool_stats
+      putStrLn $ printf "Worker pool tasks: %d" $ poolTaskCount eqs_pool_stats
       putStrLn "Message IDs in queue:"
-      for_ uuids $ \uuid ->
+      for_ eqs_uuids $ \uuid ->
         putStrLn $ "\t" ++ show uuid
     display EQStatRespCannotBeFetched =
       putStrLn "Cannot fetch EQ stats."

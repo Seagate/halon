@@ -6,7 +6,9 @@
 -- of processes that it can use.
 module Control.Distributed.Process.Pool.Bounded
     ( ProcessPool
+    , PoolStats(..)
     , newProcessPool
+    , poolStats
     , submitTask
     ) where
 
@@ -14,8 +16,11 @@ import Control.Distributed.Process hiding (catch, finally, mask_, try)
 
 import Control.Monad (join)
 import Control.Monad.Catch
-import Data.IORef (IORef, atomicModifyIORef, newIORef)
+import Data.Binary (Binary)
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.Sequence as Seq
+
+import GHC.Generics (Generic)
 
 
 -- | A pool of processes that execute tasks.
@@ -33,10 +38,29 @@ data PoolState = PoolState
     , psQueue :: !(Seq (Process ())) -- ^ The queue of tasks
     }
 
+-- | Pool statistics
+data PoolStats = PoolStats
+  { poolProcessBound :: !Int
+  , poolProcessCount :: !Int
+  , poolTaskCount :: !Int
+  } deriving (Generic)
+
+instance Binary PoolStats
+
 -- | Creates a new pool with the given bound for the amount of processes.
 newProcessPool :: Int -> IO ProcessPool
 newProcessPool bound =
   fmap (ProcessPool bound) (newIORef $ PoolState 0 Seq.empty)
+
+-- | Fetch pool statistics
+poolStats :: ProcessPool -> IO PoolStats
+poolStats pool = do
+  ps <- readIORef $ ppRef pool
+  return $ PoolStats {
+    poolProcessBound = ppBound pool
+  , poolProcessCount = psCount ps
+  , poolTaskCount = Seq.length $ psQueue ps
+  }
 
 -- | @submitTask pool task@ submits a task to the pool.
 --
@@ -53,7 +77,7 @@ newProcessPool bound =
 --
 submitTask :: ProcessPool -> Process () -> Process (Maybe (Process ()))
 submitTask (ProcessPool {..}) t =
-    liftIO $ atomicModifyIORef ppRef $ \ps@(PoolState {..}) ->
+    liftIO $ atomicModifyIORef' ppRef $ \ps@(PoolState {..}) ->
       if psCount < ppBound then
         -- Increase the process count if there is capacity.
         ( PoolState (succ psCount) psQueue
@@ -64,7 +88,7 @@ submitTask (ProcessPool {..}) t =
         (ps { psQueue = psQueue |> t}, Nothing)
   where
     continue :: Process ()
-    continue = join $ liftIO $ atomicModifyIORef ppRef $ \ps@(PoolState {..}) ->
+    continue = join $ liftIO $ atomicModifyIORef' ppRef $ \ps@(PoolState {..}) ->
       case viewl psQueue of
         -- Terminate if there are no more tasks in the queue.
         EmptyL -> (ps, return ())
@@ -73,5 +97,5 @@ submitTask (ProcessPool {..}) t =
 
     -- Decrement the process count when a process terminates.
     terminate :: Process ()
-    terminate = liftIO $ atomicModifyIORef ppRef $ \ps ->
+    terminate = liftIO $ atomicModifyIORef' ppRef $ \ps ->
       (ps { psCount = pred (psCount ps) }, ())

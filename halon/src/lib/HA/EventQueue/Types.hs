@@ -10,9 +10,11 @@ module HA.EventQueue.Types
     , DoTrimUnknown(..)
     , EQStatReq(..)
     , EQStatResp(..)
+    , PoolStats(..)
     ) where
 
 import Control.Distributed.Process
+import Control.Distributed.Process.Pool.Bounded (PoolStats(..))
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad.Trans (MonadIO(..))
 
@@ -79,8 +81,9 @@ instance Binary EQStatReq
 
 data EQStatResp =
     EQStatResp {
-        eqs_queue_size :: Int
-      , eqs_uuids :: [UUID]
+        eqs_queue_size :: !Int
+      , eqs_uuids :: ![UUID]
+      , eqs_pool_stats :: !PoolStats
     }
   | EQStatRespCannotBeFetched
   deriving (Generic, Typeable)

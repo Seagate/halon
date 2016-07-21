@@ -187,13 +187,9 @@ eqReadEvents (eqSp, sn) (EventQueue sn' uuidMap snMap) = do
                         ]
                   )
 
-eqReadStats :: (SendPort EQStatResp) -> EventQueue -> Process ()
-eqReadStats sp (EventQueue _sn uuidMap _snMap) = let
-    stats = EQStatResp {
-        eqs_queue_size = M.size uuidMap
-      , eqs_uuids = M.keys uuidMap
-    }
-  in sendChan sp stats
+eqReadStats :: (SendPort (Int, [UUID])) -> EventQueue -> Process ()
+eqReadStats sp (EventQueue _sn uuidMap _snMap) =
+  sendChan sp $ (M.size uuidMap, M.keys uuidMap)
 
 -- A noop read that helps detecting when the replicator groups becomes
 -- responsive again.
@@ -390,12 +386,18 @@ eqRules rg pool groupMonitor = do
                 sendReply sender False
 
     -- Debug information
-    defineSimple "dump-stats" $ \(EQStatReq pid) ->
-      liftProcess . void . spawnLocal $ do
+    defineSimple "dump-stats" $ \(EQStatReq pid) -> let
+        mkStats ps (qs, uuids) = EQStatResp {
+            eqs_queue_size = qs
+          , eqs_uuids = uuids
+          , eqs_pool_stats = ps
+          }
+      in liftProcess . void . spawnLocal $ do
         (sp, rp) <- newChan
         b <- getStateWith rg $ $(mkClosure 'eqReadStats) sp
+        ps <- liftIO $ poolStats pool
         DP.usend pid =<< if b
-                         then receiveChan rp
+                         then mkStats ps <$> receiveChan rp
                          else return EQStatRespCannotBeFetched
 
     -- The next two rules are used for testing.
