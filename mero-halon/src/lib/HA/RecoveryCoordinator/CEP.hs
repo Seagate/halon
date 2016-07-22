@@ -1,11 +1,13 @@
 -- |
--- Copyright : (C) 2013,2014 Xyratex Technology Limited.
+-- Copyright : (C) 2013-2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
 
 {-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -15,11 +17,14 @@ module HA.RecoveryCoordinator.CEP where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Control.Lens
 import Control.Monad (void)
 import Data.Binary (Binary, encode)
 import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.Typeable (Typeable)
+import Data.Proxy
+import Data.Vinyl
 import GHC.Generics
 
 import           Control.Distributed.Process
@@ -37,10 +42,12 @@ import           HA.RecoveryCoordinator.Events.Cluster
 import           HA.RecoveryCoordinator.Rules.Castor
 import           HA.RecoveryCoordinator.Rules.Service
 import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
+import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Monitor
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
+import           HA.Resources.HalonVars
 import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, printLogs)
 import           HA.Services.Monitor
@@ -128,6 +135,7 @@ rcRules argv additionalRules = do
               , ruleSyncPing
               , ruleStopRequest
               , rulePidRequest
+              , ruleSetHalonVars
               ]
     setLogger sendLogs
     serviceRules argv
@@ -290,10 +298,13 @@ ruleStopRequest = defineSimpleTask "stop-request" $ \msg -> do
       for_ res $ \sp ->
         killService sp Shutdown
 
-data RecoverNodeAck = RecoverNodeAck UUID
-  deriving (Eq, Show, Typeable, Generic)
+newtype RecoverNodeFinished = RecoverNodeFinished Node
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
-instance Binary RecoverNodeAck
+instance Binary RecoverNodeFinished
+
+recoverJob :: Job RecoverNode RecoverNodeFinished
+recoverJob = Job "recover-job"
 
 -- | A rule which tries to contact a node multiple times in specific
 -- time intervals, asking it to announce itself back to the TS
@@ -305,86 +316,108 @@ instance Binary RecoverNodeAck
 -- problem and try to recover, so we send RecoverNode from service
 -- failure rule.
 ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
-ruleRecoverNode argv = define "recover-node" $ do
-      let expirySeconds = 300
-          maxRetries = 5
-      start_recover <- phaseHandle "start_recover"
-      try_recover <- phaseHandle "try_recover"
-      timeout_host <- phaseHandle "timeout_host"
-      finalize_rule <- phaseHandle "finalize_rule"
+ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
+  try_recover <- phaseHandle "try_recover"
+  timeout_host <- phaseHandle "timeout_host"
 
-      -- TODO: This is stupid, just use better local state
-      let ackMsg m = if Data.UUID.null m
-                     then return ()
-                     else done m
-
-      setPhase start_recover $ \(RecoverNode uuid n1) -> do
-        todo uuid
+  let start_recover (RecoverNode n1) = do
         g <- getLocalGraph
-
         case listToMaybe (G.connectedFrom Runs n1 g) of
           Nothing -> do
             phaseLog "warn" $ "Couldn't find host for " ++ show n1
-            ackMsg uuid
-          Just host@(Host _hst) -> hasHostAttr M0.HA_TRANSIENT host >>= \case
-            -- Node not already marked as down so mark it as such and
-            -- notify mero
-            False -> do
-              setHostAttr host M0.HA_TRANSIENT
+            continue finish
+          Just host@(Host _hst) -> do
+            modify Local $ rlens fldNode .~ Field (Just n1)
+            modify Local $ rlens fldHost .~ Field (Just host)
+            modify Local $ rlens fldRetries .~ Field (Just 0)
+            hasHostAttr M0.HA_TRANSIENT host >>= \case
+              -- Node not already marked as down so mark it as such and
+              -- notify mero
+              False -> do
+                setHostAttr host M0.HA_TRANSIENT
 #ifdef USE_MERO
-              case nodeToM0Node n1 g of
-                [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
-                ns -> applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> ns
-              -- if the node is a mero server then power-cycle it.
-              -- Client nodes can run client-software that may not be
-              -- OK with reboots so we only reboot servers.
-              whenM (hasHostAttr M0.HA_M0SERVER host) $ do
-                ns <- nodesOnHost host
-                forM_ ns $ \(Node nid) ->
-                  sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack _hst))
+                case nodeToM0Node n1 g of
+                  [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
+                  ns -> applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> ns
+                -- if the node is a mero server then power-cycle it.
+                -- Client nodes can run client-software that may not be
+                -- OK with reboots so we only reboot servers.
+                whenM (hasHostAttr M0.HA_M0SERVER host) $ do
+                  ns <- nodesOnHost host
+                  forM_ ns $ \(Node nid) ->
+                    sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack _hst))
 #endif
-              put Local (uuid, Just (n1, host, 0))
-            -- Node already marked as down, probably the RC died. Do
-            -- the simple thing and start the recovery all over: as
-            -- long as the RC doesn't die more often than a full node
-            -- timeout happens, we'll finish the recovery eventually
-            True -> put Local (uuid, Just (n1, host, 0))
+              -- Node already marked as down, probably the RC died. Do
+              -- the simple thing and start the recovery all over: as
+              -- long as the RC doesn't die more often than a full node
+              -- timeout happens, we'll finish the recovery eventually
+              True -> return ()
 
         phaseLog "info" $ "Marked transient: " ++ show n1
         notify $ NodeTransient n1
-        continue try_recover
+        return $ Just [try_recover]
 
-      directly try_recover $ do
-        get Local >>= \case
-          (uuid, Just (Node nid, h, i)) | i >= maxRetries -> continue timeout_host
-                                        | otherwise -> do
-            hasHostAttr M0.HA_TRANSIENT h >>= \case
-              False -> ackMsg uuid
-              True -> do
-                phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
-                notify $ RecoveryAttempt (Node nid) i
-                put Local (uuid, Just (Node nid, h, i + 1))
-                void . liftProcess . callLocal . spawnAsync nid $
-                  $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
-                let t' = expirySeconds `div` maxRetries
-                phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
-                continue $ timeout t' try_recover
-          _ -> return ()
+  directly try_recover $ do
+    -- If max retries is negative, we keep doing recovery
+    -- indefinitely.
+    maxRetries <- getHalonVar _hv_recovery_max_retries
+    Just node@(Node nid) <- getField . rget fldNode <$> get Local
+    Just h <- getField . rget fldHost <$> get Local
+    Just i <- getField . rget fldRetries <$> get Local
+    if maxRetries > 0 && i >= maxRetries
+    then continue timeout_host
+    else hasHostAttr M0.HA_TRANSIENT h >>= \case
+           False -> do
+             phaseLog "info" $ "Recovery complete for " ++ show node
+             modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
+             continue finish
+           True -> do
+             phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
+             notify $ RecoveryAttempt node i
+             modify Local $ rlens fldRetries .~ Field (Just $ i + 1)
+             void . liftProcess . callLocal . spawnAsync nid $
+               $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
+             expirySeconds <- getHalonVar _hv_recovery_expiry_seconds
+             -- Even if maxRetries is negative to indicate
+             -- infinite recovery time, we use it to work out a
+             -- sensible frequency between retries. If we have
+             -- already tried recovery _hv_recovery_max_retries
+             -- number of times, keep trying to recovery but now
+             -- only every full duration of
+             -- _hv_recovery_expiry_seconds..
+             let t' = if abs maxRetries <= i
+                      then expirySeconds
+                      else expirySeconds `div` abs maxRetries
+             phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
+             continue $ timeout t' try_recover
 
-      directly timeout_host $ do
-        (uuid, st) <- get Local
-        phaseLog "warn" $ "Node recovery timed out, local state: " ++ show st
-        case st of
-          Just (_, h, _) -> do
-            timeoutHost h
-            put Local (nil, Nothing)
-          _ -> return ()
-        syncGraphProcess $ \self -> usend self $ RecoverNodeAck uuid
-        continue finalize_rule
+  directly timeout_host $ do
+    Just node <- getField . rget fldNode <$> get Local
+    Just host <- getField . rget fldHost <$> get Local
+    timeoutHost host
+    modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
+    continue finish
 
-      setPhase finalize_rule $ \(RecoverNodeAck uuid) -> ackMsg uuid
+  return start_recover
+  where
+    fldReq :: Proxy '("request", Maybe RecoverNode)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe RecoverNodeFinished)
+    fldRep = Proxy
+    fldNode :: Proxy '("node", Maybe Node)
+    fldNode = Proxy
+    fldHost :: Proxy '("host", Maybe M0.Host)
+    fldHost = Proxy
+    fldRetries :: Proxy '("retries", Maybe Int)
+    fldRetries = Proxy
 
-      start start_recover (nil, Nothing)
+    args  = fldUUID =: Nothing
+        <+> fldReq     =: Nothing
+        <+> fldRep     =: Nothing
+        <+> fldNode    =: Nothing
+        <+> fldHost    =: Nothing
+        <+> fldRetries =: Nothing
+        <+> RNil
 
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId

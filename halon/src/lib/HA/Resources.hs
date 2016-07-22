@@ -152,7 +152,7 @@ data EpochTransition a = EpochTransition
 instance Binary a => Binary (EpochTransition a)
 
 -- | Sent when a node goes down and we need to try to recover it
-data RecoverNode = RecoverNode UUID Node
-  deriving (Typeable, Generic, Show, Eq)
+newtype RecoverNode = RecoverNode Node
+  deriving (Typeable, Generic, Show, Eq, Ord)
 
 instance Binary RecoverNode

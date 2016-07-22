@@ -136,6 +136,26 @@ data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 instance Hashable ReplacedBy
 instance Binary ReplacedBy
 
+-- Defined here for the instances to connect to Cluster (so it doesn't
+-- get GC'd). Helpers elsewhere.
+-- | Collection of variables used throughout rules for things such as
+-- timeouts, retry attempt numbers &c. It is encouraged to change
+-- these early into the life of the RC to prevent unexpected behaviour
+-- when assumptions about constant values inside rules fail.
+data HalonVars = HalonVars
+  { _hv_recovery_expiry_seconds :: Int
+  -- ^ How long we want node recovery to last overall.
+  , _hv_recovery_max_retries :: Int
+  -- ^ Number of times to try recovery. Set to negative if you want
+  -- recovery to last forever. Even if negative, you should still set
+  -- it to a sensible number to make sure that
+  -- @'_hv_recovery_expiry_seconds' `div` 'abs' '_hv_recovery_max_retries'@
+  -- value used for the frequency of recovery still makes sense.
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary HalonVars
+instance Hashable HalonVars
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -146,10 +166,11 @@ $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid
+  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
+  , (''Cluster, ''Has, ''HalonVars)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
@@ -172,10 +193,11 @@ $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid
+  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
+  , (''Cluster, ''Has, ''HalonVars)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
