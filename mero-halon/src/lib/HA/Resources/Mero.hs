@@ -98,6 +98,10 @@ fidIsType p (Fid ctr _) =
   (ctr .&. (complement typMask)) == (fidType p `shiftL` (64 - 8))
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
+  deriving (Typeable)
+
+instance Eq AnyConfObj where
+  AnyConfObj obj == AnyConfObj obj' = fid obj == fid obj'
 
 data SpielAddress = SpielAddress {
     sa_confds_fid :: [Fid]

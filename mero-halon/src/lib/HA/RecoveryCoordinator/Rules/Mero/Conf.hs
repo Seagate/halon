@@ -467,7 +467,6 @@ diskFailsPVer = StateCascadeRule
                                     ]
          when (broken > limit) $ Left pver
          return next
-   checkBroken rg _ = Right ()
    checkBroken _ _ = Right ()
 
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
@@ -502,7 +501,6 @@ diskFixesPVer = StateCascadeRule
                                     ]
          when (broken <= limit) $ Left pver
          return next
-   checkBroken rg _ = Right ()
    checkBroken _ _ = Right ()
 
 -- | This is a rule which interprets state change events and is responsible for
