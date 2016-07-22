@@ -19,8 +19,8 @@ import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
-import HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import HA.RecoveryCoordinator.Events.Castor.Cluster (StopProcessesRequest(..))
+import HA.RecoveryCoordinator.Events.Mero (AnyStateSet(..))
 import HA.RecoveryCoordinator.Events.Drive (ExpanderReset(..))
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.RecoveryCoordinator.Rules.Castor.Node
@@ -32,8 +32,6 @@ import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
-import HA.Services.Mero (m0d)
-import HA.Services.Mero.CEP (meroChannel)
 import HA.Services.SSPL.CEP (sendNodeCmd)
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
@@ -52,6 +50,7 @@ import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
 import qualified Data.Text as T
+import Data.Typeable (cast)
 import Data.Vinyl
 
 import Network.CEP
@@ -213,9 +212,10 @@ ruleReassembleRaid =
             -- controllers, disks etc.
             forM_ mm0 $ \(m0enc, m0node) -> let
                 notifications = [ stateSet m0enc M0.M0_NC_TRANSIENT ]
+                notificationChk = fmap (==) notifications
               in do
                 applyStateChanges notifications
-                modify Local $ rlens fldNotifications . rfield .~ Just notifications
+                modify Local $ rlens fldNotifications . rfield .~ Just notificationChk
                 modify Local $ rlens fldM0 . rfield .~ Just (m0enc, m0node)
                 -- Wait for Mero notification, and also jump to stop_mero_services
                 waitFor mero_notify_done
@@ -246,8 +246,8 @@ ruleReassembleRaid =
                               ++ "but there was no corresponding node."
             done eid
 
-      setPhaseAllNotified mero_notify_done
-                          (rlens fldNotifications . rfield) $ do
+      setPhaseAllNotifiedBy mero_notify_done
+                            (rlens fldNotifications . rfield) $ do
         phaseLog "debug" "Mero notification complete"
         modify Local $ rlens fldNotifications . rfield .~ Nothing
         waitDone mero_notify_done
@@ -291,7 +291,12 @@ ruleReassembleRaid =
             phaseLog "info" $ "Stopping the following processes: "
                             ++ (show procs)
             promulgateRC $ StopProcessesRequest m0node procs
-            let notifications = (\p -> stateSet p M0.PSOffline) <$> procs
+            let notifications = (\p -> \(AnyStateSet p' s) ->
+                  case (,) <$> cast p' <*> cast s of
+                    Just (p'', M0.PSOffline) | p == p'' -> True
+                    Just (p'', (M0.PSFailed _)) | p == p'' -> True
+                    _ -> False
+                  ) <$> procs
             modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
             waitFor mero_notify_done
             onSuccess unmount
@@ -387,9 +392,10 @@ ruleReassembleRaid =
       directly mark_mero_healthy $ do
         Just (m0enc, _) <- gets Local (^. rlens fldM0 . rfield)
         let notifications = [ stateSet m0enc M0.M0_NC_ONLINE ]
+            notificationChk = fmap (==) notifications
         applyStateChanges notifications
 
-        modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
+        modify Local $ rlens fldNotifications . rfield .~ (Just notificationChk)
         waitFor mero_notify_done
         onSuccess finish
 
@@ -436,7 +442,7 @@ ruleReassembleRaid =
     fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     fldHardware = Proxy
     -- Notifications to wait for
-    fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet])
+    fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet -> Bool])
     fldNotifications = Proxy
     -- Command acknowledgements to wait for
     fldCommandAck :: Proxy '("spplCommandAck", [UUID])
