@@ -29,6 +29,7 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
     -- * Rule helpers
   , setPhaseNotified
   , setPhaseAllNotified
+  , setPhaseAllNotifiedBy
   , setPhaseInternalNotification
   , setPhaseInternalNotificationWithState
   )  where
@@ -303,6 +304,33 @@ setPhaseAllNotified handle extract act =
          InternalObjectStateChange iosc <- liftProcess . decodeP $ (msg :: InternalObjectStateChangeMsg)
          let internalStateSet = map extractStateSet iosc
              next = notificationSet \\ internalStateSet
+         modify Local $ set extract (Just next)
+         case next of
+           [] -> act
+           _  -> continue handle
+  where
+    extractStateSet (AnyStateChange a _ n _) = stateSet a n
+
+-- | Similar to 'setPhaseAllNotified' but takes a list of predicates which
+-- may be satisfied by an incoming notification. When all predicates have
+-- been satisfied, enter the phase.
+--
+-- State will endup in either @Nothing@ or @Just []@ depends on lens
+-- implementation.
+setPhaseAllNotifiedBy :: forall l g. Jump PhaseHandle
+                      -> (Lens' l (Maybe [AnyStateSet -> Bool]))
+                      -> PhaseM g l () -- ^ Callback when set has been notified
+                      -> RuleM g l ()
+setPhaseAllNotifiedBy handle extract act =
+  setPhase handle $ \(HAEvent _ msg _) -> do
+     mn <- gets Local (^. extract)
+     case mn of
+       Nothing -> do phaseLog "error" "Internal noficications are not set."
+                     act
+       Just notificationSet -> do
+         InternalObjectStateChange iosc <- liftProcess . decodeP $ (msg :: InternalObjectStateChangeMsg)
+         let internalStateSet = map extractStateSet iosc
+             next = filter (\f -> not $ any f internalStateSet) notificationSet
          modify Local $ set extract (Just next)
          case next of
            [] -> act
