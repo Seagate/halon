@@ -187,9 +187,9 @@ nodeCmdString (IPMICmd op ip) = T.intercalate " "
 nodeCmdString (DriveReset drive) = T.intercalate " "
   [ "RESET_DRIVE:", drive ]
 nodeCmdString (DrivePowerdown drive) = T.intercalate " "
-  [ "DRIVE_POWERDOWN:", drive ]
+  [ "STOP_DRIVE:", drive ]
 nodeCmdString (DrivePoweron drive) = T.intercalate " "
-  [ "DRIVE_POWERON:", drive ]
+  [ "START_DRIVE:", drive ]
 nodeCmdString (SmartTest drive) = T.intercalate " "
   [ "SMART_TEST:", drive ]
 nodeCmdString (DriveLed drive state) = T.intercalate " "
