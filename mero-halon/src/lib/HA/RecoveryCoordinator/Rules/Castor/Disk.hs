@@ -153,7 +153,8 @@ ruleDriveRemoved = define "drive-removed" $ do
       withSpielRC $ \sp m0 -> withRConfRC sp
         $ m0 $ Spiel.deviceDetach sp (fid disk)
     phaseLog "debug" "Notifying M0_NC_FAILED for sdev"
-    applyStateChanges [stateSet m0sdev M0.SDSFailed]
+    old_state <- getLocalGraph <&> getState m0sdev
+    applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
     messageProcessed uuid
     continue finish
 
@@ -318,7 +319,9 @@ attachDisk sdev = do
 ruleDriveFailed :: Definitions LoopState ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
-  forM_ sd $ \m0sdev -> applyStateChanges [ stateSet m0sdev M0.SDSFailed ]
+  forM_ sd $ \m0sdev -> do
+    old_state <- getLocalGraph <&> getState m0sdev
+    applyStateChanges [ stateSet m0sdev $ sdsFailFailed old_state ]
   messageProcessed uuid
 
 -- | When a drive is powered off
@@ -390,7 +393,8 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     -- Mark Mero device as permanently failed
     mm0sdev <- lookupStorageDeviceSDev dpcDevice
     forM_ mm0sdev $ \m0sdev -> do
-      applyStateChanges [stateSet m0sdev M0.SDSFailed]
+      old_state <- getLocalGraph <&> getState m0sdev
+      applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
 
     done uuid
 
