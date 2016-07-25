@@ -64,8 +64,6 @@ data HostAttr =
     -- ^ Node has been marked as down. We have tried to recover from
     -- the node failure in the past ('HA_TRANSIENT') but have failed
     -- to do so in timely manner.
-  | HA_BOOTSTRAP_FAILED [String]
-    -- ^ Core bootstrapping procedure has failed on this host
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Binary HostAttr
