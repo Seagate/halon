@@ -7,13 +7,18 @@
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
-module HA.Services.Mero.Types where
+module HA.Services.Mero.Types
+  ( module HA.Services.Mero.Types
+  , KeepaliveTimedOut(..)
+  ) where
 
+import HA.Resources.HalonVars
+import HA.Resources.Mero as M0
 import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
-import Mero.ConfC (Fid, strToFid)
+import Mero.ConfC (Fid, strToFid, Word128)
 import Mero.Notification (Set)
 
 import Control.Distributed.Process
@@ -26,11 +31,14 @@ import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
 import Data.UUID as UUID
+import Data.Word (Word64)
 
 import GHC.Generics (Generic)
 
 import Options.Schema
 import Options.Schema.Builder
+import System.Clock
+import Text.Read (readMaybe)
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
@@ -46,6 +54,11 @@ data MeroConf = MeroConf
        { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
        , mcProfile          :: Fid            -- ^ FID of the current profile
        , mcProcess          :: Fid            -- ^ Fid of the current process.
+       , mcKeepaliveFrequency :: Int
+       -- ^ Frequency of keepalive requests in seconds.
+       , mcKeepaliveTimeout :: Int
+       -- ^ Number of seconds after keepalive request until the
+       -- process is considered dead.
        , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
        }
    deriving (Eq, Generic, Show, Typeable)
@@ -53,10 +66,12 @@ instance Binary MeroConf
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile process kernel) =
+  toJSON (MeroConf haAddress profile process kaf kat kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
            , "process"          .= process
+           , "keepalive_frequency" .= kaf
+           , "keepalive_timeout" .= kat
            , "kernel_config"    .= kernel
            ]
 
@@ -140,6 +155,12 @@ data ProcessControlResultConfigureMsg =
 instance Binary ProcessControlResultConfigureMsg
 instance Hashable ProcessControlResultConfigureMsg
 
+-- | We haven't heard back from a process for a while about keepalive so we're
+data KeepaliveTimedOut = KeepaliveTimedOut [(Fid, M0.TimeSpec)]
+  deriving (Eq, Generic, Show, Typeable)
+instance Binary KeepaliveTimedOut
+instance Hashable KeepaliveTimedOut
+
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !(ServiceProcess MeroConf)
@@ -180,7 +201,7 @@ relationDictMeroChanelServiceProcessControlChannel :: Dict (
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> pc <*> ker
+meroSchema = MeroConf <$> ha <*> pr <*> pc <*> kaf <*> kat <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -197,6 +218,18 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> ker
           <> short 's'
           <> metavar "FID"
           <> summary "halon process Fid"
+    kaf = option (maybe (fail "can't parse as seconds") return . readMaybe)
+          $ long "keepalive_frequency"
+          <> short 'f'
+          <> metavar "INT"
+          <> summary "keepalive request frequency (seconds)"
+          <> value (_hv_keepalive_frequency defaultHalonVars)
+    kat = option (maybe (fail "can't parse as seconds") return . readMaybe)
+          $ long "keepalive_timeout"
+          <> short 't'
+          <> metavar "INT"
+          <> summary "keepalive request timeout (seconds)"
+          <> value (_hv_keepalive_timeout defaultHalonVars)
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
 
 kernelSchema :: Schema MeroKernelConf
@@ -225,6 +258,7 @@ instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel Notificati
 
 instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel ProcessControlMsg) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
+
 
 meroServiceName :: ServiceName
 meroServiceName = ServiceName "m0d"

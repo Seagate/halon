@@ -44,6 +44,7 @@ import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))
 import qualified HA.Resources as Res
+import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.Mero.Note as M0
@@ -419,6 +420,8 @@ startMeroService host node = do
                     ++ show (host, node)
   rg <- getLocalGraph
   mprofile <- Conf.getProfile
+  kaFreq <- getHalonVar _hv_keepalive_frequency
+  kaTimeout <- getHalonVar _hv_keepalive_timeout
   mHaAddr <- Conf.lookupHostHAAddress host >>= \case
     Just addr -> return $ Just addr
     -- if there is no HA service running to give us an endpoint, pass
@@ -437,8 +440,8 @@ startMeroService host node = do
                   , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
                   , srv  :: M0.Service <- G.connectedTo proc   M0.IsParentOf rg
                   , M0.s_type srv  == CST_HA
-                  , let conf = MeroConf haAddr (M0.fid profile)
-                                               (M0.fid proc)
+                  , let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
+                                               kaFreq kaTimeout
                                                (MeroKernelConf uuid)
                   ]
     (\conf -> encodeP $ ServiceStartRequest Start node m0d conf []) <$> mconf

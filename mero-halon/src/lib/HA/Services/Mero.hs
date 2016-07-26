@@ -61,6 +61,7 @@ import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
+import Control.Monad (unless)
 import Control.Monad.Fix (fix)
 import Control.Monad.Trans.Reader
 import Control.Exception (SomeException)
@@ -125,6 +126,21 @@ statusProcess niRef pid rp = do
    `catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
+
+-- | Run keep-alive when channel receives a message to do so
+keepaliveProcess :: Int -- ^ Keepalive frequency (seconds)
+                 -> Int -- ^ Keepalive timeout (seconds)
+                 -> NIRef
+                 -> ProcessId
+                 -> Process ()
+keepaliveProcess kaFreq kaTimeout niRef pid = do
+  link pid
+  forever $ do
+    _ <- receiveTimeout (kaFreq * 1000000) []
+    pruned <- liftIO $ Mero.Notification.pruneLinks niRef kaTimeout
+    liftIO $ Mero.Notification.runPing niRef
+    unless (null pruned) $ do
+      promulgateWait $ KeepaliveTimedOut pruned
 
 -- | Process responsible for controlling the system level
 --   Mero processes running on this node.
@@ -296,10 +312,14 @@ remotableDecl [ [d|
         ExitSuccess -> bracket_ bootstrap teardown $ do
           self <- getSelfPid
           traceM0d "DEBUG: Pre-withEp"
-          c <- withEp $ \ep -> spawnChannelLocal (statusProcess ep self)
+          c <- withEp $ \ep -> do
+            _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
+                                               (mcKeepaliveTimeout conf) ep self
+            spawnChannelLocal (statusProcess ep self)
           traceM0d "DEBUG: Pre-withEp"
           cc <- spawnChannelLocal (controlProcess conf self)
           sendMeroChannel c cc
+
           traceM0d "Starting service m0d on mero client"
           go
         ExitFailure i -> do
@@ -312,6 +332,7 @@ remotableDecl [ [d|
       processFid = mcProcess conf
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withNI haAddr processFid profileFid
+
       -- Kernel
       startKernel = liftIO $ do
         SystemD.sysctlFile "mero-kernel"

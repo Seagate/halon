@@ -149,6 +149,12 @@ data HalonVars = HalonVars
   -- it to a sensible number to make sure that
   -- @'_hv_recovery_expiry_seconds' `div` 'abs' '_hv_recovery_max_retries'@
   -- value used for the frequency of recovery still makes sense.
+  , _hv_keepalive_frequency :: Int
+  -- ^ How often should the keepalive check trigger in the mero
+  -- process keepalive rule. Seconds.
+  , _hv_keepalive_timeout :: Int
+  -- ^ How long to allow for a process to go on without a keepalive
+  -- reply coming back. Seconds.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Binary HalonVars
