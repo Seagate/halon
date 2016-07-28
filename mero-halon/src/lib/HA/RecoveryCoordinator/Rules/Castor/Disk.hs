@@ -407,6 +407,7 @@ ruleDrivePoweredOn :: Definitions LoopState ()
 ruleDrivePoweredOn = defineSimple "drive-powered-on"
   $ \(DrivePowerChange{..}) -> do
     todo dpcUUID
+    markDiskPowerOn dpcDevice
     realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
     unless realFailure $ do
       fdev <- lookupStorageDeviceSDev dpcDevice
