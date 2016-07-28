@@ -91,6 +91,7 @@ rules = sequence_
   , Repair.checkRepairOnServiceUp
   , Repair.ruleRepairStart
   , Repair.ruleRebalanceStart
+  , Repair.ruleSNSOperationAbort
   , Reset.ruleResetAttempt
   ]
 

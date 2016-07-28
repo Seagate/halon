@@ -17,6 +17,7 @@ import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
+
 import           Data.List (nub)
 
 -- | Just like 'repairedNotificationMessage', dispatch the appropriate
@@ -39,12 +40,6 @@ quiesceRepair :: M0.PoolRepairType -> M0.Pool
               -> PhaseM LoopState l (Maybe SomeException)
 quiesceRepair M0.Rebalance = abortRebalanceOperation
 quiesceRepair M0.Failure = quiesceRepairOperation
-
--- | Abort repair
-abortRepair :: M0.PoolRepairType -> M0.Pool
-            -> PhaseM LoopState l (Maybe SomeException)
-abortRepair M0.Rebalance = abortRebalanceOperation
-abortRepair M0.Failure = abortRepairOperation
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or

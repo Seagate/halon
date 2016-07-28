@@ -18,6 +18,9 @@ module HA.RecoveryCoordinator.Events.Mero
    , ProcessConfigured(..)
    -- * Requests
    , GetSpielAddress(..)
+   -- * Jobs
+   , AbortSNSOperation(..)
+   , AbortSNSOperationResult(..)
    -- * State changes
    , AnyStateSet(..)
    , AnyStateChange(..)
@@ -168,3 +171,17 @@ instance Binary MeroKernelFailed
 
 newtype NodeKernelFailed = NodeKernelFailed M0.Node
   deriving (Eq, Show, Typeable, Generic, Binary)
+
+-- | Request abort on the given pool.
+newtype AbortSNSOperation = AbortSNSOperation M0.Pool
+  deriving (Eq, Show, Ord, Typeable, Generic, Binary)
+
+-- | Reply to SNS operation abort.
+data AbortSNSOperationResult
+          = AbortSNSOperationOk M0.Pool -- ^ Operation  abort succesfull.
+          | AbortSNSOperationFailure String -- ^ Operation abort completed with failure.
+          | AbortSNSOperationSkip M0.Pool -- ^ Operation abort was skipped because no SNS operation was running.
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary AbortSNSOperationResult
+

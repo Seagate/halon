@@ -70,6 +70,7 @@ import Control.Applicative
 import Control.Category ((>>>))
 import qualified Control.Distributed.Process as DP
 import Control.Monad (void, join)
+import Control.Monad.Fix (fix)
 import Control.Monad.Catch
 
 import qualified Data.ByteString as BS
@@ -220,8 +221,18 @@ abortRepairOperation pool = catch go
     go :: PhaseM LoopState l (Maybe SomeException)
     go = do
       phaseLog "spiel" $ "Aborting repair on pool " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairAbort sc (M0.fid pool)
-      return Nothing
+      _ <- withSpielRC $ \sc lift -> do
+        withRConfRC sc $ lift $ poolRepairAbort sc (M0.fid pool)
+      fix $ \loop -> do
+        eresult <- statusOfRepairOperation pool
+        case eresult of
+          Left e -> return $ Just e
+          Right xs
+            | all ((`elem` [ Mero.Spiel.M0_SNS_CM_STATUS_IDLE
+                           , Mero.Spiel.M0_SNS_CM_STATUS_IDLE])
+                           . Mero.Spiel._sss_state) xs ->
+               return Nothing
+            | otherwise -> loop
 
 -- | Starts a rebalance operation on the given 'M0.Pool'.
 startRebalanceOperation :: M0.Pool -> [M0.Disk] -> PhaseM LoopState l ()
