@@ -228,7 +228,11 @@ calculateMeroClusterStatus = do
 
         stillUnstopped = getLabeledProcesses lbl
                          ( \p g -> not . null $
-                         [ () | M0.getState p g `elem` [M0.PSOnline, M0.PSStopping, M0.PSStarting]
+                         [ () | M0.getState p g `elem` [ M0.PSOnline
+                                                       , M0.PSQuiescing
+                                                       , M0.PSStopping
+                                                       , M0.PSStarting
+                                                       ]
                               , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
                               , M0.getState n g /= M0.M0_NC_FAILED
                          ] ) rg
