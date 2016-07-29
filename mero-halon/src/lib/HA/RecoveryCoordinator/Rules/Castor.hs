@@ -72,7 +72,6 @@ castorRules = sequence_
   , ruleMeroNoteSet
   , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
-  , ruleControllerChanged
   , ruleProcessFailControllerFail
   , ruleProcessOnlineControllerOnline
   , Process.rules
