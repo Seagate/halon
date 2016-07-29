@@ -417,6 +417,13 @@ data ReplicaState s ref a = Serializable ref => ReplicaState
   , stateLeaseStart        :: !TimeSpec
     -- | The list of node ids of the replicas.
   , stateReplicas          :: [NodeId]
+    -- | Tells the decree of the last proposal request sent to the proposer
+    -- process.
+    --
+    -- Invariant: isJust stateLastProposed
+    --              `implies`
+    --            stateLastProposed <= Just stateWatermark
+  , stateLastProposed      :: Maybe DecreeId
     -- | This is the decree identifier of the next proposal to confirm. All
     -- previous decrees are known to have passed consensus.
   , stateUnconfirmedDecree :: !DecreeId
@@ -662,6 +669,7 @@ replica Dict
          , statePersistenceHandle = persistenceHandle
          , stateLeaseStart = leaseStart0'
          , stateReplicas = replicas
+         , stateLastProposed = Nothing
          , stateUnconfirmedDecree = d
          , stateCurrentDecree = d
          , stateSnapshotDumper = Nothing
@@ -871,8 +879,43 @@ replica Dict
         , match $ \w' -> proposer ρ bpid (max w w') s αs
         ]
 
+    -- Makes a lease request. It takes the decree to use for consensus.
+    proposeLeaseRequest :: ProcessId -> DecreeId -> [ProcessId] -> [NodeId]
+                        -> Process ()
+    proposeLeaseRequest ppid di senders replicas = do
+      here <- getSelfNode
+      let ρs' = here : filter (here /=) replicas
+          req = Request
+                  { requestSender   = senders
+                  , requestValue    =
+                      Reconf (succ (decreeLegislatureId di)) ρs' :: Value a
+                  , requestHint     = None
+                  }
+      now <- liftIO $ getTime Monotonic
+      usend ppid (ProposerRequest di False now req)
+
+
+    -- The purpose of go is to check if the replica is delayed, and if so
+    -- make a proposal to discover later decrees. This gives replicas the
+    -- necessary initiative when the most up-to-date replicas are offline.
     go :: ReplicaState s ref a -> Process b
-    go st@(ReplicaState ppid rtimerPid ttimerPid ph leaseStart ρs d cd mdumper
+    go st@(ReplicaState {..}) =
+      if stateWatermark < stateCurrentDecree
+         && stateLastProposed /= Just stateWatermark then do
+        mLeader <- getLeader stateLeaseStart stateReplicas
+        if isNothing mLeader then do
+          -- Only propose if there is no leader. This way we don't slow down
+          -- an existing leader.
+          proposeLeaseRequest stateProposerPid stateWatermark [] stateReplicas
+          goNext st{ stateLastProposed = Just stateWatermark }
+        else
+          goNext st
+      else
+        goNext st
+
+    goNext :: ReplicaState s ref a -> Process b
+    goNext st@(ReplicaState ppid rtimerPid ttimerPid ph leaseStart ρs lastProposed d
+                        cd mdumper
                         msref w0 w s epoch legD bpid rtimerRP ttimerRP sendPool
                         persistPool persistProcs
                         stLogRestore stLogDump stLogNextState
@@ -889,21 +932,6 @@ replica Dict
             -- Updates the watermark of the proposer if it has changed.
             updateWatermark w' = usend ppid w'
 
-            -- | Makes a lease request. It takes the decree to use for
-            -- consensus.
-            proposeLeaseRequest :: DecreeId -> [ProcessId] -> [NodeId]
-                                -> Process ()
-            proposeLeaseRequest di senders replicas = do
-              let ρs' = here : filter (here /=) replicas
-                  req = Request
-                    { requestSender   = senders
-                    , requestValue    =
-                        Reconf (succ (decreeLegislatureId di)) ρs' :: Value a
-                    , requestHint     = None
-                    }
-              now <- liftIO $ getTime Monotonic
-              usend ppid (ProposerRequest di False now req)
-
             -- Does a persistence operation asynchronously.
             doPersistenceOpAsync task = do
               mproc <- Bounded.submitTask persistPool task
@@ -919,19 +947,21 @@ replica Dict
                       liftIO (atomicModifyIORef' persistProcs $ \mprocs ->
                                  (forceMaybe $ Set.delete worker <$> mprocs, ())
                              )
-
         receiveWait $ cond (w == cd)
             [ -- The lease renewal timer ticked.
               matchChan rtimerRP $ \() -> do
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "LeaseRenewalTime: " ++ show (w, cd, mLeader)
-                  cd' <- if Just here == mLeader || isNothing mLeader then do
-                      proposeLeaseRequest cd [] ρs
-                      return $ succ cd
+                  (cd', lastProposed') <-
+                    if Just here == mLeader || isNothing mLeader then do
+                      proposeLeaseRequest ppid cd [] ρs
+                      return (succ cd, Just cd)
                     else
-                      return cd
+                      return (cd, lastProposed)
                   usend rtimerPid leaseTimeout
-                  go st{ stateCurrentDecree = cd' }
+                  go st{ stateCurrentDecree = cd'
+                       , stateLastProposed  = lastProposed'
+                       }
             ]
             [] ++
             [ -- The lease timeout timer ticked.
@@ -1162,13 +1192,13 @@ replica Dict
                   mLeader <- getLeader leaseStart ρs
                   nlogTrace logId $ "replica: request from batcher "
                              ++ show (cd, mLeader, ρs)
-                  (s', cd') <- case mLeader of
+                  (s', cd', lastProposed') <- case mLeader of
                      -- Drop the request and ask for the lease.
                      Nothing | elem here ρs -> do
-                       proposeLeaseRequest cd [] ρs
+                       proposeLeaseRequest ppid cd [] ρs
                        -- Kill the batcher.
                        exitAndWait bpid
-                       return (s, succ cd)
+                       return (s, succ cd, Just cd)
 
                      -- I'm the leader, so handle the request.
                      Just leader | here == leader -> do
@@ -1191,7 +1221,7 @@ replica Dict
                                   (requestSender . batcherMsgRequest) rs
                                ) $
                            flip usend True
-                         return (s', cd)
+                         return (s', cd, lastProposed)
                        else do
                          nlogTrace logId $
                            "replica: non-nullipotent requests. " ++ show (length rs)
@@ -1206,7 +1236,7 @@ replica Dict
                              usend bpid ()
                              nlogTrace logId
                                "replica: no non-nullipotent requests."
-                             return (s, cd)
+                             return (s, cd, lastProposed)
                            BatcherMsg { batcherMsgRequest = r } : _ -> do
                              let updateLeg (Reconf _ ρs') =
                                   Reconf (succ $ decreeLegislatureId legD) ρs'
@@ -1236,7 +1266,7 @@ replica Dict
                                    , requestHint     = None
                                    }
                                }
-                             return (s, succ cd)
+                             return (s, succ cd, Just cd)
 
                      -- Drop the request.
                      _ -> do
@@ -1247,9 +1277,12 @@ replica Dict
                          flip usend (epoch, ρs)
                        -- Kill the batcher.
                        exitAndWait bpid
-                       return (s, cd)
+                       return (s, cd, lastProposed)
 
-                  go st{ stateCurrentDecree = cd', stateLogState = s' }
+                  go st{ stateLastProposed = lastProposed'
+                       , stateCurrentDecree = cd'
+                       , stateLogState = s'
+                       }
 
               -- Message from the proposer process
               --
@@ -1288,7 +1321,7 @@ replica Dict
                   when fromBatcher $ do
                     usend bpid ()
                     forM_ senders $ flip usend False
-                  go st
+                  go st { stateLastProposed = Nothing }
 
               -- Try to service a query if the requested decree is not too old.
             , matchIf (\(Query _ n) -> fst (Map.findMin log) <= n) $ {-# SCC "go/Query" #-}
@@ -1524,7 +1557,7 @@ replica Dict
                                      in if isReconf v
                                         then DecreeId (succ dmleg) dmn
                                         else dm
-                          proposeLeaseRequest d' [π] ρs''
+                          proposeLeaseRequest ppid d' [π] ρs''
 
                           -- Update the list of acceptors of the proposer, so we
                           -- have a chance to succeed.
@@ -1539,6 +1572,7 @@ replica Dict
 
                           go st { stateUnconfirmedDecree = d'
                                 , stateCurrentDecree = max (succ d') cd
+                                , stateLastProposed  = Just d'
                                 }
 
                         -- Didn't catch up on time
