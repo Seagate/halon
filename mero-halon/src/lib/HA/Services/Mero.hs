@@ -47,14 +47,14 @@ import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState, NotifyFailureEndpoints(..))
+import HA.Resources.Mero.Note (ConfObjectState(..), NotifyFailureEndpoints(..))
 import HA.Service
 import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
 import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
-import Mero.Notification (Set, NIRef)
+import Mero.Notification (Set(..), NIRef)
 import Mero.Notification.HAState (Note(..))
 import Mero.ConfC (Fid, ServiceType(..), fidToStr)
 
@@ -187,7 +187,7 @@ configureProcess mc run conf needsMkfs = do
 startProcess :: ProcessRunType   -- ^ Type of the process.
              -> Fid              -- ^ Process Fid.
              -> IO (Either Fid (Fid, String))
-startProcess run fid = do
+startProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
     putStrLn $ "m0d: startProcess: " ++ show fid ++ " with type(s) " ++ show run
     ec <- SystemD.startService $ unitString run fid
     return $ case ec of
@@ -375,6 +375,7 @@ getNotificationChannels = do
               , node <- G.connectedTo host Runs rg :: [Node]
               , m0node <- G.connectedTo host Runs rg :: [M0.Node]
               ]
+
   things <- forM nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
      let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
@@ -386,6 +387,7 @@ getNotificationChannels = do
                    , let stype = M0.s_type service
                    , endpoint <- M0.s_endpoints service
                    ]
+
      case (mchan, recipients) of
        (_, x) | Set.null x -> return Nothing
        (Nothing, Set.toList -> r) -> do

@@ -174,7 +174,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                               , ": ", show st, " (", show typ, ")]" ]
      put Local $ Just (eid, Just (service, st), Nothing)
      applyStateChanges [stateSet service st]
-     switch [service_notified, timeout 15 timed_out]
+     switch [service_notified, timeout 30 timed_out]
 
    setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
      rg <- getLocalGraph
@@ -202,7 +202,7 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                  -- notify after mero itself sends the process
                  -- notification
                  applyStateChanges [stateSet p newProcessState]
-                 switch [process_notified, timeout 15 timed_out]
+                 switch [process_notified, timeout 30 timed_out]
 
          else do phaseLog "info" $ "Still waiting to hear from "
                                 ++ show (map M0.fid $ allSrvs \\ onlineSrvs)
