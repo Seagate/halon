@@ -406,7 +406,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 --   it as replaced and start a rebalance.
 ruleDrivePoweredOn :: Definitions LoopState ()
 ruleDrivePoweredOn = defineSimple "drive-powered-on"
-  $ \(DrivePowerChange{..}) -> do
+  $ \(DrivePowerChange{..}) -> when dpcPowered $ do
     todo dpcUUID
     markDiskPowerOn dpcDevice
     realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
