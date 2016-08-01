@@ -33,11 +33,14 @@ import Control.Distributed.Process
   , monitor
   , receiveChan
   , receiveWait
+  , receiveTimeout
+  , getSelfPid
   , say
   , usend
   , sendChan
   , spawnChannelLocal
   , spawnLocal
+  , link
   , unmonitor
   )
 import Control.Distributed.Process.Closure
@@ -124,14 +127,19 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
 
+data KeepAlive = KeepAlive deriving (Eq, Show, Generic, Typeable)
+
+instance Binary KeepAlive
+
 traceSSPLHL :: String -> Process ()
 traceSSPLHL = mkHalonTracer "ssplhl-service"
 
 cmdHandler :: ProcessId -- ^ Status handler
            -> SendPort CommandResponseMessage -- ^ Response channel
+           -> ProcessId -- ^ Supervisor handler
            -> Network.AMQP.Message
            -> Process ()
-cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
+cmdHandler statusHandler responseChan supervisor msg = case decode (msgBody msg) of
   Just cr
     | isJust . commandRequestMessageServiceRequest
              . commandRequestMessage $ cr -> do
@@ -151,8 +159,15 @@ cmdHandler statusHandler responseChan msg = case decode (msgBody msg) of
     | otherwise -> do
       say $ "[sspl-hl] Unknown message " ++ show cr
 
-  Nothing -> say $ "Unable to decode command request: "
+  Nothing
+    | msgBody msg == "keepalive" -> usend supervisor KeepAlive
+    | otherwise -> say $ "Unable to decode command request: "
                       ++ (BL.unpack $ msgBody msg)
+
+
+-- | Time when at least one keepalive message should be delivered
+ssplHlTimeout :: Int
+ssplHlTimeout = 5*1000000*60 -- 5m
 
 remotableDecl [ [d|
 
@@ -160,23 +175,39 @@ remotableDecl [ [d|
   ssplProcess (SSPLHLConf{..}) = let
 
       connectRetry lock = do
-        pid <- spawnLocal $ connectSSPL lock
+        self <- getSelfPid
+        pid <- spawnLocal $ connectSSPL lock self
         mref <- monitor pid
-        receiveWait [
-            match $ \(ProcessMonitorNotification _ _ r) -> do
-              say $ "SSPL Process died:\n\t" ++ show r
-              connectRetry lock
-          , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
-          ]
-      connectSSPL lock = do
-        conn <- liftIO $ Rabbit.openConnection scConnectionConf
-        chan <- liftIO $ openChannel conn
-        responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
-        statusHandler <- StatusHandler.start responseChan
-        Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan)
-        () <- liftIO $ takeMVar lock
-        liftIO $ closeConnection conn
-        say "Connection closed."
+        fix $ \next -> do
+          mx <- receiveTimeout ssplHlTimeout [
+              match $ \(ProcessMonitorNotification _ _ r) -> do
+                say $ "SSPL Process died:\n\t" ++ show r
+                connectRetry lock
+            , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
+            , match $ \KeepAlive -> next
+            ]
+          case mx of
+            Nothing -> unmonitor mref >> (liftIO $ putMVar lock ())
+            Just x  -> return x
+      connectSSPL lock parent = do
+        bracket (liftIO $ Rabbit.openConnection scConnectionConf)
+                (\conn -> do liftIO $ closeConnection conn
+                             say "Connection closed.")
+          $ \conn -> do
+          self <- getSelfPid
+          chan <- liftIO $ openChannel conn
+          spawnLocal $ do
+            link self
+            forever $ do
+              receiveTimeout (ssplHlTimeout `div` 2) []
+              liftIO $ publishMsg chan
+                (T.pack $ fromDefault $ Rabbit.bcExchangeName scCommandConf)
+                (T.pack $ fromDefault $ Rabbit.bcRoutingKey scCommandConf)
+                newMsg{msgBody="keepalive"}
+          responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
+          statusHandler <- StatusHandler.start responseChan
+          Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan parent)
+          liftIO $ takeMVar lock :: Process ()
 
       responseProcess chan bc rp = forever $ do
         crm <- receiveChan rp
