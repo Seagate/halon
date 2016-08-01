@@ -128,6 +128,10 @@ ruleDriveRemoved = define "drive-removed" $ do
     forM_ sd $ \m0sdev -> do
       fork CopyNewerBuffer $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
+        mdisk <- lookupSDevDisk m0sdev
+        forM_ mdisk $ \disk ->
+          withSpielRC $ \sp m0 -> withRConfRC sp
+            $ m0 $ Spiel.deviceDetach sp (fid disk)
         old_state <- getLocalGraph >>= return . getState m0sdev
         applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
@@ -149,10 +153,6 @@ ruleDriveRemoved = define "drive-removed" $ do
 
   directly removal $ do
     Just (uuid, _, _, _, m0sdev) <- get Local
-    mdisk <- lookupSDevDisk m0sdev
-    forM_ mdisk $ \disk ->
-      withSpielRC $ \sp m0 -> withRConfRC sp
-        $ m0 $ Spiel.deviceDetach sp (fid disk)
     phaseLog "debug" "Notifying M0_NC_FAILED for sdev"
     old_state <- getLocalGraph <&> getState m0sdev
     applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
@@ -246,6 +246,7 @@ ruleDriveInserted = define "drive-inserted" $ do
              M0_NC_UNKNOWN -> messageProcessed uuid
              M0_NC_ONLINE -> messageProcessed uuid
              M0_NC_TRANSIENT -> do
+               attachDisk sdev
                applyStateChangesCreateFS [
                    stateSet sdev . sdsRecoverTransient $ getState sdev rg
                  ]
@@ -356,6 +357,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       -- Mark Mero device as transient
       mm0sdev <- lookupStorageDeviceSDev dpcDevice
       forM_ mm0sdev $ \m0sdev -> do
+        lookupSDevDisk m0sdev >>= flip forM_ (\d ->
+          withSpielRC $ \sp m0 -> withRConfRC sp
+            $ m0 $ Spiel.deviceDetach sp (fid d))
         old_state <- getLocalGraph >>= return . getState m0sdev
         applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
 
@@ -382,6 +386,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       -- Mark Mero device as back online
       mm0sdev <- lookupStorageDeviceSDev dpcDevice
       forM_ mm0sdev $ \m0sdev -> do
+        lookupSDevDisk m0sdev >>= flip forM_ (\d ->
+          withSpielRC $ \sp m0 -> withRConfRC sp
+            $ m0 $ Spiel.deviceAttach sp (fid d))
         old_state <- getLocalGraph >>= return . getState m0sdev
         applyStateChanges [stateSet m0sdev $ sdsRecoverTransient old_state]
 
@@ -396,7 +403,6 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     forM_ mm0sdev $ \m0sdev -> do
       old_state <- getLocalGraph <&> getState m0sdev
       applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
-
     done uuid
 
   startFork power_removed Nothing
@@ -419,6 +425,9 @@ ruleDrivePoweredOn = defineSimple "drive-powered-on"
         phaseLog "info" $ "Storage device: " ++ show dpcDevice
         phaseLog "info" $ "Mero device: " ++ showFid m0sdev
         markStorageDeviceReplaced dpcDevice
+        lookupSDevDisk m0sdev >>= flip forM_ (\d ->
+          withSpielRC $ \sp m0 -> withRConfRC sp
+            $ m0 $ Spiel.deviceAttach sp (fid d))
         -- Start rebalance
         pool <- getSDevPool m0sdev
         forM_ pool $ promulgateRC . PoolRebalanceRequest
