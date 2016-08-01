@@ -312,7 +312,7 @@ Executable halond
   -- Reduce the context-switch interval to improve sharing
   -- of the CPU when there are CPU-intensive computations
   -- in the RC.
-  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -eventlog -rtsopts -g
+  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -rtsopts -g
 
   if flag(maintainer)
     Ghc-Options: -Werror

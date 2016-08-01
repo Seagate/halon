@@ -117,11 +117,18 @@ data EndpointRef = EndpointRef
     -- ^ Number of current users, used to keep track of when it's safe
     -- to finalize.
   , _erWantsFinalize :: Bool
-    -- ^ A flag determining whether any client asked for finalisation.
+    -- ^ MVars for finalization
+    --
+    -- The caller should fill the first MVar when it wants the ha_interface
+    -- terminated.
+    --
+    -- The second MVar will be filled when the ha_interface is terminated.
+  , _erFinalizationBarriers :: Maybe (MVar (), MVar ())
+    -- ^ Marker if HA state should be stopped.
   }
 
 emptyEndpointRef :: EndpointRef
-emptyEndpointRef = EndpointRef Nothing 0 False
+emptyEndpointRef = EndpointRef Nothing 0 False Nothing
 
 -- | Multiple places such as mero service or confc may need an
 -- 'RPCMachine'. In order to ensure we don't end up initializing the machine
@@ -219,10 +226,16 @@ initializeInternal addr processFid profileFid = liftIO (takeMVar globalEndpointR
                  notificationWorker notificationChannel (void . promulgate . Set)
         link pid
         proc <- ask
+        fbarrier <- liftIO $ newEmptyMVar
+        fdone <- liftIO $ newEmptyMVar
         (barrier, r) <- liftGlobalM0 $ do
-           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc) addr processFid profileFid
+           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc)
+                                 addr processFid profileFid fbarrier fdone
            addM0Finalizer $ finalizeInternal globalEndpointRef
-           let ref' = emptyEndpointRef { _erNIRef = Just niRef }
+           let ref' = emptyEndpointRef
+                        { _erNIRef = Just niRef
+                        , _erFinalizationBarriers = Just (fbarrier, fdone)
+                        }
            return (barrier, (globalEndpointRef, ref', niRef))
         liftIO $ either (Catch.throwM) return =<< takeMVar barrier
         return r)
@@ -387,8 +400,12 @@ initializeHAStateCallbacks :: LocalNode
                            -> RPCAddress
                            -> Fid -- ^ Process Fid.
                            -> Fid -- ^ Profile Fid.
+                           -> MVar () -- ^ The caller should fill this MVar when
+                                      -- it wants the ha_interface terminated.
+                           -> MVar () -- ^ This MVar will be filled when the ha_interface
+                                      -- is terminated.
                            -> IO (MVar (Either SomeException ()), NIRef)
-initializeHAStateCallbacks lnode addr processFid profileFid = do
+initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
     links <- newIORef Map.empty
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
@@ -405,6 +422,12 @@ initializeHAStateCallbacks lnode addr processFid profileFid = do
                             (ha_delivered links)
                             (ha_cancelled links)
              putMVar barrier er
+             case er of
+               Right{} -> do
+                 takeMVar fbarrier
+                 finiHAState
+                 putMVar fdone ()
+               Left{} -> return ()
     return (barrier, NIRef links)
   where
 
@@ -522,8 +545,10 @@ initialize adr processFid profileFid = do
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = do
-  void $ swapMVar m emptyEndpointRef
-  finiHAState
+  ref <- swapMVar m emptyEndpointRef
+  for_ (_erFinalizationBarriers ref) $ \(fbarrier, fdone) -> do
+    putMVar fbarrier ()
+    takeMVar fdone
 
 -- | Finalize the Notification subsystem. We make an assumption that
 -- if 'globalEndpointRef' is empty, we have already finalized before
