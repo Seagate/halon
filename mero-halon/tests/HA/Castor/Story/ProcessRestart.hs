@@ -10,8 +10,7 @@ module HA.Castor.Story.ProcessRestart (mkTests) where
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
 import           Data.Binary (Binary)
-import           Data.Foldable (find, for_)
-import           Data.Function (fix)
+import           Data.Foldable (for_)
 import           Data.List (sort)
 import qualified Data.Text as T
 import           Data.Typeable
@@ -47,10 +46,10 @@ mkTests pg = do
     Right x -> do
       closeConnection x
       return $ \transport ->
-        [ testSuccess "testSSPLFirst" $
-          testSSPLFirst transport pg
-        , testSuccess "testMeroOnlineFirst" $
-          testMeroOnlineFirst transport pg
+        [ testSuccess "testProcessCrash" $
+          testProcessCrash transport pg
+        , testSuccess "testProcessStartsOK" $
+          testProcessStartsOK transport pg
         ]
 
 --------------------------------------------------------------------------------
@@ -66,18 +65,18 @@ testProcessNewPid = 6666
 
 -- | Make a notification of the form that we'd receive from SSPL upon
 -- service restart.
-mkRestartedNotification :: M0.Process
-                        -> SensorResponseMessageSensor_response_typeService_watchdog
-mkRestartedNotification p =
+mkFailedNotification :: M0.Process
+                     -> SensorResponseMessageSensor_response_typeService_watchdog
+mkFailedNotification p =
   let fid' = fidToStr $ M0.r_fid p
       srvName = T.pack $ "m0d@" ++ fid' ++ ".service"
   in SensorResponseMessageSensor_response_typeService_watchdog
-     { sensorResponseMessageSensor_response_typeService_watchdogService_state = "active"
+     { sensorResponseMessageSensor_response_typeService_watchdogService_state = "failed"
      , sensorResponseMessageSensor_response_typeService_watchdogService_name = srvName
-     , sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state = "inactive"
+     , sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state = "active"
      , sensorResponseMessageSensor_response_typeService_watchdogService_substate = "active"
      , sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_substate = "inactive"
-     , sensorResponseMessageSensor_response_typeService_watchdogPid = T.pack $ show testProcessNewPid
+     , sensorResponseMessageSensor_response_typeService_watchdogPid = T.pack $ show testProcessPid
      , sensorResponseMessageSensor_response_typeService_watchdogPrevious_pid = T.pack $ show testProcessPid
      }
 
@@ -170,38 +169,34 @@ doRestart transport pg startingState runRestartTest =
 --------------------------------------------------------------------------------
 
 -- |
--- * Process is in starting state waiting for no particular pid
--- * SSPL restart notification comes
--- * M0_NC_ONLINE notification comes
--- * M0_NC_FAILED and M0_NC_ONLINE are sent to mero
-testSSPLFirst :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testSSPLFirst t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
+-- * Process is online
+-- * SSPL notification about the process failure comes
+-- * M0_NC_FAILED for process is sent, TRANSIENT for services
+-- * Process restart rule starts, sends M0_NC_FAILED for services
+
+testProcessCrash :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testProcessCrash t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   nid <- getSelfNode
   let mkMsg k t' = Note (M0.fid k) t'
-  promulgateWait (nid, mkRestartedNotification p)
+  promulgateWait (nid, mkFailedNotification p)
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "SSPL handler sets process to failed"
-           (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
+           (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_TRANSIENT) srvs) (sort nt)
 
-  promulgateWait $ mkProcessStartedNotification p (M0.PID testProcessNewPid)
-  Set nt' <- H.nextNotificationFor (M0.fid p) recv
-  liftIO $ assertEqual "ruleProcessOnline sets process to online"
-           (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt')
+  Set nt' <- H.nextNotificationFor (M0.fid $ head srvs) recv
+  liftIO $ assertEqual "ruleProcessRestart sets services to failed"
+           (sort $ map (`mkMsg` M0_NC_FAILED) srvs) (sort nt')
 
 -- |
--- * Process is in 'M0.PSOnline' state
--- * Process started event for process with new PID comes.
--- * A restart is assumed, process is set to starting
--- * SSPL restart notification comes for the new pid
--- * Process is set to online
-testMeroOnlineFirst :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testMeroOnlineFirst t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
+-- * Process in starting state
+-- * Process started notification comes
+-- * M0_NC_ONLINE sent to mero for process and services
+testProcessStartsOK :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testProcessStartsOK t pg = doRestart t pg M0.PSStarting $ \p srvs recv -> do
   nid <- getSelfNode
   let mkMsg k t' = Note (M0.fid k) t'
+
   promulgateWait $ mkProcessStartedNotification p (M0.PID testProcessNewPid)
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "ruleProcessOnline sets process to online"
-           (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
-  Set nt' <- H.nextNotificationFor (M0.fid p) recv
-  liftIO $ assertEqual "SSPL handler sets process to online"
-           (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt')
+           (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)

@@ -51,7 +51,7 @@ rules :: Definitions LoopState ()
 rules = sequence_ [
     ruleProcessOnline
   , ruleProcessStopped
-  , ruleProcessRestarted
+  , ruleProcessRestart
   , ruleProcessConfigured
   , ruleStop
   , ruleProcessControlStart
@@ -67,8 +67,8 @@ rules = sequence_ [
 -- * Wait for the systemd process exit code. Deal with non-successful
 -- exit code here. If successful, do nothing more here and let other
 -- rules handle ONLINE notifications as they come in.
-ruleProcessRestarted :: Definitions LoopState ()
-ruleProcessRestarted = define "processes-restarted" $ do
+ruleProcessRestart :: Definitions LoopState ()
+ruleProcessRestart = define "processes-restarted" $ do
   initialize <- phaseHandle "initialize"
   services_notified <- phaseHandle "process_notified"
   node_notified <- phaseHandle "node_notified"
@@ -102,13 +102,6 @@ ruleProcessRestarted = define "processes-restarted" $ do
     for_ procs $ \(p, _) -> fork NoBuffer $ do
       todo eid
       phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
-      case getState p rg of
-        M0.PSStopping -> do phaseLog "info" "service is already stopping - skipping restart"
-                            stop
-        M0.PSOffline  -> do phaseLog "info" "service is already stopped - skipping restart"
-                            stop
-        _ -> return ()
-
 
       put Local $ Just (eid, p, Nothing, [])
       case listToMaybe $ G.connectedTo Cluster Has rg of
@@ -195,80 +188,56 @@ ruleProcessRestarted = define "processes-restarted" $ do
 
   start initialize Nothing
 
--- | Handle online notifications about processes. Part of process
--- restart procedure.
+-- | Handle process started notifications.
 ruleProcessOnline :: Definitions LoopState ()
 ruleProcessOnline = define "rule-process-online" $ do
   rule_init <- phaseHandle "rule_init"
-  starting_notified <- phaseHandle "starting_notified"
-  starting_notify_failed <- phaseHandle "starting_notify_failed"
 
   setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
     todo eid
     rg <- getLocalGraph
-
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
-      (M0.PSOnline, Just rgPid) | processPid /= rgPid -> do
-        -- We have an online process already but the PIDs don't match
-        -- up: the process must have restarted and we didn't get an
-        -- SSPL notification about it yet. Set the process to starting in
-        -- order to force a connection restart, and then update to ONLINE.
-        phaseLog "warn" $ showFid p ++ " restarted, updating PID: "
-                       ++ show rgPid ++ " => " ++ show processPid
-        modifyLocalGraph $ return . G.connectUniqueFrom p Has processPid
-        applyStateChanges [ stateSet p M0.PSStarting ]
-        put Local $ Just (eid, (p, M0.PSStarting))
-        switch [starting_notified, timeout 10 starting_notify_failed]
+      -- Somehow we already have an online process and it has a PID:
+      -- we don't care what the PID is as it either is the PID we
+      -- already know about which suggest duplicate message or a new
+      -- PID which suggests a duplicate message. Notably, unlike in
+      -- the past, we should never receive a legitimate started
+      -- notification for already started process as long as halon
+      -- governs over process restart. Such a notification could
+      -- happen if someone manually starts up a service but it's not a
+      -- valid usecase.
+      (M0.PSOnline, Just (M0.PID _)) -> do
+        phaseLog "warn" $
+          "Process started notification for already online process with a PID. Do nothing."
       -- We have a process but no PID for it, somehow. This can happen
       -- if the process was set to online through all its services
       -- coming up online and now we're receiving the process
-      -- notification itself.
-      (M0.PSOnline, Nothing) -> notifyProcessStarted p processPid
-      -- Process starting with an expected PID, it must have restarted
-      -- and SSPL has gotten to us first.
-      (M0.PSStarting, Just rgPid)
-        -- Process was coming up, it's just started as we expected
-        | processPid == rgPid -> do
-            phaseLog "info" $ "Process restarted, mero first: " ++ show rgPid
-            notifyProcessStarted p processPid
-        -- Process was coming up but the PID doesn't match up, do
-        -- nothing.
-        | otherwise -> phaseLog "warn" $
-            "Already waiting for notification for PID " ++ show rgPid
-      -- Process was coming up but we don't have a PID for it for some
-      -- reason, just accept it. TODO: We can use
-      -- TAG_M0_CONF_HA_PROCESS_STARTING notification now if we
-      -- desire.
-      (M0.PSStarting, Nothing) -> notifyProcessStarted p processPid
+      -- notification itself. Just store the PID.x
+      (M0.PSOnline, Nothing) -> modifyGraph $ G.connectUniqueFrom p Has processPid
+
+      -- Process was starting: we don't care what the PID was because
+      -- it's now out of date. We log it anyway, it's probably PID of
+      -- the old process.
+      --
+      -- TODO: We can use TAG_M0_CONF_HA_PROCESS_STARTING notification
+      -- now if we desire.
+      (M0.PSStarting, oldPid) -> do
+        phaseLog "info" $ showFid p ++ " started, setting PID: "
+                       ++ show oldPid ++ " => " ++ show processPid
+        modifyGraph $ G.connectUniqueFrom p Has processPid
+        applyStateChanges [ stateSet p M0.PSOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
 
-  setPhaseNotified starting_notified procNotified $ \(p, _) -> do
-    Just (eid, _) <- get Local
-    phaseLog "info" $ "Process restart notified, setting online"
-    applyStateChanges [ stateSet p M0.PSOnline ]
-    done eid
-
-  directly starting_notify_failed $ do
-    Just (eid, _) <- get Local
-    phaseLog "warn" "Couldn't notify mero about process starting"
-    done eid
-
   startFork rule_init Nothing
   where
-    procNotified = maybe Nothing (Just . snd)
-
     onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
-
-    notifyProcessStarted p pid = do
-      modifyLocalGraph $ return . G.connectUniqueFrom p Has pid
-      applyStateChanges [ stateSet p M0.PSOnline ]
 
 -- | Handled process configure event.
 --
