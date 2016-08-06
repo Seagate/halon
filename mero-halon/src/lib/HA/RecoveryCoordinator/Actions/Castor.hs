@@ -1,4 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
+-- |
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Action specific to CASTOR.
 module HA.RecoveryCoordinator.Actions.Castor
   ( -- * Resource Graph Primitives
     -- ** Disk Failure Vector
@@ -39,9 +44,12 @@ rgRecordDiskOnline = updateDiskFailure defAction rm where
      | d == x = Just xs
      | otherwise = (x:) <$> rm d xs
 
--- | Generic update graph function that just removes code duplication
-updateDiskFailure :: (M0.Pool -> G.Graph -> G.Graph) -- ^ Default action if structure does not exist.
-                  -> (M0.Disk -> [M0.Disk] -> Maybe [M0.Disk]) -- ^ Vector update function
+-- | Update the disk failure vector if it exists or perform the given
+-- action on the pool if it does not.
+updateDiskFailure :: (M0.Pool -> G.Graph -> G.Graph)
+                     -- ^ Default action if structure does not exist.
+                  -> (M0.Disk -> [M0.Disk] -> Maybe [M0.Disk])
+                     -- ^ Vector update function
                   -> M0.Disk -- ^ Disk in question
                   -> G.Graph
                   -> G.Graph

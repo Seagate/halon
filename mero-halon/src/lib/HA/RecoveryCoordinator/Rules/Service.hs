@@ -1,16 +1,14 @@
--- |
--- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
---
--- CEP Rules pertaining to the management of Halon internal services.
---
-
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TemplateHaskell           #-}
 
+-- |
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- CEP Rules pertaining to the management of Halon internal services.
 module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
@@ -33,7 +31,7 @@ import           HA.Services.Monitor (regularMonitor)
 -- | RC node-up rule local state. It isn't used anywhere else.
 data ServiceBoot
     = None
-      -- ^ When no service is expected to be started. That's the inial value.
+      -- ^ When no service is expected to be started. That's the initial value.
     | forall a. Configuration a => Starting UUID NodeId a (Service a) ProcessId
       -- ^ Indicates a service has been started and we are waiting for a
       --   'ServiceStarted' message of that same service.
@@ -57,7 +55,7 @@ serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ _ psvc pid) = do
           else return Nothing
 serviceBootStarted _ _ _ = return Nothing
 
--- | Used at RC node-up rule definition. Returnes events that we are
+-- | Used at RC node-up rule definition. Returns events that we are
 -- not interested in
 serviceBootStartedOther :: HAEvent ServiceStartedMsg
                         -> LoopState

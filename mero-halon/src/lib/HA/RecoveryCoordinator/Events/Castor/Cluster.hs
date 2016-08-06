@@ -143,7 +143,9 @@ newtype StopClientsOnNodeRequest = StopClientsOnNodeRequest M0.Node
 -- | Result of trying to start the M0 Kernel
 data M0KernelResult
     = KernelStarted M0.Node
+    -- ^ mero kernel has started on the given 'M0.Node'
     | KernelStartFailure M0.Node
+    -- ^ mero kernel has failed to start on the given 'M0.Node'
   deriving (Eq, Show, Generic)
 
 instance Binary M0KernelResult

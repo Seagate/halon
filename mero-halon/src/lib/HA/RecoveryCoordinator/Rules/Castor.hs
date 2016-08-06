@@ -56,6 +56,7 @@ import Data.Maybe
 import Network.CEP
 import Prelude hiding (id, (.))
 
+-- | Lookup device paths for the given 'StorageDevice'.
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
     mapMaybe extractPath $ ids
@@ -64,6 +65,7 @@ lookupStorageDevicePathsInGraph sd g =
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
+-- | Collection of default CASTOR rules.
 castorRules :: Definitions LoopState ()
 castorRules = sequence_
   [ ruleInitialDataLoad
@@ -81,8 +83,16 @@ castorRules = sequence_
 #endif
   ]
 
+-- | Loads the given 'CI.InitialData', populating the resource graph.
+--
+-- This rule syncs the graph ('syncGraphBlocking') multiple times
+-- throughout its run as for sufficiently big 'CI.InitialData',
+-- replicating all the graph updates that are performed here may take
+-- longer than it takes for the RC to renew the lease. This can result
+-- in RC losing the lease. This was observed on machines with already
+-- high I/O loads such as a terraform cluster on AWS.
 ruleInitialDataLoad :: Definitions LoopState ()
-ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
+ruleInitialDataLoad = defineSimpleTask "Initial-data-load" $ \(CI.InitialData{..}) -> do
   racks <- do rg <- getLocalGraph
               return (G.connectedTo Cluster Has rg :: [Rack])
   if null racks
@@ -118,6 +128,13 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
   messageProcessed eid
 
 #ifdef USE_MERO
+-- | Sets state change handlers in the ephemeral state of the RC. This
+-- rule does not wait for any message and runs only once per lifetime
+-- of any single RC instance.
+--
+-- Using ephemeral storage allows us to modify the active handlers
+-- dynamically if desired though this functionality is currently
+-- unused.
 setStateChangeHandlers :: Definitions LoopState ()
 setStateChangeHandlers = do
     define "set-state-change-handlers" $ do
@@ -137,6 +154,10 @@ setStateChangeHandlers = do
     stateChangeHandlersI = concat
       [ Disk.internalNotificationHandlers ]
 
+-- | A small collection of rules interested in the 'Set' messages
+-- received through the notification interface. Notably, this inlines
+-- the rule in charge of dispatching external notification handlers
+-- ('getExternalNotificationHandlers') on the 'Set'.
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
   defineSimpleTask "mero-note-set" $ \(Set ns) -> do
@@ -146,6 +167,9 @@ ruleMeroNoteSet = do
   Repair.querySpiel
   Repair.querySpielHourly
 
+-- | Converts 'InternalObjectStateChange' to a format expected by
+-- internal notification handlers ('getInternalNotificationHandlers')
+-- and runs the handlers.
 ruleInternalStateChangeHandler :: Definitions LoopState ()
 ruleInternalStateChangeHandler = do
   defineSimpleTask "internal-state-change-controller" $ \msg ->
@@ -159,22 +183,23 @@ ruleInternalStateChangeHandler = do
 #endif
 
 #ifdef USE_MERO
--- | Timeout between entrypoint retry.
+-- | Timeout between entrypoint retry in seconds.
 entryPointTimeout :: Int
 entryPointTimeout = 1 -- 1s
 
--- | Load information that is required to complete transaction from
--- resource graph.
+-- | Handles 'GetSpielAddress' requests. This rule waits until the
+-- 'M0.SpielAddress' becomes available in the resource graph then
+-- sends it to the requesting process.
 ruleGetEntryPoint :: Definitions LoopState ()
 ruleGetEntryPoint = define "castor-entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
   setPhase main $ \(HAEvent uuid (GetSpielAddress pid) _) -> do
-    phaseLog "info" $ "Spiel Address requested by " ++ show pid
+    phaseLog "info" $ "SpielAddress requested by " ++ show pid
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
-        put Local $ Just (pid,0)
+        put Local $ Just pid
         -- We process message here because in case of RC death,
         -- there will be timeout on the userside anyways.
         messageProcessed uuid
@@ -185,7 +210,7 @@ ruleGetEntryPoint = define "castor-entry-point-request" $ do
         messageProcessed uuid
 
   directly loop $ do
-    Just (pid, i) <- get Local
+    Just pid <- get Local
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
@@ -197,11 +222,15 @@ ruleGetEntryPoint = define "castor-entry-point-request" $ do
   start main Nothing
 #endif
 
+-- | Registers 'CI.Rack' information into RG and dispatches
+-- processing of the enclosures ('goEnc') associated with it
+-- ('CI.rack_enclosures').
 goRack :: CI.Rack -> PhaseM LoopState l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
 
+-- | Register an 'Enclosure' in the given 'Rack' and in RG and dispatch host registration ('goHost') for the enclosure ('CI.enc_hosts').
 goEnc :: Rack -> CI.Enclosure -> PhaseM LoopState l ()
 goEnc rack (CI.Enclosure{..}) = let
     enclosure = Enclosure enc_id
@@ -210,6 +239,8 @@ goEnc rack (CI.Enclosure{..}) = let
     mapM_ (registerBMC enclosure) enc_bmc
     mapM_ (goHost enclosure) enc_hosts
 
+-- | Register the given 'CI.Host' in the 'Enclosure', set 'HostAttr's
+-- and proceed to 'registerInterface's for the host ('h_interfaces').
 goHost :: Enclosure -> CI.Host -> PhaseM LoopState l ()
 goHost enc (CI.Host{..}) = let
     host = Host h_fqdn

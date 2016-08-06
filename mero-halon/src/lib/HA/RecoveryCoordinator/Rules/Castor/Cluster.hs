@@ -1,3 +1,15 @@
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE ViewPatterns          #-}
+
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -5,34 +17,21 @@
 -- Mero cluster rules
 --
 -- Relevant part of the resource graph.
--- @@@
---     R.Cluster
+--
+-- @
+--     'R.Cluster'
 --       |  |
---       |  +-------M0.Root
+--       |  +-------'M0.Root'
 --       |           |
---       |          M0.Profie
+--       |          'M0.Profile'
 --       |           |
---       |          M0.FileSystem
---     R.Host          |
+--       |          'M0.FileSystem'
+--     'R.Host'          |
 --      |  |           v
---      |  +--------->M0.Node
+--      |  +--------->'M0.Node'
 --      v
---     R.Node
--- @@@
---
---
---
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE ViewPatterns          #-}
-{-# LANGUAGE GADTs                 #-}
+--     'R.Node'
+-- @
 module HA.RecoveryCoordinator.Rules.Castor.Cluster
   ( -- * All rules in one
     clusterRules
@@ -111,16 +110,23 @@ clusterRules = sequence_
 
 -- | Fix we failed to load kernel modules on any server, then
 -- we need to put cluster into a failed state.
-eventNodeFailedStart :: Definitions LoopState ()
-eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $
-  \result -> do
-    case result of
-      KernelStarted{} -> return ()
-      _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-      -- XXX: notify $ MeroClusterFailed
-      -- XXX: check if it's a client node, in that case such failure should not
-      -- be a panic
 
+-- | Listen for 'M0KernelResult' and set the cluster to a failed state
+-- if we receive 'KernelStartFailure' on a non-client node.
+eventNodeFailedStart :: Definitions LoopState ()
+eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $ \result -> do
+  rg <- getLocalGraph
+  case result of
+    KernelStarted{} -> return ()
+    KernelStartFailure m0n
+      | isClientNode m0n rg -> phaseLog "warn" "mero-kernel failed on a client node: " ++ show m0n
+      | otherwise -> modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+  where
+    isClientNode :: M0.Node -> G.Graph -> Bool
+    isClientNode m0n rg = case G.connectedFrom M0.Runs m0n rg of
+      [] -> False
+      (h :: M0.Host) : _ -> G.isConnected host R.Has R.HA_M0CLIENT rg
+    -- XXX: notify $ MeroClusterFailed
 
 -- | Local state used in 'ruleServiceNotificationHandler'.
 type ClusterTransitionLocal =

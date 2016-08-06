@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
+
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -25,7 +26,9 @@ import Network.CEP
 
 import Prelude hiding (id)
 
-
+-- | Rules dealing with confc sync requests (originating from RC) and
+-- 'Get' events (originating from mero through the notification
+-- interface).
 meroRules :: Definitions LoopState ()
 meroRules = do
   defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) -> do
