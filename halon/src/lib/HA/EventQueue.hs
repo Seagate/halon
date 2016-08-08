@@ -65,7 +65,7 @@ import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Functor (void)
 import Data.Int (Int64)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.Typeable
 import Data.Word (Word64)

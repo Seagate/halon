@@ -25,7 +25,8 @@ import Lookup
 
 import Control.Applicative ((<|>))
 import Control.Distributed.Process
-import Control.Monad (void)
+import Control.Distributed.Process.Internal.Primitives
+import Control.Monad (void, when)
 import Control.Monad.Fix (fix)
 
 import Data.Foldable (for_)
@@ -42,6 +43,7 @@ data DebugOptions =
     EQStats EQStatsOptions
   | RCStats RCStatsOptions
   | CEPStats CEPStatsOptions
+  | NodStats NodeStatsOptions
   deriving (Eq, Show)
 
 parseDebug :: O.Parser DebugOptions
@@ -52,24 +54,32 @@ parseDebug =
         "Print RC statistics." )))
   <|> ( CEPStats <$> O.subparser ( O.command "cep" (O.withDesc parseCEPStatsOptions
         "Print CEP statistics." )))
+  <|> ( NodStats <$> O.subparser ( O.command "node" (O.withDesc parseNodeStatsOptions
+        "Print Node statistics.")))
 
 debug :: [NodeId] -> DebugOptions -> Process ()
 debug nids dbgo = case dbgo of
   EQStats x -> eqStats nids x
   RCStats x -> rcStats nids x
   CEPStats x -> cepStats nids x
+  NodStats x -> nodeStats nids x
 
-data EQStatsOptions = EQStatsOptions Int -- ^ Timeout for querying EQ
+data EQStatsOptions = EQStatsOptions Int -- ^ Timeout for querying EQ.
+                                     Bool -- ^ Request cep stats.
+                                     Bool -- ^ Request memory stats.
   deriving (Eq, Show)
 
 -- | Print Event Queue statistics.
 eqStats :: [NodeId] -> EQStatsOptions -> Process ()
-eqStats nids (EQStatsOptions t) = do
+eqStats nids (EQStatsOptions t c m) = do
     self <- getSelfPid
     eqs <- findEQFromNodes t nids
     for_ eqs $ \eq -> do
       nsendRemote eq eventQueueLabel $ EQStatReq self
-    expect >>= liftIO . display
+      expect >>= liftIO . display
+      when c $ do
+        nsendRemote eq eventQueueLabel $ RuntimeInfoRequest self m
+        expect >>= displayCepReply
   where
     display (EQStatResp{..}) = do
       putStrLn $ printf "EQ size: %d" eqs_queue_size
@@ -91,6 +101,16 @@ parseEQStatsOptions = EQStatsOptions
         <> O.help ("Time to wait from a reply from the EQT when" ++
                   " querying the location of an EQ.")
       )
+  <*> O.switch
+        ( O.long "cep"
+        <> O.short 'c'
+        <> O.help "Show cep stats."
+        )
+  <*> O.switch
+        ( O.long "memory"
+       <> O.short 'm'
+       <> O.help "Show memory allocation; this operation may be slow. Require -c"
+        )
 
 data RCStatsOptions = RCStatsOptions
     Int -- ^ Timeout for querying EQ
@@ -147,28 +167,31 @@ cepStats nids (CEPStatsOptions t m) = do
              then loop
              else for_ mp $ \p -> do
                usend p (RuntimeInfoRequest self m)
-               expect >>= display
+               expect >>= displayCepReply
         , match $ \() -> liftIO $ putStrLn "RuntimeInfo cannot be fetched."
         ]
   where
-    display :: RuntimeInfo -> Process ()
-    display (RuntimeInfo{..}) = liftIO $ do
-      putStrLn $ printf (unlines
-                          [ "Total SMs: %d"
-                          , "Running SMs: %d"
-                          , "Suspended SMs : %d"
-                          ]
-                         )
-                         infoTotalSM infoRunningSM infoSuspendedSM
-      for_ infoMemory $ \MemoryInfo{..} ->
-        putStrLn $ printf (unlines
-                            [ "Total Memory: %dB"
-                            , "SM size: %dB"
-                            , "State size: %dB"
-                            ]
-                          )
-                          minfoTotalSize minfoSMSize minfoStateSize
-      displayRunningSMs infoSMs
+    labelRecoveryCoordinator = "mero-halon.RC"
+
+displayCepReply :: RuntimeInfo -> Process ()
+displayCepReply (RuntimeInfo{..}) = liftIO $ do
+  putStrLn $ printf (unlines
+                      [ "Total SMs: %d"
+                      , "Running SMs: %d"
+                      , "Suspended SMs : %d"
+                      ]
+                     )
+                     infoTotalSM infoRunningSM infoSuspendedSM
+  for_ infoMemory $ \MemoryInfo{..} ->
+    putStrLn $ printf (unlines
+                        [ "Total Memory: %dB"
+                        , "SM size: %dB"
+                        , "State size: %dB"
+                        ]
+                      )
+                      minfoTotalSize minfoSMSize minfoStateSize
+  displayRunningSMs infoSMs
+  where
     displayRunningSMs sms = let
         heading = ("Rule name", "Running SMs")
         maxRuleNameLength :: Int
@@ -193,7 +216,6 @@ cepStats nids (CEPStatsOptions t m) = do
                   ++ "|"
                   ++ (space padding)
                   ++ (show c)
-    labelRecoveryCoordinator = "mero-halon.RC"
 
 
 parseCEPStatsOptions :: O.Parser CEPStatsOptions
@@ -209,3 +231,39 @@ parseCEPStatsOptions = CEPStatsOptions
        <> O.short 'm'
        <> O.help "Show memory allocation; this operation may be slow."
         )
+
+data NodeStatsOptions = NodeStatsOptions
+    Int -- ^ Timeout for querying EQ
+  deriving (Eq, Show)
+
+nodeStats :: [NodeId] -> NodeStatsOptions -> Process ()
+nodeStats nids (NodeStatsOptions t) = do
+    self <- getSelfPid
+    for_ nids $ \nid -> do
+      liftIO $ putStrLn $ "Node: " ++ show nid
+      getNodeStats nid >>= display
+  where
+    labelRecoveryCoordinator = "mero-halon.RC"
+    display :: Either DiedReason NodeStats -> Process ()
+    display (Right NodeStats{..}) = liftIO $ do
+      putStrLn $ printf (unlines
+                          [ "Registered names: %d"
+                          , "Monitors: %d"
+                          , "Links: %d"
+                          , "Processes: %d"
+                          ]
+                         )
+                         nodeStatsRegisteredNames
+                         nodeStatsMonitors
+                         nodeStatsLinks
+                         nodeStatsProcesses
+    display (Left r) = liftIO $ putStrLn $ "Died: " ++ show r
+
+parseNodeStatsOptions :: O.Parser NodeStatsOptions
+parseNodeStatsOptions = NodeStatsOptions
+  <$> O.option O.auto (
+        O.metavar "TIMEOUT (μs)"
+        <> O.long "rc-timeout"
+        <> O.value 1000000
+        <> O.help ("Time to wait for the location of an RC on the given nodes.")
+      )

@@ -33,6 +33,7 @@ Library
 
   Exposed-Modules: Control.Distributed.Process
                    Control.Distributed.Process.Internal.Messaging
+                   Control.Distributed.Process.Internal.Primitives
                    Control.Distributed.Process.Internal.StrictMVar
                    Control.Distributed.Process.Internal.Types
                    Control.Distributed.Process.Closure
