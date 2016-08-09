@@ -99,6 +99,9 @@ sendSystemdCmd nid req = do
     _ -> phaseLog "warning" "Cannot find systemd channel!"
 
 -- | Send command to logger actuator.
+--
+-- Logger actuator command is used to forcefully set drives status using
+-- SSPL and sent related IEM message.
 sendLoggingCmd :: Host
                -> LoggerCmd
                -> PhaseM LoopState l ()
@@ -229,11 +232,10 @@ ssplRulesF sspl = sequence_
   ]
 
 ruleDeclareChannels :: Definitions LoopState ()
-ruleDeclareChannels = defineSimple "declare-channels" $
-      \(HAEvent uuid (DeclareChannels pid svc acs) _) -> do
+ruleDeclareChannels = defineSimpleTask "declare-channels" $
+      \(DeclareChannels pid svc acs) -> do
           registerChannels svc acs
           ack pid
-          messageProcessed uuid
 
 data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
   deriving (Eq,Show,Generic,Typeable)
@@ -241,6 +243,9 @@ data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
 instance Binary RuleDriveManagerDisk
 
 -- | SSPL Monitor drivemanager
+--
+-- TODO: remove RuleDriveManagerDisk and use 'continue' instead
+-- TODO: todo/done for good measure
 ruleMonitorDriveManager :: Definitions LoopState ()
 ruleMonitorDriveManager = define "monitor-drivemanager" $ do
    pinit  <- phaseHandle "init"
@@ -274,6 +279,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          sd : _ -> lookupEnclosureOfStorageDevice sd >>= \case
            Nothing -> do
              phaseLog "warn" $ "No enclosure found for " ++ show sd
+             -- TODO: don't return enc' but just abort
              return enc'
            Just enc'' -> return enc''
        _ -> return enc'
@@ -284,6 +290,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
          -- Try to check if we have device with known serial number, just without location.
          lookupStorageDeviceInEnclosure enc sn >>= \case
            Just disk -> do
+             -- TODO: we don't want to blindly set path, should verify if it matches and panic if not
              identifyStorageDevice disk [DIIndexInEnclosure diskNum, path]
              selfMessage (RuleDriveManagerDisk disk)
            Nothing -> do
@@ -307,15 +314,14 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
 
      oldDriveStatus <- maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
      isOngoingReset <- hasOngoingReset disk
-     isRemoved <- isStorageDriveRemoved disk
 
-     if isOngoingReset || isRemoved
+     if isOngoingReset
      then do
        phaseLog "info" $ unwords [
                             "Ignoring DriveManager updates for disk:"
                           , show disk
                           , "due to disk being"
-                          , if isRemoved then "removed" else "reset"
+                          , "reset"
                           ]
        messageProcessed uuid
      else
@@ -378,6 +384,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
         (Just i, Just _) -> do
           -- Drive with this serial is known, but is not the drive in this slot.
           -- In this case the drive has probably been moved.
+          -- TODO: investigate replacement with engineer temporarily pulling out drive scenario
           void $ attachStorageDeviceReplacement i [serial, wwn, idx]
           return i
         (Just i, Nothing) -> do
@@ -482,6 +489,8 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
 #endif
 
 -- | SSPL Monitor host_update
+--
+-- TODO: can we just remove this completely and use the data from NodeUp?
 ruleMonitorHostUpdate :: Definitions LoopState ()
 ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
       let host = Host . T.unpack
@@ -512,7 +521,6 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
       drives = sensorResponseMessageSensor_response_typeRaid_dataDrives srrd
 
     in do
-      phaseLog "debug" "starting"
       todo uid
       mhost <- findNodeHost (Node nid)
       case mhost of
@@ -526,7 +534,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
             let
               midentity = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentity drive
               status = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemStatus drive
-            (fmap (, status)) <$> case midentity of
+            fmap (, status) <$> case midentity of
               Just ident -> let
                   path = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath ident
                   sn = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber ident
@@ -600,6 +608,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
       done uid
 
   setPhaseIf reset_success
+    -- TODO: relies on drive reset rule; TODO: nicer local state
     ( \(HAEvent eid (ResetSuccess x) _) _ l -> case l of
         Just (_,_,y,_,_) | x == y -> return $ Just eid
         _ -> return Nothing
@@ -616,6 +625,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
         Just (_,_,y,_,_) | x == y -> return $ Just eid
         _ -> return Nothing
     ) $ \eid -> do
+      -- TODO: log an IEM (SEM?) here that things are wrong
       messageProcessed eid
       continue end
 
@@ -672,6 +682,8 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
   --       forM_ ifs addIf
 
   -- Dummy rule for handling SSPL HL commands
+
+-- TODO: Consider whether we need this (probably not)
 ruleSystemdCmd :: Service SSPLConf -> Definitions LoopState ()
 ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
     return . fmap (uuid,) . commandRequestMessageServiceRequest
