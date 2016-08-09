@@ -29,6 +29,7 @@ module Mero.Notification.HAState
   , entrypointReply
   , entrypointNoReply
   , HAMsgMeta(..)
+  , failureVectorReply
   , HAStateException(..)
   , ProcessEvent(..)
   , ProcessEventType(..)
@@ -39,11 +40,11 @@ module Mero.Notification.HAState
 
 import HA.Resources.Mero.Note
 
-import Mero.ConfC             (Fid, Word128, ServiceType)
+import Mero.ConfC             (Cookie, Fid, Word128, ServiceType)
 import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, liftM3, liftM4 )
+import Control.Monad          ( liftM2, liftM3, liftM4, void )
 import Control.Monad.Catch    ( catch )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
@@ -198,6 +199,8 @@ initHAState :: RPCAddress
                -- ^ Message on the given link was delivered.
             -> (HALink -> Word64 -> IO ())
                -- ^ Message on the given link will never be delivered.
+            -> (HALink -> Cookie -> Fid -> IO ())
+               -- ^ Failure vector request.
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
             ha_service_event_set
@@ -205,7 +208,8 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
             ha_state_entry
             ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
-            ha_state_is_delivered ha_state_is_cancelled =
+            ha_state_is_delivered ha_state_is_cancelled
+            ha_state_failure =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -220,6 +224,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wdisconnected <- wrapDisconnectedCB
       wisdelivered <- wrapIsDeliveredCB
       wiscancelled <- wrapIsCancelledCB
+      wfailure <- wrapFailureCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
@@ -233,6 +238,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
          wdisconnected
       #{poke ha_state_callbacks_t, ha_state_is_delivered} pcbs wisdelivered
       #{poke ha_state_callbacks_t, ha_state_is_cancelled} pcbs wiscancelled
+      #{poke ha_state_callbacks_t, ha_state_failure_vec} pcbs wfailure
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
@@ -245,6 +251,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         . (SomeFunPtr wdisconnected:)
         . (SomeFunPtr wisdelivered:)
         . (SomeFunPtr wiscancelled:)
+        . (SomeFunPtr wfailure:)
         )
       rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
               ha_state_init cRPCAddr procPtr profPtr pcbs
@@ -307,6 +314,12 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         catch (ha_state_is_cancelled (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+    wrapFailureCB = cwrapFailureCB $ \hl pcookie pfid ->
+        catch (do fid <- peek pfid
+                  cookie <- peek pcookie
+                  ha_state_failure (HALink hl) cookie fid) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapFailureCB: " ++ show (e :: SomeException)
 
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
@@ -348,6 +361,10 @@ foreign import ccall "wrapper" cwrapConnectedCB ::
 
 foreign import ccall "wrapper" cwrapIsDeliveredCB ::
     (Ptr HALink -> Word64 -> IO ()) -> IO (FunPtr (Ptr HALink -> Word64 -> IO ()))
+
+foreign import ccall "wrapper" cwrapFailureCB ::
+                  (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ())
+    -> IO (FunPtr (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ()))
 
 instance Storable Note where
 
@@ -435,6 +452,20 @@ entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
 entrypointNoReply :: ReqId -> IO ()
 entrypointNoReply (ReqId reqId) = with reqId $ \reqId_ptr ->
   ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+
+-- | Replies to failure vector request
+failureVectorReply :: HALink -> Cookie -> Fid -> NVec -> IO ()
+failureVectorReply (HALink hl) cookie pool fvec =
+  allocaBytesAligned #{size struct m0_ha_msg_failure_vec_rep}
+                     #{alignment struct m0_ha_msg_failure_vec_rep} $ \ffvec -> do
+    #{poke struct m0_ha_msg_failure_vec_rep, mfp_cookie} ffvec cookie
+    #{poke struct m0_ha_msg_failure_vec_rep, mfp_pool} ffvec pool
+    #{poke struct m0_ha_msg_failure_vec_rep, mfp_nr} ffvec
+       (fromIntegral $ length fvec :: Word64)
+    pokeArray (#{ptr struct m0_ha_msg_failure_vec_rep, mfp_vec} ffvec) fvec
+    void $ ha_state_failure_vec_reply hl ffvec
+
+foreign import capi ha_state_failure_vec_reply :: Ptr HALink -> Ptr () -> IO Word64
 
 foreign import capi "hastate.h ha_state_rpc_machine" ha_state_rpc_machine :: IO (Ptr RPCMachineV)
 

@@ -38,7 +38,7 @@ import Control.Distributed.Process
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid, ServiceType(..))
+import Mero.ConfC (Fid, Cookie(..), ServiceType(..))
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
@@ -55,14 +55,14 @@ import Network.RPC.RPCLite
   ( RPCAddress
   , RPCMachine
   )
-import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..))
+import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..),GetFailureVector(..))
 
 import Control.Arrow ((***))
 import Control.Lens
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad ( void, join, when )
+import Control.Monad (void, join, when)
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
@@ -75,7 +75,7 @@ import Data.Hashable (Hashable)
 import Data.List (nub)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
 import Data.Monoid ((<>))
 import Data.Tuple (swap)
 import Data.Typeable (Typeable)
@@ -421,6 +421,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
                             (ha_disconnected links)
                             (ha_delivered links)
                             (ha_cancelled links)
+                            (ha_request_failure_vector)
              putMVar barrier er
              case er of
                Right{} -> do
@@ -498,6 +499,16 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
 
     ha_reused :: NIState -> ReqId -> HALink -> IO ()
     ha_reused _ _ _ = return ()
+
+    ha_request_failure_vector :: HALink -> Cookie -> Fid -> IO ()
+    ha_request_failure_vector hl cookie pool = void $ CH.forkProcess lnode $ do
+      liftIO $ traceEventIO "START ha_request_failure_vector"
+      (send, recv) <- newChan
+      promulgateWait (GetFailureVector pool send)
+      mr <- receiveChan recv
+      liftIO . liftGlobalM0 . failureVectorReply hl cookie pool
+             $ fromMaybe [] mr
+      liftIO $ traceEventIO "START ha_request_failure_vector"
 
     ha_disconnecting :: NIState -> HALink -> IO ()
     ha_disconnecting links hl = do

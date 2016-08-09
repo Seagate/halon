@@ -31,7 +31,7 @@ import           Network.AMQP
 import           Network.CEP
 import           Network.Transport
 import           Test.Framework
-import           Test.Tasty.HUnit (assertEqual)
+import           Test.Tasty.HUnit (assertEqual, assertBool, assertFailure)
 import           TestRunner
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
@@ -45,6 +45,8 @@ mkTests pg = do
       return $ \t ->
         [testSuccess "stateCascade" $
            stateCascade t pg
+        ,testSuccess "failureVector" $
+           failvecCascade t pg
         ]
 
 -- | Used to fire internal test rules
@@ -141,6 +143,85 @@ stateCascade t pg = doTest t pg [rule] test'
         Just (eid, pid, _, meroSet) <- get Local
         phaseLog "info" $ "All notified"
         liftProcess . usend pid $ Set meroSet
+        messageProcessed eid
+
+      directly timed_out $ do
+        Just (eid, _, _, _) <- get Local
+        phaseLog "warn" $ "Notify timed out"
+        messageProcessed eid
+
+      start init_rule Nothing
+
+failvecCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+failvecCascade t pg = doTest t pg [rule] test'
+  where
+    test' :: ReceivePort NotificationMessage -> Process ()
+    test' recv = do
+      nid <- getSelfNode
+      self <- getSelfPid
+      _ <- promulgateEQ [nid] $ RuleHook self
+      (d0:d1:_disks) <- expect :: Process [M0.Disk]
+      Set ns' <- H.nextNotificationFor (M0.fid d0) recv
+      mfailvec <- expect :: Process (Maybe [Note])
+      H.debug $ "Notifications: " ++ show mfailvec
+      case mfailvec of
+        Just failvec -> do
+          liftIO $ assertEqual "Mero sends both devices" 2 (length failvec)
+          liftIO $ assertEqual "Mero sends devices in right order"
+                   [M0.fid d0, M0.fid d1]
+                   (map (\(Note f _) -> f) failvec)
+          liftIO $ assertBool "All devices are failed" $
+                   all (\(Note _ s) -> s == M0_NC_FAILED) failvec
+        Nothing -> liftIO $ assertFailure "no failvector received"
+
+    rule :: Definitions LoopState ()
+    rule = define "stateCascadeTest" $ do
+      init_rule <- phaseHandle "init_rule"
+      notified <- phaseHandle "notified"
+      timed_out <- phaseHandle "timed_out"
+
+      let viewNotifySet :: Lens' (Maybe (UUID,ProcessId,[AnyStateSet],NVec)) (Maybe [AnyStateSet])
+          viewNotifySet = lens lget lset where
+            lset Nothing _ = Nothing
+            lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
+            lget = fmap (\(_,_,x,_) -> x)
+          viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
+
+      setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
+        rg <- getLocalGraph
+        let disks@(d0:d1:_) =
+                [ disk | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+                , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
+                , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
+                , (controller :: M0.Controller) <- G.connectedTo enclosure M0.IsParentOf rg
+                , (disk :: M0.Disk) <- G.connectedTo controller M0.IsParentOf rg
+                ]
+        liftProcess . usend pid $ disks
+        let failure_set = [stateSet d0 M0.SDSFailed, stateSet d1 M0.SDSFailed]
+        applyStateChanges failure_set
+        let _notifySet = [ stateSet d0 M0.SDSFailed
+                        , stateSet d1 M0.SDSFailed
+                        ]
+            meroSet = [ Note (M0.fid d0) M0_NC_FAILED
+                      , Note (M0.fid d1) M0_NC_TRANSIENT
+                      ]
+        put Local $ Just (eid, pid, failure_set, meroSet)
+        switch [notified, timeout 15 timed_out]
+
+      setPhaseAllNotified notified viewNotifySet $ do
+        Just (eid, pid, _, meroSet) <- get Local
+        phaseLog "info" $ "All notified"
+        rg <- getLocalGraph
+        let (pool:pools) =
+                [ pool | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+                , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg
+                ]
+        let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w)
+                 (toConfObjState w (HA.Resources.Mero.Note.getState w rg))) <$> v)
+              <$> listToMaybe (G.connectedTo pool Has rg)
+        liftProcess . usend pid $ mv -- (Set meroSet, mv)
         messageProcessed eid
 
       directly timed_out $ do

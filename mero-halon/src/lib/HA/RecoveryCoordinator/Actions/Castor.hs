@@ -24,7 +24,7 @@ import Data.List (nub, intersect)
 -- | Record disk failure in Failure vector
 rgRecordDiskFailure :: M0.Disk -> G.Graph -> G.Graph
 rgRecordDiskFailure disk = updateDiskFailure defAction ins disk where
-  defAction pool = G.connect pool R.Has (M0.DiskFailureVector [disk])
+  defAction pool = G.connectUniqueFrom pool R.Has (M0.DiskFailureVector [disk])
   ins d [] = Just [d]
   ins d (x:xs)
      | d == x = Nothing
@@ -62,4 +62,4 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
       Nothing -> df pool rg
       Just (M0.DiskFailureVector v) -> case f disk v of
         Nothing -> rg
-        Just fv -> G.connect pool R.Has (M0.DiskFailureVector fv) rg
+        Just fv -> G.connectUniqueFrom pool R.Has (M0.DiskFailureVector fv) rg

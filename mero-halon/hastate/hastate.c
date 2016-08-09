@@ -63,6 +63,13 @@ void msg_received_cb ( struct m0_halon_interface *hi
         ha_state_cbs.ha_service_event_set ( get_metadata(msg)
                                           , &msg->hm_data.u.hed_event_service);
         break;
+      case M0_HA_MSG_FAILURE_VEC_REQ:
+        ha_state_cbs.ha_state_failure_vec( hl
+                                         , &msg->hm_data.u.hed_fvec_req.mfq_cookie
+                                         , &msg->hm_data.u.hed_fvec_req.mfq_pool);
+        break;
+      default:
+        M0_LOG(M0_ALWAYS, "Unknown msg type: %"PRIu64, msg->hm_data.hed_type);
     }
     m0_halon_interface_delivered(m0init_hi, hl, msg);
 }
@@ -143,6 +150,23 @@ uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note) {
         .hm_time           = m0_time_now(),
         .hm_data = { .hed_type = M0_HA_MSG_NVEC
                    , .u.hed_nvec = *note
+                   },
+        };
+
+    m0_halon_interface_send(m0init_hi, hl, &msg, &tag);
+    return tag;
+}
+
+// Sends a failure vector reply back to mero.
+uint64_t ha_state_failure_vec_reply(struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec) {
+    uint64_t tag;
+    struct m0_ha_msg msg = (struct m0_ha_msg){
+        .hm_fid            = M0_FID_INIT(0, 0),
+        .hm_source_process = M0_FID_INIT(0, 0),
+        .hm_source_service = M0_FID_INIT(0, 0),
+        .hm_time           = m0_time_now(),    
+        .hm_data = { .hed_type = M0_HA_MSG_FAILURE_VEC_REP
+                   , .u.hed_fvec_rep = *fvec
                    },
         };
 

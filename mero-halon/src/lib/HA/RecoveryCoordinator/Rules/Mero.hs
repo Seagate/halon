@@ -12,14 +12,18 @@ module HA.RecoveryCoordinator.Rules.Mero where
 
 import HA.EventQueue.Types
 
+import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Mero
 import HA.Resources.Mero.Note
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources        as R
 import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
-import Control.Distributed.Process (usend)
+import Control.Distributed.Process (usend, sendChan)
+import Data.Maybe (listToMaybe)
 
 import Network.CEP
 
@@ -28,16 +32,25 @@ import Prelude hiding (id)
 
 meroRules :: Definitions LoopState ()
 meroRules = do
-  defineSimple "Sync-to-confd" $ \(HAEvent eid sync _) -> do
-    syncAction (Just eid) sync
+  defineSimple "Sync-to-confd" $ \(HAEvent eid afterSync _) -> do
+    syncAction (Just eid) afterSync
     messageProcessed eid
-  defineSimple "Sync-to-confd-local" $ \(uuid, sync) -> do
-    syncAction Nothing sync
+  defineSimple "Sync-to-confd-local" $ \(uuid, afterSync) -> do
+    syncAction Nothing afterSync
     selfMessage (SyncComplete uuid)
 
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.
   defineSimple "ha-state-get" $ \(HAEvent uuid (Get client fids) _) -> do
-      getLocalGraph >>= liftProcess . usend client .
-        GetReply . map (uncurry Note) . lookupConfObjectStates fids
-      messageProcessed uuid
+    getLocalGraph >>= liftProcess . usend client .
+      GetReply . map (uncurry Note) . lookupConfObjectStates fids
+    messageProcessed uuid
+
+  -- Reply to the Failure vector request.
+  defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
+    rg <- getLocalGraph
+    let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
+           <$> listToMaybe (G.connectedTo (M0.Pool pool) R.Has rg)
+    phaseLog "debug" $ "FailureVector="++show mv
+    liftProcess $ sendChan port mv
+

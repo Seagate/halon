@@ -21,6 +21,7 @@ module HA.RecoveryCoordinator.Events.Mero
    -- * Jobs
    , AbortSNSOperation(..)
    , AbortSNSOperationResult(..)
+   , GetFailureVector(..)
    -- * State changes
    , AnyStateSet(..)
    , AnyStateChange(..)
@@ -39,10 +40,12 @@ import qualified HA.Resources.Mero as M0
 import qualified Mero.ConfC as M0 (Fid)
 
 import Control.Applicative (many)
-import Control.Distributed.Process (ProcessId, RemoteTable, Static)
+import Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (unstatic)
 import Control.Monad.Reader (ask)
+import Mero.ConfC (Fid(..))
+import Mero.Notification.HAState (Note(..))
 
 import Data.Binary
 import Data.Binary.Put (runPut)
@@ -185,3 +188,6 @@ data AbortSNSOperationResult
 
 instance Binary AbortSNSOperationResult
 
+data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
+      deriving (Eq, Show, Typeable, Generic)
+instance Binary GetFailureVector

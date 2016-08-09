@@ -123,6 +123,22 @@ instance Storable Word128 where
     #{poke struct m0_uint128, u_hi} p hi
     #{poke struct m0_uint128, u_lo} p lo
 
+-- @types.h m0_cookie@
+data Cookie = Cookie {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
+  deriving (Eq, Generic, Show)
+
+instance Binary Cookie
+instance Hashable Cookie
+instance Storable Cookie where
+  sizeOf _ = #{size struct m0_cookie}
+  alignment _ = #{alignment struct m0_cookie}
+  peek p = Cookie
+    <$> #{peek struct m0_cookie, co_addr} p
+    <*> #{peek struct m0_cookie, co_generation} p
+  poke p (Cookie addr gen) = do
+    #{poke struct m0_cookie, co_addr} p addr
+    #{poke struct m0_cookie, co_generation} p gen
+
 -- | @pdclust.h m0_pdclust_attr@
 data PDClustAttr = PDClustAttr {
     _pa_N :: Word32
@@ -155,6 +171,7 @@ confCtx = mempty {
   C.ctxTypesTable = Map.fromList [
       (C.Struct "m0_fid", [t| Fid |])
     , (C.Struct "m0_uint128", [t| Word128 |])
+    , (C.Struct "m0_cookie", [t| Cookie |])
     , (C.Struct "m0_pdclust_attr", [t| PDClustAttr |])
     , (C.Struct "m0_bitmap", [t| Bitmap |])
   ]
