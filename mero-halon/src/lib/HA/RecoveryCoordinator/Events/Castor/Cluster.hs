@@ -22,7 +22,6 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StartHalonM0dRequest(..)
   , StopHalonM0dRequest(..)
   , StartClientsOnNodeRequest(..)
-  , StopClientsOnNodeRequest(..)
   , M0KernelResult(..)
   , StartProcessesOnNodeResult(..)
   -- * Process
@@ -135,10 +134,6 @@ instance Binary StopProcessesOnNodeResult
 
 newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
          deriving (Eq, Show, Generic, Binary, Ord)
-
-newtype StopClientsOnNodeRequest = StopClientsOnNodeRequest M0.Node
-         deriving (Eq, Show, Generic, Binary, Ord)
-
 
 -- | Result of trying to start the M0 Kernel
 data M0KernelResult
