@@ -14,3 +14,4 @@ resources n = do
       tupE [stringE (show r), stringE (p a), stringE (p b)]
     p (ConT n) = show n
     p (AppT n m) = p n ++ "_" ++ p m
+    p _ = ""
