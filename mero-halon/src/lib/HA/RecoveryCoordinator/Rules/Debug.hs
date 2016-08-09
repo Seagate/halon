@@ -23,17 +23,20 @@ rules argv = sequence_ [
   , ruleDebugRC argv
   ]
 
+-- | Listen for 'NodeStatusRequest' and send back the
+-- 'NodeSTatusResponse' to the interested process.
 ruleNodeStatus :: IgnitionArguments -> Definitions LoopState ()
-ruleNodeStatus argv = defineSimple "Debug::node-status" $
-      \(HAEvent uuid (NodeStatusRequest n@(R.Node nid) lis) _) -> do
+ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
+      \(NodeStatusRequest n@(R.Node nid) lis) -> do
         rg <- getLocalGraph
         let
-          isStation = nid `elem` (eqNodes argv)
-          isSatellite = G.memberResource n rg
+          isStation = nid `elem` eqNodes argv
+          isSatellite = G.isConnected R.Cluster R.Has (R.Node nid) rg
           response = NodeStatusResponse n isStation isSatellite
         liftProcess $ mapM_ (flip usend response) lis
-        messageProcessed uuid
 
+-- | Listen for 'DebugRequest' and send back 'DebugResponse' to the
+-- requesting process.
 ruleDebugRC :: IgnitionArguments -> Definitions LoopState ()
 ruleDebugRC argv = defineSimpleTask "Debug::debug-rc" $
   \(DebugRequest pid) -> do
