@@ -81,6 +81,8 @@ castorRules = sequence_
 #endif
   ]
 
+-- | Load initial data from facts file into the system.
+--   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   racks <- do rg <- getLocalGraph
