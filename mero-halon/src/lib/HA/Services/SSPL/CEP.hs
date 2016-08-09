@@ -295,7 +295,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
              mhost <- findNodeHost (Node nid)
              forM_ mhost $ \host -> locateHostInEnclosure host enc
              identifyStorageDevice disk [DIIndexInEnclosure diskNum, sn, path]
-             syncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
+             registerSyncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
        Just st -> selfMessage (RuleDriveManagerDisk st)
      continue pcommit
 
@@ -432,8 +432,8 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
        _ -> return False
 
       if more_needed
-      then syncGraph (return ())
-      else syncGraphProcessMsg uuid
+      then registerSyncGraph (return ())
+      else registerSyncGraphProcessMsg uuid
 
 #ifdef USE_MERO
 -- | Handle SSPL message about a service failure.
@@ -490,7 +490,7 @@ ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid
       registerHost host
       locateNodeOnHost node host
       phaseLog "rg" $ "Registered host: " ++ show host
-      syncGraphProcessMsg uuid
+      registerSyncGraphProcessMsg uuid
 
 -- | Monitor RAID data. We should register the RAID devices in the system,
 --   with no corresponding Mero devices.

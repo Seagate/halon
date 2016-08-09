@@ -107,7 +107,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
               getLocalGraph
             putLocalGraph graph'
             syncGraphBlocking
-          (if isJust update then liftProcess else syncGraph) $
+          (if isJust update then liftProcess else registerSyncGraph) $
             say "Loaded initial data")
           `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
       notify InitialDataLoaded

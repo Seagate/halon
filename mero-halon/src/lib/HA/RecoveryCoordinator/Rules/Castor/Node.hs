@@ -410,7 +410,7 @@ mkQueryHostInfo andThen orFail = do
         Just host -> do
           modify Local $ over (rlens fldHostHardwareInfo) (const . Field $ Just info)
           modify Local $ over (rlens fldHost) (const . Field $ Just host)
-          syncGraphProcessMsg eid
+          registerSyncGraphProcessMsg eid
           continue andThen
         Nothing -> do
           phaseLog "error" $ "Unknown host"

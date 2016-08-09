@@ -16,11 +16,11 @@ module HA.RecoveryCoordinator.Actions.Core
   , modifyLocalGraph
     -- * Operating on the graph
   , getMultimapChan
-  , syncGraph
   , syncGraphBlocking
-  , syncGraphProcess
-  , syncGraphCallback
-  , syncGraphProcessMsg
+  , registerSyncGraph
+  , registerSyncGraphProcess
+  , registerSyncGraphCallback
+  , registerSyncGraphProcessMsg
   , knownResource
   , registerNode
     -- * Operations on ephimeral state
@@ -169,8 +169,8 @@ modifyLocalGraph k = do
 -- synchronized callback will be called.
 -- Callback will block multimap process so only fast calls, that do
 -- not throw exceptions should be used there.
-syncGraph :: Process () -> PhaseM LoopState l ()
-syncGraph callback = modifyLocalGraph $ \rg ->
+registerSyncGraph :: Process () -> PhaseM LoopState l ()
+registerSyncGraph callback = modifyLocalGraph $ \rg ->
   liftProcess $ G.sync rg callback
 
 -- | Sync the graph and block the caller until this is complete. This
@@ -183,26 +183,26 @@ syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
 -- | 'syncGraph' wrapper that will notify EQ about message beign processed.
 -- This wrapper could be used then graph synchronization is a last command
 -- before commiting a graph.
-syncGraphProcessMsg :: UUID -> PhaseM LoopState l ()
-syncGraphProcessMsg uuid = do
+registerSyncGraphProcessMsg :: UUID -> PhaseM LoopState l ()
+registerSyncGraphProcessMsg uuid = do
   eqPid <- lsEQPid <$> get Global
-  syncGraph $ liftProcess (usend eqPid uuid)
+  registerSyncGraph $ liftProcess (usend eqPid uuid)
 
 -- | 'syncGraph' helper that passes current process id to the callback.
 -- This method could be used when you want to send message to itself
 -- in a callback.
-syncGraphProcess :: (ProcessId -> Process ()) -> PhaseM LoopState l ()
-syncGraphProcess action = do
+registerSyncGraphProcess :: (ProcessId -> Process ()) -> PhaseM LoopState l ()
+registerSyncGraphProcess action = do
   self <- liftProcess $ getSelfPid
-  syncGraph $ liftProcess (action self)
+  registerSyncGraph $ liftProcess (action self)
 
 -- | 'syncGraph' helper that passes current process id and action to process
 -- messages.
-syncGraphCallback :: (ProcessId -> (UUID -> Process ()) -> Process ()) -> PhaseM LoopState l ()
-syncGraphCallback action = do
+registerSyncGraphCallback :: (ProcessId -> (UUID -> Process ()) -> Process ()) -> PhaseM LoopState l ()
+registerSyncGraphCallback action = do
   self  <- liftProcess getSelfPid
   eqPid <- lsEQPid <$> get Global
-  syncGraph $ action self (usend eqPid)
+  registerSyncGraph $ action self (usend eqPid)
 
 -- | Declare that we have finished handling a message to the EQ, meaning it can
 --   delete it.

@@ -179,7 +179,6 @@ ruleNodeUp argv = define "node-up" $ do
             notify $ OldNodeRevival node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
-            syncGraph $ return () -- XXX: maybe we need barrier here
             return True
         conf <- loadNodeMonitorConf node
         if not known
@@ -287,7 +286,7 @@ ruleSyncPing :: Definitions LoopState ()
 ruleSyncPing = defineSimple "sync-ping" $
       \(HAEvent uuid (SyncPing str) _) -> do
         eqPid <- lsEQPid <$> get Global
-        syncGraph $ do
+        registerSyncGraph $ do
           liftProcess $ sayRC $ "received SyncPing " ++ str
           usend eqPid uuid
 

@@ -275,7 +275,7 @@ ruleDriveInserted = define "drive-inserted" $ do
          markStorageDeviceReplaced disk
          request <- liftIO $ nextRandom
          put Local $ Just (request, di)
-         syncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
+         registerSyncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
          continue sync_complete
 
   setPhase sync_complete $ \(SyncComplete request) -> do
@@ -304,7 +304,7 @@ ruleDriveInserted = define "drive-inserted" $ do
 
   directly finish $ do
     Just (_, DriveInserted{diUUID=uuid}) <- get Local
-    syncGraphProcessMsg uuid
+    registerSyncGraphProcessMsg uuid
     stop
 
   startFork handler Nothing
