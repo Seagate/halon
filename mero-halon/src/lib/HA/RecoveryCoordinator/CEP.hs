@@ -151,7 +151,19 @@ rcRules argv additionalRules = do
 #endif
     sequence_ additionalRules
 
-
+-- | Listen for 'NodeUp' from connecting satellites. This rule starts
+-- the monitor on the node and also decides what to do when the
+-- known has already been in the cluster previously.
+--
+-- TODO: Expand with brief description of the logic decisions it
+-- takes.
+--
+-- TODO: consider porting to jobs: 'isNotHandled' is fragile as it
+-- uses ref count for the message which will break when any new rule
+-- 'todo's the 'NodeUp' event.
+--
+-- TODO: replace uses of sayRC (remember to update tests using
+-- interceptors)
 ruleNodeUp :: IgnitionArguments -> Definitions LoopState ()
 ruleNodeUp argv = define "node-up" $ do
       nodeup      <- phaseHandle "nodeup"
@@ -179,7 +191,6 @@ ruleNodeUp argv = define "node-up" $ do
             notify $ OldNodeRevival node
             unsetHostAttr (Host h) HA_TRANSIENT
             unsetHostAttr (Host h) HA_DOWN
-            syncGraph $ return () -- XXX: maybe we need barrier here
             return True
         conf <- loadNodeMonitorConf node
         if not known
@@ -191,7 +202,6 @@ ruleNodeUp argv = define "node-up" $ do
             fork NoBuffer $ do
               put Local (Starting uuid nid conf regularMonitor pid)
               continue nm_start
-            continue nodeup
           else do
             -- Check if we already provision node with a monitor or not.
             msp  <- lookupRunningService (Node nid) regularMonitor
@@ -200,7 +210,6 @@ ruleNodeUp argv = define "node-up" $ do
                 fork NoBuffer $ do
                   put Local (Starting uuid nid conf regularMonitor pid)
                   continue nm_start
-                continue nodeup
               Just _ | hasFailed || isDown -> do
                 phaseLog "info" $
                   "Node has failed but has monitor, removing halon services"
@@ -223,7 +232,6 @@ ruleNodeUp argv = define "node-up" $ do
                   "Node that hasn't failed with monitor, probably bringing up already."
                 ack pid
                 done uuid
-                continue nodeup
 
       directly nm_start $ do
         Starting _ nid conf svc _ <- get Local
@@ -273,7 +281,7 @@ ruleNodeUp argv = define "node-up" $ do
 
       directly end stop
 
-      start nodeup None
+      startFork nodeup None
 
 ruleDummyEvent :: Definitions LoopState ()
 ruleDummyEvent = defineSimple "dummy-event" $
