@@ -97,8 +97,6 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           loadMeroServers filesystem id_m0_servers
           createMDPoolPVer filesystem
           graph <- getLocalGraph
-          -- Pick a principal RM
-          _ <- pickPrincipalRM
           syncGraphBlocking
           Just strategy <- getCurrentStrategy
           let update = onInit strategy graph
