@@ -92,14 +92,14 @@ bootstrap Config{..} = do
             where text = ""
 
       -- Check halon facts and get interseting info. Throw away hosts
-      -- without halon settings.
+      -- without halon roles.
       let ehosts = filter (\(_, _, hrs, _) -> not $ null hrs) <$> traverse unwrap hosts
 
           hosts :: [(Host, HalonSettings)]
           hosts = [ (h, hs) | r <- id_racks initialData
-                                     , enc <- rack_enclosures r
-                                     , h <- enc_hosts enc
-                                     , Just hs <- [h_halon h] ]
+                            , enc <- rack_enclosures r
+                            , h <- enc_hosts enc
+                            , Just hs <- [h_halon h] ]
 
           unwrap (h, hs) = case mkHalonRoles halonRoleObj $ _hs_roles hs of
             Left err -> _Failure # ["Halon role failure for " ++ h_fqdn h ++ ": " ++ err]

@@ -434,7 +434,14 @@ mkHalonRoles :: EDE.Template -- ^ Role template
              -> Either String [HalonRole]
 mkHalonRoles template roles =
   fmap (nub . concat) . forM roles $ \role ->
-    mkRole template mempty role return
+    mkRole template mempty role (findRole role)
+  where
+    findRole :: RoleSpec -> [HalonRole] -> Either String [HalonRole]
+    findRole role xs = case find ((_rolespec_name role ==) . _hc_name) xs of
+      Nothing -> Left $ "No matching role "
+                      ++ show role
+                      ++ " found in mapping file."
+      Just a -> Right [a]
 #endif
 
 -- | Entry point into 'InitialData' parsing.
