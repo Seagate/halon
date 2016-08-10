@@ -39,7 +39,17 @@ fldUUID = Proxy
 
 -- | Create rule for a given process. This is a helper
 -- method that removes some boilerplate that is needed
--- in order to define such rule
+-- in order to define such rule.
+--
+-- Job identity is completely determined by its input
+-- event; for each event, only one instance of any job
+-- may run. Note that this means that if we have two
+-- distinct jobs that take the same input, only one of
+-- them may run at any given time.
+--
+-- Note that also no other rules should fire on the
+-- input, unless they do not mind that the event could
+-- be deleted.
 --
 -- It's not legitimate to call 'Network.CEP.stop' inside
 -- this @body@.

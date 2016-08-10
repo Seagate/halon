@@ -295,7 +295,7 @@ ruleSyncPing :: Definitions LoopState ()
 ruleSyncPing = defineSimple "sync-ping" $
       \(HAEvent uuid (SyncPing str) _) -> do
         eqPid <- lsEQPid <$> get Global
-        syncGraph $ do
+        registerSyncGraph $ do
           liftProcess $ sayRC $ "received SyncPing " ++ str
           usend eqPid uuid
 

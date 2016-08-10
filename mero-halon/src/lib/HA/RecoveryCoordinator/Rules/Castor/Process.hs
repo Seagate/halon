@@ -265,7 +265,7 @@ ruleProcessConfigured = defineSimpleTask "handle-configured" $
        phaseLog "info" $ printf "%s : configured" (showFid p)
        modifyGraph $ G.connectUniqueFrom p Is M0.ProcessBootstrapped
     -- XXX: use notification somehow
-    syncGraphProcess $ \rc -> do
+    registerSyncGraphProcess $ \rc -> do
       for_ results $ \r -> case r of
         Left x -> usend rc (ProcessConfigured x)
         Right (x,_) -> usend rc (ProcessConfigureFailed x)

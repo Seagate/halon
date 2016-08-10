@@ -61,8 +61,8 @@ notifyOnClusterTransition desiredState msg meid = do
          _ -> newState
     phaseLog "info" $ "Cluster state changed to " ++ show state'
     modifyGraph $ G.connectUnique R.Cluster R.Has state'
-    syncGraphCallback $ \self proc -> do
+    registerSyncGraphCallback $ \self proc -> do
       usend self (msg state')
       for_ meid proc
   else
-    for_ meid syncGraphProcessMsg
+    for_ meid registerSyncGraphProcessMsg

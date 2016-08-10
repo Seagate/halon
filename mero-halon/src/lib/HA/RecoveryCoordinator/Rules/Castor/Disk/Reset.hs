@@ -20,7 +20,7 @@ import HA.RecoveryCoordinator.Actions.Core
   , getLocalGraph
   , messageProcessed
   , promulgateRC
-  , syncGraph
+  , registerSyncGraph
   , unlessM
   , whenM
   )
@@ -132,7 +132,7 @@ handleResetExternal (Set ns) = do
                       when (st /= status) $
                         applyStateChangesCreateFS [ stateSet m0sdev status ]
 
-                      syncGraph $ say "handleReset synchronized"
+                      registerSyncGraph $ say "handleReset synchronized"
             _ -> do
               phaseLog "warning" $ "Cannot find all entities attached to M0"
                                 ++ " storage device: "

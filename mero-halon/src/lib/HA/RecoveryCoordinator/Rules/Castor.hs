@@ -81,6 +81,8 @@ castorRules = sequence_
 #endif
   ]
 
+-- | Load initial data from facts file into the system.
+--   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   racks <- do rg <- getLocalGraph
@@ -95,8 +97,6 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           loadMeroServers filesystem id_m0_servers
           createMDPoolPVer filesystem
           graph <- getLocalGraph
-          -- Pick a principal RM
-          _ <- pickPrincipalRM
           syncGraphBlocking
           Just strategy <- getCurrentStrategy
           let update = onInit strategy graph
@@ -107,7 +107,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
               getLocalGraph
             putLocalGraph graph'
             syncGraphBlocking
-          (if isJust update then liftProcess else syncGraph) $
+          (if isJust update then liftProcess else registerSyncGraph) $
             say "Loaded initial data")
           `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
       notify InitialDataLoaded

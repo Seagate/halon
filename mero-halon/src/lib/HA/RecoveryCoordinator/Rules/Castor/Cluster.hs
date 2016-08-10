@@ -406,7 +406,7 @@ requestClusterStart = defineSimple "castor::cluster::request::start"
                   modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
                   announceMeroNodes
 
-                  syncGraphCallback $ \pid proc -> do
+                  registerSyncGraphCallback $ \pid proc -> do
                     sendChan ch (StateChangeStarted pid)
                     proc eid
                M0.MeroClusterStarting{} -> Left $ StateChangeOngoing st
@@ -418,6 +418,10 @@ requestClusterStart = defineSimple "castor::cluster::request::start"
         Right action -> action
 
 -- | Request cluster to teardown.
+--   If the cluster is already tearing down, or is starting, this
+--   rule will do nothing.
+--   Sends 'StopProcessesOnNodeRequest' to all nodes.
+--   TODO: Does this include stopping clients on the nodes?
 requestClusterStop :: Definitions LoopState ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
   $ \(HAEvent eid (ClusterStopRequest ch) _) -> do
@@ -439,13 +443,17 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
       let nodes =
             [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
                    , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node] ]
-      -- for_ nodes $ promulgateRC . StopClientsOnNodeRequest
       for_ nodes $ promulgateRC . StopProcessesOnNodeRequest
-      syncGraphCallback $ \pid proc -> do
+      registerSyncGraphCallback $ \pid proc -> do
         sendChan ch (StateChangeStarted pid)
         proc eid
 
 -- | Stop m0t1fs service with given fid.
+--   This may be triggered by the user using halonctl.
+--
+--   Sends 'StopProcessesRequest' which has an explicit
+--   list of Processes.
+--
 -- 1. we check if there is halon:m0d service on the node
 -- 2. find if there is m0t1fs service with a given fid
 requestStopMeroClient :: Definitions LoopState ()
@@ -462,9 +470,9 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
     then promulgateRC $ StopProcessesRequest node [proc]
     else phaseLog "warning" $ show fid ++ " is not a client process."
 
--- | Start already existing mero client.
+-- | Start already existing (in confd) mero client.
 -- 1. Checks if client exists in database
--- 2. Tries to start a client
+-- 2. Tries to start a client by calling `startMeroProcesses`
 requestStartMeroClient :: Definitions LoopState ()
 requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::start" $ \(StartMeroClientRequest fid) -> do
   phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
@@ -481,6 +489,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
       case m0svc >>= meroChannel rg of
         Just chan -> do
            phaseLog "info" $ "Starting client"
+           -- TODO switch to 'StartProcessesRequest' (HALON-373)
            configureMeroProcesses chan [proc] M0.PLM0t1fs False
            startMeroProcesses chan [proc] M0.PLM0t1fs
         Nothing -> phaseLog "warning" $ "can't find mero channel."

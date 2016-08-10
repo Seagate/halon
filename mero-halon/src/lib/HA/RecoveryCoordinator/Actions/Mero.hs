@@ -468,6 +468,8 @@ retriggerMeroNodeBootstrap n = do
 
 -- | Send notifications about new mero nodes and new mero servers for
 -- the given set of 'Castor.Host's.
+--
+-- Use during startup by 'requestClusterStart'.
 announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
                        -> PhaseM LoopState a ()
@@ -494,6 +496,7 @@ announceTheseMeroHosts hosts p = do
   for_ serverNodes $ promulgateRC . StartProcessesOnNodeRequest
   -- XXX: this is a hack, for some reason on devvm main node is not in the
   -- clients list.
+  -- TODO can we remove this now? This should be marked properly.
   for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest
 
 
