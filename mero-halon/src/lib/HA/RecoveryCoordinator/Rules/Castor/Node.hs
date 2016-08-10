@@ -98,7 +98,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Node
   , StartProcessesOnNodeRequest(..)
   , StartProcessesOnNodeResult(..)
     --- *** Stop clients on node
-  , processStopClientsOnNode
+  , processStartClientsOnNode
   , StartClientsOnNodeRequest(..)
   , StartClientsOnNodeResult(..)
     -- *** Stop processes on node
@@ -653,76 +653,69 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
        <+> RNil
 
 
-processStopClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeResult
-processStopClientsOnNode = Job "castor::node::client::start"
-
-data StartClientsOnNodeResult
-       = StartClientsOnNodeResultOk
-       | InvariantViolation
-       deriving (Eq, Show, Generic)
-
-instance Binary StartClientsOnNodeResult
+processStartClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeResult
+processStartClientsOnNode = Job "castor::node::client::start"
 
 -- | Start all clients on the given node.
 ruleStartClientsOnNode :: Definitions LoopState ()
-ruleStartClientsOnNode = mkJobRule processStopClientsOnNode args $ \finish -> do
-   start_clients <- phaseHandle "start-clients"
-   await_barrier <- phaseHandle "await_barrier"
+ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> do
+    start_clients <- phaseHandle "start-clients"
+    await_barrier <- phaseHandle "await_barrier"
 
-   let route (StartClientsOnNodeRequest m0node) = do
-         phaseLog "debug" $ "request start client for " ++ show m0node
-         rg <- getLocalGraph
-         let mnode = listToMaybe $ m0nodeToNode m0node rg
-         mhost <- join <$> traverse findNodeHost mnode
-         case liftA2 (,) mnode mhost of
-           Nothing -> return Nothing
-           Just (node,host) -> do
-             modify Local $ rlens fldNode .~ Field (Just node)
-             modify Local $ rlens fldHost .~ Field (Just host)
-             let hasM0d = isJust $ runningService node m0d rg
-             case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-                Just M0.MeroClusterRunning | hasM0d -> return $ Just [start_clients]
-                _ -> return $ Just [await_barrier]
+    let route (StartClientsOnNodeRequest m0node) = do
+          phaseLog "debug" $ "request start client for " ++ show m0node
+          rg <- getLocalGraph
+          let mnode = listToMaybe $ m0nodeToNode m0node rg
+          mhost <- join <$> traverse findNodeHost mnode
+          case liftA2 (,) mnode mhost of
+            Nothing -> return Nothing
+            Just (node,host) -> do
+              modify Local $ rlens fldNode .~ Field (Just node)
+              modify Local $ rlens fldHost .~ Field (Just host)
+              let hasM0d = isJust $ runningService node m0d rg
+              case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
+                 Just M0.MeroClusterRunning | hasM0d -> return $ Just [start_clients]
+                 _ -> return $ Just [await_barrier]
 
-       -- Before starting client stuff, we want need the cluster to be
-       -- in OK state and the mero service to be up and running on the
-       -- node. In presence of node reboots, the assumption that
-       -- ‘MeroClusterRunning -> m0d is started on every node’ no
-       -- longer holds so we explicitly check for the service. An
-       -- improvement would be to check that every process on the node
-       -- is up and running.
-       nodeRunning p msg g l = barrierPass p msg g l >>= return . \case
-         Nothing -> Nothing
-         Just _ -> case getField $ rget fldNode l of
-           Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
-           Just n -> void $ runningService n m0d (lsGraph g)
+        -- Before starting client stuff, we want need the cluster to be
+        -- in OK state and the mero service to be up and running on the
+        -- node. In presence of node reboots, the assumption that
+        -- ‘MeroClusterRunning -> m0d is started on every node’ no
+        -- longer holds so we explicitly check for the service. An
+        -- improvement would be to check that every process on the node
+        -- is up and running.
+        nodeRunning p msg g l = barrierPass p msg g l >>= return . \case
+          Nothing -> Nothing
+          Just _ -> case getField $ rget fldNode l of
+            Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
+            Just n -> void $ runningService n m0d (lsGraph g)
 
-   setPhaseIf await_barrier (nodeRunning (>= M0.MeroClusterRunning)) $ \() -> do
-      Just node <- getField . rget fldNode <$> get Local
-      phaseLog "debug" $ "Past barrier on " ++ show node
-      continue start_clients
+    setPhaseIf await_barrier (nodeRunning (>= M0.MeroClusterRunning)) $ \() -> do
+       Just node <- getField . rget fldNode <$> get Local
+       phaseLog "debug" $ "Past barrier on " ++ show node
+       continue start_clients
 
-   directly start_clients $ do
-      rg <- getLocalGraph
-      Just node <- getField . rget fldNode <$> get Local
-      Just host <- getField . rget fldHost <$> get Local
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
-        Just chan -> do
-          phaseLog "info" $ "Starting mero client on " ++ show host
-          -- XXX: implement await
-          _ <- configureNodeProcesses host chan M0.PLM0t1fs False
-          _ <- startNodeProcesses host chan M0.PLM0t1fs
-          continue finish
-        Nothing -> do
-          phaseLog "error" $ "can't find mero channel on " ++ show node
-          continue finish
+    directly start_clients $ do
+       rg <- getLocalGraph
+       Just node <- getField . rget fldNode <$> get Local
+       Just host <- getField . rget fldHost <$> get Local
+       m0svc <- lookupRunningService node m0d
+       case m0svc >>= meroChannel rg of
+         Just chan -> do
+           phaseLog "info" $ "Starting mero client on " ++ show host
+           -- XXX: implement await
+           _ <- configureNodeProcesses host chan M0.PLM0t1fs False
+           _ <- startNodeProcesses host chan M0.PLM0t1fs
+           continue finish
+         Nothing -> do
+           phaseLog "error" $ "can't find mero channel on " ++ show node
+           continue finish
 
-   return route
+    return route
   where
-    fldReq :: Proxy '("request", Maybe StartClientsOnNodeRequest)
+    fldReq :: Proxy '("request", Maybe StopClientsOnNodeRequest)
     fldReq = Proxy
-    fldRep :: Proxy '("reply", Maybe StartClientsOnNodeResult)
+    fldRep :: Proxy '("reply", Maybe StopClientsOnNodeResult)
     fldRep = Proxy
     args  = fldUUID =: Nothing
         <+> fldReq     =: Nothing

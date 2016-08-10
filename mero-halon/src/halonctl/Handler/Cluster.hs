@@ -299,7 +299,8 @@ clusterCommand :: (Serializable a, Serializable b, Show b)
 clusterCommand eqnids mk output = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
-  output =<< receiveChan rchan
+  _ <- receiveTimeout 10000000 [ matchChan rchan output ]
+  return ()
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
