@@ -233,6 +233,7 @@ ruleReassembleRaid =
               waitFor sspl_notify_done
               continue dispatcher
             else do
+              -- TODO Send some kind of 'CannotTalkToSSPL' message
               phaseLog "error" $ "Expander reset event received for enclosure, "
                               ++ "but we are unable to contact SSPL on that "
                               ++ "node."
@@ -242,6 +243,7 @@ ruleReassembleRaid =
                            ++ "but there were no RAID devices to reassemble."
             done eid
           (Nothing, _) -> do
+            -- TODO this is pretty interesting - should we raise an IEM?
             phaseLog "warning" $ "Expander reset event received for enclosure, "
                               ++ "but there was no corresponding node."
             done eid
@@ -267,6 +269,7 @@ ruleReassembleRaid =
             phaseLog "info" $ "SSPL command successful."
             continue dispatcher
           AckReplyFailed -> do
+            -- TODO Should we go to failed here?
             phaseLog "warning" $ "SSPL command failed."
             continue dispatcher
           AckReplyError msg -> do
@@ -279,6 +282,7 @@ ruleReassembleRaid =
         Just (_, m0node) <- gets Local (^. rlens fldM0 . rfield)
 
         rg <- getLocalGraph
+        -- TODO What if there are starting services? In other states?
         let procs = [ p | p <- getNodeProcesses node rg
                         , G.isConnected p R.Is M0.PSOnline rg
                         ]
@@ -290,11 +294,14 @@ ruleReassembleRaid =
           _ -> do
             phaseLog "info" $ "Stopping the following processes: "
                             ++ (show procs)
+            -- TODO stop processes with more gentle+violent means?
+            -- e.g. first try `Spiel.processStop`, then systemd,
+            -- then kill -9. Maybe `processQuiesce`? HALON-374
             promulgateRC $ StopProcessesRequest m0node procs
             let notifications = (\p -> \(AnyStateSet p' s) ->
                   case (,) <$> cast p' <*> cast s of
                     Just (p'', M0.PSOffline) | p == p'' -> True
-                    Just (p'', (M0.PSFailed _)) | p == p'' -> True
+                    Just (p'', M0.PSFailed _) | p == p'' -> True
                     _ -> False
                   ) <$> procs
             modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
@@ -306,6 +313,7 @@ ruleReassembleRaid =
         showLocality
         Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
+        -- TODO magic constant
         sent <- sendNodeCmd nid (Just cmdUUID) $ Unmount "/var/mero"
 
         if sent

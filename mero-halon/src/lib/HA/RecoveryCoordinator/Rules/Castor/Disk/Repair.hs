@@ -7,7 +7,13 @@
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Module dealing with pool repair.
+-- Module dealing with pool repair and rebalance.
+--
+-- What are the conditions under which we can start repair?
+--
+-- What are the conditions under which we can start rebalance?
+-- TODO We do not need to use repair status query periodically because we
+--      expect process failure notification and progress notifications.
 --
 -- TODO: Only abort repair on notification failure if it's IOS that failed
 module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
@@ -174,6 +180,8 @@ queryStartHandling pool = do
 -- This query is only ran once. If we're not finished repairing by
 -- time we query spiel, we dispatch 'querySpielHourly' and finish the
 -- rule.
+--
+-- TODO Can we remove these?
 querySpiel :: Specification LoopState ()
 querySpiel = define "query-spiel" $ do
   dispatchQuery <- phaseHandle "dispatch-query"
@@ -656,6 +664,8 @@ handleRepairExternal noteSet = do
 --
 -- * Handle messages that only include information about devices and
 -- not pools.
+--
+-- TODO Make this use `InternalStateChangeNotification`
 handleRepairInternal :: Set -> PhaseM LoopState l ()
 handleRepairInternal noteSet = do
   liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
@@ -676,23 +686,24 @@ handleRepairInternal noteSet = do
         tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
         fa <- getPoolSDevsWithState pool M0_NC_FAILED
 
-        -- If there are neigher no faled nor transient, and no new transient
-        -- devices were reported we could request pool rebalance procedure start.
-        -- That procedure can decide itself if there any work to do.
-        let maybeBeginRebalance = when (and [ null tr
-                                            , S.null $ getSDevs diskMap M0_NC_FAILED
-                                            , S.null $ getSDevs diskMap M0_NC_TRANSIENT
-                                            ])
-              $ promulgateRC (PoolRebalanceRequest pool)
-
-        -- If no devices are transient and something is failed, begin
-        -- repair. It's up to caller to ensure any previous repair has
-        -- been aborted/completed.
+            -- If no devices are transient and something is failed, begin
+            -- repair. It's up to caller to ensure any previous repair has
+            -- been aborted/completed.
+            -- TODO This is a bit crap. At least badly named. Redo it.
         let maybeBeginRepair =
               if null tr && not (null fa)
               then promulgateRC $ PoolRepairRequest pool
               else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
                       maybeBeginRebalance
+
+            -- If there are neither failed nor transient, and no new transient
+            -- devices were reported we could request pool rebalance procedure start.
+            -- That procedure can decide itself if there any work to do.
+            maybeBeginRebalance = when (and [ null tr
+                                            , S.null $ getSDevs diskMap M0_NC_FAILED
+                                            , S.null $ getSDevs diskMap M0_NC_TRANSIENT
+                                            ])
+              $ promulgateRC (PoolRebalanceRequest pool)
 
         getPoolRepairStatus pool >>= \case
           Just (M0.PoolRepairStatus prt _ _)
@@ -716,6 +727,10 @@ handleRepairInternal noteSet = do
                 then if prt == M0.Failure
                      then continueRepair pool prt
                      else withRepairStatus prt pool nil $ \st ->
+                            -- TODO Can we make this predicate better? It's
+                            -- actually testing to see whether there is any
+                            -- rebalance happening, not whether there
+                            -- are paused repairs.
                             if null $ R.filterPausedRepairs st
                             then promulgateRC (PoolRebalanceRequest pool)
                             else continueRepair pool prt
@@ -724,6 +739,8 @@ handleRepairInternal noteSet = do
                 "Repair on-going but don't know what to do with " ++ show diskMap
           Nothing -> maybeBeginRepair
 
+-- | When the cluster has completed starting up, it's possible that
+--   we have devices that failed during the startup process.
 checkRepairOnClusterStart :: Definitions LoopState ()
 checkRepairOnClusterStart = define "check-repair-on-start" $ do
     clusterRunning <- phaseHandle "cluster-running"
@@ -880,9 +897,12 @@ processDevices (Set ns) =
   mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
     ([] :: [M0.Pool]) -> do
       disks <- mapMaybeM noteToSDev ns
+      pdisks <- mapM (\x@(stType,sdev) -> (,x) <$> getSDevPool sdev) disks
+      {-
       pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
                              >>= return . fmap (,(stType, sdev)))
                           disks
+                          -}
 
       let ndisks = M.toList
                  . M.map (SDevStateMap . M.fromListWith (<>))

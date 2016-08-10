@@ -364,7 +364,7 @@ lookupDiskSDev disk = do
   rg <- getLocalGraph
   return . listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
 
-getSDevPool :: M0.SDev -> PhaseM LoopState l (Maybe M0.Pool)
+getSDevPool :: M0.SDev -> PhaseM LoopState l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
     let ps =
@@ -376,8 +376,14 @@ getSDevPool sdev = do
               , pv <- G.connectedFrom M0.IsParentOf rv rg :: [M0.PVer]
               , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
               ]
+    case ps of
+      -- TODO throw a better exception
+      [] -> error "getSDevPool: No pool found for sdev."
+      x:[] -> return x
+      x:_ -> do
+        phaseLog "error" $ "Multiple pools found for sdev!"
+        return x
 
-    return $ listToMaybe ps
 
 -- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
 --

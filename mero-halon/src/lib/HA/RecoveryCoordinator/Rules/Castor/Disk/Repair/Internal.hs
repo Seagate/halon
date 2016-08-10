@@ -36,6 +36,7 @@ continueRepair M0.Rebalance pool = pure Nothing <* promulgateRC (PoolRebalanceRe
 continueRepair M0.Failure pool = continueRepairOperation pool
 
 -- | Quiesces the current repair.
+-- TODO This is a bad name, since it aborts rebalance.
 quiesceRepair :: M0.PoolRepairType -> M0.Pool
               -> PhaseM LoopState l (Maybe SomeException)
 quiesceRepair M0.Rebalance = abortRebalanceOperation

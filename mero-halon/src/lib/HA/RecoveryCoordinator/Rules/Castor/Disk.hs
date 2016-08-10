@@ -175,6 +175,8 @@ driveInsertionTimeout = 10
 --
 -- 3. Once confd is updated rule decide if we need to trigger repair/rebalance
 --    procedure and does that.
+--
+-- https://drive.google.com/open?id=0BxJP-hCBgo5OVDhjY3ItU1oxTms
 ruleDriveInserted :: Definitions LoopState ()
 ruleDriveInserted = define "drive-inserted" $ do
   handler       <- phaseHandle "drive-inserted"
@@ -233,6 +235,8 @@ ruleDriveInserted = define "drive-inserted" $ do
     hasStorageDeviceIdentifier disk sn >>= \case
        True -> do
          let markIfNotMeroFailure = do
+               -- TODO this should be more general and should check for
+               -- e.g. smart failure as well.
                let isMeroFailure (StorageDeviceStatus "MERO-FAILED" _) = True
                    isMeroFailure _ = False
                meroFailure <- maybe False isMeroFailure <$> driveStatus disk
@@ -267,9 +271,16 @@ ruleDriveInserted = define "drive-inserted" $ do
          continue finish
        False -> do
          lookupStorageDeviceReplacement disk >>= \case
-           Nothing -> modifyGraph $
-             G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
-           Just cand -> actualizeStorageDeviceReplacement cand
+           Nothing -> -- TODO remove this line? This removes all identifiers
+                      -- from a drive with no replacement. Only the SN gets
+                      -- added back.
+             modifyGraph $
+               G.disconnectAllFrom disk Has (Proxy :: Proxy DeviceIdentifier)
+           Just cand ->
+             -- actualizeStorageDeviceReplacement will merge the candidate
+             -- back into the current disk, so now cand is merged back into
+             -- disk.
+             actualizeStorageDeviceReplacement cand
          identifyStorageDevice disk [sn]
          updateStorageDeviceSDev disk
          markStorageDeviceReplaced disk
@@ -317,7 +328,15 @@ attachDisk sdev = do
     forM_ msa $ \_ -> void  $ withSpielRC $ \sp m0 -> withRConfRC sp
       $ m0 $ Spiel.deviceAttach sp (fid d)
 
--- | Mark drive as failed
+-- | Mark drive as failed when SMART fails.
+--
+--   This is triggered when a SMART test fails on the drive.
+--   In this case, all we do is directly send FAILED notification
+--   to Mero and internally.
+--
+--   See also:
+--   'ruleMonitorDriveManager' -- sends the 'DriveFailed' message.
+--   'handleRepairInternal' -- tries to start repair on disk
 ruleDriveFailed :: Definitions LoopState ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
@@ -372,6 +391,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       else do
         -- Unable to send drive power on message - go straight to
         -- power_removed_duration
+        -- TODO Send some sort of 'CannotTalkToSSPL' message?
         phaseLog "warning" $ "Cannot send poweron message to "
                           ++ (show nid)
                           ++ " for disk with s/n "
@@ -430,7 +450,7 @@ ruleDrivePoweredOn = defineSimple "drive-powered-on"
             $ m0 $ Spiel.deviceAttach sp (fid d))
         -- Start rebalance
         pool <- getSDevPool m0sdev
-        forM_ pool $ promulgateRC . PoolRebalanceRequest
+        promulgateRC $ PoolRebalanceRequest pool
     done dpcUUID
   where
     filterMaybeM _ Nothing = return Nothing

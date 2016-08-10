@@ -475,6 +475,7 @@ getTime = TimeSpec <$> C.getTime C.Monotonic
 --
 -- We use this as an indicator. The underlying assumption is that a
 -- repair and rebalance will never happen at the same time.
+-- TODO s/Failure/Repair
 data PoolRepairType = Failure | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
