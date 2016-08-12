@@ -192,7 +192,7 @@ nodeCmdString (DriveReset drive) = T.intercalate " "
 nodeCmdString (DrivePowerdown drive) = T.intercalate " "
   [ "STOP_DRIVE:", drive ]
 nodeCmdString (DrivePoweron drive) = T.intercalate " "
-  [ "START_DRIVE:", drive ]
+  [ "DONT_START_DRIVE:", drive ]
 nodeCmdString (SmartTest drive) = T.intercalate " "
   [ "SMART_TEST:", drive ]
 nodeCmdString (DriveLed drive state) = T.intercalate " "

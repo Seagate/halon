@@ -388,7 +388,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   post_power_removed <- phaseHandle "post-power-removed"
 
   let
-    power_down_timeout = 300 -- seconds
+    power_down_timeout = 30 -- seconds
     power_off evt@(DrivePowerChange{..}) _ _ =
       if dpcPowered then return Nothing else return (Just evt)
     power_on evt@(DrivePowerChange{..}) _ _ =
