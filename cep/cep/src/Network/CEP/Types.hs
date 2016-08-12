@@ -23,9 +23,10 @@ import           Control.Exception (throwIO)
 import           Control.Monad.Catch
 import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
-import qualified Data.MultiMap as MM
 import qualified Data.Sequence as S
 import           Data.Int
+import qualified Data.Map as M
+import           Data.Set (Set)
 import           System.Clock
 import           Control.Lens.TH
 
@@ -66,6 +67,14 @@ data Subscribe =
     } deriving (Show, Typeable, Generic)
 
 instance Binary Subscribe
+
+-- | That message is sent when a 'Process' asks to remove a subscription.
+data Unsubscribe =
+      Unsubscribe
+      { _unsubType :: !ByteString -- ^ Serialized event type
+      , _unsubPid  :: !ProcessId  -- ^ Subscribe 'ProcessId'
+      } deriving (Show, Typeable, Generic)
+instance Binary Unsubscribe
 
 newtype SMId = SMId { getSMId :: Int64 } deriving (Eq, Show, Ord, Num)
 
@@ -119,7 +128,7 @@ instance Binary a => Binary (Published a)
 
 -- | CEP engine uses typed subscriptions. Subscribers are referenced by their
 --   'ProcessId'. Several subscribers can be associated to a type of message.
-type Subscribers = MM.MultiMap Fingerprint ProcessId
+type Subscribers = M.Map Fingerprint (Set ProcessId)
 
 type SMLogs = S.Seq (String, String, String)
 
