@@ -84,6 +84,11 @@ module Network.CEP
     , subscribeRequest
     , subscribe
     , unsubscribe
+    , subscribeThem
+    , unsubscribeThem
+    , rawSubscribeThem
+    , rawUnsubscribeThem
+
     -- * Misc
     , Some(..)
     , occursWithin
@@ -466,11 +471,21 @@ subscribe :: forall a proxy. Serializable a
           => ProcessId
           -> proxy a
           -> Process ()
-subscribe pid _ = do
-    self <- getSelfPid
-    let key  = fingerprint (undefined :: a)
-        fgBs = encodeFingerprint key
-    usend pid (Subscribe fgBs self)
+subscribe pid proxy = getSelfPid >>= subscribeThem pid proxy
+
+-- | Subscribe external process to notifications.
+subscribeThem :: forall a proxy . Serializable a
+              => ProcessId
+              -> proxy a
+              -> ProcessId
+              -> Process ()
+subscribeThem pid _ them = rawSubscribeThem pid (fingerprint (undefined :: a)) them
+
+-- | Subscribe external proces to notifications by using event 'Fingerprint'
+-- explicitly
+rawSubscribeThem :: ProcessId -> Fingerprint -> ProcessId -> Process ()
+rawSubscribeThem pid key them = usend pid (Subscribe fgBs them) where
+  fgBs = encodeFingerprint key
 
 -- | Unsubscribe process for a specific type of event.
 -- Event is asynchronous, so Process may receive 'Published a' after this
@@ -479,11 +494,23 @@ unsubscribe :: forall a proxy . Serializable a
             => ProcessId
             -> proxy a
             -> Process ()
-unsubscribe pid _ = do
-  self <- getSelfPid
-  let key  = fingerprint (undefined :: a)
-      fsBs = encodeFingerprint key
-  usend pid (Unsubscribe fsBs self)
+unsubscribe pid proxy = getSelfPid >>= unsubscribeThem pid proxy
+
+-- | Unsubscribe external process to notifications. (See 'unsubscribe' for
+-- details).
+unsubscribeThem :: forall a proxy . Serializable a
+               => ProcessId
+               -> proxy a
+               -> ProcessId
+               -> Process ()
+unsubscribeThem pid _ them = rawUnsubscribeThem pid (fingerprint (undefined :: a)) them
+
+
+-- | Unsubscribe external proces to notifications by using event 'Fingerprint'
+-- explicitly. See 'unsubscribe' for details.
+rawUnsubscribeThem :: ProcessId -> Fingerprint -> ProcessId -> Process ()
+rawUnsubscribeThem pid key them = usend pid (Unsubscribe fgBs them) where
+  fgBs = encodeFingerprint key
 
 -- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
 --   within @t@ seconds.
