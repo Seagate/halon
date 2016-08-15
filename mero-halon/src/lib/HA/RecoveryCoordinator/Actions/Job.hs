@@ -55,7 +55,7 @@ fldUUID = Proxy
 -- this @body@.
 mkJobRule :: forall input output l s .
    ( FldUUID ∈ l, '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
-   , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l)
+   , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
    -> (Jump PhaseHandle -> RuleM LoopState s (input -> PhaseM LoopState s (Maybe [Jump PhaseHandle])))
@@ -94,6 +94,7 @@ mkJobRule (Job name)
           req  = state ^. rlens fldRequest
           rep  = state ^. rlens fldReply
       phaseLog "info" $ "  request: " ++ maybe "N/A" show (getField req)
+      phaseLog "info" $ "  reply: " ++ show (getField rep)
       for_ (getField rep) notify
       for_ (getField req) deleteStorageSetRC
       for_ (getField uuid) messageProcessed
