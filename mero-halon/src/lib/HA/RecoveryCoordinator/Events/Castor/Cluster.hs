@@ -53,7 +53,7 @@ import GHC.Generics
 data ClusterStatusRequest = ClusterStatusRequest (SendPort ReportClusterState) deriving (Eq,Show,Generic)
 instance Binary ClusterStatusRequest
 
-data ClusterStartRequest = ClusterStartRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic, Ord)
+data ClusterStartRequest = ClusterStartRequest deriving (Eq, Show, Generic, Ord)
 instance Binary ClusterStartRequest
 
 data ClusterStartResult

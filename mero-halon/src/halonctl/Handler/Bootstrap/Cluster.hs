@@ -217,10 +217,7 @@ bootstrap Config{..} = do
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
              ++ " cluster start"
     startCluster stations = do
-        (schan, rchan) <- newChan
-        promulgateEQ stnodes (ClusterStartRequest schan) >>= flip withMonitor wait
-        _ <- receiveChan rchan
-        return ()
+        promulgateEQ stnodes ClusterStartRequest >>= flip withMonitor wait
       where
         stnodes = conjureRemoteNodeId <$> stations
         wait = void (expect :: Process ProcessMonitorNotification)

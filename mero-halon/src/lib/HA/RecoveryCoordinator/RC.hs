@@ -6,19 +6,25 @@
 module HA.RecoveryCoordinator.RC
   ( subscribeTo
   , unsubscribeFrom
+  , subscribeOnTo
+  , unsubscribeOnFrom
   ) where
 
 import HA.EventQueue.Producer
   ( promulgate
+  , promulgateEQ
   , promulgateWait
   )
 import HA.RecoveryCoordinator.RC.Events
 
 import Control.Distributed.Process
   ( Process
+  , NodeId
+  , ProcessMonitorNotification(..)
   , getSelfPid
   , receiveWait
   , matchIf
+  , monitor
   )
 import Control.Distributed.Process.Serializable
 import Data.Proxy
@@ -47,3 +53,25 @@ unsubscribeFrom _ = do
       fpBs = encodeFingerprint fp
   self <- getSelfPid
   promulgateWait $ UnsubscribeFromRequest self fpBs
+
+-- | 'subscribeTo' but pass nodes with event queues explicitly.
+subscribeOnTo :: forall a . Typeable a => [NodeId] -> Proxy a -> Process ()
+subscribeOnTo nids _ = do
+  let fp = fingerprint (undefined :: a)
+      fpBs = encodeFingerprint fp
+  self <- getSelfPid
+  _ <- promulgateEQ nids $ SubscribeToRequest self fpBs
+  receiveWait
+    [ matchIf (\(SubscribeToReply fp') -> fp' == fpBs) (const $ return ())]
+
+-- | 'subscribeFrom' but pass nodes with event queues explicitly
+unsubscribeOnFrom :: forall a . Typeable a => [NodeId] -> Proxy a -> Process ()
+unsubscribeOnFrom nids _ = do
+  let fp = fingerprint (undefined :: a)
+      fpBs = encodeFingerprint fp
+  self <- getSelfPid
+  pid  <- promulgateEQ nids $ UnsubscribeFromRequest self fpBs
+  mref <- monitor pid
+  receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref)
+                       (const $ return ())
+              ]
