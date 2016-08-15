@@ -670,6 +670,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
           case liftA2 (,) mnode mhost of
             Nothing -> return Nothing
             Just (node,host) -> do
+              modify Local $ rlens fldM0Node .~ Field (Just m0node)
               modify Local $ rlens fldNode .~ Field (Just node)
               modify Local $ rlens fldHost .~ Field (Just host)
               let hasM0d = isJust $ runningService node m0d rg
@@ -698,6 +699,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
     directly start_clients $ do
        rg <- getLocalGraph
        Just node <- getField . rget fldNode <$> get Local
+       Just m0node <- getField . rget fldM0Node <$> get Local
        Just host <- getField . rget fldHost <$> get Local
        m0svc <- lookupRunningService node m0d
        case m0svc >>= meroChannel rg of
@@ -706,21 +708,26 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
            -- XXX: implement await
            _ <- configureNodeProcesses host chan M0.PLM0t1fs False
            _ <- startNodeProcesses host chan M0.PLM0t1fs
+           modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartOk m0node)
            continue finish
          Nothing -> do
+           modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartFailure m0node "No mero channel")
            phaseLog "error" $ "can't find mero channel on " ++ show node
            continue finish
 
     return route
   where
-    fldReq :: Proxy '("request", Maybe StopClientsOnNodeRequest)
+    fldReq :: Proxy '("request", Maybe StartClientsOnNodeRequest)
     fldReq = Proxy
-    fldRep :: Proxy '("reply", Maybe StopClientsOnNodeResult)
+    fldRep :: Proxy '("reply", Maybe StartClientsOnNodeResult)
     fldRep = Proxy
+    fldM0Node :: Proxy '("reply", Maybe M0.Node)
+    fldM0Node = Proxy
     args  = fldUUID =: Nothing
         <+> fldReq     =: Nothing
         <+> fldRep     =: Nothing
         <+> fldNode    =: Nothing
+        <+> fldM0Node    =: Nothing
         <+> fldHost    =: Nothing
         <+> RNil
 

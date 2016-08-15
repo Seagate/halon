@@ -102,6 +102,13 @@ Library
                    HA.RecoveryCoordinator.Rules.Debug
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
+                   -- RC interface modules.
+                   HA.RecoveryCoordinator.RC
+                   HA.RecoveryCoordinator.RC.Events
+                   HA.RecoveryCoordinator.RC.Rules
+                   HA.RecoveryCoordinator.RC.Actions
+                   HA.Resources.RC
+                   -- Other resources
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
                    HA.Resources.HalonVars
