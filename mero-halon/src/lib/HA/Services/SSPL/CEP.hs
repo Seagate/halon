@@ -332,11 +332,11 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           selfMessage $ DriveFailed uuid (Node nid) enc disk
         ("EMPTY", "NONE") -> do
-          -- This is probably indicative of expander reset?
+          -- This is probably indicative of expander reset, or some other error.
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           selfMessage $ DriveTransient uuid (Node nid) enc disk
         ("OK", "NONE") -> do
-          -- Disk has returned to normal after expander reset?
+          -- Disk has returned to normal after some failure.
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           selfMessage $ DriveOK uuid (Node nid) enc disk
         (s,r) -> let
@@ -377,6 +377,11 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
       existingByIdx <- lookupStorageDeviceInEnclosure enc idx
       existingBySerial <- lookupStorageDeviceInEnclosure enc serial
 
+      phaseLog "debug" $ unwords [
+          "existing device by index in enclosure:", show existingByIdx
+        , "existing device by serial number:", show existingBySerial
+        ]
+
       sdev <- case (existingByIdx, existingBySerial) of
         (Just i, Just s) | i == s ->
           -- One existing device.
@@ -406,9 +411,7 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
           diskUUID <- liftIO $ nextRandom
           let disk = StorageDevice diskUUID
           locateStorageDeviceInEnclosure enc disk
-          identifyStorageDevice disk [idx]
-          -- TODO Do we need to do this?
-          void $ attachStorageDeviceReplacement disk [serial, wwn, idx]
+          identifyStorageDevice disk [serial, wwn, idx]
           return disk
 
       -- Now find out whether we need to send removed or powered messages
@@ -425,10 +428,10 @@ ruleMonitorStatusHpi = defineSimple "monitor-status-hpi" $ \(HAEvent uuid (nid, 
         ]
       more_needed <- case (is_installed, is_powered) of
        (True, _) | was_removed -> do
-         selfMessage $ DriveInserted uuid sdev enc diskNum serial
+         selfMessage $ DriveInserted uuid sdev enc diskNum serial is_powered
          return True
        (False, _) | (not was_removed) -> do
-         selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum
+         selfMessage $ DriveRemoved uuid (Node nid) enc sdev diskNum is_powered
          return True
        (_, True) | ((not isOngoingReset) && (not was_powered)) -> do
          selfMessage $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True

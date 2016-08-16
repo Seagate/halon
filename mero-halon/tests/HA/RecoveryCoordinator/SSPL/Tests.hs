@@ -189,7 +189,7 @@ testHpiUpdatedWWN = mkHpiTest rules test
           forM_ mc $ \c -> do
             is <- findStorageDeviceIdentifiers c
             liftProcess $ usend self is
-      defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _ _) ->
+      defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _ _ _) ->
         liftProcess $ usend self (uuid, enc)
     test rc = do
       me   <- getSelfNode

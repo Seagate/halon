@@ -66,6 +66,7 @@ data DriveRemoved = DriveRemoved
        , drEnclosure :: Enclosure -- ^ Enclosure there event happened.
        , drDevice    :: StorageDevice -- ^ Removed device
        , drDiskNum   :: Int -- ^ Unique location of device in enclosure
+       , drPowered :: Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 instance Hashable DriveRemoved
 instance Binary DriveRemoved
@@ -78,6 +79,7 @@ data DriveInserted = DriveInserted
        , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
        , diDiskNum :: Int -- ^ Unique location of device in enclosure.
        , diSerial :: DeviceIdentifier -- ^ Serial drive of device.
+       , diPowered :: Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted

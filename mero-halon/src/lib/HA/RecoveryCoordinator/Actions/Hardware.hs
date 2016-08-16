@@ -520,12 +520,8 @@ updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
   ds <- driveStatus dev
   phaseLog "rg" $ "Old status was " ++ show ds
   let statusNode = StorageDeviceStatus status reason
-      removeOldNode = case ds of
-        Just f -> G.disconnect dev Is f
-        Nothing -> id
       rg' = G.newResource statusNode
-        >>> G.connect dev Is statusNode
-        >>> removeOldNode
+        >>> G.connectUniqueFrom dev Is statusNode
           $ rg
   return rg'
 
@@ -756,8 +752,6 @@ unmarkStorageDeviceReplaced sdev = do
 
 isStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l Bool
 isStorageDeviceReplaced sdev = do
-    phaseLog "rg"
-          $ "Checking Replaced status for storage device: " ++ show sdev
     not . null <$> findStorageDeviceAttrs go sdev
   where
     go SDReplaced = True

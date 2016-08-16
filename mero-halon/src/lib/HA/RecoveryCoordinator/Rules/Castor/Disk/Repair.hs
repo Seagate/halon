@@ -38,6 +38,7 @@ import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
 import qualified Data.Binary as B
+import           Data.Either (partitionEithers)
 import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
@@ -281,14 +282,15 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
        let okMessages = [M0_NC_REPAIRED, M0_NC_ONLINE]
         -- list of devices in OK state
            sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
-           sdev_replaced = filter (isReplaced rg) sdev_repaired
+           (sdev_notready, sdev_ready) = partitionEithers $ (deviceReadyStatus rg) <$> sdev_repaired
            sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
+       for_ sdev_notready $ phaseLog "info"
        if null sdev_broken
-       then if null sdev_replaced
+       then if null sdev_ready
              then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
                      messageProcessed uuid
              else do
-              disks <- catMaybes <$> mapM lookupSDevDisk sdev_replaced
+              disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
               let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
               put Local $ Just (uuid, messages, Just (pool, disks))
               applyStateChanges messages
@@ -348,11 +350,27 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
             applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
         messageProcessed uuid
 
-    isReplaced :: G.Graph -> M0.SDev -> Bool
-    isReplaced rg s = not . null $
-      [ () | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
-           , (sd :: StorageDevice) <- G.connectedTo disk At rg
-           , G.isConnected sd Has SDReplaced rg]
+    -- Is this device ready to be rebalanced onto?
+    deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
+    deviceReadyStatus rg s = case stats of
+        [(_, True, False, True, "OK")] -> Right s
+        [other] -> Left $ "Device not ready: " ++ showFid s
+                      ++ " (sdev, Replaced, Removed, Powered, OK): "
+                      ++ show other
+        [] -> Left $ "No storage device or status could be found for " ++ showFid s
+        xs -> Left $ "Device has multiple storage devices connected! " ++ show xs
+      where
+        stats = [ ( sd
+                  , G.isConnected sd Has SDReplaced rg
+                  , G.isConnected sd Has SDRemovedAt rg
+                  , G.isConnected sd Has (SDPowered True) rg
+                  , sds
+                  )
+                | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
+                , (sd :: StorageDevice) <- G.connectedTo disk At rg
+                , (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
+                ]
+
     getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
     getSDevState d = getConfObjState d <$> getLocalGraph
 
