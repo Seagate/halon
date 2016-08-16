@@ -1049,12 +1049,12 @@ replica Dict
                           w'  = succ w
                       mdumper' <- maybeTakeSnapshot w' s'
                       updateWatermark w'
-                      go st{ stateUnconfirmedDecree = d'
-                           , stateCurrentDecree     = cd'
-                           , stateSnapshotDumper    = mdumper'
-                           , stateWatermark         = w'
-                           , stateLogState          = s'
-                           }
+                      return st { stateUnconfirmedDecree = d'
+                                , stateCurrentDecree     = cd'
+                                , stateSnapshotDumper    = mdumper'
+                                , stateWatermark         = w'
+                                , stateLogState          = s'
+                                }
                   Reconf leg' ρs'
                     -- Only execute a reconfiguration if we are on an earlier
                     -- configuration.
