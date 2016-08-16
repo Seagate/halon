@@ -39,7 +39,6 @@ module HA.RecoveryCoordinator.Rules.Castor.Cluster
     -- ** Requests
     -- $requests
   , requestClusterStatus
-  , requestClusterStart
   , requestClusterStop
     -- ** Event Handlers
   , eventUpdatePrincipalRM
@@ -69,6 +68,7 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      ( applyStateChanges
      , setPhaseNotified
      )
+import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Rules.Castor.Node
      ( maxTeardownLevel )
 import           HA.Services.Mero
@@ -88,6 +88,8 @@ import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe, isJust
 import           Data.Foldable
 import           Data.Traversable (forM)
 import           Data.Typeable
+import           Data.Vinyl
+import qualified Data.Set as Set
 
 import           Prelude hiding ((.), id)
 
@@ -95,7 +97,7 @@ import           Prelude hiding ((.), id)
 clusterRules :: Definitions LoopState ()
 clusterRules = sequence_
   [ requestClusterStatus
-  , requestClusterStart
+  , ruleClusterStart
   , requestClusterStop
   , requestStartMeroClient
   , requestStopMeroClient
@@ -376,46 +378,181 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
         }
       messageProcessed eid
 
--- | Request cluster to bootstrap.
-requestClusterStart :: Definitions LoopState ()
-requestClusterStart = defineSimple "castor::cluster::request::start"
-  $ \(HAEvent eid (ClusterStartRequest ch) _) -> do
-      rg <- getLocalGraph
-      fs <- getFilesystem
-      let eresult = case (fs, listToMaybe $ G.connectedTo R.Cluster R.Has rg) of
-            (Nothing, _) -> Left $ StateChangeError "Initial data not loaded."
-            (_, Nothing) -> Left $ StateChangeError "Unknown current state."
-            (_, Just st) -> case st of
-               M0.MeroClusterStopped    -> Right $ do
-                  -- Randomly select principal RM, it may be switched if another
-                  -- RM will appear online before this one.
-                  let pr = [ ps
-                           | prf :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
-                           , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
-                           , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
-                           , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
-                           , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
-                           , M0.s_type sv == CST_MGS
-                           ]
-                  let rms = listToMaybe [ srv
-                                        | p <- pr
-                                        , srv :: M0.Service <- G.connectedTo p M0.IsParentOf rg
-                                        , M0.s_type srv == CST_RMS
-                                        ]
-                  traverse_ setPrincipalRMIfUnset rms
-                  modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
-                  announceMeroNodes
+-- | Timeout for cluster start rule
+cluster_start_timeout :: Int
+cluster_start_timeout = 10*60 -- 10m
 
-                  registerSyncGraphCallback $ \pid proc -> do
-                    sendChan ch (StateChangeStarted pid)
-                    proc eid
-               M0.MeroClusterStarting{} -> Left $ StateChangeOngoing st
-               M0.MeroClusterStopping{} -> Left $ StateChangeError $ "cluster is stopping: " ++ show st
-               M0.MeroClusterFailed -> Left $ StateChangeError $ "cluster is failed: " ++ show st
-               M0.MeroClusterRunning    -> Left $ StateChangeFinished
-      case eresult of
-        Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
-        Right action -> action
+jobClusterStart :: Job ClusterStartRequest ClusterStartResult
+jobClusterStart = Job "castor::cluster::start"
+
+-- | Statup a node in cluster.
+--
+-- Firt requests to start mero services on all nodes.
+-- Once all nodes replied with exiter success failure or internal timeout -
+-- either report a failure or start clients in case if everything is ok.
+--
+-- Nested jobs:
+--   - 'processStartProcessesOnNode' - start all server processes on node
+--   - 'processStartClientsOnNode'   - start all m0t1fs mounts on node
+--
+ruleClusterStart :: Definitions LoopState ()
+ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
+    wait_server_jobs  <- phaseHandle "wait_server_jobs"
+    start_client_jobs <- phaseHandle "start_client_jobs"
+    wait_client_jobs  <- phaseHandle "wait_client_jobs"
+    job_timeout       <- phaseHandle "job_timeout"
+
+    let getMeroHostsNodes p = do
+         rg <- getLocalGraph
+         return [ (host,node)
+                | host <- G.connectedTo R.Cluster R.Has rg  :: [R.Host]
+                , node <- G.connectedTo host R.Runs rg :: [M0.Node]
+                , p host node rg
+                ]
+
+    let appendServerFailure s =
+           modify Local $ rlens fldRep . rfield %~
+             (\x -> Just $ case x of
+                 Just (ClusterStartFailure n xs ys) -> ClusterStartFailure n (s:xs) ys
+                 Just ClusterStartTimeout -> ClusterStartFailure "server start failure" [s] []
+                 _ -> ClusterStartFailure "server start failure" [s] [])
+
+    let appendClientFailure s =
+           modify Local $ rlens fldRep . rfield %~
+             (\x -> Just $ case x of
+                 Just (ClusterStartFailure n xs ys) -> ClusterStartFailure n xs (s:ys)
+                 Just ClusterStartTimeout -> ClusterStartFailure "client start failure" [] [s]
+                 _ -> ClusterStartFailure "client start failure" [] [s])
+
+    let fail_job st = do
+          modify Local $ rlens fldRep . rfield .~ Just st
+          return $ Just [finalize]
+        start_job = do
+          rg <- getLocalGraph
+          -- Randomly select principal RM, it may be switched if another
+          -- RM will appear online before this one.
+          let pr = [ ps
+                   | prf :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
+                   , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
+                   , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
+                   , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
+                   , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
+                   , M0.s_type sv == CST_MGS
+                   ]
+          traverse_ setPrincipalRMIfUnset $
+            listToMaybe [ srv
+                        | p <- pr
+                        , srv :: M0.Service <- G.connectedTo p M0.IsParentOf rg
+                        , M0.s_type srv == CST_RMS
+                        ]
+          -- Update cluster bootlevel
+          phaseLog "update" $ "cluster.bootlevel=" ++ show (M0.MeroClusterStarting (M0.BootLevel 0))
+          modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
+          servers <- fmap (map snd) $ getMeroHostsNodes
+            $ \(host::R.Host) (node::M0.Node) rg -> G.isConnected host R.Has R.HA_M0SERVER rg
+                            && M0.getState node rg /= M0.M0_NC_FAILED
+          for_ servers $ \s -> do
+            phaseLog "debug" $ "starting server processes on node=" ++ M0.showFid s
+            promulgateRC $ StartProcessesOnNodeRequest s
+          modify Local $ rlens fldNodes . rfield .~ Set.fromList servers
+          modify Local $ rlens fldNext  . rfield .~ Just start_client_jobs
+          return $ Just [wait_server_jobs, timeout cluster_start_timeout job_timeout]
+
+    let route ClusterStartRequest{} = getFilesystem >>= \case
+          Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." [] []
+          Just _ -> do
+            rg <- getLocalGraph
+            case listToMaybe (G.connectedTo R.Cluster R.Has rg) of
+              Nothing -> do
+                phaseLog "error" "graph invariant violation: cluster have no attached state"
+                fail_job $ ClusterStartFailure "Unknown cluster state." [] []
+              Just st -> case st of
+                M0.MeroClusterStopped  ->  start_job
+                -- previous job did start, but RC have failed, so we need to continue
+                M0.MeroClusterStarting{} -> start_job
+                M0.MeroClusterStopping{} -> fail_job $ ClusterStartFailure "Cluster is stopping." [] []
+                M0.MeroClusterRunning  -> fail_job $ ClusterStartOk
+                M0.MeroClusterFailed -> fail_job $ ClusterStartFailure ("cluster is failed: " ++ show st) [] []
+
+    setPhase wait_server_jobs $ \s -> do
+       servers <- getField . rget fldNodes <$> get Local
+       (node, result) <- case s of
+         NodeProcessesStarted node ->
+           return (node, "success")
+         s@(NodeProcessesStartTimeout node) -> do
+           modify Local $ rlens fldNext . rfield .~ Just finalize
+           appendServerFailure s
+           return (node, "timeout")
+         s@(NodeProcessesStartFailure node) -> do
+           appendServerFailure s
+           return (node, "failure")
+       phaseLog "job finished" $ "node=" ++ M0.showFid node
+       phaseLog "job finished" $ "result=" ++ result
+       let servers' = Set.delete node servers
+       modify Local $ rlens fldNodes . rfield .~ servers'
+       if Set.null servers'
+       then do Just next <- getField . rget fldNext <$> get Local
+               switch [next, timeout cluster_start_timeout job_timeout]
+       else switch [wait_server_jobs, timeout cluster_start_timeout job_timeout]
+
+    directly start_client_jobs $ do
+       clients <- fmap (map snd) $ getMeroHostsNodes
+            $ \(host::R.Host) (node::M0.Node) rg -> (G.isConnected host R.Has R.HA_M0CLIENT rg
+                               || G.isConnected host R.Has R.HA_M0SERVER rg) -- XXX on devvm node do not have client label
+                            && M0.getState node rg /= M0.M0_NC_FAILED
+       case clients of
+         [] -> do modify Local $ rlens fldRep . rfield .~ Just ClusterStartOk
+                  continue finalize
+         _  -> do
+            for_ clients $ \s -> do
+               phaseLog "debug" $ "starting client processes on node=" ++ M0.showFid s
+               promulgateRC $ StartClientsOnNodeRequest s
+            modify Local $ rlens fldNodes . rfield .~ Set.fromList clients
+            continue wait_client_jobs
+
+    setPhase wait_client_jobs $ \s -> do
+       clients <- getField . rget fldNodes <$> get Local
+       (node,result) <- case s of
+         ClientsStartOk node ->
+           return (node, "success")
+         ClientsStartTimeout node -> do
+           appendClientFailure s
+           return (node, "timeout")
+         ClientsStartFailure node _ -> do
+           appendClientFailure s
+           return (node, "failure")
+       phaseLog "job finished" $ "node=" ++ M0.showFid node
+       phaseLog "job finished" $ "result=" ++ result
+       let clients' = Set.delete node clients
+       modify Local $ rlens fldNodes . rfield .~ clients'
+       if Set.null clients'
+       then do
+         modify Local $ rlens fldRep . rfield .~ Just ClusterStartOk
+         continue finalize
+       else switch [wait_client_jobs, timeout cluster_start_timeout job_timeout]
+
+    directly job_timeout $ do
+       modify Local $ rlens fldRep . rfield .~ Just ClusterStartTimeout
+       continue finalize
+
+    return route
+  where
+    fldReq :: Proxy '("request", Maybe ClusterStartRequest)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe ClusterStartResult)
+    fldRep = Proxy
+    fldNodes :: Proxy '("nodes", Set.Set M0.Node)
+    fldNodes = Proxy
+    fldNext :: Proxy '("next", Maybe (Jump PhaseHandle))
+    fldNext = Proxy
+    -- Notifications to wait for
+    args = fldUUID =: Nothing
+       <+> fldReq  =: Nothing
+       <+> fldRep  =: Nothing
+       <+> fldNodes =: Set.empty
+       <+> fldNext  =: Nothing
+       <+> RNil
+
 
 -- | Request cluster to teardown.
 --   If the cluster is already tearing down, or is starting, this

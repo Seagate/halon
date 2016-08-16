@@ -917,7 +917,9 @@ testConsumptionDirect = do
 
 testSubscriptions :: (Process () -> IO ()) -> TestTree
 testSubscriptions launch = testGroup "Subscription properties"
-    [ testCase "CEP should forward events" $ launch testSimpleSub ]
+    [ testCase "CEP should forward events" $ launch testSimpleSub
+    , testCase "Unsubsciption works" $ launch testUnsubscribe
+    ]
 
 testSimpleSub :: Process ()
 testSimpleSub = do
@@ -942,6 +944,27 @@ testSimpleSub = do
     _ <- expect :: Process (Published Foo)
     _ <- expect :: Process (Published Baz)
     return ()
+
+testUnsubscribe :: Process ()
+testUnsubscribe = do
+  self <- getSelfPid
+  let defs = define "fork" $ do
+       ph <- phaseHandle "phase-1"
+       setPhase ph $ \Donut{} -> do
+         publish ()
+         liftProcess $ usend self ()
+       start ph ()
+  pid <- spawnLocal $ execute () defs
+  subscribe pid (Proxy :: Proxy ())
+  usend pid donut
+  _ <- expect :: Process (Published ())
+  assertEqual "message sent" () =<< expect
+  unsubscribe pid (Proxy :: Proxy ())
+  usend pid donut
+  receiveWait [ match $ \(Published () _) -> assertFailure "unexpected message"
+              , match $ \() -> return ()
+              ]
+
 
 testsTimeout :: (Process () -> IO ()) -> TestTree
 testsTimeout launch = testGroup "Timeout properties"

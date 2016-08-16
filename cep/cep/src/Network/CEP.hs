@@ -83,6 +83,12 @@ module Network.CEP
     , Published(..)
     , subscribeRequest
     , subscribe
+    , unsubscribe
+    , subscribeThem
+    , unsubscribeThem
+    , rawSubscribeThem
+    , rawUnsubscribeThem
+
     -- * Misc
     , Some(..)
     , occursWithin
@@ -203,6 +209,7 @@ data AcceptedMsg
     = SubMsg Subscribe
     | TimeoutMsg Timeout
     | Debug RuntimeInfoRequest
+    | UnsubMsg Unsubscribe
     | SomeMsg Message
 
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
@@ -224,12 +231,16 @@ runItForever start_eng = do
     bootstrap debug_mode ms loop eng = do
       msg <- receiveWait
                [ match (return . SubMsg)
+               , match (return . UnsubMsg)
                , match (return . TimeoutMsg)
                , matchAny (return . SomeMsg)
                ]
       case msg of
         SubMsg sub -> do
           (_, nxt_eng) <- stepForward (rawSubRequest sub) eng
+          bootstrap debug_mode ms (succ loop) nxt_eng
+        UnsubMsg unsub -> do
+          (_, nxt_eng) <- stepForward (rawUnsubRequest unsub) eng
           bootstrap debug_mode ms (succ loop) nxt_eng
         other -> do
           let m :: Request 'Write (Process (RunInfo, Engine))
@@ -268,22 +279,29 @@ runItForever start_eng = do
         go eng =<< receiveTimeout 0 [ match (return . SubMsg)
                                     , match (return . TimeoutMsg)
                                     , match (return . Debug)
+                                    , match (return . UnsubMsg)
                                     , matchAny (return . SomeMsg)
                                     ]
       | otherwise =
         go eng . Just =<< receiveWait [ match (return . SubMsg)
                                       , match (return . TimeoutMsg)
                                       , match (return . Debug)
+                                      , match (return . UnsubMsg)
                                       , matchAny (return . SomeMsg)
                                       ]
       where
-        go inner (Just (Debug (RuntimeInfoRequest pid mem))) = do
+        go _inner (Just (Debug (RuntimeInfoRequest pid mem))) = do
           let info = stepForward (getRuntimeInfo mem) eng
           usend pid info
           cruise debug_mode loop eng
         go inner (Just (SubMsg sub)) = do
           liftIO $ traceEventIO "START cruise:add-message"
           (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
+          liftIO $ traceEventIO "STOP cruise:add-message"
+          cruise debug_mode (succ loop) nxt_eng
+        go inner (Just (UnsubMsg sub)) = do
+          liftIO $ traceEventIO "START cruise:add-message"
+          (_, nxt_eng) <- stepForward (rawUnsubRequest sub) inner
           liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
@@ -453,11 +471,46 @@ subscribe :: forall a proxy. Serializable a
           => ProcessId
           -> proxy a
           -> Process ()
-subscribe pid _ = do
-    self <- getSelfPid
-    let key  = fingerprint (undefined :: a)
-        fgBs = encodeFingerprint key
-    usend pid (Subscribe fgBs self)
+subscribe pid proxy = getSelfPid >>= subscribeThem pid proxy
+
+-- | Subscribe external process to notifications.
+subscribeThem :: forall a proxy . Serializable a
+              => ProcessId
+              -> proxy a
+              -> ProcessId
+              -> Process ()
+subscribeThem pid _ them = rawSubscribeThem pid (fingerprint (undefined :: a)) them
+
+-- | Subscribe external proces to notifications by using event 'Fingerprint'
+-- explicitly
+rawSubscribeThem :: ProcessId -> Fingerprint -> ProcessId -> Process ()
+rawSubscribeThem pid key them = usend pid (Subscribe fgBs them) where
+  fgBs = encodeFingerprint key
+
+-- | Unsubscribe process for a specific type of event.
+-- Event is asynchronous, so Process may receive 'Published a' after this
+-- message.
+unsubscribe :: forall a proxy . Serializable a
+            => ProcessId
+            -> proxy a
+            -> Process ()
+unsubscribe pid proxy = getSelfPid >>= unsubscribeThem pid proxy
+
+-- | Unsubscribe external process to notifications. (See 'unsubscribe' for
+-- details).
+unsubscribeThem :: forall a proxy . Serializable a
+               => ProcessId
+               -> proxy a
+               -> ProcessId
+               -> Process ()
+unsubscribeThem pid _ them = rawUnsubscribeThem pid (fingerprint (undefined :: a)) them
+
+
+-- | Unsubscribe external proces to notifications by using event 'Fingerprint'
+-- explicitly. See 'unsubscribe' for details.
+rawUnsubscribeThem :: ProcessId -> Fingerprint -> ProcessId -> Process ()
+rawUnsubscribeThem pid key them = usend pid (Unsubscribe fgBs them) where
+  fgBs = encodeFingerprint key
 
 -- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
 --   within @t@ seconds.

@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   -- * Requests
     ClusterStatusRequest(..)
   , ClusterStartRequest(..)
+  , ClusterStartResult(..)
   , ClusterStopRequest(..)
   , StopMeroClientRequest(..)
   , StartMeroClientRequest(..)
@@ -17,13 +18,15 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
     -- ** Node
   , StartCastorNodeRequest(..)
   , StartProcessesOnNodeRequest(..)
+  , StartProcessesOnNodeResult(..)
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
   , StartHalonM0dRequest(..)
   , StopHalonM0dRequest(..)
   , StartClientsOnNodeRequest(..)
+  , StartClientsOnNodeResult(..)
+  , StopClientsOnNodeRequest(..)
   , M0KernelResult(..)
-  , StartProcessesOnNodeResult(..)
   -- * Process
   , StopProcessesRequest(..)
   , StopProcessesResult(..)
@@ -50,8 +53,15 @@ import GHC.Generics
 data ClusterStatusRequest = ClusterStatusRequest (SendPort ReportClusterState) deriving (Eq,Show,Generic)
 instance Binary ClusterStatusRequest
 
-data ClusterStartRequest = ClusterStartRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic)
+data ClusterStartRequest = ClusterStartRequest deriving (Eq, Show, Generic, Ord)
 instance Binary ClusterStartRequest
+
+data ClusterStartResult
+      = ClusterStartOk
+      | ClusterStartTimeout
+      | ClusterStartFailure String [StartProcessesOnNodeResult] [StartClientsOnNodeResult]
+      deriving (Eq, Show, Generic, Typeable)
+instance Binary ClusterStartResult
 
 data ClusterStopRequest = ClusterStopRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic)
 instance Binary ClusterStopRequest
@@ -133,6 +143,16 @@ data StopProcessesOnNodeResult
 instance Binary StopProcessesOnNodeResult
 
 newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
+         deriving (Eq, Show, Generic, Binary, Ord)
+
+data StartClientsOnNodeResult
+       = ClientsStartOk M0.Node
+       | ClientsStartTimeout M0.Node
+       | ClientsStartFailure M0.Node String
+       deriving (Eq, Show, Generic)
+instance Binary StartClientsOnNodeResult
+
+newtype StopClientsOnNodeRequest = StopClientsOnNodeRequest M0.Node
          deriving (Eq, Show, Generic, Binary, Ord)
 
 -- | Result of trying to start the M0 Kernel

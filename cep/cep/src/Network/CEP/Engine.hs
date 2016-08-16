@@ -87,6 +87,7 @@ data Action a where
     Tick           :: Action RunInfo
     Incoming       :: Message   -> Action RunInfo
     NewSub         :: Subscribe -> Action ()
+    Unsub          :: Unsubscribe -> Action ()
     TimeoutArrived :: Timeout -> Action RunInfo
 
 data EngineSetting a where
@@ -135,6 +136,9 @@ tick = Run Tick
 
 rawSubRequest :: Subscribe -> Request 'Write (Process ((), Engine))
 rawSubRequest = Run . NewSub
+
+rawUnsubRequest :: Unsubscribe -> Request 'Write (Process ((), Engine))
+rawUnsubRequest = Run . Unsub
 
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
 rawIncoming = Run . Incoming
@@ -220,7 +224,7 @@ emptyMachine :: s -> Machine s
 emptyMachine s =
     Machine
     { _machRuleData       = M.empty
-    , _machSubs           = MM.empty
+    , _machSubs           = M.empty
     , _machLogger         = Nothing
     , _machRuleFin        = Nothing
     , _machRuleCount      = 0
@@ -256,11 +260,28 @@ cepInit st i =
                   [m..]
                   (M.assocs $ _machRuleData st)
 
+-- | Process subscription request.
 cepSubRequest :: Machine g -> Subscribe -> Machine g
 cepSubRequest st@Machine{..} (Subscribe tpe pid) = nxt_st
   where
     key      = decodeFingerprint tpe
-    nxt_subs = MM.insert key pid _machSubs
+    nxt_subs = M.alter (\v -> case v of
+                  Nothing -> Just $ Set.singleton pid
+                  Just xs -> Just $ Set.insert pid xs)
+                  key _machSubs
+    nxt_st   = st { _machSubs = nxt_subs }
+
+-- | Process unsubscription request.
+cepUnsubRequest :: Machine g -> Unsubscribe -> Machine g
+cepUnsubRequest st@Machine{..} (Unsubscribe tpe pid) = nxt_st
+  where
+    key      = decodeFingerprint tpe
+    nxt_subs = M.alter (\v -> case v of
+                   Nothing -> Nothing
+                   Just xs -> case Set.delete pid xs of
+                                xs' | Set.null xs' -> Nothing
+                                    | otherwise -> Just xs'
+                                ) key _machSubs
     nxt_st   = st { _machSubs = nxt_subs }
 
 defaultHandler :: Machine g
@@ -269,6 +290,8 @@ defaultHandler :: Machine g
                -> a
 defaultHandler st next (Run (NewSub sub)) =
     return ((), Engine $ next $ cepSubRequest st sub)
+defaultHandler st next (Run (Unsub sub)) =
+    return ((), Engine $ next $ cepUnsubRequest st sub)
 defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (Incoming _)) =

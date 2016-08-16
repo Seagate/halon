@@ -23,9 +23,10 @@ import qualified Control.Monad.Catch as Catch
 import           Control.Monad (unless)
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
-import qualified Data.MultiMap as MM
+import qualified Data.Map as M
 import qualified Data.Sequence as S
 import           Data.Traversable (for)
+import           Data.Foldable (traverse_)
 import           Control.Lens hiding (Index)
 
 import Network.CEP.Buffer
@@ -48,8 +49,8 @@ data PhaseOut l where
 notifySubscribers :: Serializable a => Subscribers -> a -> Process ()
 notifySubscribers subs a = do
     self <- getSelfPid
-    for_ (MM.lookup (fingerprint a) subs) $ \pid ->
-      usend pid (Published a self)
+    for_ (M.lookup (fingerprint a) subs) $
+      traverse_ (\pid -> usend pid (Published a self))
 
 -- | Simple product type used as a result of message buffer extraction.
 data Extraction b =

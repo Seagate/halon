@@ -23,7 +23,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   , configureMeroProcesses
   , restartNodeProcesses
   , stopNodeProcesses
-  , announceMeroNodes
   , getAllProcesses
   , getLabeledProcesses
   , getLabeledNodeProcesses
@@ -498,12 +497,3 @@ announceTheseMeroHosts hosts p = do
   -- clients list.
   -- TODO can we remove this now? This should be marked properly.
   for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest
-
-
--- | Send notifications about new mero nodes and new mero servers for
--- every 'Castor.Host' in RG. Does not announce for failed nodes.
-announceMeroNodes :: PhaseM LoopState a ()
-announceMeroNodes = do
-  rg' <- getLocalGraph
-  announceTheseMeroHosts (G.connectedTo Res.Cluster Has rg')
-                         (\n rg -> M0.getState n rg /= M0.M0_NC_FAILED)

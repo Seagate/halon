@@ -29,8 +29,11 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.RC
+  ( subscribeOnTo, unsubscribeOnFrom )
 
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
+import Network.CEP
 #endif
 
 import Data.Foldable
@@ -39,6 +42,7 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Monad (void, unless, when)
 
+import Data.Proxy
 import Data.Yaml
   ( prettyPrintParseException
   )
@@ -70,7 +74,7 @@ parseCluster =
         "Dump embedded confd database to file." )))
   <|> ( Status <$> Opt.subparser ( Opt.command "status" (Opt.withDesc parseStatusOptions
         "Query mero-cluster status")))
-  <|> ( Start <$> Opt.subparser ( Opt.command "start" (Opt.withDesc (pure StartOptions)
+  <|> ( Start <$> Opt.subparser ( Opt.command "start" (Opt.withDesc parseStartOptions
         "Start mero cluster")))
   <|> ( Stop <$> Opt.subparser ( Opt.command "stop" (Opt.withDesc (pure StopOptions)
         "Stop mero cluster")))
@@ -105,9 +109,9 @@ cluster nids' opt = do
     cluster' nids (Status (StatusOptions m d)) = clusterCommand nids ClusterStatusRequest (liftIO . output m d)
       where output True _ = jsonReport
             output False d = prettyReport d
-    cluster' nids (Start _)  = do
+    cluster' nids (Start (StartOptions async))  = do
       say "Starting cluster."
-      clusterCommand nids ClusterStartRequest (liftIO . print)
+      clusterStartCommand nids async
     cluster' nids (Stop  _)  = do
       say "Stopping cluster."
       clusterCommand nids ClusterStopRequest (liftIO . print)
@@ -186,7 +190,7 @@ data StatusOptions = StatusOptions {
     statusOptJSON :: Bool
   , statusOptDevices :: Bool
 } deriving (Eq, Show)
-data StartOptions  = StartOptions deriving (Eq, Show)
+data StartOptions  = StartOptions Bool deriving (Eq, Show)
 data StopOptions   = StopOptions deriving (Eq, Show)
 data ClientOptions = ClientStopOption String
                    | ClientStartOption String
@@ -254,6 +258,13 @@ parseStatusOptions = StatusOptions
        <> Opt.short 'd'
        <> Opt.help "Also show failed devices and their status. Devices are always shown in the JSON format.")
 
+parseStartOptions :: Opt.Parser StartOptions
+parseStartOptions = StartOptions
+  <$> Opt.switch
+       ( Opt.long "async"
+       <> Opt.short 'a'
+       <> Opt.help "Do not wait for cluster start.")
+
 dumpConfd :: [NodeId]
           -> DumpOptions
           -> Process ()
@@ -291,6 +302,23 @@ client eqnids (ClientStartOption fn) = do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
+#ifdef USE_MERO
+clusterStartCommand :: [NodeId]
+                    -> Bool
+                    -> Process ()
+clusterStartCommand eqnids False = do
+  -- FIXME implement async also
+  subscribeOnTo eqnids (Proxy :: Proxy ClusterStartResult)
+  promulgateEQ eqnids ClusterStartRequest
+  Published msg _ <- expect :: Process (Published ClusterStartResult)
+  unsubscribeOnFrom eqnids (Proxy :: Proxy ClusterStartResult)
+  liftIO $ print msg
+clusterStartCommand eqnids True = do
+  -- FIXME implement async also
+  promulgateEQ eqnids ClusterStartRequest
+  liftIO $ putStrLn "Cluster start request sent."
+#endif
+
 clusterCommand :: (Serializable a, Serializable b, Show b)
                => [NodeId]
                -> (SendPort b -> a)
@@ -299,7 +327,8 @@ clusterCommand :: (Serializable a, Serializable b, Show b)
 clusterCommand eqnids mk output = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
-  output =<< receiveChan rchan
+  _ <- receiveTimeout 10000000 [ matchChan rchan output ]
+  return ()
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 

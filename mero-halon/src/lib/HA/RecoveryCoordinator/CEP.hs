@@ -61,6 +61,7 @@ import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
+import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_TRANSIENT))
 import           HA.Services.Mero (meroRules, m0d)
 import           HA.Services.SSPL (sendNodeCmd)
@@ -90,6 +91,9 @@ rcInitRule argv = do
       liftProcess $ do
          sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
          sayRC $ "Executing on node: " ++ show nid
+#ifdef USE_MERO
+      HA.RecoveryCoordinator.RC.Rules.initialRule
+#endif
       ms   <- getNodeRegularMonitors (const True)
       liftProcess $ do
         self <- getSelfPid
@@ -148,6 +152,7 @@ rcRules argv additionalRules = do
     HA.Services.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
+    HA.RecoveryCoordinator.RC.Rules.rules
 #endif
     sequence_ additionalRules
 
