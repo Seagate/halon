@@ -201,6 +201,27 @@ instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
   fid (Node f) = f
 
+-- | Node state. This is a generalization of what might be reported to Mero.
+data NodeState
+  = NSUnknown             -- ^ Node state is not known.
+  | NSOffline             -- ^ Node is stopped, gracefully.
+  | NSFailedUnrecoverable -- ^ Node is failed
+  | NSFailed              -- ^ Node is failed, possibly can be recovered.
+  | NSOnline              -- ^ Node is online.
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary NodeState
+instance Hashable NodeState
+instance ToJSON NodeState
+instance FromJSON NodeState
+
+prettyNodeState :: NodeState -> String
+prettyNodeState NSUnknown = "N/A"
+prettyNodeState NSOffline = "offline"
+prettyNodeState NSFailed  = "failed(recoverable)"
+prettyNodeState NSFailedUnrecoverable  = "failed(unrecoverable)"
+prettyNodeState NSOnline = "online"
+
 newtype Rack = Rack Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
@@ -638,7 +659,7 @@ $(mkDicts
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState, ''PVerCounter
+  , ''SDevState, ''PVerCounter, ''NodeState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -688,6 +709,7 @@ $(mkDicts
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
+  , (''Node,    ''R.Is, ''NodeState)
   ]
   )
 
@@ -699,7 +721,7 @@ $(mkResRel
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''MeroClusterState, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState, ''PVerCounter
+  , ''SDevState, ''PVerCounter, ''NodeState
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -749,6 +771,7 @@ $(mkResRel
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
+  , (''Node,    ''R.Is, ''NodeState)
   ]
   []
   )

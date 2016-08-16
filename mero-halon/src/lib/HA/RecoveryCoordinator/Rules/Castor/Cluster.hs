@@ -354,7 +354,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       let status = listToMaybe $ G.connectedTo R.Cluster R.Has rg
       hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
-            let node_st = maybe M0.M0_NC_UNKNOWN (flip M0.getState rg) $ listToMaybe nodes
+            let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
@@ -450,7 +450,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
           modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
           servers <- fmap (map snd) $ getMeroHostsNodes
             $ \(host::R.Host) (node::M0.Node) rg -> G.isConnected host R.Has R.HA_M0SERVER rg
-                            && M0.getState node rg /= M0.M0_NC_FAILED
+                            && M0.getState node rg /= M0.NSFailed
+                            && M0.getState node rg /= M0.NSFailedUnrecoverable
           for_ servers $ \s -> do
             phaseLog "debug" $ "starting server processes on node=" ++ M0.showFid s
             promulgateRC $ StartProcessesOnNodeRequest s
@@ -499,7 +500,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
        clients <- fmap (map snd) $ getMeroHostsNodes
             $ \(host::R.Host) (node::M0.Node) rg -> (G.isConnected host R.Has R.HA_M0CLIENT rg
                                || G.isConnected host R.Has R.HA_M0SERVER rg) -- XXX on devvm node do not have client label
-                            && M0.getState node rg /= M0.M0_NC_FAILED
+                            && M0.getState node rg /= M0.NSFailed
+                            && M0.getState node rg /= M0.NSFailedUnrecoverable
        case clients of
          [] -> do modify Local $ rlens fldRep . rfield .~ Just ClusterStartOk
                   continue finalize

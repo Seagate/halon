@@ -62,7 +62,7 @@ import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
-import           HA.Resources.Mero.Note (ConfObjectState(M0_NC_TRANSIENT))
+import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero (meroRules, m0d)
 import           HA.Services.SSPL (sendNodeCmd)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
@@ -351,7 +351,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 #ifdef USE_MERO
                 case nodeToM0Node n1 g of
                   [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
-                  ns -> applyStateChanges $ (\n -> stateSet n M0_NC_TRANSIENT) <$> ns
+                  ns -> applyStateChanges $ (\n -> stateSet n NSFailed) <$> ns
                 -- if the node is a mero server then power-cycle it.
                 -- Client nodes can run client-software that may not be
                 -- OK with reboots so we only reboot servers.
@@ -398,7 +398,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
              -- number of times, keep trying to recovery but now
              -- only every full duration of
              -- _hv_recovery_expiry_seconds..
-             let t' = if abs maxRetries <= i
+             let t' = if abs maxRetries > i
                       then expirySeconds
                       else expirySeconds `div` abs maxRetries
              phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h

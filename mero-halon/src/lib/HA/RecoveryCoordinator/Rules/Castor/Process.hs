@@ -493,7 +493,7 @@ ruleProcessRecoveryFailure = defineSimpleTask "process-recovery-failure" $ \(Pro
   rg <- getLocalGraph
   let m0ns = [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
                  , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
-  applyStateChanges $ map (`stateSet` M0_NC_FAILED) m0ns
+  applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

@@ -536,7 +536,7 @@ diskFixesPVer = StateCascadeRule
 nodeTransient :: StateCascadeRule M0.Node M0.Process
 nodeTransient = StateCascadeRule
   (const True)
-  (M0.M0_NC_TRANSIENT==)
+  (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (\_ -> M0.PSInhibited)
 

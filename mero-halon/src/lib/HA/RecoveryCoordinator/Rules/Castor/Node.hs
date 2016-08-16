@@ -1,9 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
 -- |
 -- Collection of the rules for maintaining castor node.
 --
@@ -148,6 +148,8 @@ import           System.Posix.SysInfo
 
 import Network.CEP
 import Data.Binary (Binary)
+import Data.Typeable
+import Data.Maybe (mapMaybe)
 import           Data.Vinyl
 import           Text.Printf
 import GHC.Generics
@@ -160,6 +162,7 @@ rules = sequence_
   , ruleStartProcessesOnNode
   , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
+  , ruleRecoverTransientNode
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
@@ -221,7 +224,7 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
   let nodes = [m0node | node :: R.Node <- G.connectedFrom R.Runs sp g
                       , m0node <- nodeToM0Node node g
                       ]
-  applyStateChanges $ (`stateSet` M0.M0_NC_ONLINE) <$> nodes
+  applyStateChanges $ (`stateSet` M0.NSOnline) <$> nodes
   for_ nodes $ notify . KernelStarted
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
@@ -236,7 +239,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
   let nodes = [m0node | node :: R.Node <- G.connectedFrom R.Runs sp g
                       , m0node <- nodeToM0Node node g
                       ]
-  applyStateChanges $ (`stateSet` M0.M0_NC_ONLINE) <$> nodes
+  applyStateChanges $ (`stateSet` M0.NSFailed) <$> nodes
   for_ nodes $ notify . KernelStartFailure
 
 {-
@@ -295,7 +298,7 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
      rg <- getLocalGraph
      case listToMaybe $ m0nodeToNode m0node rg of
        Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
-       Just node -> do applyStateChanges [stateSet m0node M0.M0_NC_FAILED]
+       Just node -> do applyStateChanges [stateSet m0node M0.NSOffline]
                        promulgateRC $ encodeP $ ServiceStopRequest node m0d
 
 
@@ -890,7 +893,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      -- sure.
      applyStateChanges $ (\p -> stateSet p $ M0.PSFailed "Timeout on stop.")
                           <$> failedProcs
-     applyStateChanges [stateSet m0node M0.M0_NC_FAILED]
+     applyStateChanges [stateSet m0node M0.NSUnknown]
      modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeTimeout)
      -- go back to teardown_exec, let it notice no more processes on
      -- this level and deal with transition into next
@@ -927,3 +930,19 @@ mkLabel :: M0.BootLevel -> M0.ProcessLabel
 mkLabel bl@(M0.BootLevel l)
   | l == maxTeardownLevel = M0.PLM0t1fs
   | otherwise = M0.PLBootLevel bl
+
+
+-- | If node becomes transient - we need to start recover job.
+ruleRecoverTransientNode :: Definitions LoopState ()
+ruleRecoverTransientNode = defineSimpleTask "castor::node::recover-start" $ \msg -> do
+    rg <- getLocalGraph
+    let go :: AnyStateChange -> Maybe R.Node
+        go (AnyStateChange (a :: a) _old new _) =
+           ((,) <$> cast a <*> cast new) >>= \(m0node,state) ->
+             if state == M0.NSFailed
+             then listToMaybe (m0nodeToNode m0node rg)
+             else Nothing
+    nodes <- do
+          InternalObjectStateChange chs <- liftProcess $ decodeP msg
+          return $ mapMaybe go chs
+    for_ nodes $ promulgateRC . R.RecoverNode

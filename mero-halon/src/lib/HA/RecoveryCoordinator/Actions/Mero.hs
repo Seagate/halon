@@ -233,7 +233,8 @@ calculateMeroClusterStatus = do
                                                        , M0.PSStarting
                                                        ]
                               , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
-                              , M0.getState n g /= M0.M0_NC_FAILED
+                              , M0.getState n g /= M0.NSFailed
+                                && M0.getState n g /= M0.NSFailedUnrecoverable
                          ] ) rg
       in if null $ stillUnstopped
       then case i of

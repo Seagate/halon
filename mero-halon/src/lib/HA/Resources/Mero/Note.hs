@@ -212,7 +212,16 @@ instance HasConfObjectState M0.Enclosure where
 instance HasConfObjectState M0.Controller where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Controller
 instance HasConfObjectState M0.Node where
+  type StateCarrier M0.Node = M0.NodeState
+  getState x rg = fromMaybe M0.NSUnknown . listToMaybe $ G.connectedTo x Is rg
+  setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
+
+  toConfObjState _ M0.NSUnknown = M0_NC_ONLINE
+  toConfObjState _ M0.NSFailed  = M0_NC_TRANSIENT
+  toConfObjState _ M0.NSFailedUnrecoverable = M0_NC_FAILED
+  toConfObjState _ M0.NSOffline = M0_NC_FAILED
+  toConfObjState _ M0.NSOnline  = M0_NC_ONLINE
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
   getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
@@ -383,7 +392,6 @@ $(mkDicts
   , (''M0.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
-  , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
@@ -396,7 +404,6 @@ $(mkResRel
   , (''M0.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
-  , (''M0.Node, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
   , (''M0.Pool, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
