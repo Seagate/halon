@@ -17,9 +17,6 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , applyStateChanges
   , applyStateChangesCreateFS
   , applyStateChangesSyncConfd
-  , createDeferredStateChanges
-  , genericApplyDeferredStateChanges
-  , genericApplyStateChanges
     -- * Re-export for convenience
   , AnyStateSet
   , stateSet
