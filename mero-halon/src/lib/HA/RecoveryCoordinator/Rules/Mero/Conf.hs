@@ -32,7 +32,7 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   )  where
 
 import HA.Encode (decodeP, encodeP)
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue.Producer (promulgateWait)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Core
@@ -214,8 +214,8 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i)
   syncGraphBlocking -- TODO Should we call this here?
   res <- action
   notifyMeroAndThen s
-    (promulgate (encodeP i) >> cbSucc)
-    (promulgate (encodeP i) >> cbFail)
+    (promulgateWait (encodeP i) >> cbSucc)
+    (promulgateWait (encodeP i) >> cbFail)
   return res
 
 -- | Apply state changes and do nothing else.
