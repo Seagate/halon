@@ -55,7 +55,6 @@ rules = sequence_ [
   , ruleProcessConfigured
   , ruleStop
   , ruleProcessControlStart
-  , ruleProcessRecoveryFailure
   , ruleFailedNotificationFailsProcess
   ]
 
@@ -482,18 +481,6 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
           | sort (M0.fid <$> p) == sort ((either id fst) <$> results)
           -> return $ Just (eid, results)
         _ -> return Nothing
-
--- | We have failed to restart the process of the given fid with due
--- to the provided reason.
---
--- Currently just fails the node the process is on.
-ruleProcessRecoveryFailure :: Definitions LoopState ()
-ruleProcessRecoveryFailure = defineSimpleTask "process-recovery-failure" $ \(ProcessRecoveryFailure (pfid, r)) -> do
-  phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
-  rg <- getLocalGraph
-  let m0ns = [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
-                 , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
-  applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

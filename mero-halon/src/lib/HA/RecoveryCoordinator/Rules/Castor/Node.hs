@@ -118,6 +118,7 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
+import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Services.Mero
@@ -139,6 +140,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import           Data.Proxy (Proxy(..))
 import           Data.Foldable (for_)
+import           Data.List (nub)
 import           Data.Maybe (listToMaybe, fromMaybe, isNothing, isJust)
 import           Control.Applicative
 import           Control.Lens
@@ -163,6 +165,7 @@ rules = sequence_
   , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
   , ruleRecoverTransientNode
+  , ruleFailNodeIfProcessCantRestart
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
@@ -946,3 +949,16 @@ ruleRecoverTransientNode = defineSimpleTask "castor::node::recover-start" $ \msg
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
           return $ mapMaybe go chs
     for_ nodes $ promulgateRC . R.RecoverNode
+
+-- | We have failed to restart the process of the given fid with due
+-- to the provided reason.
+--
+-- Currently just fails the node the process is on.
+ruleFailNodeIfProcessCantRestart :: Definitions LoopState ()
+ruleFailNodeIfProcessCantRestart = defineSimpleTask "castor::node::process-restart-failure" $
+  \(ProcessRecoveryFailure (pfid, r)) -> do
+    phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
+    rg <- getLocalGraph
+    let m0ns = nub [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
+                       , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
+    applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
