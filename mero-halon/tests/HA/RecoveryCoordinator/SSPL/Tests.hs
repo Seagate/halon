@@ -241,32 +241,32 @@ testDMRequest = mkHpiTest rules test
         let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0) []
-        "drive-transient" <- await uuid0
+        liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid0
         say "Unused ok for removed drive"
         let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
         uuid1 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid1 (me, request1) []
-        "nothing" <- await uuid1
+        liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid1
         say "Failed smart for good drive"
         let request2 = dmRequest "FAILED" "SMART" "serial1" 0 "path"
         uuid2 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid2 (me, request2) []
-        "drive-failed" <- await uuid2
+        liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid2
         say "Failed smart for removed drive"
         let request3 = dmRequest "FAILED" "SMART" "serial1" 1 "path"
         uuid3 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid3 (me, request3) []
-        "nothing" <- await uuid3
+        liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid3
         say "OK_None smart for good"
         let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4) []
-        await uuid4 >>= liftIO . assertEqual "OK_None smart for good" "drive-ok"
+        liftIO . assertEqual "OK_None smart for good" "drive-ok" =<< await uuid4
         say "OK_None smart for bad"
         let request5 = dmRequest "OK" "None" "serial1" 1 "path"
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5) []
-        await uuid5 >>= liftIO . assertEqual "OK_None smart for bad" "nothing"
+        liftIO . assertEqual "OK_None smart for bad" "drive-ok" =<< await uuid5
         return ()
       where
         await uuid = receiveWait
