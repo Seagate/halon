@@ -26,6 +26,7 @@ import Control.Distributed.Process.Node
   ( initRemoteTable
   , runProcess
   )
+import Control.Distributed.Process.Internal.Primitives (SayMessage(..))
 
 import Control.Monad
 import Data.List (isInfixOf, isPrefixOf)
@@ -60,7 +61,7 @@ test = testCase "Snapshot3" $
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond") ]
 
-      getSelfPid >>= copyLog (\(_, _, msg) -> any (`isInfixOf` msg)
+      getSelfPid >>= copyLog (\(SayMessage _ _ msg) -> any (`isInfixOf` msg)
                                   [ "New replica started in"
                                   , "New node contacted"
                                   , "Starting service"
@@ -132,7 +133,7 @@ test = testCase "Snapshot3" $
   where
     expectLogInt :: [NodeId] -> String -> Process Int
     expectLogInt nids pfx = receiveWait
-       [ matchIf (\(_, pid, msg) -> elem (processNodeId pid) nids &&
+       [ matchIf (\(SayMessage _ pid msg) -> elem (processNodeId pid) nids &&
                                     pfx `isPrefixOf` msg) $
-                 \(_ :: String, _, msg) -> return $ read $ drop (length pfx) msg
+                 \(SayMessage _ _ msg) -> return $ read $ drop (length pfx) msg
        ]

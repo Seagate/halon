@@ -18,6 +18,7 @@ import Control.Distributed.Process.Scheduler
   , addFailures
   , removeFailures
   )
+import Control.Distributed.Process.Internal.Primitives
 import Control.Distributed.Process.Internal.Types (ProcessExitException(..))
 import Control.Distributed.Process.Trans
 import Control.Monad ( when, forM_, replicateM_, forM )
@@ -166,9 +167,9 @@ registerInterceptor hook = do
     Just logger <- whereis "logger"
 
     let loop = receiveWait
-            [ match $ \msg@(_, _, string) -> do
+            [ match $ \msg@(SayMessage _ _ string) -> do
                   hook string
-                  usend logger (msg :: (String, ProcessId, String))
+                  usend logger msg
                   loop
             , matchAny $ \amsg -> do
                   uforward amsg logger

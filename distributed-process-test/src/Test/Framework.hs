@@ -32,6 +32,7 @@ import Control.Distributed.Process hiding
   , finally
   , try
   )
+import Control.Distributed.Process.Internal.Primitives (SayMessage(..))
 import Control.Distributed.Process.Internal.StrictMVar
   ( modifyMVar
   , newEmptyMVar
@@ -170,7 +171,7 @@ registerInterceptor hook = do
     Just logger <- whereis "logger"
 
     let loop = receiveWait
-            [ match $ \(msg@(_, _, string) :: (String, ProcessId, String)) -> do
+            [ match $ \msg@(SayMessage _ _ string) -> do
                   hook string
                   usend logger msg
                   loop

@@ -89,6 +89,8 @@ import qualified "distributed-process" Control.Distributed.Process.Internal.Type
 import Control.Distributed.Process.Closure
 import "distributed-process" Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
+import "distributed-process" Control.Distributed.Process.Internal.Primitives
+    (SayMessage(..))
 import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
@@ -111,6 +113,7 @@ import Data.Map ( Map )
 import qualified Data.Map as Map
 import Data.Set ( Set )
 import qualified Data.Set as Set
+import Data.Time.Clock
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
 import Network.Transport (Transport)
@@ -1196,7 +1199,9 @@ say string = do
     schedulerTrace "say"
     sendS $ GetTime self
     now <- DP.expect
-    nsend "logger" (show (now :: Int), self, string)
+    -- Treat ticks as milliseconds.
+    let utc = addUTCTime (toEnum now * 1000 * 1000) (UTCTime (toEnum 0) 0)
+    nsend "logger" (SayMessage utc self string)
 
 nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
 nsendRemote nid label msg = do

@@ -53,6 +53,7 @@ import Control.Distributed.Process.Closure
     , mkClosure
     , sdictUnit
     )
+import Control.Distributed.Process.Internal.Primitives (SayMessage(..))
 import Control.Distributed.Process.Internal.Types (runLocalProcess)
 import Control.Exception as E (evaluate, onException, SomeException, throwIO)
 import Control.Monad.Reader (ask, when)
@@ -78,7 +79,7 @@ redirectLogsThere pid = do
 
     let loop = receiveWait
             [ match $ \msg -> do
-                  send pid (msg :: (String, ProcessId, String))
+                  send pid (msg :: SayMessage)
                   loop
             , matchAny $ \amsg -> do
                   forward amsg logger
@@ -195,9 +196,8 @@ spawnLocalNode cmd = handleGetNodeId <$> spawnNodeWith C.systemLocal cmd
 -- | Intercepts 'say' messages from processes as a crude way to know that an
 -- action following an asynchronous send has completed.
 registerLogHook ::
-    ((String, ProcessId, String) -> Process ())
-    -- ^ Intercepter hook. Takes triplet @(timestamp, process, message)@
-    -- message sent with 'say'
+    (SayMessage -> Process ())
+    -- ^ Intercepter hook. Takes a @SayMessage@ message sent with 'say'
     -> Process ()
 registerLogHook hook = do
     Just logger <- whereis "logger"
@@ -216,7 +216,7 @@ registerLogHook hook = do
 -- | @copyLog p pid@ copies local log messages satisfying predicate @p@ to
 -- to the process with identifier @pid@.
 --
-copyLog :: ((String, ProcessId, String) -> Bool)
+copyLog :: (SayMessage -> Bool)
         -> ProcessId
         -> Process ()
 copyLog p pid = registerLogHook $ \msg -> when (p msg) $ send pid msg
@@ -226,7 +226,7 @@ copyLog p pid = registerLogHook $ \msg -> when (p msg) $ send pid msg
 --
 expectLog :: [NodeId] -> (String -> Bool) -> Process ()
 expectLog nids p = receiveWait
-    [ matchIf (\(_ :: String, pid, msg) ->
+    [ matchIf (\(SayMessage _ pid msg) ->
                 elem (processNodeId pid) nids && p msg
               ) $
               const $ return ()
@@ -235,7 +235,7 @@ expectLog nids p = receiveWait
 -- | Like 'expectLog' but returns @False@ if the given timeout expires.
 expectTimeoutLog :: Int -> [NodeId] -> (String -> Bool) -> Process Bool
 expectTimeoutLog t nids p = receiveTimeout t
-    [ matchIf (\(_ :: String, pid, msg) ->
+    [ matchIf (\(SayMessage _ pid msg) ->
                 elem (processNodeId pid) nids && p msg
               ) $
               const $ return ()

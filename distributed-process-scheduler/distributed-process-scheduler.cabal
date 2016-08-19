@@ -57,6 +57,7 @@ Library
                    ,network-transport
                    ,random
                    ,stm
+                   ,time
 
 Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
