@@ -103,6 +103,7 @@ clusterRules = sequence_
   , eventUpdatePrincipalRM
   , eventNodeFailedStart
   , ruleServiceNotificationHandler
+  , requestClusterReset
   ]
 
 -------------------------------------------------------------------------------
@@ -551,8 +552,8 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
 --   cluster is in a 'steady state', which is to say there are no running
 --   SMs and all 'midway' suspended SMs have timed out.
 requestClusterReset :: Definitions LoopState ()
-requestClusterReset = defineSimpleTask "castor::cluster::reset"
-  $ \(ClusterResetRequest deepReset) -> do
+requestClusterReset = defineSimple "castor::cluster::reset"
+  $ \(HAEvent eid (ClusterResetRequest deepReset) _) -> do
     phaseLog "info" "Cluster reset requested."
     -- Mark all processes and services as unknown.
     procs <- getLocalGraph <&> M0.getM0Processes
@@ -561,6 +562,28 @@ requestClusterReset = defineSimpleTask "castor::cluster::reset"
       <$> procs
     modifyGraph $ foldl' (.) id (flip M0.setState M0.SSUnknown <$> srvs)
     modifyGraph $ foldl' (.) id (flip M0.setState M0.PSUnknown <$> procs)
+    if deepReset
+    then do
+      syncGraphBlocking
+      phaseLog "info" "Clearing event queue."
+      self <- liftProcess $ getSelfPid
+      eqPid <- lsEQPid <$> get Global
+      liftProcess $ usend eqPid (DoClearEQ self)
+      -- Actually properly block the RC here - we do not want to allow
+      -- other events to occur in the meantime.
+      msg <- liftProcess $ expectTimeout (1*1000000) -- 1s
+      case msg of
+        Just DoneClearEQ -> phaseLog "info" "EQ cleared"
+        Nothing -> do
+          phaseLog "error" "Unable to clear the EQ!"
+          -- Attempt to ack this message to avoid a reset loop
+          messageProcessed eid
+      -- Reset the recovery co-ordinator
+      error "Force reset RC."
+    else
+      messageProcessed eid
+
+
 
 -- | Stop m0t1fs service with given fid.
 --   This may be triggered by the user using halonctl.

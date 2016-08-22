@@ -8,6 +8,8 @@ module HA.EventQueue.Types
     , PersistMessage(..)
     , newPersistMessage
     , DoTrimUnknown(..)
+    , DoClearEQ(..)
+    , DoneClearEQ(..)
     , EQStatReq(..)
     , EQStatResp(..)
     , PoolStats(..)
@@ -72,6 +74,17 @@ newPersistMessage msg = liftIO $ do
 data DoTrimUnknown = DoTrimUnknown Message deriving (Typeable, Generic)
 
 instance Binary DoTrimUnknown
+
+-- | Request to the EQ to remove all messages.
+data DoClearEQ = DoClearEQ ProcessId deriving (Typeable, Generic)
+
+instance Binary DoClearEQ
+
+-- | Returned by the EQ when messages have been cleared.
+data DoneClearEQ = DoneClearEQ deriving (Typeable, Generic)
+
+instance Binary DoneClearEQ
+
 
 -- | Request for EQ statistics
 data EQStatReq = EQStatReq ProcessId
