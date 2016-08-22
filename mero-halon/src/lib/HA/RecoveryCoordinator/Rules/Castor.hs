@@ -166,35 +166,43 @@ entryPointTimeout = 1 -- 1s
 -- | Load information that is required to complete transaction from
 -- resource graph.
 ruleGetEntryPoint :: Definitions LoopState ()
-ruleGetEntryPoint = define "castor-entry-point-request" $ do
+ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
   setPhase main $ \(HAEvent uuid (GetSpielAddress pid) _) -> do
-    phaseLog "info" $ "Spiel Address requested by " ++ show pid
+    phaseLog "info" $ "Spiel Address requested."
+    phaseLog "info" $ "requested.pid = " ++ show pid
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
-        put Local $ Just (pid,0)
+        put Local $ Just (pid,0::Int)
         -- We process message here because in case of RC death,
         -- there will be timeout on the userside anyways.
         messageProcessed uuid
         continue (timeout entryPointTimeout loop)
       Just{} -> do
-        phaseLog "entrypoint" $ show ep
+        logEP ep
         liftProcess $ usend pid ep
         messageProcessed uuid
 
   directly loop $ do
-    Just (pid, i) <- get Local
+    Just (pid, _) <- get Local
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
         continue (timeout entryPointTimeout loop)
       Just{} -> do
-        phaseLog "entrypoint" $ show ep
+        logEP ep
         liftProcess $ usend pid ep
 
   start main Nothing
+  where
+    logEP Nothing = phaseLog "warning" "Entrypoint information not available."
+    logEP (Just (M0.SpielAddress confd_fids confd_eps rm_fid rm_ep)) = do
+       phaseLog "info" $ "confd.fids = " ++ show confd_fids
+       phaseLog "info" $ "confd.eps  = " ++ show confd_eps
+       phaseLog "info" $ "rm.fids    = " ++ show rm_fid
+       phaseLog "info" $ "rm.ep      = " ++ show rm_ep
 #endif
 
 goRack :: CI.Rack -> PhaseM LoopState l ()
