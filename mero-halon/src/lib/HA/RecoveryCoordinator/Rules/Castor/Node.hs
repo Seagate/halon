@@ -275,7 +275,8 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
              Just node@(R.Node nid) ->
                findNodeHost node >>= \case
                  Just host -> do
-                   phaseLog "info" $ "Starting new mero server " ++ show nid
+                   phaseLog "info" $ "Starting new mero server."
+                   phaseLog "info" $ "node.host = " ++ show nid
                    let mlnid = (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
                            <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
                                                    <- G.connectedTo host R.Has rg ])
@@ -283,6 +284,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                      Nothing ->
                        phaseLog "error" $ "Unable to find Data IP addr for host " ++ show host
                      Just lnid -> do
+                       phaseLog "info" $ "node.lnid = " ++ show lnid
                        createMeroKernelConfig host $ lnid ++ "@tcp"
                        startMeroService host node
                  Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show node
