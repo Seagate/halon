@@ -174,6 +174,12 @@ filterMessage msg eq =
                 then Right p
                 else Left ((PersistMessage uuid (EncodedMessage f enc)), i)
 
+-- | Remove all messages from the event queue.
+--
+-- @O(1)@
+clearQueue :: EventQueue -> EventQueue
+clearQueue = const emptyEventQueue
+
 -- | @eqReadEvents (eq, sn)@ sends the current sequence number and all events
 -- from @sn@ onwards to @eq@.
 eqReadEvents :: (SendPort (SequenceNumber, [PersistMessage]), Word64)
@@ -199,6 +205,7 @@ dummyRead _ = return ()
 remotable [ 'addSerializedEvent
           , 'filterEvent
           , 'filterMessage
+          , 'clearQueue
           , 'eqReadEvents
           , 'eqReadStats
           , 'dummyRead
@@ -298,6 +305,32 @@ eqRules rg pool groupMonitor = do
             updateStateWith rg $ $(mkClosure 'filterEvent) eid
           case mr of
             Just True -> usend self (TrimAck eid)
+            _         -> loop
+
+    -- When the RC requests to clear the queue, we submit such a task to the
+    -- thread pool.
+    defineSimple "clearing" $ \(DoClearEQ pid) -> do
+      self <- liftProcess $ getSelfPid
+      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
+        -- Insist here in a loop until it works.
+        fix $ \loop -> do
+          -- Ensure we have a pid to monitor the rgroup.
+          -- See Note [RGroup monitor].
+          when schedulerIsEnabled $ fix $ \tmvarLoop -> do
+            -- When the scheduler is enabled, we loop until the TMVar is filled.
+            liftIO (atomically $ tryReadTMVar groupMonitor) >>= \case
+              -- We are going to block on the TMVar, tell the worker monitor.
+              Nothing -> do getSelfPid >>= DP.nsend workerMonitorLabel
+                            () <- DP.expect
+                            () <- expect
+                            tmvarLoop
+              -- We are not blocking on the TMVar, proceed.
+              Just _  -> return ()
+          rgMonitor <- liftIO $ atomically $ readTMVar groupMonitor
+          mr <- withMonitoring (monitor rgMonitor) $
+            updateStateWith rg $ $(mkStaticClosure 'clearQueue)
+          case mr of
+            Just True -> usend pid DoneClearEQ
             _         -> loop
 
     -- Remove message of unknown type. It's important that all
