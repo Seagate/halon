@@ -60,6 +60,7 @@ data ClusterOptions =
   | Stop  StopOptions
   | ClientCmd ClientOptions
   | NotifyCmd NotifyOptions
+  | ResetCmd ResetOptions
 #endif
   deriving (Eq, Show)
 
@@ -82,6 +83,8 @@ parseCluster =
         "Control m0t1fs clients")))
   <|> ( NotifyCmd <$> Opt.subparser ( Opt.command "notify" (Opt.withDesc parseNotifyOptions
         "Notify mero cluster" )))
+  <|> ( ResetCmd <$> Opt.subparser ( Opt.command "reset" (Opt.withDesc parseResetOptions
+        "Reset Halon's cluster knowledge to ground state." )))
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -117,6 +120,7 @@ cluster nids' opt = do
       clusterCommand nids ClusterStopRequest (liftIO . print)
     cluster' nids (ClientCmd s) = client nids s
     cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
+    cluster' nids (ResetCmd (ResetOptions s)) = clusterReset nids s
 #endif
 
 data LoadOptions = LoadOptions
@@ -198,6 +202,8 @@ data ClientOptions = ClientStopOption String
 
 newtype NotifyOptions = NotifyOptions [M0.Note]
   deriving (Eq, Show)
+newtype ResetOptions = ResetOptions Bool
+  deriving (Eq, Show)
 
 parseNotifyOptions :: Opt.Parser NotifyOptions
 parseNotifyOptions = NotifyOptions <$>
@@ -258,6 +264,13 @@ parseStatusOptions = StatusOptions
        <> Opt.short 'd'
        <> Opt.help "Also show failed devices and their status. Devices are always shown in the JSON format.")
 
+parseResetOptions :: Opt.Parser ResetOptions
+parseResetOptions = ResetOptions
+  <$> Opt.switch
+    ( Opt.long "hard"
+    <> Opt.help "Perform a hard reset. This clears the EQ and forces an RC restart."
+    )
+
 parseStartOptions :: Opt.Parser StartOptions
 parseStartOptions = StartOptions
   <$> Opt.switch
@@ -302,7 +315,6 @@ client eqnids (ClientStartOption fn) = do
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
-#ifdef USE_MERO
 clusterStartCommand :: [NodeId]
                     -> Bool
                     -> Process ()
@@ -317,7 +329,14 @@ clusterStartCommand eqnids True = do
   -- FIXME implement async also
   promulgateEQ eqnids ClusterStartRequest
   liftIO $ putStrLn "Cluster start request sent."
-#endif
+
+clusterReset :: [NodeId]
+             -> Bool
+             -> Process ()
+clusterReset eqnids hard = do
+  promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
 
 clusterCommand :: (Serializable a, Serializable b, Show b)
                => [NodeId]

@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
   , PoolRepairRequest(..)
+  , ClusterResetRequest(..)
     -- ** Node
   , StartCastorNodeRequest(..)
   , StartProcessesOnNodeRequest(..)
@@ -93,6 +94,16 @@ data ClusterStateChange =
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ClusterStateChange
+
+-- | Request sent to reset the cluster. This should be done if the cluster
+--   gets into a 'stuck' state from which we cannot recover in the regular
+--   manner. In general, 'reset' should only be called if the cluster is in
+--   a 'steady state' - e.g. there should be no SMs running.
+--
+--   The optional Bool parameter determines whether to do a deeper reset,
+--   which will also purge the EQ and restart the RC.
+newtype ClusterResetRequest = ClusterResetRequest Bool
+  deriving (Eq, Show, Binary, Typeable, Generic)
 
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState

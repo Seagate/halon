@@ -540,6 +540,28 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
         sendChan ch (StateChangeStarted pid)
         proc eid
 
+-- | Reset the (mero) cluster. This should be used when something
+--   has gone wrong and we cannot restore the cluster to ground
+--   state under normal operation.
+--
+--   There are two 'levels' of reset. The first level will simply
+--   revert the status of all Mero processes and services to 'Unknown'.
+--   The second level will also purge all messages from the EQ and restart
+--   the recovery co-ordinator. Note that this should only be done if the
+--   cluster is in a 'steady state', which is to say there are no running
+--   SMs and all 'midway' suspended SMs have timed out.
+requestClusterReset :: Definitions LoopState ()
+requestClusterReset = defineSimpleTask "castor::cluster::reset"
+  $ \(ClusterResetRequest deepReset) -> do
+    phaseLog "info" "Cluster reset requested."
+    -- Mark all processes and services as unknown.
+    procs <- getLocalGraph <&> M0.getM0Processes
+    srvs <- getLocalGraph <&> \rg -> join
+      $ (\p -> G.connectedTo p M0.IsParentOf rg :: [M0.Service])
+      <$> procs
+    modifyGraph $ foldl' (.) id (flip M0.setState M0.SSUnknown <$> srvs)
+    modifyGraph $ foldl' (.) id (flip M0.setState M0.PSUnknown <$> procs)
+
 -- | Stop m0t1fs service with given fid.
 --   This may be triggered by the user using halonctl.
 --
