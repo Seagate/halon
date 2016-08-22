@@ -24,6 +24,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
+import HA.EventQueue (eventQueueLabel)
+import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..))
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -31,6 +33,8 @@ import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.RC
   ( subscribeOnTo, unsubscribeOnFrom )
+import HA.RecoveryCoordinator.Mero
+  ( labelRecoveryCoordinator )
 
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 import Network.CEP
@@ -41,6 +45,7 @@ import Options.Applicative
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Control.Monad (void, unless, when)
+import Control.Monad.Fix (fix)
 
 import Data.Proxy
 import Data.Yaml
@@ -120,7 +125,7 @@ cluster nids' opt = do
       clusterCommand nids ClusterStopRequest (liftIO . print)
     cluster' nids (ClientCmd s) = client nids s
     cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
-    cluster' nids (ResetCmd (ResetOptions s)) = clusterReset nids s
+    cluster' nids (ResetCmd r) = clusterReset nids r
 #endif
 
 data LoadOptions = LoadOptions
@@ -202,7 +207,7 @@ data ClientOptions = ClientStopOption String
 
 newtype NotifyOptions = NotifyOptions [M0.Note]
   deriving (Eq, Show)
-newtype ResetOptions = ResetOptions Bool
+data ResetOptions = ResetOptions Bool Bool
   deriving (Eq, Show)
 
 parseNotifyOptions :: Opt.Parser NotifyOptions
@@ -270,6 +275,10 @@ parseResetOptions = ResetOptions
     ( Opt.long "hard"
     <> Opt.help "Perform a hard reset. This clears the EQ and forces an RC restart."
     )
+  <*> Opt.switch
+    ( Opt.long "unstick"
+    <> Opt.help "Clear the EQ and reset the RC remotely, in case of a stuck RC."
+    )
 
 parseStartOptions :: Opt.Parser StartOptions
 parseStartOptions = StartOptions
@@ -331,12 +340,37 @@ clusterStartCommand eqnids True = do
   liftIO $ putStrLn "Cluster start request sent."
 
 clusterReset :: [NodeId]
-             -> Bool
+             -> ResetOptions
              -> Process ()
-clusterReset eqnids hard = do
-  promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
-  where
-    wait = void (expect :: Process ProcessMonitorNotification)
+clusterReset eqnids (ResetOptions hard unstick) = if unstick
+  then do
+    self <- getSelfPid
+    eqs <- findEQFromNodes 1000000 eqnids
+    case eqs of
+      [] -> liftIO $ putStrLn "Cannot find EQ."
+      eq:_ -> do
+        nsendRemote eq eventQueueLabel $ DoClearEQ self
+        msg <- expectTimeout 1000000
+        case msg of
+          Nothing -> liftIO $ putStrLn "No reply from EQ."
+          Just DoneClearEQ -> liftIO $ putStrLn "EQ cleared."
+    -- Attempt to kill the RC
+    for_ eqnids $ \nid -> whereisRemoteAsync nid labelRecoveryCoordinator
+    void . spawnLocal $ receiveTimeout 3000000 [] >> usend self ()
+    fix $ \loop -> do
+      void $ receiveWait
+        [ matchIf (\(WhereIsReply s _) -> s == labelRecoveryCoordinator)
+           $ \(WhereIsReply _ mp) -> case mp of
+             Nothing -> loop
+             Just p -> do
+               liftIO $ putStrLn "Killing recovery coordinator."
+               kill p "User requested `cluster reset --unstick`"
+        , match $ \() -> liftIO $ putStrLn "Cannot determine the location of the RC."
+        ]
+  else do
+      promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
+    where
+      wait = void (expect :: Process ProcessMonitorNotification)
 
 clusterCommand :: (Serializable a, Serializable b, Show b)
                => [NodeId]

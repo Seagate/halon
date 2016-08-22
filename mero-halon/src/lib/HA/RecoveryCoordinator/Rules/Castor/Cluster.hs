@@ -579,11 +579,9 @@ requestClusterReset = defineSimple "castor::cluster::reset"
           -- Attempt to ack this message to avoid a reset loop
           messageProcessed eid
       -- Reset the recovery co-ordinator
-      error "Force reset RC."
+      error "User requested `cluster reset --hard`"
     else
       messageProcessed eid
-
-
 
 -- | Stop m0t1fs service with given fid.
 --   This may be triggered by the user using halonctl.
