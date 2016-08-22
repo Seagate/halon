@@ -208,7 +208,6 @@ registerSyncGraphCallback action = do
 --   delete it.
 messageProcessed :: UUID -> PhaseM LoopState l ()
 messageProcessed uuid = do
-  phaseLog "eq" $ unwords ["Removing message", show uuid, "from EQ."]
   eqPid <- lsEQPid <$> get Global
   liftProcess $ usend eqPid uuid
 
