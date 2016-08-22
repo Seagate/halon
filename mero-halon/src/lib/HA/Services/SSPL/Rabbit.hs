@@ -6,6 +6,7 @@
 
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module HA.Services.SSPL.Rabbit where
@@ -32,6 +33,10 @@ import Control.Monad (forever)
 import Control.Monad.Catch
   ( finally
   , bracket
+  , mask_
+  , try
+  , catch
+  , SomeException(..)
   )
 
 import Data.Aeson
@@ -43,6 +48,7 @@ import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Foldable
+import Data.Functor (void)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -155,13 +161,15 @@ receive chan BindConf{..} handle = do
       handle msg
 
     rabbitHandler lChan = liftIO $ do
-      declareExchange chan newExchange
-        { exchangeName = exchangeName
-        , exchangeType = "topic"
-        , exchangeDurable = False
-        }
-      _ <- declareQueue chan newQueue { queueName = queueName }
-      bindQueue chan queueName exchangeName routingKey
+      mask_ $ do -- ignore async exceptions during startup
+        ignoreException $ declareExchange chan newExchange
+          { exchangeName = exchangeName
+          , exchangeType = "topic"
+          , exchangeDurable = False
+          }
+        ignoreException $ void $
+          declareQueue chan newQueue { queueName = queueName }
+        ignoreException $ bindQueue chan queueName exchangeName routingKey
 
       consumeMsgs chan queueName NoAck $ writeChan lChan
 
@@ -175,26 +183,39 @@ receiveAck :: Network.AMQP.Channel
            -> T.Text -- ^ Routing key
            -> (Network.AMQP.Message -> Process ())
            -> Process ()
-receiveAck chan exchange queue routingKey handle = bracket
-  (liftIO $ do
-     declareExchange chan newExchange
-       { exchangeName = exchange
-       , exchangeType = "topic"
-       , exchangeDurable = False
-       }
-     _  <- declareQueue chan newQueue{ queueName = queue }
-     bindQueue chan queue exchange routingKey
-     mbox  <- newEmptyMVar
-     mdone <- newEmptyMVar
-     tag   <- consumeMsgs chan queue Ack $ \(msg,env) -> do
-       putMVar mbox msg
-       takeMVar mdone
-       ackEnv env
-     return (tag,(mbox,mdone)))
-  (liftIO . cancelConsumer chan . fst)
-  (\(_,(mbox,mdone)) -> forever $ do
-     handle =<< liftIO (takeMVar mbox)
-     liftIO $ putMVar mdone ())
+receiveAck chan exchange queue routingKey handle = go `catch` (liftIO . logException) where
+  go = bracket
+         (liftIO $ do
+            mask_ $ do -- ignore all asynchronous exception for simplicity
+              ignoreException $
+                declareExchange chan newExchange
+                  { exchangeName = exchange
+                  , exchangeType = "topic"
+                  , exchangeDurable = False
+                  }
+              ignoreException $ void $
+                declareQueue chan newQueue{ queueName = queue }
+              ignoreException $ bindQueue chan queue exchange routingKey
+            mbox  <- newEmptyMVar
+            mdone <- newEmptyMVar
+            tag   <- consumeMsgs chan queue Ack $ \(msg,env) -> do
+              putMVar mbox msg
+              takeMVar mdone
+              ackEnv env
+            return (tag,(mbox,mdone)))
+         (liftIO . cancelConsumer chan . fst)
+         (\(_,(mbox,mdone)) -> forever $ do
+            handle =<< liftIO (takeMVar mbox)
+            liftIO $ putMVar mdone ())
+
+ignoreException :: IO () -> IO ()
+ignoreException io = try io >>= \case
+  Right _ -> return ()
+  Left e  -> logException e
+
+
+logException :: SomeException -> IO ()
+logException e = putStrLn $ "[SSPL-HL]: exception: " ++ show (e::SomeException)
 
 -- | Publish message
 data MQPublish = MQPublish

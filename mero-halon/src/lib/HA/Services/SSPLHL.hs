@@ -237,12 +237,13 @@ remotableDecl [ [d|
             bracket (openChannel conn)
                     (closeChannel)
               $ \chan ->
-                declareExchange chan newExchange
-                  { exchangeName = T.pack $ fromDefault $ Rabbit.bcExchangeName
-                                                        $ scResponseConf
-                  , exchangeType = "topic"
-                  , exchangeDurable = False
-                  }
+                Rabbit.ignoreException $
+                  declareExchange chan newExchange
+                    { exchangeName = T.pack $ fromDefault $ Rabbit.bcExchangeName
+                                                          $ scResponseConf
+                    , exchangeType = "topic"
+                    , exchangeDurable = False
+                    }
 
 
       lock <- liftIO newEmptyMVar
