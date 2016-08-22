@@ -11,8 +11,9 @@ import           Control.Lens
 import           Control.Exception as E
 import           Data.Binary (Binary)
 import           Data.List (sort)
-import           Data.Maybe (listToMaybe, fromMaybe)
+import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
 import           Data.Typeable
+import           Data.Traversable (for)
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
@@ -188,6 +189,7 @@ failvecCascade t pg = doTest t pg [rule] test'
           viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
 
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
+        phaseLog "info" "Set hooks"
         rg <- getLocalGraph
         let disks@(d0:d1:_) =
                 [ disk | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
@@ -200,10 +202,7 @@ failvecCascade t pg = doTest t pg [rule] test'
         liftProcess . usend pid $ disks
         let failure_set = [stateSet d0 M0.SDSFailed, stateSet d1 M0.SDSFailed]
         applyStateChanges failure_set
-        let _notifySet = [ stateSet d0 M0.SDSFailed
-                        , stateSet d1 M0.SDSFailed
-                        ]
-            meroSet = [ Note (M0.fid d0) M0_NC_FAILED
+        let meroSet = [ Note (M0.fid d0) M0_NC_FAILED
                       , Note (M0.fid d1) M0_NC_TRANSIENT
                       ]
         put Local $ Just (eid, pid, failure_set, meroSet)
@@ -213,15 +212,19 @@ failvecCascade t pg = doTest t pg [rule] test'
         Just (eid, pid, _, meroSet) <- get Local
         phaseLog "info" $ "All notified"
         rg <- getLocalGraph
-        let (pool:pools) =
+        let pools =
                 [ pool | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg
                 ]
-        let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w)
+        let mvs = mapMaybe (\pl -> (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w)
                  (toConfObjState w (HA.Resources.Mero.Note.getState w rg))) <$> v)
-              <$> listToMaybe (G.connectedTo pool Has rg)
-        liftProcess . usend pid $ mv -- (Set meroSet, mv)
+              <$> listToMaybe (G.connectedTo pl Has rg)) pools
+        case mvs of
+          [] -> liftProcess . usend pid $ (Nothing :: Maybe [Note])
+          (mv:_) -> do
+            phaseLog "mvs" $ show mvs
+            liftProcess . usend pid $ Just mv
         messageProcessed eid
 
       directly timed_out $ do
