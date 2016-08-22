@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE KindSignatures  #-}
@@ -38,7 +39,9 @@ import           Debug.Trace (traceEventIO)
 import           Control.Lens
 
 import GHC.Generics
-import GHC.DataSize
+#ifdef VERSION_ghc_datasize
+import GHC.DataSize (recursiveSize)
+#endif
 import System.IO.Unsafe (unsafePerformIO)
 
 import Network.CEP.Buffer
@@ -314,6 +317,7 @@ defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
                    $ map (\(SMData _ k _) -> (_ruleKeyName k, 1)) suspended
         nRunning = length running
         nSuspended = length suspended
+#ifdef VERSION_ghc_datasize
         minfo = if mem
                 then Just $ MemoryInfo
                   { minfoTotalSize = unsafePerformIO $ recursiveSize st
@@ -323,6 +327,9 @@ defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
                       = unsafePerformIO (recursiveSize (_machState st))
                   }
                 else Nothing
+#else
+        minfo = Nothing
+#endif
     in RuntimeInfo
         { infoTotalSM = nRunning + nSuspended
         , infoMemory = minfo

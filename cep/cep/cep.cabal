@@ -13,6 +13,12 @@ Flag maintainer
   Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
+-- ghc-heap-view cannot be built with profiling, does we need to drop
+-- ghc-datasize which depends on it.
+Flag profiling
+  Description: Drop dependencies which can't be built with profiling enabled.
+  Default: False
+
 library
   hs-source-dirs:      src
   exposed-modules:     Network.CEP
@@ -39,11 +45,12 @@ library
                        operational,
                        transformers,
                        exceptions,
-                       ghc-datasize,
                        lens
   default-language:    Haskell2010
   ghc-options:         -Wall
 
+  if !flag(profiling)
+    build-depends:     ghc-datasize
   if flag(maintainer)
     Ghc-Options: -Werror
 
