@@ -305,7 +305,7 @@ runItForever start_eng = do
           liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
-          bracket_ (liftIO $ traceEventIO "START cruise:process-step-msg")
+          nxt_eng <- bracket_ (liftIO $ traceEventIO "START cruise:process-step-msg")
                    (liftIO $ traceEventIO "STOP cruise:process-step-msg")
                    $ do
             let m :: Request 'Write (Process (RunInfo, Engine))
@@ -321,15 +321,17 @@ runItForever start_eng = do
               _ -> return ()
             let act = requestAction m
             when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            go nxt_eng Nothing
-        go inner Nothing =
-          bracket_ (liftIO $ traceEventIO "START cruise:process-step")
+            return nxt_eng
+          go nxt_eng Nothing
+        go inner Nothing = do
+          nxt_eng <- bracket_ (liftIO $ traceEventIO "START cruise:process-step")
                    (liftIO $ traceEventIO "STOP cruise:process-step")
                    $ do
             (ri, nxt_eng) <- stepForward tick inner
             let act = requestAction tick
             when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            cruise debug_mode (succ loop) nxt_eng
+            return nxt_eng
+          cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()
 dumpDebuggingInfo m loop (RunInfo total rres) = do
