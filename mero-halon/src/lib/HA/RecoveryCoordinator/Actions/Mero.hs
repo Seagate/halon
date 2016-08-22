@@ -350,11 +350,11 @@ configureMeroProcesses (TypedChannel chan) procs label mkfs = do
     let msg = ConfigureProcesses $
          (\(p,conf) -> (toType label, conf, mkfs && not (G.isConnected p Is M0.ProcessBootstrapped rg)))
          <$> (msg_confds ++ msg_others)
-    liftProcess $ sendChan chan msg
     for_ procs $ \p -> modifyGraph
       $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
                       (M0.setState p M0.PSStarting rg')
                       (G.connectedTo p M0.IsParentOf rg')
+    registerSyncGraph $ sendChan chan msg
   where
     runsMgs proc rg =
       not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
