@@ -41,10 +41,9 @@ meroRules = do
 
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.
-  defineSimple "ha-state-get" $ \(HAEvent uuid (Get client fids) _) -> do
+  defineSimpleTask "castor::cluster::state-get" $ \(Get client fids) -> do
     getLocalGraph >>= liftProcess . usend client .
       GetReply . map (uncurry Note) . lookupConfObjectStates fids
-    messageProcessed uuid
 
   -- Reply to the Failure vector request.
   defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do

@@ -572,7 +572,9 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       case m0svc >>= meroChannel g of
         Just chan -> do
           ps <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-          when (null ps) $ continue boot_level_0
+          when (null ps) $ do
+            phaseLog "info" "No services on boot_level 0 - continue to next level"
+            continue boot_level_0
           modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> ps)
           continue await_configure_0
         Nothing -> do

@@ -195,9 +195,7 @@ genericApplyStateChanges :: [AnyStateSet]
                          -> PhaseM LoopState l a
 genericApplyStateChanges ass act cbSucc cbFail = getLocalGraph >>= \rg -> let
     dsc@(DeferredStateChanges _ n _) = createDeferredStateChanges ass rg
-  in do
-    phaseLog "state-change-set" (show n)
-    genericApplyDeferredStateChanges dsc act cbSucc cbFail
+  in genericApplyDeferredStateChanges dsc act cbSucc cbFail
 
 -- | Generic function to apply deferred state changes in the standard order.
 --   The provided 'action' is executed between updating the graph and sending

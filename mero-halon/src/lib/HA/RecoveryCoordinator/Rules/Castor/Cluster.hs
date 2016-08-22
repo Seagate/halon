@@ -136,7 +136,7 @@ type ClusterTransitionLocal =
 -- parent process based on the service states and on unblocking the
 -- cluster bootstrap barrier if bootstrap is happening.
 ruleServiceNotificationHandler :: Definitions LoopState ()
-ruleServiceNotificationHandler = define "service-notification-handler" $ do
+ruleServiceNotificationHandler = define "castor::service::notification-handler" $ do
    start_rule <- phaseHandle "start"
    service_notified <- phaseHandle "service-notified"
    process_notified <- phaseHandle "process-notified"
@@ -171,19 +171,26 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 
    setPhaseIf start_rule startOrStop $ \(eid, service, st, typ) -> do
      todo eid
-     phaseLog "info" $ concat [ "Cluster transition for [", M0.showFid service
-                              , ": ", show st, " (", show typ, ")]" ]
+     phaseLog "begin" "Service transition"
+     phaseLog "info" $ "transaction.id = " ++ show eid
+     phaseLog "info" $ "service.fid    = " ++ show (M0.fid service)
+     phaseLog "info" $ "service.state  = " ++ show st
+     phaseLog "info" $ "service.type   = " ++ show typ -- XXX: remove
      put Local $ Just (eid, Just (service, st), Nothing)
      applyStateChanges [stateSet service st]
      switch [service_notified, timeout 30 timed_out]
 
    setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
      rg <- getLocalGraph
+     let mproc = listToMaybe $ G.connectedFrom M0.IsParentOf srv rg :: Maybe M0.Process
      Just (eid, _, _) <- get Local
+     phaseLog "action" $ "Check if all services for process are online"
+     phaseLog "info" $ "transaction.id = " ++ show eid
+     phaseLog "info" $ "process.fid = " ++ show (fmap M0.fid mproc)
      -- find the process, the service belongs to, check if all
      -- services are online, if yes then update process state and
      -- notify barrier
-     case (st, listToMaybe $ G.connectedFrom M0.IsParentOf srv rg) of
+     case (st, mproc) of
        (M0.SSOnline, Just (p :: M0.Process)) -> do
          let allSrvs :: [M0.Service]
              allSrvs = G.connectedTo p M0.IsParentOf rg
@@ -193,20 +200,13 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 
          put Local $ Just (eid, Just (srv, st), Just (p, newProcessState))
          if length allSrvs == length onlineSrvs
-         then do phaseLog "info" $
-                   unwords [ "All services for", M0.showFid p
-                           , "online, marking process as online" ]
-                 modifyGraph $ G.connectUniqueFrom p R.Is M0.ProcessBootstrapped
-
-
+         then do phaseLog "info" "all services online -> marking process as online" -- XXX: move to process rule.
                  -- TODO: maybe we should not notify here but instead
                  -- notify after mero itself sends the process
                  -- notification
                  applyStateChanges [stateSet p newProcessState]
                  switch [process_notified, timeout 30 timed_out]
-
-         else do phaseLog "info" $ "Still waiting to hear from "
-                                ++ show (map M0.fid $ allSrvs \\ onlineSrvs)
+         else do phaseLog "info" $ "waiting for = " ++ show (map M0.fid $ allSrvs \\ onlineSrvs)
                  continue finish
        (M0.SSOffline, Just p) -> case M0.getState p rg of
          M0.PSInhibited{} -> do
@@ -228,8 +228,10 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
                  continue finish
 
    setPhaseNotified process_notified viewProc $ \(p, pst) -> do
-     phaseLog "info" $ "Process " ++ show (M0.fid p) ++ " => " ++ show pst
-     Just (_, srvi, _) <- get Local
+     Just (eid, srvi, _) <- get Local
+     phaseLog "info" $ "transaction.eid = " ++ show eid
+     phaseLog "info" $ "process.fid    = " ++ show (M0.fid p)
+     phaseLog "info" $ "process.status = " ++ show pst
      rg <- getLocalGraph
      when (G.isConnected R.Cluster R.Has M0.OFFLINE rg) $
       phaseLog "warn" $
@@ -242,8 +244,11 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
      continue finish
 
    directly finish $ get Local >>= \case
-     Just (eid, _, _) -> done eid
-     lst -> phaseLog "warn" $ "In finish with strange local state: " ++ show lst
+       Just (eid, _, _) -> do
+         done eid
+         phaseLog "info" $ "transaction.idg = " ++ show eid
+         phaseLog "end" "Service transition."
+       lst -> phaseLog "warn" $ "In finish with strange local state: " ++ show lst
 
    startFork start_rule startState
 
@@ -266,8 +271,8 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
                          Just Refl -> Just a
                          Nothing   -> Nothing) chs
     procChanges :: [M0.Process] <- findChanges
-    phaseLog "debug" $ "Process changes:" ++ show procChanges
     unless (null procChanges) $ do
+      phaseLog "debug" $ "Process changes:" ++ show (map M0.fid procChanges)
       notifyOnClusterTransition Nothing
 
 -- | This is a rule catches death of the Principal RM and elects new one.

@@ -116,7 +116,9 @@ queryStartHandling pool = do
       let err = "In queryStartHandling for " ++ show pool ++ " without PRS set."
       phaseLog "error" err
       return $ error err
-    Just prs -> return prs
+    Just prs -> do
+      phaseLog "info" $ "PoolRepairStatus = " ++ show prs
+      return prs
 
   iosvs <- length <$> R.getIOServices pool
 
