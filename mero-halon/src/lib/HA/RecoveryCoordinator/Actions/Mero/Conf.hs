@@ -376,6 +376,8 @@ getSDevPool sdev = do
               , rv <- G.connectedFrom M0.IsParentOf ev rg :: [M0.RackV]
               , pv <- G.connectedFrom M0.IsParentOf rv rg :: [M0.PVer]
               , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
+              , fs <- G.connectedFrom M0.IsParentOf p rg :: [M0.Filesystem]
+              , M0.fid p /= M0.f_mdpool_fid fs
               ]
     case ps of
       -- TODO throw a better exception
