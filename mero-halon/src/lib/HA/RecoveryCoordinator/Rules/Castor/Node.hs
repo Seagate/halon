@@ -136,12 +136,10 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
-import           Data.Proxy (Proxy(..))
 import           Data.Foldable (for_)
 import           Data.List (nub)
-import           Data.Maybe (listToMaybe, fromMaybe, isNothing, isJust)
+import           Data.Maybe (listToMaybe, isNothing, isJust)
 import           Control.Applicative
 import           Control.Lens
 import           Control.Monad (void, guard, join)
@@ -270,10 +268,8 @@ requestStartHalonM0d :: Definitions LoopState ()
 requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d" $
   \(StartHalonM0dRequest m0node) -> do
     rg <- getLocalGraph
-    case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-      Just M0.MeroClusterStopped -> phaseLog "info" "Cluster is stopped."
-      Just M0.MeroClusterStopping{} -> phaseLog "info" "Cluster is stopping."
-      Just M0.MeroClusterFailed -> phaseLog "info" "Cluster is in failed state, doing nothing."
+    case getClusterStatus rg of
+      Just (M0.MeroClusterState M0.OFFLINE _ _) -> phaseLog "info" "Cluster disposition is OFFLINE."
       _ -> case listToMaybe $ m0nodeToNode m0node rg of
              Just node@(R.Node nid) ->
                findNodeHost node >>= \case
@@ -355,7 +351,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     Just (StartProcessNodeNew node) <- getField . rget fldReq <$> get Local
     route node >>= switch
 
-  setPhaseIf confd_running (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
+  setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
     syncStat <- syncToConfd
     case syncStat of
       Left err -> do phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
@@ -594,7 +590,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           -- node, we'd get stuck here so send out a barrier pass
           -- directly
           when (null ps) $ do
-            notifyOnClusterTransition (>= M0.MeroClusterStarting (M0.BootLevel 1)) BarrierPass Nothing
+            notifyOnClusterTransition Nothing
           switch [boot_level_1_conf, timeout startProcTimeout bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
@@ -603,7 +599,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
 
     await_configure_1 <- mkConfigurationAwait "configure::1" boot_level_1
 
-    setPhaseIf boot_level_1_conf (barrierPass (>= (M0.MeroClusterStarting (M0.BootLevel 1)))) $ \() -> do
+    setPhaseIf boot_level_1_conf (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
@@ -680,9 +676,14 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
               modify Local $ rlens fldNode .~ Field (Just node)
               modify Local $ rlens fldHost .~ Field (Just host)
               let hasM0d = isJust $ runningService node m0d rg
-              case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-                 Just M0.MeroClusterRunning | hasM0d -> return $ Just [start_clients]
-                 _ -> return $ Just [await_barrier]
+              case getClusterStatus rg of
+                Just (M0.MeroClusterState M0.OFFLINE _ _ ) -> do
+                  phaseLog "warning" $ "Request to start clients but "
+                                     ++ "cluster disposition is OFFLINE."
+                  return Nothing
+                Just mcs | M0._mcs_runlevel mcs >= m0t1fsBootLevel && hasM0d
+                  -> return $ Just [start_clients]
+                _ -> return $ Just [await_barrier]
 
         -- Before starting client stuff, we want need the cluster to be
         -- in OK state and the mero service to be up and running on the
@@ -697,29 +698,30 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
             Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
             Just n -> void $ runningService n m0d (lsGraph g)
 
-    setPhaseIf await_barrier (nodeRunning (>= M0.MeroClusterRunning)) $ \() -> do
-       Just node <- getField . rget fldNode <$> get Local
-       phaseLog "debug" $ "Past barrier on " ++ show node
-       continue start_clients
+    setPhaseIf await_barrier
+        (nodeRunning (\mcs -> M0._mcs_runlevel mcs >= m0t1fsBootLevel)) $ \() -> do
+      Just node <- getField . rget fldNode <$> get Local
+      phaseLog "debug" $ "Past barrier on " ++ show node
+      continue start_clients
 
     directly start_clients $ do
-       rg <- getLocalGraph
-       Just node <- getField . rget fldNode <$> get Local
-       Just m0node <- getField . rget fldM0Node <$> get Local
-       Just host <- getField . rget fldHost <$> get Local
-       m0svc <- lookupRunningService node m0d
-       case m0svc >>= meroChannel rg of
-         Just chan -> do
-           phaseLog "info" $ "Starting mero client on " ++ show host
-           -- XXX: implement await
-           _ <- configureNodeProcesses host chan M0.PLM0t1fs False
-           _ <- startNodeProcesses host chan M0.PLM0t1fs
-           modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartOk m0node)
-           continue finish
-         Nothing -> do
-           modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartFailure m0node "No mero channel")
-           phaseLog "error" $ "can't find mero channel on " ++ show node
-           continue finish
+      rg <- getLocalGraph
+      Just node <- getField . rget fldNode <$> get Local
+      Just m0node <- getField . rget fldM0Node <$> get Local
+      Just host <- getField . rget fldHost <$> get Local
+      m0svc <- lookupRunningService node m0d
+      case m0svc >>= meroChannel rg of
+        Just chan -> do
+          phaseLog "info" $ "Starting mero client on " ++ show host
+          -- XXX: implement await
+          _ <- configureNodeProcesses host chan M0.PLM0t1fs False
+          _ <- startNodeProcesses host chan M0.PLM0t1fs
+          modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartOk m0node)
+          continue finish
+        Nothing -> do
+          modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartFailure m0node "No mero channel")
+          phaseLog "error" $ "can't find mero channel on " ++ show node
+          continue finish
 
     return route
   where
@@ -738,7 +740,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
         <+> RNil
 
 
-processStopProcessesOnNode :: Job StopProcessesOnNodeRequest  StopProcessesOnNodeResult
+processStopProcessesOnNode :: Job StopProcessesOnNodeRequest StopProcessesOnNodeResult
 processStopProcessesOnNode = Job "castor::node::stop-processes"
 
 -- | Procedure for tearing down mero services. Starts by each node
@@ -778,10 +780,10 @@ processStopProcessesOnNode = Job "castor::node::stop-processes"
 -- teardown, nodes want to notify the barrier that they are done with
 -- their chunk of work as well as needing to wait until all others
 -- nodes finished the work on the same level. Here's a brief
--- description of how this barrier functions. 'notifyBarrier' is
+-- description of how this barrier functions. 'notifyOnClusterTransition' is
 -- called by the node when it's done with its chunk.
 --
--- * 'notifyBarrier' grabs the current global cluster state.
+-- * 'notifyOnClusterTransition' grabs the current global cluster state.
 --
 -- * If there are still processes waiting to stop, do nothing: we
 -- still have nodes that need to report back their results or
@@ -804,6 +806,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
    teardown_exec <- phaseHandle "teardown-exec"
    teardown_timeout  <- phaseHandle "teardown-timeout"
    await_barrier <- phaseHandle "await-barrier"
+   barrier_timeout <- phaseHandle "barrier-timeout"
    stop_service <- phaseHandle "stop-service"
 
    -- Continue process on the next boot level. This method include only
@@ -812,13 +815,6 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
          Just (M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
          modify Local $ rlens fldBootLevel .~ (Field $ Just $ M0.BootLevel (i-1)) -- XXX: improve lens
          continue teardown
-   -- Check if there are any processes left to be stopped on current bootlevel.
-   -- If there are any process - then just process current message (meid),
-   -- If there are no process left then move cluster to next bootlevel and prepare
-   -- all technical information in RG, then emit BarrierPassed function.
-   let notifyBarrier meid = do
-         Just b <- getField . rget fldBootLevel <$> get Local
-         notifyOnClusterTransition (>= (M0.MeroClusterStopping b)) BarrierPass meid
 
    let route (StopProcessesOnNodeRequest m0node) = do
          rg <- getLocalGraph
@@ -834,11 +830,10 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      Just node <- getField . rget fldNode <$> get Local
      Just lvl@(M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
      phaseLog "info" $ "Tearing down " ++ show lvl ++ " on " ++ show node
-     cluster_lvl <- fromMaybe M0.MeroClusterStopped
-                     . listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
+     cluster_lvl <- getClusterStatus <$> getLocalGraph
      case cluster_lvl of
-       M0.MeroClusterStopping s
-          | i < 0 && s < lvl -> continue stop_service
+       Just (M0.MeroClusterState M0.OFFLINE _ s)
+          | i < 0 -> continue stop_service
           | s < lvl -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - skipping"
                                         (show node) (show lvl) (show s)
@@ -847,13 +842,12 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
           | otherwise -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barriers."
                                         (show node) (show lvl) (show s)
-              notifyBarrier Nothing
-              switch [ await_barrier ]
-       M0.MeroClusterFailed{}
-           | i < 0 -> continue stop_service
-           | otherwise -> continue teardown_exec
-       st  -> do modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeStateChanged st)
-                 continue finish
+              notifyOnClusterTransition Nothing
+              switch [ await_barrier, timeout barrierTimeout barrier_timeout ]
+       Just st -> do
+         modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeStateChanged st)
+         continue finish
+       Nothing -> continue finish -- should not happen?
 
    directly teardown_exec $ do
      Just node <- getField . rget fldNode <$> get Local
@@ -902,12 +896,18 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      -- this level and deal with transition into next
      continue teardown_exec
 
-   setPhaseIf await_barrier (\(BarrierPass i) _ minfo ->
+   setPhaseIf await_barrier (\(ClusterStateChange _ mcs) _ minfo ->
      runMaybeT $ do
        lvl <- MaybeT $ return $ getField . rget fldBootLevel $ minfo
-       guard (i <= M0.MeroClusterStopping lvl)
+       guard (M0._mcs_stoplevel mcs <= lvl)
        return ()
      ) $ \() -> continue teardown
+
+   directly barrier_timeout $ do
+     Just lvl <- getField . rget fldBootLevel <$> get Local
+     phaseLog "warning" $ "Timed out waiting for cluster barrier to reach " ++ show lvl
+     modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeTimeout)
+     continue finish
 
    directly stop_service $ do
      Just node <- getField . rget fldNode <$> get Local
@@ -916,6 +916,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      continue finish
    return route
   where
+    barrierTimeout = 3 * 60 -- seconds
     fldReq :: Proxy '("request", Maybe StopProcessesOnNodeRequest)
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe StopProcessesOnNodeResult)

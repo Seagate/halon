@@ -15,7 +15,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
   , loadMeroServers
   , createMDPoolPVer
     -- * Queries
-  , queryObjectStatus
   , setObjectStatus
     -- ** Get all objects of type
   , getProfile
@@ -117,7 +116,9 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.newResource pool
         >>> G.newResource mdpool
         >>> G.connectUniqueFrom Cluster Has profile
-        >>> G.connectUniqueFrom Cluster Has M0.MeroClusterStopped
+        >>> G.connectUniqueFrom Cluster Has M0.OFFLINE
+        >>> G.connectUniqueFrom Cluster M0.RunLevel (M0.BootLevel 0)
+        >>> G.connectUniqueFrom Cluster M0.StopLevel (M0.BootLevel 0)
         >>> G.connectUniqueFrom profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connect fs M0.IsParentOf mdpool
@@ -445,13 +446,6 @@ getChildren obj = do
 getParents :: G.Relation M0.IsParentOf a b => b -> PhaseM LoopState l [a]
 getParents obj = do
   G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
-
--- | Query current status of the conf object.
-queryObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
-                  -> PhaseM LoopState l (Maybe M0.ConfObjectState)
-queryObjectStatus obj = do
-  listToMaybe . G.connectedTo obj Is <$> getLocalGraph
-{-# INLINE queryObjectStatus #-}
 
 -- | Set object in a new state.
 setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a

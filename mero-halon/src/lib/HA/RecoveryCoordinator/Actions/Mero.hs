@@ -13,10 +13,12 @@ module HA.RecoveryCoordinator.Actions.Mero
   , module HA.RecoveryCoordinator.Actions.Mero.Core
   , module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , noteToSDev
-  , calculateMeroClusterStatus
-  , clusterStartedBootLevel
+  , calculateRunLevel
+  , calculateStopLevel
   , createMeroKernelConfig
   , createMeroClientConfig
+  , getClusterStatus
+  , isClusterStopped
   , startMeroService
   , startNodeProcesses
   , configureNodeProcesses
@@ -26,6 +28,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getAllProcesses
   , getLabeledProcesses
   , getLabeledNodeProcesses
+  , getProcessBootLevel
   , getNodeProcesses
   , m0t1fsBootLevel
   , startMeroProcesses
@@ -56,11 +59,12 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Category
 import Control.Distributed.Process
+import Control.Lens ((<&>))
 
 import Data.Foldable (for_)
 import Data.Proxy
-import Data.List ((\\), partition)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.List (partition, sort)
+import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
 import Network.CEP
@@ -71,11 +75,7 @@ import Prelude hiding ((.), id)
 
 -- | At what boot level do we start M0t1fs processes?
 m0t1fsBootLevel :: M0.BootLevel
-m0t1fsBootLevel = M0.BootLevel 3
-
--- | At which boot level (after completion) do we consider the cluster started?
-clusterStartedBootLevel :: M0.BootLevel
-clusterStartedBootLevel = M0.BootLevel 2
+m0t1fsBootLevel = M0.BootLevel 2
 
 -- TODO Generalise this
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
@@ -170,80 +170,112 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
             $ rg
     return rg'
 
--- | Look at the current cluster status and current local status and
---   calculate whether we should move to a new status.
-calculateMeroClusterStatus :: PhaseM LoopState l M0.MeroClusterState
-calculateMeroClusterStatus = do
-  -- Currently recorded status in the graph
-  recordedState <- fromMaybe M0.MeroClusterStopped . listToMaybe
-                    . G.connectedTo Res.Cluster Has <$> getLocalGraph
-  case recordedState of
-    M0.MeroClusterStopped -> return M0.MeroClusterStopped
-    M0.MeroClusterRunning -> return M0.MeroClusterRunning
-    M0.MeroClusterFailed -> return M0.MeroClusterFailed
-    M0.MeroClusterStarting bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
-      let
-        lbl = case M0.BootLevel i of
-          x | x == m0t1fsBootLevel -> M0.PLM0t1fs
-          x -> M0.PLBootLevel x
+-- | Calculate the current run level of the cluster.
+calculateRunLevel :: PhaseM LoopState l M0.BootLevel
+calculateRunLevel = do
+    vals <- traverse guard lvls
+    return . fst . findLast $ zip lvls vals
+  where
+    findLast = head . reverse . takeWhile snd
+    lvls = M0.BootLevel <$> [0..2]
+    guard (M0.BootLevel 0) = return True
+    guard (M0.BootLevel 1) = do
+      -- We allow boot level 1 processes to start when at least ceil(n+1/2)
+      -- confd processes have started, where n is the total number, and
+      -- where we have a principal RM selected.
+      prm <- getPrincipalRM
+      confdprocs <- getLocalGraph <&>
+        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 0)
+          (\p rg -> any
+              (\s -> M0.s_type s == CST_MGS)
+              [svc | svc <- G.connectedTo p M0.IsParentOf rg]
+          )
+      onlineProcs <- getLocalGraph <&>
+        \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) confdprocs
+      return $ isJust prm && length onlineProcs > (length confdprocs `div` 2)
+    guard (M0.BootLevel 2) = do
+      -- TODO Allow boot level 2 to start up earlier
+      -- We allow boot level 2 processes to start when all processes
+      -- at level 1 have started.
+      lvl1procs <- getLocalGraph <&>
+        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
+                            (const $ const True)
+      onlineProcs <- getLocalGraph <&>
+        \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
+      return $ length onlineProcs == length lvl1procs
+    guard (M0.BootLevel _) = return False
 
-        onlineOrFailed (M0.PSFailed _) = True
-        onlineOrFailed st = st == M0.PSOnline
+-- | Calculate the current stop level of the cluster.
+calculateStopLevel :: PhaseM LoopState l M0.BootLevel
+calculateStopLevel = do
+    vals <- traverse guard lvls
+    return . fst . findLast $ zip lvls vals
+  where
+    findLast = head . reverse . takeWhile snd
+    lvls = M0.BootLevel <$> reverse [0..2]
+    guard (M0.BootLevel 0) = do
+      -- We allow stopping a process on level i if there are no running
+      -- processes on level i+1
+      stillUnstopped <- getLocalGraph <&>
+        getLabeledProcesses (M0.PLBootLevel . M0.BootLevel $ 1)
+          ( \p g -> not . null $
+          [ () | M0.getState p g `elem` [ M0.PSOnline
+                                        , M0.PSQuiescing
+                                        , M0.PSStopping
+                                        , M0.PSStarting
+                                        ]
+              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , M0.getState n g /= M0.NSFailed
+                && M0.getState n g /= M0.NSFailedUnrecoverable
+          ] )
+      return $ null stillUnstopped
+    guard (M0.BootLevel 1) = do
+      -- We allow stopping a process on level 1 if there are no running
+      -- PLM0t1fs processes
+      stillUnstopped <- getLocalGraph <&>
+        getLabeledProcesses (M0.PLM0t1fs)
+          ( \p g -> not . null $
+          [ () | M0.getState p g `elem` [ M0.PSOnline
+                                        , M0.PSQuiescing
+                                        , M0.PSStopping
+                                        , M0.PSStarting
+                                        ]
+              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , M0.getState n g /= M0.NSFailed
+                && M0.getState n g /= M0.NSFailedUnrecoverable
+          ] )
+      return $ null stillUnstopped
+    guard (M0.BootLevel 2) = return True
+    guard (M0.BootLevel _) = return False
 
-        failedProcs = getLabeledProcesses lbl (\p g -> not . null $
-                      [ () | M0.PSFailed _ <- [M0.getState p g] ] ) rg
+-- | Get an aggregate cluster status report.
+getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState
+getClusterStatus rg = let
+    dispo = listToMaybe $ G.connectedTo Res.Cluster Has rg
+    runLevel = listToMaybe $ G.connectedTo Res.Cluster M0.RunLevel rg
+    stopLevel = listToMaybe $ G.connectedTo Res.Cluster M0.StopLevel rg
+  in M0.MeroClusterState <$> dispo <*> runLevel <*> stopLevel
 
-        allProcs = getLabeledProcesses lbl (\_ _ -> True) rg
 
-        finishedProcs = getLabeledProcesses lbl
-                        ( \proc g -> not . null $
-                        [ () | state <- [M0.getState proc g]
-                        , onlineOrFailed state
-                        ] ) rg
-        stillWaiting = allProcs \\ finishedProcs
-
-        allProcsFinished = null $ getLabeledProcesses lbl
-                           ( \proc g -> null $
-                           [ () | state <- [M0.getState proc g]
-                           , onlineOrFailed state
-                           ] ) rg
-      in case failedProcs of
-        [] -> case allProcsFinished of
-          -- All processes finished and none failed
-          True -> if M0.BootLevel i == clusterStartedBootLevel
-                  then return M0.MeroClusterRunning
-                  else return $ M0.MeroClusterStarting $ M0.BootLevel (i+1)
-          -- Not everything has finished but nothing has failed yet either
-          False -> do
-            phaseLog "info" $ "Still waiting for boot: " ++ show (map M0.fid stillWaiting)
-            return $ M0.MeroClusterStarting bl
-        -- Some process failed, bail
-        _:_ -> return M0.MeroClusterFailed
-    M0.MeroClusterStopping bl@(M0.BootLevel i) -> getLocalGraph >>= \rg ->
-      let
-        lbl = case M0.BootLevel i of
-          x | x == m0t1fsBootLevel -> M0.PLM0t1fs
-          x -> M0.PLBootLevel x
-
-        stillUnstopped = getLabeledProcesses lbl
-                         ( \p g -> not . null $
-                         [ () | M0.getState p g `elem` [ M0.PSOnline
-                                                       , M0.PSQuiescing
-                                                       , M0.PSStopping
-                                                       , M0.PSStarting
-                                                       ]
-                              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
-                              , M0.getState n g /= M0.NSFailed
-                                && M0.getState n g /= M0.NSFailedUnrecoverable
-                         ] ) rg
-      in if null $ stillUnstopped
-      then case i of
-        0 -> return M0.MeroClusterStopped
-        _ -> return $ M0.MeroClusterStopping $ M0.BootLevel (i-1)
-      else do
-        phaseLog "info" $ "Still waiting for following processes to stop: "
-                       ++ show (M0.fid <$> stillUnstopped)
-        return $ M0.MeroClusterStopping bl
+-- | Is the cluster completely stopped?
+--   Cluster is completely stopped when all processes on non-failed nodes
+--   are offline, failed or unknown.
+isClusterStopped :: G.Graph -> Bool
+isClusterStopped rg = null $
+  [ p
+  | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
+  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
+  , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+  , M0.getState node rg /= M0.NSFailed
+    && M0.getState node rg /= M0.NSFailedUnrecoverable
+  , not . psDown $ M0.getState p rg
+  ]
+  where
+    psDown M0.PSOffline = True
+    psDown (M0.PSFailed _) = True
+    psDown M0.PSUnknown = True
+    psDown _ = False
 
 -- | Start all Mero processes labelled with the specified process label on
 --   a given node. Returns all the processes which are being started.
@@ -396,6 +428,27 @@ getLabeledNodeProcesses node label rg =
        , G.isConnected p Has label rg
    ]
 
+-- | Fetch the boot level for the given 'Process'. This is determined as
+--   follows:
+--   - If the process has the 'PLM0t1fs' label, then the returned boot level is
+--     'm0t1fsBootLevel'
+--   - If the process has an explicit 'PLBootLevel x' label, then the returned
+--     boot level is x.
+--   - Otherwise, return 'Nothing'
+--   If a process has multiple boot levels, then this function will return
+--   the lowest (although this should not occur.)
+getProcessBootLevel :: M0.Process -> G.Graph -> Maybe M0.BootLevel
+getProcessBootLevel proc rg = let
+    pl = G.connectedTo proc Has rg
+    m0t1fs M0.PLM0t1fs = Just m0t1fsBootLevel
+    m0t1fs _ = Nothing
+    bl (M0.PLBootLevel x) = Just x
+    bl _ = Nothing
+  in case (mapMaybe m0t1fs pl, sort $ mapMaybe bl pl) of
+    (x:_, _) -> Just x
+    (_, x:_) -> Just x
+    _ -> Nothing
+
 getNodeProcesses :: Res.Node -> G.Graph -> [M0.Process]
 getNodeProcesses node rg =
   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
@@ -455,8 +508,7 @@ retriggerMeroNodeBootstrap :: M0.Node -> PhaseM LoopState a ()
 retriggerMeroNodeBootstrap n = do
   rg <- getLocalGraph
   case listToMaybe $ G.connectedTo Res.Cluster Has rg of
-    Just M0.MeroClusterRunning -> restartMeroOnNode
-    Just M0.MeroClusterStarting{} -> restartMeroOnNode
+    Just M0.ONLINE -> restartMeroOnNode
     cst -> phaseLog "info"
            $ "Not trying to retrigger mero as cluster state is " ++ show cst
   where

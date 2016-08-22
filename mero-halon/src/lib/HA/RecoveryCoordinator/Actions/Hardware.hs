@@ -30,9 +30,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findHostsByAttributeFilter
   , findHostsByAttr
   , findHostAttrs
-    -- * Cluster status functions
-  , setClusterStatus
-  , getClusterStatus
     -- * Interface related functions
   , registerInterface
     -- * Drive related functions
@@ -97,7 +94,7 @@ import qualified HA.Resources.Mero as M0
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
 
-import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 import Data.Foldable
 
@@ -303,25 +300,6 @@ findHostAttrs host = do
   phaseLog "rg-query" $ "Getting attributes for host " ++ show host
   g <- getLocalGraph
   return $ G.connectedTo host Has g
-
-
-----------------------------------------------------------
--- Cluster status functions                             --
-----------------------------------------------------------
-
--- | Obtain the current 'ClusterStatus' of the 'Cluster'. If the
--- status has not been set, it is assumed to be 'ONLINE'.
-getClusterStatus :: PhaseM LoopState l ClusterStatus
-getClusterStatus = do
-  getLocalGraph >>= \g ->
-    return . fromMaybe ONLINE . listToMaybe $ G.connectedTo Cluster Has g
-
--- | Set the 'ClusterStatus' for a 'Cluster'. Any other status that
--- has been previously set is overwritten.
-setClusterStatus :: ClusterStatus -> PhaseM LoopState l ()
-setClusterStatus cs = do
-  modifyLocalGraph $ \g -> do
-    return $ G.newResource cs >>> G.connectUnique Cluster Has cs $ g
 
 ----------------------------------------------------------
 -- Interface related functions                          --

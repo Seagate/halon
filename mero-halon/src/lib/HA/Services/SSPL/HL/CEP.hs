@@ -16,6 +16,7 @@ import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
 #ifdef USE_MERO
 import HA.Resources.Mero
+import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 #endif
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -23,7 +24,6 @@ import HA.RecoveryCoordinator.Actions.Core
 import SSPL.Bindings
 import Network.CEP
 
-import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as T
 import Data.UUID (toString)
@@ -58,8 +58,7 @@ clusterStatus g = CommandResponseMessageStatusResponseItem {
   } : []
   where
 #ifdef USE_MERO
-    status = prettyStatus $ fromMaybe MeroClusterStopped . listToMaybe
-                          $ G.connectedTo Cluster Has g
+    status = maybe "No status" id $ prettyStatus <$> getClusterStatus g
 #else
     status = "No mero support."
 #endif

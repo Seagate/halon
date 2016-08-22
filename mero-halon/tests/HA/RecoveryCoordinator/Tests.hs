@@ -14,7 +14,6 @@ module HA.RecoveryCoordinator.Tests
   , testServiceNotRestarting
   , testEQTrimming
   , testEQTrimUnknown
-  , testClusterStatus
   , testDecisionLog
   , testServiceStopped
   , testMonitorManagement
@@ -72,7 +71,6 @@ tests transport pg =
   , testCase "testServiceNotRestarting" $ testServiceNotRestarting transport pg
   , testCase "testEQTrimming" $ testEQTrimming transport pg
   , testCase "testEQTrimUnknown" $ testEQTrimUnknown transport pg
-  , testCase "testClusterStatus" $ testClusterStatus transport pg
   , testCase "testDecisionLog" $ testDecisionLog transport pg
   , testCase "testServiceStopped" $ testServiceStopped transport pg
   , testCase "testMonitorManagement" $ testMonitorManagement transport pg
@@ -186,76 +184,6 @@ testEQTrimUnknown transport pg = runDefaultTest transport $ do
     _ <- promulgateEQ [nid] AbraCadabra
     Published (TrimUnknown _) _ <- expect
     say $ "Everything got trimmed"
-
-
--- | Message used by 'testClusterStatus'.
-data MsgClusterStatus = ClusterSet ClusterStatus
-                      | ClusterGet
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Binary MsgClusterStatus
-
--- | Test that we can set and query 'ClusterStatus' through a rule.
--- This test merely sends get/set messages and checks that the RG
--- changes accordingly.
-testClusterStatus :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testClusterStatus transport pg = runDefaultTest transport $ do
-  nid <- getSelfNode
-  self <- getSelfPid
-  let sendSelf :: String -> Process ()
-      sendSelf = usend self
-
-  registerInterceptor $ \case
-    str | "Cluster status is ONLINE" `isInfixOf` str ->
-            sendSelf "OnlineGet"
-        | "Set cluster status to ONLINE" `isInfixOf` str ->
-            sendSelf "OnlineSet"
-        | "Cluster status is QUIESCING" `isInfixOf` str ->
-            sendSelf "QuiescingGet"
-        | "Set cluster status to QUIESCING" `isInfixOf` str ->
-            sendSelf "QuiescingSet"
-        | "Cluster status is RECOVERING" `isInfixOf` str ->
-            sendSelf "RecoveringGet"
-        | "Set cluster status to RECOVERING" `isInfixOf` str ->
-            sendSelf "RecoveringSet"
-        | "Node succesfully joined the cluster" `isInfixOf` str ->
-            sendSelf "NodeUp"
-        | otherwise -> return ()
-
-  withTrackingStation pg clusterStatusRules $ \_ -> do
-    nodeUp ([nid], 1000000)
-    -- wait for node to come up
-    "NodeUp" :: String <- expect
-    let sendCluster msg = promulgateEQ [nid] msg >>= flip withMonitor wait
-    -- Check that we're ONLINE even though we haven't set it
-    sendCluster ClusterGet
-    "OnlineGet" :: String <- expect
-    -- then just set and get a bunch and make sure things happen
-    sendCluster (ClusterSet QUIESCING)
-    "QuiescingSet" :: String <- expect
-    sendCluster ClusterGet
-    "QuiescingGet" :: String <- expect
-    sendCluster (ClusterSet RECOVERING)
-    "RecoveringSet" :: String <- expect
-    sendCluster ClusterGet
-    "RecoveringGet" :: String <- expect
-    sendCluster (ClusterSet ONLINE)
-    "OnlineSet" :: String <- expect
-    sendCluster ClusterGet
-    "OnlineGet" :: String <- expect
-    return ()
-  where
-    wait = void (expect :: Process ProcessMonitorNotification)
-    clusterStatusRules :: [Definitions LoopState ()]
-    clusterStatusRules = return $ defineSimple "cluster-status" $ \(HAEvent eid cmsg _) -> case cmsg of
-        ClusterGet -> do
-          cs <- getClusterStatus
-          liftProcess . say $ "Cluster status is " ++ show cs
-          messageProcessed eid
-        ClusterSet cs -> do
-          setClusterStatus cs
-          liftProcess . say $ "Set cluster status to " ++ show cs
-          messageProcessed eid
 
 -- | Tests decision-log service by starting it and redirecting the logs to own
 --  process, then starting a dummy service and checking that logs were

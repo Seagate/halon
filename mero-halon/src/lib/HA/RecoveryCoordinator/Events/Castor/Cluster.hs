@@ -35,7 +35,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , ReportClusterHost(..)
   , ReportClusterProcess(..)
   -- * Internal events
-  , BarrierPass(..)
+  , ClusterStateChange(..)
   ) where
 
 import Control.Distributed.Process
@@ -85,8 +85,14 @@ newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
   deriving (Eq, Show, Binary, Typeable, Generic)
 
--- | Notification that barrier was passed by the cluster.
-newtype BarrierPass = BarrierPass M0.MeroClusterState deriving (Binary, Show)
+-- | Internal event sent when the cluster changes state.
+data ClusterStateChange =
+    ClusterStateChange
+      (Maybe M0.MeroClusterState) -- Old state (if it exists)
+      M0.MeroClusterState -- New state
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary ClusterStateChange
 
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState

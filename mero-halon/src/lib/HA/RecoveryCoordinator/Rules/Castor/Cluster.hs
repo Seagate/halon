@@ -69,8 +69,6 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      , setPhaseNotified
      )
 import           HA.RecoveryCoordinator.Actions.Job
-import           HA.RecoveryCoordinator.Rules.Castor.Node
-     ( maxTeardownLevel )
 import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import           Mero.ConfC (ServiceType(..))
@@ -84,7 +82,7 @@ import           Control.Monad (join, unless, when)
 import           Control.Monad.Trans.Maybe
 
 import           Data.List ((\\))
-import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, fromMaybe, isJust)
+import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, isJust)
 import           Data.Foldable
 import           Data.Traversable (forM)
 import           Data.Typeable
@@ -118,7 +116,8 @@ eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" 
   \result -> do
     case result of
       KernelStarted{} -> return ()
-      _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+      _ -> phaseLog "error" $ "Kernel module failed to start."
+      -- _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
       -- XXX: notify $ MeroClusterFailed
       -- XXX: check if it's a client node, in that case such failure should not
       -- be a panic
@@ -232,18 +231,10 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
      phaseLog "info" $ "Process " ++ show (M0.fid p) ++ " => " ++ show pst
      Just (_, srvi, _) <- get Local
      rg <- getLocalGraph
-     let cst = case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-           Just (M0.MeroClusterStarting (M0.BootLevel 0)) ->
-             Right $ M0.MeroClusterStarting (M0.BootLevel 1)
-           Just (M0.MeroClusterStarting (M0.BootLevel 1)) ->
-             Right M0.MeroClusterRunning
-           Just M0.MeroClusterRunning -> Right M0.MeroClusterRunning
-           st -> Left st
-     case cst of
-       Left st -> phaseLog "warn" $
-         unwords [ "Received service notification about", show srvi
-                 , "but cluster is in state" , show st ]
-       Right _ -> return ()
+     when (G.isConnected R.Cluster R.Has M0.OFFLINE rg) $
+      phaseLog "warn" $
+         unwords [ "Received service start notification about", show srvi
+                 , "but cluster disposition is OFFLINE" ]
      continue finish
 
    directly timed_out $ do
@@ -266,48 +257,18 @@ ruleServiceNotificationHandler = define "service-notification-handler" $ do
 -- Idempotent
 -- Nonblocking
 eventAdjustClusterState :: Definitions LoopState ()
-eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-cluster-state" $ \msg -> do
-    let findChanges = do --- XXX: move to common place
+eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-cluster-state"
+  $ \msg -> do
+    let findChanges = do -- XXX: move to the common place
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $  mapMaybe (\(AnyStateChange (_ :: a) _old new _) ->
+          return $ mapMaybe (\(AnyStateChange (a :: a) _old _new _) ->
                        case eqT :: Maybe (a Data.Typeable.:~: M0.Process) of
-                         Just Refl -> Just new
+                         Just Refl -> Just a
                          Nothing   -> Nothing) chs
-    recordedState <- fromMaybe M0.MeroClusterStopped . listToMaybe
-        . G.connectedTo R.Cluster R.Has <$> getLocalGraph
-    case recordedState of
-      M0.MeroClusterStarting{} -> do
-        anyDown <- any checkDown <$> findChanges
-        if anyDown
-        then do phaseLog "error" "Some processes failed to start - put cluster into failed state."
-                modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-        else do anyUp <- any checkUp <$> findChanges
-                when anyUp $ notifyOnClusterTransition (> recordedState) BarrierPass Nothing
-      M0.MeroClusterStopping{} -> do
-        anyDown <- any checkDown <$> findChanges
-        when anyDown $ do
-          phaseLog "debug" $ "at least one process up - trying: " ++ show recordedState
-          notifyOnClusterTransition (> recordedState) BarrierPass Nothing
-      -- TODO: transition cluster in some state while cluster is running
-      --
-      -- Note: we don't want to merge this with MeroClusterStarting
-      -- case because if we get Inhibited during bootstrap then that's
-      -- bad but if we get it while cluster is running already, that's
-      -- still bad but it probably means node is rebooting (or some
-      -- other failure we can recover from).
-      M0.MeroClusterRunning -> do
-        anyUp <- any checkUp <$> findChanges
-        when anyUp $ do
-          phaseLog "info" "Adjust while in running state"
-          notifyOnClusterTransition (== recordedState) BarrierPass Nothing
-      st -> phaseLog "info" $ "Not adjusting cluster from state " ++ show st
-  where
-    checkUp M0.PSOnline = True
-    checkUp _        = False
-    checkDown M0.PSFailed{} = True
-    checkDown M0.PSOffline  = True
-    checkDown M0.PSInhibited{} = True
-    checkDown _             = False
+    procChanges :: [M0.Process] <- findChanges
+    phaseLog "debug" $ "Process changes:" ++ show procChanges
+    unless (null procChanges) $ do
+      notifyOnClusterTransition Nothing
 
 -- | This is a rule catches death of the Principal RM and elects new one.
 --
@@ -351,7 +312,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       profile <- getProfile
       filesystem <- getFilesystem
       repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairInformation p) =<< getPool
-      let status = listToMaybe $ G.connectedTo R.Cluster R.Has rg
+      let status = getClusterStatus rg
       hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
             let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
@@ -445,9 +406,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                         , srv :: M0.Service <- G.connectedTo p M0.IsParentOf rg
                         , M0.s_type srv == CST_RMS
                         ]
-          -- Update cluster bootlevel
-          phaseLog "update" $ "cluster.bootlevel=" ++ show (M0.MeroClusterStarting (M0.BootLevel 0))
-          modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStarting (M0.BootLevel 0))
+          -- Update cluster disposition
+          phaseLog "update" $ "cluster.disposition=ONLINE"
+          modifyGraph $ G.connectUnique R.Cluster R.Has (M0.ONLINE)
           servers <- fmap (map snd) $ getMeroHostsNodes
             $ \(host::R.Host) (node::M0.Node) rg -> G.isConnected host R.Has R.HA_M0SERVER rg
                             && M0.getState node rg /= M0.NSFailed
@@ -463,17 +424,13 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
           Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." [] []
           Just _ -> do
             rg <- getLocalGraph
-            case listToMaybe (G.connectedTo R.Cluster R.Has rg) of
+            case getClusterStatus rg of
               Nothing -> do
                 phaseLog "error" "graph invariant violation: cluster have no attached state"
                 fail_job $ ClusterStartFailure "Unknown cluster state." [] []
-              Just st -> case st of
-                M0.MeroClusterStopped  ->  start_job
-                -- previous job did start, but RC have failed, so we need to continue
-                M0.MeroClusterStarting{} -> start_job
-                M0.MeroClusterStopping{} -> fail_job $ ClusterStartFailure "Cluster is stopping." [] []
-                M0.MeroClusterRunning  -> fail_job $ ClusterStartOk
-                M0.MeroClusterFailed -> fail_job $ ClusterStartFailure ("cluster is failed: " ++ show st) [] []
+              Just _ -> if isClusterStopped rg
+                        then start_job
+                        else fail_job $ ClusterStartFailure "Cluster not fully stopped." [] []
 
     setPhase wait_server_jobs $ \s -> do
        servers <- getField . rget fldNodes <$> get Local
@@ -555,8 +512,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
        <+> fldNext  =: Nothing
        <+> RNil
 
-
 -- | Request cluster to teardown.
+--   Immediately set cluster disposition to OFFLINE.
 --   If the cluster is already tearing down, or is starting, this
 --   rule will do nothing.
 --   Sends 'StopProcessesOnNodeRequest' to all nodes.
@@ -565,20 +522,16 @@ requestClusterStop :: Definitions LoopState ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
   $ \(HAEvent eid (ClusterStopRequest ch) _) -> do
       rg <- getLocalGraph
-      let eresult = case listToMaybe $ G.connectedTo R.Cluster R.Has rg of
-            Nothing -> Left $ StateChangeError "Unknown current state."
-            Just st -> case st of
-               M0.MeroClusterRunning    -> Right $ stopCluster rg ch eid
-               M0.MeroClusterFailed     -> Right $ stopCluster rg ch eid
-               M0.MeroClusterStopping{} -> Left $ StateChangeOngoing st
-               M0.MeroClusterStarting{} -> Left $ StateChangeError $ "cluster is starting: " ++ show st
-               M0.MeroClusterStopped    -> Left   StateChangeFinished
+      let eresult = if isClusterStopped rg
+                    then Left StateChangeFinished
+                    else Right $ stopCluster rg ch eid
       case eresult of
         Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
         Right action -> action
   where
     stopCluster rg ch eid = do
-      modifyGraph $ G.connectUnique R.Cluster R.Has (M0.MeroClusterStopping (M0.BootLevel maxTeardownLevel))
+      -- Set disposition to OFFLINE
+      modifyGraph $ G.connectUniqueFrom R.Cluster R.Has (M0.OFFLINE)
       let nodes =
             [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
                    , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node] ]

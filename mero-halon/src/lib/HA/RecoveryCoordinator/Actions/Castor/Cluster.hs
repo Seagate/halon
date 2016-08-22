@@ -15,25 +15,26 @@ import qualified HA.Resources        as R
 import qualified HA.Resources.Mero   as M0
 import qualified HA.RecoveryCoordinator.Events.Castor.Cluster as Event
 
+import Control.Category ((>>>))
 import Control.Distributed.Process (Process, usend)
+import Control.Lens ((<&>))
 
-import Data.Binary (Binary)
 import Data.Foldable (for_)
-import Data.Typeable (Typeable)
+import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 
 import Network.CEP
 
 -- | Message guard: Check if the barrier being passed is for the
 -- correct level. This is used during 'ruleNewMeroServer' with the
--- actual 'BarrierPass' message being emitted from
+-- actual 'MeroClusterState' message being emitted from
 -- 'notifyOnClusterTransition'.
 barrierPass :: (M0.MeroClusterState -> Bool)
-            -> Event.BarrierPass
+            -> Event.ClusterStateChange
             -> g
             -> l
             -> Process (Maybe ())
-barrierPass rightState (Event.BarrierPass state') _ _ =
+barrierPass rightState (Event.ClusterStateChange _ state') _ _ =
   if rightState state' then return (Just ()) else return Nothing
 
 -- | Send a notification when the cluster state transitions.
@@ -47,22 +48,19 @@ barrierPass rightState (Event.BarrierPass state') _ _ =
 -- 'calculateMeroClusterStatus' which traverses the RG and checks the
 -- current cluster status and status of the processes on the current
 -- cluster boot level.
-notifyOnClusterTransition :: (Binary a, Typeable a)
-                          => (M0.MeroClusterState -> Bool) -- ^ States to notify on
-                          -> (M0.MeroClusterState -> a) -- Notification to send
-                          -> Maybe UUID -- Message to declare processed
+notifyOnClusterTransition :: Maybe UUID -- ^ Message to declare processed
                           -> PhaseM LoopState l ()
-notifyOnClusterTransition desiredState msg meid = do
-  newState <- calculateMeroClusterStatus
-  if desiredState newState then do
-    let state'  = case desiredState of
-         _ | newState == M0.MeroClusterStarting clusterStartedBootLevel ->
-              M0.MeroClusterRunning
-         _ -> newState
-    phaseLog "info" $ "Cluster state changed to " ++ show state'
-    modifyGraph $ G.connectUnique R.Cluster R.Has state'
-    registerSyncGraphCallback $ \self proc -> do
-      usend self (msg state')
-      for_ meid proc
-  else
-    for_ meid registerSyncGraphProcessMsg
+notifyOnClusterTransition meid = do
+  oldState <- getLocalGraph <&> getClusterStatus
+  newRunLevel <- calculateRunLevel
+  newStopLevel <- calculateStopLevel
+  disposition <- getLocalGraph <&> maybe M0.OFFLINE id
+                                 . listToMaybe . G.connectedTo R.Cluster R.Has
+  let newState = M0.MeroClusterState disposition newRunLevel newStopLevel
+  phaseLog "oldState" $ show oldState
+  phaseLog "newState" $ show newState
+  modifyGraph $ G.connectUnique R.Cluster M0.RunLevel newRunLevel
+            >>> G.connectUnique R.Cluster M0.StopLevel newStopLevel
+  registerSyncGraphCallback $ \self proc -> do
+    usend self (Event.ClusterStateChange oldState newState)
+    for_ meid proc

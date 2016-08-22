@@ -55,6 +55,7 @@ import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
+import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -67,7 +68,6 @@ import HA.RecoveryCoordinator.Rules.Mero.Conf
   , setPhaseAllNotified
   , setPhaseInternalNotificationWithState
   , setPhaseNotified
-  , stateSet
   )
 import           HA.Services.SSPL.CEP
 import           HA.Resources
@@ -687,8 +687,9 @@ handleRepairExternal noteSet = do
 handleRepairInternal :: Set -> PhaseM LoopState l ()
 handleRepairInternal noteSet = do
   liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
-  G.connectedTo Cluster Has <$> getLocalGraph >>= \case
-    [MeroClusterRunning] -> processDevices noteSet >>= traverse_ go
+  getClusterStatus <$> getLocalGraph >>= \case
+    Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) ->
+      processDevices noteSet >>= traverse_ go
     _ -> return ()
   liftIO $ traceEventIO "STOP mero-halon:internal-handlers:repair-rebalance"
   where
@@ -765,7 +766,7 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
     notified <- phaseHandle "mero-notification-success"
     end <- phaseHandle "end"
 
-    setPhaseIf clusterRunning (barrierPass MeroClusterRunning) $ \() -> do
+    setPhaseIf clusterRunning (barrierPass (\mcs -> _mcs_runlevel mcs >= M0.BootLevel 2)) $ \() -> do
       pools <- getPool
       forM_ pools $ \pool ->
         getPoolRepairStatus pool >>= \case
@@ -790,9 +791,6 @@ checkRepairOnClusterStart = define "check-repair-on-start" $ do
     directly end stop
 
     startFork clusterRunning Nothing
-  where
-    barrierPass state (BarrierPass state') _ _ =
-      if state <= state' then return (Just ()) else return Nothing
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely

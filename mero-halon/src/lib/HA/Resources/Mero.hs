@@ -37,7 +37,6 @@ import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
 import Data.Char (ord)
-import Data.Function (on)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Ord (comparing)
@@ -597,40 +596,66 @@ instance Binary ProcessLabel
 instance Hashable ProcessLabel
 
 -- | Process boot level.
+--   This is used both to tag processes (to indicate when they should start/stop)
+--   and to tag the cluster (to indicate which processes it's valid to try to
+--   start/stop).
+--   Given a cluster run level of x, it is valid to start a process with a
+--   boot level of <= x. So at level 0 we may start confd processes, at level
+--   1 we may start IOS etc as well as confd processes.
 -- Currently:
 --   * 0 - confd
 --   * 1 - other
-newtype BootLevel = BootLevel Int
+--   * 2 - clients
+newtype BootLevel = BootLevel { unBootLevel :: Int }
   deriving
     (Eq, Show, Typeable, Generic, Binary, Hashable, Ord, FromJSON, ToJSON)
 
-data MeroClusterState =
-    MeroClusterStopped -- ^ Cluster is not running.
-  | MeroClusterStarting BootLevel -- ^ Cluster is currently starting on a concrete bootlevel.
-  | MeroClusterStopping BootLevel -- ^ Cluster is currently stopping on a concrete bootlevel.
-  | MeroClusterRunning -- ^ Cluster is running succesfully.
-  | MeroClusterFailed -- ^ Cluster bootstrap has failed.
-  deriving (Eq,Show, Typeable, Generic)
+-- | Cluster disposition.
+--   This represents the desired state for the cluster, which is used to
+--   decide upon the correct behaviour to take in reaction to events.
+data Disposition =
+    ONLINE -- ^ Cluster should be online
+  | OFFLINE -- ^ Cluster should be offline (e.g. for maintenance)
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary Disposition
+instance Hashable Disposition
+instance ToJSON Disposition
+instance FromJSON Disposition
+
+-- | Marker to tag the cluster run level
+data RunLevel = RunLevel
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary RunLevel
+instance Hashable RunLevel
+
+-- | Marker to tag the cluster stop level
+data StopLevel = StopLevel
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary StopLevel
+instance Hashable StopLevel
+
+-- | Cluster state.
+--   We do not store this cluster state in the graph, but it's a useful
+--   aggregation for sending to clients.
+data MeroClusterState = MeroClusterState {
+    _mcs_disposition :: Disposition
+  , _mcs_runlevel :: BootLevel
+  , _mcs_stoplevel :: BootLevel
+} deriving (Eq, Show, Typeable, Generic)
+
 instance Binary MeroClusterState
-instance Hashable MeroClusterState
-instance ToJSON MeroClusterState
 instance FromJSON MeroClusterState
+instance ToJSON MeroClusterState
 
 prettyStatus :: MeroClusterState -> String
-prettyStatus MeroClusterStopped = "stopped"
-prettyStatus (MeroClusterStarting (BootLevel i)) = "starting (bootlevel " ++ show i ++ ")"
-prettyStatus (MeroClusterStopping (BootLevel i)) = "stopping (bootlevel " ++ show i ++ ")"
-prettyStatus MeroClusterRunning = "running"
-prettyStatus MeroClusterFailed = "failed"
-
-instance Ord MeroClusterState where
-   compare = compare `on` toInt where
-     toInt MeroClusterRunning = maxBound
-     toInt (MeroClusterStarting (BootLevel i)) = 1+i
-     toInt MeroClusterStopped     = 0
-     toInt (MeroClusterStopping (BootLevel i)) = -1-i
-     toInt MeroClusterFailed = minBound
-
+prettyStatus MeroClusterState{..} = unlines [
+    "Disposition: " ++ (show _mcs_disposition)
+  , "Current run level: " ++ (show . unBootLevel $ _mcs_runlevel)
+  , "Current stop level: " ++ (show . unBootLevel $ _mcs_stoplevel)
+  ]
 
 newtype ConfUpdateVersion = ConfUpdateVersion Word64
   deriving (Eq, Show, Typeable, Generic)
@@ -657,13 +682,14 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''ProcessBootstrapped
+  , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState
+  , ''BootLevel, ''RunLevel, ''StopLevel
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
-  , (''R.Cluster, ''R.Has, ''MeroClusterState)
+  , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
@@ -699,6 +725,8 @@ $(mkDicts
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+  , (''R.Cluster, ''RunLevel, ''BootLevel)
+  , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''R.Host, ''R.Has, ''LNid)
@@ -719,13 +747,14 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''MeroClusterState, ''ProcessBootstrapped
+  , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState
+  , ''BootLevel, ''RunLevel, ''StopLevel
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
-  , (''R.Cluster, ''R.Has, ''MeroClusterState)
+  , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
@@ -761,6 +790,8 @@ $(mkResRel
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+  , (''R.Cluster, ''RunLevel, ''BootLevel)
+  , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''R.Host, ''R.Has, ''LNid)

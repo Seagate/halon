@@ -11,7 +11,6 @@
 module HA.RecoveryCoordinator.Rules.Castor.Process
   ( rules ) where
 
-import           HA.Encode
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Job
@@ -22,7 +21,7 @@ import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Node(..), Cluster(..))
+import           HA.Resources (Has(..), Node(..))
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..), showFid)
@@ -70,7 +69,6 @@ ruleProcessRestart :: Definitions LoopState ()
 ruleProcessRestart = define "processes-restarted" $ do
   initialize <- phaseHandle "initialize"
   services_notified <- phaseHandle "process_notified"
-  node_notified <- phaseHandle "node_notified"
   notification_timeout <- phaseHandle "notification_timeout"
   restart_result <- phaseHandle "restart_result"
   restart_timeout <- phaseHandle "restart_timeout"
@@ -100,11 +98,12 @@ ruleProcessRestart = define "processes-restarted" $ do
     rg <- getLocalGraph
     for_ procs $ \(p, _) -> fork NoBuffer $ do
       todo eid
-      phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
-
       put Local $ Just (eid, p, Nothing, [])
-      case listToMaybe $ G.connectedTo Cluster Has rg of
-        Just M0.MeroClusterRunning -> do
+
+      phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
+      let mpl = getProcessBootLevel p rg
+      case (,) <$> mpl <*> getClusterStatus rg of
+        Just (pl, M0.MeroClusterState M0.ONLINE rl _) | rl >= pl -> do
           let srvs = [ stateSet srv (M0.SSInhibited M0.SSFailed)
                      | (srv :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
               notificationSet = srvs
@@ -118,7 +117,8 @@ ruleProcessRestart = define "processes-restarted" $ do
               applyStateChanges notificationSet
               switch [services_notified, timeout 5 notification_timeout]
         cst -> do
-          phaseLog "warn" $ "Process restart requested but cluster in state "
+          phaseLog "warn" $ "Process restart requested for "
+                         ++ "(process state, cluster state): "
                          ++ show cst
           continue finish
     done eid
@@ -277,7 +277,7 @@ ruleProcessStopped :: Definitions LoopState ()
 ruleProcessStopped = define "rule-process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIf rule_init stoppedProc $ \(eid, p, pid) -> do
+  setPhaseIf rule_init stoppedProc $ \(eid, p, _) -> do
     todo eid
     getLocalGraph >>= \rg -> case alreadyFailed p rg of
       -- The process is already in what we consider a failed state:
@@ -349,7 +349,7 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
   no_response <- phaseHandle "no_response"
 
   directly quiesce $ do
-    (Just (StopProcessesRequest n p))
+    (Just (StopProcessesRequest _ p))
       <- gets Local (^. rlens fldReq . rfield)
     showContext
     phaseLog "info" $ "Setting processes to quiesce."
@@ -448,7 +448,7 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
     -- forM_ (lefts results) $ \x ->
     --   phaseLog "info" $ printf "process stopped: %s" (show x)
 
-  return $ \(StopProcessesRequest node procs) -> return $ Just [quiesce]
+  return $ \(StopProcessesRequest _ _) -> return $ Just [quiesce]
 
   where
     fldReq :: Proxy '("request", Maybe StopProcessesRequest)

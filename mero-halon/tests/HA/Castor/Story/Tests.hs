@@ -13,6 +13,7 @@ module HA.Castor.Story.Tests where
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.NodeUp (nodeUp)
+import HA.RecoveryCoordinator.Actions.Castor.Cluster (notifyOnClusterTransition)
 import HA.RecoveryCoordinator.Actions.Mero.Conf (encToM0Enc)
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    ( findRealObjsInPVer
@@ -152,8 +153,10 @@ testRules = do
       phaseLog "debug:procs" $ show procs
       forM_ procs $ \proc -> do
         modifyGraph $ setState proc M0.PSOnline
-      -- Also mark the cluster as running.
-      modifyGraph $ G.connectUniqueFrom Cluster Has M0.MeroClusterRunning
+      -- Also mark the cluster disposition as ONLINE.
+      modifyGraph $ G.connectUniqueFrom Cluster Has M0.ONLINE
+      -- Calculate cluster status.
+      notifyOnClusterTransition Nothing
       locateNodeOnHost node host
       registerServiceProcess (Node nid) m0d mockMeroConf sp
       void . liftProcess $ promulgateEQ [nid] dc
