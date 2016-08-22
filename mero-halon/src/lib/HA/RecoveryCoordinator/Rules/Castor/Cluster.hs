@@ -330,7 +330,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
                     else Just (sdev, st)
             devs <- fmap (\x -> mapMaybe go x) . traverse lookupStorageDeviceSDev
                       =<< findHostStorageDevices host
-            return (host, ReportClusterHost node_st (join prs) devs)
+            return (host, ReportClusterHost (listToMaybe nodes) node_st (join prs) devs)
       liftProcess $ sendChan ch $ ReportClusterState
         { csrStatus = status
         , csrSNS    = repairs

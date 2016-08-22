@@ -200,6 +200,9 @@ instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
   fid (Node f) = f
 
+instance FromJSON Node
+instance ToJSON   Node
+
 -- | Node state. This is a generalization of what might be reported to Mero.
 data NodeState
   = NSUnknown             -- ^ Node state is not known.

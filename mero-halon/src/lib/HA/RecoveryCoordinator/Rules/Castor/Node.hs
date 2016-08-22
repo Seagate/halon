@@ -269,7 +269,8 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
   \(StartHalonM0dRequest m0node) -> do
     rg <- getLocalGraph
     case getClusterStatus rg of
-      Just (M0.MeroClusterState M0.OFFLINE _ _) -> phaseLog "info" "Cluster disposition is OFFLINE."
+      Just (M0.MeroClusterState M0.OFFLINE _ _) -> do
+         phaseLog "info" "Cluster disposition is OFFLINE."
       _ -> case listToMaybe $ m0nodeToNode m0node rg of
              Just node@(R.Node nid) ->
                findNodeHost node >>= \case
