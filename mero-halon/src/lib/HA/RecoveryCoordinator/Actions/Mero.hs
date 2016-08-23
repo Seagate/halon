@@ -317,10 +317,13 @@ configureNodeProcesses :: Castor.Host
                        -> PhaseM LoopState a [M0.Process]
 configureNodeProcesses host chan label mkfs = do
     rg <- getLocalGraph
+    -- We do not want to reconfigure already running processes, if one needs
+    -- to reconfigure that process should be stopped first.
     let allProcs =  [ p
                     | m0node <- G.connectedTo host Runs rg :: [M0.Node]
                     , p <- G.connectedTo m0node M0.IsParentOf rg
                     , G.isConnected p Has label rg
+                    , M0.getState p rg /= M0.PSOnline
                     ]
     if null allProcs
     then phaseLog "action" $ "No services with label " ++ show label ++ " on host " ++ show host
