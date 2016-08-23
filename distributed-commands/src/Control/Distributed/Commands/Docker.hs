@@ -104,12 +104,10 @@ showContainer credentials cid = do
 -- | Destroys a container given its ID.
 destroyContainer :: Credentials -> String -> IO ()
 destroyContainer credentials cId = do
-    void $ callCURLPost "" ((dockerHost credentials) ++ "/containers/" ++ cId
-                            ++ "/kill" )
-    -- don't get a response from this...
-    -- if we care, we can poll for status.
-    -- or should really do a destroy too... TODO
-    return ()
+--    void $ callCURLPost "" ((dockerHost credentials) ++ "/containers/" ++ cId
+--                            ++ "/kill" )
+    void $ callCURLDelete $ (dockerHost credentials) ++ "/containers/" ++ cId ++
+                            "?force=true"
 
 callCURLPost :: String -> String -> IO String
 callCURLPost input url = readProcess "curl" ["-s", "--data", "@-", url, "-H", "Content-Type: application/json"] input
@@ -117,3 +115,5 @@ callCURLPost input url = readProcess "curl" ["-s", "--data", "@-", url, "-H", "C
 callCURLGet :: String -> IO String
 callCURLGet url = readProcess "curl" ["-s", url] ""
 
+callCURLDelete :: String -> IO String
+callCURLDelete url = readProcess "curl" ["--request", "DELETE", "-s", url] ""
