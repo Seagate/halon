@@ -35,6 +35,7 @@ import Control.Distributed.Process.Node
   , newLocalNode
   , runProcess
   )
+import Control.Distributed.Process.Internal.Primitives (SayMessage(..))
 
 import Control.Monad
 import Data.IORef
@@ -81,7 +82,7 @@ main = (>>= maybe (error "test timed out") return) $
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond") ]
       self <- getSelfPid
-      flip copyLog self $ \(_, _, msg) -> any (`isInfixOf` msg)
+      flip copyLog self $ \(SayMessage _ _ msg) -> any (`isInfixOf` msg)
         [ "New replica started"
         , "Starting from empty graph"
         , "New node contacted"
