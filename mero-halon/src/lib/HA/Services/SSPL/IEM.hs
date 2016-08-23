@@ -11,7 +11,7 @@
 -- |
 -- Module for generation log events in Telemetry message format.
 --
--- For full specificaiton refer to <http:\/\/goo.gl\/uM0J24>.
+-- For full specificaiton refer to <http://goo.gl/uM0J24>.
 --
 module HA.Services.SSPL.IEM
   ( IEMLog(..)
@@ -37,6 +37,7 @@ module HA.Services.SSPL.IEM
   , logMeroRebalanceQuisise
   , logMeroRebalanceContinue
   , logMeroRebalanceAbort
+  , logMeroClientFailed
   ) where
 
 import Data.Aeson (ToJSON)
@@ -176,6 +177,7 @@ type MeroRebalanceFinish   = Log Mero  "021" "Rebalance finish"     ()
 type MeroRebalanceQuisise  = Log Mero  "022" "Rebalance quisise"    ()
 type MeroRebalanceContinue = Log Mero  "023" "Rebalance continue"   ()
 type MeroRebalanceAbort    = Log Mero  "024" "Rebalance abort"      ()
+type MeroClientFailed      = Log Mero  "025" "Mero client failed" Text
 
 type IECList =
   '[ HalonDiskStatus
@@ -190,6 +192,7 @@ type IECList =
    , MeroRebalanceQuisise
    , MeroRebalanceContinue
    , MeroRebalanceAbort
+   , MeroClientFailed
    ]
 
 
@@ -205,6 +208,7 @@ logMeroRebalanceFinish   :: Generator MeroRebalanceFinish
 logMeroRebalanceQuisise  :: Generator MeroRebalanceQuisise
 logMeroRebalanceContinue :: Generator MeroRebalanceContinue
 logMeroRebalanceAbort    :: Generator MeroRebalanceAbort
+logMeroClientFailed      :: Generator MeroClientFailed
 (logHalonDiskStatus
  ,(logSSPLUnknownMessage
  ,(logMeroRepairStart
@@ -216,5 +220,5 @@ logMeroRebalanceAbort    :: Generator MeroRebalanceAbort
  ,(logMeroRebalanceFinish
  ,(logMeroRebalanceQuisise
  ,(logMeroRebalanceContinue
- ,(logMeroRebalanceAbort,())))))))))))) = mkCommands (Proxy :: Proxy IECList)
-
+ ,(logMeroRebalanceAbort
+ ,(logMeroClientFailed,()))))))))))))) = mkCommands (Proxy :: Proxy IECList)

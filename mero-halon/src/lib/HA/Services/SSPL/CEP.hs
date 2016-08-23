@@ -65,18 +65,17 @@ import Prelude hiding (mapM_)
 -- Primitives
 --------------------------------------------------------------------------------
 
-sendInterestingEvent :: NodeId
-                     -> InterestingEventMessage
+sendInterestingEvent :: InterestingEventMessage
                      -> PhaseM LoopState l ()
-sendInterestingEvent nid msg = do
+sendInterestingEvent msg = do
   phaseLog "action" $ "Sending InterestingEventMessage."
   rg <- getLocalGraph
   let
-    node = Node nid
-    chanm = do
-      s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
-      sp <- runningService node s rg
-      listToMaybe $ connectedTo sp IEMChannel rg
+    chanm = listToMaybe
+            [ c | s <- connectedTo Cluster Supports rg :: [Service SSPLConf]
+                , n <- connectedTo Cluster Has rg
+                , Just sp <- [runningService n s rg]
+                , c <- connectedTo sp IEMChannel rg ]
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
@@ -346,7 +345,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
                   <> s <> " reason " <> r <> " is not known'}"
                   )
           in do
-            sendInterestingEvent nid msg
+            sendInterestingEvent msg
             messageProcessed uuid
    start pinit Nothing
 

@@ -22,6 +22,8 @@ import Control.Monad (void)
 import Data.Binary (Binary, encode)
 import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe)
+import Data.Monoid
+import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl
@@ -31,7 +33,6 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (Message(..))
 import           Control.Monad (forM_)
-import           Data.UUID (nil, null)
 import           Network.CEP
 import           Network.HostName
 
@@ -55,7 +56,6 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
@@ -64,8 +64,9 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero (meroRules, m0d)
-import           HA.Services.SSPL (sendNodeCmd)
-import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..))
+import           HA.Services.SSPL.CEP
+import           HA.Services.SSPL.IEM (logMeroClientFailed)
+import           HA.Services.SSPL.LL.Resources
 #endif
 import           HA.Services.SSPL (ssplRules)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
@@ -339,7 +340,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
           Nothing -> do
             phaseLog "warn" $ "Couldn't find host for " ++ show n1
             continue finish
-          Just host@(Host _hst) -> do
+          Just host -> do
             modify Local $ rlens fldNode .~ Field (Just n1)
             modify Local $ rlens fldHost .~ Field (Just host)
             modify Local $ rlens fldRetries .~ Field (Just 0)
@@ -355,10 +356,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
                 -- if the node is a mero server then power-cycle it.
                 -- Client nodes can run client-software that may not be
                 -- OK with reboots so we only reboot servers.
-                whenM (hasHostAttr M0.HA_M0SERVER host) $ do
-                  ns <- nodesOnHost host
-                  forM_ ns $ \(Node nid) ->
-                    sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack _hst))
+                rebootOrLogHost host
 #endif
               -- Node already marked as down, probably the RC died. Do
               -- the simple thing and start the recovery all over: as
@@ -431,6 +429,26 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
         <+> fldHost    =: Nothing
         <+> fldRetries =: Nothing
         <+> RNil
+
+#ifdef USE_MERO
+    -- Reboots the node if possible (if it's a server node) or logs an
+    -- IEM otherwise.
+    rebootOrLogHost :: Host -> PhaseM LoopState l ()
+    rebootOrLogHost host@(Host hst) = do
+      isServer <- hasHostAttr HA_M0SERVER host
+      isClient <- hasHostAttr HA_M0CLIENT host
+      case () of
+        _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed
+                                  ( "{ 'hostname': \"" <> T.pack hst <> "\", "
+                                  <> " 'reason': \"Lost connection to RC\" }")
+                        in sendInterestingEvent msg
+          | isServer -> do
+              ns <- nodesOnHost host
+              forM_ ns $ \(Node nid) ->
+                sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack hst))
+          | otherwise ->
+              phaseLog "warn" $ show host ++ " not labeled as server or client"
+#endif
 
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId
