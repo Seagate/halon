@@ -189,7 +189,7 @@ ruleProcessRestart = define "processes-restarted" $ do
 
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions LoopState ()
-ruleProcessOnline = define "rule-process-online" $ do
+ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
   setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
@@ -206,7 +206,7 @@ ruleProcessOnline = define "rule-process-online" $ do
       -- happen if someone manually starts up a service but it's not a
       -- valid usecase.
       (M0.PSOnline, Just (M0.PID _)) -> do
-        phaseLog "warn" $
+        phaseLog "debug" $
           "Process started notification for already online process with a PID. Do nothing."
       -- We have a process but no PID for it, somehow. This can happen
       -- if the process was set to online through all its services
@@ -221,10 +221,12 @@ ruleProcessOnline = define "rule-process-online" $ do
       -- TODO: We can use TAG_M0_CONF_HA_PROCESS_STARTING notification
       -- now if we desire.
       (M0.PSStarting, oldPid) -> do
-        phaseLog "info" $ showFid p ++ " started, setting PID: "
-                       ++ show oldPid ++ " => " ++ show processPid
+        phaseLog "action" "Process started."
+        phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
+        phaseLog "info" $ "process.old_pid = " ++ show oldPid
+        phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connectUniqueFrom p Has processPid
-        applyStateChanges [ stateSet p M0.PSOnline ]
+        applyStateChanges [ stateSet p M0.PSOnline ]  -- XXX: registerSyncGraph
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
@@ -246,9 +248,10 @@ ruleProcessOnline = define "rule-process-online" $ do
 --   [Nonblocking] yes
 --   [Emits] 'ProcessConfigured' events
 ruleProcessConfigured :: Definitions LoopState ()
-ruleProcessConfigured = defineSimpleTask "handle-configured" $
+ruleProcessConfigured = defineSimpleTask "castor::process::handle-configured" $
   \(ProcessControlResultConfigureMsg node results) -> do
-    phaseLog "info" $ printf "Mero process configured on %s" (show node)
+    phaseLog "begin" $ "Mero process configured"
+    phaseLog "info" $ "node = " ++ show node
     rg <- getLocalGraph
     let
       resultProcs :: [Either M0.Process (M0.Process, String)]
@@ -261,20 +264,21 @@ ruleProcessConfigured = defineSimpleTask "handle-configured" $
     for_ (rights resultProcs) $ \(p, s) -> do
        phaseLog "error" $ printf "failed to configure %s : %s" (showFid p) s
     for_ (lefts resultProcs) $ \p -> do
-       phaseLog "info" $ printf "%s : configured" (showFid p)
+       phaseLog "info" $ printf "%s: configured" (showFid p)
        modifyGraph $ G.connectUniqueFrom p Is M0.ProcessBootstrapped
     -- XXX: use notification somehow
     registerSyncGraphProcess $ \rc -> do
       for_ results $ \r -> case r of
         Left x -> usend rc (ProcessConfigured x)
         Right (x,_) -> usend rc (ProcessConfigureFailed x)
+    phaseLog "end" $ "Mero process configured."
 
 -- | Listen for process event notifications about a stopped process
 -- and decide whether we want to fail the process. If we do fail the
 -- process, 'ruleProcessRestarted' deals with the internal state
 -- change notification.
 ruleProcessStopped :: Definitions LoopState ()
-ruleProcessStopped = define "rule-process-stopped" $ do
+ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
   setPhaseIf rule_init stoppedProc $ \(eid, p, _) -> do

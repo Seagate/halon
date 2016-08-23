@@ -584,9 +584,7 @@ getRPCAddress = do
 
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
-getSpielAddressRC = do
-  phaseLog "rg-query" "Looking up confd and RM services for spiel address."
-  getSpielAddress True <$> getLocalGraph
+getSpielAddressRC = getSpielAddress True <$> getLocalGraph
 
 -- | List of addresses to known confd servers on the cluster.
 getConfdServers :: PhaseM LoopState l [String]
@@ -621,12 +619,8 @@ sfinally action finalizer = do
 -- the graph, it means no repairs are going on
 getPoolRepairStatus :: M0.Pool
                     -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
-getPoolRepairStatus pool = do
-  getLocalGraph >>= \g -> do
-   let prs = listToMaybe [ p | p <- G.connectedTo pool Has g ]
-   phaseLog "rg-query" $ "Looked up PRS for " ++ show pool ++ ", got "
-                      ++ show prs
-   return prs
+getPoolRepairStatus pool =
+  getLocalGraph >>= \g -> return (listToMaybe [ p | p <- G.connectedTo pool Has g ])
 
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.

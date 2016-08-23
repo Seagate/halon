@@ -401,8 +401,8 @@ prettyReport showDevices (ReportClusterState status sns info' hosts) = do
            forM_ (M0.priStateUpdates s) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
              putStrLn $ "        " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "Hosts:"
-      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost st ps sdevs) -> do
-         putStrLn $ "  " ++ qfdn ++ " ["++ M0.prettyNodeState st ++ "]"
+      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps sdevs) -> do
+         putStrLn $ "  " ++ qfdn ++ showNodeFid m0fid ++ " ["++ M0.prettyNodeState st ++ "]"
          forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
            putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t"
                              ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid
@@ -419,6 +419,8 @@ prettyReport showDevices (ReportClusterState status sns info' hosts) = do
        | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
        | any (\(M0.Service _ t _ _) -> t == CST_HA)  srvs = "halon    "
        | otherwise                                        = "m0t1fs   "
+     showNodeFid Nothing = ""
+     showNodeFid (Just (M0.Node fid)) = " ==> " ++ show fid ++ " "
 
 jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . Data.Aeson.encode

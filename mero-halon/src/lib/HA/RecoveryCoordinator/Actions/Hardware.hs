@@ -160,7 +160,6 @@ findBMCAddress host = do
 findNodeHost :: Node
              -> PhaseM LoopState l (Maybe Host)
 findNodeHost node =  do
-  phaseLog "rg-query" $ "Looking for host running " ++ show node
   g <- getLocalGraph
   return $ case G.connectedFrom Runs node g of
     [h] -> Just h
@@ -170,7 +169,6 @@ findNodeHost node =  do
 findHostEnclosure :: Host
                   -> PhaseM LoopState l (Maybe Enclosure)
 findHostEnclosure host = do
-  phaseLog "rg-query" $ "Looking for enclosure containing " ++ show host
   g <- getLocalGraph
   return $ case G.connectedFrom Has host g of
     [h] -> Just h
@@ -190,7 +188,6 @@ findHosts regex = do
 nodesOnHost :: Host
             -> PhaseM LoopState l [Node]
 nodesOnHost host = do
-  phaseLog "rg-query" $ "Looking for nodes on host " ++ show host
   fmap (G.connectedTo host Runs) getLocalGraph
 
 -- | Register a new host in the system.

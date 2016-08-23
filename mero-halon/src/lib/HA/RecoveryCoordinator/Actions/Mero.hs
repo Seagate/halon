@@ -60,6 +60,7 @@ import Mero.Notification.HAState (Note(..))
 import Control.Category
 import Control.Distributed.Process
 import Control.Lens ((<&>))
+import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import Data.Proxy
@@ -290,22 +291,22 @@ startNodeProcesses host chan label = do
                     , p <- G.connectedTo m0node M0.IsParentOf rg
                     , G.isConnected p Has label rg
                     ]
-    if null allProcs
-    then phaseLog "action" $ "No services with label " ++ show label ++ " on host " ++ show host
-    else phaseLog "action" $ "Starting services with label " ++ show label ++ "on host " ++ show host
-
-    -- If RC has restarted the bootstrap rule, some processes may have
-    -- already been online: we don't want to try and start those
-    -- processes again (so we filter them here) and we want the
-    -- bootstrap to proceed (so we notify ONLINE about those processes
-    -- here: this will cause internal notification about process state
-    -- to go out which will be picked up by adjustClusterState which
-    -- should release the barrier even if all the processes are
-    -- already started)
     let (onlineProcs, procs) = partition (\p -> M0.getState p rg == M0.PSOnline) allProcs
-    applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
-
-    startMeroProcesses chan procs label
+    unless (null onlineProcs) $ do
+      -- If RC has restarted the bootstrap rule, some processes may have
+      -- already been online: we don't want to try and start those
+      -- processes again (so we filter them here) and we want the
+      -- bootstrap to proceed (so we notify ONLINE about those processes
+      -- here: this will cause internal notification about process state
+      -- to go out which will be picked up by adjustClusterState which
+      -- should release the barrier even if all the processes are
+      -- already started)
+      applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
+    unless (null procs) $ do
+      phaseLog "action" $ "Starting mero processe on node."
+      phaseLog "info"   $ "process.label = " ++ show label
+      phaseLog "info"   $ "process.host  = " ++ show host
+      startMeroProcesses chan procs label
     return procs
 
 -- | Configure all Mero processes labelled with the specified process label on
@@ -325,11 +326,12 @@ configureNodeProcesses host chan label mkfs = do
                     , G.isConnected p Has label rg
                     , M0.getState p rg /= M0.PSOnline
                     ]
-    if null allProcs
-    then phaseLog "action" $ "No services with label " ++ show label ++ " on host " ++ show host
-    else phaseLog "action" $ "Configure services with label " ++ show label ++ "on host " ++ show host
-
-    configureMeroProcesses chan allProcs label mkfs
+    unless (null allProcs) $ do
+      phaseLog "begin" "Configure node processes"
+      phaseLog "info"  $ "label = " ++ show label
+      phaseLog "info"  $ "host  = " ++ show host
+      configureMeroProcesses chan allProcs label mkfs
+      phaseLog "end"  "Configure node processes"
     return allProcs
 
 -- | Send requesrt to all configure all mero processes.
@@ -353,11 +355,11 @@ configureMeroProcesses (TypedChannel chan) procs label mkfs = do
     let msg = ConfigureProcesses $
          (\(p,conf) -> (toType label, conf, mkfs && not (G.isConnected p Is M0.ProcessBootstrapped rg)))
          <$> (msg_confds ++ msg_others)
-    liftProcess $ sendChan chan msg
     for_ procs $ \p -> modifyGraph
       $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
                       (M0.setState p M0.PSStarting rg')
                       (G.connectedTo p M0.IsParentOf rg')
+    registerSyncGraph $ sendChan chan msg
   where
     runsMgs proc rg =
       not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
