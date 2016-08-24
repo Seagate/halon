@@ -329,12 +329,8 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
                        services <- getChildren process
                        let services' = map (\srv -> (srv, M0.getState srv rg)) services
                        return (process, ReportClusterProcess st services')
-            let go (msdev::Maybe M0.SDev) = msdev >>= \sdev ->
-                 let st = M0.getState sdev rg
-                 in if st == M0.SDSOnline
-                    then Nothing
-                    else Just (sdev, st)
-            devs <- fmap (\x -> mapMaybe go x) . traverse lookupStorageDeviceSDev
+            let go (msdev::Maybe M0.SDev) = (\sdev -> (sdev, M0.getState sdev rg)) <$> msdev
+            devs <- fmap (mapMaybe go) . traverse lookupStorageDeviceSDev
                       =<< findHostStorageDevices host
             return (host, ReportClusterHost (listToMaybe nodes) node_st (join prs) devs)
       liftProcess $ sendChan ch $ ReportClusterState
