@@ -230,7 +230,7 @@ remotableDecl [ [d|
     in do
       say $ "[sspl-hl] Starting service"
 
-      liftIO $ do
+      liftIO $ Rabbit.ignoreException $ do
         bracket (Rabbit.openConnection scConnectionConf)
                 (closeConnection)
           $ \conn ->
@@ -242,7 +242,7 @@ remotableDecl [ [d|
                     { exchangeName = T.pack $ fromDefault $ Rabbit.bcExchangeName
                                                           $ scResponseConf
                     , exchangeType = "topic"
-                    , exchangeDurable = False
+                    , exchangeDurable = True
                     }
 
 
