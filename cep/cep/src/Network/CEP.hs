@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -274,7 +275,7 @@ runItForever start_eng = do
       when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
       forwardLeftOvers debug_mode (succ loop) nxt_eng xs
 
-    cruise debug_mode loop eng
+    cruise debug_mode !loop eng
       | stepForward engineIsRunning eng =
         go eng =<< receiveTimeout 0 [ match (return . SubMsg)
                                     , match (return . TimeoutMsg)
