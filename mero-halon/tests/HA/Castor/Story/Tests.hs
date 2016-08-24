@@ -75,6 +75,7 @@ import Data.UUID.V4 (nextRandom)
 import Mero.ConfC (Fid(..))
 import Mero.M0Worker
 import HA.RecoveryCoordinator.Actions.Mero.Core
+import HA.Resources.HalonVars
 
 import GHC.Generics (Generic)
 
@@ -102,6 +103,8 @@ mockMeroConf :: MeroConf
 mockMeroConf = MeroConf ""
                         (Fid 0x7000000000000001 0x1)
                         (Fid 0x7200000000000001 0x18)
+                        (_hv_keepalive_frequency defaultHalonVars)
+                        (_hv_keepalive_timeout defaultHalonVars)
                         (MeroKernelConf UUID.nil)
 
 data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)

@@ -28,6 +28,7 @@ module Mero.Notification.HAState
   , disconnect
   , entrypointReply
   , entrypointNoReply
+  , pingProcess
   , HAMsgMeta(..)
   , failureVectorReply
   , HAStateException(..)
@@ -56,7 +57,7 @@ import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
 import Data.Word              ( Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
-import Foreign.Marshal.Alloc  ( allocaBytesAligned, free )
+import Foreign.Marshal.Alloc  ( allocaBytesAligned, free , alloca)
 import Foreign.Marshal.Array  ( peekArray, withArrayLen, withArrayLen0, pokeArray )
 import Foreign.Marshal.Utils  ( with, withMany )
 import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
@@ -148,7 +149,7 @@ newtype HALink = HALink (Ptr HALink)
 
 -- | Id of the incomming entrypoint/link connected request.
 newtype ReqId = ReqId Word128
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 -- | A type for hidding the type argument of 'FunPtr's
 data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
@@ -184,11 +185,9 @@ initHAState :: RPCAddress
                -- is received.
             -> (ReqId -> HALink -> IO ())
                -- ^ Called when a new link is established.
-               -- Word128 is for requiest id passed in entrypoint request.
             -> (ReqId -> HALink -> IO ())
                -- ^ Called when an old link is reconnected, may happen in case
                -- of RM service change.
-               -- Word128 is for requiest id passed in entrypoint request.
             -> (HALink -> IO ())
                -- ^ The link is no longer needed by the remote peer.
                -- It is safe to call 'disconnect' when all 'notify' calls
@@ -200,7 +199,9 @@ initHAState :: RPCAddress
             -> (HALink -> Word64 -> IO ())
                -- ^ Message on the given link will never be delivered.
             -> (HALink -> Cookie -> Fid -> IO ())
-               -- ^ Failure vector request.
+              -- ^ Failure vector request.
+            -> (HALink -> IO ())
+              -- ^ Process keepalive reply
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
             ha_service_event_set
@@ -209,7 +210,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
             ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
             ha_state_is_delivered ha_state_is_cancelled
-            ha_state_failure =
+            ha_state_failure p_keepalive_rep =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -225,6 +226,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wisdelivered <- wrapIsDeliveredCB
       wiscancelled <- wrapIsCancelledCB
       wfailure <- wrapFailureCB
+      wkeepaliverep <- wrapKeepAliveRepCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
@@ -239,6 +241,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       #{poke ha_state_callbacks_t, ha_state_is_delivered} pcbs wisdelivered
       #{poke ha_state_callbacks_t, ha_state_is_cancelled} pcbs wiscancelled
       #{poke ha_state_callbacks_t, ha_state_failure_vec} pcbs wfailure
+      #{poke ha_state_callbacks_t, ha_process_keepalive_reply} pcbs wkeepaliverep
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
@@ -252,6 +255,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         . (SomeFunPtr wisdelivered:)
         . (SomeFunPtr wiscancelled:)
         . (SomeFunPtr wfailure:)
+        . (SomeFunPtr wkeepaliverep:)
         )
       rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
               ha_state_init cRPCAddr procPtr profPtr pcbs
@@ -321,6 +325,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
           hPutStrLn stderr $
             "initHAState.wrapFailureCB: " ++ show (e :: SomeException)
 
+    wrapKeepAliveRepCB = cwrapKeepAliveRepCb $ \hl ->
+        catch (p_keepalive_rep $ HALink hl) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
   nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
@@ -365,6 +374,9 @@ foreign import ccall "wrapper" cwrapIsDeliveredCB ::
 foreign import ccall "wrapper" cwrapFailureCB ::
                   (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ())
     -> IO (FunPtr (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ()))
+
+foreign import ccall "wrapper" cwrapKeepAliveRepCb ::
+    (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO()))
 
 instance Storable Note where
 
@@ -413,6 +425,14 @@ disconnect :: HALink -> IO ()
 disconnect (HALink hl) = ha_state_disconnect hl
 
 foreign import capi ha_state_disconnect :: Ptr HALink -> IO ()
+
+-- | Sends keepalive request to process on the given link
+pingProcess :: HALink -> Word128 -> IO Word64
+pingProcess (HALink hl) req_id = alloca $ \req_id_p -> do
+  poke req_id_p req_id
+  ha_state_ping_process hl req_id_p
+
+foreign import capi safe ha_state_ping_process :: Ptr HALink -> Ptr Word128 -> IO Word64
 
 -- | Type of exceptions that HAState calls can produce.
 data HAStateException = HAStateException String Int

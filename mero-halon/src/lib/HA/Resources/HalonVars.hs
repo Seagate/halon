@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -27,6 +28,8 @@ defaultHalonVars :: HalonVars
 defaultHalonVars = HalonVars
   { _hv_recovery_expiry_seconds = 300
   , _hv_recovery_max_retries = (-5)
+  , _hv_keepalive_frequency = 30
+  , _hv_keepalive_timeout = 115
   }
 
 -- | Get 'HalonVars' from RG

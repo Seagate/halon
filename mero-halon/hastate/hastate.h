@@ -12,6 +12,7 @@
 #include "rpclite.h"
 #include "ha/msg.h"
 #include "ha/note.h"
+#include "ha/link.h"
 #include "ha/halon/interface.h"
 
 // m0_ha_msg without the data or private fields
@@ -128,6 +129,11 @@ typedef struct ha_state_callbacks {
 	 */
 	void (*ha_state_failure_vec)(struct m0_ha_link *hl, const struct m0_cookie *cookie, const struct m0_fid* fid);
 
+	/**
+	 * Keepalive reply came to halon's keepalive request.
+	 */
+	void (*ha_process_keepalive_reply)(struct m0_ha_link *hl);
+
 } ha_state_callbacks_t;
 
 /**
@@ -151,9 +157,16 @@ void ha_state_fini();
 /// changed. Returns the tag of the message.
 uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note);
 
-/// Replies mero about 3Notifies mero through the given link that the state of some objects has
+/// Notifies mero through the given link that the state of some objects has
 /// changed. Returns the tag of the message.
 uint64_t ha_state_failure_vec_reply(struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec);
+
+/// Send a keepalive request on the given link with the given req_id.
+/// The req_id is sent back by mero in keepalive reply but unused in
+/// halon as we don't care about which particular request on the link
+/// the reply is for.
+uint64_t ha_state_ping_process(struct m0_ha_link *hl, struct m0_uint128 *req_id);
+
 
 /// Disconnects a link. It is only safe to call after a ha_state_disconnecting
 /// callback for the link is executed and no `ha_state_notify` calls are

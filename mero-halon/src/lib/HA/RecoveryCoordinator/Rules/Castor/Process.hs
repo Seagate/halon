@@ -19,6 +19,7 @@ import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..))
@@ -55,6 +56,7 @@ rules = sequence_ [
   , ruleStop
   , ruleProcessControlStart
   , ruleFailedNotificationFailsProcess
+  , ruleProcessKeepaliveReply
   ]
 
 -- | Watch for internal process failure notifications and orchestrate
