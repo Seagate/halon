@@ -13,17 +13,12 @@ module HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
   ) where
 
 
-import           Control.Distributed.Process (sendChan)
+import           Control.Distributed.Process (liftIO)
 import           Control.Monad (unless)
-import           GHC.Word (Word64)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
-import           HA.ResourceGraph
-import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
-import           HA.Services.Mero
 import           HA.Services.Mero.Types
-import           Mero.ConfC (Word128(..))
 import           Network.CEP
 
 -- | Process replies to keepalive requests sent to mero.
@@ -31,8 +26,10 @@ ruleProcessKeepaliveReply :: Definitions LoopState ()
 ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \(KeepaliveTimedOut fids) -> do
   ps <- getProcs fids <$> getLocalGraph
   unless (Prelude.null ps) $ do
-    applyStateChanges $ map (\(p, t) -> stateSet p $ mkMsg t) ps
+    ct <- liftIO M0.getTime
+    applyStateChanges $ map (\(p, t) -> stateSet p $ mkMsg ct t) ps
   where
-    mkMsg t = M0.PSFailed $ "No keepalive reply after " ++ show t ++ " seconds."
+    mkMsg ct t = M0.PSFailed $ "No keepalive for " ++ show (ct - t)
     getProcs fids rg = [ (p, t) | (fid, t) <- fids
-                                , Just (p :: M0.Process) <- [M0.lookupConfObjByFid fid rg] ]
+                                , Just (p :: M0.Process) <- [M0.lookupConfObjByFid fid rg]
+                                ]

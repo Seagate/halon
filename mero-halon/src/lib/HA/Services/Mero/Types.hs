@@ -218,16 +218,16 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> kaf <*> kat <*> ker
           <> short 's'
           <> metavar "FID"
           <> summary "halon process Fid"
-    kaf = option (maybe (fail "can't parse as seconds") return . readMaybe)
+    kaf = intOption
           $ long "keepalive_frequency"
           <> short 'f'
-          <> metavar "INT"
+          <> metavar "SECONDS"
           <> summary "keepalive request frequency (seconds)"
           <> value (_hv_keepalive_frequency defaultHalonVars)
-    kat = option (maybe (fail "can't parse as seconds") return . readMaybe)
+    kat = intOption
           $ long "keepalive_timeout"
           <> short 't'
-          <> metavar "INT"
+          <> metavar "SECONDS"
           <> summary "keepalive request timeout (seconds)"
           <> value (_hv_keepalive_timeout defaultHalonVars)
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"

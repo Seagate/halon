@@ -69,9 +69,7 @@ void msg_received_cb ( struct m0_halon_interface *hi
                                          , &msg->hm_data.u.hed_fvec_req.mfq_pool);
         break;
       case M0_HA_MSG_KEEPALIVE_REP:
-        ha_state_cbs.ha_process_keepalive_reply ( hl
-                                                , &msg->hm_data.u.hed_keepalive_rep.kap_id
-                                                , msg->hm_data.u.hed_keepalive_rep.kap_counter );
+        ha_state_cbs.ha_process_keepalive_reply ( hl );
         break;
       default:
         M0_LOG(M0_ALWAYS, "Unknown msg type: %"PRIu64, msg->hm_data.hed_type);

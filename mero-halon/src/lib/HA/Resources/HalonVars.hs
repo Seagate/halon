@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.

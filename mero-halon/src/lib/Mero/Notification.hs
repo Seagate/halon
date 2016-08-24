@@ -1,4 +1,12 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
+
 -- |
+-- Copyright : (C) 2014-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
 --
 -- This module implements the Haskell bindings to the HA side of the
 -- Notification interface. It contains the functions that pass messages between
@@ -7,12 +15,6 @@
 -- This module is enabled only when building with the RPC transport.
 --
 -- This module is intended to be imported qualified.
-
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Mero.Notification
     ( Set(..)
@@ -41,7 +43,7 @@ import Control.Distributed.Process
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..))
+import Mero.ConfC (Fid, Cookie(..), ServiceType(..))
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
@@ -65,7 +67,7 @@ import Control.Lens
 import Control.Concurrent.MVar
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad (unless, void, join, when)
+import Control.Monad (void, when)
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
@@ -74,11 +76,12 @@ import Control.Concurrent.STM.TChan (TChan, readTChan, newTChanIO, writeTChan)
 import qualified Control.Monad.Catch as Catch
 import Data.Foldable (for_, traverse_)
 import Data.Binary (Binary(..))
+import Data.Function (on)
 import Data.Hashable (Hashable)
-import Data.List (nub)
+import Data.List (nub, nubBy, foldl')
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
+import Data.Maybe (catMaybes, listToMaybe, fromMaybe, mapMaybe)
 import Data.Monoid ((<>))
 import Data.Tuple (swap)
 import Data.Typeable (Typeable)
@@ -390,21 +393,18 @@ data Callback = Callback
   }
 
 data LinkState = LinkState
-  { _ls_tags :: [Word64] -- ^ tags we're waiting for
-  , _ls_last_seen :: Maybe TimeSpec -- ^ time
-  , _ls_req_id :: ReqId
+  { _ls_last_seen :: TimeSpec
+    -- ^ Time at which we have last seen the link alive: on actual
+    -- links this will always either be the time at which we receive
+    -- the link connected callback or the time at which last keepalive
+    -- reply for the link has arrived.
+  , _ls_req_id :: [ReqId] -- ^ 'ReqId's associated with the link.
   } deriving (Show, Ord, Eq, Generic, Typeable)
 
-
-
 instance Monoid LinkState where
-  mempty = LinkState [] Nothing (ReqId (Word128 0 0))
-  mappend (LinkState ts1 t1 (ReqId req1)) (LinkState ts2 t2 (ReqId req2)) =
-    let newTime = case (t1, t2) of
-          (Just t1', Just t2') -> Just $ max t1' t2'
-          (Nothing, t2') -> t2'
-          (t1', _) -> t1'
-    in LinkState (ts1 <> ts2) newTime (ReqId $ max req1 req2)
+  mempty = LinkState (TimeSpec 0 0) []
+  mappend (LinkState t1 req1) (LinkState t2 req2) =
+    LinkState (max t1 t2) (req1 <> req2)
 
 instance Monoid Callback where
   mempty = Callback (return ()) (return ())
@@ -421,10 +421,10 @@ data NIRef = NIRef (IORef NIState)
 -- | Let the user modify the the link map without bothering with
 -- keepalive state attached. The keepalive states are recovered after
 -- user modification.
-preservingKeepalive :: (Map HALink ((Map Word64 Callback), LinkState))
+preservingLinkState :: (Map HALink ((Map Word64 Callback), LinkState))
                     -> (Map HALink (Map Word64 Callback) -> Map HALink (Map Word64 Callback))
                     -> (Map HALink ((Map Word64 Callback), LinkState))
-preservingKeepalive orig f =
+preservingLinkState orig f =
   let new = fmap (,mempty) . f $ fmap fst orig
   in Map.unionWith (\(_, ls) (n, _) -> (n, ls)) orig new
 
@@ -456,7 +456,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
                             (ha_delivered niRef)
                             (ha_cancelled niRef)
                             ha_request_failure_vector
-                            (proc_keepalive_rep niRef)
+                            (ha_keepalive_reply niRef)
              putMVar barrier er
              case er of
                Right{} -> do
@@ -533,8 +533,10 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
 
     ha_connected :: NIRef -> ReqId -> HALink -> IO ()
     ha_connected (NIRef ref) reqId hl = do
-      let ls = mempty { _ls_req_id = reqId }
-      atomicModifyIORef' ref $ \x -> (x { _ni_links = Map.insert hl (mempty, ls) (_ni_links x) }, ())
+      currentTime <- getTime Monotonic
+      let ls = mempty { _ls_last_seen = currentTime
+                      , _ls_req_id = [reqId] }
+      atomicModifyIORef' ref $ \x -> (x { _ni_links = Map.insertWith (<>) hl (mempty, ls) (_ni_links x) }, ())
 
     ha_reused :: ReqId -> HALink -> IO ()
     ha_reused _ _ = return ()
@@ -550,21 +552,19 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
       liftIO $ traceEventIO "START ha_request_failure_vector"
 
     ha_disconnecting :: NIRef -> HALink -> IO ()
-    ha_disconnecting (NIRef ref) hl = do
-      deleteId <- maybe id Map.delete <$> linkToReqId (NIRef ref) hl
-      let newState x = x { _ni_links = Map.delete hl (_ni_links x)
-                         , _ni_fidMap = deleteId (_ni_fidMap x) }
-      atomicModifyIORef' ref $ \x -> (newState x, ())
-      -- TODO: call ha_state_disconnect hl when safe
+    -- our implementation of ha_disconnecting to date has always been
+    -- a copy of ha_disconnected which was redundant: doing nothing at
+    -- all here until we need special behaviour seems reasonable
+    ha_disconnecting _ _ = return ()
 
+    -- Remove the HALink from our link map and remove any ReqIds
+    -- associated with the link from our process map
     ha_disconnected :: NIRef -> HALink -> IO ()
     ha_disconnected (NIRef ref) hl = do
-      deleteId <- maybe id Map.delete <$> linkToReqId (NIRef ref) hl
+      reqIds <- linkToReqIds (NIRef ref) hl
       let newState x = x { _ni_links = Map.delete hl (_ni_links x)
-                         , _ni_fidMap = deleteId (_ni_fidMap x) }
+                         , _ni_fidMap = foldl' (flip Map.delete) (_ni_fidMap x) reqIds }
       atomicModifyIORef' ref $ \x -> (newState x, ())
-      -- TODO: call ha_state_disconnect hl when safe
-
 
     ha_delivered :: NIRef -> HALink -> Word64 -> IO ()
     ha_delivered (NIRef ref) hlink tag = do
@@ -581,49 +581,93 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
               in (x { _ni_links = newLinks }, cbs)
       for_ mv $ onCancelled
 
-    -- Find the HALink associated with the return tag. Update the time
-    -- we last saw a keepalive. Logic concerning disconnecting the
-    -- link and notifying RC in mero service.
-    proc_keepalive_rep :: NIRef -> HALink -> ReqId -> Word64 -> IO ()
-    proc_keepalive_rep (NIRef ref) hlink rep_id tag = do
+    -- Update the last seen time for the link the keepalive reply is coming on
+    ha_keepalive_reply :: NIRef -> HALink -> IO ()
+    ha_keepalive_reply (NIRef ref) hlink = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' ref $ \mp ->
         let (_, newLinks) = _ni_links mp & at hlink . _Just . _2 <<%~ updateTime currentTime
         in (mp { _ni_links = newLinks }, ())
       where
-        updateTime t ls = ls {_ls_last_seen = Just t }
+        updateTime t ls = ls {_ls_last_seen = t }
 
-linkToReqId :: NIRef -> HALink -> IO (Maybe ReqId)
-linkToReqId (NIRef ref) hl = readIORef ref >>= \ni -> case Map.lookup hl (_ni_links ni) of
-  Nothing -> return Nothing
-  Just (_, _ls_req_id -> reqId) -> return $ Just reqId
+linkToReqIds :: NIRef -> HALink -> IO [ReqId]
+linkToReqIds (NIRef ref) hl = readIORef ref >>= \ni -> return $ case Map.lookup hl (_ni_links ni) of
+  Nothing -> []
+  Just (_, ls) -> _ls_req_id ls
 
--- | Disconnect HALinks which haven't replied to keepalive in
+-- | 'disconnect' 'HALink's which haven't replied to keepalive in
 -- specified amount of time.
-pruneLinks :: NIRef -> Int -> IO [(Fid, M0.TimeSpec)]
+--
+-- Returns a list of process 'Fid's for the processes we know have
+-- timed out the keepalive as well as the time last keepalive request
+-- was sent to the process.
+--
+-- It should be noted that this list does not cleanly map onto what
+-- 'HALink's are actually 'disconnect'ed: consider a failed link for a
+-- process (link @A@) and process subsequently reconnecting on a new
+-- link (link @B@). The request sent on @A@ will time out but in
+-- reality the process is fine, we can talk to it on @B@ and don't
+-- want to fail the process. In this case we still want to
+-- 'disconnect' @A@ but don't return the process 'Fid'.
+--
+-- Briefly, the process 'Fid's returned here are only for processes
+-- whose all links are known to be timed out.
+--
+-- For processes where multiple links are detected to have timed out
+-- in the same run of 'pruneLinks', the 'Fid' will be reported only
+-- once with 'M0.TimeSpec' for one of the links though all links will
+-- be 'disconnect'ed.
+pruneLinks :: NIRef
+           -> Int -- ^ How many seconds should pass since we last saw
+                  -- a keepalive reply to consider the process as
+                  -- timed out.
+           -> IO [(Fid, M0.TimeSpec)]
 pruneLinks (NIRef ref) expireSecs = do
   now <- getTime Monotonic
   dead <- atomicModifyIORef' ref $ \mp ->
     let (dead, live) = Map.partition (isExpired now) $ _ni_links mp
     in (mp { _ni_links = live }, dead)
 
-  -- Could remove the link here but let disconnect callbacks do it.
-  sendM0Task $ for_ (Map.keys dead) disconnect
-  catMaybes <$> mapM linkToDetails (Map.toList dead)
+  case Map.null dead of
+    True -> return []
+    False -> do
+      -- Could remove the link from the map here but let disconnect
+      -- callbacks do it and deal with removing entries from the (ReqId ->
+      -- Fid) Map while there.
+      sendM0Task $ for_ (Map.keys dead) disconnect
+
+      -- Gather information on what processes still have alive links
+      -- to not misreport
+      ni <- readIORef ref
+      let liveReqs = concatMap (_ls_req_id . snd) . Map.elems $ _ni_links ni
+          liveFids = mapMaybe (flip Map.lookup (_ni_fidMap ni)) liveReqs
+      nubBy ((==) `on` fst) . catMaybes <$> mapM (linkToProc liveFids) (Map.toList dead)
   where
     getFid :: LinkState -> IO (Maybe Fid)
-    getFid ls = Map.lookup (_ls_req_id ls) . _ni_fidMap <$> readIORef ref
+    getFid ls = findAnyFid (_ls_req_id ls) . _ni_fidMap <$> readIORef ref
 
-    linkToDetails :: (HALink, (a, LinkState)) -> IO (Maybe (Fid, M0.TimeSpec))
-    linkToDetails (l, (_, ls)) = case _ls_last_seen ls of
-      Nothing -> return Nothing
-      Just ts -> getFid ls >>= \case
-        Nothing -> return Nothing
-        Just fid' -> return $ Just (fid', M0.TimeSpec ts)
+    -- Try all known ReqIds for link: in practice, first lookup should
+    -- succeed but this won't hurt just in case.
+    findAnyFid :: [ReqId] -> Map ReqId Fid -> Maybe Fid
+    findAnyFid [] _ = Nothing
+    findAnyFid (reqId : reqs) fidMap = maybe (findAnyFid reqs fidMap) return $ Map.lookup reqId fidMap
 
-    isExpired now (_, ls) = case _ls_last_seen ls of
-      Nothing -> False
-      Just (TimeSpec secs ns) -> TimeSpec (secs + fromIntegral expireSecs) ns <= now
+    -- Take a link with its state, find the process it belongs to and
+    -- return it if all known links for this process are dead.
+    --
+    -- Check that there is no mention of this Fid in the list of Fids
+    -- associated to ReqIds which are in turn associated to still
+    -- alive HALinks: this makes sure we don't reported a process as
+    -- timed out while it still has potentially alive links.
+    linkToProc :: [Fid] -> (HALink, (a, LinkState)) -> IO (Maybe (Fid, M0.TimeSpec))
+    linkToProc liveFids (_, (_, ls)) = getFid ls <&> \case
+      Nothing -> Nothing
+      Just fid' | fid' `elem` liveFids -> Nothing
+                | otherwise -> Just (fid', M0.TimeSpec $ _ls_last_seen ls)
+
+    isExpired now (_, _ls_last_seen -> TimeSpec secs ns) =
+      TimeSpec (secs + fromIntegral expireSecs) ns <= now
 
 -- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
 getRPCMachine :: IO (Maybe RPCMachine)
@@ -690,15 +734,26 @@ notifyMero (NIRef niRef) (Set nvec) onOk onFail = liftIO $
                          <*> pure (mkCallback l)
         return tags
       atomicModifyIORef' niRef $ \pm ->
-        let newMap = preservingKeepalive (_ni_links pm) $ \links ->
+        let newMap = preservingLinkState (_ni_links pm) $ \links ->
                        Map.unionWith (Map.unionWith (<>)) links tags
         in (pm { _ni_links = newMap }, ())
 
+-- | Send a ping on every known 'HALink': we should have at least one
+-- known 'HALink' per process. Each link can in turn have muliple
+-- 'ReqId's associated with it (if for some reason process sends
+-- entrypoint request multiple times): we just send it to most
+-- recently known 'ReqId' for the link.
 runPing :: NIRef -> IO ()
 runPing (NIRef niRef) = do
   links <- Map.toList . _ni_links <$> readIORef niRef
   sendM0Task $ do
-    for_ links $ \(link', (_, _ls_req_id -> ReqId reqid)) -> pingProcess link' reqid
+    for_ links $ \(link', (_, ls)) -> case _ls_req_id ls of
+      -- We know a link but haven't got an associated ReqId with the
+      -- link yet: this probably means entrypoint request hasn't come
+      -- yet and that's fine, just do nothing in this case, future
+      -- runPing will deal with it if the link is ready then.
+      [] -> return ()
+      ReqId reqId : _ -> void $ pingProcess link' reqId
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: Bool -- Allow returning dead services

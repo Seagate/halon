@@ -200,7 +200,7 @@ initHAState :: RPCAddress
                -- ^ Message on the given link will never be delivered.
             -> (HALink -> Cookie -> Fid -> IO ())
               -- ^ Failure vector request.
-            -> (HALink -> ReqId -> Word64 -> IO ())
+            -> (HALink -> IO ())
               -- ^ Process keepalive reply
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
@@ -325,8 +325,8 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
           hPutStrLn stderr $
             "initHAState.wrapFailureCB: " ++ show (e :: SomeException)
 
-    wrapKeepAliveRepCB = cwrapKeepAliveRepCb $ \hl rep_id tag ->
-        catch (peek rep_id >>= \rid -> p_keepalive_rep (HALink hl) (ReqId rid) tag) $ \e ->
+    wrapKeepAliveRepCB = cwrapKeepAliveRepCb $ \hl ->
+        catch (p_keepalive_rep $ HALink hl) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
 
@@ -376,8 +376,7 @@ foreign import ccall "wrapper" cwrapFailureCB ::
     -> IO (FunPtr (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ()))
 
 foreign import ccall "wrapper" cwrapKeepAliveRepCb ::
-       (Ptr HALink -> Ptr Word128 -> Word64 -> IO ())
-    -> IO (FunPtr (Ptr HALink -> Ptr Word128 -> Word64 -> IO()))
+    (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO()))
 
 instance Storable Note where
 
