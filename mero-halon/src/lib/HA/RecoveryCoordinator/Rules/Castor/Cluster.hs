@@ -70,7 +70,7 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      )
 import           HA.RecoveryCoordinator.Actions.Job
 import           HA.Services.Mero
-import           HA.Services.Mero.RC.Actions (meroChannel)
+import           HA.Services.Mero.RC (meroChannel)
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 

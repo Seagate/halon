@@ -427,8 +427,8 @@ disconnect (HALink hl) = ha_state_disconnect hl
 foreign import capi ha_state_disconnect :: Ptr HALink -> IO ()
 
 -- | Sends keepalive request to process on the given link
-pingProcess :: HALink -> Word128 -> IO Word64
-pingProcess (HALink hl) req_id = alloca $ \req_id_p -> do
+pingProcess :: Word128 -> HALink -> IO Word64
+pingProcess req_id (HALink hl) = alloca $ \req_id_p -> do
   poke req_id_p req_id
   ha_state_ping_process hl req_id_p
 

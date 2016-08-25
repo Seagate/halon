@@ -419,12 +419,11 @@ nextNotificationFor :: Fid -> ReceivePort NotificationMessage -> Process Set
 nextNotificationFor fid recv = fix $ \go -> do
   nm <- receiveChan recv
   let s@(Set notes) = notificationMessage nm
-  forM_ (notificationAckTo nm) $ \pid ->
-    usend pid (NotificationAck ())
+  forM_ (notificationRecipients nm) $ promulgateWait . NotificationAck (notificationEpoch nm)
   case (find (\(Note f _) -> f == fid) notes) of
     Just _ -> return s
     Nothing -> do
-      debug $ "Ignoring notification: " ++ show s
+      debug $ "Ignoring notification: " ++ show s ++ " looking for " ++ show fid
       go
 --------------------------------------------------------------------------------
 -- Test primitives
@@ -1009,7 +1008,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
               fid = case pc of
                       ProcessConfigLocal x _ _ -> x
                       ProcessConfigRemote x _ -> x
-          promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid [Left fid]
+          _ <- promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid [Left fid]
           return ()
         s -> liftIO $ assertFailure $ "Expected configure request, but received " ++ show s
 

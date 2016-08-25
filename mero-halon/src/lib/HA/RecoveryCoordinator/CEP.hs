@@ -59,13 +59,15 @@ import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
-import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
+import qualified HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.Resources.Mero (NodeState(..))
-import           HA.Services.Mero (meroRules, m0d)
+import           HA.Services.Mero (m0d)
+import           HA.Services.Mero.RC (rules)
 import           HA.Services.SSPL.CEP
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
-import           HA.Services.SSPL.LL.Resources
+import           HA.Services.SSPL (sendNodeCmd)
+import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
 #endif
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.Services.SSPL (ssplRules)
@@ -149,7 +151,7 @@ rcRules argv additionalRules = do
     ssplHLRules
     HA.RecoveryCoordinator.RC.Rules.rules
 #ifdef USE_MERO
-    HA.Services.Mero.meroRules
+    HA.Services.Mero.RC.rules
     HA.RecoveryCoordinator.Rules.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
 #endif

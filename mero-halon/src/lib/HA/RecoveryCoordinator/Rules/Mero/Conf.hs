@@ -32,7 +32,6 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   )  where
 
 import HA.Encode (decodeP, encodeP)
-import HA.EventQueue.Producer (promulgateWait)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Core
@@ -42,14 +41,14 @@ import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
-import HA.Services.Mero (notifyMeroAndThen)
+import HA.Services.Mero.RC
 
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
 
 import Control.Applicative (liftA2)
 import Control.Category ((>>>))
-import Control.Distributed.Process (Process, say)
+import Control.Distributed.Process (Process)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
@@ -62,11 +61,11 @@ import Data.Maybe (catMaybes, mapMaybe)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
-import Data.UUID (UUID)
 import Data.List (nub, genericLength, (\\))
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
+import Data.UUID (UUID)
 
 import Network.CEP
 
@@ -188,12 +187,10 @@ createDeferredStateChanges stateSets rg =
 --   the graph and sending notifications to Mero and internally.
 genericApplyStateChanges :: [AnyStateSet]
                          -> PhaseM LoopState l a
-                         -> Process () -- ^ Callback on successful notification
-                         -> Process () -- ^ Callback on failed notification
                          -> PhaseM LoopState l a
-genericApplyStateChanges ass act cbSucc cbFail = getLocalGraph >>= \rg -> let
+genericApplyStateChanges ass act = getLocalGraph >>= \rg -> let
     dsc@(DeferredStateChanges _ n _) = createDeferredStateChanges ass rg
-  in genericApplyDeferredStateChanges dsc act cbSucc cbFail
+  in genericApplyDeferredStateChanges dsc act
 
 -- | Generic function to apply deferred state changes in the standard order.
 --   The provided 'action' is executed between updating the graph and sending
@@ -205,43 +202,33 @@ genericApplyStateChanges ass act cbSucc cbFail = getLocalGraph >>= \rg -> let
 --   a `DeferredStateChanges` argument.
 genericApplyDeferredStateChanges :: DeferredStateChanges
                                  -> PhaseM LoopState l a -- ^ action
-                                 -> Process () -- ^ Callback on successful notification
-                                 -> Process () -- ^ Callback on failed notification
                                  -> PhaseM LoopState l a
-genericApplyDeferredStateChanges (DeferredStateChanges f s i)
-                                  action cbSucc cbFail = do
-  modifyGraph f
-  syncGraphBlocking -- TODO Should we call this here?
-  res <- action
-  notifyMeroAndThen s
-    (promulgateWait (encodeP i) >> cbSucc)
-    (promulgateWait (encodeP i) >> cbFail)
-  return res
+genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
+  diff <- mkStateDiff f (encodeP i) []
+  notifyMeroAsync diff s
+  action
+
 
 -- | Apply state changes and do nothing else.
 applyStateChanges :: [AnyStateSet]
                   -> PhaseM LoopState l ()
 applyStateChanges ass =
-    genericApplyStateChanges ass (return ()) (return ()) logFail
-  where
-    logFail = say "applyStateChanges: Could not notify mero."
-
+    genericApplyStateChanges ass (return ())
 
 -- | Apply state changes and synchronise with confd.
 applyStateChangesSyncConfd :: [AnyStateSet]
                            -> PhaseM LoopState l ()
 applyStateChangesSyncConfd ass =
-    genericApplyStateChanges ass act (return ()) logFail
+    genericApplyStateChanges ass act
   where
     act = syncAction Nothing M0.SyncToConfdServersInRG
-    logFail = say "applyStateChangesSyncConfd: Could not notify mero."
 
 -- | Apply state changes and create any dynamic failure sets if needed.
 --   This also syncs to confd.
 applyStateChangesCreateFS :: [AnyStateSet]
                           -> PhaseM LoopState l ()
 applyStateChangesCreateFS ass =
-    genericApplyStateChanges ass act (return ()) logFail
+    genericApplyStateChanges ass act
   where
     act = do
       sgraph <- getLocalGraph
@@ -250,7 +237,6 @@ applyStateChangesCreateFS ass =
         forM_ (onFailure strategy sgraph) $ \graph' -> do
           putLocalGraph graph'
           syncAction Nothing M0.SyncToConfdServersInRG
-    logFail = say "applyStateChangesCreateFS: Could not notify mero."
 
 -- | @'setPhaseNotified' handle change extract act@
 --

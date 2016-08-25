@@ -54,6 +54,7 @@ import qualified Data.ByteString.Lazy as BS
 import Data.Constraint (Dict(..))
 import Data.Foldable (traverse_)
 import Data.Typeable
+import Data.Hashable (Hashable)
 import Data.UUID
 import GHC.Generics
 
@@ -136,7 +137,7 @@ newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
 
 newtype InternalObjectStateChangeMsg =
     InternalObjectStateChangeMsg BS.ByteString
-  deriving (Binary, Typeable)
+  deriving (Binary, Typeable, Eq, Show, Ord, Hashable)
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg

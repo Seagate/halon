@@ -196,6 +196,8 @@ Library
                        HA.RecoveryCoordinator.Events.Castor.Process
                        HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
                        HA.RecoveryCoordinator.Events.Mero
+                       HA.Services.Mero.RC
+
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
@@ -205,7 +207,10 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.Node
                       HA.RecoveryCoordinator.Rules.Castor.Expander
                       HA.Resources.Mero.Note.TH
-                      HA.Services.Mero.CEP
+                      HA.Services.Mero.RC.Actions
+                      HA.Services.Mero.RC.Rules
+                      HA.Services.Mero.RC.Events
+                      HA.Services.Mero.RC.Resources
                       System.Posix.SysInfo
       -- cc-options aren't used when compiling Haskell files, and this is
       -- necessary for using CApiFFI, thus we need to pass those options here as
