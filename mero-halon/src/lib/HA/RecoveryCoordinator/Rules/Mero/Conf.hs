@@ -123,9 +123,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
                     b = filter (flip all acc . notMatch) $ join bs
                 in f b (b ++ acc) (new_f)
     notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) =
-       case eqT :: Maybe (a :~: b) of
-         Just Refl -> M0.fid a /= M0.fid b
-         Nothing -> True
+      M0.fid a /= M0.fid b
     unwrap (AnyStateChange a a_old a_new _) r = tryApplyCascadeRule (a, a_old, a_new) r
     -- XXX: keep states in map a -> AnyStateChange, so eqT will always be Refl
     tryApplyCascadeRule :: forall a . Typeable a
