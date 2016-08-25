@@ -7,6 +7,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
@@ -18,7 +19,6 @@ module HA.Resources.Castor (
   , MI.Interface(..)
 ) where
 
-import Control.Distributed.Process.Internal.Types (NodeId)
 import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
@@ -26,8 +26,9 @@ import HA.Resources.TH
 import Data.Hashable (Hashable(..))
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
-import Data.UUID (UUID)
+import Data.UUID (UUID, fromText, toText)
 import Data.Aeson
+import Data.Aeson.Types (parseMaybe, typeMismatch)
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -74,6 +75,19 @@ newtype StorageDevice = StorageDevice
     UUID -- ^ Internal UUID used to refer to the disk
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
 
+instance FromJSON StorageDevice where
+  parseJSON jsn@(Object v) = case fromText =<< parseMaybe (.: "uuid") v of
+    Just x -> pure $ StorageDevice x
+    Nothing -> typeMismatch "StorageDevice" jsn
+  parseJSON x = typeMismatch "StorageDevice" x
+
+instance ToJSON StorageDevice where
+  toJSON (StorageDevice uuid) =
+    object ["uuid" .= toText uuid]
+
+  toEncoding (StorageDevice uuid) =
+    pairs ("uuid" .= toText uuid)
+
 data StorageDeviceAttr
     = SDResetAttempts !Int
     | SDPowered Bool
@@ -99,6 +113,8 @@ data DeviceIdentifier =
 
 instance Binary DeviceIdentifier
 instance Hashable DeviceIdentifier
+instance ToJSON DeviceIdentifier
+instance FromJSON DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.

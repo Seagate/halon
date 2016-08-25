@@ -58,7 +58,7 @@ import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Hardware
-      ( findHostStorageDevices )
+      ( findHostStorageDevices, findStorageDeviceIdentifiers )
 import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
      ( notifyOnClusterTransition )
@@ -329,9 +329,14 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
                        services <- getChildren process
                        let services' = map (\srv -> (srv, M0.getState srv rg)) services
                        return (process, ReportClusterProcess st services')
-            let go (msdev::Maybe M0.SDev) = (\sdev -> (sdev, M0.getState sdev rg)) <$> msdev
-            devs <- fmap (mapMaybe go) . traverse lookupStorageDeviceSDev
-                      =<< findHostStorageDevices host
+            let go ( hdev :: R.StorageDevice
+                    , ids :: [R.DeviceIdentifier]
+                    , msdev :: Maybe M0.SDev)
+                  = (\sdev -> (sdev, M0.getState sdev rg, hdev, ids)) <$> msdev
+            devs <- fmap (mapMaybe go)
+                  . traverse (\x -> (x,,) <$> findStorageDeviceIdentifiers x
+                                          <*> lookupStorageDeviceSDev x)
+                    =<< findHostStorageDevices host
             return (host, ReportClusterHost (listToMaybe nodes) node_st (join prs) devs)
       liftProcess $ sendChan ch $ ReportClusterState
         { csrStatus = status
