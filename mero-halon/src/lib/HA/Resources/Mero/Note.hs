@@ -210,7 +210,14 @@ instance HasConfObjectState M0.Rack where
 instance HasConfObjectState M0.Enclosure where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Enclosure
 instance HasConfObjectState M0.Controller where
+  type StateCarrier M0.Controller = M0.ControllerState
+  getState x rg = fromMaybe M0.CSUnknown . listToMaybe $ G.connectedTo x Is rg
+  setState x st = G.connectUniqueFrom x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Controller
+
+  toConfObjState _ M0.CSUnknown = M0_NC_ONLINE
+  toConfObjState _ M0.CSOnline = M0_NC_ONLINE
+  toConfObjState _ M0.CSTransient = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Node where
   type StateCarrier M0.Node = M0.NodeState
   getState x rg = fromMaybe M0.NSUnknown . listToMaybe $ G.connectedTo x Is rg

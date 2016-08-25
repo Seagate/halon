@@ -375,11 +375,28 @@ instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
   fid (Enclosure f) = f
 
+-- | A controller represents an entity which allows access to a number of
+--   disks. It will typically be hosted on a node.
 newtype Controller = Controller Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
 instance ToJSON Controller
 instance FromJSON Controller
+
+-- | Controller state type. Note that:
+--   - A controller cannot be meaningfully turned 'off', so there is no
+--     offline state.
+--   - A controller has no persistent identity of its own, so there is no
+--     permanent failure state. A controller which is completely broken and
+--     replaced will appear identical from Halon's perspective.
+data ControllerState
+  = CSUnknown -- ^ We do not know the state of the controller.
+  | CSOnline -- ^ Controller is fine.
+  | CSTransient -- ^ Controller is experiencing a failure.
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ControllerState
+instance Hashable ControllerState
 
 instance ConfObj Controller where
   fidType _ = fromIntegral . ord $ 'c'
@@ -687,7 +704,7 @@ $(mkDicts
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState, ''PVerCounter, ''NodeState
+  , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel
   ]
   [ -- Relationships connecting conf with other resources
@@ -741,6 +758,7 @@ $(mkDicts
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
+  , (''Controller,    ''R.Is, ''ControllerState)
   ]
   )
 
@@ -752,7 +770,7 @@ $(mkResRel
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
-  , ''SDevState, ''PVerCounter, ''NodeState
+  , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel
   ]
   [ -- Relationships connecting conf with other resources
@@ -806,6 +824,7 @@ $(mkResRel
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
+  , (''Controller,    ''R.Is, ''ControllerState)
   ]
   []
   )

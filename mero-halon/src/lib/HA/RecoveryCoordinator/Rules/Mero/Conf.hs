@@ -111,17 +111,20 @@ cascadeStateChange :: AnyStateChange -> G.Graph -> (G.Graph->G.Graph, [AnyStateC
 cascadeStateChange asc rg = go [asc] [asc] id
    where
     -- XXX: better structues for union and difference, should we nub on b?
-    go :: [AnyStateChange] -> [AnyStateChange] -> (G.Graph -> G.Graph) -> (G.Graph -> G.Graph, [AnyStateChange])
-    go = fix $ \f a c old_f ->
-           if null a
-           then (old_f, c)
-           else let (updates, bs) = unzip $ liftA2 unwrap a stateCascadeRules
+    go :: [AnyStateChange] -- New changes. These will be evaluated for cascade
+       -> [AnyStateChange] -- Accumulated changes.
+       -> (G.Graph -> G.Graph) -- Accumulated graph updates.
+       -> (G.Graph -> G.Graph, [AnyStateChange])
+    go = fix $ \f new_cgs acc old_f ->
+           if null new_cgs
+           then (old_f, acc)
+           else let (updates, bs) = unzip $ liftA2 unwrap new_cgs stateCascadeRules
                     new_f = foldl (>>>) old_f (catMaybes updates)
-                    b = join bs
-                in f (filter (flip all c . notMatch) b) (b ++ c) (new_f)
+                    b = filter (flip all acc . notMatch) $ join bs
+                in f b (b ++ acc) (new_f)
     notMatch (AnyStateChange (a :: a) _ _ _) (AnyStateChange (b::b) _ _ _) =
        case eqT :: Maybe (a :~: b) of
-         Just Refl -> a /= b
+         Just Refl -> M0.fid a /= M0.fid b
          Nothing -> True
     unwrap (AnyStateChange a a_old a_new _) r = tryApplyCascadeRule (a, a_old, a_new) r
     -- XXX: keep states in map a -> AnyStateChange, so eqT will always be Refl
@@ -375,12 +378,15 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
+  -- When the state of an object changes, update the state of other
+  -- connected objects accordingly.
   StateCascadeRule :: (M0.HasConfObjectState a, M0.HasConfObjectState b)
                     => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
                     -> (M0.StateCarrier a -> Bool)  --  New state(s)
                     -> (a -> G.Graph -> [b]) --  Function to find new objects
                     -> (M0.StateCarrier a -> M0.StateCarrier b -> M0.StateCarrier b)
                     -> StateCascadeRule a b
+  -- Trigger an arbitrary graph update as a result of a state change.
   StateCascadeTrigger :: (M0.HasConfObjectState a, b ~ a)
                     => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
                     -> (M0.StateCarrier a -> Bool) --  New state(s)
@@ -400,33 +406,41 @@ data AnyCascadeRule = forall a b.
 -- | List all possible cascading rules
 stateCascadeRules :: [AnyCascadeRule]
 stateCascadeRules =
-  [ AnyCascadeRule rackCascadeRule
-  , AnyCascadeRule enclosureCascadeRule
-  , AnyCascadeRule sdevCascadeRule
+  [ AnyCascadeRule rackCascadeEnclosureRule
+  , AnyCascadeRule sdevCascadeDisk
+  , AnyCascadeRule diskCascadeSdev
+  , AnyCascadeRule nodeCascadeController
   , AnyCascadeRule diskFailsPVer
   , AnyCascadeRule diskFixesPVer
   , AnyCascadeRule diskAddToFailureVector
   , AnyCascadeRule diskRemoveFromFailureVector
-  , AnyCascadeRule processCascadeRule
-  , AnyCascadeRule nodeTransient
-  ]
+  , AnyCascadeRule processCascadeServiceRule
+  , AnyCascadeRule nodeFailsProcessRule
+  ] ++ (AnyCascadeRule <$> enclosureCascadeControllerRules)
 
-rackCascadeRule :: StateCascadeRule M0.Rack M0.Enclosure
-rackCascadeRule = StateCascadeRule
+rackCascadeEnclosureRule :: StateCascadeRule M0.Rack M0.Enclosure
+rackCascadeEnclosureRule = StateCascadeRule
   (M0.M0_NC_ONLINE==)
   (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (const $ const M0.M0_NC_TRANSIENT)  -- XXX: what if enclosure if failed (?)
 
-enclosureCascadeRule :: StateCascadeRule M0.Enclosure M0.Controller
-enclosureCascadeRule = StateCascadeRule
-  (M0.M0_NC_ONLINE ==)
-  (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
-  (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (const $ const M0.M0_NC_TRANSIENT)
+enclosureCascadeControllerRules :: [StateCascadeRule M0.Enclosure M0.Controller]
+enclosureCascadeControllerRules =
+  [ StateCascadeRule
+      (M0.M0_NC_ONLINE ==)
+      (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
+      (\x rg -> G.connectedTo x M0.IsParentOf rg)
+      (const $ const M0.CSTransient)
+  , StateCascadeRule
+      (M0.M0_NC_ONLINE /=)
+      (M0.M0_NC_ONLINE ==)
+      (\x rg -> G.connectedTo x M0.IsParentOf rg)
+      (const $ const M0.CSOnline)
+  ]
 
-processCascadeRule :: StateCascadeRule M0.Process M0.Service
-processCascadeRule = StateCascadeRule
+processCascadeServiceRule :: StateCascadeRule M0.Process M0.Service
+processCascadeServiceRule = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
@@ -450,16 +464,42 @@ processCascadeRule = StateCascadeRule
               | otherwise -> M0.SSInhibited o
             M0.PSUnknown -> o)
 
+-- | This is a rule which interprets state change events and is responsible for
+-- changing the state of the cluster accordingly'
+nodeFailsProcessRule :: StateCascadeRule M0.Node M0.Process
+nodeFailsProcessRule = StateCascadeRule
+  (const True)
+  (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (\_ -> M0.PSInhibited)
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
 -- notifications which get sent out.
-sdevCascadeRule :: StateCascadeRule M0.SDev M0.Disk
-sdevCascadeRule = StateCascadeRule
+sdevCascadeDisk :: StateCascadeRule M0.SDev M0.Disk
+sdevCascadeDisk = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> G.connectedTo x M0.IsOnHardware rg)
   const
+
+diskCascadeSdev :: StateCascadeRule M0.Disk M0.SDev
+diskCascadeSdev = StateCascadeRule
+  (const True)
+  (const True)
+  (\x rg -> G.connectedFrom M0.IsOnHardware x rg)
+  const
+
+nodeCascadeController :: StateCascadeRule M0.Node M0.Controller
+nodeCascadeController = StateCascadeRule
+  (const True)
+  (const True)
+  (\x rg -> G.connectedTo x M0.IsOnHardware rg)
+  (\s o -> case s of
+            M0.NSUnknown -> o
+            M0.NSOnline -> M0.CSOnline
+            _ -> M0.CSTransient
+  )
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
@@ -528,15 +568,6 @@ diskFixesPVer = StateCascadeRule
          when (broken <= limit) $ Left pver
          return next
    checkBroken _ _ = Right ()
-
--- | This is a rule which interprets state change events and is responsible for
--- changing the state of the cluster accordingly'
-nodeTransient :: StateCascadeRule M0.Node M0.Process
-nodeTransient = StateCascadeRule
-  (const True)
-  (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
-  (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\_ -> M0.PSInhibited)
 
 -- | When disk is failing we need to add that disk to the 'DiskFailureVector'.
 diskAddToFailureVector :: StateCascadeRule M0.Disk M0.Disk

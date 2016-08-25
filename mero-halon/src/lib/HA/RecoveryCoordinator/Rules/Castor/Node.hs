@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 -- |
 -- Collection of the rules for maintaining castor node.
 --
@@ -125,7 +126,7 @@ import           HA.Services.Mero
 import           HA.Services.Mero.CEP (meroChannel)
 import qualified HA.RecoveryCoordinator.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
-import           Mero.ConfC (Fid)
+import           Mero.ConfC (Fid, ServiceType(CST_HA))
 
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync)
 import           Control.Distributed.Process.Closure
@@ -136,6 +137,7 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import           Data.Foldable (for_)
 import           Data.List (nub)
@@ -164,6 +166,8 @@ rules = sequence_
   , ruleStopProcessesOnNode
   , ruleRecoverTransientNode
   , ruleFailNodeIfProcessCantRestart
+  , ruleAllProcessesFailed
+  , ruleAllProcessesOnline
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
@@ -243,12 +247,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
   applyStateChanges $ (`stateSet` M0.NSFailed) <$> nodes
   for_ nodes $ notify . KernelStartFailure
 
-{-
-eventStopHalonM0dFinished :: Definitions LoopState ()
-eventStopHalonM0dFinished = defineSimpleTask "castor::node::event::halon-m0d-stopped" $
-  \(..) -> do g <- getLocalGraph
-              undefined -- XXX: mark node as stopped
--}
+
 
 -------------------------------------------------------------------------------
 -- Requests handling
@@ -968,3 +967,48 @@ ruleFailNodeIfProcessCantRestart = defineSimpleTask "castor::node::process-resta
     let m0ns = nub [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
                        , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
     applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
+
+-- | Create a rule that transitions node if all processes on the
+-- node meet the given predicates.
+ruleAllProcessChangesNode :: String -- ^ Rule name
+                          -> (M0.ProcessState -> Bool)
+                          -- ^ Process predicate
+                          -> M0.NodeState
+                          -- ^ New state of node if all
+                          -- the processes meet the predicate
+                          -> Definitions LoopState ()
+ruleAllProcessChangesNode rName pGuard nodeNewState = define rName $ do
+  rule_init <- phaseHandle "rule_init"
+  setPhaseInternalNotificationWithState rule_init pGuard $ \(eid, map fst -> (procs :: [M0.Process])) -> do
+    todo eid
+    rg <- getLocalGraph
+    for_ (nub $ concatMap (`getNode` rg) procs) $ \(ctrl, ps) -> do
+      when (all (\p -> pGuard (M0.getState p rg) || isHalonProcess p rg) ps) $ do
+        applyStateChanges [stateSet ctrl nodeNewState]
+    done eid
+
+  startFork rule_init ()
+  where
+    isHalonProcess p rg =
+      any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
+
+    getNode p rg = [ (n, (G.connectedTo n M0.IsParentOf rg :: [M0.Process]))
+                   | (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg
+                   , M0.getState n rg /= nodeNewState
+                   ]
+
+
+-- | If every process on node fails, fail the node too
+ruleAllProcessesFailed :: Definitions LoopState ()
+ruleAllProcessesFailed =
+  ruleAllProcessChangesNode "castor::node::allProcessesFailed"
+                                  isProcFailed M0.NSFailed
+  where
+    isProcFailed (M0.PSFailed _) = True
+    isProcFailed _ = False
+
+-- | If every process on node comes online, set node online
+ruleAllProcessesOnline :: Definitions LoopState ()
+ruleAllProcessesOnline =
+  ruleAllProcessChangesNode "castor::node::allProcessesOnline"
+                                  (== M0.PSOnline) M0.NSOnline

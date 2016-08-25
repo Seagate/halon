@@ -70,13 +70,13 @@ doTest t pg rules test' = H.run t pg interceptor rules test where
 -- | Test that internal object change message is properly sent out
 -- throughout RC for a cascaded event.
 --
--- Relies on @processCascadeRule@. Set a process to Offline and make
+-- Relies on @processCascadeRule@. Set a process to Online and make
 -- sure a notification goes out for both the process and services
 -- belonging to that process.
 --
 -- * Load initial data
 --
--- * Mark process as offline
+-- * Mark process as online
 --
 -- * Wait until internal notification for process and services
 -- happens: this tests HALON-269 fix and without it times out
@@ -94,8 +94,8 @@ stateCascade t pg = doTest t pg [rule] test'
       nid <- getSelfNode
       self <- getSelfPid
       _ <- promulgateEQ [nid] $ RuleHook self
-      rack <- expect :: Process M0.Rack
-      Set ns' <- H.nextNotificationFor (M0.fid rack) recv
+      ps <- expect :: Process M0.Process
+      Set ns' <- H.nextNotificationFor (M0.fid ps) recv
       H.debug $ "Received: " ++ show ns'
       Set ns <- expect
       H.debug $ "Expected: " ++ show ns
@@ -114,29 +114,31 @@ stateCascade t pg = doTest t pg [rule] test'
             lget = fmap (\(_,_,x,_) -> x)
           viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
 
-
-
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         rg <- getLocalGraph
         let Just p = listToMaybe $
-                [ rack | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                [ proc | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
+                , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
+                , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
+                , (node :: M0.Node) <- G.connectedFrom M0.IsOnHardware ctrl rg
+                , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
                 ]
-            Just encl = listToMaybe
-                      $ (G.connectedTo p M0.IsParentOf rg :: [M0.Enclosure])
-            Just ctrl = listToMaybe
-                      $ (G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+            -- Just encl = listToMaybe
+            --           $ (G.connectedTo p M0.IsParentOf rg :: [M0.Enclosure])
+            -- Just ctrl = listToMaybe
+            --           $ (G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+            -- Just node = listToMaybe
+            --           $ (G.connectedFrom M0.IsOnHardware ctrl rg :: [M0.Node])
+            -- procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
+            srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
         liftProcess . usend pid $ p
-        applyStateChanges [stateSet p M0_NC_FAILED]
-        let notifySet = stateSet p M0_NC_FAILED
-                      : stateSet encl M0_NC_TRANSIENT
-                      : stateSet ctrl M0_NC_TRANSIENT
-                      : []
-            meroSet = Note (M0.fid p) M0_NC_FAILED
-                    : (Note (M0.fid encl) M0_NC_TRANSIENT)
-                    : (Note (M0.fid ctrl) M0_NC_TRANSIENT)
-                    : []
+        applyStateChanges [stateSet p M0.PSOnline]
+        let notifySet = stateSet p M0.PSOnline
+                      : (flip stateSet M0.SSOnline <$> srvs)
+            meroSet = Note (M0.fid p) M0_NC_ONLINE
+                    : (flip Note M0_NC_ONLINE . M0.fid <$> srvs)
         put Local $ Just (eid, pid, notifySet, meroSet)
         switch [notified, timeout 15 timed_out]
 
@@ -147,8 +149,9 @@ stateCascade t pg = doTest t pg [rule] test'
         messageProcessed eid
 
       directly timed_out $ do
-        Just (eid, _, _, _) <- get Local
+        Just (eid, _, notifySet, _) <- get Local
         phaseLog "warn" $ "Notify timed out"
+        phaseLog "info" $ "Expecting " ++ (show $ length notifySet) ++ " notes."
         messageProcessed eid
 
       start init_rule Nothing

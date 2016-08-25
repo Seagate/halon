@@ -194,7 +194,12 @@ calculateRunLevel = do
           )
       onlineProcs <- getLocalGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) confdprocs
-      return $ isJust prm && length onlineProcs > (length confdprocs `div` 2)
+      -- The 'null confdprocs' here deserves explanation, because it
+      -- shouldn't happen in a normal cluster. It just serves for test cases
+      -- where there are no confd processes running. Meanwhile, it shouldn't
+      -- cause any harm in real scenarios.
+      return $ null confdprocs
+            || (isJust prm && length onlineProcs > (length confdprocs `div` 2))
     guard (M0.BootLevel 2) = do
       -- TODO Allow boot level 2 to start up earlier
       -- We allow boot level 2 processes to start when all processes
