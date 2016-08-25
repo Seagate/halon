@@ -14,7 +14,6 @@ module Mero.M0Worker
     , sendM0Task
     ) where
 
-import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception (AsyncException(ThreadKilled))
