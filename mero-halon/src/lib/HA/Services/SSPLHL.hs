@@ -229,23 +229,6 @@ remotableDecl [ [d|
 
     in do
       say $ "[sspl-hl] Starting service"
-
-      liftIO $ Rabbit.ignoreException $ do
-        bracket (Rabbit.openConnection scConnectionConf)
-                (closeConnection)
-          $ \conn ->
-            bracket (openChannel conn)
-                    (closeChannel)
-              $ \chan ->
-                Rabbit.ignoreException $
-                  declareExchange chan newExchange
-                    { exchangeName = T.pack $ fromDefault $ Rabbit.bcExchangeName
-                                                          $ scResponseConf
-                    , exchangeType = "topic"
-                    , exchangeDurable = True
-                    }
-
-
       lock <- liftIO newEmptyMVar
       connectRetry lock
 
