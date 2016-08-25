@@ -70,7 +70,7 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      )
 import           HA.RecoveryCoordinator.Actions.Job
 import           HA.Services.Mero
-import           HA.Services.Mero.CEP (meroChannel)
+import           HA.Services.Mero.RC.Actions (meroChannel)
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
@@ -473,6 +473,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
            appendServerFailure s
            return (node, "timeout")
          s@(NodeProcessesStartFailure node) -> do
+           modify Local $ rlens fldNext . rfield .~ Just finalize
            appendServerFailure s
            return (node, "failure")
        phaseLog "job finished" $ "node=" ++ M0.showFid node
