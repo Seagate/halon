@@ -255,6 +255,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                           $ srdm
          diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
+         diidx = DIIndexInEnclosure diskNum
          sn = DISerialNumber . T.unpack
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
                 $ srdm
@@ -263,7 +264,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
                 $ srdm
 
      phaseLog "sspl-service" $ "monitor-drivemanager request received for drive: "
-                            ++ (show [sn, path])
+                            ++ (show [sn, path, diidx])
                             ++ " in enclosure "
                             ++ (show enc')
 
@@ -284,13 +285,15 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
        _ -> return enc'
 
      put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path)
-     lookupStorageDeviceInEnclosure enc (DIIndexInEnclosure diskNum) >>= \case
+     lookupStorageDeviceInEnclosure enc diidx >>= \case
        Nothing ->
          -- Try to check if we have device with known serial number, just without location.
          lookupStorageDeviceInEnclosure enc sn >>= \case
            Just disk -> do
+             phaseLog "sspl-service" $ "Drive not found by index. Found device "
+                                    ++ show disk ++ " by serial number."
              -- TODO: we don't want to blindly set path, should verify if it matches and panic if not
-             identifyStorageDevice disk [DIIndexInEnclosure diskNum, path]
+             identifyStorageDevice disk [diidx, path]
              selfMessage (RuleDriveManagerDisk disk)
            Nothing -> do
              phaseLog "sspl-service"
@@ -300,7 +303,7 @@ ruleMonitorDriveManager = define "monitor-drivemanager" $ do
              locateStorageDeviceInEnclosure enc disk
              mhost <- findNodeHost (Node nid)
              forM_ mhost $ \host -> locateHostInEnclosure host enc
-             identifyStorageDevice disk [DIIndexInEnclosure diskNum, sn, path]
+             identifyStorageDevice disk [diidx, sn, path]
              registerSyncGraphProcess $ \self -> usend self (RuleDriveManagerDisk disk)
        Just st -> selfMessage (RuleDriveManagerDisk st)
      continue pcommit
