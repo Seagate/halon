@@ -414,6 +414,7 @@ stateCascadeRules =
   , AnyCascadeRule diskRemoveFromFailureVector
   , AnyCascadeRule processCascadeServiceRule
   , AnyCascadeRule nodeFailsProcessRule
+  , AnyCascadeRule serviceCascadeDiskRule
   ] ++ (AnyCascadeRule <$> enclosureCascadeControllerRules)
 
 rackCascadeEnclosureRule :: StateCascadeRule M0.Rack M0.Enclosure
@@ -461,6 +462,26 @@ processCascadeServiceRule = StateCascadeRule
               | o == M0.SSFailed -> o
               | otherwise -> M0.SSInhibited o
             M0.PSUnknown -> o)
+
+serviceCascadeDiskRule :: StateCascadeRule M0.Service M0.SDev
+serviceCascadeDiskRule = StateCascadeRule
+  (const True)
+  (const True)
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (\s o  ->
+     let break M0.SDSFailed  = M0.SDSFailed
+         break (M0.SDSTransient x) = M0.SDSTransient x
+         break x = M0.SDSTransient x
+         unbreak (M0.SDSTransient x) = x
+         unbreak x = x
+     in case s of
+          M0.SSUnknown  -> o
+          M0.SSOffline  -> break o
+          M0.SSFailed   -> break o
+          M0.SSStarting -> unbreak o
+          M0.SSOnline   -> unbreak o
+          M0.SSStopping -> break o
+          M0.SSInhibited _ -> break o)
 
 -- | This is a rule which interprets state change events and is responsible for
 -- changing the state of the cluster accordingly'
