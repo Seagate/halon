@@ -47,6 +47,7 @@ import System.FilePath ((</>))
 import System.IO
 import System.Timeout
 
+import HA.Test.Distributed.Helpers
 
 testTrace :: String -> Process ()
 testTrace m = do
@@ -92,6 +93,7 @@ test = testCase "StressRC" $
                      )
 
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
+      waitForRCAndSubscribe [nid0]
 
       say "Starting satellite nodes ..."
       -- this runs on one node but it should control both nodes (?)
@@ -100,8 +102,7 @@ test = testCase "StressRC" $
                      ++ " -a " ++ m1loc
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc ++ " 2>&1")
-      expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
-      expectLog [nid0, nid1] (isInfixOf "Node succesfully joined the cluster.")
+      Just _ <- waitForNewNode nid1 20000000
 
       say "Starting ping service ..."
       systemThere [m0] $ "./halonctl"

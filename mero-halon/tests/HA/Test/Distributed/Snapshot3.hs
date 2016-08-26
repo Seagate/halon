@@ -41,6 +41,7 @@ import System.FilePath ((</>))
 import System.Timeout (timeout)
 import Test.Framework (assert)
 
+import HA.Test.Distributed.Helpers
 
 test :: TestTree
 test = testCase "Snapshot3" $
@@ -63,7 +64,6 @@ test = testCase "Snapshot3" $
 
       getSelfPid >>= copyLog (\(SayMessage _ _ msg) -> any (`isInfixOf` msg)
                                   [ "New replica started in"
-                                  , "New node contacted"
                                   , "Starting service"
                                   , "Log size of replica"
                                   , "Log size when trimming"
@@ -85,6 +85,8 @@ test = testCase "Snapshot3" $
                      ++ " -a " ++ m1 ++ ":9000 bootstrap"
                      ++ " station -n " ++ show snapshotThreshold ++ " 2>&1"
                        )
+      say "Waiting for RC to start ..."
+      waitForRCAndSubscribe [nid1]
 
       say "Spawning satellites ..."
       systemThere [m0] ("./halonctl"
@@ -93,9 +95,8 @@ test = testCase "Snapshot3" $
                      ++ "-t " ++ m1 ++ ":9000 2>&1"
                        )
 
-      say "Waiting for RC to start ..."
       say $ "nid0 -> " ++ show nid0 ++ " nid1 -> " ++ show nid1
-      expectLog [nid1] (isInfixOf $ "New node contacted: " ++ show nid0)
+      Just _ <- waitForNewNode nid0 20000000
 
       say "Starting noisy service ..."
       let noisy_messages = snapshotThreshold * 3 :: Int

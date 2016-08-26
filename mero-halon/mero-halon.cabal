@@ -400,6 +400,7 @@ Test-Suite distributed-tests
       HA.Test.Distributed.Autoboot
       HA.Test.Distributed.ClusterDeath
       HA.Test.Distributed.ConfigureServices
+      HA.Test.Distributed.Helpers
       HA.Test.Distributed.MoveState
       HA.Test.Distributed.NodeDeath
       HA.Test.Distributed.RCInsists
@@ -419,9 +420,11 @@ Test-Suite distributed-tests
 
   Build-Depends:   distributed-process,
                    base,
+                   cep,
                    distributed-process-test,
                    filepath,
                    halon,
+                   mero-halon,
                    network-transport,
                    network-transport-tcp,
                    distributed-commands,
@@ -667,33 +670,6 @@ Test-Suite scheduler-tests
     Build-Depends:  confc,
                     rpclite
     Other-modules:  Mero.Notification.Tests
-
-Test-Suite test-start-service-local
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Distributed
-  Main-Is:         startService-local.hs
-
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   directory,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   distributed-process-test,
-                   process,
-                   unix,
-                   halon,
-                   mero-halon
-  if flag(rpc)
-      Build-Depends: network-transport-rpc
-      CPP-Options:    -DUSE_RPC
 
 benchmark halonpings
   Type:             exitcode-stdio-1.0

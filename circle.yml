@@ -62,7 +62,7 @@ test:
     # Only test mero-halon and deps, without USE_MERO.
     # Testing with USE_MERO is not possible since m0_init fails when some cpus
     # on the host are forbidden via cpusets as circleci does.
-    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:tests halon:tests mero-halon:tests mero-halon:test-start-service-local:
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:tests halon:tests mero-halon:tests:
         timeout: 3600
     - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:random replicated-log:scheduler-tests halon:scheduler-tests mero-halon:scheduler-tests:
         timeout: 3600

@@ -22,8 +22,6 @@ import Control.Monad (void)
 import Data.Binary (Binary, encode)
 import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe)
-import Data.Monoid
-import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl
@@ -56,18 +54,20 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
+import           Data.Monoid
+import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
 import           HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
-import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero (meroRules, m0d)
 import           HA.Services.SSPL.CEP
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
 import           HA.Services.SSPL.LL.Resources
 #endif
+import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.Services.SSPL (ssplRules)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.Frontier.CEP (frontierRules)
@@ -92,9 +92,7 @@ rcInitRule argv = do
       liftProcess $ do
          sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
          sayRC $ "Executing on node: " ++ show nid
-#ifdef USE_MERO
       HA.RecoveryCoordinator.RC.Rules.initialRule
-#endif
       ms   <- getNodeRegularMonitors (const True)
       liftProcess $ do
         self <- getSelfPid
@@ -149,46 +147,75 @@ rcRules argv additionalRules = do
     castorRules
     frontierRules
     ssplHLRules
+    HA.RecoveryCoordinator.RC.Rules.rules
 #ifdef USE_MERO
     HA.Services.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
-    HA.RecoveryCoordinator.RC.Rules.rules
 #endif
     sequence_ additionalRules
+
+-- | Job marker used by 'ruleNodeUp'
+nodeUpJob :: Job NodeUp NewNodeConnected
+nodeUpJob = Job "node-up"
 
 -- | Listen for 'NodeUp' from connecting satellites. This rule starts
 -- the monitor on the node and also decides what to do when the
 -- known has already been in the cluster previously.
 --
--- TODO: Expand with brief description of the logic decisions it
--- takes.
+-- This rule fires through 'nodeUpJob' and deals with adding the
+-- requesting 'Node' to the cluster. Brief description of each rule
+-- phase below.
 --
--- TODO: consider porting to jobs: 'isNotHandled' is fragile as it
--- uses ref count for the message which will break when any new rule
--- 'todo's the 'NodeUp' event.
+-- [nodeup] Decide whether this is a node we already know about by
+-- checking in RG for attributes on its 'Host' and its presence in RG
+-- in general. If we know about the node, go either to @nm_start@ or
+-- @mm_reply@ depending on whether regular monitor is known to have
+-- been present on the node. In case the node has failed and had a
+-- monitor in the past, we take care to unregister @halon:m0d@ service
+-- before doing anything else: we don't want regular monitor to
+-- restart this service in @mm_reply@. Lastly, still in the known node
+-- case, we ask master monitor to monitor our (now dead) regular
+-- monitor. This will restart it.
 --
--- TODO: replace uses of sayRC (remember to update tests using
--- interceptors)
+-- [nm_start] Tell the node about what the EQ nodes and ask it to
+-- start regular monitor. Go to @nm_started@ or @nm_failed@.
+--
+-- [nm_started] A message has come saying the monitor has started. Ask
+-- master monitor to monitor our freshly started regular monitor and
+-- go to @mm_reply@.
+--
+-- [mm_reply] Master monitor acknowledges that it started monitor the
+-- regular monitor. Ask regular monitor to monitor services on this
+-- node. This might seem pointless because we only started regular
+-- monitor on this node. Consider a node we have already seen before
+-- that had some services running. We ask the regular monitor to
+-- monitor those (now dead) services and it will take care of
+-- restarting them for us.
+--
+-- [nm_reply] Regular monitor replies saying it's going to monitor the
+-- services we asked it to on the node. We're node with the regular
+-- run of the rule. Job emits 'NewNodeConnected' through @finish@
+-- phase as part of the job mechanism.
+--
+-- [nm_failed] If regular monitor fails to start, we log the issue and
+-- finish. We don't emit a message. Perhaps we should retry starting
+-- the regular monitor a few times.
 ruleNodeUp :: IgnitionArguments -> Definitions LoopState ()
-ruleNodeUp argv = define "node-up" $ do
-      nodeup      <- phaseHandle "nodeup"
-      nm_started  <- phaseHandle "node_monitor_started"
-      nm_start    <- phaseHandle "node_monitor_start"
-      nm_failed   <- phaseHandle "node_monitor_could_not_start"
-      mm_reply    <- phaseHandle "master_monitor_reply"
-      nm_reply    <- phaseHandle "regular_monitor_reply"
-      end         <- phaseHandle "end"
+ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
+  nm_started  <- phaseHandle "node_monitor_started"
+  nm_start    <- phaseHandle "node_monitor_start"
+  nm_failed   <- phaseHandle "node_monitor_could_not_start"
+  mm_reply    <- phaseHandle "master_monitor_reply"
+  nm_reply    <- phaseHandle "regular_monitor_reply"
 
-      setPhaseIf nodeup isNotHandled $ \(HAEvent uuid (NodeUp h pid) _) -> do
-        todo uuid
+  let nodeup (NodeUp h pid) = do
         let nid  = processNodeId pid
             node = Node nid
-        liftProcess . sayRC $ "New node contacted: " ++ show nid
         publish $ NewNodeMsg node
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
         isDown <- hasHostAttr HA_DOWN (Host h)
-        known <- case hasFailed of
+        known <- case hasFailed || isDown of
           False -> do
             phaseLog "info" $ "Potentially new node, no revival: " ++ show node
             knownResource node
@@ -199,95 +226,125 @@ ruleNodeUp argv = define "node-up" $ do
             unsetHostAttr (Host h) HA_DOWN
             return True
         conf <- loadNodeMonitorConf node
+        let putLocalState = do
+              putLocal fldNodeId nid
+              putLocal fldMonitorConf conf
+              putLocal fldMonitor regularMonitor
+              putLocal fldNodePid pid
         if not known
           then do
             let host = Host h
             registerNode node
             registerHost host
             locateNodeOnHost node host
-            fork NoBuffer $ do
-              put Local (Starting uuid nid conf regularMonitor pid)
-              continue nm_start
+            putLocalState >> return (Just [nm_start])
           else do
             -- Check if we already provision node with a monitor or not.
             msp  <- lookupRunningService (Node nid) regularMonitor
             case msp of
               Nothing -> do
-                fork NoBuffer $ do
-                  put Local (Starting uuid nid conf regularMonitor pid)
-                  continue nm_start
+                putLocalState
+                return $ Just [nm_start]
               Just _ | hasFailed || isDown -> do
                 phaseLog "info" $
                   "Node has failed but has monitor, removing halon services"
                 ack pid
-                fork NoBuffer $ do
-                  put Local (Starting uuid nid conf regularMonitor pid)
+                putLocalState
 #ifdef USE_MERO
-                  findRunningServiceProcesses m0d >>= mapM_ (unregisterServiceProcess (Node nid) m0d)
+                findRunningServiceProcesses m0d >>= mapM_ (unregisterServiceProcess (Node nid) m0d)
 #endif
-                  getNodeRegularMonitors (== Node nid) >>= startNodesMonitoring
-                  -- We told MM to watch the old regular monitor, it
-                  -- should notice it's dead and restart it, message
-                  -- about start should come and node bootstrap should
-                  -- proceed and inturn old services should get
-                  -- restarted after the newly restarted monitor
-                  -- notices those are dead.
-                  continue mm_reply
+                getNodeRegularMonitors (== Node nid) >>= startNodesMonitoring
+                -- We told MM to watch the old regular monitor, it
+                -- should notice it's dead and restart it, message
+                -- about start should come and node bootstrap should
+                -- proceed and inturn old services should get
+                -- restarted after the newly restarted monitor notices
+                -- those are dead.
+                return $ Just [mm_reply]
               Just _ | otherwise -> do
                 phaseLog "info" $
                   "Node that hasn't failed with monitor, probably bringing up already."
                 ack pid
-                done uuid
+                return $ Just [finish]
 
-      directly nm_start $ do
-        Starting _ nid conf svc _ <- get Local
-        _ <- liftProcess $ spawnAsync nid $
-          $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
-        registerService svc
-        startService nid svc conf
-        switch [nm_started, nm_failed]
+  directly nm_start $ do
+    Just nid <- fromLocal fldNodeId
+    Just conf <- fromLocal fldMonitorConf
+    Just svc <- fromLocal fldMonitor
+    _ <- liftProcess $ spawnAsync nid $
+      $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
+    registerService svc
+    startService nid svc conf
+    switch [nm_started, nm_failed]
 
-      setPhaseIf nm_started serviceBootStarted $
-          \(HAEvent msgid msg _) -> do
-        ServiceStarted n svc cfg sp <- decodeMsg msg
-        liftProcess $ sayRC $
-          "started " ++ snString (serviceName svc) ++ " service on " ++ show sp
-        registerServiceName svc
-        registerServiceProcess n svc cfg sp
-        startNodesMonitoring [msg]
-        messageProcessed msgid
-        continue mm_reply  -- XXX: retry on timeout from nm start
+  setPhaseIf nm_started (serviceBootStarted (takeField fldMonitor) (takeField fldNodePid)) $
+      \(HAEvent msgid msg _) -> do
+    ServiceStarted n svc cfg sp <- decodeMsg msg
+    phaseLog "info" $
+      "started " ++ snString (serviceName svc) ++ " service on " ++ show sp
+    registerServiceName svc
+    registerServiceProcess n svc cfg sp
+    startNodesMonitoring [msg]
+    messageProcessed msgid
+    continue mm_reply  -- XXX: retry on timeout from nm start
 
-      setPhase mm_reply $ \StartMonitoringReply -> do
-        Starting _ n _ _ _ <- get Local
-        startProcessMonitoring (Node n) =<< getRunningServices (Node n)
-        continue nm_reply -- XXX: retry on timeout from nm start
+  setPhase mm_reply $ \StartMonitoringReply -> do
+    Just node <- fmap Node <$> fromLocal fldNodeId
+    startProcessMonitoring node =<< getRunningServices node
+    continue nm_reply -- XXX: retry on timeout from nm start
 
-      setPhase nm_reply $ \StartMonitoringReply -> do
-        Starting uuid nid _ _ npid <- get Local
-        phaseLog "info" $ printf "started monitor service on %s with pid %s"
-                                 (show (Node nid)) (show npid)
-        ack npid
+  setPhase nm_reply $ \StartMonitoringReply -> do
+    Just node <- fmap Node <$> fromLocal fldNodeId
+    Just npid <- fromLocal fldNodePid
+    phaseLog "info" $ printf "started monitor service on %s with pid %s"
+                             (show node) (show npid)
+    ack npid
+    putLocal fldRep $ NewNodeConnected node
+    continue finish
 
-        phaseLog "debug " $ "Sending NewNodeConnected for " ++ show (Node nid)
-        promulgateRC $ NewNodeConnected (Node nid)
-        publish $ NewNodeConnected (Node nid)
-        done uuid
-        continue end
+  setPhaseIf nm_failed (serviceBootCouldNotStart (takeField fldNodeId) (takeField fldMonitor)) $
+      \(HAEvent msgid msg _) -> do
+    ServiceCouldNotStart n svc _ <- decodeMsg msg
+    phaseLog "info" $
+      "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
+    messageProcessed msgid
+    -- XXX: retry on timeout from nm start
+    continue finish
 
-      setPhaseIf nm_failed serviceBootCouldNotStart $
-          \(HAEvent msgid msg _) -> do
-        ServiceCouldNotStart n svc _ <- decodeMsg msg
-        liftProcess $ sayRC $
-          "failed " ++ snString (serviceName svc) ++ " service on the node " ++ show n
-        messageProcessed msgid
-        Starting uuid _ _ _ _ <- get Local
-        done uuid
-        continue end  -- XXX: retry on timeout from nm start
+  return nodeup
+  where
+    takeField l = getField . rget l
+    fromLocal l = takeField l <$> get Local
+    putLocal l x = modify Local $ rlens l .~ Field (Just x)
 
-      directly end stop
+    fldReq :: Proxy '("request", Maybe NodeUp)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe NewNodeConnected)
+    fldRep = Proxy
+    fldNode :: Proxy '("node", Maybe Node)
+    fldNode = Proxy
+    fldHost :: Proxy '("host", Maybe M0.Host)
+    fldHost = Proxy
+    fldNodeId :: Proxy '("node-id", Maybe NodeId)
+    fldNodeId = Proxy
+    fldNodePid :: Proxy '("node-pid", Maybe ProcessId)
+    fldNodePid = Proxy
+    fldMonitorConf :: Proxy '("monitor-conf", Maybe MonitorConf)
+    fldMonitorConf = Proxy
+    fldMonitor :: Proxy '("monitor", Maybe (Service MonitorConf))
+    fldMonitor = Proxy
 
-      startFork nodeup None
+    args = fldUUID =: Nothing
+       <+> fldReq     =: Nothing
+       <+> fldRep     =: Nothing
+       <+> fldNode    =: Nothing
+       <+> fldHost    =: Nothing
+       <+> fldNodeId  =: Nothing
+       <+> fldNodePid =: Nothing
+       <+> fldMonitorConf =: Nothing
+       <+> fldMonitor =: Nothing
+       <+> RNil
+
 
 ruleDummyEvent :: Definitions LoopState ()
 ruleDummyEvent = defineSimple "dummy-event" $

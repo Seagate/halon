@@ -401,8 +401,6 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
         let t = "Recovery Coordinator: received DummyEvent "
         case string of
           str' | t `isInfixOf` str' -> usend self $ Dummy (drop (length t) str')
-          str' | "New node contacted" `isInfixOf` str' -> usend self "NewNode"
-
           _ -> return ()
       usend self ((), ())
     ((), ()) <- expect
