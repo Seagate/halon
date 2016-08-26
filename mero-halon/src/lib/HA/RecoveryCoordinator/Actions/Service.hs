@@ -36,9 +36,6 @@ import HA.RecoveryCoordinator.Actions.Hardware (nodesOnHost)
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Service
-#ifdef USE_MERO
-import HA.Services.Mero.Types (meroServiceName)
-#endif
 import HA.Services.Monitor (MonitorConf)
 
 import Control.Category ((>>>))

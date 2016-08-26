@@ -4,8 +4,12 @@
 -- License   : All rights reserved.
 --
 module HA.RecoveryCoordinator.RC.Actions
-  ( getCurrentRC
+  ( -- * RC
+    getCurrentRC
   , makeCurrentRC
+  -- * Epoch
+  , updateEpoch
+  , getCurrentEpoch
   ) where
 
 import           HA.RecoveryCoordinator.Actions.Core
@@ -18,6 +22,7 @@ import           Network.CEP
 
 import Control.Category
 import Data.Maybe (listToMaybe)
+import Data.Word (Word64)
 import Prelude hiding (id, (.))
 
 -- | Current RC.
@@ -56,6 +61,7 @@ makeCurrentRC update = do
       in g'
 
 
+-- | Find currenlty running RC in resource graph.
 tryGetCurrentRC :: PhaseM LoopState l (Maybe RC)
 tryGetCurrentRC = do
   rg <- getLocalGraph
@@ -64,4 +70,18 @@ tryGetCurrentRC = do
                        , G.isConnected rc R.Is Active rg
                        ]
 
+-- | Increment epoch
+incrementEpoch :: Word64 -> R.EpochId
+incrementEpoch = R.EpochId . succ
 
+-- | Get current epoch
+getCurrentEpoch :: PhaseM LoopState l Word64
+getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i). listToMaybe
+                . G.connectedTo R.Cluster R.Has <$> getLocalGraph
+
+-- | Read old epoch value and update it to the next one.
+updateEpoch :: PhaseM LoopState l Word64
+updateEpoch = do
+  old <- getCurrentEpoch
+  modifyGraph $ G.connectUnique R.Cluster R.Has (incrementEpoch old)
+  return old

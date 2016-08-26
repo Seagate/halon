@@ -33,36 +33,22 @@ module HA.Services.Mero
     , m0dProcess__sdict
     , m0dProcess__tdict
     , m0d__static
-    , meroRules
-    , createSet
-    , notifyMero
-    , notifyMeroAndThen
-    , lookupMeroChannelByNode
     ) where
 
 import HA.Logger
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
-import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
-import HA.Resources.Castor
-import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState(..), NotifyFailureEndpoints(..))
 import HA.Service
-import HA.Services.Mero.CEP (meroRulesF)
 import HA.Services.Mero.Types
-import qualified HA.ResourceGraph as G
 
 import qualified Mero.Notification
-import Mero.Notification (Set(..), NIRef)
-import Mero.Notification.HAState (Note(..))
-import Mero.ConfC (Fid, ServiceType(..), fidToStr)
+import Mero.Notification (NIRef)
+import Mero.ConfC (Fid, fidToStr)
 
-import Network.CEP
 import qualified Network.RPC.RPCLite as RPC
 
 import Control.Monad (unless)
-import Control.Monad.Fix (fix)
 import Control.Monad.Trans.Reader
 import Control.Exception (SomeException)
 import qualified Control.Distributed.Process.Internal.Types as DI
@@ -80,11 +66,7 @@ import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
-import Data.Foldable (for_)
-import Data.Traversable (forM)
-import Data.List (partition)
-import Data.Maybe (catMaybes, listToMaybe, maybeToList)
-import qualified Data.Set as Set
+import Data.Maybe (maybeToList)
 import qualified Data.UUID as UUID
 
 import System.Exit
@@ -114,15 +96,15 @@ statusProcess niRef pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      msg@(NotificationMessage set _ subs) <- receiveChan rp
+      msg@(NotificationMessage epoch set ps) <- receiveChan rp
       traceM0d $ "statusProcess: notification msg received: " ++ show msg
       -- We crecreate process, this is highly unsafe and it's not allowed
       -- to do receive read calls. also this thread will not be killed when
       -- status process is killed.
       lproc <- DI.Process ask
-      Mero.Notification.notifyMero niRef set
-            (DI.runLocalProcess lproc $ for_ subs $ flip usend $ NotificationAck ())
-            (DI.runLocalProcess lproc $ for_ subs $ flip usend $ NotifyFailureEndpoints [])
+      Mero.Notification.notifyMero niRef ps set
+            (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
+            (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
    `catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
@@ -327,6 +309,7 @@ remotableDecl [ [d|
           traceM0d $ "Kernel module did not load correctly: " ++ show i
           void . promulgate . M0.MeroKernelFailed self $
             "mero-kernel service failed to start: " ++ show i
+          Control.Distributed.Process.die Shutdown
     where
       profileFid = mcProfile conf
       processFid = mcProcess conf
@@ -381,106 +364,3 @@ remotableDecl [ [d|
                      else False
 
     |] ]
-
-meroRules :: Definitions LoopState ()
-meroRules = meroRulesF m0d
-
--- | Return the set of notification channels available in the cluster.
---   This function logs, but does not error, if it cannot find channels
---   for every host in the cluster.
-getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [String])]
-getNotificationChannels = do
-  rg <- getLocalGraph
-  let nodes = [ (node, m0node)
-              | host <- G.connectedTo Cluster Has rg :: [Host]
-              , node <- G.connectedTo host Runs rg :: [Node]
-              , m0node <- G.connectedTo host Runs rg :: [M0.Node]
-              ]
-
-  things <- forM nodes $ \(node, m0node) -> do
-     mchan <- lookupMeroChannelByNode node
-     let recipients = Set.fromList (fst <$> nha) Set.\\ Set.fromList (fst <$> ha)
-         (nha, ha) = partition ((/=) CST_HA . snd)
-                   [ (endpoint, stype)
-                   | m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-                   , G.isConnected m0proc Is M0.PSOnline rg
-                   , service <- G.connectedTo m0proc M0.IsParentOf rg :: [M0.Service]
-                   , let stype = M0.s_type service
-                   , endpoint <- M0.s_endpoints service
-                   ]
-
-     case (mchan, recipients) of
-       (_, x) | Set.null x -> return Nothing
-       (Nothing, Set.toList -> r) -> do
-         localNode <- liftProcess getSelfNode
-         lookupMeroChannelByNode (Node localNode) >>= \case
-            Just (TypedChannel chan) -> do
-               phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
-                                  ++ show node
-                                  ++ ", sending from local. "
-                                  ++ "Recipients: "
-                                  ++ show r
-               return $ Just (chan, r)
-            Nothing -> do
-              phaseLog "error" $ "HA.Service.Mero.notifyMero: cannot notify MeroChannel on "
-                              ++ show (node, localNode)
-                              ++ " nor local channel. "
-                              ++ "Recipients: "
-                              ++ show r
-              return Nothing
-       (Just (TypedChannel chan), Set.toList -> r) -> return $ Just (chan, r)
-  return $ catMaybes things
-
--- | Create a set event from a set of conf objects and a state.
---   TODO: This is only temporary until we move to `stateSet`
-createSet :: [M0.AnyConfObj] -> ConfObjectState -> Set
-createSet cs st = setEvent
-  where
-    getFid (M0.AnyConfObj a) = M0.fid a
-    setEvent :: Mero.Notification.Set
-    setEvent = Mero.Notification.Set $ map (flip Note st . getFid) cs
-
-notifyMeroAndThen :: Set
-                  -> Process () -- ^ Action on success
-                  -> Process () -- ^ Action on failure
-                  -> PhaseM LoopState l ()
-notifyMeroAndThen setEvent fsucc ffail = do
-    phaseLog "action" $ "Sending configuration update to mero services: "
-                     ++ show setEvent
-    chans <- getNotificationChannels
-    liftProcess $ do
-      self <- getSelfPid
-      void $ spawnLocal $ do
-        link self
-        sendChansBlocking chans
-  where
-    -- Send a message to all channels and block until each has replied
-    sendChansBlocking :: [(SendPort NotificationMessage, [String])] -> Process ()
-    sendChansBlocking [] = fsucc
-    sendChansBlocking chans = do
-      selfLocal <- getSelfPid
-      for_ chans $ \(chan, recipients) ->
-        sendChan chan $ NotificationMessage setEvent recipients [selfLocal]
-      fix (\loop i -> receiveWait
-          [ match $ \NotificationAck{} -> do
-             if i <= 1
-             then fsucc
-             else loop (i-1)
-          , match $ \NotifyFailureEndpoints{} -> ffail
-          ]) (length chans)
-
-notifyMero :: Set -> PhaseM LoopState l ()
-notifyMero setEvent = do
-  phaseLog "action" $ "Sending non-blocking configuration update to mero services: "
-                   ++ show setEvent
-  chans <- getNotificationChannels
-  for_ chans $ \(sp, recipients) -> liftProcess $
-      sendChan sp $ NotificationMessage setEvent recipients []
-
-lookupMeroChannelByNode :: Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
-lookupMeroChannelByNode node = do
-   rg <- getLocalGraph
-   let mlchan = listToMaybe
-         [ chan | sp   <- G.connectedTo node Runs rg :: [ServiceProcess MeroConf]
-                , chan <- G.connectedTo sp MeroChannel rg ]
-   return mlchan

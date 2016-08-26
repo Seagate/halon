@@ -1,7 +1,8 @@
 -- |
--- Copyright : (C) 2016 Xyratex Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+-- Rules that are needed in order to support mero service on RC side.
 module HA.RecoveryCoordinator.RC.Rules
   ( rules
   , initialRule
@@ -59,7 +60,7 @@ initialRule = do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
-      monitor p
+      _ <- monitor p
       rawSubscribeThem self fp p
 
 -- | When new process is subscribed to some interesting events persistently,
@@ -72,7 +73,7 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
     phaseLog "info" $ "fingerprint=" ++ show fp
     liftProcess $ do
       self <- getSelfPid
-      monitor pid
+      _ <- monitor pid
       rawSubscribeThem self fp pid
     rc <- getCurrentRC
     modifyGraph $ \g -> do

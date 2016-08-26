@@ -76,7 +76,6 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero
   hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
-import           HA.Services.Mero
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (Note(..))
 import           Mero.ConfC (ServiceType(CST_IOS))
@@ -536,7 +535,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   directly entry $ do
     Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
     Just prt <- getField . rget fldPrt <$> get Local
-    case prt of
+    _ <- case prt of
       M0.Failure -> abortRepairOperation pool
       M0.Rebalance -> abortRebalanceOperation pool
     continue await
@@ -613,13 +612,8 @@ completeRepair pool prt muid = do
       repaired_disks <- mapMaybeM lookupSDevDisk $ Set.toList repaired_sdevs
       unless (null repaired_sdevs) $ do
 
-        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ repairedState prt)
-                  repaired_sdevs
-        traverse_ (\m0disk -> modifyGraph $ setState m0disk $ repairedState prt)
-                  repaired_disks
-        notifyMero $ createSet ((AnyConfObj <$> Set.toList repaired_sdevs)
-                    ++ (AnyConfObj <$> repaired_disks))
-                    $ R.repairedNotificationMsg prt
+        applyStateChanges $ map (\s -> stateSet s (repairedState prt)) (Set.toList repaired_sdevs)
+                         ++ map (\s -> stateSet s (repairedState prt)) repaired_disks
 
         when (prt == M0.Rebalance) $
            forM_ repaired_sdevs $ \m0sdev -> void $ runMaybeT $ do
@@ -630,7 +624,7 @@ completeRepair pool prt muid = do
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool
-                notifyMero $ createSet [AnyConfObj pool] $ R.repairedNotificationMsg prt
+                applyStateChanges [stateSet pool $ R.repairedNotificationMsg prt]
                 unsetPoolRepairStatus pool
                 when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
         else do phaseLog "info" $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
@@ -915,7 +909,7 @@ processDevices (Set ns) =
   mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
     ([] :: [M0.Pool]) -> do
       disks <- mapMaybeM noteToSDev ns
-      pdisks <- mapM (\x@(stType,sdev) -> (,x) <$> getSDevPool sdev) disks
+      pdisks <- mapM (\x@(_stType,sdev) -> (,x) <$> getSDevPool sdev) disks
       {-
       pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
                              >>= return . fmap (,(stType, sdev)))

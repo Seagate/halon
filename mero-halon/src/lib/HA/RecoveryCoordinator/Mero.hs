@@ -53,9 +53,6 @@ import HA.RecoveryCoordinator.Actions.Monitor
 import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState(..))
-import HA.Services.Mero (createSet, notifyMero)
 import HA.RecoveryCoordinator.Actions.Mero.Core
 #endif
 import qualified HA.ResourceGraph as G

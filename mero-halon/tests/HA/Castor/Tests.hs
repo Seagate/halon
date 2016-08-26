@@ -41,6 +41,7 @@ import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, stateSet)
+import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import HA.Replicator (RGroup(..))
 import HA.Resources
 import HA.Resources.Castor
@@ -369,6 +370,7 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
+      RC.initialRule
 
     let procs = getResourcesOfType (lsGraph ls) :: [M0.Process]
 

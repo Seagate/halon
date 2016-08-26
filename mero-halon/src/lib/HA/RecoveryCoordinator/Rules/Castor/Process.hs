@@ -27,7 +27,7 @@ import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..), showFid)
 import           HA.Services.Mero (m0d)
-import           HA.Services.Mero.CEP (meroChannel)
+import           HA.Services.Mero.RC.Actions (meroChannel)
 import           HA.Services.Mero.Types
 import           Mero.Notification.HAState
 import           Network.CEP

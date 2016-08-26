@@ -123,7 +123,7 @@ import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Services.Mero
-import           HA.Services.Mero.CEP (meroChannel)
+import           HA.Services.Mero.RC.Actions (meroChannel)
 import qualified HA.RecoveryCoordinator.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 import           Mero.ConfC (Fid, ServiceType(CST_HA))
@@ -233,6 +233,7 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
   for_ nodes $ notify . KernelStarted
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
+-- Stop halon:m0d service on the node.
 --
 -- Listens:      'MeroKernelFailed'
 -- Emits:        'NodeKernelFailed'
@@ -241,11 +242,13 @@ eventKernelFailed :: Definitions LoopState ()
 eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid _) -> do
   g <- getLocalGraph
   let sp = ServiceProcess pid :: ServiceProcess MeroConf
-  let nodes = [m0node | node :: R.Node <- G.connectedFrom R.Runs sp g
-                      , m0node <- nodeToM0Node node g
-                      ]
-  applyStateChanges $ (`stateSet` M0.NSFailed) <$> nodes
-  for_ nodes $ notify . KernelStartFailure
+      nodes = G.connectedFrom R.Runs sp g
+      m0nodes = nodes >>= flip nodeToM0Node g
+  applyStateChanges $ (`stateSet` M0.NSFailed) <$> m0nodes
+
+  for_ nodes $ \node -> do
+    promulgateRC $ encodeP $ ServiceStopRequest node m0d
+  for_ m0nodes $ notify . KernelStartFailure
 
 
 

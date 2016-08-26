@@ -18,7 +18,7 @@ import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
 
-import Mero.ConfC (Fid, strToFid, Word128)
+import Mero.ConfC (Fid, strToFid)
 import Mero.Notification (Set)
 
 import Control.Distributed.Process
@@ -37,8 +37,6 @@ import GHC.Generics (Generic)
 
 import Options.Schema
 import Options.Schema.Builder
-import System.Clock
-import Text.Read (readMaybe)
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
@@ -83,15 +81,22 @@ data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 instance Binary MeroChannel
 instance Hashable MeroChannel
 
--- | Acknowledgement sent upon successfully calling m0_ha_state_set
-newtype NotificationAck = NotificationAck ()
-  deriving (Binary, Eq, Hashable, Generic, Typeable)
+-- | Acknowledgement sent upon successfully calling m0_ha_state_set.
+data NotificationAck = NotificationAck Word64 Fid
+  deriving (Eq, Generic, Typeable)
+instance Hashable NotificationAck
+instance Binary   NotificationAck
+
+-- | Acknowledgement that delivery for cetrain procedd definitely failed.
+data NotificationFailure = NotificationFailure Word64 Fid
+  deriving (Eq, Generic, Typeable)
+instance Hashable NotificationFailure
+instance Binary   NotificationFailure
 
 data NotificationMessage = NotificationMessage
-       { notificationMessage :: Set
-       , notificationRecipients :: [String] -- Endpoints
-       , notificationAckTo :: [ProcessId] -- Processes to send ack that
-                                          -- notification is complete.
+       { notificationEpoch   :: Word64    -- Current epoch
+       , notificationMessage :: Set       -- Notification set
+       , notificationRecipients :: [Fid]  -- Endpoints
        }
      deriving (Typeable, Generic, Show)
 instance Binary NotificationMessage

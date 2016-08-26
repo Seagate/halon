@@ -42,25 +42,8 @@ instance Binary Node
 instance Hashable Node
 
 -- | An identifier for epochs.
-type EpochId = Word64
-
--- | A datatype for epochs which hold a state.
-data Epoch a = Epoch
-  { epochId    :: EpochId  -- ^ Identifier of epoch.
-  , epochState :: a        -- ^ State held by epoch.
-  }
-  deriving (Show, Typeable, Generic)
-
-instance Eq (Epoch a) where
-  (==) = (==) `on` epochId
-
-instance Ord (Epoch a) where
-  compare = compare `on` epochId
-
-instance Binary a => Binary (Epoch a)
-
-instance Hashable (Epoch a) where
-  hashWithSalt s = hashWithSalt s . epochId
+newtype EpochId = EpochId Word64
+  deriving (Eq, Ord, Show, Typeable, Generic, Binary, Hashable)
 
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -86,17 +69,17 @@ instance Hashable Runs
 --------------------------------------------------------------------------------
 
 -- Type alias for purposes of giving a quotable name.
-type EpochByteString = Epoch ByteString
+-- type EpochByteString = Epoch ByteString
 
 $(mkDicts
-  [''Cluster, ''Node, ''EpochByteString]
+  [''Cluster, ''Node, ''EpochId]
   [ (''Cluster, ''Has, ''Node)
-  , (''Cluster, ''Has, ''EpochByteString)
+  , (''Cluster, ''Has, ''EpochId)
   ])
 $(mkResRel
-  [''Cluster, ''Node, ''EpochByteString]
+  [''Cluster, ''Node, ''EpochId]
   [ (''Cluster, ''Has, ''Node)
-  , (''Cluster, ''Has, ''EpochByteString)
+  , (''Cluster, ''Has, ''EpochId)
   ]
   []
   )
