@@ -13,7 +13,6 @@ module HA.Services.Mero.RC.Actions
    , getStateDiffByEpoch
    , markNotificationDelivered
    , markNotificationFailed
-   , markNotificationSent
    , getNotificationChannels
    , tryCompleteStateDiff
    , failNotificationsOnNode

@@ -96,13 +96,13 @@ statusProcess niRef pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
-      msg@(NotificationMessage epoch set _) <- receiveChan rp
+      msg@(NotificationMessage epoch set ps) <- receiveChan rp
       traceM0d $ "statusProcess: notification msg received: " ++ show msg
       -- We crecreate process, this is highly unsafe and it's not allowed
       -- to do receive read calls. also this thread will not be killed when
       -- status process is killed.
       lproc <- DI.Process ask
-      Mero.Notification.notifyMero niRef set
+      Mero.Notification.notifyMero niRef ps set
             (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
             (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
    `catch` \(e :: SomeException) -> do

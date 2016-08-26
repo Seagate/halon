@@ -20,7 +20,7 @@ import HA.Services.Mero.RC.Events
 
 -- RC dependencies
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.Resources.Mero.Note (getState)
+import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
 import qualified HA.Resources.Mero   as M0
@@ -74,7 +74,7 @@ ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
           phaseLog "warning" "some services were marked online but notifications failed to be delivered"
           phaseLog "warning" $ "epoch = " ++ show epoch
           for_ ps $ \p -> phaseLog "warning" $ "fid = " ++ show (M0.fid p)
-
+          promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> ps)
 
 -- | When notification Set was delivered to some process we should mark that
 -- in graph and check if there are some other pending processes, if not -

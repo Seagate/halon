@@ -80,13 +80,13 @@ import Data.Hashable (Hashable)
 import Data.List (nub)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
 import Data.Monoid ((<>))
 import Data.Tuple (swap)
 import Data.Typeable (Typeable)
 import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef')
 import Data.Word
-import qualified Data.Set as Set
 import qualified Data.HashPSQ as PSQ
 import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
@@ -663,23 +663,31 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
 
 -- | Send notification to all connected mero processes
 notifyMero :: NIRef -- ^ Internal storage with information about connections.
+           -> [Fid] -- ^ Fids that halon thinks notification should go to.
            -> Set   -- ^ Set of notifications to be send.
            -> (Fid -> IO ()) -- ^ What to do when all messages are delivered.
            -> (Fid -> IO ()) -- ^ What to do when any of messages failed to be delivered.
            -> Process ()
-notifyMero (NIRef linksRef _ linksInfo _) (Set nvec) onOk onFail = liftIO $
+notifyMero ref fids (Set nvec) onOk onFail = liftIO $
     sendM0Task $ do
-      links <- readIORef linksRef
+      links <- readIORef (_ni_links ref)
       let mkCallback l = Callback (ok l) (fail l)
-          ok l = do r <- readIORef linksInfo
+          ok l = do r <- readIORef (_ni_info ref)
                     for_ (Map.lookup l r) onOk
-          fail l = do r <- readIORef linksInfo
+          fail l = do r <- readIORef (_ni_info ref)
                       for_ (Map.lookup l r) onFail
       tags <- ifor links $ \l _ ->
         Map.singleton <$> notify l 0 nvec
                       <*> pure (mkCallback l)
-      atomicModifyIORef' linksRef $ \pm ->
+      atomicModifyIORef' (_ni_links ref) $ \pm ->
         (Map.unionWith (Map.unionWith (<>)) pm tags, ())
+
+      -- send failed notification for all processes that have no connection
+      -- to the interface.
+      info <- readIORef (_ni_info ref)
+      let known = Set.fromList $ Map.elems info
+      for_ (filter (`Set.notMember` known) fids) $ onFail
+
 
 -- | Send a ping on every known 'HALink': we should have at least one
 -- known 'HALink' per process. Each link can in turn have muliple
