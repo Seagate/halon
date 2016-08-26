@@ -122,7 +122,11 @@ data ReportClusterHost = ReportClusterHost
       { crnNodeFid    :: Maybe M0.Node
       , crnNodeStatus :: M0.StateCarrier M0.Node
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
-      , crpDevices    :: [(M0.SDev, M0.StateCarrier M0.SDev)]
+      , crpDevices    :: [( M0.SDev
+                          , M0.StateCarrier M0.SDev
+                          , Castor.StorageDevice
+                          , [Castor.DeviceIdentifier]
+                          )]
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterHost

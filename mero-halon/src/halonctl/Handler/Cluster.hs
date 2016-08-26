@@ -425,8 +425,10 @@ prettyReport showDevices (ReportClusterState status sns info' hosts) = do
              putStrLn $ "        [" ++ M0.prettyServiceState sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
          when (showDevices && (not . null) sdevs) $ do
            putStrLn "    Devices:"
-           forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st) -> do
-             putStrLn $ "        " ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettySDevState sdev_st ++ "]"
+           forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, sdi, ids) -> do
+             putStrLn $ "        " ++ show sdi ++ "\t" ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettySDevState sdev_st ++ "]"
+             for_ ids $ \ident ->
+               putStrLn $ "          " ++ show ident
    where
      inferType srvs
        | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
