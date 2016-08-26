@@ -117,7 +117,7 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
 #ifdef USE_MERO
 setStateChangeHandlers :: Definitions LoopState ()
 setStateChangeHandlers = do
-    define "set-state-change-handlers" $ do
+    define "castor::internal-state-change-controller::set" $ do
       setThem <- phaseHandle "set"
       finish <- phaseHandle "finish"
       directly setThem $ do
@@ -136,7 +136,7 @@ setStateChangeHandlers = do
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
-  defineSimpleTask "mero-note-set" $ \(Set ns) -> do
+  defineSimpleTask "castor::mero-note-set" $ \(Set ns) -> do
     phaseLog "info" $ "Received " ++ show (Set ns)
     mhandlers <- getStorageRC
     traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
@@ -145,7 +145,7 @@ ruleMeroNoteSet = do
 
 ruleInternalStateChangeHandler :: Definitions LoopState ()
 ruleInternalStateChangeHandler = do
-  defineSimpleTask "internal-state-change-controller" $ \msg ->
+  defineSimpleTask "castor::internal-state-change-controller::run" $ \msg ->
     liftProcess (decodeP msg) >>= \(InternalObjectStateChange changes) -> let
         s = Set $ extractNote <$> changes
         extractNote (AnyStateChange a _old new _) =
@@ -153,9 +153,7 @@ ruleInternalStateChangeHandler = do
       in do
         mhandlers <- getStorageRC
         traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
-#endif
 
-#ifdef USE_MERO
 -- | Timeout between entrypoint retry.
 entryPointTimeout :: Int
 entryPointTimeout = 1 -- 1s

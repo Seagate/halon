@@ -105,7 +105,9 @@ handleResetExternal (Set ns) = do
               -- Drive reset rule may be triggered if drive is removed, we
               -- can't do anything sane here, so skipping this rule.
               mstatus <- driveStatus sdev
-              phaseLog "info" $ "handleReset for " ++ show (sdev, mstatus)
+              phaseLog "info" $ "Handle reset"
+              phaseLog "debug" $ "storage-device = " ++ show sdev
+              phaseLog "debug" $ "storage-device.status = " ++ show mstatus
               case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
                 Just "EMPTY" ->
                    phaseLog "info" "drive is physically removed, skipping reset"
@@ -115,7 +117,7 @@ handleResetExternal (Set ns) = do
                   unless (st == M0.SDSFailed) $ do
                     ongoing <- hasOngoingReset sdev
                     if ongoing
-                    then phaseLog "info" $ "Reset ongoing on a drive - ignoring message"
+                    then phaseLog "debug" $ "Reset ongoing on a drive - ignoring message"
                     else do
                       ratt <- getDiskResetAttempts sdev
                       let status = if ratt <= resetAttemptThreshold
@@ -125,7 +127,8 @@ handleResetExternal (Set ns) = do
                       -- We handle this status inside external rule, because we need to
                       -- update drive manager if and only if failure is set because of
                       -- mero notifications, not because drive removal or other event.
-                      when (status == M0.SDSFailed) $
+                      when (status == M0.SDSFailed) $ do
+                        phaseLog "warning" "drive have failed to reset too many times => making as failed."
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       -- Notify rest of system if stat actually changed
