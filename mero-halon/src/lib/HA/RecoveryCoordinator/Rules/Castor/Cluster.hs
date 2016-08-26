@@ -80,6 +80,8 @@ import           Control.Distributed.Process hiding (catch, try)
 import           Control.Lens
 import           Control.Monad (join, unless, when)
 import           Control.Monad.Trans.Maybe
+import           Control.Monad.Trans.State (execState)
+import qualified Control.Monad.Trans.State as State
 
 import           Data.List ((\\))
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, isJust)
@@ -347,6 +349,28 @@ cluster_start_timeout = 10*60 -- 10m
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
 jobClusterStart = Job "castor::cluster::start"
+
+-- | Mark all processes as finished mkfs.
+--
+-- This will make halon to skip mkfs step.
+--
+-- Note: This rule should be used with great care as if configuration data has
+-- changed, or mkfs have not been completed, this call could put cluster into
+-- a bad state.
+ruleMarkProcessesBootstrapped :: Definitions LoopState ()
+ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-process-bootstrapped" $
+  \(MarkProcessesBootstrapped ch) -> do
+     rg <- getLocalGraph
+     let procs = [ m0proc
+                 | m0prof <- G.connectedTo R.Cluster R.Has rg :: [M0.Profile]
+                 , m0fs   <- G.connectedTo m0prof M0.IsParentOf rg :: [M0.Filesystem]
+                 , m0node <- G.connectedTo m0fs M0.IsParentOf rg :: [M0.Node]
+                 , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+                 ]
+     modifyGraph $ execState $ do
+       for_ procs $ \p -> State.modify (G.connect p R.Is M0.ProcessBootstrapped)
+     registerSyncGraph $ do
+       sendChan ch ()
 
 -- | Statup a node in cluster.
 --

@@ -66,6 +66,7 @@ data ClusterOptions =
   | ClientCmd ClientOptions
   | NotifyCmd NotifyOptions
   | ResetCmd ResetOptions
+  | MkfsDone MkfsDoneOptions
 #endif
   deriving (Eq, Show)
 
@@ -90,6 +91,8 @@ parseCluster =
         "Notify mero cluster" )))
   <|> ( ResetCmd <$> Opt.subparser ( Opt.command "reset" (Opt.withDesc parseResetOptions
         "Reset Halon's cluster knowledge to ground state." )))
+  <|> ( MkfsDone <$> Opt.subparser ( Opt.command "mkfs-done" (Opt.withDesc parseMkfsDoneOptions
+        "Mark all processes as finished mkfs.")))
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -126,6 +129,10 @@ cluster nids' opt = do
     cluster' nids (ClientCmd s) = client nids s
     cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
     cluster' nids (ResetCmd r) = clusterReset nids r
+    cluster' nids (MkfsDone (MkfsDoneOptions False)) = do
+      liftIO $ putStrLn "Please check that cluster fits all requirements first."
+    cluster' nids (MkfsDone (MkfsDoneOptions True)) = do
+      clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
 #endif
 
 data LoadOptions = LoadOptions
@@ -209,6 +216,7 @@ newtype NotifyOptions = NotifyOptions [M0.Note]
   deriving (Eq, Show)
 data ResetOptions = ResetOptions Bool Bool
   deriving (Eq, Show)
+data MkfsDoneOptions  = MkfsDoneOptions Bool deriving (Eq, Show)
 
 parseNotifyOptions :: Opt.Parser NotifyOptions
 parseNotifyOptions = NotifyOptions <$>
@@ -286,6 +294,13 @@ parseStartOptions = StartOptions
        ( Opt.long "async"
        <> Opt.short 'a'
        <> Opt.help "Do not wait for cluster start.")
+
+parseMkfsDoneOptions :: Opt.Parser MkfsDoneOptions
+parseMkfsDoneOptions = MkfsDoneOptions
+  <$> Opt.switch
+    ( Opt.long "configm"
+    <> Opt.help "Confirm that all that cluster fits all requirements for running this call."
+    )
 
 dumpConfd :: [NodeId]
           -> DumpOptions

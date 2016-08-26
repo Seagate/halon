@@ -37,6 +37,8 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , ReportClusterProcess(..)
   -- * Internal events
   , ClusterStateChange(..)
+  -- * Debug
+  , MarkProcessesBootstrapped(..)
   ) where
 
 import Control.Distributed.Process
@@ -209,3 +211,7 @@ data StopProcessesResult =
   deriving (Eq, Show, Generic)
 
 instance Binary StopProcessesResult
+
+-- | Request to mark all processes as finished mkfs.
+newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
+  deriving (Eq, Show,Generic, Binary, Typeable)
