@@ -53,6 +53,7 @@ import Test.Tasty.HUnit (testCase)
 import System.FilePath ((</>))
 import System.Timeout
 
+import HA.Test.Distributed.Helpers
 
 test :: TestTree
 test = testCase "RCInsists" $
@@ -92,6 +93,7 @@ test = testCase "RCInsists" $
                      ++ " bootstrap station"
                      )
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
+      waitForRCAndSubscribe [nid0]
 
       say "Starting satellite node ..."
       systemThere [m1] ("./halonctl"
@@ -99,8 +101,7 @@ test = testCase "RCInsists" $
                      ++ " -a " ++ m1loc
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc)
-      expectLog [nid0] (isInfixOf $ "New node contacted: nid://" ++ m1loc)
-      expectLog [nid1] (isInfixOf "Node succesfully joined the cluster.")
+      Just _ <- waitForNewNode nid1 20000000
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"

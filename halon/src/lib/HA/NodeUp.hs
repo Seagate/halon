@@ -59,7 +59,7 @@ import System.IO
 data NodeUp =
   -- | 'NodeUp' @nodeHostname@ @nodePid@
   NodeUp String ProcessId
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Ord)
 
 instance Binary NodeUp
 instance Hashable NodeUp

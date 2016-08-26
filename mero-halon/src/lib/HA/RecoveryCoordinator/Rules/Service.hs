@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- CEP Rules pertaining to the management of Halon internal services.
@@ -8,6 +8,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TemplateHaskell           #-}
 
@@ -15,6 +16,7 @@ module HA.RecoveryCoordinator.Rules.Service where
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Control.Lens
 import Data.Foldable (traverse_)
 
 import           Control.Distributed.Process
@@ -30,38 +32,33 @@ import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 import           HA.Services.Monitor (regularMonitor)
 
--- | RC node-up rule local state. It isn't used anywhere else.
-data ServiceBoot
-    = None
-      -- ^ When no service is expected to be started. That's the inial value.
-    | forall a. Configuration a => Starting UUID NodeId a (Service a) ProcessId
-      -- ^ Indicates a service has been started and we are waiting for a
-      --   'ServiceStarted' message of that same service.
-
 -- | Used at RC node-up rule definition. Track the confirmation of a
---   service we've previously started by looking at 'Starting' fields. In any
+--   service we've previously started by looking at local state fields. In any
 --   other case, it refuses the message.
-serviceBootStarted :: HAEvent ServiceStartedMsg
+serviceBootStarted :: Configuration a
+                   => (l -> Maybe (Service a))
+                   -> (l -> Maybe ProcessId)
+                   -> HAEvent ServiceStartedMsg
                    -> LoopState
-                   -> ServiceBoot
+                   -> l
                    -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStarted evt@(HAEvent _ msg _) ls l@(Starting _ _ _ psvc pid) = do
+serviceBootStarted psvcL pidL evt@(HAEvent _ msg _) ls l = do
+    -- TODO: isNotHandled, can we do better?
     res <- isNotHandled evt ls l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
+    case (res, psvcL l, pidL l) of
+      (Just _, Just psvc, Just pid)  -> do
         let pn = Node $ processNodeId pid
         ServiceStarted n svc _ _ <- decodeP msg
         if serviceName svc == serviceName psvc && n == pn
           then return $ Just evt
           else return Nothing
-serviceBootStarted _ _ _ = return Nothing
+      _ -> return Nothing
 
 -- | Used at RC node-up rule definition. Returnes events that we are
 -- not interested in
 serviceBootStartedOther :: HAEvent ServiceStartedMsg
                         -> LoopState
-                        -> ServiceBoot
+                        -> l
                         -> Process (Maybe (HAEvent ServiceStartedMsg))
 serviceBootStartedOther evt@(HAEvent _ msg _) _ _ = do
    ServiceStarted _ svc _ _ <- decodeP msg
@@ -73,7 +70,7 @@ serviceBootStartedOther evt@(HAEvent _ msg _) _ _ = do
 -- not interested in
 serviceBootCouldNotStartOther :: HAEvent ServiceCouldNotStartMsg
                               -> LoopState
-                              -> ServiceBoot
+                              -> l
                               -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
 serviceBootCouldNotStartOther evt@(HAEvent _ msg _) _ _ = do
    ServiceCouldNotStart _ svc _ <- decodeP msg
@@ -84,20 +81,22 @@ serviceBootCouldNotStartOther evt@(HAEvent _ msg _) _ _ = do
 -- | Used at RC node-up rule definition. Track the confirmation of a
 --   service we've previously started by looking at 'Starting' fields. In any
 --   other case, it refuses the message.
-serviceBootCouldNotStart :: HAEvent ServiceCouldNotStartMsg
-                   -> LoopState
-                   -> ServiceBoot
-                   -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceBootCouldNotStart evt@(HAEvent _ msg _) ls l@(Starting _ nd _ psvc _) = do
+serviceBootCouldNotStart :: Configuration a
+                         => (l -> Maybe NodeId)
+                         -> (l -> Maybe (Service a))
+                         -> HAEvent ServiceCouldNotStartMsg
+                         -> LoopState
+                         -> l
+                         -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
+serviceBootCouldNotStart nidL psvcL evt@(HAEvent _ msg _) ls l = do
     res <- isNotHandled evt ls l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
+    case (res, nidL l, psvcL l) of
+      (Just _, Just nd, Just psvc)  -> do
         ServiceCouldNotStart n svc _ <- decodeP msg
         if serviceName svc == serviceName psvc && Node nd == n
           then return $ Just evt
           else return Nothing
-serviceBootCouldNotStart _ _ _ = return Nothing
+      _ -> return Nothing
 
 -- | Used at RC service-start rule definition. Tracks the confirmation of a
 --   service we've previously started by looking at the local state. In any
