@@ -159,7 +159,7 @@ main = (>>= maybe (error "test timed out") return) $
         mems <- forM tsNids $ \nid -> do
           _ <- spawn nid $ $(mkClosure 'getStats) self
           expect
-        let timeSpecAsSecs = timeSpecAsNanoSecs (diffTimeSpec tf t0)
+        let timeSpecAsSecs = toNanoSecs (diffTimeSpec tf t0)
                                `div` 10^(9 :: Int)
             mem = case catMaybes mems of
               xs | length xs == length tsNids -> Just (maximum xs :: Integer)
