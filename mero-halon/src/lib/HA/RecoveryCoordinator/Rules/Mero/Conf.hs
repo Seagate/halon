@@ -151,6 +151,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
                | b <- f a rg
                , let b_old = M0.getState b rg
                , let b_new = u a_new b_old
+               , b_old /= b_new
                ])
         else (Nothing, [])
     applyCascadeRule
