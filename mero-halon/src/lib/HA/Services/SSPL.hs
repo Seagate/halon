@@ -37,6 +37,7 @@ module HA.Services.SSPL
 
 import HA.EventQueue.Producer (promulgate, promulgateWait)
 import HA.RecoveryCoordinator.Mero (LoopState)
+import HA.Logger (mkHalonTracer)
 import HA.Service
 import HA.Services.SSPL.CEP
 import HA.Services.SSPL.IEM
@@ -110,8 +111,14 @@ header uuid = ActuatorRequestMessageSspl_ll_msg_header {
   , actuatorRequestMessageSspl_ll_msg_headerSchema_version = "1.0.0"
   }
 
+-- | Messages that are always logged.
 saySSPL :: String -> Process ()
 saySSPL msg = say $ "[Service:SSPL] " ++ msg
+
+-- | Trace messages, output only in case if debug mode is set.
+traceSSPL:: String -> Process ()
+traceSSPL = mkHalonTracer "service:sspl"
+
 
 -- | Maximum allowed timeout between any sspl messages.
 ssplMaxMessageTimeout :: Int
@@ -130,15 +137,15 @@ msgHandler chan msg = do
       -- XXX: check that message was sent by sspl service
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
           sendMessage s f = forM_ (f srms) $ \x -> do
-            say $ "[SSPL-Service] received " ++ s
+            traceSSPL $ "[SSPL-Service] received " ++ s
             promulgate (nid, x)
           ignoreMessage s f = forM_ (f srms) $ \_ -> do
-            saySSPL $ s ++ " is not used by RC, ignoring."
+            traceSSPL $ s ++ " is not used by RC, ignoring."
       sendMessage "SensorResponse.HPI"
         sensorResponseMessageSensor_response_typeDisk_status_hpi
       ignoreMessage "SensorResponse.IF"
         sensorResponseMessageSensor_response_typeIf_data
-      sendMessage "SensorResponse.Host"
+      ignoreMessage "SensorResponse.Host"
         sensorResponseMessageSensor_response_typeHost_update
       sendMessage "SensorResponse.DriveManager"
         sensorResponseMessageSensor_response_typeDisk_status_drivemanager
@@ -146,7 +153,7 @@ msgHandler chan msg = do
         sensorResponseMessageSensor_response_typeService_watchdog
       ignoreMessage "SensorResponse.MountData"
         sensorResponseMessageSensor_response_typeLocal_mount_data
-      sendMessage "SensorResponse.CPU"
+      ignoreMessage "SensorResponse.CPU"
         sensorResponseMessageSensor_response_typeCpu_data
       sendMessage "SensorResponse.Raid"
         sensorResponseMessageSensor_response_typeRaid_data
@@ -157,11 +164,11 @@ msgHandler chan msg = do
       Just ar -> do
         let arms = actuatorResponseMessageActuator_response_type . actuatorResponseMessage $ ar
             sendMessage s f = forM_ (f arms) $ \x -> do
-              saySSPL $ "received " ++ s
+              traceSSPL $ "received " ++ s
               promulgate (nid, x)
         sendMessage "ActuatorResponse.ThreadController"
           actuatorResponseMessageActuator_response_typeThread_controller
-      Nothing -> say $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
+      Nothing -> saySSPL $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
    where
      whenNotExpired s f = do
       mte <- runMaybeT $ (,) <$> (parseTimeSSPL $ sensorResponseTime s)
@@ -259,7 +266,7 @@ startActuators chan ac pid monitorChan = do
                let ca =  CommandAck (UID.fromString =<< T.unpack <$> uuid)
                                                (parseNodeCmd  mtype)
                                                reply
-               saySSPL $ "Sending reply: " ++ show ca
+               traceSSPL $ "Sending reply: " ++ show ca
                _ <- promulgateWait ca
                sendChan monitorChan ())
 
@@ -292,7 +299,7 @@ remotableDecl [ [d|
       fix $ \loop -> do
         receiveWait [
             match $ \(ProcessMonitorNotification _ _ r) -> do
-              saySSPL $ "SSPL Process died:" ++ show r
+              saySSPL $ "Process died:" ++ show r
               _ <- receiveTimeout 2000000 []
               connectRetry lock
           , match $ \ResetSSPLService -> do
@@ -337,7 +344,6 @@ remotableDecl [ [d|
       say $ "Starting service sspl"
       lock <- liftIO newEmptyMVar
       connectRetry lock
-
   |] ]
 
 ssplRules :: Definitions LoopState ()

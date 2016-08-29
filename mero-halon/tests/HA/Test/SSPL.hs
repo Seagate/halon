@@ -75,7 +75,7 @@ data RChan = RChan String deriving (Generic, Typeable)
 
 instance Binary RChan
 
-data SChan = SChan SensorResponseMessageSensor_response_typeHost_update deriving (Generic, Typeable)
+data SChan = SChan SensorResponseMessageSensor_response_typeDisk_status_drivemanager deriving (Generic, Typeable)
 
 instance Binary SChan
 
@@ -207,7 +207,9 @@ runSSPLTest transport interseptor test =
                                      ("guest")
     usend pid $ MQBind    "sspl_halon" "sspl_iem" "sspl_ll"
     usend pid $ MQSubscribe "sspl_iem" self
+    say "Starting test"
     test pid n
+    say "Test finished"
     _ <- promulgateEQ [localNodeId n] $ encodeP $
           ServiceStopRequest (Node $ localNodeId n) sspl
     _ <- receiveTimeout 1000000 []
@@ -226,13 +228,11 @@ testSensor transport = runSSPLTest transport interseptor test
             , ", \"title\": \"SSPL-LL Sensor Response\""
             , ", \"expires\": 3600, \"signature\": \"None\""
             , ", \"time\": \"", BS8.pack (T.unpack t), "\""
-            , ", \"message\": {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\": {\"host_update\": {\"loggedInUsers\": [\"vagrant\"], \"runningProcessCount\": 2, \"hostId\": \""
-            , BS8.pack systemHostname
-            , "\", \"totalMem\": {\"units\": \"MB\", \"value\": 1930}, \"upTime\": 1445251379, \"uname\": \"Linux "
-            , BS8.pack systemHostname
-            , " 3.10.0-229.7.2.el7.x86_64 #1 SMP Tue Jun 23 22:06:11 UTC 2015 x86_64\", \"bootTime\": \"2015-10-19 10:42:59 \", \"processCount\": 126, \"freeMem\": {\"units\": \"MB\", \"value\": 142}, \"localtime\": \"2015-10-19 11:49:34 \"}}}}"
+            , ", \"message\":  {\"sspl_ll_msg_header\": {\"msg_version\": \"1.0.0\", \"schema_version\": \"1.0.0\", \"sspl_version\": \"1.0.0\"}, \"sensor_response_type\":"
+            , "{\"disk_status_drivemanager\": {\"enclosureSN\":\"HLM1002010G2YD5\", \"serialNumber\": \"Z8402HS4\", \"diskNum\": 29, \"diskReason\": \"None\", \"diskStatus\": \"OK\", \"pathID\": \"/dev/disk/by-id/wwn-0x5000c5007b00ecf5\"}}"
+            , "}}"
             ] :: ByteString
-          Just (Just msg) = sensorResponseMessageSensor_response_typeHost_update
+          Just (Just msg) = sensorResponseMessageSensor_response_typeDisk_status_drivemanager
             . sensorResponseMessageSensor_response_type
             . sensorResponseMessage <$> decodeStrict rawmsg
       say "sending command"
