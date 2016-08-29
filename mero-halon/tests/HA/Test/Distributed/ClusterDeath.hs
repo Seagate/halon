@@ -104,6 +104,14 @@ test = testCase "ClusterDeath" $
       expectLog [nid1] (isInfixOf "Hello World!")
       expectLog [nid0] (isInfixOf "started dummy service")
 
+      -- TODO: This is a hack due to poorly written 'serviceRules'. We
+      -- should rewrite serviceRules to emit a proper message when
+      -- everything is done and synced. The problem here is that we
+      -- can see the log message and kill halond before it manages to
+      -- replicate message acks and that makes this test unhappy. We
+      -- give it some time here.
+      Nothing <- expectTimeout 5000000 :: Process (Maybe ())
+
       say "Killing cluster ..."
       systemThere ms "pkill halond; true"
       _ <- liftIO $ waitForCommand_ $ handleGetInput nh0
@@ -112,6 +120,7 @@ test = testCase "ClusterDeath" $
       -- Restart the satellite and wait for the RC to ack the service restart.
       say "Restart cluster ..."
       nid0' <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
+      waitForRCAndSubscribe [nid0']
       nid1' <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
 
       -- Wait until the dummy service is registered.
