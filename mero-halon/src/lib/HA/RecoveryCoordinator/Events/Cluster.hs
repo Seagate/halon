@@ -8,6 +8,10 @@
 module HA.RecoveryCoordinator.Events.Cluster
   ( NewNodeConnected(..)
   , InitialDataLoaded(..)
+  , OldNodeRevival(..)
+  , RecoveryAttempt(..)
+  , NodeTransient(..)
+  , NewNodeMsg(..)
   ) where
 
 import HA.Resources
@@ -26,3 +30,20 @@ data InitialDataLoaded = InitialDataLoaded
    deriving (Eq, Show, Typeable, Generic)
 
 instance Binary InitialDataLoaded
+
+-- * Messages which may be interesting to any subscribers (disconnect
+-- tests).
+
+newtype OldNodeRevival = OldNodeRevival Node
+  deriving (Show, Eq, Typeable, Generic)
+data RecoveryAttempt = RecoveryAttempt Node Int
+  deriving (Show, Eq, Typeable, Generic)
+newtype NodeTransient = NodeTransient Node
+  deriving (Show, Eq, Typeable, Generic)
+newtype NewNodeMsg = NewNodeMsg Node
+  deriving (Show, Eq, Typeable, Generic)
+
+instance Binary OldNodeRevival
+instance Binary RecoveryAttempt
+instance Binary NodeTransient
+instance Binary NewNodeMsg

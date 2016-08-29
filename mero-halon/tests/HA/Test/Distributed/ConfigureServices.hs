@@ -102,7 +102,6 @@ test = testCase "ConfigureServices" $
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc ++ " 2>&1")
-      expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")
       say "Reconfiguring dummy service ..."
       systemThere [m0] ("./halonctl"

@@ -370,7 +370,7 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
-      RC.initialRule
+      RC.initialRule (IgnitionArguments [])
 
     let procs = getResourcesOfType (lsGraph ls) :: [M0.Process]
 

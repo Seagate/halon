@@ -31,10 +31,12 @@ import           Data.Binary
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
+import           HA.Encode
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Events.Drive (DriveOK(..))
+import           HA.RecoveryCoordinator.Events.Service
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -66,7 +68,6 @@ import           Mero.Notification
 import           Mero.Notification.HAState
 import           Mero.ConfC (Fid(..))
 import qualified Data.UUID as UUID
-import           HA.Service
 #endif
 
 

@@ -5,7 +5,6 @@
 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -32,7 +31,6 @@ import Control.Distributed.Process
   , match
   , monitor
   , receiveChan
-  , receiveWait
   , receiveTimeout
   , getSelfPid
   , say
@@ -196,10 +194,10 @@ remotableDecl [ [d|
           $ \conn -> do
           self <- getSelfPid
           chan <- liftIO $ openChannel conn
-          spawnLocal $ do
+          _ <- spawnLocal $ do
             link self
             forever $ do
-              receiveTimeout (ssplHlTimeout `div` 2) []
+              _ <- receiveTimeout (ssplHlTimeout `div` 2) []
               liftIO $ publishMsg chan
                 (T.pack $ fromDefault $ Rabbit.bcExchangeName scCommandConf)
                 (T.pack $ fromDefault $ Rabbit.bcRoutingKey scCommandConf)
@@ -233,8 +231,7 @@ remotableDecl [ [d|
       connectRetry lock
 
   sspl :: Service SSPLHLConf
-  sspl = Service
-          (ServiceName "sspl-hl")
+  sspl = Service "sspl-hl"
           $(mkStaticClosure 'ssplProcess)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLHLConf))

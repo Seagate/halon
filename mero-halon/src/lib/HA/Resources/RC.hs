@@ -8,6 +8,7 @@
 module HA.Resources.RC where
 
 import Control.Distributed.Process (ProcessId)
+import           HA.Service (ServiceInfoMsg)
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import HA.Resources.TH
@@ -45,6 +46,13 @@ data SubscribedTo = SubscribedTo
 instance Hashable SubscribedTo
 instance Binary   SubscribedTo
 
+-- | Mark certain service as beign stopping on the node, to prevent its
+-- restarts.
+data Stopping = Stopping
+  deriving (Eq, Ord, Generic, Typeable, Show)
+instance Hashable Stopping
+instance Binary   Stopping
+
 -- XXX: is used to avoid orphan instances, possibly we need to fix that
 -- by adding an instance in the halon package?
 
@@ -53,21 +61,25 @@ newtype SubProcessId = SubProcessId ProcessId
 
 $(mkDicts
   [ ''RC, ''Active, ''Subscriber, ''IsSubscriber, ''SubscribedTo, ''SubProcessId
+  , ''Stopping
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''RC)
   , (''RC, ''R.Is, ''Active)
   , (''Subscriber, ''SubscribedTo, ''RC)
   , (''SubProcessId, ''IsSubscriber, ''Subscriber)
+  , (''R.Node, ''Stopping, ''ServiceInfoMsg)
   ])
 
 $(mkResRel
   [ ''RC, ''Active, ''Subscriber, ''IsSubscriber, ''SubscribedTo, ''SubProcessId
+  , ''Stopping
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''RC)
   , (''RC, ''R.Is, ''Active)
   , (''Subscriber, ''SubscribedTo, ''RC)
   , (''SubProcessId, ''IsSubscriber, ''Subscriber)
+  , (''R.Node, ''Stopping, ''ServiceInfoMsg)
   ]
   [])

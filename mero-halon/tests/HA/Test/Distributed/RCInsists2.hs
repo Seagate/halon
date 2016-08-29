@@ -112,20 +112,20 @@ test = testCase "RCInsists2" $
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyStartedLine)
       expectLog [nid1] (isInfixOf "Hello World!")
 
       say "Killing satellite ..."
-      whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
+      whereisRemoteAsync nid1 $ serviceLabel Dummy.dummy
       WhereIsReply _ (Just _) <- expect
       systemThere [m1] "pkill halond; true"
       _ <- liftIO $ waitForCommand_ $ handleGetInput nh1
 
       say "sending service failed"
       False <- expectTimeoutLog 1000000 [nid0]
-                                (isInfixOf "started dummy service")
+                                (isInfixOf dummyStartedLine)
 
       -- Restart the satellite and wait for the RC to ack the service restart.
       say "Restart satellite ..."
       _ <- spawnNode m1 ("./halond -l " ++ m1loc ++ " 2>&1")
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyStartedLine)

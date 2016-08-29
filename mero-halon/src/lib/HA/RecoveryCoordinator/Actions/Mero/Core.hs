@@ -1,33 +1,25 @@
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE LambdaCase                 #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Core where
 
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Service
 import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources as R
 import HA.Services.Mero
-import HA.Service
+import HA.Service (serviceLabel)
 
 import Mero.ConfC ( Fid(..) )
 import Mero.M0Worker
 
-import Control.Applicative (liftA2)
 import Control.Distributed.Process
-  ( getSelfNode
-  , getSelfPid
+  ( getSelfPid
   , register
   , unregister
   , monitor
@@ -138,13 +130,9 @@ halonRCMeroWorkerLabel = "halon:rc-mero-worker"
 createMeroWorker :: PhaseM LoopState l (Maybe M0Worker)
 createMeroWorker = do
   pid <- liftProcess getSelfPid
-  node <- liftProcess getSelfNode
-  mprocess <- lookupRunningService (R.Node node) m0d
-  lprocess <- liftProcess $
-    whereis $ "service." ++ ((\(ServiceName s) -> s) meroServiceName)
-  case liftA2 (,) lprocess mprocess of
-    Just (lproc, ServiceProcess proc)
-      | proc == lproc -> do
+  lprocess <- liftProcess $ whereis $ serviceLabel m0d
+  case lprocess of
+    Just{} -> do
       worker <- liftIO newM0Worker
       liftProcess $ do
         whereis halonRCMeroWorkerLabel >>= \case

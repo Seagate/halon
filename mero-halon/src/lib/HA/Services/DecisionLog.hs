@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Rank2Types        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
@@ -9,7 +7,6 @@ module HA.Services.DecisionLog
     , EntriesLogged(..)
     , decisionLog
     , decisionLogService
-    , decisionLogServiceName
     , fileOutput
     , processOutput
     , standardOutput
@@ -33,9 +30,6 @@ import HA.Services.DecisionLog.Types
 makeDecisionLogProcess ::  Definitions () () -> Process ()
 makeDecisionLogProcess rules = execute () rules
 
-decisionLogServiceName :: ServiceName
-decisionLogServiceName = ServiceName "decision-log"
-
 remotableDecl [ [d|
     decisionLogService :: DecisionLogConf -> Process ()
     decisionLogService (DecisionLogConf out) = do
@@ -43,8 +37,7 @@ remotableDecl [ [d|
         makeDecisionLogProcess $ decisionLogRules wl
 
     decisionLog :: Service DecisionLogConf
-    decisionLog = Service
-                  decisionLogServiceName
+    decisionLog = Service "decision-log"
                   $(mkStaticClosure 'decisionLogService)
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'configDictDecisionLogConf))

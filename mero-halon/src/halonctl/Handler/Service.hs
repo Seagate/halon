@@ -21,8 +21,8 @@ where
 
 import Prelude hiding ((<$>), (<*>))
 import HA.EventQueue.Producer (promulgateEQ)
-import HA.Resources
-  ( Node(..) )
+import HA.Resources ( Node(..) )
+import HA.Encode
 import HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy       as Dummy
@@ -34,6 +34,7 @@ import qualified HA.Services.Noisy       as Noisy
 import qualified HA.Services.Ping        as Ping
 import qualified HA.Services.SSPL        as SSPL
 import qualified HA.Services.SSPLHL      as SSPLHL
+import           HA.RecoveryCoordinator.Events.Service
 
 import Lookup
 
@@ -173,14 +174,14 @@ mkStandardServiceCmd svc = let
                     <$> eqtTimeout
                     <*> tsNodes)
                 "Query the status of a service on a node.")
-  in O.command (snString . serviceName $ svc) (O.withDesc
+  in O.command (serviceName $ svc) (O.withDesc
       ( O.subparser
       $  startCmd
       <> reconfCmd
       <> stopCmd
       <> statusCmd
       )
-      ("Control the " ++ (snString . serviceName $ svc) ++ " service."))
+      ("Control the " ++ (serviceName $ svc) ++ " service."))
 
 -- | Parse the options for the "service" command.
 parseService :: O.Parser ServiceCmdOptions
@@ -255,15 +256,16 @@ standardService nids sso svc = case sso of
     showStatus (nid, Nothing) = show nid ++ ": No reply."
     showStatus (nid, Just SrvStatNotRunning) =
       show nid ++ ": Service not running."
+    showStatus (nid, Just (SrvStatStillRunning pid)) =
+      show nid ++ ": Is not registered but still running on " ++ show pid
     showStatus (nid, Just (SrvStatError msg)) =
       show nid ++ ": Error: " ++ msg
     showStatus (nid, Just (SrvStatRunning _ pid a)) =
       show nid ++ ": Running on PID " ++ show pid
                 ++ " with config:\n" ++ B8.unpack (encodePretty a)
-    showStatus (nid, Just (SrvStatRestarting _ pid a b)) =
-      show nid ++ ": Running on PID " ++ show pid
-                ++ " with config:\n" ++ B8.unpack (encodePretty a)
-                ++ "\nRestart requested to new config:\n" ++ B8.unpack (encodePretty b)
+    showStatus (nid, Just (SrvStatFailed _ a)) =
+      show nid ++ ": Not running "
+               ++ " but configured with:\n" ++ B8.unpack (encodePretty a)
 
 -- | Start a given service on a single node.
 start :: Configuration a
@@ -304,7 +306,6 @@ reconf t s c eqnids nid = promulgateEQ eqnids msg
       _ <- expect :: Process ProcessMonitorNotification
       stat <- expectTimeout t
       liftIO . putStrLn $ case stat of
-        Just NotAlreadyRunning -> "No service running to restart."
         Just AttemptingToRestart -> "Trying to restart " ++ (show $ serviceName s)
         Just NodeUnknown -> "Cannot restart service on unknown node " ++ show nid
         Just x -> "error: " ++ show x

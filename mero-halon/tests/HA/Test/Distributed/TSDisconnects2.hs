@@ -112,9 +112,9 @@ test = testCase "TSDisconnects2" $
                       ++ " -t " ++ m1loc
                       ++ " -t " ++ m2loc
                       ++ " 2>&1"
-      expectLog tsNodes (isInfixOf "started ping service")
+      expectLog [nid3] (isInfixOf pingStartedLine)
 
-      whereisRemoteAsync nid3 $ serviceLabel $ serviceName Ping.ping
+      whereisRemoteAsync nid3 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       say "Testing ping service ..."
       send pingPid "0"

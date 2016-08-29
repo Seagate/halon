@@ -1,14 +1,5 @@
 -- Copyright: (C) 2015 Seagate LLC
 --
-
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RankNTypes                 #-}
-
 module HA.Services.Mero.RC.Rules
   ( rules
   ) where
@@ -23,14 +14,20 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero   as M0
 import           HA.Service
-import           HA.Services.Monitor
+  ( Service
+  , ServiceInfo(..)
+  , ServiceFailed(..)
+  , ServiceExit(..)
+  , ServiceUncaughtException(..))
 import           HA.EventQueue.Producer
 
 import Control.Monad (unless)
+import Control.Distributed.Process.Internal.Types (processNodeId)
 import Data.Foldable (for_)
-import Data.Typeable
+import Data.Typeable (cast)
 
 import Network.CEP
 
@@ -44,6 +41,8 @@ rules = sequence_
   , ruleNotificationsDeliveredToM0d
   , ruleNotificationsFailedToBeDeliveredToM0d
   , ruleHalonM0dFailed
+  , ruleHalonM0dExit
+  , ruleHalonM0dException
   , ruleGenericNotification
   ]
 
@@ -53,17 +52,17 @@ rules = sequence_
 ruleRegisterChannels :: Definitions LoopState ()
 ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
   \(DeclareMeroChannel sp c cc) -> do
-      registerChannel sp c
-      registerChannel sp cc
-      -- XXX: use notify
-      registerSyncGraph $ do
+      let node = R.Node (processNodeId sp)
+      registerChannel node c
+      registerChannel node cc
+      registerSyncGraph $ do -- XXX: use notificaion meachanism
         promulgateWait $ MeroChannelDeclared sp c cc
 
 -- | Rule that allow old interface that was listening to internal message to be
 -- used.
 ruleGenericNotification :: Definitions LoopState ()
 ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
-   \(Notified epoch msg oks fails) -> do
+   \(Notified epoch msg _ fails) -> do
       promulgateRC msg
       unless (null fails) $ do
         ps <- (\rg -> filter (\p ->
@@ -106,10 +105,32 @@ ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::noti
 -- As a result of such event RC should mark all pending messages as
 -- non-delivered and mark halon:m0d on the node as 'Outdated', (see $outdated)
 ruleHalonM0dFailed :: Definitions LoopState ()
-ruleHalonM0dFailed = defineSimpleTask "service::m0d::notification::halon-m0d-failed" $ \msg -> do
-  ServiceFailed node svc _pid <- decodeMsg msg
-  for_ (cast svc) $ \(_ :: Service MeroConf) -> failNotificationsOnNode node
-  for_ (cast svc) $ \(_ :: Service MonitorConf) -> failNotificationsOnNode node
+ruleHalonM0dFailed = defineSimpleTask "service::m0d::notification::halon-m0d-failed" $
+  \(ServiceFailed node info _) -> do
+     ServiceInfo svc _ <- decodeMsg info
+     for_ (cast svc) $ \(_ :: Service MeroConf) -> do
+       failNotificationsOnNode node
+       unregisterMeroChannelsOn node
+
+-- | Handle normal exit from service.
+-- (See 'ruleHalonM0dFailed' for more explations)
+ruleHalonM0dExit :: Definitions LoopState ()
+ruleHalonM0dExit = defineSimpleTask "service::m0d::notification::halon-m0d-exit" $
+  \(ServiceExit node info _) -> do
+     ServiceInfo svc _ <- decodeMsg info
+     for_ (cast svc) $ \(_ :: Service MeroConf) -> do
+       failNotificationsOnNode node
+       unregisterMeroChannelsOn node
+
+-- | Handle exceptional exit from service.
+-- (See 'ruleHalonM0dFailed' for more explations)
+ruleHalonM0dException :: Definitions LoopState ()
+ruleHalonM0dException = defineSimpleTask "service::m0d::notification::halon-m0d-exception" $
+  \(ServiceUncaughtException node info _ _) -> do
+     ServiceInfo svc _ <- decodeMsg info
+     for_ (cast svc) $ \(_ :: Service MeroConf) -> do
+       failNotificationsOnNode node
+       unregisterMeroChannelsOn node
 
 -- $outdated
 -- When we can't guarantee that halon:m0d have delivered all notifications that

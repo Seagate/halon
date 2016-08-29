@@ -2,17 +2,9 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DeriveDataTypeable    #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE ViewPatterns          #-}
-
 module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
@@ -27,7 +19,6 @@ module HA.Services.Mero
     , MeroConf(..)
     , MeroKernelConf(..)
     , m0d
-    , meroServiceName
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
     , m0dProcess__sdict
@@ -39,6 +30,7 @@ import HA.Logger
 import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
 import qualified HA.RecoveryCoordinator.Events.Mero as M0
 import HA.Resources
+import HA.Encode
 import HA.Service
 import HA.Services.Mero.Types
 
@@ -85,7 +77,7 @@ sendMeroChannel :: SendPort NotificationMessage
 sendMeroChannel cn cc = do
   pid <- getSelfPid
   let chan = DeclareMeroChannel
-              (ServiceProcess pid) (TypedChannel cn) (TypedChannel cc)
+              pid (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
 statusProcess :: NIRef
@@ -279,8 +271,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
 remotableDecl [ [d|
 
   m0d :: Service MeroConf
-  m0d = Service
-          meroServiceName
+  m0d = Service "m0d"
           $(mkStaticClosure 'm0dProcess)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictMeroConf))
@@ -339,7 +330,7 @@ remotableDecl [ [d|
           let shutdownAndTellThem = do
                 node <- getSelfNode
                 pid  <- getSelfPid
-                expiate . encodeP $ ServiceFailed (Node node) m0d pid
+                expiate $ ServiceFailed (Node node) (encodeP $ ServiceInfo m0d conf) pid
           receiveWait $
             [ match $ \buf ->
                 case examine buf of

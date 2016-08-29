@@ -112,7 +112,7 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     rc <- spawnLocal $ execute ls' $ do
             setLogger $ \l _ -> say (show l)
             _ <- testRule
-            _ <- ssplRules
+            _ <- ssplRules sspl
             return ()
     say "start HPI test"
     test rc

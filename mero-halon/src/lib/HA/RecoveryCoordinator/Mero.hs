@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeOperators #-}
 -- |
 -- Copyright : (C) 2013,2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -11,30 +10,15 @@
 -- are posted by R from the event queue maintained by R. After recovering an HA
 -- event, RC instructs R to drop the event, using a globally unique identifier.
 
-{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE CPP                        #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
-
 module HA.RecoveryCoordinator.Mero
        ( module HA.RecoveryCoordinator.Actions.Core
        , module HA.RecoveryCoordinator.Actions.Hardware
-       , module HA.RecoveryCoordinator.Actions.Service
        , module HA.RecoveryCoordinator.Actions.Test
        , IgnitionArguments(..)
-       , GetMultimapProcessId(..)
        , ack
        , makeRecoveryCoordinator
-       , sendToMonitor
-       , sendToMasterMonitor
-       , loadNodeMonitorConf
        , buildRCState
        , timeoutHost
        , HostDisconnected(..)
@@ -48,12 +32,10 @@ import HA.Multimap
 import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Service
-import HA.RecoveryCoordinator.Actions.Monitor
 import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0
 #ifdef USE_MERO
-import HA.RecoveryCoordinator.Actions.Mero.Core
+import HA.RecoveryCoordinator.Actions.Mero.Core -- XXX: remove ifdef
 #endif
 import qualified HA.ResourceGraph as G
 
@@ -78,17 +60,6 @@ data IgnitionArguments = IgnitionArguments
   } deriving (Generic,Typeable)
 
 instance Binary IgnitionArguments
-
--- | An internal message type.
-data NodeAgentContacted = NodeAgentContacted ProcessId
-         deriving (Typeable, Generic)
-
-instance Binary NodeAgentContacted
-
-data GetMultimapProcessId =
-    GetMultimapProcessId ProcessId deriving (Typeable, Generic)
-
-instance Binary GetMultimapProcessId
 
 -- | Used in 'timeoutHost'
 newtype HostDisconnected = HostDisconnected M0.Host
@@ -131,7 +102,7 @@ buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
     startRG <- G.sync rg (return ())
-    return $ LoopState startRG Map.empty mm eq Map.empty Storage.empty
+    return $ LoopState startRG mm eq Map.empty Storage.empty
 
 msgProcessedGap :: Int
 msgProcessedGap = 10

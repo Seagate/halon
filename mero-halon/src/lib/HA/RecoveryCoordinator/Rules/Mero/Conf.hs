@@ -2,16 +2,12 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StaticPointers      #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
-{-# LANGUAGE LambdaCase          #-}
 module HA.RecoveryCoordinator.Rules.Mero.Conf
   ( DeferredStateChanges(..)
   , applyStateChanges
@@ -189,9 +185,8 @@ createDeferredStateChanges stateSets rg =
 genericApplyStateChanges :: [AnyStateSet]
                          -> PhaseM LoopState l a
                          -> PhaseM LoopState l a
-genericApplyStateChanges ass act = getLocalGraph >>= \rg -> let
-    dsc@(DeferredStateChanges _ n _) = createDeferredStateChanges ass rg
-  in genericApplyDeferredStateChanges dsc act
+genericApplyStateChanges ass act = getLocalGraph >>= \rg ->
+  genericApplyDeferredStateChanges (createDeferredStateChanges ass rg) act
 
 -- | Generic function to apply deferred state changes in the standard order.
 --   The provided 'action' is executed between updating the graph and sending
@@ -453,19 +448,19 @@ serviceCascadeDiskRule = StateCascadeRule
   (const True)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (\s o  ->
-     let break M0.SDSFailed  = M0.SDSFailed
-         break (M0.SDSTransient x) = M0.SDSTransient x
-         break x = M0.SDSTransient x
+     let break' M0.SDSFailed  = M0.SDSFailed
+         break' (M0.SDSTransient x) = M0.SDSTransient x
+         break' x = M0.SDSTransient x
          unbreak (M0.SDSTransient x) = x
          unbreak x = x
      in case s of
           M0.SSUnknown  -> o
-          M0.SSOffline  -> break o
-          M0.SSFailed   -> break o
+          M0.SSOffline  -> break' o
+          M0.SSFailed   -> break' o
           M0.SSStarting -> unbreak o
           M0.SSOnline   -> unbreak o
-          M0.SSStopping -> break o
-          M0.SSInhibited _ -> break o)
+          M0.SSStopping -> break' o
+          M0.SSInhibited _ -> break' o)
 
 -- | This is a rule which interprets state change events and is responsible for
 -- changing the state of the cluster accordingly'

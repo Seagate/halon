@@ -13,6 +13,7 @@ module HA.Services.OCF
     , HA.Services.OCF.__remoteTableDecl ) where
 
 import HA.EventQueue.Producer (expiate)
+import HA.Encode
 import HA.Service
 import HA.Services.Empty
 import HA.Resources
@@ -34,7 +35,7 @@ remotableDecl [ [d|
 
     ocf :: FilePath -> Service EmptyConf
     ocf script = Service
-                  (ServiceName script)
+                  script
                   ($(mkClosure 'ocfProcess) script)
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'configDictEmptyConf))
@@ -46,7 +47,8 @@ remotableDecl [ [d|
         checkExitCode
           (liftIO $ System.rawSystem script ["start"])
           go
-          (expiate . encodeP $ ServiceCouldNotStart (Node node) (ocf script) EmptyConf)
+          (expiate $ ServiceCouldNotStart (Node node)
+            (encodeP $ ServiceInfo (ocf script) EmptyConf))
       where
         checkExitCode proc good bad =
           proc >>= \status ->

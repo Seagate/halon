@@ -9,6 +9,7 @@ module HA.Test.Distributed.Helpers where
 import Control.Distributed.Process
 import Data.Proxy
 import HA.RecoveryCoordinator.CEP
+import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.RC
 import HA.Resources
 import Network.CEP hiding (timeout)
@@ -27,3 +28,12 @@ waitForNewNode nid t = receiveTimeout t
   [ matchIf (\(Published (NewNodeMsg (Node nid')) _) -> nid == nid')
             (const $ return nid)
   ]
+
+dummyStartedLine :: String
+dummyStartedLine = "[Service:dummy] starting at "
+
+dummyAlreadyLine :: String
+dummyAlreadyLine = "[Service:dummy] already running"
+
+pingStartedLine :: String
+pingStartedLine = "[Service:ping] starting at "

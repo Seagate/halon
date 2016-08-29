@@ -10,13 +10,9 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.NodeUp ( nodeUp )
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
+import HA.RecoveryCoordinator.Events.Service
 import HA.Startup
-import HA.Service
-  ( ServiceStart(..)
-  , ServiceStartRequest(..)
-  , ServiceStopRequest(..)
-  , encodeP
-  )
+import HA.Encode
 import qualified HA.Services.DecisionLog as DLog
 import Test.Framework
 
@@ -60,16 +56,19 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
   () <- expect
   _  <- liftIO $ forkProcess n $ registerInterceptor $ \string -> do
           case string of
-            str' | "started decision-log service" `isInfixOf` str' -> usend self "Test 1"
+            str' | "[Service:decision-log] starting at" `isInfixOf` str' -> usend self "Test 1"
             _ -> return ()
 
+  say "starting service"
   _ <- promulgateEQ [localNodeId n] . encodeP $
          ServiceStartRequest Start (Node $ localNodeId n) DLog.decisionLog
           (DLog.processOutput self) []
   "Test 1" :: String <- expect
+  say "stopping service"
   _ <- promulgateEQ [localNodeId n] . encodeP $
          ServiceStopRequest (Node $ localNodeId n) DLog.decisionLog
 
+  say "doing something strange"
   mt <- receiveTimeout 1000000
     [ matchIf (\s -> "Test 1" `isInfixOf` s) (\_ -> return ())
     ]

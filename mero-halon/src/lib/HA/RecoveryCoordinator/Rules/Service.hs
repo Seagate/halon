@@ -5,14 +5,13 @@
 -- CEP Rules pertaining to the management of Halon internal services.
 --
 
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE FlexibleContexts          #-}
 
-module HA.RecoveryCoordinator.Rules.Service where
+module HA.RecoveryCoordinator.Rules.Service
+  ( rules ) where
 
 import Prelude hiding ((.), id)
 import Control.Category
@@ -20,287 +19,368 @@ import Control.Lens
 import Data.Foldable (traverse_)
 
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
 
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Actions.Monitor
-import           HA.Resources
+import           HA.Encode (encodeP)
 import           HA.Service
-import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
-import qualified HA.EQTracker as EQT
-import           HA.Services.Monitor (regularMonitor)
+  ( ServiceExit(..)
+  , ServiceFailed(..)
+  , ServiceUncaughtException(..)
+  , ServiceCouldNotStart(..)
+  , ServiceInfo(..)
+  , ServiceInfoMsg
+  , Service(..)
+  )
 
--- | Used at RC node-up rule definition. Track the confirmation of a
---   service we've previously started by looking at local state fields. In any
---   other case, it refuses the message.
-serviceBootStarted :: Configuration a
-                   => (l -> Maybe (Service a))
-                   -> (l -> Maybe ProcessId)
-                   -> HAEvent ServiceStartedMsg
-                   -> LoopState
-                   -> l
-                   -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStarted psvcL pidL evt@(HAEvent _ msg _) ls l = do
-    -- TODO: isNotHandled, can we do better?
-    res <- isNotHandled evt ls l
-    case (res, psvcL l, pidL l) of
-      (Just _, Just psvc, Just pid)  -> do
-        let pn = Node $ processNodeId pid
-        ServiceStarted n svc _ _ <- decodeP msg
-        if serviceName svc == serviceName psvc && n == pn
-          then return $ Just evt
-          else return Nothing
-      _ -> return Nothing
+import HA.RecoveryCoordinator.Events.Service
+import HA.RecoveryCoordinator.Actions.Job
+import qualified HA.RecoveryCoordinator.Actions.Service as Service
 
--- | Used at RC node-up rule definition. Returnes events that we are
--- not interested in
-serviceBootStartedOther :: HAEvent ServiceStartedMsg
-                        -> LoopState
-                        -> l
-                        -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceBootStartedOther evt@(HAEvent _ msg _) _ _ = do
-   ServiceStarted _ svc _ _ <- decodeP msg
-   if serviceName svc == serviceName regularMonitor
-      then return   Nothing
-      else return $ Just evt
+import Control.Monad (when, unless)
+import Data.Binary (encode)
+import Data.Functor (void)
+import Data.Proxy
+import Data.Vinyl hiding ((:~:))
+import Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
+import Data.Foldable (for_)
 
--- | Used at RC node-up rule definition. Returnes events that we are
--- not interested in
-serviceBootCouldNotStartOther :: HAEvent ServiceCouldNotStartMsg
-                              -> LoopState
-                              -> l
-                              -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceBootCouldNotStartOther evt@(HAEvent _ msg _) _ _ = do
-   ServiceCouldNotStart _ svc _ <- decodeP msg
-   if serviceName svc == serviceName regularMonitor
-      then return Nothing
-      else return $ Just evt
+rules :: Definitions LoopState ()
+rules = sequence_
+  [ serviceStart
+  , serviceStop
+  , serviceStatus
+  , ruleServiceFailed
+  , ruleServiceExit
+  , ruleServiceUncaughtException
+  , ruleServiceStarted
+  , ruleServiceCouldNotStart
+  ]
 
--- | Used at RC node-up rule definition. Track the confirmation of a
---   service we've previously started by looking at 'Starting' fields. In any
---   other case, it refuses the message.
-serviceBootCouldNotStart :: Configuration a
-                         => (l -> Maybe NodeId)
-                         -> (l -> Maybe (Service a))
-                         -> HAEvent ServiceCouldNotStartMsg
-                         -> LoopState
-                         -> l
-                         -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceBootCouldNotStart nidL psvcL evt@(HAEvent _ msg _) ls l = do
-    res <- isNotHandled evt ls l
-    case (res, nidL l, psvcL l) of
-      (Just _, Just nd, Just psvc)  -> do
-        ServiceCouldNotStart n svc _ <- decodeP msg
-        if serviceName svc == serviceName psvc && Node nd == n
-          then return $ Just evt
-          else return Nothing
-      _ -> return Nothing
+serviceStartJob :: Job ServiceStartRequestMsg ServiceStartRequestResult
+serviceStartJob = Job "rc::service::start"
 
--- | Used at RC service-start rule definition. Tracks the confirmation of a
---   service we've previously started by looking at the local state. In any
---   other case, it refuses the message.
-serviceStarted :: HAEvent ServiceStartedMsg
-               -> LoopState
-               -> Maybe (UUID, Node, ServiceName, Int)
-               -> Process (Maybe (HAEvent ServiceStartedMsg))
-serviceStarted evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
-    res <- isNotHandled evt ls l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
-       ServiceStarted n svc _ _ <- decodeP msg
-       if n == n1 && serviceName svc == sname
-         then return $ Just evt
-         else return Nothing
-serviceStarted _ _ _ = return Nothing
+-- | Register service on the node and request monitor to start that
+-- service. Rule will exit when either service will be started on the
+-- node, or request to stop service will arrive.
+--
+-- In case if node is not yet known - process will exit.
+serviceStart :: Definitions LoopState ()
+serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
+   do_restart  <- phaseHandle "service restart attempt"
+   do_register <- phaseHandle "register"
+   do_start    <- phaseHandle "do_start"
+   wait_cancel <- phaseHandle "wait_cancel"
+   wait_reply  <- phaseHandle "wait_reply"
+   wait_fail   <- phaseHandle "wait_stop"
+   wait_exit   <- phaseHandle "wait_exit"
+   wait_exc    <- phaseHandle "wait_exception"
 
--- | Used at RC service-start rule definition. Tracks an issue encountered when
---   we tried to start a service by looking at the local state. In any
---   other case, it refuses the message.
-serviceCouldNotStart :: HAEvent ServiceCouldNotStartMsg
-                     -> LoopState
-                     -> Maybe (UUID, Node, ServiceName, Int)
-                     -> Process (Maybe (HAEvent ServiceCouldNotStartMsg))
-serviceCouldNotStart evt@(HAEvent _ msg _) ls l@(Just (_, n1, sname, _)) = do
-    res <- isNotHandled evt ls l
-    case res of
-      Nothing -> return Nothing
-      Just _  -> do
-       ServiceCouldNotStart n svc _ <- decodeP msg
-       if n == n1 && serviceName svc == sname
-         then return $ Just evt
-         else return Nothing
-serviceCouldNotStart _ _ _ = return Nothing
+   let -- This job is using old method to notify all interested proceses
+       -- so we are just reusing this method, without porting all the code
+       -- to new subscription mechanism.
+       announce what whom = liftProcess $ traverse_ (`usend` what) whom
+       eqTT :: (Typeable a, Typeable b) => a -> b -> Maybe (a :~: b)
+       eqTT _ _ = eqT
+   let route msg = do
+         (ServiceStartRequest startType node svc conf listeners) <- decodeMsg msg
+         known <- knownResource node
+         if known
+         then do
+            is_registered <- Service.has node (ServiceInfo svc conf)
+            if is_registered && startType == Restart
+            then do announce AttemptingToRestart listeners
+                    return $ Just [do_restart]
+            else do
+              mcfg <- Service.lookupConfig node svc
+              case mcfg of
+                Just c | c /= conf -> do
+                  announce AttemptingToRestart listeners
+                  return $ Just [do_restart]
+                _ -> do
+                  announce AttemptingToStart listeners
+                  return $ Just [do_register]
+         else do
+           phaseLog "warning" "Unknown node - ignoring."
+           announce NodeUnknown listeners
+           return Nothing
 
-serviceRules :: IgnitionArguments -> Definitions LoopState ()
-serviceRules argv = do
-  let timeup = 30 -- secs
-  -- Service Start
-  define "service-start" $ do
+   let loop = do
+         next <- fromLocal fldNext
+         switch (wait_cancel:next)
 
-    ph0 <- phaseHandle "pre-request"
-    ph1 <- phaseHandle "start-request"
-    ph1' <- phaseHandle "service-failed"
-    ph2 <- phaseHandle "start-success"
-    ph3 <- phaseHandle "start-failed"
-    ph4 <- phaseHandle "start-failed-totally"
+   directly do_restart $ do
+     Just msg <- fromLocal fldReq
+     ServiceStartRequest _ node svc a _ <- decodeMsg msg
+     phaseLog "service.node" $ show node
+     phaseLog "service.name" $ serviceName svc
+     phaseLog "service.config" $ show a
+     minfo <- Service.lookupInfoMsg node svc
+     for_ minfo $ \cfg -> do
+       Service.markStopping node cfg
+       Service.stop node svc
+       putLocalR fldNext [wait_exit,wait_fail,wait_exc]
+       loop
+     continue do_register
 
-    directly ph0 $ switch [ph1, ph1']
+   let service_died died_node _died_info = do
+         Just msg <- fromLocal fldReq
+         ServiceStartRequest _ stopping_node _ _ _ <- decodeMsg msg
+         unless (died_node == stopping_node) loop
+         continue do_register
+   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _) _) ->
+     service_died  node info
+   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _) _) ->
+     service_died node info
+   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+     service_died node info
 
-    setPhaseIf ph1 isNotHandled $ \(HAEvent uuid msg _) -> do
-      todo uuid
-      ServiceStartRequest sstart n@(Node nid) svc conf lis <- decodeMsg msg
-      phaseLog "input" $ unwords [ "ServiceStartRequest:"
-                                 , "name=" ++ (snString $ serviceName svc)
-                                 , "type=" ++ show sstart
-                                 , "nid=" ++ show nid
-                                 , "listeners=" ++ show lis
-                                 ]
-      phaseLog "thread-id" (show uuid)
-      -- Store the service start request, and the failed retry count
-      put Local $ Just (uuid, n, serviceName svc, 0 :: Int)
 
-      known <- knownResource n
-      msp   <- lookupRunningService n svc
+   directly do_register $ do
+     Just msg <- fromLocal fldReq
+     ServiceStartRequest _ node svc conf _ <- decodeMsg msg
+     phaseLog "info" "service start"
+     phaseLog "service.node"   $ show node
+     phaseLog "service.name"   $ serviceName svc
+     phaseLog "service.config" $ show conf
+     Service.declare svc
+     Service.register node svc conf
+     continue do_start
 
-      registerService svc
-      case (known, msp, sstart) of
-        (True, Nothing, HA.Service.Start) -> do
-          startService nid svc conf
-          liftProcess $ mapM_ (flip usend AttemptingToStart) lis
-          switch [ph2, ph3, timeout timeup ph4]
-        (True, Just sp, Restart) -> do
-          writeConfiguration sp conf Intended
-          bounceServiceTo Intended n svc
-          switch [ph2, ph3, timeout timeup ph4]
-        (True, Just _, HA.Service.Start) -> do
-          phaseLog "info" $ unwords [ snString $ serviceName svc
-                                    , "already running on"
-                                    , show nid]
-          liftProcess $ mapM_ (flip usend AlreadyRunning) lis
-          done uuid
-        (True, Nothing, HA.Service.Restart) -> do
-          phaseLog "info" $ unwords [ snString $ serviceName svc
-                                    , "not already running on"
-                                    , show nid]
-          liftProcess $ mapM_ (flip usend NotAlreadyRunning) lis
-          done uuid
-        (False, _, _) -> do
-          phaseLog "info" $ unwords [ "Cannot start service on unknown node:"
-                                    , show nid
-                                    ]
-          liftProcess $ mapM_ (flip usend NodeUnknown) lis
-          done uuid
+   directly do_start $ do
+     Just msg <- fromLocal fldReq
+     ServiceStartRequest _ node svc conf _ <- decodeMsg msg
+     Service.start node  $ ServiceInfo svc conf
+     putLocalR fldNext [wait_reply]
+     loop
 
-    setPhaseIf ph1' isNotHandled $ \(HAEvent uuid msg _) -> do
-      todo uuid
-      ServiceFailed n svc pid <- decodeMsg msg
-      res                     <- lookupRunningService n svc
-      phaseLog "input" $ unwords [ "ServiceFailed:"
-                                 , "name=" ++ (snString $ serviceName svc)
-                                 , "nid=" ++ show n
-                                 ]
-      phaseLog "thread-id" $ show uuid
-      case res of
-        Just (ServiceProcess spid) | spid == pid -> do
-          -- Store the service failed message, and the failed retry count
-          put Local $ Just (uuid, n, serviceName svc, 0)
-          bounceServiceTo Current n svc
-          switch [ph2, ph3, timeout timeup ph4]
-        _ -> return ()
+   -- We do not acknowledge this message, because it should be done by another
+   -- rule. Ideal solution here will require introduction service rule that
+   -- will control running jobs, so they will be isolated
+   setPhase wait_cancel $ \(HAEvent _ msg _) -> do
+     ServiceStopRequest stoppingNode stoppingSvc <- decodeMsg msg
+     Just mmsg <- fromLocal fldReq
+     ServiceStartRequest _ startingNode startingSvc _ _ <- decodeMsg mmsg
+     if stoppingNode == startingNode
+     then do
+       case eqTT stoppingSvc startingSvc of
+         Just Refl -> do
+           putLocal fldRep $ ServiceStartRequestCancelled
+           phaseLog "info" "service start was cancelled."
+           phaseLog "end" "service start"
+           continue finish
+         Nothing -> loop
+     else loop
 
-    setPhaseIf ph2 serviceStarted $ \(HAEvent uuid msg _) -> do
-      ServiceStarted n@(Node nodeId) svc cfg sp@(ServiceProcess spid)
-        <- decodeMsg msg
-      Just (thread, _, _, _) <- get Local
-      phaseLog "input" $ unwords [ "ServiceStarted:"
-                                 , "name=" ++ (snString $ serviceName svc)
-                                 , "nid=" ++ show nodeId
-                                 ]
-      phaseLog "thread-id" $ show thread
-      res <- lookupRunningService n svc
-      case res of
-        Just sp' -> unregisterServiceProcess n svc sp'
-        Nothing  -> registerServiceName svc
+   -- We do not acknowledge this message, because it should be done by another
+   -- rule. Ideal solution here will require introduction service rule that
+   -- will control running jobs, so they will be isolated
+   setPhase wait_reply $ \(HAEvent _ (ServiceStarted startedNode info pid) _) -> do
+     ServiceInfo svc startedConf <- decodeMsg info
+     Just mmsg <- fromLocal fldReq
+     ServiceStartRequest _ startingNode startingSvc conf _ <- decodeMsg mmsg
+     if startedNode == startingNode
+     then case eqTT svc startingSvc of
+       Just Refl ->
+         if encode startedConf == encode conf -- XXX: why not keep encoded?
+         then do
+           putLocal fldRep $ ServiceStartRequestOk
+           phaseLog "info" "Service started"
+           phaseLog "info" $ "service.pid = " ++ show pid
+           phaseLog "end"  $ "service start"
+           continue finish
+         else loop
+       Nothing -> loop
+     else loop
 
-      registerServiceProcess n svc cfg sp
+   return route
+   where
+     takeField l = getField . rget l
+     fromLocal l = takeField l <$> get Local
+     putLocal l x = modify Local $ rlens l .~ Field (Just x)
+     putLocalR l x = modify Local $ rlens l .~ Field x
 
-      let vitalService = serviceName regularMonitor == serviceName svc
 
-      if vitalService
-        then do startNodesMonitoring [msg]
-                _ <- liftProcess $ spawnAsync nodeId $
-                       $(mkClosure 'EQT.updateEQNodes) (eqNodes argv)
-                startProcessMonitoring n =<< getRunningServices n
-        else startProcessMonitoring n [msg]
+     fldReq :: Proxy '("request", Maybe ServiceStartRequestMsg)
+     fldReq = Proxy
+     fldRep :: Proxy '("reply", Maybe ServiceStartRequestResult)
+     fldRep = Proxy
+     fldInfoMsg :: Proxy '("info", Maybe ServiceInfoMsg)
+     fldInfoMsg = Proxy
+     fldNext :: Proxy '("next", [Jump PhaseHandle])
+     fldNext = Proxy
+     args =  fldUUID =: Nothing
+         <+> fldReq =: Nothing
+         <+> fldRep =: Nothing
+         <+> fldInfoMsg =: Nothing
+         <+> fldNext =: []
 
-      phaseLog "info" ("Service "
-                          ++ (snString . serviceName $ svc)
-                          ++ " started"
-                         )
+serviceStopJob :: Job ServiceStopRequestMsg ServiceStopRequestResult
+serviceStopJob = Job "rc::service::stop"
 
-      done thread
-      messageProcessed uuid
-      liftProcess $ sayRC $
-        "started " ++ snString (serviceName svc) ++ " service on " ++
-        show (processNodeId spid)
+-- | Request to stop service on a given node - this code updates
+-- RG and stops service.
+serviceStop :: Definitions LoopState ()
+serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
+   do_stop     <- phaseHandle "stopping service"
+   do_stop_only <- phaseHandle "try to stop service without checking success"
+   wait_cancel <- phaseHandle "wait_cancel"
+   wait_exit   <- phaseHandle "wait_reply"
+   wait_fail   <- phaseHandle "wait_fail"
+   wait_exc    <- phaseHandle "wait_exception"
 
-    setPhaseIf ph3 serviceCouldNotStart $ \(HAEvent uuid msg _) -> do
-      ServiceCouldNotStart (Node nid) svc cfg <- decodeMsg msg
-      messageProcessed uuid
-      Just (thread, n1, s1, count) <- get Local
-      phaseLog "input" $ unwords [ "ServiceCouldNotStart:"
-                                 , "name=" ++ (snString $ serviceName svc)
-                                 , "nid=" ++ show nid
-                                 ]
-      phaseLog "thread-id" $ show thread
-      if count <= 4
-        then do
-          phaseLog "debug"
-            $ unwords [ snString $ serviceName svc , "did not start on node"
-                      , show nid ++ ".", "Retrying another"
-                      , show (4 - count) , "times."
-                      ]
-          -- Increment the failure count
-          put Local $ Just (thread, n1, s1, count+1)
-          startService nid svc cfg
-          switch [ph2, ph3, timeout timeup ph4]
-        else continue ph4
+   let route msg = do
+         (ServiceStopRequest node svc) <- decodeMsg msg
+         mcfg <- node & Service.lookupInfoMsg $ svc
+         case mcfg of
+           Just cfg -> do
+             phaseLog "info" "service stop"
+             phaseLog "service.name" $ serviceName svc
+             phaseLog "service.node" $ show node
+             Service.markStopping node cfg
+             return $ Just [do_stop]
+           Nothing -> return $ Just [do_stop_only]
 
-    directly ph4 $ do
-      Just (uuid, n1, s1, count) <- get Local
-      phaseLog "thread-id" $ show uuid
-      phaseLog "error" ("Service "
-                      ++ (snString s1)
-                      ++ " on node "
-                      ++ show n1
-                      ++ " cannot start after "
-                      ++ show count
-                      ++ " attempts."
-                       )
-      promulgateRC $ RecoverNode n1
-      done uuid
+   let loop = switch [wait_cancel, wait_exit, wait_fail, wait_exc]
 
-    start ph0 Nothing
+   directly do_stop_only $ do
+      Just msg <- fromLocal fldReq
+      ServiceStopRequest node svc <- decodeMsg msg
+      phaseLog "service.name" $ serviceName svc
+      phaseLog "service.node" $ show node
+      Service.stop node svc
+      continue finish
 
-  defineSimple "service-status" $ \(HAEvent uuid msg _) -> do
-    ServiceStatusRequest node svc@(Service _ _ d) listeners <- decodeMsg msg
-    response <- lookupRunningService node svc >>= \case
-      Nothing -> return SrvStatNotRunning
-      Just sp@(ServiceProcess pid) -> do
-        rg <- getLocalGraph
-        let currentConf = readConfig sp Current rg
-            wantsConf = readConfig sp Intended rg
-        return $ case (currentConf, wantsConf) of
-          (Just a, Nothing) -> SrvStatRunning d pid a
-          (Just a, Just b) -> SrvStatRestarting d pid a b
-          _ -> SrvStatError $ "Wrong config profiles found."
-    liftProcess $ mapM_ (flip usend (encodeP response)) listeners
-    messageProcessed uuid
+   directly do_stop $ do
+      Just msg <- fromLocal fldReq
+      ServiceStopRequest node svc <- decodeMsg msg
+      Service.stop node svc
+      loop
 
-  defineSimpleTask "service-stopped" $ \msg -> do
-    ServiceExit node svc@(Service{}) _ <- decodeMsg msg
-    phaseLog "info" $ "Service stopped normally: " ++ show svc
-    traverse_  (unregisterServiceProcess node svc) =<< lookupRunningService node svc
+   let eqTT :: (Typeable a, Typeable b) => a -> b -> Maybe (a :~: b)
+       eqTT _ _ = eqT
+   let service_died node info = do
+         ServiceInfo died_srv _ <- decodeMsg info
+         Just mmsg <- fromLocal fldReq
+         ServiceStopRequest stoppingNode stoppingSrv <- decodeMsg mmsg
+         if node == stoppingNode
+         then case eqTT died_srv stoppingSrv of
+           Just Refl -> do
+             putLocal fldRep $ ServiceStopRequestOk
+             phaseLog "end"  $ "service stop"
+             continue finish
+           Nothing -> loop
+         else loop
+   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _) _) ->
+     service_died  node info
+   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _) _) ->
+     service_died node info
+   setPhase wait_exc  $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+     service_died node info
+
+   setPhase wait_cancel $ \(HAEvent _ msg _) -> do
+     ServiceStartRequest _ startingNode startingSvc _ _ <- decodeMsg msg
+     Just mmsg <- fromLocal fldReq
+     (ServiceStopRequest stoppingNode stoppingSvc) <- decodeMsg mmsg
+     if stoppingNode == startingNode
+     then do
+       case eqTT stoppingSvc startingSvc of
+         Just Refl -> do
+           putLocal fldRep $ ServiceStopRequestCancelled
+           phaseLog "info" "service stop was cancelled."
+           phaseLog "end" "service stop"
+           continue finish
+         Nothing -> loop
+     else loop
+
+   return route
+   where
+     takeField l = getField . rget l
+     fromLocal l = takeField l <$> get Local
+     putLocal l x = modify Local $ rlens l .~ Field (Just x)
+
+     fldReq :: Proxy '("request", Maybe ServiceStopRequestMsg)
+     fldReq = Proxy
+     fldRep :: Proxy '("reply", Maybe ServiceStopRequestResult)
+     fldRep = Proxy
+     args =  fldUUID =: Nothing
+         <+> fldReq =: Nothing
+         <+> fldRep =: Nothing
+
+-- | Request service status.
+serviceStatus :: Definitions LoopState ()
+serviceStatus = defineSimple "rc::service::status" $ \(HAEvent uuid msg _) -> do
+  ServiceStatusRequest node svc listeners <- decodeMsg msg
+  minfo <- node & Service.lookupInfoMsg $ svc
+  case minfo of
+    Nothing -> do
+      let response = encodeP SrvStatNotRunning
+      liftProcess $ traverse_ (`usend` response) listeners
+    Just _ -> do -- XXX: use current config
+      processMsg <- mkMessageProcessed
+      Service.requestStatusAsync node svc
+        (\p -> traverse_ (`usend` p) listeners)
+        (processMsg uuid)
+
+ruleServiceCouldNotStart :: Definitions LoopState ()
+ruleServiceCouldNotStart = defineSimpleTask "rc::service::could-not-start" $
+  \(ServiceCouldNotStart node info) -> do
+    ServiceInfo svc config <- decodeMsg info
+    phaseLog "service.name" $ serviceName svc
+    phaseLog "service.node" $ show node
+    phaseLog "service.config" $ show config
+    void $ node & Service.unregisterIfStopping $ info
+
+-- | Log service exit.
+ruleServiceExit :: Definitions LoopState ()
+ruleServiceExit = defineSimpleTask "rc::service::exit" $
+  \(ServiceExit node info pid) -> do
+    ServiceInfo svc config <- decodeMsg info
+    phaseLog "info" $ "service exit"
+    phaseLog "service.name" $ serviceName svc
+    phaseLog "service.node" $ show node
+    phaseLog "service.pid"  $ show pid
+    phaseLog "service.config" $ show config
+    void $ node & Service.unregister $ info
+
+-- | If service have failed - try if it's the one that is registered
+-- and if so - restart it.
+ruleServiceFailed :: Definitions LoopState ()
+ruleServiceFailed = defineSimpleTask "rc::service::failed" $
+  \(ServiceFailed node info pid) -> do
+    ServiceInfo svc config <- decodeMsg info
+    phaseLog "warning" $ "service failed"
+    phaseLog "service.name" $ serviceName svc
+    phaseLog "service.node" $ show node
+    phaseLog "service.pid"  $ show pid
+    phaseLog "service.config" $ show config
+    node & Service.unregisterIfStopping $ info
+    isCurrent <- node & Service.has $ info
+    -- XXX: currently we restart service by default, we may want to be
+    -- more clever and have some service specific logic here.
+    when isCurrent $ node & Service.start $ info
+
+-- | If service have failed - try if it's the one that is registered
+-- and if so - restart it.
+ruleServiceUncaughtException :: Definitions LoopState ()
+ruleServiceUncaughtException = defineSimpleTask "rc::service::failed" $
+  \(ServiceUncaughtException node info reason pid) -> do
+    ServiceInfo svc config <- decodeMsg info
+    phaseLog "error" $ "service failed because of exception"
+    phaseLog "service.name"   $ serviceName svc
+    phaseLog "service.node"   $ show node
+    phaseLog "service.pid"    $ show pid
+    phaseLog "service.config" $ show config
+    phaseLog "exception.text" $ reason
+    node & Service.unregister $ info
+
+-- | If service have started - continue execution.
+ruleServiceStarted :: Definitions LoopState ()
+ruleServiceStarted = defineSimpleTask "rc::service::started" $
+  \(ServiceStarted node info pid) -> do
+    ServiceInfo svc config <- decodeMsg info
+    phaseLog "service.name"   $ serviceName svc
+    phaseLog "service.node"   $ show node
+    phaseLog "service.pid"    $ show pid
+    phaseLog "service.config" $ show config

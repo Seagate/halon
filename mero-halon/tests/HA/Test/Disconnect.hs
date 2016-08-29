@@ -15,7 +15,7 @@ module HA.Test.Disconnect
   , testRejoinRCDeath
   ) where
 
-import Control.Applicative (many)
+-- import Control.Applicative (many)
 import Control.Distributed.Process hiding (bracket_)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
@@ -28,9 +28,11 @@ import Data.Hashable (Hashable)
 
 import Network.Transport (Transport, EndPointAddress)
 
+import HA.Encode
 import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Events.Cluster
+import HA.RecoveryCoordinator.Events.Service
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.CEP
 import HA.Resources.HalonVars
@@ -163,7 +165,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
 
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
-      dhv <- expect :: Process (Published HalonVarsUpdated)
+      _dhv <- expect :: Process (Published HalonVarsUpdated)
 
       say "running NodeUp"
       void $ liftIO $ forkProcess m3 $ do
@@ -185,7 +187,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       () <- expect
 
       whereisRemoteAsync (localNodeId m3)
-        $ serviceLabel $ serviceName Ping.ping
+        $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
 
       usend pingPid "0"
@@ -268,9 +270,11 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
+      say $ "expect NodeTransient to be published"
       nt <- expect :: Process (Published NodeTransient)
       say $ "test_debug => " ++ show nt
       -- wait until timeout happens
+      say $ "expect HostDisconnected to be published"
       hd <- expect :: Process (Published HostDisconnected)
       say $ "test_debug => " ++ show hd
       -- then bring it back up
@@ -441,9 +445,11 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
+      say $ "Expecting NodeTransient to be published"
       nt <- expect :: Process (Published NodeTransient)
       say $ "test_debug => " ++ show nt
       -- Wait until recovery starts
+      say $ "Expecting RecoveryAttempt to be published"
       ra <- expect :: Process (Published RecoveryAttempt)
       say $ "test_debug => " ++ show ra
       -- Bring one node back up straight away…

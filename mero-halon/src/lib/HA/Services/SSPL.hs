@@ -6,11 +6,9 @@
 -- This service is used to collect low-level sensor data and to carry out
 -- SSPL-mediated actions.
 --
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
-
 module HA.Services.SSPL
   ( sspl
   , ssplProcess
@@ -36,7 +34,6 @@ module HA.Services.SSPL
   ) where
 
 import HA.EventQueue.Producer (promulgate, promulgateWait)
-import HA.RecoveryCoordinator.Mero (LoopState)
 import HA.Logger (mkHalonTracer)
 import HA.Service
 import HA.Services.SSPL.CEP
@@ -52,9 +49,9 @@ import Control.Distributed.Process
   ( Process
   , ProcessId
   , ProcessMonitorNotification(..)
-  , expectTimeout
   , getSelfPid
   , getSelfNode
+  , expect
   , match
   , monitor
   , SendPort
@@ -70,7 +67,6 @@ import Control.Distributed.Process
   , spawnLocal
   , unmonitor
   , link
-  , expect
   , usend
   , kill
   )
@@ -87,7 +83,6 @@ import qualified Data.Aeson as Aeson
 
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable
-import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.UUID as UID
@@ -95,7 +90,6 @@ import qualified Data.HashMap.Strict as HM
 import Data.Time (getCurrentTime, addUTCTime)
 
 import Network.AMQP
-import Network.CEP (Definitions)
 
 import Prelude hiding (id, mapM_)
 
@@ -191,23 +185,17 @@ startActuators :: Network.AMQP.Channel
                -> ActuatorConf
                -> ProcessId -- ^ ProcessID of SSPL main process.
                -> SendPort ()
-               -> Process ()
+               -> Process DeclareChannels
 startActuators chan ac pid monitorChan = do
     iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
     systemdChan <- spawnChannelLocal $ \ch -> link pid >> (commandProcess $ acSystemd ac) ch
     _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
-    informRC (ServiceProcess pid) (ActuatorChannels iemChan systemdChan)
+    mypid <- getSelfPid
+    let decl = DeclareChannels mypid (ActuatorChannels iemChan systemdChan)
+    promulgateWait decl
+    return decl
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
-    informRC sp chans = do
-      mypid <- getSelfPid
-      mon <- promulgate $ DeclareChannels mypid sp chans
-      _ <- monitor mon
-      _ <- expect :: Process ProcessMonitorNotification
-      msg <- expectTimeout (fromDefault . acDeclareChanTimeout $ ac)
-      case msg of
-        Nothing -> informRC sp chans
-        Just () -> return ()
     iemProcess Rabbit.BindConf{..} rp = forever $ do
       InterestingEventMessage iem <- receiveChan rp
       liftIO $ publishMsg
@@ -283,8 +271,7 @@ trySome = try
 remotableDecl [ [d|
 
   sspl :: Service SSPLConf
-  sspl = Service
-          (ServiceName "sspl")
+  sspl = Service "sspl"
           $(mkStaticClosure 'ssplProcess)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLConf))
@@ -295,6 +282,7 @@ remotableDecl [ [d|
     connectRetry lock = do
       me <- getSelfPid
       pid <- spawnLocal $ connectSSPL lock me
+      decl <- expect :: Process DeclareChannels
       mref <- monitor pid
       fix $ \loop -> do
         receiveWait [
@@ -309,6 +297,9 @@ remotableDecl [ [d|
                 void $ SystemD.restartService "sspl-ll.service"
                 _ <- tryTakeMVar lock
                 putMVar lock ()
+              loop
+          , match $ \RequestChannels -> do
+              promulgateWait decl
               loop
           , match $ \() -> do
               saySSPL $ "tearing server down"
@@ -333,7 +324,8 @@ remotableDecl [ [d|
       chan <- liftIO $ openChannel conn
       (sendPort, receivePort) <- newChan
       startSensors chan sendPort scSensorConf
-      startActuators chan scActuatorConf pid sendPort
+      decl <- startActuators chan scActuatorConf pid sendPort
+      usend pid decl
       rc <- spawnLocal $ link pid >> monitorProcess receivePort
       link pid
       () <- liftIO $ takeMVar lock
@@ -345,6 +337,3 @@ remotableDecl [ [d|
       lock <- liftIO newEmptyMVar
       connectRetry lock
   |] ]
-
-ssplRules :: Definitions LoopState ()
-ssplRules = ssplRulesF sspl

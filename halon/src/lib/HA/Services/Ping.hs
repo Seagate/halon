@@ -7,19 +7,23 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
-
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module HA.Services.Ping
   ( ping
   , PingConf(..)
+  , SyncPing(..)
   , HA.Services.Ping.__remoteTable
   , HA.Services.Ping.__remoteTableDecl
+  , ping__static
+  , pingProcess__sdict
+  , pingProcess__tdict
   ) where
 
 import HA.EventQueue.Producer
 import HA.Service
 import HA.Service.TH
+import HA.Services.Dummy (DummyEvent(..))
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -43,6 +47,10 @@ instance Binary PingConf
 instance Hashable PingConf
 instance ToJSON PingConf
 
+-- | An event that causes the RC to write pending changes to the RG.
+newtype SyncPing = SyncPing String
+  deriving (Show, Generic, Typeable, Binary)
+
 pingSchema :: Schema PingConf
 pingSchema = pure PingConf
 
@@ -51,8 +59,7 @@ $(deriveService ''PingConf 'pingSchema [])
 
 remotableDecl [ [d|
   ping :: Service PingConf
-  ping = Service
-            (ServiceName "ping")
+  ping = Service "ping"
             $(mkStaticClosure 'pingProcess)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictPingConf))
@@ -61,7 +68,7 @@ remotableDecl [ [d|
   pingProcess PingConf = do
       say $ "Starting service ping"
       forever $ receiveWait
-        [ match $ promulgate . DummyEvent
-        , match $ \p -> promulgate (p :: SyncPing)
+        [ match $ promulgateWait . DummyEvent
+        , match $ \p -> promulgateWait (p :: SyncPing)
         ]
   |] ]

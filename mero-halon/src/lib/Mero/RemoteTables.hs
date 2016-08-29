@@ -2,8 +2,6 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
 import HA.Resources.Castor(__remoteTable)
@@ -18,7 +16,6 @@ import System.Posix.SysInfo ( __remoteTable )
 
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl )
 import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
-import HA.Services.Monitor ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPLHL ( __remoteTable, __remoteTableDecl )
 import HA.Stats ( __remoteTable )
@@ -46,8 +43,6 @@ meroRemoteTable next =
    HA.Services.Frontier.__remoteTableDecl $
    HA.Services.DecisionLog.__remoteTable $
    HA.Services.DecisionLog.__remoteTableDecl $
-   HA.Services.Monitor.__remoteTable $
-   HA.Services.Monitor.__remoteTableDecl $
    HA.Stats.__remoteTable $
    HA.RecoveryCoordinator.Definitions.__remoteTable $
    next

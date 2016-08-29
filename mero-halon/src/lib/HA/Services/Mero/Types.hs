@@ -1,6 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -15,8 +13,8 @@ module HA.Services.Mero.Types
 import HA.Resources.HalonVars
 import HA.Resources.Mero as M0
 import HA.ResourceGraph
-import HA.Service
 import HA.Service.TH
+import qualified HA.Resources as R
 
 import Mero.ConfC (Fid, strToFid)
 import Mero.Notification (Set)
@@ -168,7 +166,7 @@ instance Hashable KeepaliveTimedOut
 
 data DeclareMeroChannel =
     DeclareMeroChannel
-    { dmcPid     :: !(ServiceProcess MeroConf)
+    { dmcPid     :: !ProcessId
     , dmcChannel :: !(TypedChannel NotificationMessage)
     , dmcCtrlChannel :: !(TypedChannel ProcessControlMsg)
     }
@@ -179,7 +177,7 @@ instance Hashable DeclareMeroChannel
 
 data MeroChannelDeclared =
     MeroChannelDeclared
-    { mcdPid     :: !(ServiceProcess MeroConf)
+    { mcdPid     :: !ProcessId
     , mcdChannel :: !(TypedChannel NotificationMessage)
     , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
     }
@@ -196,12 +194,12 @@ resourceDictControlChannel :: Dict (Resource (TypedChannel ProcessControlMsg))
 resourceDictControlChannel = Dict
 
 relationDictMeroChanelServiceProcessChannel :: Dict (
-    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage)
+    Relation MeroChannel R.Node (TypedChannel NotificationMessage)
   )
 relationDictMeroChanelServiceProcessChannel = Dict
 
 relationDictMeroChanelServiceProcessControlChannel :: Dict (
-    Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel ProcessControlMsg)
+    Relation MeroChannel R.Node (TypedChannel ProcessControlMsg)
   )
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
@@ -258,12 +256,8 @@ instance Resource (TypedChannel NotificationMessage) where
 instance Resource (TypedChannel ProcessControlMsg) where
     resourceDict = $(mkStatic 'resourceDictControlChannel)
 
-instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel NotificationMessage) where
+instance Relation MeroChannel R.Node (TypedChannel NotificationMessage) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
 
-instance Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel ProcessControlMsg) where
+instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
-
-
-meroServiceName :: ServiceName
-meroServiceName = ServiceName "m0d"
