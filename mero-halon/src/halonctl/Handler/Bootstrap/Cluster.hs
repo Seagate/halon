@@ -50,7 +50,7 @@ data Config = Config
 schema :: Opt.Parser Config
 schema = let
     initial = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
-            $ Opt.long "file"
+            $ Opt.long "facts"
             <> Opt.short 'f'
             <> Opt.help "Halon facts file"
             <> Opt.metavar "FILEPATH"

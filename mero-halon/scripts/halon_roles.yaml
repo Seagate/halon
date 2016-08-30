@@ -1,7 +1,7 @@
 - name: station
   h_bootstrap_station: True
   h_services:
-    - "decision-log start -f \"/var/log/halon.decision.log\""
+    - "decision-log start -f /var/log/halon.decision.log"
 
 - name: ssu
   h_bootstrap_station: False
