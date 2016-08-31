@@ -4,7 +4,7 @@ machine:
   environment:
       # Use only as many jobs as CPUs are available (via cpuset)
       STACK_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2"
-      STACK_TEST_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://172.17.42.1:5555 --docker-env DC_HOST_IP=172.17.42.1"
+      STACK_TEST_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1):5555 --docker-env DC_HOST_IP=$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1)"
       TMPDIR: .
 
 checkout:
@@ -33,6 +33,9 @@ dependencies:
   override:
     # Build tweagremote image for distributed tests and copy the ssh key to access it.
     - docker build --tag=tweagremote docker/tweagremote
+    # For future debug purposes
+    - echo $STACK_FLAGS
+    - echo $STACK_TEST_FLAGS
     - echo | stack $STACK_FLAGS --docker-registry-username $DOCKER_REGISTRY_USERNAME --docker-registry-password $DOCKER_REGISTRY_PASSWORD docker pull
     - stack $STACK_FLAGS setup
     # Build Mero.
