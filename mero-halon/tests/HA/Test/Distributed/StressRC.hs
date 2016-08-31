@@ -58,7 +58,7 @@ test :: TestTree
 test = testCase "StressRC" $
   (>>= maybe (error "test timed out") return) $ timeout (360 * 1000000) $
   getHostAddress >>= \ip ->
-  IO.bracket (do Right nt <- createTransport ip "4000" defaultTCPParameters
+  IO.bracket (do Right nt <- createTransport ip "0" defaultTCPParameters
                  return nt
              ) closeTransport $ \nt ->
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
