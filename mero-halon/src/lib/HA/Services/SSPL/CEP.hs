@@ -453,15 +453,14 @@ ruleMonitorServiceFailed :: Definitions LoopState ()
 ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: NodeId, watchdogmsg) -> do
 
   let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
-      prevState = sensorResponseMessageSensor_response_typeService_watchdogPrevious_service_state watchdogmsg
       serviceName = sensorResponseMessageSensor_response_typeService_watchdogService_name watchdogmsg
       -- assume we have ‘service@fid.service’ format
       mprocessFid = strToFid . T.unpack . T.takeWhile (/= '.') . T.drop 1
                     $ T.dropWhile (/= '@') serviceName
       mcurrentPid = readMaybe . T.unpack
                     $ sensorResponseMessageSensor_response_typeService_watchdogPid watchdogmsg
-  case (,,,) <$> mprocessFid <*> mcurrentPid <*> pure currentState <*> pure prevState of
-    Just (processFid, currentPid, "failed", "active")-> do
+  case (,,) <$> mprocessFid <*> mcurrentPid <*> pure currentState of
+    Just (processFid, currentPid, "failed")-> do
       phaseLog "info" $ "Received SSPL message about service failure: "
                      ++ show watchdogmsg
       svs <- M0.getM0Processes <$> getLocalGraph
