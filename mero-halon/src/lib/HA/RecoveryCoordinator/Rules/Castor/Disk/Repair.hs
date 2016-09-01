@@ -264,92 +264,86 @@ querySpielHourly = define "query-spiel-hourly" $ do
 
   start dispatchQueryHourly Nothing
 
+-- | 'Job' used by 'ruleRebalanceStart'
+jobRebalanceStart :: Job PoolRebalanceRequest PoolRebalanceStarted
+jobRebalanceStart = Job "castor-rebalance-start"
+
+-- | Start rebalance operation triggered by 'PoolRebalanceRequest.
+-- Emits 'PoolRebalanceStarted' if successful.
+--
+-- See 'ruleRepairStart' for some caveats.
 ruleRebalanceStart :: Specification LoopState ()
-ruleRebalanceStart = define "castor-rebalance-start" $ do
-  init_rule <- phaseHandle "init_rule"
-  wait_abort <- phaseHandle "wait_abort"
+ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
 
-  setPhase init_rule $ \(HAEvent uuid (PoolRebalanceRequest pool) _) ->
-    getPoolRepairInformation pool >>= \case
-      Nothing -> do
-       rg <- getLocalGraph
-       sdevs <- getPoolSDevs pool
-       sts <- mapM (\d -> (,d) <$> getSDevState d) sdevs
-       -- states that are considered as ‘OK, we can finish
-       -- repair/rebalance’ states for the drives
-       let okMessages = [M0_NC_REPAIRED, M0_NC_ONLINE]
-        -- list of devices in OK state
-           sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
-           (sdev_notready, sdev_ready) = partitionEithers $ (deviceReadyStatus rg) <$> sdev_repaired
-           sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
-       for_ sdev_notready $ phaseLog "info"
-       if null sdev_broken
-       then if null sdev_ready
-             then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
-                     messageProcessed uuid
-             else do
-              disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
-              let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
-              put Local $ Just (uuid, messages, Just (pool, disks))
-              applyStateChanges messages
-              switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+  let init_rule (PoolRebalanceRequest pool) = getPoolRepairInformation pool >>= \case
+        Nothing -> R.readyToUseIOS pool >>= \case
+          True -> do
+            rg <- getLocalGraph
+            sdevs <- getPoolSDevs pool
+            let sts = map (\d -> (getConfObjState d rg, d)) sdevs
+            -- states that are considered as ‘OK, we can finish
+            -- repair/rebalance’ states for the drives
+            let okMessages = [M0_NC_REPAIRED, M0_NC_ONLINE]
+             -- list of devices in OK state
+                sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
+                (sdev_notready, sdev_ready) = partitionEithers $ deviceReadyStatus rg <$> sdev_repaired
+                sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
+            for_ sdev_notready $ phaseLog "info"
+            if null sdev_broken
+            then if null sdev_ready
+                  then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
+                          return $ Just [finish]
+                  else do
+                   disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
+                   let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
+                   modify Local $ rlens fldNotifications .~ Field (Just messages)
+                   modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
+                   applyStateChanges messages
+                   return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+            else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
+                    return $ Just [finish]
+          False -> do
+            phaseLog "info" "Not starting rebalance, some IOS are not ready"
+            return $ Just [finish]
+        Just info -> do
+          phaseLog "warn" $ "Pool repair/rebalance is already running: " ++ show info
+          promulgateRC $ AbortSNSOperation pool
+          return $ Just [finish]
 
-       else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
-               messageProcessed uuid
-      Just info -> do
-        phaseLog "info" $ "Pool Rep/Reb is already running: " ++ show info
-        promulgateRC (AbortSNSOperation pool)
-        messageProcessed uuid
+  setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
+    Just (pool, disks) <- getField . rget fldPoolDisks <$> get Local
+    R.readyToUseIOS pool >>= \case
+      True -> do
+        startRebalanceOperation pool disks
+        modify Local $ rlens fldRep .~ Field (Just $ PoolRebalanceStarted pool)
+        queryStartHandling pool
+      False -> abortRebalanceStart
+    continue finish
 
-  setPhase wait_abort $ \result -> do
-    case result of
-      AbortSNSOperationOk pool -> promulgateRC (PoolRebalanceRequest pool)
-      AbortSNSOperationFailure _ -> return ()
-      AbortSNSOperationSkip pool -> promulgateRC (PoolRebalanceRequest pool)
-
-  let viewNS :: Lens' (Maybe (a, [AnyStateSet], b)) (Maybe [AnyStateSet])
-      viewNS = lens lget lset where
-        lget ms = (\(_, ns, _) -> ns) <$> ms
-        lset Nothing _ = Nothing
-        lset (Just (a, _, b)) x = Just (a, fromMaybe [] x, b)
-
-  setPhaseAllNotified pool_disks_notified viewNS $ do
-    Just (uuid, _, Just (pool, disks)) <- get Local
-    startRebalanceOperation pool disks
-    queryStartHandling pool
-    messageProcessed uuid
-
-  -- Check if it's IOS that failed, if not then just keep going
-  -- XXX: I'm not sure that logic is correct here
-  setPhase notify_failed $ \(HAEvent uuid' (NotifyFailureEndpoints eps) _) -> do
-    todo uuid'
-    rg <- getLocalGraph
-    case R.failedNotificationIOS eps rg of
-      [] -> get Local >>= \(Just (uuid, _, _)) -> messageProcessed uuid
-      ps -> do
-        phaseLog "warn" $ "Aborting rebalance as IOS failed: " ++ show ps
-        runAbort
-    done uuid'
+  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
+    todo uuid
+    when (not $ null eps) $ do
+      phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting rebalance"
+      abortRebalanceStart
+    done uuid
+    continue finish
 
   directly notify_timeout $ do
     phaseLog "warn" $ "Unable to notify Mero; cannot start rebalance"
-    runAbort
+    abortRebalanceStart
+    continue finish
 
-  start init_rule Nothing
+  return init_rule
 
   where
-    runAbort = get Local >>= \case
-      Nothing -> phaseLog "warn" $ "no local state"
-      Just (uuid, _, mp) -> do
-        case mp of
-          Nothing -> phaseLog "error" "No pool info in local state"
-          Just (pool, _) -> do
-            ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
-            applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
-        messageProcessed uuid
+    abortRebalanceStart = getField . rget fldPoolDisks <$> get Local >>= \case
+      Nothing -> phaseLog "error" "No pool info in local state"
+      Just (pool, _) -> do
+        ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
+        applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
 
     -- Is this device ready to be rebalanced onto?
     deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
@@ -372,79 +366,127 @@ ruleRebalanceStart = define "castor-rebalance-start" $ do
                 , (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
                 ]
 
-    getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
-    getSDevState d = getConfObjState d <$> getLocalGraph
+    fldReq = Proxy :: Proxy '("request", Maybe PoolRebalanceRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe PoolRebalanceStarted)
+    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
+    fldPoolDisks = Proxy :: Proxy '("pooldisks", Maybe (M0.Pool, [M0.Disk]))
 
--- | Possibly start repair on the given pool and disks.
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> fldNotifications =: Nothing
+       <+> fldPoolDisks =: Nothing
+
+-- | 'Job' used by 'ruleRepairStart'
+jobRepairStart :: Job PoolRepairRequest PoolRepairStarted
+jobRepairStart = Job "castor-repair-start"
+
+-- | Handle the 'PoolRepairRequest' message that tries to trigger repair.
+--
+-- * If no repair is on-going, all IOS are idle and online, set
+-- appropriate states to pool and disks and notify mero.
+--
+-- * Once mero has been notified, 'startRepairOperation' and
+-- 'queryStartHandling'.
+--
+-- * It may happen that notification either times out or fails. In
+-- either case, set the pool and disks to a state that indicates
+-- repair failure.
+--
+-- * If everything goes well, repair starts and rule emits 'PoolRepairStarted'.
+--
+-- TODO: There is a race between us checking that we're ready to start
+-- repair, issuing the start repair call, repair actually starting and
+-- IOS becoming unavailable. For now we just check IOS status right
+-- before repairing but there is no guarantee we won't try to start
+-- repair on IOS that's down. HALON-403 should help.
 ruleRepairStart :: Specification LoopState ()
-ruleRepairStart = define "castor-repair-start" $ do
-  init_rule <- phaseHandle "init_rule"
-  pool_disks_notified <- phaseHandle "'pool_disks_notified"
+ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
+  pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
 
-  setPhase init_rule $ \(HAEvent uuid (PoolRepairRequest pool) _) -> do
-    getPoolRepairInformation pool >>= \case
-      Nothing -> do
-        fa <- getPoolSDevsWithState pool M0_NC_FAILED
-        phaseLog "repair" $ "Starting repair operation on " ++ show pool
-        let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0.SDSRepairing <$> fa)
-        put Local $ Just (uuid, msgs, Just pool)
-        applyStateChanges msgs
-        switch [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
-      Just _ -> messageProcessed uuid
+  let init_rule (PoolRepairRequest pool) = getPoolRepairInformation pool >>= \case
+        -- We spare ourselves some work and if IOS aren't ready then
+        -- we don't even try to put the drives in repairing state just
+        -- to flip them back a second later.
+        Nothing -> R.readyToUseIOS pool >>= \case
+          True -> do
+            tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+            fa <- getPoolSDevsWithState pool M0_NC_FAILED
+            case null tr && not (null fa) of
+              True -> do
+                let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0.SDSRepairing <$> fa)
+                modify Local $ rlens fldNotifications .~ Field (Just msgs)
+                modify Local $ rlens fldPool .~ Field (Just pool)
+                applyStateChanges msgs
+                return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+              False -> do
+                phaseLog "warn" $ "Not starting repair, have transient or no failed devices"
+                return $ Just [finish]
+          False -> do
+            phaseLog "warn" $ "Not starting repair, some IOS are not ready"
+            return $ Just [finish]
+        Just _ -> do
+          phaseLog "warn" $ "Not starting repair, seems there is repair already on-going"
+          return $ Just [finish]
 
-  let viewNS :: Lens' (Maybe (a, [AnyStateSet], b)) (Maybe [AnyStateSet])
-      viewNS = lens lget lset where
-        lget ms = (\(_, ns, _) -> ns) <$> ms
-        lset Nothing _ = Nothing
-        lset (Just (a, _, b)) x = Just (a, fromMaybe [] x, b)
-
-  setPhaseAllNotified pool_disks_notified viewNS $ do
-    Just (uuid, _, Just pool) <- get Local
-    startRepairOperation pool
-    queryStartHandling pool
-    messageProcessed uuid
+  setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
+    Just pool <- getField . rget fldPool <$> get Local
+    R.readyToUseIOS pool >>= \case
+      True -> do
+        startRepairOperation pool
+        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairStarted pool)
+        queryStartHandling pool
+      False -> abortRepairStart
+    continue finish
 
   -- Check if it's IOS that failed, if not then just keep going
-  setPhase notify_failed $ \(HAEvent uuid' (NotifyFailureEndpoints eps) _) -> do
-    todo uuid'
-    rg <- getLocalGraph
-    case R.failedNotificationIOS eps rg of
-      [] -> get Local >>= \(Just (uuid, _, _)) -> messageProcessed uuid
-      ps -> do
-        phaseLog "warn" $ "Aborting repair as IOS failed: " ++ show ps
-        runAbort
-    done uuid'
+  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
+    todo uuid
+    when (not $ null eps) $ do
+      phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting repair"
+      abortRepairStart
+    done uuid
+    continue finish
 
   -- Failure endpoint message didn't come and notification didn't go
   -- through either, abort just in case.
   directly notify_timeout $ do
     phaseLog "warn" $ "Unable to notify Mero; cannot start repair"
-    runAbort
+    abortRepairStart
+    continue finish
 
-  start init_rule Nothing
-
+  return init_rule
   where
-    runAbort = get Local >>= \case
-      Nothing -> phaseLog "warn" $ "no local state"
-      Just (uuid, _, mp) -> do
-        case mp of
-          Nothing -> phaseLog "error" "No pool info in local state"
-          -- HALON-275: We have failed to start the repair so
-          -- clean up repair status. halon:m0d should notice that
-          -- notification has failed and fail the process, restart
-          -- should happen and repair eventually restarted if
-          -- everything goes right
-          Just pool -> do
-            ds <- getPoolSDevsWithState pool M0_NC_REPAIR
-            -- There may be a race here: either this notification
-            -- tries to go out first or the rule for failed
-            -- notification fires first. The race does not matter
-            -- because notification failure handler will check for
-            -- already failed processes.
-            applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
-        messageProcessed uuid
+    abortRepairStart = getField . rget fldPool <$> get Local >>= \case
+      Nothing -> phaseLog "error" "No pool info in local state"
+      -- HALON-275: We have failed to start the repair so
+      -- clean up repair status. halon:m0d should notice that
+      -- notification has failed and fail the process, restart
+      -- should happen and repair eventually restarted if
+      -- everything goes right
+      Just pool -> do
+        ds <- getPoolSDevsWithState pool M0_NC_REPAIR
+        -- There may be a race here: either this notification
+        -- tries to go out first or the rule for failed
+        -- notification fires first. The race does not matter
+        -- because notification failure handler will check for
+        -- already failed processes.
+        applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
+
+
+    fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStarted)
+    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
+    fldPool = Proxy :: Proxy '("pool", Maybe M0.Pool)
+
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> fldNotifications =: Nothing
+       <+> fldPool          =: Nothing
+
 
 -- | Try to fetch 'Spiel.SnsStatus' for the given 'Pool' and if that
 -- fails, unset the @PRS@ and ack the message. Otherwise run the
@@ -757,36 +799,12 @@ handleRepairInternal noteSet = do
 -- | When the cluster has completed starting up, it's possible that
 --   we have devices that failed during the startup process.
 checkRepairOnClusterStart :: Definitions LoopState ()
-checkRepairOnClusterStart = define "check-repair-on-start" $ do
-    clusterRunning <- phaseHandle "cluster-running"
-    notified <- phaseHandle "mero-notification-success"
-    end <- phaseHandle "end"
+checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBootLevel2 $ \() -> do
+  pools <- getPool
+  forM_ pools $ promulgateRC . PoolRepairRequest
+  where
+    clusterOnBootLevel2 msg ls = barrierPass (\mcs -> _mcs_runlevel mcs >= M0.BootLevel 2) msg ls ()
 
-    setPhaseIf clusterRunning (barrierPass (\mcs -> _mcs_runlevel mcs >= M0.BootLevel 2)) $ \() -> do
-      pools <- getPool
-      forM_ pools $ \pool ->
-        getPoolRepairStatus pool >>= \case
-          Just _ -> return () -- Repair is already handled by another rule
-          Nothing -> do
-            tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-            fa <- getPoolSDevsWithState pool M0_NC_FAILED
-            when (null tr && not (null fa)) $ do
-              fork NoBuffer $ do
-                put Local $ Just (pool, M0_NC_REPAIR)
-                applyStateChanges (
-                    stateSet pool M0_NC_REPAIR
-                  : ((flip stateSet $ M0.SDSRepairing) <$> fa)
-                  )
-                switch [notified, timeout 10 end]
-
-    setPhaseNotified notified (maybe Nothing return) $ \(pool, _) -> do
-      startRepairOperation pool
-      queryStartHandling pool
-      continue end
-
-    directly end stop
-
-    startFork clusterRunning Nothing
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
