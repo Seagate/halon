@@ -347,8 +347,6 @@ prettySDevState (SDSTransient x) = "Transient failure (" ++ prettySDevState x ++
 --   where the device is failed or already transient.
 sdsFailTransient :: SDevState -> SDevState
 sdsFailTransient SDSFailed = SDSFailed
-sdsFailTransient SDSRepairing = SDSRepairing
-sdsFailTransient SDSRepaired = SDSRepaired
 sdsFailTransient s@(SDSTransient _) = s
 sdsFailTransient x = SDSTransient x
 

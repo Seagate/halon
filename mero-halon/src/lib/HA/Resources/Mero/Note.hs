@@ -288,6 +288,9 @@ instance HasConfObjectState M0.SDev where
   toConfObjState _ M0.SDSRepaired = M0_NC_REPAIRED
   toConfObjState _ M0.SDSRebalancing = M0_NC_REBALANCE
   toConfObjState _ (M0.SDSTransient M0.SDSFailed) = M0_NC_FAILED -- odd case
+  toConfObjState _ (M0.SDSTransient M0.SDSRepairing) = M0_NC_REPAIR
+  toConfObjState _ (M0.SDSTransient M0.SDSRepaired) = M0_NC_REPAIRED
+  toConfObjState _ (M0.SDSTransient M0.SDSRebalancing) = M0_NC_REBALANCE
   toConfObjState _ (M0.SDSTransient _) = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Pool where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
