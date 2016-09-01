@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -8,6 +7,7 @@
 module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal where
 
 import           Control.Exception (SomeException)
+import           Data.List (nub)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
@@ -17,8 +17,6 @@ import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
-
-import           Data.List (nub)
 
 -- | Just like 'repairedNotificationMessage', dispatch the appropriate
 -- status checking routine depending on whether we're rebalancing or
@@ -56,19 +54,6 @@ repairingNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
 repairingNotificationMsg M0.Rebalance = M0.M0_NC_REBALANCE
 repairingNotificationMsg M0.Failure = M0.M0_NC_REPAIR
 
--- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
-getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
-getIOServices pool = getLocalGraph >>= \g -> return $ nub
-  [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
-        , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
-        , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
-        , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]
-        , ct <- G.connectedFrom M0.IsRealOf cv g :: [M0.Controller]
-        , nd <- G.connectedFrom M0.IsOnHardware ct g :: [M0.Node]
-        , pr <- G.connectedTo nd M0.IsParentOf g :: [M0.Process]
-        , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr M0.IsParentOf g
-        ]
-
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.
 filterCompletedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
@@ -93,3 +78,50 @@ failedNotificationIOS eps rg =
       , s <- G.connectedTo p M0.IsParentOf rg
       , CST_IOS <- [M0.s_type s]
       , any (`elem` M0.s_endpoints s) eps ]
+
+-- | Check if we're able to use the IOS we know about for
+-- repair/rebalance. Checks that all IOS are
+-- 'Spiel.M0_SNS_CM_STATUS_IDLE' and the parent process is
+-- 'M0.PSOnline'.
+readyToUseIOS :: M0.Pool -> PhaseM LoopState l Bool
+readyToUseIOS pool = allIOSOnline >>= \case
+  False -> do
+    phaseLog "warn" $ "Some IOS not online, not starting repair"
+    return False
+  True -> statusOfRepairOperation pool >>= \case
+    Left err -> do
+      phaseLog "warn" $ "Can't use IOS, IOS status returned " ++ show err
+      return False
+    Right sts
+      | all iosReady sts -> return True
+      | otherwise -> do
+          phaseLog "warn" $ "Can't use IOS, not all IOS are ready " ++ show sts
+          return False
+  where
+    allIOSOnline = do
+      svs <- getIOServices pool
+      rg <- getLocalGraph
+      let sts = [ M0.getState p rg
+                | s <- svs
+                , p :: M0.Process <- G.connectedFrom M0.IsParentOf s rg
+                ]
+      return $ all (== M0.PSOnline) sts
+
+    iosReady (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_IDLE _) = True
+    iosReady _                                                 = False
+
+
+-- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
+--
+-- We use this helper both in repair module and spiel module so it lives here.
+getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
+getIOServices pool = getLocalGraph >>= \g -> return $ nub
+  [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+        , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
+        , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
+        , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]
+        , ct <- G.connectedFrom M0.IsRealOf cv g :: [M0.Controller]
+        , nd <- G.connectedFrom M0.IsOnHardware ct g :: [M0.Node]
+        , pr <- G.connectedTo nd M0.IsParentOf g :: [M0.Process]
+        , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr M0.IsParentOf g
+        ]

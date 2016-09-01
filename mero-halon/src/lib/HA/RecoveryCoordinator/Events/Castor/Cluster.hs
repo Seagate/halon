@@ -14,7 +14,9 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StartMeroClientRequest(..)
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
+  , PoolRebalanceStarted(..)
   , PoolRepairRequest(..)
+  , PoolRepairStarted(..)
   , ClusterResetRequest(..)
     -- ** Node
   , StartCastorNodeRequest(..)
@@ -83,10 +85,16 @@ data StateChangeResult
 instance Binary StateChangeResult
 
 newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
-  deriving (Eq, Show, Binary, Typeable, Generic)
+  deriving (Eq, Show, Ord, Binary, Typeable, Generic)
+
+newtype PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
+  deriving (Show, Eq, Ord, Binary, Typeable, Generic)
 
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
-  deriving (Eq, Show, Binary, Typeable, Generic)
+  deriving (Eq, Show, Ord, Binary, Typeable, Generic)
+
+newtype PoolRepairStarted = PoolRepairStarted M0.Pool
+  deriving (Show, Eq, Ord, Binary, Typeable, Generic)
 
 -- | Internal event sent when the cluster changes state.
 data ClusterStateChange =
