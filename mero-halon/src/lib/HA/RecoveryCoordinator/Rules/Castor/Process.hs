@@ -25,32 +25,32 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node(..))
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero.Note (ConfObjectState(..), getState, NotifyFailureEndpoints(..), showFid)
+import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
 import           HA.Services.Mero (m0d)
 import           HA.Services.Mero.RC.Actions (meroChannel)
 import           HA.Services.Mero.Types
 import           Mero.Notification.HAState
 import           Network.CEP
 
-
 import           Control.Distributed.Process (usend)
 import           Control.Lens
 import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
-
+import           Data.Binary (Binary)
 import           Data.Either (partitionEithers, rights, lefts)
 import           Data.Foldable
 import           Data.List (nub, sort)
-import           Data.Maybe (listToMaybe, mapMaybe, fromMaybe)
+import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
 import           Data.Vinyl
-
+import           GHC.Generics
 import           Text.Printf
 
 rules :: Definitions LoopState ()
 rules = sequence_ [
     ruleProcessOnline
   , ruleProcessStopped
+  , ruleProcessDispatchRestart
   , ruleProcessRestart
   , ruleProcessConfigured
   , ruleStop
@@ -59,76 +59,84 @@ rules = sequence_ [
   , ruleProcessKeepaliveReply
   ]
 
+newtype ProcessRestartRequest = ProcessRestartRequest M0.Process
+  deriving (Show, Eq, Ord, Typeable, Generic)
+instance Binary ProcessRestartRequest
+
+-- | Catch 'InternalObjectChange's flying by and dispatch
+-- 'ProcessRestartRequest' for every failed process, allowing
+-- 'ruleProcessRestart' to do its job while assuring only one on-going
+-- restart per process.
+ruleProcessDispatchRestart :: Definitions LoopState ()
+ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
+  rule_init <- phaseHandle "rule_init"
+
+  setPhaseInternalNotificationWithState rule_init isProcFailed $ \(eid, procs) -> do
+    todo eid
+    for_ procs $ promulgateRC . ProcessRestartRequest . fst
+    done eid
+
+  startFork rule_init ()
+  where
+    isProcFailed (M0.PSFailed _) = True
+    isProcFailed _ = False
+
+-- | Job used in 'ruleProcessRestart'
+jobProcessRestart :: Job ProcessRestartRequest ProcessRecoveryFailure
+jobProcessRestart = Job "process-restarted"
+
 -- | Watch for internal process failure notifications and orchestrate
 -- their restart. Common scenario is:
 --
 -- * Fail the services associated with the process
 -- * Request restart of the process through systemd
 -- * Wait for the systemd process exit code. Deal with non-successful
--- exit code here. If successful, do nothing more here and let other
--- rules handle ONLINE notifications as they come in.
+--   exit code here. If successful, do nothing more here and let other
+--   rules handle ONLINE notifications as they come in.
 ruleProcessRestart :: Definitions LoopState ()
-ruleProcessRestart = define "processes-restarted" $ do
-  initialize <- phaseHandle "initialize"
+ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
   services_notified <- phaseHandle "process_notified"
   notification_timeout <- phaseHandle "notification_timeout"
   restart_result <- phaseHandle "restart_result"
   restart_timeout <- phaseHandle "restart_timeout"
-  finish <- phaseHandle "finish"
-  end <- phaseHandle "end"
 
-  let viewNotifySet :: Lens' (Maybe (a,b,c,[AnyStateSet])) (Maybe [AnyStateSet])
-      viewNotifySet = lens lget lset where
-        lset Nothing _ = Nothing
-        lset (Just (a,b,c,_)) x = Just (a,b,c,fromMaybe [] x)
-        lget Nothing = Nothing
-        lget (Just (_,_,_,x)) = Just x
-
-      resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls (Just (_, p, Just n, _)) = do
-        let mnode = M0.m0nodeToNode n $ lsGraph ls
+  let resetNodeGuard (HAEvent eid (ProcessControlResultRestartMsg nid results) _) ls l = do
+        let Just (ProcessRestartRequest p) = getField . rget fldReq $ l
+            Just n = getField . rget fldNode $ l
+            mnode = M0.m0nodeToNode n $ lsGraph ls
             resultFids = either id fst <$> results
         return $ if maybe False (== Node nid) mnode && M0.fid p `elem` resultFids
                  then Just (eid, results) else Nothing
-      resetNodeGuard _ _ _ = return Nothing
 
-      isProcFailed st = case st of
-        M0.PSFailed _ -> True
-        _ -> False
+      rule_init (ProcessRestartRequest p) = do
+        rg <- getLocalGraph
+        phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
+        let mpl = getProcessBootLevel p rg
+        case (,,) <$> mpl <*> getClusterStatus rg <*> pure (getState p rg) of
+          Just (pl, M0.MeroClusterState M0.ONLINE rl _, M0.PSFailed _) | rl >= pl -> do
+            let notificationSet = [ stateSet srv (M0.SSInhibited M0.SSFailed)
+                                  | (srv :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
 
-  setPhaseInternalNotificationWithState initialize isProcFailed $ \(eid, procs) -> do
-    todo eid
-    rg <- getLocalGraph
-    for_ procs $ \(p, _) -> fork NoBuffer $ do
-      todo eid
-      put Local $ Just (eid, p, Nothing, [])
+            case listToMaybe [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
+              Nothing -> do
+                phaseLog "warn" $ "Couldn't find node associated with " ++ show p
+                return $ Just [finish]
+              Just (m0node :: M0.Node) -> do
+                modify Local $ rlens fldNode .~ Field (Just m0node)
+                modify Local $ rlens fldNotifications .~ Field (Just notificationSet)
+                applyStateChanges notificationSet
+                return $ Just [services_notified, timeout 5 notification_timeout]
+          cst -> do
+            phaseLog "warn" $ "Process restart requested for "
+                           ++ "(process state, cluster state): "
+                           ++ show cst
+            return $ Just [finish]
 
-      phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
-      let mpl = getProcessBootLevel p rg
-      case (,) <$> mpl <*> getClusterStatus rg of
-        Just (pl, M0.MeroClusterState M0.ONLINE rl _) | rl >= pl -> do
-          let srvs = [ stateSet srv (M0.SSInhibited M0.SSFailed)
-                     | (srv :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
-              notificationSet = srvs
+  setPhaseAllNotified services_notified (rlens fldNotifications . rfield) $ do
+    Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
+    Just m0node <- getField . rget fldNode <$> get Local
 
-          case listToMaybe [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
-            Nothing -> do
-              phaseLog "warn" $ "Couldn't find node associated with " ++ show p
-              continue finish
-            Just (m0node :: M0.Node) -> do
-              put Local $ Just (eid, p, Just m0node, notificationSet)
-              applyStateChanges notificationSet
-              switch [services_notified, timeout 5 notification_timeout]
-        cst -> do
-          phaseLog "warn" $ "Process restart requested for "
-                         ++ "(process state, cluster state): "
-                         ++ show cst
-          continue finish
-    done eid
-
-  setPhaseAllNotified services_notified viewNotifySet $ do
-    Just (_, p, Just m0node, _) <- get Local
     phaseLog "info" $ "Notification for " ++ show (M0.fid p) ++ " landed."
-
     rg <- getLocalGraph
     mrunRestart <- runMaybeT $ do
       node <- MaybeT . return $ M0.m0nodeToNode m0node rg
@@ -150,12 +158,10 @@ ruleProcessRestart = define "processes-restarted" $ do
         switch [restart_result, timeout 180 restart_timeout]
 
   setPhaseIf restart_result resetNodeGuard $ \(eid', results) -> do
+    todo eid'
     phaseLog "debug" $ "Got restart results: " ++ show results
-    -- Process restart message early: if something goes wrong the rule
-    -- starts fresh anyway
-    messageProcessed eid'
-
-    case partitionEithers results of
+    Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
+    case filter (\(fid', _) -> fid' == M0.fid p) <$> partitionEithers results of
       (okFids, []) -> do
         -- We don't have to do much here: mero should send ONLINE for
         -- services belonging to the process, if all services for the
@@ -163,31 +169,33 @@ ruleProcessRestart = define "processes-restarted" $ do
         -- (ruleServiceNotificationHandler). Further, if the process is up (as
         -- per mero) and all the processes on the node are up then
         -- node is up (ruleProcessOnline).
-        phaseLog "info" $ "Managed to restart following processes: " ++ show okFids
+        phaseLog "info" $ "Managed to initiate restart following processes: " ++ show okFids
         continue finish
 
-      (_, failures) -> do
+      (_, failures@(fl : _)) -> do
         phaseLog "warn" $ "Following processes failed to restart: " ++ show failures
-        for_ failures $ promulgateRC . ProcessRecoveryFailure
-        continue finish
-
-  directly restart_timeout $ do
-    Just (_, p, _, _) <- get Local
-    phaseLog "warn" $ "Restart for " ++ show p ++ " taking too long, bailing."
-    promulgateRC $ ProcessRecoveryFailure (M0.fid p, "Restart timed out")
+        modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure fl)
+    done eid'
     continue finish
 
-  directly finish $ do
-    get Local >>= \case
-      Nothing -> phaseLog "warn" $ "Finish without local state"
-      Just (eid, p, _, _) -> do
-        phaseLog "info" $ "Process restart rule finish for " ++ show p
-        done eid
-    continue end
+  directly restart_timeout $ do
+    Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
+    phaseLog "warn" $ "Restart for " ++ show p ++ " taking too long, bailing."
+    modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure (M0.fid p, "Restart timed out"))
+    continue finish
 
-  directly end stop
+  return rule_init
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe ProcessRestartRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe ProcessRecoveryFailure)
+    fldNode = Proxy :: Proxy '("node", Maybe M0.Node)
+    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
 
-  start initialize Nothing
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> fldNode          =: Nothing
+       <+> fldNotifications =: Nothing
 
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions LoopState ()
