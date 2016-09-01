@@ -217,7 +217,6 @@ ssplRulesF sspl = sequence_
   [ ruleDeclareChannels
   , ruleMonitorDriveManager
   , ruleMonitorStatusHpi
-  , ruleMonitorHostUpdate
   , ruleMonitorRaidData
   , ruleSystemdCmd sspl
   , ruleHlNodeCmd sspl
@@ -491,19 +490,6 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
               markFailed p True
     _ -> return ()
 #endif
-
--- | SSPL Monitor host_update
---
--- TODO: can we just remove this completely and use the data from NodeUp?
-ruleMonitorHostUpdate :: Definitions LoopState ()
-ruleMonitorHostUpdate = defineSimple "monitor-host-update" $ \(HAEvent uuid (nid, srhu) _) -> do
-      let host = Host . T.unpack
-                     $ sensorResponseMessageSensor_response_typeHost_updateHostId srhu
-          node = Node nid
-      registerHost host
-      locateNodeOnHost node host
-      phaseLog "rg" $ "Registered host: " ++ show host
-      registerSyncGraphProcessMsg uuid
 
 -- | Monitor RAID data. We should register the RAID devices in the system,
 --   with no corresponding Mero devices.

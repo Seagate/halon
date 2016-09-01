@@ -12,7 +12,6 @@
 -- mero or its components.
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
-  , testHostAddition
 #ifdef USE_MERO
   , testRCsyncToConfd
   , testGoodConfValidates
@@ -73,8 +72,7 @@ import           HA.Service
 
 tests ::  (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
 tests host transport pg =
-  [ testCase "testHostAddition" $ testHostAddition transport pg
-  , testCase "testDriveAddition" $ testDriveAddition transport pg
+  [ testCase "testDriveAddition" $ testDriveAddition transport pg
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport pg
 #ifdef USE_MERO
   , testCase "testConfObjectStateQuery" $
@@ -111,41 +109,6 @@ testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent eid SpielSync _) 
     Right{} -> liftProcess $ say "Finished sync to confd"
   messageProcessed eid
 #endif
-
--- | Test that the recovery co-ordinator successfully adds a host to the
---   resource graph.
-testHostAddition :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHostAddition transport pg = runDefaultTest transport $ do
-  nid <- getSelfNode
-  self <- getSelfPid
-
-  registerInterceptor $ \case
-      str@"Starting service dummy"   -> usend self str
-      str' | "Registered host" `isInfixOf` str' ->
-        usend self ("Host" :: String)
-      _ -> return ()
-
-  say $ "tests node: " ++ show nid
-  withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
-    nodeUp ([nid], 1000000)
-    say "Send host update message to the RC"
-    promulgateEQ [nid] (nid, mockEvent) >>= flip withMonitor wait
-    "Host" :: String <- expect
-
-    say "Load graph"
-    graph <- G.getGraph mm
-    let host = Host "mockhost"
-        node = Node nid
-    liftIO $ do
-      assertBool (show host ++ " is not in graph") $
-        G.memberResource host graph
-      assertBool (show host ++ " is not connected to " ++ show node) $
-        G.memberEdge (G.Edge host Runs node) graph
-  where
-    wait = void (expect :: Process ProcessMonitorNotification)
-    mockEvent = (emptyHostUpdate "mockhost")
-      { SSPL.sensorResponseMessageSensor_response_typeHost_updateUname = Just "mockhost"
-      }
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
 --   and updates its status accordingly.
