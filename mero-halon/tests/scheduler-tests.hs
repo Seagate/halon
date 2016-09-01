@@ -46,8 +46,6 @@ ut _host transport = do
           HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport pg
       , testCase "testEQTrimming" $
           HA.RecoveryCoordinator.Tests.testEQTrimming transport pg
-      , testCase "testHostAddition" $
-          HA.RecoveryCoordinator.Mero.Tests.testHostAddition transport pg
       , testCase "testDriveAddition" $
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport pg
       , testCase "testServiceStopped" $

@@ -193,20 +193,24 @@ nodesOnHost host = do
 -- | Register a new host in the system.
 registerHost :: Host
              -> PhaseM LoopState l ()
-registerHost host = registerOnCluster host $ "Registering host: " ++ show host
+registerHost host = registerOnCluster host $ "Registering host on cluster: " ++ show host
 
 -- | Register a new thing on 'Cluster' as long as it has a 'Has'
--- 'G.Relation' instance.
+-- 'G.Relation' instance. Does nothing if the resource is already
+-- connected.
 registerOnCluster :: G.Relation Has Cluster a
                   => a -- ^ The thing to register
                   -> String -- ^ The message to log
                   -> PhaseM LoopState l ()
-registerOnCluster x m = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" m
-  let rg' = G.newResource x
-        >>> G.connect Cluster Has x
-          $ rg
-  return rg'
+registerOnCluster x m = modifyLocalGraph $ \rg ->
+  if G.isConnected Cluster Has x rg
+  then return rg
+  else do
+    phaseLog "rg" m
+    let rg' = G.newResource x
+          >>> G.connect Cluster Has x
+            $ rg
+    return rg'
 
 -- | Record that a host is running in an enclosure.
 locateHostInEnclosure :: Host
@@ -220,15 +224,18 @@ locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
 
   return $ G.connect enc Has host rg
 
--- | Record that a node is running on a host.
+-- | Record that a node is running on a host. Does not re-connect if
+-- the 'Node' is already connected to the given 'Host'.
 locateNodeOnHost :: Node
                  -> Host
                  -> PhaseM LoopState l ()
-locateNodeOnHost node host = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Locating node " ++ (show node) ++ " on host "
-              ++ show host
-
-  return $ G.connect host Runs node rg
+locateNodeOnHost node host = modifyLocalGraph $ \rg ->
+  if G.isConnected host Runs node rg
+  then return rg
+  else do
+    phaseLog "rg" $ "Locating node " ++ show node ++ " on host "
+                 ++ show host
+    return $ G.connect host Runs node rg
 
 ----------------------------------------------------------
 -- Host attribute functions                             --
