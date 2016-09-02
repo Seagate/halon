@@ -75,7 +75,7 @@ test = testCase "TSDisconnects" $
           m1loc = m1 ++ ":9000"
           m2loc = m2 ++ ":9000"
           m3loc = m3 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")

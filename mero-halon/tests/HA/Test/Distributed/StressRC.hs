@@ -69,7 +69,7 @@ test = testCase "StressRC" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder

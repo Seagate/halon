@@ -63,7 +63,7 @@ test = testCase "TSRecovers2" $
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
           m2loc = m2 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
