@@ -56,7 +56,6 @@ import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
 
-import Control.Applicative
 import Control.Distributed.Process hiding (catch)
 import Control.Lens ((<&>))
 import Control.Monad
