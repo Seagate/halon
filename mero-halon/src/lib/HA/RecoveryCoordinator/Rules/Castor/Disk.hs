@@ -95,10 +95,7 @@ rules = sequence_
 
 -- | All internal notifications related to disks.
 internalNotificationHandlers :: [Set -> PhaseM LoopState l ()]
-internalNotificationHandlers =
-  [ Repair.handleRepairInternal
-  , Reset.handleResetInternal
-  ]
+internalNotificationHandlers = [ Repair.handleRepairInternal ]
 
 -- | All external notifications related to disks.
 externalNotificationHandlers :: [Set -> PhaseM LoopState l ()]

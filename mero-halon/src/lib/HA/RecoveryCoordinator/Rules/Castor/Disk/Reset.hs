@@ -6,7 +6,6 @@
 -- Module containing some reset bits that multiple rules may want access to
 module HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
   ( handleResetExternal
-  , handleResetInternal
   , resetAttemptThreshold
   , ruleResetAttempt
   ) where
@@ -20,7 +19,6 @@ import HA.RecoveryCoordinator.Actions.Core
   , getLocalGraph
   , messageProcessed
   , promulgateRC
-  , registerSyncGraph
   , unlessM
   , whenM
   )
@@ -52,9 +50,7 @@ import Mero.Notification.HAState (Note(..))
 import qualified Mero.Spiel as Spiel
 
 import Control.Distributed.Process
-  ( Process
-  , say
-  )
+  ( Process )
 import Control.Lens ((<&>))
 import Control.Monad
   ( forM_
@@ -105,12 +101,20 @@ handleResetExternal (Set ns) = do
               -- Drive reset rule may be triggered if drive is removed, we
               -- can't do anything sane here, so skipping this rule.
               mstatus <- driveStatus sdev
+              isDrivePowered <- isStorageDevicePowered sdev
+              isDriveRemoved <- isStorageDriveRemoved sdev
               phaseLog "info" $ "Handle reset"
-              phaseLog "debug" $ "storage-device = " ++ show sdev
-              phaseLog "debug" $ "storage-device.status = " ++ show mstatus
+              phaseLog "storage-device" $ show sdev
+              phaseLog "storage-device.status" $ show mstatus
+              phaseLog "storage-device.powered" $ show isDrivePowered
+              phaseLog "storage-device.removed" $ show isDriveRemoved
               case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
+                _ | isDriveRemoved ->
+                  phaseLog "info" "Drive is physically removed, skipping reset."
+                _ | not isDrivePowered ->
+                  phaseLog "info" "Drive is not powered, skipping reset."
                 Just "EMPTY" ->
-                   phaseLog "info" "drive is physically removed, skipping reset"
+                  phaseLog "info" "Expander reset in progress, skipping reset."
                 _ -> do
                   st <- getState m0sdev <$> getLocalGraph
 
@@ -132,10 +136,10 @@ handleResetExternal (Set ns) = do
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       -- Notify rest of system if stat actually changed
-                      when (st /= status) $
+                      when (st /= status) $ do
                         applyStateChangesCreateFS [ stateSet m0sdev status ]
+                        promulgateRC $ ResetAttempt sdev
 
-                      registerSyncGraph $ say "handleReset synchronized"
             _ -> do
               phaseLog "warning" $ "Cannot find all entities attached to M0"
                                 ++ " storage device: "
@@ -144,33 +148,6 @@ handleResetExternal (Set ns) = do
                                 ++ show msdev
       _ -> return () -- Should we do anything here?
   liftIO $ traceEventIO "STOP mero-halon:external-handler:reset"
-
--- | Internal reset handler, if any drive changes state to a transient,
--- we need to run reset attempt.
-handleResetInternal :: Set -> PhaseM LoopState l ()
-handleResetInternal (Set ns) = do
-  liftIO $ traceEventIO "START mero-halon:internal-handler:reset-attempt"
-  for_ ns $ \(Note mfid tpe) ->
-    case tpe of
-      M0_NC_TRANSIENT -> do
-        sdevm <- lookupConfObjByFid mfid
-        for_ sdevm $ \m0sdev ->  do
-          msdev <- lookupStorageDevice m0sdev
-          forM_ msdev $ \sdev ->  do
-            mstatus <- driveStatus sdev
-            isDrivePowered <- isStorageDevicePowered sdev
-            isDriveRemoved <- isStorageDriveRemoved sdev
-            case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
-              _ | isDriveRemoved ->
-                phaseLog "info" "Drive is physically removed, skipping reset."
-              _ | not isDrivePowered ->
-                phaseLog "info" "Drive is not powered, skipping reset."
-              Just "EMPTY" ->
-                phaseLog "info" "Expander reset in progress, skipping reset."
-              _ -> do phaseLog "info" $ "Starting reset attempt for " ++ show sdev
-                      promulgateRC $ ResetAttempt sdev
-      _ -> return ()
-  liftIO $ traceEventIO "STOP mero-halon:internal-handler:reset-attempt"
 
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = define "reset-attempt" $ do

@@ -486,9 +486,6 @@ resetComplete mm (ADisk sdev _ serial _ _) = let
   in do
     debug "resetComplete"
     nid <- getSelfNode
-    rg <- G.getGraph mm
-    liftIO . assertBool "false_dev should we power off"
-           . not . any isPowered $ devAttrs sdev rg
     _ <- promulgateEQ [nid] resetCmd
     let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                          $ nodeCmdString (SmartTest tserial)
