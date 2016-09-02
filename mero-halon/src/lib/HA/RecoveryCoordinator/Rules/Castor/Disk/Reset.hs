@@ -28,6 +28,7 @@ import HA.RecoveryCoordinator.Events.Drive
   ( ResetAttempt(..)
   , ResetFailure(..)
   , ResetSuccess(..)
+  , DriveRemoved(drDevice)
   )
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
@@ -159,6 +160,7 @@ ruleResetAttempt = define "reset-attempt" $ do
       smartFailure  <- phaseHandle "smart-failure"
       failure       <- phaseHandle "failure"
       end           <- phaseHandle "end"
+      drive_removed <- phaseHandle "drive-removed"
 
       setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
         nodes <- getSDevNode sdev
@@ -173,14 +175,18 @@ ruleResetAttempt = define "reset-attempt" $ do
         case paths of
           serial:_ -> do
             put Local (Just (sdev, pack serial, node, uid))
+            whenM (isStorageDriveRemoved sdev) $ do
+              phaseLog "info" $ "Cancelling drive reset as drive is removed."
+              phaseLog "sdev" $ show sdev
+              continue end
             unlessM (isStorageDevicePowered sdev) $ do
               phaseLog "info" $ "Device powered off: " ++ show sdev
-              switch [resetComplete, timeout driveResetTimeout failure]
+              switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
             whenM (isStorageDeviceRunningSmartTest sdev) $ do
               phaseLog "info" $ "Device running SMART test: " ++ show sdev
-              switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+              switch [drive_removed, smartSuccess, smartFailure, timeout smartTestTimeout failure]
             markOnGoingReset sdev
-            continue reset
+            switch [drive_removed, reset]
           [] -> do
             -- XXX: send IEM message
             phaseLog "warning" $ "Cannot perform reset attempt for drive "
@@ -206,7 +212,7 @@ ruleResetAttempt = define "reset-attempt" $ do
               lookupSDevDisk m0sdev >>= flip forM_ (\d ->
                 withSpielRC $ \sp m0 -> withRConfRC sp
                   $ m0 $ Spiel.deviceDetach sp (M0.fid d))
-            switch [resetComplete, timeout driveResetTimeout failure]
+            switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
           else continue failure
         else continue failure
 
@@ -218,7 +224,7 @@ ruleResetAttempt = define "reset-attempt" $ do
           phaseLog "debug" $ "Drive reset success for sdev: " ++ show sdev
           markDiskPowerOn sdev
           messageProcessed eid
-          continue smart
+          switch [drive_removed, smart]
         else do
           phaseLog "debug" $ "Drive reset failure for sdev: " ++ show sdev
           messageProcessed eid
@@ -230,7 +236,9 @@ ruleResetAttempt = define "reset-attempt" $ do
         if sent
         then do phaseLog "info" $ "Running SMART test on " ++ show sdev
                 markSMARTTestIsRunning sdev
-                switch [smartSuccess, smartFailure, timeout smartTestTimeout failure]
+                switch [ drive_removed, smartSuccess
+                        , smartFailure, timeout smartTestTimeout failure
+                        ]
         else continue failure
 
       setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
@@ -279,6 +287,13 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (_, _, _, uid) <- get Local
         messageProcessed uid
         stop
+
+      setPhaseIf drive_removed onDriveRemoved $ \sdev -> do
+        phaseLog "info" "Cancelling drive reset as drive removed."
+        -- Claim all things are complete
+        markResetComplete sdev
+        markSMARTTestComplete sdev
+        continue end
 
       startFork home Nothing
 
@@ -330,3 +345,13 @@ onSmartFailure (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
         | otherwise -> return Nothing
       _ -> return Nothing
 onSmartFailure _ _ _ = return Nothing
+
+onDriveRemoved :: DriveRemoved
+               -> g
+               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> Process (Maybe StorageDevice)
+onDriveRemoved dr _ (Just (sdev, _, _, _)) =
+    if drDevice dr == sdev
+    then return $ Just sdev
+    else return Nothing
+onDriveRemoved _ _ _ = return Nothing
