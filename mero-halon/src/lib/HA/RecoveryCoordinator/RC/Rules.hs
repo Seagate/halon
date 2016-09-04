@@ -8,18 +8,25 @@ module HA.RecoveryCoordinator.RC.Rules
   , initialRule
   ) where
 
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.RC.Events
-import HA.Resources.RC
+import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Events
+import           HA.RecoveryCoordinator.RC.Internal
+import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
+import           HA.Resources.RC
+import qualified HA.Resources as R
 import qualified HA.ResourceGraph as G
 import Network.CEP
 
+
 import Control.Distributed.Process
   ( ProcessMonitorNotification(..)
+  , NodeMonitorNotification(..)
+  , DidSpawn(..)
   , getSelfPid
   , monitor
   , usend
+  , say
   )
 import Control.Distributed.Process.Serializable
   ( decodeFingerprint
@@ -38,7 +45,9 @@ rules :: Definitions LoopState ()
 rules = sequence_
   [ ruleNewSubscription
   , ruleRemoveSubscription
-  , ruleSubscriberDied
+  , ruleProcessMonitorNotification
+  , ruleNodeMonitorNotification
+  , ruleDidSpawn
   ]
 
 -- | Describe how to update recovery coordinator, in case
@@ -49,19 +58,30 @@ updateRC _old _new = return ()
 
 -- | Store information about currently running RC in the Resource Graph
 -- ('G.Graph'). We store current RC, and update old one if needed.
-initialRule :: PhaseM LoopState l ()
-initialRule = do
+initialRule :: IgnitionArguments -> PhaseM LoopState l ()
+initialRule argv = do
+  let l = liftProcess . say
+  l "make RC"
   -- Store current recovery coordinator in the graph and update
   -- graph if needed.
   rc <- makeCurrentRC updateRC
   -- subscribe all processes with persistent subscription.
   rg <- getLocalGraph
+  l "subscribers"
   for_ (G.connectedFrom SubscribedTo rc rg) $ \(Subscriber p bs) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
       _ <- monitor p
       rawSubscribeThem self fp p
+  l "register angel"
+  -- Run node monitoring angel.
+  registerNodeMonitoringAngel
+  -- Add all known nodes to cluster.
+  phaseLog "info" "Adding known nodes" -- XXX: do not add ones that are not up
+  l "add nodes"
+  for_ (G.connectedTo R.Cluster R.Has rg) $
+    addNodeToCluster (eqNodes argv)
 
 -- | When new process is subscribed to some interesting events persistently,
 -- we store that in RG and add announce that to CEP engine manually.
@@ -110,12 +130,19 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
              $ g
       g'
 
--- | When process that requested subscription dies, we need to remove that
+-- | When monitored process dies we call all handlers who are intersted in that
+-- event.
+--
+-- Additional if it was pprocess that requested subscription, we need to remove that
 -- subscription from the graph.
-ruleSubscriberDied :: Definitions LoopState ()
-ruleSubscriberDied = defineSimpleTask "halon::rc::subscriber-died" $
-  \(ProcessMonitorNotification _ pid _) -> do
+ruleProcessMonitorNotification :: Definitions LoopState ()
+ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notification" $
+  \(ProcessMonitorNotification mref pid _) -> do
       self <- liftProcess $ getSelfPid
+
+      runMonitorCallback mref
+
+      -- Remove external subscribers
       modifyLocalGraph $ \g -> do
         let subs =
              [ (sub,rc)
@@ -128,3 +155,16 @@ ruleSubscriberDied = defineSimpleTask "halon::rc::subscriber-died" $
             State.modify $ G.disconnect sub SubscribedTo rc
             State.modify $ G.disconnect (SubProcessId pid) IsSubscriber sub
             lift $ liftProcess $ rawUnsubscribeThem self fp pid
+
+-- | When node dies we run all interested subscribers.
+ruleNodeMonitorNotification :: Definitions LoopState ()
+ruleNodeMonitorNotification = defineSimple "halon::rc::node-monitor-notification" $
+  \(NodeMonitorNotification mref nid reason) -> do
+     phaseLog "node" $ show nid
+     phaseLog "reason" $ show reason
+     runMonitorCallback mref
+
+-- | When process did spawn we run all interested subscribers.
+ruleDidSpawn :: Definitions LoopState ()
+ruleDidSpawn = defineSimple "halon::rc::did-spawn" $
+  \(DidSpawn ref _) -> runSpawnCallback ref

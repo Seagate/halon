@@ -28,7 +28,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..))
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
+import qualified HA.Resources.Mero.Note()
 import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.RC
@@ -119,7 +119,7 @@ cluster nids' opt = do
     cluster' nids (Dump s) = dumpConfd nids s
     cluster' nids (Status (StatusOptions m d)) = clusterCommand nids ClusterStatusRequest (liftIO . output m d)
       where output True _ = jsonReport
-            output False d = prettyReport d
+            output False e = prettyReport e
     cluster' nids (Start (StartOptions async))  = do
       say "Starting cluster."
       clusterStartCommand nids async
@@ -129,7 +129,7 @@ cluster nids' opt = do
     cluster' nids (ClientCmd s) = client nids s
     cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
     cluster' nids (ResetCmd r) = clusterReset nids r
-    cluster' nids (MkfsDone (MkfsDoneOptions False)) = do
+    cluster' _    (MkfsDone (MkfsDoneOptions False)) = do
       liftIO $ putStrLn "Please check that cluster fits all requirements first."
     cluster' nids (MkfsDone (MkfsDoneOptions True)) = do
       clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")

@@ -59,7 +59,6 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Hardware
       ( findHostStorageDevices, findStorageDeviceIdentifiers )
-import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
      ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
@@ -69,7 +68,6 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      , setPhaseNotified
      )
 import           HA.RecoveryCoordinator.Actions.Job
-import           HA.Services.Mero
 import           HA.Services.Mero.RC (meroChannel)
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
@@ -106,6 +104,7 @@ clusterRules = sequence_
   , eventNodeFailedStart
   , ruleServiceNotificationHandler
   , requestClusterReset
+  , ruleMarkProcessesBootstrapped
   ]
 
 -------------------------------------------------------------------------------
@@ -647,12 +646,11 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
     rg <- getLocalGraph
     if G.isConnected proc R.Has M0.PLM0t1fs rg
     then do
-      let nodes = [node | m0node <- G.connectedFrom M0.IsParentOf proc rg
-                        , node   <- m0nodeToNode m0node rg
-                        ]
-      m0svc <- runMaybeT $ asum
-               $ map (\node -> MaybeT $ lookupRunningService node m0d) nodes
-      case m0svc >>= meroChannel rg of
+      let chans = [ch | m0node <- G.connectedFrom M0.IsParentOf proc rg
+                      , node   <- m0nodeToNode m0node rg
+                      , let Just ch = meroChannel rg node
+                      ]
+      case listToMaybe chans of
         Just chan -> do
            phaseLog "info" $ "Starting client"
            -- TODO switch to 'StartProcessesRequest' (HALON-373)

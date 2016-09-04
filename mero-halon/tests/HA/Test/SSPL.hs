@@ -25,14 +25,15 @@ import Test.Tasty.HUnit
 
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
+import HA.Encode
 import HA.Multimap
-import HA.Service
 import HA.Services.SSPL hiding (header)
 import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
+import HA.RecoveryCoordinator.Events.Service
 import HA.Startup (startupHalonNode, ignition)
 import HA.NodeUp  (nodeUp)
 import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)

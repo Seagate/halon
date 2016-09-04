@@ -6,10 +6,8 @@ module Mero.Notification.Tests
    ( tests
    ) where
 
-import HA.NodeUp (nodeUp)
 import Control.Concurrent.STM
 import Control.Distributed.Process
-import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
 import Control.Monad (when)
 import Mero.ConfC hiding (Process)
@@ -17,10 +15,8 @@ import Mero.Notification
 import qualified HA.Resources.Mero.Note as M0
 import Mero.Notification.HAState
 import Network.Transport
-import RemoteTables
 import HA.RecoveryCoordinator.Helpers
 
-import TestRunner
 import Test.Tasty
 import Test.Tasty.HUnit (assertEqual, testCase, assertFailure)
 
@@ -29,10 +25,10 @@ tests transport = testGroup "mero-notification-worker"
    [ testCase "testNotificationWorker" $ testNotificationWorker transport
    ]
 
+testNotificationWorker :: Transport -> IO ()
 testNotificationWorker transport = runDefaultTest transport $ do
      notificationChannel <- liftIO $ newTChanIO
      let fid1 = Fid 0 1
-     output <- liftIO $ newTChanIO
      self   <- getSelfPid
      pid <- spawnLocal $ notificationWorker notificationChannel
                                           (usend self)
@@ -67,20 +63,20 @@ testNotificationWorker transport = runDefaultTest transport $ do
      when schedulerIsEnabled $ usend pid ()
      liftIO $ atomically $ writeTChan notificationChannel [Note fid1 M0.M0_NC_ONLINE]
      when schedulerIsEnabled $ usend pid ()
-     mnotes5 <- expectTimeout (pendingInterval+pendingInterval `div` 2) :: Process (Maybe Note)
+     _mnotes5 <- expectTimeout (pendingInterval+pendingInterval `div` 2) :: Process (Maybe Note)
      liftIO $ assertEqual "only one message was delivered" Nothing mnotes4
      _ <- receiveTimeout (cancelledInterval) [] :: Process (Maybe ())
 
      -- filter out after send
      liftIO $ atomically $ writeTChan notificationChannel [Note fid1 M0.M0_NC_TRANSIENT]
      when schedulerIsEnabled $ usend pid ()
-     mnotes3 <- expectTimeout (pendingInterval+pendingInterval `div` 2)
-     liftIO $ case mnotes3 of
+     mnotes6 <- expectTimeout (pendingInterval+pendingInterval `div` 2)
+     liftIO $ case mnotes6 of
        Nothing -> assertFailure "sent message was not delivered."
        Just [Note xfid1 st] -> do assertEqual "fid is correct" fid1 xfid1
                                   assertEqual "state should be transient" M0.M0_NC_TRANSIENT st
        Just ns -> assertFailure $ "too many messages were delivered: " ++ show ns
      liftIO $ atomically $ writeTChan notificationChannel [Note fid1 M0.M0_NC_TRANSIENT]
      when schedulerIsEnabled $ usend pid ()
-     mnotes4 <- expectTimeout (sentInterval + pendingInterval) :: Process (Maybe Note)
-     liftIO $ assertEqual "only one message was delivered" Nothing mnotes4
+     mnotes7 <- expectTimeout (sentInterval + pendingInterval) :: Process (Maybe Note)
+     liftIO $ assertEqual "only one message was delivered" Nothing mnotes7

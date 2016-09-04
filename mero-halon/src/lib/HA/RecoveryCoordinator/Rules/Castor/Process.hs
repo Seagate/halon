@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
+
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -15,7 +15,6 @@ import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
@@ -26,7 +25,6 @@ import           HA.Resources (Has(..), Node(..))
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
-import           HA.Services.Mero (m0d)
 import           HA.Services.Mero.RC.Actions (meroChannel)
 import           HA.Services.Mero.Types
 import           Mero.Notification.HAState
@@ -140,8 +138,7 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
     rg <- getLocalGraph
     mrunRestart <- runMaybeT $ do
       node <- MaybeT . return $ M0.m0nodeToNode m0node rg
-      m0svc <- MaybeT $ lookupRunningService node m0d
-      ch <- MaybeT . return $ meroChannel rg m0svc
+      ch <- MaybeT . return $ meroChannel rg node
       return $ do
         phaseLog "info" $ "Requesting restart for " ++ show p
         -- TODO: Probably should check that the controller we're on
@@ -386,12 +383,8 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
     (Just (StopProcessesRequest m0node p))
       <- gets Local (^. rlens fldReq . rfield)
     rg <- getLocalGraph
-    mchan <- runMaybeT $ do
-      let nodes = m0nodeToNode m0node rg
-      (m0svc,_node) <- asum $ map
-        (\node -> MaybeT $ fmap (,node) <$> lookupRunningService node m0d)
-        nodes
-      MaybeT . return $ meroChannel rg m0svc
+    let nodes = m0nodeToNode m0node rg
+        mchan = listToMaybe $ mapMaybe (meroChannel rg) nodes
     case mchan of
       Just ch -> do
         stopNodeProcesses ch p

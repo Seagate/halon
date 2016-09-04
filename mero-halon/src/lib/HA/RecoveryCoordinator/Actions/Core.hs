@@ -1,12 +1,9 @@
+{-# LANGUAGE RankNTypes                 #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE CPP                        #-}
-
+-- XXX: write module level documentation
 module HA.RecoveryCoordinator.Actions.Core
   ( -- * Manipulating LoopState
     LoopState(..)
@@ -32,6 +29,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , deleteStorageSetRC
     -- * Communication with the EQ
   , messageProcessed
+  , mkMessageProcessed
   , selfMessage
   , promulgateRC
   , unsafePromulgateRC
@@ -65,9 +63,8 @@ import HA.Resources
 import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import HA.EventQueue.Types
 import HA.EventQueue.Producer (promulgateWait)
-import HA.Service
+import HA.Encode
   ( ProcessEncode(..)
-  , ServiceName(..)
   , decodeP
   )
 
@@ -98,8 +95,6 @@ import Network.CEP
 
 data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
-  , lsFailMap  :: Map.Map (ServiceName, Node) Int
-    -- ^ Failed reconfiguration count
   , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
   , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsRefCount :: Map.Map UUID Int
@@ -210,6 +205,14 @@ messageProcessed :: UUID -> PhaseM LoopState l ()
 messageProcessed uuid = do
   eqPid <- lsEQPid <$> get Global
   liftProcess $ usend eqPid uuid
+
+-- | Create function that will process message and can be called from
+-- 'Process' context, is useful for marking message as processed from
+-- spawned threads.
+mkMessageProcessed :: PhaseM LoopState l (UUID -> Process ())
+mkMessageProcessed = do
+  eqPid <- lsEQPid <$> get Global
+  return $ usend eqPid
 
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s

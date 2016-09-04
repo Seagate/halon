@@ -10,21 +10,25 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.Services.Noisy
   ( noisy
   , NoisyConf(..)
   , HasPingCount(..)
   , NoisyPingCount(..)
+  , DummyEvent(..)
   , HA.Services.Noisy.__remoteTable
   , HA.Services.Noisy.__remoteTableDecl
+    -- D-P specifics
+  , noisy__static
+  , noisyProcess__sdict
+  , noisyProcess__tdict
   ) where
 
 import HA.EventQueue.Producer
 import HA.ResourceGraph
 import HA.Service
 import HA.Service.TH
+import HA.Services.Dummy (DummyEvent(..))
 
 #if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative ((<$>))
@@ -95,8 +99,7 @@ never = receiveWait []
 
 remotableDecl [ [d|
   noisy :: Service NoisyConf
-  noisy = Service
-            (ServiceName "noisy")
+  noisy = Service "noisy"
             $(mkStaticClosure 'noisyProcess)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictNoisyConf))

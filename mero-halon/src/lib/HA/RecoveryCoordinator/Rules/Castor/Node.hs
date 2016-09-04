@@ -1,11 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
 -- Collection of the rules for maintaining castor node.
 --
 -- Castor node is a hardware node with running mero-kernel, such node
@@ -111,13 +113,13 @@ module HA.RecoveryCoordinator.Rules.Castor.Node
   , maxTeardownLevel
   ) where
 
+import           HA.Encode
 import           HA.Service
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Job
-import           HA.RecoveryCoordinator.Actions.Service (lookupRunningService)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
@@ -125,10 +127,11 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Actions (meroChannel)
 import qualified HA.RecoveryCoordinator.Events.Cluster as Event
+import           HA.RecoveryCoordinator.Events.Service as Service
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 import           Mero.ConfC (Fid, ServiceType(CST_HA))
 
-import           Control.Distributed.Process(Process, spawnLocal, spawnAsync)
+import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
 import           Control.Distributed.Process.Closure
 import           Control.Monad (when)
 import           Control.Monad.Trans.Maybe
@@ -226,9 +229,7 @@ eventNewHalonNode = defineSimpleTask "castor::node::event::new-node" $ \(Event.N
 eventKernelStarted :: Definitions LoopState ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
   g <- getLocalGraph
-  let nodes = [m0node | node :: R.Node <- G.connectedFrom R.Runs sp g
-                      , m0node <- nodeToM0Node node g
-                      ]
+  let nodes = nodeToM0Node (R.Node $ processNodeId sp) g
   applyStateChanges $ (`stateSet` M0.NSOnline) <$> nodes
   for_ nodes $ notify . KernelStarted
 
@@ -241,15 +242,11 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
 eventKernelFailed :: Definitions LoopState ()
 eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid _) -> do
   g <- getLocalGraph
-  let sp = ServiceProcess pid :: ServiceProcess MeroConf
-      nodes = G.connectedFrom R.Runs sp g
-      m0nodes = nodes >>= flip nodeToM0Node g
+  let node = R.Node $ processNodeId pid
+      m0nodes = nodeToM0Node node g
   applyStateChanges $ (`stateSet` M0.NSFailed) <$> m0nodes
-
-  for_ nodes $ \node -> do
-    promulgateRC $ encodeP $ ServiceStopRequest node m0d
+  promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
-
 
 
 -------------------------------------------------------------------------------
@@ -511,8 +508,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
             node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
             MaybeT $ do
               rg <- getLocalGraph
-              srv <- lookupRunningService node m0d -- XXX: head
-              let chan = srv >>= meroChannel rg :: Maybe (TypedChannel ProcessControlMsg)
+              let chan = meroChannel rg node :: Maybe (TypedChannel ProcessControlMsg)
               host <- findNodeHost node  -- XXX: head
               modify Local $ rlens fldHost .~ (Field $ host)
               modify Local $ rlens fldNode .~ (Field $ Just node)
@@ -570,8 +566,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel g of
+      case meroChannel g node of
         Just chan -> do
           ps <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
           when (null ps) $ do
@@ -589,8 +584,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel g of
+      case meroChannel g node of
         Just chan -> do
           ps <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0))
           -- We aren't actually starting anything: if this is the only
@@ -610,8 +604,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel g of
+      case meroChannel g node of
         Just chan -> do
           procs <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
           if null procs
@@ -627,8 +620,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       Just node <- getField . rget fldNode <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       g <- getLocalGraph
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel g of
+      case meroChannel g node of
         Just chan -> do
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1))
           let notifications = (\p -> stateSet p M0.PSOnline) <$> procs
@@ -682,7 +674,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
               modify Local $ rlens fldM0Node .~ Field (Just m0node)
               modify Local $ rlens fldNode .~ Field (Just node)
               modify Local $ rlens fldHost .~ Field (Just host)
-              let hasM0d = isJust $ runningService node m0d rg
+              let hasM0d = not . null $ lookupServiceInfo node m0d rg
               case getClusterStatus rg of
                 Just (M0.MeroClusterState M0.OFFLINE _ _ ) -> do
                   phaseLog "warning" $ "Request to start clients but "
@@ -703,7 +695,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
           Nothing -> Nothing
           Just _ -> case getField $ rget fldNode l of
             Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
-            Just n -> void $ runningService n m0d (lsGraph g)
+            Just n -> void $ listToMaybe $ lookupServiceInfo n m0d (lsGraph g)
 
     setPhaseIf await_barrier
         (nodeRunning (\mcs -> M0._mcs_runlevel mcs >= m0t1fsBootLevel)) $ \() -> do
@@ -716,8 +708,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
       Just node <- getField . rget fldNode <$> get Local
       Just m0node <- getField . rget fldM0Node <$> get Local
       Just host <- getField . rget fldHost <$> get Local
-      m0svc <- lookupRunningService node m0d
-      case m0svc >>= meroChannel rg of
+      case meroChannel rg node of
         Just chan -> do
           phaseLog "info" $ "Starting mero client on " ++ show host
           -- XXX: implement await

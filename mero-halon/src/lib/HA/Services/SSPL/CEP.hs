@@ -6,11 +6,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE CPP                 #-}
-
 module HA.Services.SSPL.CEP where
+
+import HA.Services.SSPL.LL.RC.Actions
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Service hiding (configDict)
@@ -19,11 +19,12 @@ import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 
 import HA.RecoveryCoordinator.Events.Drive
-import HA.ResourceGraph
-import HA.Resources (Cluster(..), Node(..), Has(..))
+import qualified HA.RecoveryCoordinator.Actions.Service as Service
+import HA.ResourceGraph hiding (null)
+import HA.Resources (Node(..), Has(..), Cluster(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (showFid)
 import Mero.ConfC (strToFid)
@@ -34,13 +35,13 @@ import Text.Read (readMaybe)
 import SSPL.Bindings
 
 import Control.Applicative
-import Control.Arrow ((>>>))
 import Control.Distributed.Process
   ( NodeId
-  , SendPort
   , sendChan
   , say
   , usend
+  , processNodeId
+  , nsendRemote
   )
 import Control.Lens ((<&>))
 import Control.Monad
@@ -48,12 +49,14 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe, maybeToList, fromMaybe, isJust)
+import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import Data.UUID (UUID)
 import Data.Binary (Binary)
+import Data.Foldable (for_)
+import Data.Traversable (for)
 import Data.Typeable (Typeable)
 
 import Network.CEP
@@ -68,14 +71,8 @@ import Prelude hiding (mapM_)
 sendInterestingEvent :: InterestingEventMessage
                      -> PhaseM LoopState l ()
 sendInterestingEvent msg = do
-  phaseLog "action" $ "Sending InterestingEventMessage."
-  rg <- getLocalGraph
-  let
-    chanm = listToMaybe
-            [ c | s <- connectedTo Cluster Supports rg :: [Service SSPLConf]
-                , n <- connectedTo Cluster Has rg
-                , Just sp <- [runningService n s rg]
-                , c <- connectedTo sp IEMChannel rg ]
+  phaseLog "action" "Sending InterestingEventMessage."
+  chanm <- listToMaybe <$> getAllIEMChannels
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
@@ -86,16 +83,16 @@ sendSystemdCmd :: NodeId
                -> PhaseM LoopState l ()
 sendSystemdCmd nid req = do
   phaseLog "action" $ "Sending Systemd request" ++ show req
-  rg <- getLocalGraph
-  let
-    node = Node nid
-    chanm = do
-      s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
-      sp <- runningService node s rg
-      listToMaybe $ connectedTo sp CommandChannel rg
+  chanm <- getCommandChannel (Node nid)
   case chanm of
-    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeSystemdMsg req)
+    Just chan -> sendSystemdCmdChan chan req
     _ -> phaseLog "warning" "Cannot find systemd channel!"
+
+sendSystemdCmdChan :: Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
+                   -> SystemdCmd
+                   -> PhaseM LoopState l ()
+sendSystemdCmdChan (Channel chan) req =
+  liftProcess $ sendChan chan (Nothing, makeSystemdMsg req)
 
 -- | Send command to logger actuator.
 --
@@ -107,13 +104,9 @@ sendLoggingCmd :: Host
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
   rg <- getLocalGraph
-  let mchan = listToMaybe $ do
-        s    <- connectedTo Cluster Supports rg
-        node <- connectedTo host Runs rg
-        sp   <- maybeToList $ runningService (node::Node) (s::Service SSPLConf) rg
-        connectedTo sp CommandChannel rg
+  mchan <- listToMaybe . catMaybes <$> for (connectedTo host Runs rg) getCommandChannel
   case mchan of
-    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing :: Maybe UUID, makeLoggerMsg req)
+    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing, makeLoggerMsg req)
     _ -> phaseLog "error" "Cannot find sspl channel!"
 
 mkDiskLoggingCmd :: T.Text -- ^ Status
@@ -134,11 +127,7 @@ sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM LoopState l Bool
 sendLedUpdate status host sn = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
-  let mnode = listToMaybe [ node
-                          | s    <- connectedTo Cluster Supports rg
-                          , node <- connectedTo host Runs rg
-                          , isJust $ runningService (node :: Node) (s :: Service SSPLConf) rg
-                          ]
+  let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
   case mnode of
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
@@ -162,63 +151,31 @@ sendNodeCmd :: NodeId
             -> PhaseM LoopState l Bool
 sendNodeCmd nid muuid req = do
   phaseLog "action" $ "Sending node actuator request: " ++ show req
-  rg <- getLocalGraph
-  let
-    node = Node nid
-    chanm = do
-      s <- listToMaybe $ (connectedTo Cluster Supports rg :: [Service SSPLConf])
-      sp <- runningService node s rg
-      listToMaybe $ connectedTo sp CommandChannel rg
+  chanm <- getCommandChannel (Node nid)
   case chanm of
-    Just (Channel chan) -> do liftProcess $ sendChan chan (muuid, makeNodeMsg req)
-                              return True
+    Just chan -> do sendNodeCmdChan chan muuid req
+                    return True
     _ -> do phaseLog "warning" "Cannot find command channel!"
             return False
 
-registerChannels :: ServiceProcess SSPLConf
-                 -> ActuatorChannels
-                 -> PhaseM LoopState l ()
-registerChannels svc acs = modifyLocalGraph $ \rg -> do
-    phaseLog "rg" "Registering SSPL actuator channels."
-    let rg' =   registerChannel IEMChannel (iemPort acs)
-            >>> registerChannel CommandChannel (systemdPort acs)
-            $   rg
-    return rg'
-  where
-    registerChannel :: forall r b. Relation r (ServiceProcess SSPLConf) (Channel b)
-                    => r
-                    -> SendPort b
-                    -> Graph
-                    -> Graph
-    registerChannel r sp =
-        newResource svc >>>
-        newResource chan >>>
-        connect svc r chan
-      where
-        chan = Channel sp
+sendNodeCmdChan :: Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
+                -> Maybe UUID
+                -> NodeCmd
+                -> PhaseM LoopState l ()
+sendNodeCmdChan (Channel chan) muuid req =
+  liftProcess $ sendChan chan (muuid, makeNodeMsg req)
 
-findActuationNode :: Configuration a => Service a
-                  -> PhaseM LoopState l NodeId
-findActuationNode sspl = do
-    (Node actuationNode) <- fmap head
-        $ findHosts ".*"
-      >>= filterM (hasHostAttr HA_POWERED)
-      >>= mapM nodesOnHost
-      >>= return . join
-      >>= filterM (\a -> isServiceRunning a sspl)
-    return actuationNode
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
 
-ssplRulesF :: Service SSPLConf -> Definitions LoopState ()
-ssplRulesF sspl = sequence_
+ssplRules :: Service SSPLConf -> Definitions LoopState ()
+ssplRules sspl = sequence_
   [ ruleDeclareChannels
   , ruleMonitorDriveManager
   , ruleMonitorStatusHpi
   , ruleMonitorRaidData
-  , ruleSystemdCmd sspl
   , ruleHlNodeCmd sspl
   , ruleThreadController
   , ruleSSPLTimeout sspl
@@ -229,10 +186,22 @@ ssplRulesF sspl = sequence_
 #endif
   ]
 
+initialRule :: Service SSPLConf -> PhaseM LoopState l () -- XXX: remove first argument
+initialRule sspl = do
+   rg <- getLocalGraph
+   let nodes = [ n | host <- connectedTo Cluster Has rg :: [Host]
+               , n <- connectedTo host Runs rg :: [Node]
+               , not . null $ lookupServiceInfo n sspl rg
+               ]
+   liftProcess $ for_ nodes $ \(Node nid) -> -- XXX: wait for reply ?!
+     nsendRemote nid (serviceLabel sspl) RequestChannels
+
 ruleDeclareChannels :: Definitions LoopState ()
 ruleDeclareChannels = defineSimpleTask "declare-channels" $
-      \(DeclareChannels pid svc acs) -> do
-          registerChannels svc acs
+      \(DeclareChannels pid (ActuatorChannels iem systemd)) -> do
+          let node = Node (processNodeId pid)
+          storeIEMChannel node (Channel iem)
+          storeCommandChannel node (Channel systemd)
           ack pid
 
 data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
@@ -673,55 +642,8 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
 
   -- Dummy rule for handling SSPL HL commands
 
--- TODO: Consider whether we need this (probably not)
-ruleSystemdCmd :: Service SSPLConf -> Definitions LoopState ()
-ruleSystemdCmd sspl = defineSimpleIf "systemd-cmd" (\(HAEvent uuid cr _ ) _ ->
-    return . fmap (uuid,) . commandRequestMessageServiceRequest
-              . commandRequestMessage
-              $ cr
-    ) $ \(uuid,sr) -> do
-      let
-        serviceName = commandRequestMessageServiceRequestServiceName sr
-        command = commandRequestMessageServiceRequestCommand sr
-        nodeFilter = case commandRequestMessageServiceRequestNodes sr of
-          Just foo -> T.unpack foo
-          Nothing -> "."
-      case command of
-        Aeson.String "start" -> do
-          nodes <- findHosts nodeFilter
-                    >>= mapM nodesOnHost
-                    >>= return . join
-                    >>= filterM (\a -> fmap not $ isServiceRunning a sspl)
-          phaseLog "action" $ "Starting " ++ (T.unpack serviceName)
-                          ++ " on nodes " ++ (show nodes)
-          forM_ nodes $ \(Node nid) -> do
-            sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_START
-        Aeson.String "stop" -> do
-          nodes <- findHosts nodeFilter
-                    >>= mapM nodesOnHost
-                    >>= return . join
-                    >>= filterM (\a -> isServiceRunning a sspl)
-          phaseLog "action" $ "Stopping " ++ (T.unpack serviceName)
-                          ++ " on nodes " ++ (show nodes)
-          forM_ nodes $ \(Node nid) -> do
-            sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_STOP
-        Aeson.String "restart" -> do
-          nodes <- findHosts nodeFilter
-                    >>= mapM nodesOnHost
-                    >>= return . join
-                    >>= filterM (\a -> isServiceRunning a sspl)
-          phaseLog "action" $ "Restarting " ++ (T.unpack serviceName)
-                          ++ " on nodes " ++ (show nodes)
-          forM_ nodes $ \(Node nid) -> do
-            sendSystemdCmd nid $ SystemdCmd serviceName SERVICE_RESTART
-        -- Aeson.String "enable" -> liftProcess $ say "Unsupported."
-        -- Aeson.String "disable" -> liftProcess $ say "Unsupported."
-        -- Aeson.String "status" -> liftProcess $ say "Unsupported."
-        x -> liftProcess . say $ "Unsupported service command: " ++ show x
-      messageProcessed uuid
-
 ruleHlNodeCmd :: Service SSPLConf -> Definitions LoopState ()
-ruleHlNodeCmd sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
+ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
     return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
               $ cr
@@ -732,21 +654,22 @@ ruleHlNodeCmd sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ 
           Just foo -> T.unpack foo
           Nothing -> "."
       in do
-        actuationNode <- findActuationNode sspl
-        hosts <- fmap catMaybes
-                $ findHosts nodeFilter
-              >>= mapM findBMCAddress
-        case command of
-          Aeson.String "poweroff" -> do
-            phaseLog "action" $ "Powering off hosts " ++ (show hosts)
-            forM_ hosts $ \(nodeIp) -> do
-              sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
-          Aeson.String "poweron" -> do
-            phaseLog "action" $ "Powering on hosts " ++ (show hosts)
-            forM_ hosts $ \(nodeIp) -> do
-              sendNodeCmd actuationNode Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
-          x -> liftProcess . say $ "Unsupported node command: " ++ show x
-        messageProcessed uuid
+        mactuationChannel <- listToMaybe <$> getAllCommandChannels -- XXX: filter nodes that is not running (?)
+        for_ mactuationChannel $ \actuationChannel -> do
+          hosts <- fmap catMaybes
+                  $ findHosts nodeFilter
+                >>= mapM findBMCAddress
+          case command of
+            Aeson.String "poweroff" -> do
+              phaseLog "action" $ "Powering off hosts " ++ (show hosts)
+              forM_ hosts $ \(nodeIp) -> do
+                sendNodeCmdChan actuationChannel Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
+            Aeson.String "poweron" -> do
+              phaseLog "action" $ "Powering on hosts " ++ (show hosts)
+              forM_ hosts $ \(nodeIp) -> do
+                sendNodeCmdChan actuationChannel Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
+            x -> liftProcess . say $ "Unsupported node command: " ++ show x
+          messageProcessed uuid
 
 -- | Send update to SSPL that the given 'StorageDevice' changed its status.
 updateDriveManagerWithFailure :: StorageDevice
@@ -775,11 +698,11 @@ updateDriveManagerWithFailure disk st reason = do
 
 ruleSSPLTimeout :: Service SSPLConf -> Definitions LoopState ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
-      \(HAEvent uuid (SSPLServiceTimeout node) _) -> do
-          phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
-          mservice <- lookupRunningService (Node node) sspl
-          forM_ mservice $ \(ServiceProcess pid) ->
-            liftProcess $ usend pid ResetSSPLService
+      \(HAEvent uuid (SSPLServiceTimeout nid) _) -> do
+          mcfg <- Service.lookupInfoMsg (Node nid) sspl
+          for_ mcfg $ \_ -> do
+            phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
+            liftProcess $ nsendRemote nid (serviceLabel sspl) ResetSSPLService
           messageProcessed uuid
 
 ruleSSPLConnectFailure :: Definitions LoopState ()

@@ -69,7 +69,7 @@ test = testCase "StressRC" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -109,10 +109,10 @@ test = testCase "StressRC" $
           ++ " -l " ++ halonctlloc m0
           ++ " -a " ++ m1loc
           ++ " service ping start -t " ++ m0loc ++ " 2>&1"
-      expectLog [nid0] (isInfixOf "started ping service")
+      expectLog [nid1] (isInfixOf pingStartedLine)
 
       say "Where is ..."
-      whereisRemoteAsync nid1 $ serviceLabel $ serviceName Ping.ping
+      whereisRemoteAsync nid1 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       say "Sending a test ping ..."
       send pingPid "0"
@@ -121,7 +121,7 @@ test = testCase "StressRC" $
       let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
       forM_ [1..numPings] $ send pingPid . show
-      send pingPid (SyncPing "final")
+      send pingPid (Ping.SyncPing "final")
 
       forM_ [1..numPings] $ \i -> do
         expectLog [nid0] $ isSuffixOf $ "received DummyEvent " ++ show i

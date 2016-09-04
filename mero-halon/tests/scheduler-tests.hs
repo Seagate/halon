@@ -41,7 +41,7 @@ ut _host transport = do
     testGroup "mero-halon" $ (:[]) $
     testGroup "scheduler"
       [ testCase "testServiceRestarting" $
-          HA.RecoveryCoordinator.Tests.testServiceRestarting transport pg
+           HA.RecoveryCoordinator.Tests.testServiceRestarting transport pg
       , testCase "testServiceNotRestarting" $
           HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport pg
       , testCase "testEQTrimming" $
@@ -50,13 +50,6 @@ ut _host transport = do
           HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport pg
       , testCase "testServiceStopped" $
           HA.RecoveryCoordinator.Tests.testServiceStopped transport pg
-      , testCase "testMonitorManagement" $
-          HA.RecoveryCoordinator.Tests.testMonitorManagement transport pg
-      , testCase "testMasterMonitorManagement" $
-          HA.RecoveryCoordinator.Tests.testMasterMonitorManagement
-            transport pg
-      , testCase "testNodeUpRace" $
-          HA.RecoveryCoordinator.Tests.testNodeUpRace transport pg
       , testGroup "Autoboot" $
           HA.Autoboot.Tests.tests transport
       , testCase "testDisconnect" $

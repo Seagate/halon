@@ -18,4 +18,4 @@ import qualified Data.Map as Map
 emptyLoopState :: StoreChan -> ProcessId -> Process LoopState
 emptyLoopState mmchan pid = do
   g' <- getGraph mmchan >>= return . addRootNode Cluster
-  return $ LoopState g' Map.empty mmchan pid Map.empty Storage.empty
+  return $ LoopState g' mmchan pid Map.empty Storage.empty

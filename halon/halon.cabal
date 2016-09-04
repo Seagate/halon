@@ -78,6 +78,7 @@ Library
                    HA.Logger
                    Control.SpineSeq
                    System.SystemD.API
+  other-modules:   HA.Service.Internal
 
   Build-Depends:   base,
                    aeson,

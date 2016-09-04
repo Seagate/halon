@@ -20,6 +20,8 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    , findFailableObjs
    )
 import HA.RecoveryCoordinator.Events.Drive
+import HA.RecoveryCoordinator.Events.Service
+import qualified HA.RecoveryCoordinator.Actions.Service as Service
 import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
 import qualified HA.ResourceGraph as G
 import HA.Resources
@@ -32,6 +34,7 @@ import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.Multimap
+import HA.Encode
 import HA.Service
 import HA.Services.Mero
 import HA.Services.Mero.Types
@@ -132,7 +135,7 @@ newMeroChannel pid = do
   let sdChan   = TypedChannel sd
       connChan = TypedChannel cc
       notfication = MockM0
-              $ DeclareMeroChannel (ServiceProcess pid) sdChan connChan
+              $ DeclareMeroChannel pid sdChan connChan
   return (recv, recv1, notfication)
 
 data MkWorker = MkWorker deriving (Typeable, Generic)
@@ -161,7 +164,7 @@ testRules = do
       -- Calculate cluster status.
       notifyOnClusterTransition Nothing
       locateNodeOnHost node host
-      registerServiceProcess (Node nid) m0d mockMeroConf sp
+      Service.register node m0d mockMeroConf
       void . liftProcess $ promulgateEQ [nid] dc
       messageProcessed eid
   defineSimple "mark-disk-failed" $ \(HAEvent eid MarkDriveFailed _) -> do
@@ -192,12 +195,6 @@ mkTests pg = do
           testFailedSMART transport pg
         , testSuccess "Drive failure, second drive fails whilst handling to reset attempt" $
           testSecondReset transport pg
---        , testSuccess "No response from powerdown" $
---          testPowerdownNoResponse transport
---        , testSuccess "No response from powerup" $
---          testPowerupNoResponse transport
---        , testSuccess "No response from SMART test" $
---          testSMARTNoResponse transport
         , testSuccess "Drive failure removal reported by SSPL" $
           testDriveRemovedBySSPL transport pg
         , testSuccess "Metadata drive failure reported by IEM" $
@@ -588,76 +585,6 @@ testSecondReset transport pg = run transport pg interceptor [] test where
     smartTestComplete recv AckReplyPassed sdev2
     resetComplete mm sdev
     smartTestComplete recv AckReplyPassed sdev
-
-{-
-testPowerdownNoResponse :: Transport -> IO ()
-testPowerdownNoResponse transport = run transport interceptor test where
-  interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
-    prepareSubscriptions rc rmq
-    loadInitialData
-
-    sdev <- G.getGraph mm >>= findSDev
-    failDrive recv sdev
-    -- No response to powerdown command, should try again
-    liftIO $ threadDelay 1000001
-    let sdev_path = pack $ M0.d_path sdev
-    msg <- expectNodeMsg 1000000
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (DrivePowerdown sdev_path))
-                    )
-    -- This time, we get a response
-    powerdownComplete mm sdev
-    poweronComplete mm sdev
-    smartTestComplete recv AckReplyPassed sdev
-
-
-testPowerupNoResponse :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testPowerupNoResponse transport pg = run transport pg interceptor test where
-  interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
-    prepareSubscriptions rc rmq
-    loadInitialData
-
-    sdev <- G.getGraph mm >>= findSDev
-    failDrive recv sdev
-    powerdownComplete mm sdev
-    -- No response to poweron command, should try again
-    liftIO $ threadDelay 1000001
-    let sdev_path = pack $ M0.d_path sdev
-    msg <- expectNodeMsg 1000000
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (DrivePoweron sdev_path))
-                    )
-    -- This time, we get a response
-    poweronComplete mm sdev
-    smartTestComplete recv AckReplyPassed sdev
-
-testSMARTNoResponse :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testSMARTNoResponse transport pg = run transport pg interceptor test where
-  interceptor _ _ = return ()
-  test (TestArgs _ mm rc) rmq recv = do
-    prepareSubscriptions rc rmq
-    loadInitialData
-    sdev <- G.getGraph mm >>= findSDev
-    failDrive recv sdev
-    powerdownComplete mm sdev
-    poweronComplete mm sdev
-    -- No response to SMART test, should try power cycle again
-    liftIO $ threadDelay 1000001
-    let sdev_path = pack $ M0.d_path sdev
-    msg <- expectNodeMsg ssplTimeout
-    assert $ msg
-            == Just (ActuatorRequestMessageActuator_request_typeNode_controller
-                      (nodeCmdString (DrivePowerdown sdev_path))
-                    )
-    powerdownComplete mm sdev
-    poweronComplete mm sdev
-    smartTestComplete recv AckReplyPassed sdev
-    return ()
--}
 
 -- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: (Typeable g, RGroup g)

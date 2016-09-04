@@ -12,10 +12,10 @@ module HA.Services.SSPL.LL.Resources where
 
 import Control.Distributed.Process (NodeId)
 
-import HA.Service
 import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
+import qualified HA.Resources as R
 import HA.ResourceGraph
 
 import Prelude
@@ -306,6 +306,11 @@ data ResetSSPLService = ResetSSPLService
 
 instance Binary ResetSSPLService
 
+data RequestChannels = RequestChannels
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Binary RequestChannels
+
 -- | Event happens when SSPL can't connect to Rabbit-MQ broker
 newtype SSPLConnectFailure = SSPLConnectFailure NodeId
    deriving (Eq, Show, Binary, Typeable)
@@ -334,7 +339,6 @@ instance Hashable ActuatorChannels
 -- | Message to the RC advertising which channels to talk on.
 data DeclareChannels = DeclareChannels
     ProcessId -- Identity of reporting process
-    (ServiceProcess SSPLConf) -- Identity of the service process
     ActuatorChannels -- Relevant channels
   deriving (Generic, Typeable)
 
@@ -487,12 +491,12 @@ resourceDictChannelSystemd :: Dict (Resource (Channel (Maybe UUID, ActuatorReque
 resourceDictChannelSystemd = Dict
 
 relationDictIEMChannelServiceProcessChannel :: Dict (
-    Relation IEMChannel (ServiceProcess SSPLConf) (Channel InterestingEventMessage)
+    Relation IEMChannel R.Node (Channel InterestingEventMessage)
   )
 relationDictIEMChannelServiceProcessChannel = Dict
 
 relationDictCommandChannelServiceProcessChannel :: Dict (
-    Relation CommandChannel (ServiceProcess SSPLConf) (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type))
+    Relation CommandChannel R.Node (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type))
   )
 relationDictCommandChannelServiceProcessChannel = Dict
 
@@ -510,12 +514,12 @@ instance Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_t
   resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
 instance Relation IEMChannel
-                  (ServiceProcess SSPLConf)
+                  R.Node
                   (Channel InterestingEventMessage) where
   relationDict = $(mkStatic 'relationDictIEMChannelServiceProcessChannel)
 
 instance Relation CommandChannel
-                  (ServiceProcess SSPLConf)
+                  R.Node
                   (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   relationDict = $(mkStatic 'relationDictCommandChannelServiceProcessChannel)
 --------------------------------------------------------------------------------

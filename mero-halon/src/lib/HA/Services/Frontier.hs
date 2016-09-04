@@ -1,10 +1,8 @@
-{-# LANGUAGE DeriveDataTypeable    #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -119,8 +117,7 @@ remotableDecl [ [d|
               tcpServerLoop
 
     frontier :: Service FrontierConf
-    frontier = Service
-               (ServiceName "frontier")
+    frontier = Service "frontier"
                $(mkStaticClosure 'frontierService)
                ($(mkStatic 'someConfigDict)
                  `staticApply` $(mkStatic 'configDictFrontierConf))

@@ -1,12 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# OPTIONS_GHC -Werror #-}
+-- |
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
 module HA.Services.Mero.RC.Actions
    ( -- * Service channels
      registerChannel
+   , unregisterChannel
    , meroChannel
    , meroChannels
+   , unregisterMeroChannelsOn
    , lookupMeroChannelByNode
      -- * Notifications system
    , mkStateDiff
@@ -37,7 +39,6 @@ import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Events.Mero
 
 import HA.EventQueue.Producer (promulgateWait)
-import HA.Service
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import Control.Distributed.Process
@@ -50,16 +51,17 @@ import Control.Monad (when, unless)
 import Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import Data.Traversable (for)
-import Data.Maybe (isJust, listToMaybe, catMaybes)
+import Data.Maybe (listToMaybe, catMaybes)
 import Data.Foldable (for_)
 import Data.Word (Word64)
+import Data.Proxy (Proxy(..))
 import Prelude hiding ((.), id)
 
 -- | Regisger new mero channel inside RG.
 registerChannel :: ( Resource (TypedChannel a)
-                   , Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel a)
+                   , Relation MeroChannel R.Node (TypedChannel a)
                    )
-                => ServiceProcess MeroConf
+                => R.Node
                 -> TypedChannel a
                 -> PhaseM LoopState l ()
 registerChannel sp chan =
@@ -67,33 +69,41 @@ registerChannel sp chan =
             >>> G.newResource chan
             >>> G.connectUniqueTo sp MeroChannel chan
 
+-- | Unregister mero channel inside RG.
+unregisterChannel :: forall a l proxy .
+   ( Resource (TypedChannel a)
+   , Relation MeroChannel R.Node (TypedChannel a)
+   ) => R.Node -> proxy a -> PhaseM LoopState l ()
+unregisterChannel node _ = modifyGraph $ \rg ->
+  let res = G.connectedTo node MeroChannel rg :: [TypedChannel a]
+  in foldr (G.disconnect node MeroChannel) rg res
+
 -- | Find mero channel.
 meroChannel :: ( Resource (TypedChannel a)
-               , Relation MeroChannel (ServiceProcess MeroConf) (TypedChannel a)
+               , Relation MeroChannel R.Node (TypedChannel a)
                )
             => Graph
-            -> ServiceProcess MeroConf
+            -> R.Node
             -> Maybe (TypedChannel a)
 meroChannel rg sp = listToMaybe [ chan | chan <- G.connectedTo sp MeroChannel rg ]
 
 
 -- | Fetch all Mero notification channels.
-meroChannels :: Service MeroConf -> Graph -> [TypedChannel NotificationMessage]
-meroChannels m0d rg =
-  [ chan
-  | node <- G.connectedTo R.Cluster R.Has rg
-  , isJust $ runningService node m0d rg
-  , sp   <- G.connectedTo node R.Runs rg :: [ServiceProcess MeroConf]
-  , chan <- G.connectedTo sp MeroChannel rg ]
+meroChannels :: R.Node -> Graph -> [TypedChannel NotificationMessage]
+meroChannels node rg = G.connectedTo node MeroChannel rg
 
 -- | Find mero channel registered on the given node.
 lookupMeroChannelByNode :: R.Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do
    rg <- getLocalGraph
-   let mlchan = listToMaybe
-         [ chan | sp   <- G.connectedTo node R.Runs rg :: [ServiceProcess MeroConf]
-                , chan <- G.connectedTo sp MeroChannel rg ]
+   let mlchan = listToMaybe $ G.connectedTo node MeroChannel rg
    return mlchan
+
+-- | Unregister all channels.
+unregisterMeroChannelsOn :: R.Node -> PhaseM LoopState l ()
+unregisterMeroChannelsOn node = do
+   unregisterChannel node (Proxy :: Proxy NotificationMessage)
+   unregisterChannel node (Proxy :: Proxy ProcessControlMsg)
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.

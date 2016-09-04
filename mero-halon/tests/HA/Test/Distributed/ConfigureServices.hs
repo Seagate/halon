@@ -61,7 +61,7 @@ test = testCase "ConfigureServices" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
       let m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -102,7 +102,6 @@ test = testCase "ConfigureServices" $
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc ++ " 2>&1")
-      expectLog [nid1] (isInfixOf "Starting service dummy")
       expectLog [nid1] (isInfixOf "Hello World!")
       say "Reconfiguring dummy service ..."
       systemThere [m0] ("./halonctl"

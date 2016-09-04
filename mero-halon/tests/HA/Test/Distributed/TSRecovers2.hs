@@ -63,7 +63,7 @@ test = testCase "TSRecovers2" $
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
           m2loc = m2 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
@@ -103,9 +103,9 @@ test = testCase "TSRecovers2" $
                       ++ " -l " ++ halonctlloc m0
                       ++ " -a " ++ m2loc
                       ++ " service ping start -t " ++ m0loc ++ " 2>&1"
-      expectLog tsNodes (isInfixOf "started ping service")
+      expectLog [nid2] (isInfixOf pingStartedLine)
 
-      whereisRemoteAsync nid2 $ serviceLabel $ serviceName Ping.ping
+      whereisRemoteAsync nid2 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       send pingPid "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"

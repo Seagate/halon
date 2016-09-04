@@ -161,6 +161,7 @@ checkAndHandleDriveReady disk = do
         SDSTransient _ -> do
           -- Transient failure - recover
           applyStateChanges [ stateSet sd . sdsRecoverTransient $ oldState ]
+        SDSRebalancing -> return ()
   else
     phaseLog "info" $ unwords [
         "Device not ready:", show disk

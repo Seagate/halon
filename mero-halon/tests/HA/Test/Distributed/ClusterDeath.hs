@@ -61,7 +61,7 @@ test = testCase "ClusterDeath" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -102,15 +102,7 @@ test = testCase "ClusterDeath" $
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Hello World!")
-      expectLog [nid0] (isInfixOf "started dummy service")
-
-      -- TODO: This is a hack due to poorly written 'serviceRules'. We
-      -- should rewrite serviceRules to emit a proper message when
-      -- everything is done and synced. The problem here is that we
-      -- can see the log message and kill halond before it manages to
-      -- replicate message acks and that makes this test unhappy. We
-      -- give it some time here.
-      Nothing <- expectTimeout 5000000 :: Process (Maybe ())
+      expectLog [nid1] (isInfixOf dummyStartedLine)
 
       say "Killing cluster ..."
       systemThere ms "pkill halond; true"
@@ -129,4 +121,4 @@ test = testCase "ClusterDeath" $
         WhereIsReply "service.dummy" m <- expect
         maybe (receiveTimeout 10000 [] >> loop) (const $ return ()) m
 
-      expectLog [nid0'] (isInfixOf "started dummy service")
+      expectLog [nid1'] (isInfixOf dummyStartedLine)

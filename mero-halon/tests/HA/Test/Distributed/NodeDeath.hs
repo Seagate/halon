@@ -62,7 +62,7 @@ test = testCase "NodeDeath" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -102,7 +102,7 @@ test = testCase "NodeDeath" $
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Hello World!")
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyStartedLine)
 
       say "Killing satellite ..."
       systemThere [m1] "pkill halond; true"
@@ -118,4 +118,4 @@ test = testCase "NodeDeath" $
         WhereIsReply "service.dummy" m <- expect
         maybe (receiveTimeout 10000 [] >> loop) (const $ return ()) m
 
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyStartedLine)

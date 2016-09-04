@@ -79,7 +79,6 @@ Library
                    HA.Services.Frontier
                    HA.Services.Frontier.Command
                    HA.Services.Frontier.CEP
-                   HA.Services.Monitor
                    HA.Services.SSPL
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.CEP
@@ -102,6 +101,7 @@ Library
                    HA.RecoveryCoordinator.Rules.Debug
                    HA.RecoveryCoordinator.Rules.Service
                    HA.RecoveryCoordinator.Events.Drive
+                   HA.RecoveryCoordinator.Events.Service
                    -- RC interface modules.
                    HA.RecoveryCoordinator.RC
                    HA.RecoveryCoordinator.RC.Events
@@ -114,14 +114,13 @@ Library
                    HA.Resources.HalonVars
                    Version.Read
 
-  Other-Modules:   HA.RecoveryCoordinator.Actions.Monitor
+  Other-Modules:   HA.RecoveryCoordinator.RC.Internal
                    HA.Services.DecisionLog.CEP
                    HA.Services.DecisionLog.Types
-                   HA.Services.Monitor.CEP
-                   HA.Services.Monitor.Types
                    HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
+                   HA.Services.SSPL.LL.RC.Actions
                    Version
 
   Build-Depends:   base,
@@ -436,7 +435,8 @@ Test-Suite distributed-tests
                    process,
                    tasty,
                    tasty-files,
-                   tasty-hunit
+                   tasty-hunit,
+                   options-schema
   if !flag(distributed-tests)
     Buildable:     False
 

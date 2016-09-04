@@ -10,13 +10,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.Services.Dummy
   ( dummy
   , DummyConf(..)
+  , DummyEvent(..)
+  -- * D-P specific functions
   , HA.Services.Dummy.__remoteTable
   , HA.Services.Dummy.__remoteTableDecl
+  , dummy__static
+  , dummyProcess__tdict
+  , dummyProcess__sdict
   ) where
 
 import HA.Service
@@ -59,14 +62,19 @@ dummySchema = let
 $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
 
+-- | An event which produces no action in the RC. Used for testing.
+data DummyEvent = DummyEvent String
+  deriving (Typeable, Generic)
+
+instance Binary DummyEvent
+
 -- | Block forever.
 never :: Process ()
 never = receiveWait []
 
 remotableDecl [ [d|
   dummy :: Service DummyConf
-  dummy = Service
-            (ServiceName "dummy")
+  dummy = Service "dummy"
             $(mkStaticClosure 'dummyProcess)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictDummyConf))

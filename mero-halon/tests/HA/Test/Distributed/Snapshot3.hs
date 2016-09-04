@@ -56,7 +56,7 @@ test = testCase "Snapshot3" $
 
     withHostNames cp 2 $ \ms@[m0, m1] ->
      runProcess n0 $ do
-      let halonctlloc = (++ ":9001")
+      let halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")

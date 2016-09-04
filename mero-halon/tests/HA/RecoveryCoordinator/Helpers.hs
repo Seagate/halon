@@ -9,24 +9,18 @@ module HA.RecoveryCoordinator.Helpers where
 import           Control.Distributed.Process
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
-import           HA.Multimap
-import qualified HA.ResourceGraph as G
+import           HA.Service
+import           HA.RecoveryCoordinator.Events.Service
 import           HA.Resources
+import           HA.Encode
 import           HA.Service
   ( Configuration
   , Service(..)
-  , ServiceName(..)
-  , ServiceProcess(..)
-  , ServiceStart(..)
-  , ServiceStarted(..)
-  , ServiceStartRequest(..)
-  , decodeP
-  , encodeP
-  , runningService
+  , ServiceInfo(..)
   )
-import           HA.Services.Monitor
 import           Network.CEP (Published(..))
 import           Network.Transport (Transport(..))
+import           Data.Typeable
 import           Prelude hiding ((<$>), (<*>))
 import           RemoteTables ( remoteTable )
 import           TestRunner
@@ -41,16 +35,13 @@ testRemoteTable = TestRunner.__remoteTableDecl $
 
 -- | Awaits a message about the start of the given service. Waits
 -- until the right message is received.
-serviceStarted :: ServiceName -> Process ProcessId
-serviceStarted svname = do
-    mp@(Published (HAEvent _ msg _) _)          <- expect
-    ServiceStarted _ svc _ (ServiceProcess pid) <- decodeP msg
-    if serviceName svc == svname
-        then return pid
-        else do
-          self <- getSelfPid
-          usend self mp
-          serviceStarted svname
+serviceStarted :: Typeable a => Service a -> Process ProcessId
+serviceStarted srv = do
+  (Published (HAEvent _ (ServiceStarted _ msg pid) _) _) <- expect
+  ServiceInfo srvi _ <- decodeP msg
+  if maybe False (srv==) (cast srvi)
+  then return pid
+  else serviceStarted srv
 
 -- | Start the given 'Service' on the current node.
 serviceStart :: Configuration a => Service a -> a -> Process ()
@@ -60,47 +51,13 @@ serviceStart svc conf = do
     _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
     return ()
 
--- | Get the regular monitor pid of the current node.
-getNodeMonitor :: StoreChan -> Process ProcessId
-getNodeMonitor mm = do
-    nid <- getSelfNode
-    rg  <- G.getGraph mm
-    let n = Node nid
-    case runningService n regularMonitor rg of
-      Just (ServiceProcess pid) -> return pid
-      _  -> do
-        _ <- receiveTimeout 100 []
-        getNodeMonitor mm
-
 -- | Gets the pid of the given service on the given node. It blocks
 -- until the service actually starts.
 getServiceProcessPid :: Configuration a
-                     => StoreChan
-                     -> Node
+                     => Node
                      -> Service a
                      -> Process ProcessId
-getServiceProcessPid mm n sc = do
-    rg <- G.getGraph mm
-    case runningService n sc rg of
-      Just (ServiceProcess pid) -> return pid
-      _ -> do
-        _ <- receiveTimeout 500000 []
-        getServiceProcessPid mm n sc
-
--- | Tests that the given service is still alive. Tries 3 times and
--- then gives up.
-serviceProcessStillAlive :: Configuration a
-                         => StoreChan
-                         -> Node
-                         -> Service a
-                         -> Process Bool
-serviceProcessStillAlive mm n sc = loop (1 :: Int)
-  where
-    loop i | i > 3     = return True
-           | otherwise = do
-                 rg <- G.getGraph mm
-                 case runningService n sc rg of
-                   Just _ -> do
-                     _ <- receiveTimeout 250000 []
-                     loop (i + 1)
-                   _ -> return False
+getServiceProcessPid (Node nid) sc = do
+  whereisRemoteAsync nid (serviceLabel sc)
+  WhereIsReply _ (Just pid) <- expect
+  return pid

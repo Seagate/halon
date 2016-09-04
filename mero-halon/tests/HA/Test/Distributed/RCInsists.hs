@@ -31,6 +31,7 @@ import Control.Distributed.Commands.Providers
   ( getHostAddress
   , getProvider
   )
+import HA.Encode
 import HA.EventQueue.Producer
 import HA.Resources hiding (__remoteTable)
 import HA.Service hiding (__remoteTable)
@@ -43,6 +44,7 @@ import Control.Distributed.Process.Node
   )
 
 import Data.List (isInfixOf)
+import Data.Defaultable
 
 import Network.Transport (closeTransport)
 import Network.Transport.TCP (createTransport, defaultTCPParameters)
@@ -70,7 +72,7 @@ test = testCase "RCInsists" $
      runProcess n0 $ do
       let m0loc = m0 ++ ":9000"
           m1loc = m1 ++ ":9000"
-          halonctlloc = (++ ":9001")
+          halonctlloc = (++ ":0")
 
       say "Copying binaries ..."
       -- test copying a folder
@@ -109,19 +111,19 @@ test = testCase "RCInsists" $
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
       expectLog [nid1] (isInfixOf "Hello World!")
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyStartedLine)
 
       say "Isolating satellite ..."
       liftIO $ isolateHostsAsUser "root" [m1] ms
-      whereisRemoteAsync nid1 $ serviceLabel $ serviceName Dummy.dummy
+      whereisRemoteAsync nid1 $ serviceLabel Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
-      _ <- promulgateEQ [nid0] . encodeP $ ServiceFailed (Node nid1)
-                                                         Dummy.dummy
-                                                         pid
+      _ <- promulgateEQ [nid0] $ ServiceFailed (Node nid1)
+             (encodeP $ ServiceInfo Dummy.dummy $ Dummy.DummyConf (Default "Hello World!"))
+             pid
       False <- expectTimeoutLog 1000000 [nid0]
-                                (isInfixOf "started dummy service")
+                                (isInfixOf dummyStartedLine)
 
       -- Rejoin the satellite and wait for the RC to ack the service restart.
       say "Rejoining satellite ..."
       liftIO $ rejoinHostsAsUser "root" [m1] ms
-      expectLog [nid0] (isInfixOf "started dummy service")
+      expectLog [nid1] (isInfixOf dummyAlreadyLine)

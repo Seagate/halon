@@ -7,7 +7,6 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
 module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
   , module HA.RecoveryCoordinator.Actions.Mero.Core
@@ -41,6 +40,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Events.Service
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 
@@ -52,6 +52,7 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
+import HA.Encode
 import HA.Service
 import HA.Services.Mero
 
