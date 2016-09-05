@@ -29,16 +29,16 @@ import HA.Service
 -- relationDictSupportsClusterService_x :: Dict (Relation Supports Cluster (Service N))
 -- relationDictSupportsClusterService_x = Dict
 --
--- resoureDictServiceInfo_x :: Dict (Resource N)
--- resouceDictServiceInfo_x = Dict
+-- resourceDictServiceInfo_x :: Dict (Resource N)
+-- resourceDictServiceInfo_x = Dict
 --
 -- resourceDictService_x :: Dict (Resource (Service N)
 -- resourceDictService_x = Dict
 --
--- serializableDict_x :: SerializableDict n
+-- serializableDict_x :: SerializableDict N
 -- serializableDict_x = SerializableDict
 --
--- configDict_x :: Dict (Configuration n)
+-- configDict_x :: Dict (Configuration N)
 -- configDict_x = Dict
 -- @
 generateDicts :: Name -> Q [Dec]
@@ -92,22 +92,22 @@ generateDicts n = do
 --
 -- @
 -- instance Relation (Supports Cluster Sevice N) where
---   relationDict = mkStatic relationDictSupportsClusterService_x
+--   relationDict = $(mkStatic relationDictSupportsClusterService_x)
 --
 -- instance Resource N where
---   relationDict = mkStatic resourceDictServiceInfo_x
+--   relationDict = $(mkStatic resourceDictServiceInfo_x)
 --
 -- instance Resource (Service N) where
---   relationDict = mkStatic resourceDictService_x
+--   relationDict = $(mkStatic resourceDictService_x)
 --
--- instance Configuration n where
+-- instance Configuration N where
 --   schema = nschema
---   sDict = mkStatic serializableDict_x
+--   sDict = $(mkStatic serializableDict_x)
 --
--- remotable [ configDict_x, 'serializableDict_x, 'resourceDictService
---           , 'resourceDictServiceInfo
---           , 'relationDictSupportsClusterService
---           ] ++ remotables
+-- remotable $
+--    [ configDict_x, 'serializableDict_x, 'resourceDictService
+--    , 'resourceDictServiceInfo, 'relationDictSupportsClusterService
+--    ] ++ remotables
 -- @
 deriveService :: Name   -- ^ Configuration data constructor
               -> Name   -- ^ Schema  function
