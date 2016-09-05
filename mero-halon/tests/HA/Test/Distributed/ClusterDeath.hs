@@ -44,7 +44,13 @@ import Test.Tasty.HUnit (testCase)
 import System.FilePath ((</>))
 import System.Timeout
 
+import HA.EventQueue.Producer
 import HA.Test.Distributed.Helpers
+import HA.Resources.Castor (HalonVars (..))
+import HA.Resources.HalonVars
+
+fastReconnectVars :: HalonVars
+fastReconnectVars = defaultHalonVars { _hv_recovery_max_retries = (-30) }
 
 test :: TestTree
 test = testCase "ClusterDeath" $
@@ -95,6 +101,11 @@ test = testCase "ClusterDeath" $
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc)
       _ <- waitForNewNode nid1 20000000
+
+      -- By default halond tries to search for the failed nodes
+      -- once per minute, this makes test run really slow and timeout on a slow
+      -- CI. So we setup a new options that will query new node once per 10s.
+      promulgateEQ [nid0] $ SetHalonVars fastReconnectVars
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"
