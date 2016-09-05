@@ -5,7 +5,31 @@
 -- License   : All rights reserved.
 --
 
-module HA.RecoveryCoordinator.Actions.Mero.Core where
+module HA.RecoveryCoordinator.Actions.Mero.Core
+  ( -- * Graph manipulation
+    newFidSeq
+  , newFidSeqRC
+  , newFid
+  , newFidRC
+  , uniquePVerCounter
+  , mkVirtualFid
+  , getM0Globals
+  , loadMeroGlobals
+    -- * Mero actions execution
+    -- $execution-model
+  , LiftRC
+    -- ** Action Runners
+  , liftM0RC
+  , withM0RC
+  , m0synchronously
+  , m0asynchronously
+  , m0asynchronously_
+    -- * Mero Worker
+    -- $mero-worker
+  , halonRCMeroWorkerLabel
+  , createMeroWorker
+  , tryCloseMeroWorker
+  ) where
 
 import HA.RecoveryCoordinator.Actions.Core
 import qualified HA.ResourceGraph as G
@@ -32,10 +56,14 @@ import Control.Distributed.Process
   , Process
   , ProcessMonitorNotification(..)
   )
+import qualified Control.Distributed.Process.Internal.Types as DI
 import Control.Monad.IO.Class
-import Control.Monad.Catch (finally)
+import Control.Monad.Catch (SomeException, finally, try, bracket)
+import Control.Monad.Trans.Reader (ask)
+import Control.Concurrent.MVar
 import Data.Bits (setBit)
 import Data.Maybe (listToMaybe)
+import Data.Functor (void)
 import Data.Foldable
 import Data.Proxy
 import Data.Word ( Word64, Word32 )
@@ -91,12 +119,57 @@ loadMeroGlobals :: CI.M0Globals
                 -> PhaseM LoopState l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 
--- | Run the given computation in the m0 thread dedicated to the RC.
+--------------------------------------------------------------------------------
+-- Mero actions execution
+--------------------------------------------------------------------------------
+-- $execution-model
 --
--- Some operations the RC submits cannot use the global m0 worker ('liftGlobalM0') because
--- they would require grabbing the global m0 worker a second time thus blocking the application.
--- Currently, these are spiel operations which use the notification interface before returning
--- control to the caller.
+-- For the commands that are required to be used in mero thread (mero-commands)
+-- Recovery coordinator is using dedicated thread contolled by MeroWorker (see
+-- mero worker). This is done in order to not block global mero thread.
+--
+-- All mero calls are scheduled in the queue, so it's guaranteed that order will
+-- be preserved and actions will not overlap. However calls may be synchronious
+-- or asynchronous in a sence that if they block Recovery Coordinator or not.
+--
+--   * [synchronous call] - low overhead call to mero thread, this call avoids
+--      creation of the new helper threads and results serialization. However
+--      RC thread will be blocked until call will exit. This call doesn't
+--      require creation on additional phases and can be executed in 'PhaseM'
+--      directly. Synchronous calls rethrow  possible exceptions as-is in the
+--      RC thread.
+--
+--      Synchronous calls should be used only for the fast non-blocking calls.
+--
+--   * [asynchronous calls] - higher overhead calls to mero thread. Such calls
+--      create helper D-P Process that will handle reply from mero and re-send
+--      it to RC, so serialization is used. In order to handle reply additional
+--      phase have to be introduced.
+--
+--      Asynchronous calls can be used for any kind of calls but at a cost of
+--      performance and mainly maintenance and code support overhead.
+--
+--  As all calls are queued it's imporant that using synchronous call after
+--  any asynchronous call will block RC thread until previous async call will
+--  exit.
+--
+--  @
+--  m0asynchronous >> m0asynchronous
+--  @
+--
+--  will immediately exit and notifications will be received in the future point
+--  of time.
+--
+--  @
+--  m0asynchronous >> m0synchronous
+--  @
+--
+--  will block RC thread until both async and sync actions will be executed.
+--  This means that finalizers should be asynchronous for the additonal safety,
+--  see 'm0asynchronous_'.
+
+-- | Synchronously run the given computation in the m0 thread dedicated to the RC.
+--
 -- This call will return Nothing if no RC worker was created.
 liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
 liftM0RC task = getStorageRC >>= traverse (\worker -> runOnM0Worker worker task)
@@ -108,20 +181,65 @@ liftM0RC task = getStorageRC >>= traverse (\worker -> runOnM0Worker worker task)
 --
 -- @@@
 -- withM0RC $ \lift ->
---    lift $ someOperationThatShouldBeRunningInM0Thread
+--    m0synchronously lift $ someOperationThatShouldBeRunningInM0Thread
 -- @@@
-withM0RC :: ((forall a . IO a -> PhaseM LoopState l a) -> PhaseM LoopState l b)
+withM0RC :: (LiftRC -> PhaseM LoopState l b)
          -> PhaseM LoopState l b
 withM0RC f = getStorageRC >>= \case
   Nothing -> do mworker <- createMeroWorker
                 case mworker of
                   Nothing -> error "No worker loaded."
-                  Just w  -> f (runOnM0Worker w)
+                  Just w  -> f (LiftRC w)
   Just w  -> liftProcess (whereis halonRCMeroWorkerLabel) >>= \case
                Nothing -> do deleteStorageRC (Proxy :: Proxy M0Worker)
                              withM0RC f
-               Just _  -> f (runOnM0Worker w)
+               Just _  -> f (LiftRC w)
 
+-- | Handle that allow to lift 'IO' operations into 'PhaseM'. Actions will be
+-- running in mero thread associated with Recovery Coordinator.
+data LiftRC = LiftRC M0Worker
+
+-- XXX introduce m0now modifier, modifier should create new thread
+-- if current one is running some actions.
+
+-- | Use 'LiftRC' to action that require to be run in mero thread synchronously.
+-- RC thread will be blocked until result will be received.
+m0synchronously :: LiftRC
+                -> IO a
+                -> PhaseM LoopState l a
+m0synchronously (LiftRC w) = runOnM0Worker w
+
+-- | Run action asynchronously. RC thread will not be blocked and will
+-- immediately exit. All calls that will be run after 'm0asynchronously' will
+-- be scheduled to run after the call.
+m0asynchronously :: LiftRC
+                 -> (Either SomeException a -> Process ())
+                 -> IO a
+                 -> PhaseM LoopState l ()
+m0asynchronously (LiftRC w) onExecution action = liftProcess $ do
+  lproc <- DI.Process ask
+  liftIO $ queueM0Worker w $ do
+    try action >>= DI.runLocalProcess lproc . onExecution
+
+-- | More efficient version of the 'm0asynchronously', that does
+-- not wait for result. This method is more efficient than
+-- 'm0synchronously' but like 'm0asynchronously' does not propagate exceptions
+-- to RC thread.
+m0asynchronously_ :: LiftRC
+                  -> IO a
+                  -> PhaseM LoopState l ()
+m0asynchronously_ (LiftRC w) = liftIO . queueM0Worker w . void
+
+--------------------------------------------------------------------------------
+-- Mero actions execution
+--------------------------------------------------------------------------------
+-- TODO rename to mero-angel :)
+
+-- $mero-worker
+-- Dedicated thread that is running together with RC, and controls mero thread
+-- decidated to RC actions.
+
+-- | Label of the mero worker.
 halonRCMeroWorkerLabel :: String
 halonRCMeroWorkerLabel = "halon:rc-mero-worker"
 

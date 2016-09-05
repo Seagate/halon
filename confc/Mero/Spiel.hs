@@ -72,10 +72,10 @@ import Foreign.Storable
 
 data SpielContext = SpielContext (Ptr SpielContextV) (Ptr ReqHServiceV)
 
-spielInit :: RPCMachine -> IO SpielContext
-spielInit rpcmach = alloca $ \sc -> alloca $ \rms -> do
+spielInit :: IO SpielContext
+spielInit = alloca $ \sc -> alloca $ \rms -> do
     throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
-      $ c_spiel_init sc rms (rm_reqh rpcmach)
+      $ c_spiel_init sc rms
     SpielContext <$> peek sc <*> peek rms
 
 spielFini :: SpielContext -> IO ()
@@ -95,9 +95,8 @@ rconfStop (SpielContext sc _) = c_spiel_rconfc_stop sc
 
 -- | Open a Spiel context with command interface support.
 -- If you don't need commands interface, use 'spielInit' instead.
-start :: RPCMachine -- ^ Request handler
-      -> IO SpielContext
-start rpcmach = spielInit rpcmach
+start :: IO SpielContext
+start = spielInit
 
 -- | Close a Spiel context
 stop :: SpielContext
@@ -109,10 +108,9 @@ withRConf :: SpielContext
           -> IO a
 withRConf spiel = bracket_ (rconfStart spiel) (rconfStop spiel)
 
-withSpiel :: RPCMachine
-          -> (SpielContext -> IO a)
+withSpiel :: (SpielContext -> IO a)
           -> IO a
-withSpiel rpcmach = bracket (spielInit rpcmach) spielFini
+withSpiel = bracket spielInit spielFini
 
 ---------------------------------------------------------------
 -- Configuration management                                  --

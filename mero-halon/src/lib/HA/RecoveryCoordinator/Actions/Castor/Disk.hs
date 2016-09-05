@@ -25,8 +25,8 @@ attachDisk sdev = do
   mdisk <- lookupSDevDisk sdev
   case mdisk of
     Just d ->
-      void $ withSpielRC $ \sp m0 -> withRConfRC sp -- FIXME do not hide exception
-        $ m0 $ Spiel.deviceAttach sp (M0.fid d)
+      void $ withSpielRC $ \sp _ -> withRConfRC sp -- FIXME do not hide exception
+        $ Spiel.deviceAttach sp (M0.fid d)
     Nothing ->
       phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
 
@@ -39,7 +39,7 @@ detachDisk sdev = do
   mdisk <- lookupSDevDisk sdev
   case mdisk of
     Just d  ->
-      void $ withSpielRC $ \sp m0 -> withRConfRC sp -- FIXME do not hide exception
-        $ m0 $ Spiel.deviceDetach sp (M0.fid d)
+      void $ withSpielRC $ \sp _ -> withRConfRC sp -- FIXME do not hide exception
+        $ Spiel.deviceDetach sp (M0.fid d)
     Nothing ->
       phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."

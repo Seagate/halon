@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   ( haAddress
   , getSpielAddressRC
   , withRootRC
+  , LiftRC
   , withSpielRC
   , withRConfRC
   , abortRebalanceOperation
@@ -77,7 +78,7 @@ import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
 import Data.IORef (writeIORef)
 import Data.List (sortOn)
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe, fromJust)
 import Data.Proxy (Proxy(..))
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
@@ -114,30 +115,32 @@ withRootRC f =
 --
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
-withSpielRC :: (SpielContext -> (forall b . IO b -> PhaseM LoopState l b) -> PhaseM LoopState l a)
+withSpielRC :: (SpielContext -> LiftRC -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ do
   rpca <- getRPCAddress
   try $ withM0RC $ \lift -> do
-     Just rpcm <- lift $ getRPCMachine
-     conn <- lift $ initHASession rpcm rpca
-     sc <- lift $ Mero.Spiel.start rpcm
-     f sc lift `sfinally`  lift (Mero.Spiel.stop sc >> finiHASession conn)
+     (conn, sc) <- m0synchronously lift $ do
+       Just rpcm <- getRPCMachine
+       conn <- initHASession rpcm rpca
+       sc <- Mero.Spiel.start
+       return (conn, sc)
+     f sc lift `sfinally`  m0asynchronously_ lift (Mero.Spiel.stop sc >> finiHASession conn)
 
--- | Try to start rconf sesion and run 'PhaseM' on the 'SpielContext' this
--- call is required for running management commands.
+-- | Try to start rconf sesion and run 'IO' action in the 'SpielContext'.
+-- This call is required for running spiel management commands.
 --
--- The user is responsible for making sure that inner 'IO' actions run
--- on the global m0 worker if needed.
-withRConfRC :: SpielContext -> PhaseM LoopState l a -> PhaseM LoopState l a
+-- Internal action will be running in mero thread allocated to RC service.
+withRConfRC :: SpielContext -> IO a -> PhaseM LoopState l a
 withRConfRC spiel action = do
   rg <- getLocalGraph
   let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
-  void $ liftM0RC $ do
-     Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
-     Mero.Spiel.rconfStart spiel
-  x <- action `sfinally` liftM0RC (Mero.Spiel.rconfStop spiel)
-  return x
+  fmap fromJust . liftM0RC $ bracket_
+    (do Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+        Mero.Spiel.rconfStart spiel)
+    (Mero.Spiel.rconfStop spiel)
+    action
+
 
 -- | Start the repair operation on the given 'M0.Pool'.
 startRepairOperation :: M0.Pool
@@ -153,7 +156,7 @@ startRepairOperation pool = go `catch`
     go = do
       phaseLog "spiel" $ "Starting repair operation."
       phaseLog "pool"  $ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairStart sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairStart sc (M0.fid pool)
       uuid <- DP.liftIO nextRandom
       setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
       phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
@@ -173,7 +176,7 @@ statusOfRepairOperation pool = catch go
     go :: PhaseM LoopState l (Either SomeException [SnsStatus])
     go = do
       phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairStatus sc (M0.fid pool)
+      withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairStatus sc (M0.fid pool)
 
 -- | Continue the rebalance operation.
 continueRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
@@ -188,7 +191,7 @@ continueRepairOperation pool = catch go
   where
     go = do
       phaseLog "spiel" $ "Continuing repair on " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairContinue sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairContinue sc (M0.fid pool)
       return Nothing
 
 -- | Quiesces the repair operation on the given pool
@@ -205,7 +208,7 @@ quiesceRepairOperation pool = catch go
     go :: PhaseM LoopState l (Maybe SomeException)
     go = do
       phaseLog "spiel" $ "Quiescing repair on pool " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRepairQuiesce sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairQuiesce sc (M0.fid pool)
       return Nothing
 
 -- | Quiesces the repair operation on the given pool
@@ -222,8 +225,8 @@ abortRepairOperation pool = catch go
     go :: PhaseM LoopState l (Maybe SomeException)
     go = do
       phaseLog "spiel" $ "Aborting repair on pool " ++ show pool
-      _ <- withSpielRC $ \sc lift -> do
-        withRConfRC sc $ lift $ poolRepairAbort sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> do
+        withRConfRC sc $ poolRepairAbort sc (M0.fid pool)
       fix $ \loop -> do
         eresult <- statusOfRepairOperation pool
         case eresult of
@@ -252,7 +255,7 @@ startRebalanceOperation pool disks = catch go
         for_ mt $ \t -> do
           msd <- lookupStorageDevice t
           for_ msd unmarkStorageDeviceReplaced
-        _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStart sc (M0.fid pool)
+        _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceStart sc (M0.fid pool)
         uuid <- DP.liftIO nextRandom
         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
 
@@ -271,7 +274,7 @@ statusOfRebalanceOperation pool = catch go
     go :: PhaseM LoopState l (Either SomeException [SnsStatus])
     go = do
       phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceStatus sc (M0.fid pool)
+      withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceStatus sc (M0.fid pool)
 
 -- | Continue the rebalance operation.
 continueRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
@@ -286,7 +289,7 @@ continueRebalanceOperation pool = catch go
   where
     go = do
       phaseLog "spiel" $ "Continuing rebalance on " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceContinue sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceContinue sc (M0.fid pool)
       return Nothing
 
 -- | Quiesces the rebalance operation on the given pool
@@ -303,7 +306,7 @@ quiesceRebalanceOperation pool = catch go
     go :: PhaseM LoopState l (Maybe SomeException)
     go = do
       phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceQuiesce sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceQuiesce sc (M0.fid pool)
       return Nothing
 
 -- | Quiesces the rebalance operation on the given pool
@@ -320,7 +323,7 @@ abortRebalanceOperation pool = catch go
     go :: PhaseM LoopState l (Maybe SomeException)
     go = do
       phaseLog "spiel" $ "Aborting rebalance on pool " ++ show pool
-      _ <- withSpielRC $ \sc lift -> withRConfRC sc $ lift $ poolRebalanceAbort sc (M0.fid pool)
+      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceAbort sc (M0.fid pool)
       return Nothing
 
 -- | Synchronize graph to confd.
@@ -377,18 +380,16 @@ syncToConfd = do
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
-txOpenContext :: (IO SpielTransaction -> PhaseM LoopState l SpielTransaction)
-              -> SpielContext -> PhaseM LoopState l SpielTransaction
-txOpenContext lift = lift . openTransaction
+txOpenContext :: LiftRC -> SpielContext -> PhaseM LoopState l SpielTransaction
+txOpenContext lift = m0synchronously lift . openTransaction
 
-txOpenLocalContext :: (IO SpielTransaction -> PhaseM LoopState l SpielTransaction)
-                   -> PhaseM LoopState l SpielTransaction
-txOpenLocalContext lift = lift openLocalTransaction
+txOpenLocalContext :: LiftRC -> PhaseM LoopState l SpielTransaction
+txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
-txSyncToConfd :: (forall a . IO a -> PhaseM LoopState l a) -> SpielTransaction -> PhaseM LoopState l ()
+txSyncToConfd :: LiftRC -> SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd lift t = do
   phaseLog "spiel" "Committing transaction to confd"
-  lift (commitTransaction t) >>= \case
+  m0synchronously lift (commitTransaction t) >>= \case
     Nothing -> do
       -- spiel increases conf version here so we should too; alternative
       -- would be querying spiel after transaction for the new version
@@ -396,16 +397,16 @@ txSyncToConfd lift t = do
       phaseLog "spiel" "Transaction committed."
     Just err ->
       phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
-  lift $ closeTransaction t
+  m0asynchronously_ lift $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
 
-txDumpToFile :: (IO () -> PhaseM LoopState l()) -> FilePath -> SpielTransaction -> PhaseM LoopState l ()
+txDumpToFile :: LiftRC -> FilePath -> SpielTransaction -> PhaseM LoopState l ()
 txDumpToFile lift fp t = do
   M0.ConfUpdateVersion ver <- getConfUpdateVersion
   phaseLog "spiel" $ "Writing transaction to " ++ fp ++ " with ver " ++ show ver
-  lift $ dumpTransaction t ver fp
+  m0synchronously lift $ dumpTransaction t ver fp
   phaseLog "spiel" "Transaction written."
-  lift $ closeTransaction t
+  m0asynchronously_ lift $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
   modifyConfUpdateVersion $ const (M0.ConfUpdateVersion $ ver + 1)
 
@@ -438,7 +439,7 @@ modifyConfUpdateVersion f = do
   phaseLog "rg" $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyLocalGraph $ return . G.connectUniqueFrom Cluster Has fcsu
 
-txPopulate :: (IO () -> PhaseM LoopState l ()) -> TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
+txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
@@ -450,26 +451,26 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
                              ]
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
-  lift $ do
+  m0synchronously lift $ do
     addProfile t pfid
     addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
   for_ racks $ \rack -> do
-    lift $ addRack t (M0.fid rack) f_fid
+    m0synchronously lift $ addRack t (M0.fid rack) f_fid
     let encls = G.connectedTo rack M0.IsParentOf g :: [M0.Enclosure]
     for_ encls $ \encl -> do
-      lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
+      m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
       let ctrls = G.connectedTo encl M0.IsParentOf g :: [M0.Controller]
       for_ ctrls $ \ctrl -> do
         -- Get node fid
         let (Just node) = listToMaybe
                         $ (G.connectedFrom M0.IsOnHardware ctrl g :: [M0.Node])
-        lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
+        m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
         let disks = G.connectedTo ctrl M0.IsParentOf g :: [M0.Disk]
         for_ disks $ \disk -> do
-          lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
+          m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
   let nodes = G.connectedTo fs M0.IsParentOf g :: [M0.Node]
   for_ nodes $ \node -> do
@@ -487,20 +488,20 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         getMem _ = Nothing
         getCpuCount (HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
-    lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
+    m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
     for_ procs $ \(proc@M0.Process{..}) -> do
-      lift $ addProcess t r_fid (M0.fid node) r_cores
+      m0synchronously lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
                             r_endpoint
       let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
       for_ servs $ \(serv@M0.Service{..}) -> do
-        lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
+        m0synchronously lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
         let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
           let disk = listToMaybe
                    $ (G.connectedTo sdev M0.IsOnHardware g :: [M0.Disk])
-          lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
+          m0synchronously lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   phaseLog "spiel" "Finished adding concrete entities."
@@ -510,34 +511,34 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                          M0.PVer _ a@M0.PVerActual{}    -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
-    lift $ addPool t (M0.fid pool) f_fid 0
+    m0synchronously lift $ addPool t (M0.fid pool) f_fid 0
     let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_type pver of
         pva@M0.PVerActual{} -> do
-          lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
+          m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
           let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
           for_ rackvs $ \rackv -> do
             let (Just (rack :: M0.Rack)) = listToMaybe
                                          $ G.connectedFrom M0.IsRealOf rackv g
-            lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
+            m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
             let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
             for_ enclvs $ \enclv -> do
               let (Just (encl :: M0.Enclosure)) = listToMaybe
                                                 $ G.connectedFrom M0.IsRealOf enclv g
-              lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
+              m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
               let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
               for_ ctrlvs $ \ctrlv -> do
                 let (Just (ctrl :: M0.Controller)) = listToMaybe
                                                    $ G.connectedFrom M0.IsRealOf ctrlv g
-                lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
+                m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
                 let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
                 for_ diskvs $ \diskv -> do
                   let (Just (disk :: M0.Disk)) = listToMaybe
                                                $ G.connectedFrom M0.IsRealOf diskv g
 
-                  lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
-          lift $ poolVersionDone t (M0.fid pver)
+                  m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
+          m0synchronously lift $ poolVersionDone t (M0.fid pver)
         pvf@M0.PVerFormulaic{} -> do
           base <- lookupConfObjByFid (M0.v_base pvf)
           case fmap M0.v_type base of
@@ -546,7 +547,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
             Just (pva@M0.PVerActual{}) -> do
               let(PDClustAttr n k p _ _) = M0.v_attrs pva
               if (M0.v_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k))
-              then lift $ addPVerFormulaic t (M0.fid pver) (M0.fid pool)
+              then m0synchronously lift $ addPVerFormulaic t (M0.fid pver) (M0.fid pool)
                             (M0.v_id pvf) (M0.v_base pvf) (M0.v_allowance pvf)
               else phaseLog "warning" $ "Ignoring pool version " ++ show pvf
                      ++ " because it doesn't meet"
@@ -724,9 +725,9 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
     return $ M0.timeSpecToSeconds untilHourPasses
 
 -- | Set profile in current thread.
-setProfileRC :: SpielContext -> (IO () -> PhaseM LoopState l ())  -> PhaseM LoopState l ()
+setProfileRC :: SpielContext -> LiftRC -> PhaseM LoopState l ()
 setProfileRC spiel lift = do
   rg <- getLocalGraph
   let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
   phaseLog "spiel" $ "set command profile to" ++ show mp
-  lift $ Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+  m0synchronously lift $ Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)

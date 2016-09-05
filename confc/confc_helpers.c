@@ -3,6 +3,9 @@
 // License   : All rights reserved.
 //
 
+#define M0_TRACE_SUBSYSTEM M0_TRACE_SUBSYS_HA
+#include "lib/trace.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +16,8 @@
 #include "reqh/reqh_service.h"
 #include "rm/rm_service.h"
 #include "spiel/spiel.h"
+#include "m0init.h"       /* m0init_hi */
+#include "ha/halon/interface.h"
 
 static struct m0_sm_group g_grp;
 
@@ -178,10 +183,10 @@ char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen) {
 
 int spiel_init( struct m0_spiel** out_spiel
               , struct m0_reqh_service** out_service
-              , struct m0_reqh* reqh
               ) {
     struct m0_fid fid;
     int rc;
+    struct m0_reqh * reqh = m0_halon_interface_reqh(m0init_hi);
     m0_fid_tgenerate(&fid, M0_CONF_SERVICE_TYPE.cot_ftype.ft_id);
     rc = m0_reqh_service_setup(out_service, &m0_rms_type, reqh, NULL, &fid);
     if (rc)
