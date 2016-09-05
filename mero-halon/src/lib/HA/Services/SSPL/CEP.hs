@@ -18,7 +18,7 @@ import HA.Services.SSPL.IEM
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 
-import HA.RecoveryCoordinator.Events.Drive
+import HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 import HA.ResourceGraph hiding (null)
 import HA.Resources (Node(..), Has(..), Cluster(..))

@@ -100,7 +100,7 @@ Library
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Debug
                    HA.RecoveryCoordinator.Rules.Service
-                   HA.RecoveryCoordinator.Events.Drive
+                   HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Events.Service
                    -- RC interface modules.
                    HA.RecoveryCoordinator.RC
@@ -175,8 +175,7 @@ Library
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
                        HA.RecoveryCoordinator.Actions.Mero.Conf
-                       HA.RecoveryCoordinator.Rules.Castor.Disk
-                       HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
+                       HA.RecoveryCoordinator.Castor.Drive
                        HA.RecoveryCoordinator.Rules.Mero
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
@@ -199,8 +198,10 @@ Library
 
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
-                      HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
-                      HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal
+                      HA.RecoveryCoordinator.Castor.Drive.Rules
+                      HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
+                      HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
+                      HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Node

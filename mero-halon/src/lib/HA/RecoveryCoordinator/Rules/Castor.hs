@@ -34,10 +34,10 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
-import qualified HA.RecoveryCoordinator.Rules.Castor.Disk as Disk
+import qualified HA.RecoveryCoordinator.Castor.Drive as Disk
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
-import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note

@@ -21,7 +21,7 @@ import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Events.Castor.Cluster (StopProcessesRequest(..))
 import HA.RecoveryCoordinator.Events.Mero (AnyStateSet(..))
-import HA.RecoveryCoordinator.Events.Drive (ExpanderReset(..))
+import HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.RecoveryCoordinator.Rules.Castor.Node
   ( StartProcessesOnNodeResult(..)
