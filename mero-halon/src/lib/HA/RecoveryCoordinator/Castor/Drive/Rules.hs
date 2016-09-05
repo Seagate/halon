@@ -45,6 +45,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Actions.Castor.Disk
 import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
 import HA.Resources
 import HA.Resources.Castor
@@ -109,20 +110,6 @@ externalNotificationHandlers =
 
 driveRemovalTimeout :: Int
 driveRemovalTimeout = 60
-
-attachDisk :: M0.SDev -> PhaseM LoopState a ()
-attachDisk sdev = do
-  phaseLog "spiel" $ "Attaching disk " ++ showFid sdev
-  lookupSDevDisk sdev >>= flip forM_ (\d ->
-    withSpielRC $ \sp m0 -> withRConfRC sp
-      $ m0 $ Spiel.deviceAttach sp (fid d))
-
-detachDisk :: M0.SDev -> PhaseM LoopState a ()
-detachDisk sdev = do
-  phaseLog "spiel" $ "Detaching disk " ++ showFid sdev
-  lookupSDevDisk sdev >>= flip forM_ (\d ->
-    withSpielRC $ \sp m0 -> withRConfRC sp
-      $ m0 $ Spiel.deviceDetach sp (fid d))
 
 -- | Verifies that a drive is in a ready state, and takes appropriate
 --   actions accordingly.

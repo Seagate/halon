@@ -25,10 +25,9 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
-  ( ResetAttempt(..)
-  , ResetFailure(..)
-  , ResetSuccess(..)
-  , DriveRemoved(drDevice)
+import HA.RecoveryCoordinator.Actions.Castor.Disk
+  ( attachDisk
+  , detachDisk
   )
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
@@ -48,7 +47,6 @@ import HA.Services.SSPL.LL.Resources
 
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
-import qualified Mero.Spiel as Spiel
 
 import Control.Distributed.Process
   ( Process )
@@ -205,10 +203,7 @@ ruleResetAttempt = define "reset-attempt" $ do
             phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
             markDiskPowerOff sdev
             sd <- lookupStorageDeviceSDev sdev
-            forM_ sd $ \m0sdev -> do
-              lookupSDevDisk m0sdev >>= flip forM_ (\d ->
-                withSpielRC $ \sp m0 -> withRConfRC sp
-                  $ m0 $ Spiel.deviceDetach sp (M0.fid d))
+            forM_ sd detachDisk
             switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
           else continue failure
         else continue failure
@@ -245,9 +240,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         promulgateRC $ ResetSuccess sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          lookupSDevDisk m0sdev >>= flip forM_ (\d ->
-            withSpielRC $ \sp m0 -> withRConfRC sp
-              $ m0 $ Spiel.deviceAttach sp (M0.fid d))
+          attachDisk m0sdev
           getLocalGraph <&> getState m0sdev >>= \case
             M0.SDSTransient _ ->
               applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
