@@ -7,6 +7,10 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE MagicHash                  #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Actions.Mero.Spiel
@@ -16,16 +20,18 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , LiftRC
   , withSpielRC
   , withRConfRC
-  , abortRebalanceOperation
-  , abortRepairOperation
-  , continueRebalanceOperation
-  , continueRepairOperation
-  , quiesceRebalanceOperation
-  , quiesceRepairOperation
-  , startRepairOperation
-  , statusOfRepairOperation
-  , startRebalanceOperation
-  , statusOfRebalanceOperation
+    -- * SNS operations
+  , mkRepairStartOperation
+  , mkRepairContinueOperation
+  , mkRepairQuiesceOperation
+  , mkRepairStatusRequestOperation
+  , mkRepairAbortOperation
+  , mkRebalanceStartOperation
+  , mkRebalanceContinueOperation
+  , mkRebalanceQuiesceOperation
+  , mkRebalanceAbortOperation
+  , mkRebalanceStatusRequestOperation
+    -- * Sync operation
   , syncAction
   , syncToBS
   , syncToConfd
@@ -66,22 +72,24 @@ import Mero.ConfC
 import Mero.Notification hiding (notifyMero)
 import Mero.Spiel hiding (start)
 import qualified Mero.Spiel
+import Mero.ConfC (Fid)
 
 import Control.Applicative
 import Control.Category ((>>>))
 import qualified Control.Distributed.Process as DP
 import Control.Monad (void, join)
-import Control.Monad.Fix (fix)
 import Control.Monad.Catch
 
+import Data.Binary
 import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
+import Data.Typeable
 import Data.IORef (writeIORef)
 import Data.List (sortOn)
-import Data.Maybe (catMaybes, listToMaybe, fromJust)
-import Data.Proxy (Proxy(..))
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
+import Data.Bifunctor
 
 import Network.CEP
 import Network.HostName (getHostName)
@@ -91,6 +99,9 @@ import System.IO
 import System.Directory
 
 import Text.Printf (printf)
+import GHC.Generics
+import GHC.TypeLits
+import GHC.Exts
 
 import Prelude hiding (id)
 
@@ -141,190 +152,293 @@ withRConfRC spiel action = do
     (Mero.Spiel.rconfStop spiel)
     action
 
+withRConfIO :: SpielContext -> Maybe M0.Profile -> IO a -> IO a
+withRConfIO spiel mp action = do
+  Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+  Mero.Spiel.rconfStart spiel
+  action `finally` Mero.Spiel.rconfStop spiel
 
--- | Start the repair operation on the given 'M0.Pool'.
-startRepairOperation :: M0.Pool
-                     -> PhaseM LoopState l ()
-startRepairOperation pool = go `catch`
-    (\e -> do
-      phaseLog "error" $ "Error starting repair operation: "
-                      ++ show (e :: SomeException)
-                      ++ " on pool "
-                      ++ show (M0.fid pool)
-    )
-  where
-    go = do
-      phaseLog "spiel" $ "Starting repair operation."
-      phaseLog "pool"  $ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairStart sc (M0.fid pool)
-      uuid <- DP.liftIO nextRandom
-      setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
-      phaseLog "spiel" $ "startRepairOperation for " ++ show pool ++ " done."
+-------------------------------------------------------------------------------
+-- Generic operations helpers.
+-------------------------------------------------------------------------------
 
--- | Retrieves the repair 'SnsStatus' of the given 'M0.Pool'.
-statusOfRepairOperation :: M0.Pool
-                        -> PhaseM LoopState l (Either SomeException [SnsStatus])
-statusOfRepairOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in pool status repair operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Left e
-  )
+data GenericSNSOperationResult (k::Symbol) a = GenericSNSOperationResult M0.Pool (Either String a)
+  deriving (Generic, Typeable)
+instance Binary a => Binary (GenericSNSOperationResult k a)
+
+-- | Helper for implementation call to generic spiel operation. This
+-- call is done asynchronously.
+mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
+  => Proxy# k -- ^ Operation name
+  -> (M0.Pool -> Either SomeException a -> GenericSNSOperationResult k a)
+  -- ^ Handler
+  -> (SpielContext -> M0.Pool -> IO a)
+  -- ^ SNS action
+  -> M0.Pool
+  -- ^ Pool of interest
+  -> PhaseM LoopState l ()
+mkGenericSNSOperation operation_name operation_reply operation_action pool = do
+  phaseLog "spiel"    $ symbolVal' operation_name
+  phaseLog "pool.fid" $ show (M0.fid pool)
+  next <- liftProcess $ do
+    rc <- DP.getSelfPid
+    return $ DP.usend rc . operation_reply pool
+  mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
+  er <- withSpielRC $ \sc m0 ->
+          m0asynchronously m0 next $ withRConfIO sc mp $ operation_action sc pool
+  case er of
+    Right () -> return ()
+    Left e -> liftProcess $ next $ Left e
+
+-- | 'mkGenericSpielOperation' specialized for the most common case.
+mkGenericSNSOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
+  => Proxy# k
+  -> (SpielContext -> Fid -> IO a)
+  -> M0.Pool
+  -> PhaseM LoopState l ()
+mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
+  (\pool eresult -> GenericSNSOperationResult pool (first show eresult))
+  (\sc pool -> f sc (M0.fid pool))
+
+-- | Helper for implementation call to generic spiel operation.
+mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable b, Typeable k, KnownSymbol k)
+  => Proxy# k                                               -- ^ Rule name
+  -> (String -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Error result converter.
+  -> (c      -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Success result onverter.
+  -> (M0.Pool -> (Either a b) -> PhaseM LoopState l ())     -- ^ Handler
+  -> RuleM LoopState l (Jump PhaseHandle)
+mkGenericSNSReplyHandler n onError onSuccess action = do
+  ph <- phaseHandle $ symbolVal' n ++ " reply"
+  setPhase ph $ \(GenericSNSOperationResult pool er :: GenericSNSOperationResult k c) -> do
+    phaseLog "pool.fid" $ show (M0.fid pool)
+    result <- case er of
+      Left s -> do phaseLog "result" "ERROR"
+                   phaseLog "error" s
+                   onError s pool
+      Right x -> do phaseLog "result" (show x)
+                    onSuccess x pool
+    action pool result
+  return ph
+
+-- | 'mkGenericSpielReplyHandler' specialized for the most common case.
+mkGenericSNSReplyHandlerSimple :: (Typeable b, Binary b, KnownSymbol k, Typeable k, Show b)
+  => Proxy# k
+  -> (M0.Pool -> String  -> PhaseM LoopState l ()) -- ^ Error handler
+  -> (M0.Pool -> b -> PhaseM LoopState l ())       -- ^ Result handler
+  -> RuleM LoopState l (Jump PhaseHandle)
+mkGenericSNSReplyHandlerSimple n onError onResult =
+  mkGenericSNSReplyHandler n (const . return . Left) (const . return . Right)
+    (\pool-> either (onError pool) (onResult pool))
+
+
+-- Tier 2
+
+-- | Generate function for the very simple case when there is no logic
+-- rather than send request and receive reply.
+mkSimpleSNSOperation :: forall a l n . (KnownSymbol n, Typeable a, Typeable n, Binary a, Show a)
+                     => Proxy n
+                     -> (SpielContext -> Fid -> IO a)
+                     -> (M0.Pool -> String -> PhaseM LoopState l ())
+                     -> (M0.Pool -> a -> PhaseM LoopState l ())
+                     -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkSimpleSNSOperation _ action onFailure onResult = do
+  phase <- handleReply onFailure onResult
+  return ( phase
+         , mkGenericSNSOperationSimple p action)
   where
-    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
-    go = do
-      phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairStatus sc (M0.fid pool)
+    p :: Proxy# n
+    p = proxy#
+    handleReply :: (M0.Pool -> String -> PhaseM LoopState l ())
+                -> (M0.Pool -> a      -> PhaseM LoopState l ())
+                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply = mkGenericSNSReplyHandlerSimple p
+
+-- Tier 3
+
+-- | Generate function that query status until operation will complete.
+mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
+  => Proxy n
+  -> (    (M0.Pool -> String -> PhaseM LoopState l ())
+       -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
+       -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ()))
+  -> (SpielContext -> Fid -> IO ())
+  -> [SnsCmStatus]
+  -> Int                        -- ^ Timeout between retries (in seconds).
+  -> (l -> M0.Pool)             -- ^ Getter of the pool.
+  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkStatusCheckingSNSOperation _ mk action interesting n getter onFailure onSuccess = do
+  next_request <- phaseHandle "next request"
+  (status_received, statusRequest) <- mk onFailure $ \pool xs -> do
+     if all (`elem` interesting) (map _sss_state xs)
+     then onSuccess pool (map ((,) <$> _sss_fid <*> _sss_state) xs)
+     else continue (timeout n next_request)
+  operation_done <- handleReply onFailure $ \pool _ -> do
+    statusRequest pool
+    continue status_received
+  directly next_request $ do
+    pool <- gets Local getter
+    statusRequest pool
+    continue status_received
+  return ( operation_done
+         , mkGenericSNSOperationSimple p action)
+  where
+    p :: Proxy# n
+    p = proxy#
+    handleReply :: (M0.Pool -> String -> PhaseM LoopState l ())
+                -> (M0.Pool -> ()     -> PhaseM LoopState l ())
+                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply = mkGenericSNSReplyHandlerSimple p
+
+-------------------------------------------------------------------------------
+-- SNS Operations
+-------------------------------------------------------------------------------
+
+-- | Start the repair operation on the given 'M0.Pool' asynchronously.
+mkRepairStartOperation ::
+  (M0.Pool -> Either String UUID -> PhaseM LoopState l ()) -- ^ Result handler.
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRepairStartOperation handler = do
+  operation_started <- mkRepairOperationStarted handler
+  return ( operation_started
+         , mkGenericSNSOperationSimple p poolRepairStart
+         )
+  where
+    p :: Proxy# "Repair start"
+    p = proxy#
+    -- | Create a phase to handle pool repair operation start result.
+    mkRepairOperationStarted ::
+           (M0.Pool -> Either String UUID -> PhaseM LoopState l ())
+        -> RuleM LoopState l (Jump PhaseHandle)
+    mkRepairOperationStarted = mkGenericSNSReplyHandler p
+      (const . return . Left)
+      (\() pool -> do
+         uuid <- DP.liftIO nextRandom
+         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
+         return (Right uuid))
+
+-- | Start the rebalance operation on the given 'M0.Pool' asynchronously.
+mkRebalanceStartOperation ::
+  (M0.Pool -> Either String UUID -> PhaseM LoopState l ()) -- ^ Result handler.
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> [M0.Disk] -> PhaseM LoopState l ())
+mkRebalanceStartOperation handler = do
+  operation_started <- handleReply handler
+  return ( operation_started
+         , \pool disks -> do
+             phaseLog "spiel" $ "Starting rebalance on pool"
+             phaseLog "pool"  $ show pool
+             phaseLog "disks" $ show disks
+             -- XXX: is it really safe to do that here?
+             for_ disks $ \d -> do
+               mt <- lookupDiskSDev d
+               for_ mt $ \t -> do
+                 msd <- lookupStorageDevice t
+                 for_ msd unmarkStorageDeviceReplaced
+             mkGenericSNSOperationSimple p poolRebalanceStart pool
+         )
+  where
+    p :: Proxy# "Rebalance start"
+    p = proxy#
+    handleReply :: (M0.Pool -> Either String UUID -> PhaseM LoopState l ())
+                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply = mkGenericSNSReplyHandler p
+      (const . return . Left)
+      (\() pool -> do
+         uuid <- DP.liftIO nextRandom
+         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
+         return (Right uuid))
+
+
+-- | Create a phase to handle pool repair operation start result.
+mkRepairStatusRequestOperation ::
+     (M0.Pool -> String -> PhaseM LoopState l ())
+  -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRepairStatusRequestOperation =
+  mkSimpleSNSOperation  (Proxy :: Proxy "Repair status request") poolRepairStatus
 
 -- | Continue the rebalance operation.
-continueRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-continueRepairOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in continue repair operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go = do
-      phaseLog "spiel" $ "Continuing repair on " ++ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairContinue sc (M0.fid pool)
-      return Nothing
+mkRepairContinueOperation ::
+     (M0.Pool -> String -> PhaseM LoopState l ())
+  -> (M0.Pool -> () -> PhaseM LoopState l ())
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRepairContinueOperation =
+  mkSimpleSNSOperation (Proxy :: Proxy "Repair continue") poolRepairContinue
 
--- | Quiesces the repair operation on the given pool
-quiesceRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-quiesceRepairOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in repair quiesce operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go :: PhaseM LoopState l (Maybe SomeException)
-    go = do
-      phaseLog "spiel" $ "Quiescing repair on pool " ++ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRepairQuiesce sc (M0.fid pool)
-      return Nothing
-
--- | Quiesces the repair operation on the given pool
-abortRepairOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-abortRepairOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in repair abort operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go :: PhaseM LoopState l (Maybe SomeException)
-    go = do
-      phaseLog "spiel" $ "Aborting repair on pool " ++ show pool
-      _ <- withSpielRC $ \sc _ -> do
-        withRConfRC sc $ poolRepairAbort sc (M0.fid pool)
-      fix $ \loop -> do
-        eresult <- statusOfRepairOperation pool
-        case eresult of
-          Left e -> return $ Just e
-          Right xs
-            | all ((`elem` [ Mero.Spiel.M0_SNS_CM_STATUS_IDLE
-                           , Mero.Spiel.M0_SNS_CM_STATUS_IDLE])
-                           . Mero.Spiel._sss_state) xs ->
-               return Nothing
-            | otherwise -> loop
-
--- | Starts a rebalance operation on the given 'M0.Pool'.
-startRebalanceOperation :: M0.Pool -> [M0.Disk] -> PhaseM LoopState l ()
-startRebalanceOperation pool disks = catch go
-    (\e -> do
-      phaseLog "error" $ "Error starting rebalance operation: "
-                      ++ show (e :: SomeException)
-                      ++ " on pool "
-                      ++ show (M0.fid pool)
-    )
-  where
-    go = do
-      phaseLog "spiel" $ "Starting rebalance on pool " ++ show pool ++ " for " ++ show disks
-      for_ disks $ \d -> do
-        mt <- lookupDiskSDev d
-        for_ mt $ \t -> do
-          msd <- lookupStorageDevice t
-          for_ msd unmarkStorageDeviceReplaced
-        _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceStart sc (M0.fid pool)
-        uuid <- DP.liftIO nextRandom
-        setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
-
--- | Retrieves the rebalance 'SnsStatus' of the given pool.
-statusOfRebalanceOperation :: M0.Pool
-                           -> PhaseM LoopState l (Either SomeException [SnsStatus])
-statusOfRebalanceOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in pool status rebalance operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Left e
-  )
-  where
-    go :: PhaseM LoopState l (Either SomeException [SnsStatus])
-    go = do
-      phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceStatus sc (M0.fid pool)
 
 -- | Continue the rebalance operation.
-continueRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-continueRebalanceOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in continue rebalance operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go = do
-      phaseLog "spiel" $ "Continuing rebalance on " ++ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceContinue sc (M0.fid pool)
-      return Nothing
+mkRebalanceContinueOperation ::
+     (M0.Pool -> String -> PhaseM LoopState l ())
+  -> (M0.Pool -> ()     -> PhaseM LoopState l ())
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRebalanceContinueOperation = do
+  mkSimpleSNSOperation (Proxy :: Proxy "Rebalance continue") poolRebalanceContinue
 
--- | Quiesces the rebalance operation on the given pool
-quiesceRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-quiesceRebalanceOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in rebalance quiesce operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go :: PhaseM LoopState l (Maybe SomeException)
-    go = do
-      phaseLog "spiel" $ "Starting status on pool " ++ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceQuiesce sc (M0.fid pool)
-      return Nothing
+-- | Create a phase to handle pool repair operation start result.
+mkRebalanceStatusRequestOperation ::
+     (M0.Pool -> String      -> PhaseM LoopState l ())
+  -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRebalanceStatusRequestOperation = do
+  mkSimpleSNSOperation (Proxy :: Proxy "Rebalance status request") poolRebalanceStatus
 
--- | Quiesces the rebalance operation on the given pool
-abortRebalanceOperation :: M0.Pool -> PhaseM LoopState l (Maybe SomeException)
-abortRebalanceOperation pool = catch go
-  (\e -> do
-    phaseLog "error" $ "Error in rebalance abort operation: "
-                    ++ show e
-                    ++ " on pool "
-                    ++ show (M0.fid pool)
-    return $ Just e
-  )
-  where
-    go :: PhaseM LoopState l (Maybe SomeException)
-    go = do
-      phaseLog "spiel" $ "Aborting rebalance on pool " ++ show pool
-      _ <- withSpielRC $ \sc _ -> withRConfRC sc $ poolRebalanceAbort sc (M0.fid pool)
-      return Nothing
+-- | Create code that allow to quisce repair operation.
+mkRepairQuiesceOperation ::
+     Int                        -- ^ Timeout between retries (in seconds).
+  -> (l -> M0.Pool)             -- ^ Getter of the pool.
+  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRepairQuiesceOperation =
+  mkStatusCheckingSNSOperation
+    (Proxy :: Proxy "Repair quiesce")
+    mkRepairStatusRequestOperation
+    poolRepairQuiesce
+    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_PAUSED]
+
+-- | Create an action and helper phases that will allow to abort SNS operation
+-- and wait until it will be really aborted.
+mkRepairAbortOperation ::
+     Int
+  -> (l -> M0.Pool)
+  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRepairAbortOperation =
+  mkStatusCheckingSNSOperation
+    (Proxy :: Proxy "Repair abort")
+    mkRepairStatusRequestOperation
+    poolRepairAbort
+    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+
+-- | Create code that allow to quisce repair operation.
+mkRebalanceQuiesceOperation ::
+     Int                        -- ^ Timeout between retries (in seconds).
+  -> (l -> M0.Pool)             -- ^ Getter of the pool.
+  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRebalanceQuiesceOperation = do
+  mkStatusCheckingSNSOperation
+    (Proxy :: Proxy "Rebalance quiesce")
+    mkRebalanceStatusRequestOperation
+    poolRebalanceQuiesce
+    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_PAUSED]
+
+-- | Generate code to call abort operation.
+mkRebalanceAbortOperation ::
+     Int
+  -> (l -> M0.Pool)
+  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success
+  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+mkRebalanceAbortOperation = do
+  mkStatusCheckingSNSOperation
+    (Proxy :: Proxy "Rebalance quiesce")
+    mkRebalanceStatusRequestOperation
+    poolRebalanceAbort
+    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because

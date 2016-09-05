@@ -27,12 +27,14 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , checkRepairOnClusterStart
   , checkRepairOnServiceUp
   , ruleSNSOperationAbort
+  , ruleSNSOperationQuiesce
+  , ruleSNSOperationContinue
+  , ruleOnSnsOperationQuiesceFailure
   ) where
 
 import           Control.Applicative
 import           Control.Arrow (second)
 import           Control.Distributed.Process
-import           Control.Exception (SomeException)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Trans
@@ -48,11 +50,9 @@ import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable)
-import           Data.UUID (nil)
 import           Data.Vinyl
 import           GHC.Generics (Generic)
 
-import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
@@ -65,9 +65,8 @@ import           HA.RecoveryCoordinator.Events.Mero
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
-  , setPhaseAllNotified
   , setPhaseInternalNotificationWithState
-  , setPhaseNotified
+  , setPhaseAllNotified
   )
 import           HA.Services.SSPL.CEP
 import           HA.Resources
@@ -96,21 +95,22 @@ instance B.Binary SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
 data SpielQueryHourly = SpielQueryHourly Pool M0.PoolRepairType UUID
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance B.Binary SpielQueryHourly
 
+-- | Event that hourly job finihed.
+data SpielQueryHourlyFinished = SpielQueryHourlyFinished Pool M0.PoolRepairType UUID
+  deriving (Eq, Show, Generic, Typeable)
+
+instance B.Binary SpielQueryHourlyFinished
+
 -- | Handler for @M0_NC_ONLINE@ 'Pool' messages. Its main role is to
--- check whether we need to wait for more messages and if yes,
--- dispatch queries to SSPL after a period of time through
--- 'querySpiel'. As we do not receive information as to what type of
--- message this is about, we use previously stored 'M0.PoolRepairType'
--- to help us out.
+-- load all metadata information and schedule request that will check
+-- if repair could be completed.
 queryStartHandling :: M0.Pool -> PhaseM LoopState l ()
 queryStartHandling pool = do
-  possiblyInitialisePRI pool
-  incrementOnlinePRSResponse pool
-  M0.PoolRepairStatus prt ruuid (Just pri) <- getPoolRepairStatus pool >>= \case
+  M0.PoolRepairStatus prt ruuid _ <- getPoolRepairStatus pool >>= \case
     Nothing -> do
       let err = "In queryStartHandling for " ++ show pool ++ " without PRS set."
       phaseLog "error" err
@@ -118,46 +118,39 @@ queryStartHandling pool = do
     Just prs -> do
       phaseLog "info" $ "PoolRepairStatus = " ++ show prs
       return prs
+  -- We always send SpielQuery and move all complex logic there,
+  -- this allow to leave this call synchronous but non-blocking
+  -- so it can be used inside 'PhaseM' directly
+  promulgateRC $ SpielQuery pool prt ruuid
 
-  iosvs <- length <$> R.getIOServices pool
-
-  -- Ask for status always.
-  onlines <- R.repairStatus prt pool >>= \case
-    Left e -> do
-      phaseLog "warn" $ "repairStatus " ++ show prt ++ " failed: " ++ show e
-      -- we use priOnlineNotifications as a fallback here and we may
-      -- want to do something better in case R.repairStatus fails but
-      -- priOnlineNotifications has one more use, see [Note multipleIOS]
-      return $ priOnlineNotifications pri
-    Right sts -> return . length $ R.filterCompletedRepairs sts
-  if -- Everything is repaired. Running timeouts keep running but
-     -- 'completeRepair' will remove the repair information with given
-     -- UUID they expect so they will simply die when it's their time
-     -- to fire.
-     | onlines == iosvs -> completeRepair pool prt Nothing
-     -- This is the first of many notifications, start query in 5
-     -- minutes.
-     --
-     -- [Note multipleIOS]
-     -- We don't use ‘onlines’ here: consider the case where we
-     -- receive our first notification and enter queryStartHandling
-     -- for the first time but in the meantime, more than one IOS has
-     -- finished repair. In this case ’onlines > 1’ and we can't
-     -- decide whether we have dispatched SpielQuery. The obvious
-     -- solution is to record in RG whether we have already started
-     -- the query and use that to decide. But we already do except not
-     -- explicitly: if we check ‘priOnlineNotifications’, we
-     -- effectively find out how many times we entered
-     -- queryStartHandling so we can determine when we have entered it
-     -- for the first time and therefore can decide if we should
-     -- dispatch a query.
-     | priOnlineNotifications pri == 1 && iosvs > 1 ->
-         promulgateRC $ SpielQuery pool prt ruuid
-
-     -- This is not the first notification and also we haven't yet
-     -- finished repair so do nothing and let the running queries or
-     -- future notifications deal with it.
-     | otherwise -> return ()
+processSnsStatusReply ::
+      PhaseM LoopState l (Maybe UUID, PoolRepairType, UUID) -- ^ Get interesting info from env
+   -> PhaseM LoopState l () -- ^ action to run before doing anything else
+   -> PhaseM LoopState l () -- ^ action to run if SNS is not running
+   -> PhaseM LoopState l () -- ^ action to run if action is not complete
+   -> (PoolRepairInformation -> PhaseM LoopState l ()) -- ^ action to run if action is complete
+   -> M0.Pool
+   -> [Spiel.SnsStatus]
+   -> PhaseM LoopState l ()
+processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete pool sts = do
+  (muuid, prt, ruuid) <- getUUIDs
+  preProcess
+  mpri <- getPoolRepairInformation pool
+  case mpri of
+    Nothing -> unsetPoolRepairStatusWithUUID pool ruuid
+    Just pri -> do
+      keepRunning <- maybe False ((ruuid ==) .prsRepairUUID)
+                       <$> getPoolRepairStatus pool
+      when keepRunning $ do
+        updatePoolRepairStatusTime pool
+        nios <- length <$> R.getIOServices pool -- XXX: this is not number of
+                                                --  IOS we started with
+        if sts == R.filterCompletedRepairs sts
+             && length sts >= nios
+        then do completeRepair pool prt muuid
+                onComplete pri
+        else onNonComplete
+      onNotRunning
 
 -- | This function does basic checking of whether we're done
 -- repairing/rebalancing as well as handling time related matters.
@@ -185,42 +178,72 @@ queryStartHandling pool = do
 --
 -- TODO Can we remove these?
 querySpiel :: Specification LoopState ()
-querySpiel = define "query-spiel" $ do
-  dispatchQuery <- phaseHandle "dispatch-query"
-  runQuery <- phaseHandle "run-query"
+querySpiel = define "spiel::sns:query-status" $ do
+  query_status    <- phaseHandle "run status request"
+  dispatch_hourly <- phaseHandle "dispatch hourly event"
+  abort_on_quiesce <- phaseHandle "aborting because of SNS operation quiesce"
+  abort_on_abort   <- phaseHandle "aborting baceuse of SNS operation abort"
 
-  setPhase dispatchQuery $ \(HAEvent uid (SpielQuery pool prt ruuid) _) -> do
+  let process_info = processSnsStatusReply
+        (do Just (uuid, _, prt, ruuid) <- get Local
+            return (Just uuid, prt, ruuid))
+        (do Just (uuid, _, _, _) <- get Local
+            messageProcessed uuid)
+        (return ())
+        (return ())
+        (\pri -> do
+            timeNow <- liftIO getTime
+            let elapsed = timeNow - priTimeOfFirstCompletion pri
+                untilTimeout = M0.mkTimeSpec 300 - elapsed
+            switch [ query_status
+                   , abort_on_quiesce
+                   , abort_on_abort
+                   , timeout (timeSpecToSeconds untilTimeout) dispatch_hourly])
+  let process_failure pool str = do
+        Just (uuid, _, _, _) <- get Local
+        messageProcessed uuid
+        phaseLog "error" "Exception when requesting status"
+        phaseLog "pool.fid" $ show (M0.fid pool)
+        phaseLog "text"  str
+
+  (repair_status, repairStatus) <-
+     mkRepairStatusRequestOperation process_failure process_info
+
+  (rebalance_status, rebalanceStatus) <-
+    mkRebalanceStatusRequestOperation process_failure process_info
+
+  setPhase query_status $ \(HAEvent uid (SpielQuery pool prt ruuid) _) -> do
+    phaseLog "pool.fid" $ show (M0.fid pool)
+    phaseLog "repair.type" $ show prt
     put Local $ Just (uid, pool, prt, ruuid)
-    getPoolRepairInformation pool >>= \case
-      Nothing -> unsetPoolRepairStatusWithUUID pool ruuid
-      Just pri -> do
-        timeNow <- liftIO getTime
-        let elapsed = timeNow - priTimeOfFirstCompletion pri
-            untilTimeout = M0.mkTimeSpec 300 - elapsed
-        iosvs <- length <$> R.getIOServices pool
-        if priOnlineNotifications pri < iosvs
-        then switch [timeout (timeSpecToSeconds untilTimeout) runQuery]
-        else completeRepair pool prt $ Just uid
+    case prt of
+      M0.Rebalance -> do
+        rebalanceStatus pool
+        continue rebalance_status
+      M0.Failure   -> do
+        repairStatus pool
+        continue repair_status
 
-  directly runQuery $ do
-    Just (uid, pool, prt, ruuid) <- get Local
-    keepRunning <- getPoolRepairStatus pool >>= return . \case
-      Nothing -> False
-      Just prs -> prsRepairUUID prs == ruuid
-
+  directly dispatch_hourly $ do
+    Just (_, pool, prt, ruuid) <- get Local
+    keepRunning <- maybe False ((ruuid ==) .prsRepairUUID)
+                     <$> getPoolRepairStatus pool
     when keepRunning $ do
-      iosvs <- length <$> R.getIOServices pool
-      withRepairStatus prt pool uid $ \sts -> do
-        let onlines = length $ R.filterCompletedRepairs sts
-        modifyPoolRepairInformation pool $ \pri ->
-          pri { priOnlineNotifications = onlines }
-        updatePoolRepairStatusTime pool
-        if onlines < iosvs
-        then liftProcess . promulgateWait $ SpielQueryHourly pool prt ruuid
-        else completeRepair pool prt $ Just uid
-    phaseLog "repair" $ "First query for pool " ++ show pool ++ " terminating."
+      phaseLog "pool.fid" $ show (M0.fid  pool)
+      phaseLog "repair.type" $ show prt
+      phaseLog "repair.uuid" $ show ruuid
+      promulgateRC $ SpielQueryHourly pool prt ruuid
 
-  start dispatchQuery Nothing
+  setPhase abort_on_quiesce $
+    \(HAEvent _ (QuiesceSNSOperation _pool) _) -> return ()
+  setPhase abort_on_abort $
+    \(HAEvent _ (AbortSNSOperation _pool) _) -> return ()
+
+  start query_status Nothing
+
+-- | 'Job' used by 'ruleRebalanceStart'
+jobHourlyStatus :: Job SpielQueryHourly SpielQueryHourlyFinished
+jobHourlyStatus  = Job "castor::sns::hourly-status"
 
 -- | This rule works in similar fashion to 'querySpiel' with the main difference
 -- that:
@@ -228,45 +251,61 @@ querySpiel = define "query-spiel" $ do
 -- * it runs hourly
 -- * it runs until repairs complete
 querySpielHourly :: Specification LoopState ()
-querySpielHourly = define "query-spiel-hourly" $ do
-  dispatchQueryHourly <- phaseHandle "dispatch-query-hourly"
-  runQueryHourly <- phaseHandle "run-query-hourly"
+querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
+  run_query <- phaseHandle "run status query"
+  abort_on_quiesce <- phaseHandle "abort due to SNS operation pause"
+  abort_on_abort   <- phaseHandle "abort due to SNS operation abort"
+  let loop = [ timeout 3600 run_query
+             , abort_on_quiesce
+             , abort_on_abort
+             ]
+  let process_info = processSnsStatusReply
+        (do Just (SpielQueryHourly _ prt ruid) <- getField . rget fldReq <$> get Local
+            return (Nothing, prt, ruid))
+        (return ())
+        (continue finish)
+        (switch loop)
+        (\_ -> continue finish)
+  let process_failure _pool _str = continue finish
 
-  setPhase dispatchQueryHourly $ \(HAEvent uid (SpielQueryHourly pool prt ruuid) _) -> do
-    t <- getTimeUntilQueryHourlyPRI pool
-    put Local $ Just (uid, pool, prt, ruuid)
-    phaseLog "repair" $ "Running hourly query in " ++ show t ++ " seconds."
-    switch [timeout t runQueryHourly]
+  let route (SpielQueryHourly pool prt ruid) = do
+        modify Local $ rlens fldRep .~ Field (Just $ SpielQueryHourlyFinished pool prt ruid)
+        return $ Just loop
 
-  directly runQueryHourly $ do
-    Just (uid, pool, prt, ruuid) <- get Local
-    keepRunning <- getPoolRepairStatus pool >>= return . \case
-      Nothing -> False
-      Just prs -> prsRepairUUID prs == ruuid
-    when keepRunning $ do
-      iosvs <- length <$> R.getIOServices pool
-      Just pri <- getPoolRepairInformation pool
-      case priOnlineNotifications pri < iosvs of
-        False -> completeRepair pool prt (Just uid)
-        True -> withRepairStatus prt pool uid $ \sts -> do
-          -- is 'filterCompletedRepairs' relevant for rebalancing too?
-          -- If not, how do we handle this query?
-          let onlines = length $ R.filterCompletedRepairs sts
-          modifyPoolRepairInformation pool $ \pri' ->
-            pri' { priOnlineNotifications = onlines }
-          updatePoolRepairStatusTime pool
-          if onlines < iosvs
-          then do t <- getTimeUntilQueryHourlyPRI pool
-                  switch [timeout t runQueryHourly]
-          else completeRepair pool prt (Just uid)
-    phaseLog "repair" $ "Hourly query for pool " ++ show pool ++ " terminating."
-    messageProcessed uid
+  setPhase abort_on_quiesce $
+    \(HAEvent _ (QuiesceSNSOperation _pool) _) -> continue finish
+  setPhase abort_on_abort   $
+    \(HAEvent _ (AbortSNSOperation _pool) _) -> continue finish
 
-  start dispatchQueryHourly Nothing
+  (repair_status, repairStatus) <-
+     mkRepairStatusRequestOperation process_failure process_info
+
+  (rebalance_status, rebalanceStatus) <-
+    mkRebalanceStatusRequestOperation process_failure process_info
+
+  directly run_query $ do
+    Just (SpielQueryHourly pool prt ruuid) <- getField . rget fldReq <$> get Local
+    keepRunning <- maybe False ((ruuid ==) . prsRepairUUID) <$> getPoolRepairStatus pool
+    unless keepRunning $ continue finish
+    case prt of
+      M0.Rebalance -> do rebalanceStatus pool
+                         continue rebalance_status
+      M0.Failure   -> do repairStatus pool
+                         continue repair_status
+
+  return route
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe SpielQueryHourly)
+    fldRep = Proxy :: Proxy '("reply", Maybe SpielQueryHourlyFinished)
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> RNil
+
 
 -- | 'Job' used by 'ruleRebalanceStart'
 jobRebalanceStart :: Job PoolRebalanceRequest PoolRebalanceStarted
-jobRebalanceStart = Job "castor-rebalance-start"
+jobRebalanceStart = Job "castor::sns::rebalance::start"
 
 -- | Start rebalance operation triggered by 'PoolRebalanceRequest.
 -- Emits 'PoolRebalanceStarted' if successful.
@@ -279,7 +318,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
   notify_timeout <- phaseHandle "notify_timeout"
 
   let init_rule (PoolRebalanceRequest pool) = getPoolRepairInformation pool >>= \case
-        Nothing -> R.readyToUseIOS pool >>= \case
+        Nothing -> R.allIOSOnline pool >>= \case
           True -> do
             rg <- getLocalGraph
             sdevs <- getPoolSDevs pool
@@ -297,31 +336,50 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
                   then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
                           return $ Just [finish]
                   else do
-                   disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
-                   let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
-                   modify Local $ rlens fldNotifications .~ Field (Just messages)
-                   modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
-                   applyStateChanges messages
-                   return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
+                    phaseLog "info" "starting rebalance"
+                    disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
+                    let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
+                    modify Local $ rlens fldNotifications .~ Field (Just messages)
+                    modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
+                    applyStateChanges messages
+                    return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
             else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
                     return $ Just [finish]
           False -> do
-            phaseLog "info" "Not starting rebalance, some IOS are not ready"
-            return $ Just [finish]
+            phaseLog "info" "Not starting rebalance, some IOS are not online"
+            return Nothing
         Just info -> do
           phaseLog "warn" $ "Pool repair/rebalance is already running: " ++ show info
-          promulgateRC $ AbortSNSOperation pool
-          return $ Just [finish]
+          return Nothing
+
+  (rebalance_started, startRebalance) <- mkRebalanceStartOperation $ \pool eresult -> do
+     case eresult of
+       Left _err -> do abortRebalanceStart
+                       continue finish
+       Right _uuid -> do modify Local $ rlens fldRep .~ Field (Just $ PoolRebalanceStarted pool)
+                         possiblyInitialisePRI pool
+                         incrementOnlinePRSResponse pool
+                         continue finish
+
+  (status_received, statusRebalance) <- mkRebalanceStatusRequestOperation
+     (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
+                 abortRebalanceStart
+                 continue finish)
+     (\_ sns -> if all R.iosReady $ Spiel._sss_state <$> sns
+              then do
+                Just (pool, disks) <- getField . rget fldPoolDisks <$> get Local
+                startRebalance pool disks
+                continue rebalance_started
+              else do
+                phaseLog "error" "some IO services are not ready"
+                phaseLog "reply" $ show sns
+                abortRebalanceStart
+                continue finish)
 
   setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
-    Just (pool, disks) <- getField . rget fldPoolDisks <$> get Local
-    R.readyToUseIOS pool >>= \case
-      True -> do
-        startRebalanceOperation pool disks
-        modify Local $ rlens fldRep .~ Field (Just $ PoolRebalanceStarted pool)
-        queryStartHandling pool
-      False -> abortRebalanceStart
-    continue finish
+    Just (pool, _) <- getField . rget fldPoolDisks <$> get Local
+    statusRebalance pool
+    continue status_received
 
   setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
     todo uuid
@@ -378,7 +436,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
        <+> fldPoolDisks =: Nothing
 
 -- | 'Job' used by 'ruleRepairStart'
-jobRepairStart :: Job PoolRepairRequest PoolRepairStarted
+jobRepairStart :: Job PoolRepairRequest PoolRepairStartResult
 jobRepairStart = Job "castor-repair-start"
 
 -- | Handle the 'PoolRepairRequest' message that tries to trigger repair.
@@ -410,7 +468,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
         -- We spare ourselves some work and if IOS aren't ready then
         -- we don't even try to put the drives in repairing state just
         -- to flip them back a second later.
-        Nothing -> R.readyToUseIOS pool >>= \case
+        Nothing -> R.allIOSOnline pool >>= \case
           True -> do
             tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
             fa <- getPoolSDevsWithState pool M0_NC_FAILED
@@ -425,21 +483,41 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
                 phaseLog "warn" $ "Not starting repair, have transient or no failed devices"
                 return $ Just [finish]
           False -> do
-            phaseLog "warn" $ "Not starting repair, some IOS are not ready"
+            phaseLog "warn" $ "Not starting repair, some IOS are not online"
             return $ Just [finish]
         Just _ -> do
           phaseLog "warn" $ "Not starting repair, seems there is repair already on-going"
           return $ Just [finish]
 
+  (repair_started, startRepairOperation) <- mkRepairStartOperation $ \pool er -> do
+    case er of
+      Left s -> do
+        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairFailedToStart pool s)
+        continue finish
+      Right _ -> do
+        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairStarted pool)
+        possiblyInitialisePRI pool
+        incrementOnlinePRSResponse pool
+        continue finish
+
+  (status_received, statusRepair) <- mkRepairStatusRequestOperation
+     (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
+                 abortRepairStart
+                 continue finish)
+     (\pool sns -> if all R.iosReady $ Spiel._sss_state <$> sns
+              then do
+                startRepairOperation pool
+                continue repair_started
+              else do
+                phaseLog "error" "some IO services are not ready"
+                phaseLog "reply" $ show sns
+                abortRepairStart
+                continue finish)
+
   setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
     Just pool <- getField . rget fldPool <$> get Local
-    R.readyToUseIOS pool >>= \case
-      True -> do
-        startRepairOperation pool
-        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairStarted pool)
-        queryStartHandling pool
-      False -> abortRepairStart
-    continue finish
+    statusRepair pool
+    continue status_received
 
   -- Check if it's IOS that failed, if not then just keep going
   setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
@@ -477,7 +555,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
 
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
-    fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStarted)
+    fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStartResult)
     fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
     fldPool = Proxy :: Proxy '("pool", Maybe M0.Pool)
 
@@ -487,70 +565,96 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
        <+> fldNotifications =: Nothing
        <+> fldPool          =: Nothing
 
+data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
 
--- | Try to fetch 'Spiel.SnsStatus' for the given 'Pool' and if that
--- fails, unset the @PRS@ and ack the message. Otherwise run the
--- user-supplied handler.
-withRepairStatus :: PoolRepairType -> Pool -> UUID
-                 -> ([Spiel.SnsStatus] -> PhaseM LoopState l ())
-                 -> PhaseM LoopState l ()
-withRepairStatus prt pool uid f = R.repairStatus prt pool >>= \case
-  Left e -> do
-    liftProcess . sayRC $ "repairStatus " ++ show prt ++ " failed: " ++ show e
-    updatePoolRepairStatusTime pool
-    messageProcessed uid
-  Right sts -> f sts
+instance B.Binary ContinueSNS
 
---------------------------------------------------------------------------------
--- Actions                                                                    --
---------------------------------------------------------------------------------
+data ContinueSNSResult
+       = SNSContinued UUID M0.Pool M0.PoolRepairType
+       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
+       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
 
--- | Continue a previously-quiesced repair.
-continueRepair :: M0.Pool
-                  -- ^ Pool under repair
-               -> M0.PoolRepairType
-               -> PhaseM LoopState l ()
-continueRepair pool prt = repairHasQuiesced pool prt >>= \case
-  Left e -> phaseLog "repair" $ "queryContinueRepair: failed repair status: "
-                             ++ show e
-  Right True -> do
-    R.continueRepair prt pool >>= \case
-      Nothing -> return ()
-      Just e -> phaseLog "repair" $ "Repair continue failed with " ++ show e
-  Right False ->
-    phaseLog "repair" $ "queryContinueRepair: repair not quiesced, not contunuing"
+instance B.Binary ContinueSNSResult
 
--- | Quiesce the repair on the given pool if the repair is on-going.
+-- | Job that convers all the repair continue logic.
+jobContinueSNS :: Job ContinueSNS ContinueSNSResult
+jobContinueSNS = Job "castor::sns:continue"
+
+
+-- | Rule that check all if all nessesary conditions for pool repair start
+-- are met and starts repair if so.
 --
--- Tell spiel to quiesce and mark the given set of 'M0.SDev's
--- 'M0_NC_TRANSIENT' internally so we can track drives as they come
--- back up online and know when to continue repair. We don't have to
--- do much else, the regular spiel queries can run as usual because
--- the repair states will come back as 'M0_SNS_CM_STATUS_PAUSED' so
--- the repair won't finish and they'll just keep running until either
--- we 'queryContinueRepair' and everything completes fine or something
--- fails and we kill them during halt.
-quiesceRepair :: M0.Pool
-              -- ^ Pool under repair
-              -> M0.PoolRepairType
-              -- ^ Rebalance/repair?
-              -> PhaseM LoopState l ()
-quiesceRepair pool prt = repairHasQuiesced pool prt >>= \case
-  -- We may have quiesced before. We could check the stored disk map
-  -- here but in case of RC death we might have quiesced but lost the
-  -- graph update. Therefore we ask for repair status explicitly and
-  -- check if any status comes back as PAUSED, in which case we know
-  -- quiesce has happened.
-  Right False -> do
-    phaseLog "repair" $ "Quescing repair operation on " ++ show pool
-    R.quiesceRepair prt pool >>= \case
-      Nothing -> return ()
-      Just e -> phaseLog "repair" $ "Repair quiesce failed with " ++ show e
-  Right True -> do
-    phaseLog "repair" $ "queryQuiesceRepair: "
-                     ++ show pool ++ " already quiesced."
-  Left e -> phaseLog "repair" $ "queryQuiesceRepair: failed repair status: "
-                               ++ show e
+-- The requirements are:
+--   * All IOS should be running.
+--   * At least one IO service status should be M0_SNS_CM_STATUS_PAUSED.
+ruleSNSOperationContinue :: Definitions LoopState ()
+ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
+
+  let process_failure pool s = do
+        keepRunning <- isStillRunning pool
+        if keepRunning
+        then do Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
+                modify Local $
+                  rlens fldRep .~ Field (Just $ SNSFailed ruuid pool prt s)
+        else do
+          phaseLog "warning" "SNS continue operation failedm but SNS is no longer registered in RG"
+          continue finish
+      check_and_run (phase, action) pool sns = do
+       keep_running <- isStillRunning pool
+       if keep_running
+       then do
+         if any ((Spiel.M0_SNS_CM_STATUS_PAUSED ==) . Spiel._sss_state) sns
+             && all ((Spiel.M0_SNS_CM_STATUS_FAILED /=) . Spiel._sss_state) sns
+         then do
+           result <- R.allIOSOnline pool
+           if result
+           then action pool >> continue phase
+           else process_failure pool "Not all IOS are ready"
+         else continue finish -- XXX: should we unregister operation here
+       else continue finish
+      isStillRunning pool = do
+        Just (ContinueSNS ruuid _ _) <- getField . rget fldReq <$> get Local
+        maybe False ((ruuid ==) .prsRepairUUID)
+                         <$> getPoolRepairStatus pool
+
+  repair <- mkRepairContinueOperation process_failure $ \pool _ -> do
+    Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
+    modify Local $ rlens fldRep .~ Field (Just $ SNSContinued ruuid pool prt)
+    continue finish
+
+  (repair_status, repairStatus) <-
+     mkRepairStatusRequestOperation process_failure
+       $ check_and_run repair
+
+  rebalance <- mkRebalanceContinueOperation process_failure $ \pool _ -> do
+    Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
+    modify Local $ rlens fldRep .~ Field (Just $ SNSContinued ruuid pool prt)
+    continue finish
+
+  (rebalance_status, rebalanceStatus) <-
+    mkRebalanceStatusRequestOperation process_failure (check_and_run rebalance)
+
+  return $ \(ContinueSNS _ pool prt) -> do
+        keepRunning <- isStillRunning pool
+        result <- R.allIOSOnline pool
+        if keepRunning && result
+        then case prt of
+          M0.Failure -> do
+            repairStatus pool
+            return $ Just [repair_status]
+          M0.Rebalance -> do
+            rebalanceStatus pool
+            return $ Just [rebalance_status]
+        else return Nothing
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe ContinueSNS)
+    fldRep = Proxy :: Proxy '("reply", Maybe ContinueSNSResult)
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> RNil
 
 -- | Abort current SNS operation. Rule requesting SNS operation abort
 -- and waiting for all IOs to be finalized.
@@ -560,7 +664,6 @@ jobSNSAbort = Job "castor::node::sns::abort"
 ruleSNSOperationAbort :: Definitions LoopState ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   entry <- phaseHandle "entry"
-  await <- phaseHandle "await"
   ok    <- phaseHandle "ok"
 
   let route (AbortSNSOperation pool) = getPoolRepairStatus pool >>= \case
@@ -574,30 +677,38 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
           modify Local $ rlens fldUUID .~ (Field . Just $ uuid)
           return $ Just [entry]
 
+  (ph_repair_abort, abortRepair) <- mkRepairAbortOperation 15
+      (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
+      (\pool s -> do
+         modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
+         continue finish)
+      (\pool sns -> do
+         if all R.iosReady $ snd <$> sns
+         then do modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
+                 continue ok
+         else continue entry)
+
+  (ph_rebalance_abort, abortRebalance) <- mkRebalanceAbortOperation 15
+      (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
+      (\pool s -> do
+         modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
+         continue finish)
+      (\pool sns -> do
+         if all R.iosReady $ snd <$> sns
+         then do modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
+                 continue ok
+         else continue entry)
+
   directly entry $ do
     Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
     Just prt <- getField . rget fldPrt <$> get Local
-    _ <- case prt of
-      M0.Failure -> abortRepairOperation pool
-      M0.Rebalance -> abortRebalanceOperation pool
-    continue await
-
-  directly await $ do
-    Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
-    Just prt <- getField . rget fldPrt <$> get Local
-    eresult <- case prt of
-      M0.Rebalance -> statusOfRebalanceOperation pool
-      M0.Failure -> statusOfRepairOperation pool
-    case eresult of
-      Left e -> do
-        modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure $ show e)
-        continue finish
-      Right xs -> do
-        if all ((`elem` [Spiel.M0_SNS_CM_STATUS_IDLE
-                        ,Spiel.M0_SNS_CM_STATUS_FAILED])
-                . Spiel._sss_state) xs
-        then continue ok
-        else continue (timeout 5 await)
+    case prt of
+      M0.Failure -> do
+        abortRepair pool
+        continue ph_repair_abort
+      M0.Rebalance -> do
+        abortRebalance pool
+        continue ph_rebalance_abort
 
   directly ok $ do
     Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
@@ -619,6 +730,119 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
         <+> RNil
+
+
+jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
+jobSNSQuiesce = Job "castor::sns::quiesce"
+
+ruleSNSOperationQuiesce :: Definitions LoopState ()
+ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
+  entry <- phaseHandle "execute operation"
+
+  let route (QuiesceSNSOperation pool) = do
+       phaseLog "info" $ "Quisce request."
+       phaseLog "pool.fid" $ show (M0.fid pool)
+       mprs <- getPoolRepairStatus pool
+       case mprs of
+         Nothing -> do phaseLog "result" $ "no repair seems to be happening"
+                       modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationSkip pool)
+                       return $ Just [finish]
+         Just (M0.PoolRepairStatus prt uuid _) -> do
+           modify Local $ rlens fldPrt .~ (Field . Just $ prt)
+           modify Local $ rlens fldUUID .~ (Field . Just $ uuid)
+           return $ Just [entry]
+
+  (ph_repair_quiesced, quiesceRepair) <- mkRepairQuiesceOperation 15
+      (\l -> (\(Just (QuiesceSNSOperation pool)) -> pool) $ getField (rget fldReq l))
+      (\pool s -> do
+         modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationFailure pool s)
+         continue finish)
+      (\pool sns -> do
+         if all R.iosPaused $ snd <$> sns
+         then modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationOk pool)
+         else modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationFailure pool "services in a bad state")
+         continue finish)
+
+  (ph_rebalance_quiesced, quiesceRebalance) <- mkRebalanceQuiesceOperation 15
+      (\l -> case getField (rget fldReq l) of
+               Nothing -> error "impossible happened."
+               Just (QuiesceSNSOperation pool) -> pool)
+      (\pool s -> do
+         modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationFailure pool s)
+         continue finish)
+      (\pool sns -> do
+         if all R.iosPaused $ snd <$> sns
+         then modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationOk pool)
+         else modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationFailure pool "services in a bad state")
+         continue finish
+         )
+
+  directly entry $ do
+    Just (QuiesceSNSOperation pool) <- getField . rget fldReq <$> get Local
+    Just prt <- getField . rget fldPrt <$> get Local
+    case prt of
+      M0.Rebalance -> do
+        quiesceRebalance pool
+        continue ph_rebalance_quiesced
+      M0.Failure -> do
+        quiesceRepair pool
+        continue ph_repair_quiesced
+
+  return route
+  where
+    fldReq :: Proxy '("request", Maybe QuiesceSNSOperation)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe QuiesceSNSOperationResult)
+    fldRep = Proxy
+    fldPrt :: Proxy '("prt", Maybe PoolRepairType)
+    fldPrt = Proxy
+    args =  fldReq  =: Nothing
+        <+> fldRep  =: Nothing
+        <+> fldPrt  =: Nothing
+        <+> fldUUID =: Nothing
+        <+> RNil
+
+-- | If Quiesce operation on pool failed - we need to abort SNS operation.
+ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
+ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
+   case result of
+    (QuiesceSNSOperationFailure pool _) -> do
+       mprs <- getPoolRepairStatus pool
+       case mprs of
+         Nothing -> return ()
+         Just _  -> promulgateRC $ AbortSNSOperation pool
+    _ -> return ()
+
+--------------------------------------------------------------------------------
+-- Actions                                                                    --
+--------------------------------------------------------------------------------
+
+
+-- | Continue a previously-quiesced SNS operation.
+continueSNS :: M0.Pool  -- ^ Pool under SNS operation
+            -> M0.PoolRepairType
+            -> PhaseM LoopState l ()
+continueSNS pool prt = do
+  -- We check what we have actualy registered in graph in order to
+  -- understand what can we do. Theoretically it should not be needed
+  -- and we could be able to get all info in runtime, without storing
+  -- data in the graph.
+  mprs <- getPoolRepairStatus pool
+  case mprs of
+    Nothing -> phaseLog "warning" $
+      "continue repair was called, when no SNS operation were registered\
+       \- ignoring"
+    Just prs ->
+      if prsType prs == prt
+      then promulgateRC $ ContinueSNS (prsRepairUUID prs) pool prt
+      else phaseLog "warning" $
+             "Continue for " ++ show prt
+                             ++ "was requested, but "
+                             ++ show (prsType prs) ++ "is registered."
+
+-- | Quiesce the repair on the given pool if the repair is on-going.
+quiesceSNS :: M0.Pool -> PhaseM LoopState l ()
+quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 
 -- | Complete the given pool repair by notifying mero about all the
 -- devices being repaired and marking the message as processed.
@@ -772,7 +996,7 @@ handleRepairInternal noteSet = do
             , not (S.null tr') -> do
                 phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                                  ++ ", quescing repair."
-                quiesceRepair pool prt
+                quiesceSNS pool
             -- Repair happening, something came online, check if
             -- nothing is left transient and continue repair if possible
             | Just ds <- allWithState diskMap M0_NC_ONLINE
@@ -781,16 +1005,7 @@ handleRepairInternal noteSet = do
                 sts <- getLocalGraph >>= \rg ->
                   return $ (flip getConfObjState $ rg) <$> sdevs
                 if null $ filter (== M0_NC_TRANSIENT) sts
-                then if prt == M0.Failure
-                     then continueRepair pool prt
-                     else withRepairStatus prt pool nil $ \st ->
-                            -- TODO Can we make this predicate better? It's
-                            -- actually testing to see whether there is any
-                            -- rebalance happening, not whether there
-                            -- are paused repairs.
-                            if null $ R.filterPausedRepairs st
-                            then promulgateRC (PoolRebalanceRequest pool)
-                            else continueRepair pool prt
+                then continueSNS pool prt
                 else phaseLog "repair" $ "Still some drives transient: " ++ show sts
             | otherwise -> phaseLog "repair" $
                 "Repair on-going but don't know what to do with " ++ show diskMap
@@ -841,22 +1056,7 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
   Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
-    | prt == M0.Failure -> do
-    phaseLog "repair" $ "Got M0_NC_REPAIRED for a pool that is repairing, "
-                     ++ "checking if other IOS completed."
-    iosvs <- length <$> R.getIOServices pool
-    withRepairStatus prt pool nil $ \sts -> do
-      -- is 'filterCompletedRepairs' relevant for rebalancing too?
-      -- If not, how do we handle this query?
-      let onlines = length $ R.filterCompletedRepairs sts
-      modifyPoolRepairInformation pool $ \pri' ->
-          pri' { priOnlineNotifications = onlines }
-      updatePoolRepairStatusTime pool
-      if onlines >= iosvs
-      then do
-        phaseLog "repair" $ "All IOS have finished repair, moving to complete"
-        completeRepair pool prt Nothing
-      else phaseLog "repair" $ "Not all services completed repair: [" ++ show onlines ++"/"++show iosvs ++"]" ++ show sts
+    | prt == M0.Failure -> queryStartHandling pool
   _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- We got some pool state info but we don't care about what it is as
@@ -874,7 +1074,7 @@ processPoolInfo pool _ m
         sts <- getLocalGraph >>= \rg ->
           return $ (flip getConfObjState $ rg) <$> sdevs
         if null $ filter (== M0_NC_TRANSIENT) sts
-        then continueRepair pool prt
+        then continueSNS pool prt
         else phaseLog "repair" $ "Still some drives transient: " ++ show sts
       _ -> phaseLog "repair" $ "Got some transient drives but repair not on-going on " ++ show pool
 -- Some devices came up as transient, quiesce repair if it's on-going.
@@ -883,10 +1083,10 @@ processPoolInfo pool _ m
       Nothing -> do
         phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ " but no repair is on-going, doing nothing."
-      Just (M0.PoolRepairStatus prt _ _) -> do
+      Just (M0.PoolRepairStatus _ _ _) -> do
         phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ ", quescing repair."
-        quiesceRepair pool prt
+        quiesceSNS pool
 
 processPoolInfo pool st m = phaseLog "warning" $ unwords
   [ "Got", show st, "for a pool", show pool
@@ -960,18 +1160,6 @@ allWithState sm@(SDevStateMap m) st =
   if M.member st m && M.size m == 1 then Just $ getSDevs sm st else Nothing
 
 
--- | Check if the repair is quiesced. Note that this function just
--- checks if any SNS status comes back as
--- 'Spiel.M0_SNS_CM_STATUS_PAUSED': if we get no statuses back, it
--- will report as no quiesce happening.
-repairHasQuiesced :: Pool -> PoolRepairType
-                  -> PhaseM LoopState l (Either SomeException Bool)
-repairHasQuiesced pool prt = R.repairStatus prt pool >>= \case
-  Left e -> return $ Left e
-  Right sts -> do
-    let p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_PAUSED _) = True
-        p _                                                   = False
-    return . Right . not . null $ filter p sts
 
 -- | Check if processes associated with IOS are up. If yes, try to
 -- restart repair/rebalance on the pools.

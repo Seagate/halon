@@ -93,6 +93,9 @@ rules = sequence_
   , Repair.ruleRepairStart
   , Repair.ruleRebalanceStart
   , Repair.ruleSNSOperationAbort
+  , Repair.ruleSNSOperationQuiesce
+  , Repair.ruleSNSOperationContinue
+  , Repair.ruleOnSnsOperationQuiesceFailure
   , Reset.ruleResetAttempt
   , Raid.rules
   ]

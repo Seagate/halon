@@ -22,6 +22,8 @@ module HA.RecoveryCoordinator.Events.Mero
    , AbortSNSOperation(..)
    , AbortSNSOperationResult(..)
    , GetFailureVector(..)
+   , QuiesceSNSOperation(..)
+   , QuiesceSNSOperationResult(..)
    -- * State changes
    , AnyStateSet(..)
    , AnyStateChange(..)
@@ -183,11 +185,22 @@ newtype AbortSNSOperation = AbortSNSOperation M0.Pool
 -- | Reply to SNS operation abort.
 data AbortSNSOperationResult
           = AbortSNSOperationOk M0.Pool -- ^ Operation  abort succesfull.
-          | AbortSNSOperationFailure String -- ^ Operation abort completed with failure.
+          | AbortSNSOperationFailure M0.Pool String -- ^ Operation abort completed with failure.
           | AbortSNSOperationSkip M0.Pool -- ^ Operation abort was skipped because no SNS operation was running.
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Binary AbortSNSOperationResult
+
+newtype QuiesceSNSOperation = QuiesceSNSOperation M0.Pool
+  deriving (Eq, Show, Ord, Typeable, Generic, Binary)
+
+data QuiesceSNSOperationResult
+          = QuiesceSNSOperationOk M0.Pool
+          | QuiesceSNSOperationFailure M0.Pool String
+          | QuiesceSNSOperationSkip M0.Pool
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary QuiesceSNSOperationResult
 
 data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
