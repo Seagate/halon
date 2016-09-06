@@ -199,6 +199,7 @@ Library
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Castor.Drive.Rules
+                      HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Reset

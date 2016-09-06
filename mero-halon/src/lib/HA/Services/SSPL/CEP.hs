@@ -539,29 +539,14 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
 
           isReassembling <- getLocalGraph
                             <&> isConnected host Is ReassemblingRaid
-          let
-            go [] = return ()
-            go ((sdev, path, _sn):xs) = do
-              fork CopyNewerBuffer $ do
-                phaseLog "action" $ "Metadrive drive " ++ show path
-                                  ++ "failed on " ++ show nid ++ "."
-                msgUuid <- liftIO $ nextRandom
-                put Local $ Just (nid, msgUuid, sdev, device_t, path)
-                -- Tell SSPL to remove the drive from the array
-                removed <- sendNodeCmd nid (Just msgUuid)
-                            (NodeRaidCmd device_t (RaidRemove path))
-                -- Start the reset operation for this disk
-                if removed
-                then do
-                  promulgateRC $ ResetAttempt sdev
-                  switch [reset_success, reset_failure, timeout 120 end]
-                else do
-                  phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
-                  continue end
-              go xs
 
           if (not isReassembling)
-          then go . fmap fst . filter (\(_,x) -> x == "_") $ catMaybes sdevs
+          then promulgateRC $ RaidUpdate {
+              ruNode = (Node nid)
+            , ruRaidDevice = device_t
+            , ruFailedComponents = fmap fst . filter (\(_,x) -> x == "_")
+                                    $ catMaybes sdevs
+            }
           else phaseLog "info" $ "RAID device is reassembling; not attempting "
                               ++ "further action."
       done uid

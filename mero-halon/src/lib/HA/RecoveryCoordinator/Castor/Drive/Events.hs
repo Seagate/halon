@@ -15,6 +15,8 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , ResetAttempt(..)
   , ResetSuccess(..)
   , ResetFailure(..)
+    -- * Metadata drive events
+  , RaidUpdate(..)
   ) where
 
 import HA.Resources
@@ -115,3 +117,13 @@ data ExpanderReset = ExpanderReset Enclosure
 
 instance Hashable ExpanderReset
 instance Binary ExpanderReset
+
+-- | Sent when RAID controller reports that part of a RAID array has failed.
+data RaidUpdate = RaidUpdate
+  { ruNode :: Node
+  , ruRaidDevice :: T.Text -- ^ RAID device path
+  , ruFailedComponents :: [(StorageDevice, T.Text, T.Text)] -- ^ sd, path, serial
+  } deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable RaidUpdate
+instance Binary RaidUpdate
