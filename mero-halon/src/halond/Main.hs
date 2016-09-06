@@ -129,13 +129,13 @@ main = do
         res -> do
           hPutStrLn stderr $ "Unexpected version string: " ++ show (gitDescribe, res)
           exitFailure
-               
+
       -- We don't want to check the persisted state version if there is no
       -- persisted state.
       if exists && stateExists then do
         str <- readFile versionFile
-        case parseGitDescribe str of
-          [(fVersion, "")] ->
+        case (parseGitDescribe str, parseGitDescribe gitDescribe) of
+          ([(fVersion, "")], [(version, "")]) ->
             when (versionBranch fVersion > versionBranch version
                   || ((/=) `on` (take 2 . versionBranch)) fVersion version) $ do
               hPutStrLn stderr "Version incompatibility of the persisted state."
@@ -144,10 +144,13 @@ main = do
               hPutStrLn stderr $ "but halond is at version"
               hPutStrLn stderr gitDescribe
               exitFailure
-          res -> do
-            hPutStrLn stderr $ "Error when parsing " ++ show versionFile ++ ": "
-                               ++ show res
-            exitFailure
+          (fver, ver) -> do
+            hPutStrLn stderr $ "Error when parsing versions."
+            hPutStrLn stderr $ show versionFile ++ ": " ++ show fver
+            hPutStrLn stderr $ "Current version: " ++ show ver
+            when (str /= gitDescribe) $ do
+              hPutStrLn stderr "Unparsed versions do not match."
+              exitFailure
       else do
         createDirectoryIfMissing True storageDir
       writeFile versionFile gitDescribe
