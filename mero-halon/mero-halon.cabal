@@ -113,6 +113,7 @@ Library
                    HA.Resources.Castor.Initial
                    HA.Resources.HalonVars
                    Version.Read
+                   Version
 
   Other-Modules:   HA.RecoveryCoordinator.RC.Internal
                    HA.Services.DecisionLog.CEP
@@ -121,7 +122,6 @@ Library
                    HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions
-                   Version
 
   Build-Depends:   base,
                    aeson,

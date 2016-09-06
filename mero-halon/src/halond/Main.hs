@@ -22,6 +22,7 @@ import Network.Transport.TCP as TCP
 import HA.RecoveryCoordinator.Definitions
 import HA.Replicator.Log (replicasDir, storageDir)
 import HA.Startup (startupHalonNode)
+import Version (gitDescribe)
 
 import Control.Distributed.Commands.Process (sendSelfNode)
 import Control.Distributed.Process hiding (catch)
@@ -33,6 +34,9 @@ import Mero
 import Mero.Environment
 #endif
 import Control.Monad (when)
+import Data.Function (on)
+import Data.Version (parseVersion, versionBranch)
+import Text.ParserCombinators.ReadP
 import System.FilePath ((</>))
 import System.Directory
     ( getCurrentDirectory
@@ -110,20 +114,40 @@ main = do
 
     checkStoredVersion = do
       let versionFile = storageDir </> "version.txt"
+          parseGitDescribe = readP_to_S $ do
+            v <- parseVersion
+--          Uncomment when versionTag is removed from Data.Version.Version
+--            optional $ char '-' >> munch1 isDigit >> char '-' >>
+--                       munch1 isAlphaNum
+            skipSpaces
+            eof
+            return v
       exists <- doesFileExist versionFile
       stateExists <- doesDirectoryExist replicasDir
-      vString <- versionString
+      version <- case parseGitDescribe gitDescribe of
+        [(version, "")] -> return version
+        res -> do
+          hPutStrLn stderr $ "Unexpected version string: " ++ show (gitDescribe, res)
+          exitFailure
+               
       -- We don't want to check the persisted state version if there is no
       -- persisted state.
       if exists && stateExists then do
         str <- readFile versionFile
-        when (str /= vString) $ do
-          hPutStrLn stderr "Version mismatch of the persisted state:"
-          hPutStrLn stderr "The state was written with version"
-          hPutStrLn stderr str
-          hPutStrLn stderr $ "but halond is at version"
-          hPutStrLn stderr vString
-          exitFailure
+        case parseGitDescribe str of
+          [(fVersion, "")] ->
+            when (versionBranch fVersion > versionBranch version
+                  || ((/=) `on` (take 2 . versionBranch)) fVersion version) $ do
+              hPutStrLn stderr "Version incompatibility of the persisted state."
+              hPutStrLn stderr "The state was written with version"
+              hPutStrLn stderr str
+              hPutStrLn stderr $ "but halond is at version"
+              hPutStrLn stderr gitDescribe
+              exitFailure
+          res -> do
+            hPutStrLn stderr $ "Error when parsing " ++ show versionFile ++ ": "
+                               ++ show res
+            exitFailure
       else do
         createDirectoryIfMissing True storageDir
-        writeFile versionFile vString
+      writeFile versionFile gitDescribe
