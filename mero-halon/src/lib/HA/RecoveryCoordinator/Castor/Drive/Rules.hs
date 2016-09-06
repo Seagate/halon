@@ -23,26 +23,28 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
-module HA.RecoveryCoordinator.Rules.Castor.Disk
+module HA.RecoveryCoordinator.Castor.Drive.Rules
   ( -- & All rules
     rules
   , internalNotificationHandlers
   , externalNotificationHandlers
-    -- * Internal rules (for tests use)
+    -- * Internal rules (exported for test use)
   , ruleDriveFailed
   , ruleDriveInserted
   , ruleDriveRemoved
   , driveRemovalTimeout
   , driveInsertionTimeout
+  -- * Constants (for test use)
+  , resetAttemptThreshold
   ) where
 
-import HA.RecoveryCoordinator.Rules.Castor.Disk.Repair as Repair
-import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset  as Reset
+import HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
+import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
+import HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
-import HA.RecoveryCoordinator.Events.Drive
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G

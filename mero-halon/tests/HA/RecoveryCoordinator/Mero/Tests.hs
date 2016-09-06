@@ -35,7 +35,7 @@ import           HA.Encode
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Events.Drive (DriveOK(..))
+import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK(..))
 import           HA.RecoveryCoordinator.Events.Service
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero

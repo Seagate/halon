@@ -19,7 +19,7 @@ import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Events.Drive
+import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.Replicator (RGroup(..))
 import HA.Resources
 import HA.Resources.Castor

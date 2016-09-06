@@ -4,7 +4,7 @@
 --
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric      #-}
-module HA.RecoveryCoordinator.Events.Drive
+module HA.RecoveryCoordinator.Castor.Drive.Events
   ( DriveRemoved(..)
   , DriveInserted(..)
   , DriveFailed(..)

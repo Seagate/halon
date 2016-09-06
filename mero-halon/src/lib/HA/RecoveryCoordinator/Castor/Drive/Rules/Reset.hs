@@ -4,7 +4,7 @@
 -- License   : All rights reserved.
 --
 -- Module containing some reset bits that multiple rules may want access to
-module HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
+module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
   ( handleResetExternal
   , resetAttemptThreshold
   , ruleResetAttempt
@@ -24,7 +24,7 @@ import HA.RecoveryCoordinator.Actions.Core
   )
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Events.Drive
+import HA.RecoveryCoordinator.Castor.Drive.Events
   ( ResetAttempt(..)
   , ResetFailure(..)
   , ResetSuccess(..)

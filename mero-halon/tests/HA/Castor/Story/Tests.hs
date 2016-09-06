@@ -19,10 +19,9 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
    ( findRealObjsInPVer
    , findFailableObjs
    )
-import HA.RecoveryCoordinator.Events.Drive
 import HA.RecoveryCoordinator.Events.Service
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
-import HA.RecoveryCoordinator.Rules.Castor.Disk.Reset
+import HA.RecoveryCoordinator.Castor.Drive
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor.Initial

@@ -16,7 +16,7 @@
 --      expect process failure notification and progress notifications.
 --
 -- TODO: Only abort repair on notification failure if it's IOS that failed
-module HA.RecoveryCoordinator.Rules.Castor.Disk.Repair
+module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   ( handleRepairInternal
   , handleRepairExternal
   , ruleRebalanceStart
@@ -62,7 +62,7 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
-import qualified HA.RecoveryCoordinator.Rules.Castor.Disk.Repair.Internal as R
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
 import HA.RecoveryCoordinator.Rules.Mero.Conf
   ( applyStateChanges
   , setPhaseAllNotified
