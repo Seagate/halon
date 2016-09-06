@@ -5,7 +5,8 @@
 -- Rules specific to drives in RAID arrays.
 --
 
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
   ( rules
     -- * Individual rules exported
@@ -14,22 +15,33 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( RaidUpdate(..)
   , ResetAttempt(..)
   , ResetFailure(..)
   , ResetSuccess(..)
   )
+import HA.RecoveryCoordinator.Events.Mero (stateSet)
+import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import HA.Resources (Node(..))
-import HA.Services.SSPL.CEP (sendNodeCmd)
+import qualified HA.Resources.Mero as M0
+import HA.Services.SSPL.CEP
+  ( sendInterestingEvent
+  , sendNodeCmd
+  )
 import HA.Services.SSPL.LL.Resources
   ( NodeCmd(..)
   , RaidCmd(..)
+  , InterestingEventMessage(..)
   )
+import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)
 import Control.Monad (void)
 
+import Data.Foldable (for_)
+import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 
@@ -58,7 +70,7 @@ failed = define "castor::drive::raid::failed" $ do
           phaseLog "action" $ "Metadrive drive " ++ show path
                             ++ "failed on " ++ show nid ++ "."
           msgUuid <- liftIO $ nextRandom
-          put Local $ Just (nid, msgUuid, sdev, ruRaidDevice, path)
+          put Local $ Just (ruNode, msgUuid, sdev, ruRaidDevice, path)
           -- Tell SSPL to remove the drive from the array
           removed <- sendNodeCmd nid (Just msgUuid)
                       (NodeRaidCmd ruRaidDevice (RaidRemove path))
@@ -83,7 +95,7 @@ failed = define "castor::drive::raid::failed" $ do
         _ -> return Nothing
     ) $ \eid -> do
       todo eid
-      Just (nid, _, _, device, path) <- get Local
+      Just (Node nid, _, _, device, path) <- get Local
       -- Add drive back into array
       void $ sendNodeCmd nid Nothing (NodeRaidCmd device (RaidAdd path))
       done eid
@@ -92,11 +104,17 @@ failed = define "castor::drive::raid::failed" $ do
 
   setPhaseIf reset_failure
     ( \(HAEvent eid (ResetFailure x) _) _ l -> case l of
-        Just (_,_,y,_,_) | x == y -> return $ Just eid
+        Just (node,_,y,rdev,path) | x == y -> return $ Just (eid, node, rdev, path)
         _ -> return Nothing
-    ) $ \eid -> do
+    ) $ \(eid, node, rdev, path) -> do
       todo eid
-      -- TODO: log an IEM (SEM?) here that things are wrong
+      -- Mark the node as being failed.
+      rg <- getLocalGraph
+      for_ (nodeToM0Node node rg) $ \n -> do
+        phaseLog "info" "Marking node as failed due to failed RAID reset."
+        applyStateChanges [ stateSet n M0.NSFailed ]
+      sendInterestingEvent . InterestingEventMessage $ logRaidArrayFailure
+        ( "{'raidDevice':" <> rdev <> ", 'failedDevice': " <> path <> "}")
       done eid
       continue end
 
