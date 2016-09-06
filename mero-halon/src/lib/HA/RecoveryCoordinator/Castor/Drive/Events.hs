@@ -11,6 +11,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , DrivePowerChange(..)
   , DriveTransient(..)
   , DriveOK(..)
+  , DriveReady(..)
   , ExpanderReset(..)
   , ResetAttempt(..)
   , ResetSuccess(..)
@@ -109,6 +110,14 @@ data DriveOK = DriveOK UUID Node Enclosure StorageDevice
 
 instance Hashable DriveOK
 instance Binary DriveOK
+
+-- | Event sent when a drive is ready and available to be used by the system.
+--   This is presently only consumed by the metatada drive rules.
+data DriveReady = DriveReady StorageDevice
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Hashable DriveReady
+instance Binary DriveReady
 
 -- | Sent when an expander reset attempt happens in the enclosure. In such
 --   a case, we expect to see (or have seen) multiple drive transient events.

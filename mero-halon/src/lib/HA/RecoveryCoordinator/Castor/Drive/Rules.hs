@@ -140,6 +140,7 @@ checkAndHandleDriveReady disk = do
 
   if (not reset && powered && not removed && status == "OK")
   then do
+    promulgateRC $ DriveReady disk
     mm0sdev <- lookupStorageDeviceSDev disk
     forM_ mm0sdev $ \sd -> do
       catch (attachDisk sd)
