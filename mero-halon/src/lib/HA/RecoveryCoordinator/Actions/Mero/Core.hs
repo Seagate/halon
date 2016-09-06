@@ -154,7 +154,8 @@ createMeroWorker = do
       return Nothing
 
 -- | Try to close mero worker process if it's running.
--- Do nothing if no process is registered. Blocks until process exit otherwise.
+-- Do nothing if no process is registered. Blocks until process or for 8 seconds
+-- if process didn't exit first.
 tryCloseMeroWorker :: Process ()
 tryCloseMeroWorker = do
   mpid <- whereis halonRCMeroWorkerLabel
@@ -162,6 +163,7 @@ tryCloseMeroWorker = do
     unregister halonRCMeroWorkerLabel
     mon <- monitor pid
     kill pid "RC exit"
-    receiveWait [matchIf (\(ProcessMonitorNotification mref _ _) -> mref == mon)
-                         (\_ -> return ())
-                ]
+    receiveTimeout (8*1000000)
+      [matchIf (\(ProcessMonitorNotification mref _ _) -> mref == mon)
+               (\_ -> return ())
+      ]
