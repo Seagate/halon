@@ -20,6 +20,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , LiftRC
   , withSpielRC
   , withRConfRC
+  , withRConfIO
     -- * SNS operations
   , mkRepairStartOperation
   , mkRepairContinueOperation

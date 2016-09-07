@@ -184,7 +184,6 @@ Library
                        HA.Services.Mero.Types
                        HA.RecoveryCoordinator.Actions.Castor
                        HA.RecoveryCoordinator.Actions.Castor.Cluster
-                       HA.RecoveryCoordinator.Actions.Castor.Disk
                        HA.RecoveryCoordinator.Actions.Mero.Failure
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
@@ -200,6 +199,7 @@ Library
 
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
+                      HA.RecoveryCoordinator.Castor.Drive.Actions
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair

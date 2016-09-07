@@ -25,10 +25,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
-import HA.RecoveryCoordinator.Actions.Castor.Disk
-  ( attachDisk
-  , detachDisk
-  )
+import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
 import HA.Resources.Castor
@@ -55,6 +52,7 @@ import Control.Monad
   ( forM_
   , when
   , unless
+  , join
   )
 import Control.Monad.IO.Class
 
@@ -190,6 +188,11 @@ ruleResetAttempt = define "reset-attempt" $ do
             messageProcessed uid
             stop
 
+      (disk_detached, detachDisk) <- mkDetachDisk
+         (fmap join . traverse (\(sdev,_,_,_) -> lookupStorageDeviceSDev sdev))
+         (\_ _ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
+         (\_ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
+
       directly reset $ do
         Just (sdev, serial, Node nid, _) <- get Local
         i <- getDiskResetAttempts sdev
@@ -202,11 +205,14 @@ ruleResetAttempt = define "reset-attempt" $ do
           then do
             phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
             markDiskPowerOff sdev
-            sd <- lookupStorageDeviceSDev sdev
-            forM_ sd detachDisk
-            switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
+            msd <- lookupStorageDeviceSDev sdev
+            case msd of
+              Nothing -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
+              Just sd -> do detachDisk sd
+                            continue disk_detached
           else continue failure
         else continue failure
+
 
       setPhaseIf resetComplete (onCommandAck DriveReset) $ \(result, eid) -> do
         Just (sdev, _, _, _) <- get Local
@@ -233,6 +239,19 @@ ruleResetAttempt = define "reset-attempt" $ do
                         ]
         else continue failure
 
+      (disk_attached, attachDisk) <- mkAttachDisk
+        (fmap join . traverse (\(sdev, _, _, _) -> lookupStorageDeviceSDev sdev) )
+        (\_ _ -> do phaseLog "error" "failed to attach disk"
+                    continue end)
+        (\m0sdev -> do
+           getLocalGraph <&> getState m0sdev >>= \case
+             M0.SDSTransient _ ->
+               applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
+             x ->
+               phaseLog "info" $ "Cannot bring drive Online from state "
+                               ++ show x
+           continue end)
+
       setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
         Just (sdev, _, _, _) <- get Local
         phaseLog "info" $ "Successful SMART test on " ++ show sdev
@@ -241,12 +260,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           attachDisk m0sdev
-          getLocalGraph <&> getState m0sdev >>= \case
-            M0.SDSTransient _ ->
-              applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
-            x -> do
-              phaseLog "info" $ "Cannot bring drive Online from state "
-                              ++ show x
+          continue disk_attached
         messageProcessed eid
         continue end
 

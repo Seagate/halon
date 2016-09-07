@@ -48,6 +48,7 @@ import Control.Distributed.Process
   , unregister
   , monitor
   , receiveWait
+  , receiveTimeout
   , matchIf
   , kill
   , link

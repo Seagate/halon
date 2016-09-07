@@ -23,6 +23,7 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE GADTs #-}
 module HA.RecoveryCoordinator.Castor.Drive.Rules
   ( -- & All rules
     rules
@@ -45,13 +46,12 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Castor.Disk
+import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
-import qualified Mero.Spiel as Spiel
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
@@ -63,7 +63,6 @@ import Mero.Notification hiding (notifyMero)
 import Control.Distributed.Process hiding (catch)
 import Control.Lens ((<&>))
 import Control.Monad
-import Control.Monad.Catch (catch)
 import Control.Monad.Trans.Maybe
 
 import Data.Maybe
@@ -120,51 +119,65 @@ driveRemovalTimeout = 60
 --   - Powered
 --   - Inserted
 --   - Visible to the OS (e.g. have a drivemanager 'OK' status)
-checkAndHandleDriveReady :: StorageDevice -> PhaseM LoopState a ()
-checkAndHandleDriveReady disk = do
-  reset <- hasOngoingReset disk
-  powered <- isStorageDevicePowered disk
-  removed <- isStorageDriveRemoved disk
-  StorageDeviceStatus status _ <-
-    maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
+mkCheckAndHandleDriveReady ::
+     (l -> Maybe StorageDevice) -- ^ accessor to curent storage device in a local state.
+  -> (M0.SDev -> PhaseM LoopState l ()) -- ^ Action to run when drive is handled.
+  -> RuleM LoopState l (Jump PhaseHandle, StorageDevice -> PhaseM LoopState l ())
+mkCheckAndHandleDriveReady getter next = do
 
-  if (not reset && powered && not removed && status == "OK")
-  then do
-    promulgateRC $ DriveReady disk
-    mm0sdev <- lookupStorageDeviceSDev disk
-    forM_ mm0sdev $ \sd -> do
-      catch (attachDisk sd)
-            (\e -> phaseLog "warning" $ show (e :: IOError))
-      oldState <- getLocalGraph <&> getState sd
-      case oldState of
-        SDSUnknown -> do
-          -- We do not know the old state, so set the new state to online
-          applyStateChanges [ stateSet sd SDSOnline ]
-        SDSOnline -> return () -- Do nothing
-        SDSFailed -> do
-          -- Drive was permanently failed, and has not yet been repaired.
-          -- We should not have to do anything here.
-          return ()
-        SDSRepairing -> do
-          -- Drive is repairing. When it's finished, rebalance should start
-          -- automatically.
-          return ()
-        SDSRepaired -> do
-          -- Start rebalance
-          pool <- getSDevPool sd
-          promulgateRC $ PoolRebalanceRequest pool
-        SDSTransient _ -> do
-          -- Transient failure - recover
-          applyStateChanges [ stateSet sd . sdsRecoverTransient $ oldState ]
-        SDSRebalancing -> return ()
-  else
-    phaseLog "info" $ unwords [
-        "Device not ready:", show disk
-      , "Reset ongoing:", show reset
-      , "Powered:", show powered
-      , "Removed:", show removed
-      , "Status:", status
-      ]
+  let post_process m0sdev = do
+        oldState <- getLocalGraph <&> getState m0sdev
+        case oldState of
+          SDSUnknown -> do
+            -- We do not know the old state, so set the new state to online
+            applyStateChanges [ stateSet m0sdev SDSOnline ]
+          SDSOnline -> return () -- Do nothing
+          SDSFailed -> do
+            -- Drive was permanently failed, and has not yet been repaired.
+            -- We should not have to do anything here.
+            return ()
+          SDSRepairing -> do
+            -- Drive is repairing. When it's finished, rebalance should start
+            -- automatically.
+            return ()
+          SDSRepaired -> do
+            -- Start rebalance
+            pool <- getSDevPool m0sdev
+            promulgateRC $ PoolRebalanceRequest pool
+          SDSTransient _ -> do
+            -- Transient failure - recover
+            applyStateChanges [ stateSet m0sdev . sdsRecoverTransient $ oldState ]
+          SDSRebalancing -> return ()
+        next m0sdev
+
+  (device_attached, deviceAttach) <- mkAttachDisk
+    (fmap join . traverse (lookupStorageDeviceSDev) . getter)
+    (\sdev e -> do phaseLog "warning" e
+                   post_process sdev)
+    post_process
+
+  return (device_attached, \disk -> do
+    reset <- hasOngoingReset disk
+    powered <- isStorageDevicePowered disk
+    removed <- isStorageDriveRemoved disk
+    StorageDeviceStatus status _ <-
+      maybe (StorageDeviceStatus "" "") id <$> driveStatus disk
+
+    if not reset && powered && not removed && status == "OK"
+    then do
+      promulgateRC $ DriveReady disk
+      mm0sdev <- lookupStorageDeviceSDev disk
+      forM_ mm0sdev $ \sd -> do
+        deviceAttach sd
+        continue device_attached
+     else
+       phaseLog "info" $ unwords [
+           "Device not ready:", show disk
+         , "Reset ongoing:", show reset
+         , "Powered:", show powered
+         , "Removed:", show removed
+         , "Status:", status
+         ])
 
 -- | Removing drive:
 -- We need to notify mero about drive state change and then send event to the logger.
@@ -175,6 +188,19 @@ ruleDriveRemoved = define "drive-removed" $ do
   reinsert <- phaseHandle "reinsert"
   removal  <- phaseHandle "removal"
 
+  let post_process m0sdev = do
+        Just (uuid, _, _, _, _) <- get Local
+        old_state <- getLocalGraph >>= return . getState m0sdev
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        switch [reinsert, timeout driveRemovalTimeout removal]
+        messageProcessed uuid
+
+  (device_detached, detachDisk) <- mkDetachDisk
+    (return . fmap (\(_,_,_,_,d) -> d))
+    (\sdev e -> do phaseLog "warning" e
+                   post_process sdev)
+    post_process
+
   setPhase pinit $ \(DriveRemoved uuid _ enc disk loc powered) -> do
     markStorageDeviceRemoved disk
     unless powered $ markDiskPowerOff disk
@@ -183,11 +209,9 @@ ruleDriveRemoved = define "drive-removed" $ do
     forM_ sd $ \m0sdev -> do
       fork CopyNewerBuffer $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
-        detachDisk m0sdev
-        old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
-        switch [reinsert, timeout driveRemovalTimeout removal]
+        detachDisk m0sdev
+        continue device_detached
     messageProcessed uuid
 
   setPhaseIf reinsert
@@ -276,6 +300,10 @@ ruleDriveInserted = define "drive-inserted" $ do
         messageProcessed uuid
         continue finish
 
+  (checked, checkAndHandleDriveReady) <-
+    mkCheckAndHandleDriveReady (fmap (\(_,DriveInserted{diDevice=disk})->disk))
+      $ \_ -> continue finish
+
   directly main $ do
     Just (_, di@DriveInserted{ diUUID = uuid
                              , diDevice = disk
@@ -298,8 +326,9 @@ ruleDriveInserted = define "drive-inserted" $ do
          unmarkStorageDeviceRemoved disk
          when powered $ markDiskPowerOn disk
          markIfNotMeroFailure
+         put Local $ Just (UUID.nil, di)
          checkAndHandleDriveReady disk
-         continue finish
+         continue checked
        False -> do
          lookupStorageDeviceReplacement disk >>= \case
            Nothing -> -- TODO remove this line? This removes all identifiers
@@ -360,6 +389,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   power_removed <- phaseHandle "power_removed"
   power_returned <- phaseHandle "power_returned"
   power_removed_duration <- phaseHandle "power_removed_duration"
+  post_power_removed <- phaseHandle "post-power-removed"
 
   let
     power_down_timeout = 300 -- seconds
@@ -368,29 +398,40 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     power_on evt@(DrivePowerChange{..}) _ _ =
       if dpcPowered then return (Just evt) else return Nothing
     matching_device _ _ Nothing = return Nothing
-    matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev)) =
+    matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev, _, _)) =
       if dev == dpcDevice then return (Just evt) else return Nothing
     x `gAnd` y = \a g l -> x a g l >>= \case
       Nothing -> return Nothing
       Just b -> y b g l
+
+  let post_process m0sdev = do
+        old_state <- getLocalGraph >>= return . getState m0sdev
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        continue post_power_removed
+  (device_detached, detachDisk) <- mkDetachDisk
+    (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d))
+    (\sdev e -> do phaseLog "warning" e
+                   post_process sdev) post_process
 
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) ->
     let
       (Node nid) = dpcNode
     in do
       todo dpcUUID
-      put Local $ Just (dpcUUID, dpcDevice)
+      put Local $ Just (dpcUUID, dpcDevice, nid, dpcSerial)
       markDiskPowerOff dpcDevice
 
       -- Mark Mero device as transient
       mm0sdev <- lookupStorageDeviceSDev dpcDevice
       forM_ mm0sdev $ \m0sdev -> do
         detachDisk m0sdev
-        old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        continue device_detached
+      continue post_power_removed
 
+  directly post_power_removed $ do
+      Just (_, _, nid, serial) <- get Local
       -- Attempt to power the disk back on
-      sent <- sendNodeCmd nid Nothing (DrivePoweron dpcSerial)
+      sent <- sendNodeCmd nid Nothing (DrivePoweron serial)
       if sent
       then switch [ power_returned
                   , timeout power_down_timeout power_removed_duration
@@ -405,18 +446,21 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
                           ++ (show dpcSerial)
         continue power_removed_duration
 
+  (checked, checkAndHandleDriveReady) <-
+    mkCheckAndHandleDriveReady (fmap (\(_,d,_,_) -> d)) $ \_ -> do
+      Just (uuid, _, _, _) <- get Local
+      done uuid
+
   setPhaseIf power_returned (power_on `gAnd` matching_device)
     $ \(DrivePowerChange{..}) -> do
       phaseLog "info" $ "Device " ++ (show dpcSerial) ++ " has been repowered."
       markDiskPowerOn dpcDevice
 
       checkAndHandleDriveReady dpcDevice
-
-      Just (uuid, _) <- get Local
-      done uuid
+      continue checked
 
   directly power_removed_duration $ do
-    Just (uuid, dpcDevice) <- get Local
+    Just (uuid, dpcDevice, _, _) <- get Local
 
     -- Mark Mero device as permanently failed
     mm0sdev <- lookupStorageDeviceSDev dpcDevice
@@ -431,22 +475,34 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 --   or SMART test failures (e.g. it had just been depowered), then mark
 --   it as replaced and start a rebalance.
 ruleDrivePoweredOn :: Definitions LoopState ()
-ruleDrivePoweredOn = defineSimple "drive-powered-on"
-  $ \(DrivePowerChange{..}) -> when dpcPowered $ do
-    todo dpcUUID
-    markDiskPowerOn dpcDevice
-    realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
-    unless realFailure $ do
-      fdev <- lookupStorageDeviceSDev dpcDevice
-              >>= filterMaybeM (\d -> getLocalGraph <&> m0failed . getState d)
-      forM_ fdev $ \m0sdev -> do
-        phaseLog "info" $ "Failed device with no underlying failure has been "
-                        ++ "repowered. Marking as replaced."
-        phaseLog "info" $ "Storage device: " ++ show dpcDevice
-        phaseLog "info" $ "Mero device: " ++ showFid m0sdev
-        markStorageDeviceReplaced dpcDevice
-        checkAndHandleDriveReady dpcDevice
-    done dpcUUID
+ruleDrivePoweredOn = define "drive-powered-on" $ do
+
+  handle <- phaseHandle "Drive power change event received."
+
+  (checked, checkAndHandleDriveReady) <-
+    mkCheckAndHandleDriveReady (fmap snd) $ \_ -> do
+      Just (uuid,_) <- get Local
+      done uuid
+
+  setPhase handle $ \(DrivePowerChange{..}) -> do
+    when dpcPowered $ do
+      put Local $ Just (dpcUUID, dpcDevice)
+      todo dpcUUID
+      markDiskPowerOn dpcDevice
+      realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
+      unless realFailure $ do
+        fdev <- lookupStorageDeviceSDev dpcDevice
+                >>= filterMaybeM (\d -> getLocalGraph <&> m0failed . getState d)
+        forM_ fdev $ \m0sdev -> do
+          phaseLog "info" $ "Failed device with no underlying failure has been "
+                          ++ "repowered. Marking as replaced."
+          phaseLog "info" $ "Storage device: " ++ show dpcDevice
+          phaseLog "info" $ "Mero device: " ++ showFid m0sdev
+          markStorageDeviceReplaced dpcDevice
+          checkAndHandleDriveReady dpcDevice
+          continue checked
+
+  start handle Nothing
   where
     filterMaybeM _ Nothing = return Nothing
     filterMaybeM f j@(Just x) = f x >>= \q -> return $ if q then j else Nothing
@@ -482,10 +538,20 @@ ruleDriveBlip = defineSimple "castor::disk::blip"
 --   caused by a DriveManager message which indicates that the OS can now
 --   see and interract with the drive.
 ruleDriveOK :: Definitions LoopState ()
-ruleDriveOK = defineSimple "castor::disk::ready" $
-  \(DriveOK eid _ _ disk) -> do
+ruleDriveOK = define "castor::disk::ready" $ do
+  handle <- phaseHandle "Drive ready event received"
+
+  (checked, checkAndHandleDriveReady) <-
+    mkCheckAndHandleDriveReady (fmap snd) $ \_ -> do
+      Just (eid,_) <- get Local
+      messageProcessed eid
+
+  setPhase handle $ \(DriveOK eid _ _ disk) -> do
+    put Local $ Just (eid, disk)
     checkAndHandleDriveReady disk
-    messageProcessed eid
+    continue checked
+
+  start handle Nothing
 
 -- | When a drive is marked as failed, power it down.
 rulePowerDownDriveOnFailure :: Definitions LoopState ()
