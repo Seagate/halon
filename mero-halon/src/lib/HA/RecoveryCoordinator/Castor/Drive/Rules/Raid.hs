@@ -5,6 +5,7 @@
 -- Rules specific to drives in RAID arrays.
 --
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -17,12 +18,12 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Hardware
   ( getSDevNode
   , lookupStorageDevicePaths
   , lookupStorageDeviceRaidDevice
   )
-import HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( RaidUpdate(..)
   , ResetAttempt(..)
@@ -30,13 +31,15 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   , ResetSuccess(..)
   , DriveReady(..)
   )
-import HA.RecoveryCoordinator.Events.Mero (stateSet)
-import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import HA.Resources (Node(..))
-import qualified HA.Resources.Mero as M0
 import HA.Services.SSPL.CEP
   ( sendInterestingEvent
   , sendNodeCmd
+  , updateDriveManagerWithFailure
+  )
+import HA.Services.SSPL.LL.RC.Actions
+  ( fldCommandAck
+  , mkDispatchAwaitCommandAck
   )
 import HA.Services.SSPL.LL.Resources
   ( NodeCmd(..)
@@ -46,13 +49,15 @@ import HA.Services.SSPL.LL.Resources
 import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)
+import Control.Lens
 import Control.Monad (void)
 
-import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
+import Data.Proxy
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
+import Data.Vinyl
 
 import Network.CEP
 
@@ -70,7 +75,7 @@ failed = define "castor::drive::raid::failed" $ do
   raid_update <- phaseHandle "raid_update"
   reset_success <- phaseHandle "reset_success"
   reset_failure <- phaseHandle "reset_failure"
-  end <- phaseHandle "end"
+  reset_timeout <- phaseHandle "reset_timeout"
 
   setPhase raid_update $ \(HAEvent eid (RaidUpdate{..}) _) -> do
     let
@@ -89,10 +94,9 @@ failed = define "castor::drive::raid::failed" $ do
           if removed
           then do
             promulgateRC $ ResetAttempt sdev
-            switch [reset_success, reset_failure, timeout 120 end]
+            switch [reset_success, reset_failure, timeout 120 reset_timeout]
           else do
             phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
-            continue end
         go xs
 
     todo eid
@@ -110,26 +114,26 @@ failed = define "castor::drive::raid::failed" $ do
       -- Add drive back into array
       void $ sendNodeCmd nid Nothing (NodeRaidCmd device (RaidAdd path))
       done eid
-      -- At this point we are done
-      continue end
 
   setPhaseIf reset_failure
     ( \(HAEvent eid (ResetFailure x) _) _ l -> case l of
-        Just (node,_,y,rdev,path) | x == y -> return $ Just (eid, node, rdev, path)
+        Just (node,_,y,rdev,path) | x == y -> return $ Just (eid, node, y, rdev, path)
         _ -> return Nothing
-    ) $ \(eid, node, rdev, path) -> do
+    ) $ \(eid, _, sdev, rdev, path) -> do
       todo eid
-      -- Mark the node as being failed.
-      rg <- getLocalGraph
-      for_ (nodeToM0Node node rg) $ \n -> do
-        phaseLog "info" "Marking node as failed due to failed RAID reset."
-        applyStateChanges [ stateSet n M0.NSFailedUnrecoverable ]
+      -- Send SSPL message requiring the drive to be replaced.
       sendInterestingEvent . InterestingEventMessage $ logRaidArrayFailure
         ( "{'raidDevice':" <> rdev <> ", 'failedDevice': " <> path <> "}")
+      updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "RAID_FAILURE")
       done eid
-      continue end
 
-  directly end stop
+  -- We should not generally hit this phase, since the reset job *should*
+  -- return.
+  directly reset_timeout $ do
+    Just (_, _, sdev, rdev, path) <- get Local
+    sendInterestingEvent . InterestingEventMessage $ logRaidArrayFailure
+      ( "{'raidDevice':" <> rdev <> ", 'failedDevice': " <> path <> "}")
+    updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "RAID_FAILURE")
 
   startFork raid_update Nothing
 
@@ -140,37 +144,74 @@ failed = define "castor::drive::raid::failed" $ do
 replacement :: Definitions LoopState ()
 replacement = define "castor::drive::raid::replaced" $ do
 
-  drive_replaced <- phaseHandle "drive_replaced"
-  end <- phaseHandle "end"
+    drive_replaced <- phaseHandle "drive_replaced"
+    failure <- phaseHandle "failure"
+    success <- phaseHandle "success"
+    dispatcher <- mkDispatcher
+    sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failure (return ())
+    tidyup <- phaseHandle "tidyup"
 
-  setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev) _) -> do
-    todo eid
-    phaseLog "device" $ show sdev
-    -- Check if this is a metadata drive
-    lookupStorageDeviceRaidDevice sdev >>= \case
-      [] -> do
-        done eid -- Not part of a raid array
-        continue end
-      (rd:[]) -> do
-        -- Add drive back into array
-        mnode <- listToMaybe <$> getSDevNode sdev
-        mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
-        case (,) <$> mnode <*> mpath of
-          Just ((Node nid), path) ->
-            void $ sendNodeCmd nid Nothing (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
-          Nothing -> do
-            phaseLog "warning" "Cannot find node or path for device."
-            phaseLog "node" $ show mnode
-            phaseLog "path" $ show mpath
-        done eid
-        -- At this point we are done
-        continue end
-      xs -> do
-        phaseLog "warning" "Device is part of multiple RAID arrays"
-        phaseLog "raidDevices" $ show xs
-        done eid
-        continue end
+    setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev) _) -> do
+      todo eid
+      phaseLog "device" $ show sdev
+      -- Check if this is a metadata drive
+      lookupStorageDeviceRaidDevice sdev >>= \case
+        [] -> do
+          done eid -- Not part of a raid array
+        (rd:[]) -> do
+          -- Add drive back into array
+          mnode <- listToMaybe <$> getSDevNode sdev
+          mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
+          case (,) <$> mnode <*> mpath of
+            Just (node@(Node nid), path) -> do
+              modify Local $ rlens fldNode . rfield .~ (Just node)
+              cmdUUID <- liftIO $ nextRandom
+              sent <- sendNodeCmd nid Nothing (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
+              if sent
+              then do
+                modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]
+                waitFor sspl_notify_done
+                onSuccess success
+                onTimeout 30 failure
 
-  directly end stop
+                continue dispatcher
+              else do
+                phaseLog "error" "Cannot send drive add command to SSPL."
+            Nothing -> do
+              phaseLog "warning" "Cannot find node or path for device."
+              phaseLog "node" $ show mnode
+              phaseLog "path" $ show mpath
+              continue failure
+        xs -> do
+          phaseLog "warning" "Device is part of multiple RAID arrays"
+          phaseLog "raidDevices" $ show xs
+          continue failure
 
-  startFork drive_replaced ()
+    directly success $ do
+      Just node <- gets Local (^. rlens fldNode . rfield)
+      phaseLog "info" $ "RAID device added successfully."
+      phaseLog "node" $ show node
+      continue tidyup
+
+    directly failure $ do
+      Just node <- gets Local (^. rlens fldNode . rfield)
+      phaseLog "error" $ "RAID device could not be added."
+      phaseLog "node" $ show node
+      continue tidyup
+
+    -- Tidy up phase, runs after either a successful or unsuccessful
+    -- completion and:
+    -- - Removes the raid reassembly marker on the host
+    -- - Acknowledges the message
+    directly tidyup $ do
+      Just uuid <- gets Local (^. rlens fldUUID . rfield)
+      done uuid
+
+    startFork drive_replaced (args drive_replaced)
+  where
+    fldNode :: Proxy '("node", Maybe Node)
+    fldNode = Proxy
+    args st = fldUUID =: Nothing
+          <+> fldNode =: Nothing
+          <+> fldCommandAck =: []
+          <+> fldDispatch =: Dispatch [] st Nothing
