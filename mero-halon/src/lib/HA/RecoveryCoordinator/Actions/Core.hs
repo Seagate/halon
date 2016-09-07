@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RankNTypes                 #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -50,6 +51,9 @@ module HA.RecoveryCoordinator.Actions.Core
   , unlessM
   , whenM
   , mkLoop
+    -- * Predefined accessor fields.
+  , fldUUID
+  , FldUUID
   ) where
 
 import HA.Multimap (StoreChan)
@@ -366,3 +370,10 @@ mkLoop name tm tmRule update check = do
                      maybe (continue loop) switch (check l')
       Left e -> continue e
   return loop
+
+-- | Field containing Message UUID.
+type FldUUID = '("uuid", Maybe UUID)
+
+-- | Message UUID
+fldUUID :: Proxy FldUUID
+fldUUID = Proxy

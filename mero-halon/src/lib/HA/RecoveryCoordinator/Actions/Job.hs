@@ -11,8 +11,6 @@ module HA.RecoveryCoordinator.Actions.Job
    ( -- * Process
      Job(..)
    , mkJobRule
-     -- * Predefined accessor fields.
-   , fldUUID
    ) where
 
 import HA.EventQueue.Types
@@ -31,11 +29,6 @@ import Network.CEP
 -- that is triggered when some @input@ event is received
 -- and emits @output@ event as a result of it's run.
 newtype Job input output = Job String
-
-
-type FldUUID = '("uuid", Maybe UUID)
-fldUUID :: Proxy FldUUID
-fldUUID = Proxy
 
 -- | Create rule for a given process. This is a helper
 -- method that removes some boilerplate that is needed
