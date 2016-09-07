@@ -339,10 +339,11 @@ defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
 -- | Notify about event. This event will be sent to the internal rules
 -- in addition it will be broadcasted to all external listeners as
 -- 'Published a'.
-notify :: Serializable a
+notify :: (Serializable a, Show a)
        => a
        -> PhaseM LoopState l ()
 notify msg = do
+  phaseLog "emit-event" $ show msg
   selfMessage msg
   publish msg
 
