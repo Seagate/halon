@@ -39,6 +39,16 @@ onSuccess :: forall a l. (FldDispatch ∈ l)
 onSuccess next =
   modify Local $ rlens fldDispatch . rfield . successPhase .~ next
 
+-- | Set the phase to transition to on timeout, as well as how long to
+--   wait for.
+onTimeout :: forall a l. (FldDispatch ∈ l)
+          => Int -- ^ Time to wait (seconds)
+          -> Jump PhaseHandle -- ^ Phase to proceed to on timeout
+          -> PhaseM a (FieldRec l) ()
+onTimeout wait phase =
+  modify Local $ rlens fldDispatch . rfield . timeoutPhase
+                .~ (Just (wait, phase))
+
 -- | Add a phase to wait for
 waitFor :: forall a l. (FldDispatch ∈ l)
          => Jump PhaseHandle

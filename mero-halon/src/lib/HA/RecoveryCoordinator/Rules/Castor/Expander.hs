@@ -158,8 +158,8 @@ ruleReassembleRaid =
             modifyGraph $ G.connect host R.Is R.ReassemblingRaid
 
             -- Set default jump parameters. If no Mero, just stop RAID directly
-            modify Local $ rlens fldDispatch . rfield .~
-              Dispatch [] stop_raid (Just (notificationTimeout, notify_failed))
+            onSuccess stop_raid
+            onTimeout notificationTimeout notify_failed
 
             -- Mark enclosure as transiently failed. This should cascade down to
             -- controllers, disks etc.
