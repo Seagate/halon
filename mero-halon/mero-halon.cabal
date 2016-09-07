@@ -92,6 +92,7 @@ Library
                    HA.RecoveryCoordinator.Events.Debug
                    HA.RecoveryCoordinator.Events.Cluster
                    HA.RecoveryCoordinator.Actions.Core
+                   HA.RecoveryCoordinator.Actions.Dispatch
                    HA.RecoveryCoordinator.Actions.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service

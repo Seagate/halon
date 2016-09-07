@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Expander
 
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Events.Castor.Cluster (StopProcessesRequest(..))
@@ -64,56 +65,6 @@ notificationTimeout = 180 -- seconds
 -- | How long to wait for the node to come up again
 nodeUpTimeout :: Int
 nodeUpTimeout = 460 -- seconds
-
--- | Holds dispatching information for complex jumps.
-type FldDispatch = '("dispatch", Dispatch)
-fldDispatch :: Proxy FldDispatch
-fldDispatch = Proxy
-
-data Dispatch = Dispatch {
-    _waitPhases :: [Jump PhaseHandle]
-  , _successPhase :: Jump PhaseHandle
-  , _timeoutPhase :: Maybe (Int, Jump PhaseHandle)
-}
-makeLenses ''Dispatch
-
--- | Pass control back to central dispatcher
-onSuccess :: forall l. (FldDispatch ∈ l)
-          => Jump PhaseHandle
-          -> PhaseM LoopState (FieldRec l) ()
-onSuccess next =
-  modify Local $ rlens fldDispatch . rfield . successPhase .~ next
-
--- | Add a phase to wait for
-waitFor :: forall l. (FldDispatch ∈ l)
-         => Jump PhaseHandle
-         -> PhaseM LoopState (FieldRec l) ()
-waitFor p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
-  (p :)
-
--- | Announce that this phase has finished waiting and remove from dispatch.
-waitDone :: forall l. (FldDispatch ∈ l)
-         => Jump PhaseHandle
-         -> PhaseM LoopState (FieldRec l) ()
-waitDone p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
-  (delete p)
-
-mkDispatcher :: forall l. (FldDispatch ∈ l)
-             => RuleM LoopState (FieldRec l) (Jump PhaseHandle)
-mkDispatcher = do
-  dispatcher <- phaseHandle "dispatcher::dispatcher"
-
-  directly dispatcher $ do
-    dinfo <- gets Local (^. rlens fldDispatch . rfield)
-    phaseLog "dispatcher:awaiting" $ show (dinfo ^. waitPhases)
-    phaseLog "dispatcher:onSuccess" $ show (dinfo ^. successPhase)
-    phaseLog "dispatcher:onTimeout" $ show (dinfo ^. timeoutPhase)
-    case dinfo ^. waitPhases of
-      [] -> continue $ dinfo ^. successPhase
-      xs -> switch (xs ++ (maybe [] ((:[]) . uncurry timeout)
-                                    $ dinfo ^. timeoutPhase))
-
-  return dispatcher
 
 rules :: Definitions LoopState ()
 rules = sequence_
