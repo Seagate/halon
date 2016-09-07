@@ -16,10 +16,8 @@
 module HA.RecoveryCoordinator.Actions.Mero.Spiel
   ( haAddress
   , getSpielAddressRC
-  , withRootRC
   , LiftRC
   , withSpielRC
-  , withRConfRC
   , withRConfIO
     -- * SNS operations
   , mkRepairStartOperation
@@ -64,8 +62,6 @@ import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC
   ( PDClustAttr(..)
-  , Root
-  , withConf
   , initHASession
   , finiHASession
   , confPVerLvlDisks
@@ -109,19 +105,6 @@ import Prelude hiding (id)
 haAddress :: String
 haAddress = ":12345:34:101"
 
--- | Find a confd server in the cluster and run the given function on
--- the configuration tree. Returns no result if no confd servers are
--- found in the cluster.
---
--- It does nothing if 'lsRPCAddress' has not been set.
-withRootRC :: (Root -> IO a) -> PhaseM LoopState l (Maybe a)
-withRootRC f =
- getConfdServers >>= \case
-  [] -> return Nothing
-  confdServer:_ -> liftM0RC $ do
-      Just rpcm <- getRPCMachine
-      withConf rpcm (rpcAddress confdServer) f
-
 -- | Try to connect to spiel and run the 'PhaseM' on the
 -- 'SpielContext'.
 --
@@ -143,16 +126,6 @@ withSpielRC f = withResourceGraphCache $ do
 -- This call is required for running spiel management commands.
 --
 -- Internal action will be running in mero thread allocated to RC service.
-withRConfRC :: SpielContext -> IO a -> PhaseM LoopState l a
-withRConfRC spiel action = do
-  rg <- getLocalGraph
-  let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
-  fmap fromJust . liftM0RC $ bracket_
-    (do Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
-        Mero.Spiel.rconfStart spiel)
-    (Mero.Spiel.rconfStop spiel)
-    action
-
 withRConfIO :: SpielContext -> Maybe M0.Profile -> IO a -> IO a
 withRConfIO spiel mp action = do
   Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
@@ -230,7 +203,6 @@ mkGenericSNSReplyHandlerSimple :: (Typeable b, Binary b, KnownSymbol k, Typeable
 mkGenericSNSReplyHandlerSimple n onError onResult =
   mkGenericSNSReplyHandler n (const . return . Left) (const . return . Right)
     (\pool-> either (onError pool) (onResult pool))
-
 
 -- Tier 2
 
@@ -702,10 +674,6 @@ getRPCAddress = do
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
 getSpielAddressRC = getSpielAddress True <$> getLocalGraph
-
--- | List of addresses to known confd servers on the cluster.
-getConfdServers :: PhaseM LoopState l [String]
-getConfdServers = (getSpielAddress False <$> getLocalGraph) >>= return . maybe [] M0.sa_confds_ep
 
 -- | Store 'ResourceGraph' in 'globalResourceGraphCache' in order to avoid dead
 -- lock conditions. RC performing all queries sequentially, thus it can't reply
