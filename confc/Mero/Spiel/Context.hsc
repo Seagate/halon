@@ -22,6 +22,7 @@ import Control.Monad (liftM2, liftM3)
 
 import qualified Data.Map as Map
 
+import Data.Binary
 import Foreign.C.String
   ( CString
   , newCString
@@ -226,6 +227,9 @@ instance Storable SnsStatus where
     #{poke struct m0_spiel_sns_status, sss_state} p st
     #{poke struct m0_spiel_sns_status, sss_progress} p pr
 
+instance Binary SnsStatus where
+  put (SnsStatus f s u) = put f >> put (fromEnum s) >> put (fromIntegral u :: Word64)
+  get = SnsStatus <$> get <*> fmap toEnum get <*> fmap fromIntegral (get :: Get Word64)
 
 spielCtx :: C.Context
 spielCtx = mempty {
