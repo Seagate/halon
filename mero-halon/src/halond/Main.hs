@@ -124,11 +124,6 @@ main = do
             return v
       exists <- doesFileExist versionFile
       stateExists <- doesDirectoryExist replicasDir
-      version <- case parseGitDescribe gitDescribe of
-        [(version, "")] -> return version
-        res -> do
-          hPutStrLn stderr $ "Unexpected version string: " ++ show (gitDescribe, res)
-          exitFailure
 
       -- We don't want to check the persisted state version if there is no
       -- persisted state.
@@ -146,8 +141,10 @@ main = do
               exitFailure
           (fver, ver) -> do
             hPutStrLn stderr $ "Error when parsing versions."
-            hPutStrLn stderr $ show versionFile ++ ": " ++ show fver
-            hPutStrLn stderr $ "Current version: " ++ show ver
+            hPutStrLn stderr $ show versionFile ++ ": " ++ show str
+            hPutStrLn stderr $ "Parses to: " ++ show fver
+            hPutStrLn stderr $ "Current version: " ++ show gitDescribe
+            hPutStrLn stderr $ "Parses to: " ++ show ver
             when (str /= gitDescribe) $ do
               hPutStrLn stderr "Unparsed versions do not match."
               exitFailure
