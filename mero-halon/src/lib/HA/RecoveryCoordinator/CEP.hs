@@ -291,6 +291,11 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
            False -> do
              phaseLog "info" $ "Recovery complete for " ++ show node
              modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
+             -- It may be possible that node already joined and failed again.
+             -- in this case new recovery rule will not be running, because
+             -- this one is still running. And node monitor will be removed.
+             -- A simple "hack" here is to call addNodeToCluster here.
+             addNodeToCluster (eqNodes argv) node
              continue finish
            True -> do
              phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
