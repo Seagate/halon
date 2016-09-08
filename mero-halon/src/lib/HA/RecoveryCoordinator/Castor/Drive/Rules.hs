@@ -192,7 +192,8 @@ ruleDriveRemoved = define "drive-removed" $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
         detachDisk m0sdev
         old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        unless (isSDSFailedState old_state) $
+          applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
     messageProcessed uuid

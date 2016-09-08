@@ -366,6 +366,13 @@ sdsFailFailed SDSRepairing = SDSRepairing
 sdsFailFailed SDSRepaired = SDSRepaired
 sdsFailFailed _ = SDSFailed
 
+isSDSFailedState :: SDevState -> Bool
+isSDSFailedState SDSFailed = True
+isSDSFailedState SDSRepairing = True
+isSDSFailedState SDSRepaired = True
+isSDSFailedState (SDSTransient _) = True
+isSDSFailedState _ = False
+
 newtype Enclosure = Enclosure Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
