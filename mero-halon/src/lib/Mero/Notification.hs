@@ -467,6 +467,10 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
       when  (_chp_event pe == TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
         mv <- atomicModifyIORef' (_ni_links ni) $
                 swap . Map.updateLookupWithKey (const $ const $ Nothing) hlink
+        atomicModifyIORef' (_ni_info ni) $
+          swap . Map.updateLookupWithKey (const $ const $ Nothing) hlink
+        atomicModifyIORef' (_ni_last_seen ni) $
+          swap . Map.updateLookupWithKey (const $ const $ Nothing) hlink
         for_ mv $ traverse_ onDelivered . Map.elems
       void $ CH.forkProcess lnode $ promulgateWait (meta, pe)
 
