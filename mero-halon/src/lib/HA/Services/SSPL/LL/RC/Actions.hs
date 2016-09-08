@@ -123,9 +123,8 @@ mkDispatchAwaitCommandAck dispatcher failed logAction = do
           phaseLog "info" $ "SSPL command successful."
           continue dispatcher
         AckReplyFailed -> do
-          -- TODO Should we go to failed here?
           phaseLog "warning" $ "SSPL command failed."
-          continue dispatcher
+          continue failed
         AckReplyError msg -> do
           phaseLog "error" $ "Error received from SSPL: " ++ (T.unpack msg)
           continue failed
