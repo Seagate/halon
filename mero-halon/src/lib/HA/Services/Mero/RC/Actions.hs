@@ -189,12 +189,14 @@ markNotificationFailed diff process = do
 -- RG and announce it to halon.
 tryCompleteStateDiff :: StateDiff -> PhaseM LoopState l ()
 tryCompleteStateDiff diff = do
+  rc <- getCurrentRC
+  notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
   ps <- G.connectedTo diff WaitingFor <$> getLocalGraph
-  when (null (ps :: [M0.Process])) $ do
-    rc <- getCurrentRC
+  when (null (ps :: [M0.Process]) && notSent) $ do
     modifyGraph $ G.disconnect rc R.Has diff
     okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
     failProcesses <- G.connectedTo diff WaitingFor  <$> getLocalGraph
+    phaseLog "epoch" $ show (stateEpoch diff)
     registerSyncGraph $ do
       for_ (stateDiffOnCommit diff) applyOnCommit
       promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses failProcesses
