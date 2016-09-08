@@ -147,10 +147,15 @@ ruleInternalStateChangeHandler :: Definitions LoopState ()
 ruleInternalStateChangeHandler = do
   defineSimpleTask "castor::internal-state-change-controller::run" $ \msg ->
     liftProcess (decodeP msg) >>= \(InternalObjectStateChange changes) -> let
-        s = Set $ extractNote <$> changes
-        extractNote (AnyStateChange a _old new _) =
-          Note (M0.fid a) (toConfObjState a new)
-      in do
+        -- XXX: Using mapMaybe is a hack here to workound the problem
+        -- that same event could be sent multiple times without
+        -- actual state change.
+        notes = mapMaybe extractNote changes
+        s = Set notes
+        extractNote (AnyStateChange a old new _)
+          | old == new = Nothing
+          | otherwise  = Just $ Note (M0.fid a) (toConfObjState a new)
+      in unless (null notes) $ do
         mhandlers <- getStorageRC
         traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
 

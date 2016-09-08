@@ -120,7 +120,7 @@ testDriveAddition transport pg = runDefaultTest transport $ do
 
   registerInterceptor $ \case
       str@"Starting service dummy"   -> usend self str
-      str' | "Updating status for device StorageDevice" `isInfixOf` str' ->
+      str' | "Updating status for device" `isInfixOf` str' ->
         usend self ("Drive" :: String)
       _ -> return ()
 

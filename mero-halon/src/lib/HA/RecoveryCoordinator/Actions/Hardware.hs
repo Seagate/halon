@@ -486,7 +486,6 @@ mergeStorageDevices sds = do
 driveStatus :: StorageDevice
             -> PhaseM LoopState l (Maybe StorageDeviceStatus)
 driveStatus dev = do
-  phaseLog "rg-query" $ "Querying status of device " ++ show dev
   rg <- getLocalGraph
   return $ case G.connectedTo dev Is rg of
     [a] -> Just a
@@ -498,7 +497,9 @@ updateDriveStatus :: StorageDevice
                   -> String -- ^ Reason.
                   -> PhaseM LoopState l ()
 updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Updating status for device " ++ show dev ++ " to " ++ status ++ "("++reason++")"
+  phaseLog "rg" $ "Updating status for device"
+  phaseLog "status" $ status
+  phaseLog "reason" $ reason
   ds <- driveStatus dev
   phaseLog "rg" $ "Old status was " ++ show ds
   let statusNode = StorageDeviceStatus status reason
