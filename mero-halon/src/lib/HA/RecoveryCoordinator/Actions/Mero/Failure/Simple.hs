@@ -90,8 +90,16 @@ generateFailureSets df cf cfe rg globs = let
     buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (Failures, Set Fid)
     buildCtrlFailureSet i fids = let
         df' = if df > i * cfe then df - (i*cfe) else 0 -- E.g. failures to support on top of ctrl failure
-        unitsPerController = ceiling $ (n + 2*k) % (fromIntegral $ length allCtrls)
-        ctrlFailures = (floor $ k % unitsPerController) - i
+        -- Following change is temporary, and would work as long as failures
+        -- above controllers (encl, racks) are not to be supported
+        -- (ref. HALON-406)
+        quotient = floor $ (n + 2*k) % (fromIntegral (length allCtrls) -i)
+        remainder = (n + 2*k) `rem` (fromIntegral (length allCtrls) - i)
+        kc = remainder * (quotient + 1)
+        ctrlFailures
+            | kc > k = k `quot` (quotient + 1)
+            | kc < k = floor $ (k - remainder) % quotient
+            | otherwise = remainder
         failures = Failures 0 0 0 ctrlFailures k
         keys = sort $ Map.keys fids
         go :: [Fid] -> Set (Failures, Set Fid)  -- FailureSet
