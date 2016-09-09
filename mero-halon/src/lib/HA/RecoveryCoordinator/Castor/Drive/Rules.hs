@@ -192,8 +192,7 @@ ruleDriveRemoved = define "drive-removed" $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
         detachDisk m0sdev
         old_state <- getLocalGraph >>= return . getState m0sdev
-        unless (isSDSFailedState old_state) $
-          applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
     messageProcessed uuid
@@ -395,8 +394,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       forM_ mm0sdev $ \m0sdev -> do
         detachDisk m0sdev
         old_state <- getLocalGraph >>= return . getState m0sdev
-        unless (isSDSFailedState old_state) $
-          applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
 
       -- Attempt to power the disk back on
       sent <- sendNodeCmd nid Nothing (DrivePoweron dpcSerial)
