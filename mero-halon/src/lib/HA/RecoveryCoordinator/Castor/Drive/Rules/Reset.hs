@@ -179,9 +179,6 @@ ruleResetAttempt = define "reset-attempt" $ do
               phaseLog "info" $ "Cancelling drive reset as drive is removed."
               phaseLog "sdev" $ show sdev
               continue end
-            unlessM (isStorageDevicePowered sdev) $ do
-              phaseLog "info" $ "Device powered off: " ++ show sdev
-              switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
             whenM (isStorageDeviceRunningSmartTest sdev) $ do
               phaseLog "info" $ "Device running SMART test: " ++ show sdev
               switch [drive_removed, smartSuccess, smartFailure, timeout smartTestTimeout failure]
