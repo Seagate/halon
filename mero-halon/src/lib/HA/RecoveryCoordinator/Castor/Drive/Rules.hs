@@ -479,9 +479,12 @@ ruleDriveBlip :: Definitions LoopState ()
 ruleDriveBlip = defineSimple "castor::disk::blip"
   $ \(DriveTransient eid _ _ disk) -> do
     rg <- getLocalGraph
-    mm0sdev <- lookupStorageDeviceSDev disk
-    forM_ mm0sdev $ \sd -> do
-      applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
+    removed <- isStorageDriveRemoved disk
+    powered <- isStorageDevicePowered disk
+    unless (removed || not powered) $ do
+      mm0sdev <- lookupStorageDeviceSDev disk
+      forM_ mm0sdev $ \sd -> do
+        applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
     messageProcessed eid
 
 -- | Fires when a drive is marked as 'ready' for use. This is typically

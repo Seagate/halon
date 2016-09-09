@@ -3,11 +3,12 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ViewPatterns        #-}
 module HA.Services.SSPL.CEP where
 
 import HA.Services.SSPL.LL.RC.Actions
@@ -39,7 +40,6 @@ import Control.Distributed.Process
   ( NodeId
   , sendChan
   , say
-  , usend
   , processNodeId
   , nsendRemote
   )
@@ -298,18 +298,18 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                           ]
        messageProcessed uuid
      else
-       case ( T.toUpper disk_status, T.toUpper disk_reason) of
+       case (disk_status, disk_reason) of
         (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) -> do
           phaseLog "sspl-service" "status unchanged"
           messageProcessed uuid
-        ("FAILED", _) -> do
+        (T.toUpper -> "FAILED", _) -> do
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           notify $ DriveFailed uuid (Node nid) enc disk
-        ("EMPTY", "NONE") -> do
+        (T.toUpper -> "EMPTY", T.toUpper -> "NONE") -> do
           -- This is probably indicative of expander reset, or some other error.
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           notify $ DriveTransient uuid (Node nid) enc disk
-        ("OK", "NONE") -> do
+        (T.toUpper -> "OK", T.toUpper -> "NONE") -> do
           -- Disk has returned to normal after some failure.
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
           notify $ DriveOK uuid (Node nid) enc disk
