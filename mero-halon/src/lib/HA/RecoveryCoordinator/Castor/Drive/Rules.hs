@@ -395,7 +395,8 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       forM_ mm0sdev $ \m0sdev -> do
         detachDisk m0sdev
         old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        unless (isSDSFailedState old_state) $
+          applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
 
       -- Attempt to power the disk back on
       sent <- sendNodeCmd nid Nothing (DrivePoweron dpcSerial)
