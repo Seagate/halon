@@ -192,8 +192,7 @@ ruleDriveRemoved = define "drive-removed" $ do
         phaseLog "mero" $ "Notifying M0_NC_TRANSIENT for sdev"
         detachDisk m0sdev
         old_state <- getLocalGraph >>= return . getState m0sdev
-        unless (isSDSFailedState old_state) $
-          applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         put Local $ Just (uuid, enc, disk, loc, m0sdev)
         switch [reinsert, timeout driveRemovalTimeout removal]
     messageProcessed uuid
@@ -478,9 +477,12 @@ ruleDriveBlip :: Definitions LoopState ()
 ruleDriveBlip = defineSimple "castor::disk::blip"
   $ \(DriveTransient eid _ _ disk) -> do
     rg <- getLocalGraph
-    mm0sdev <- lookupStorageDeviceSDev disk
-    forM_ mm0sdev $ \sd -> do
-      applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
+    removed <- isStorageDriveRemoved disk
+    powered <- isStorageDevicePowered disk
+    unless (removed || not powered) $ do
+      mm0sdev <- lookupStorageDeviceSDev disk
+      forM_ mm0sdev $ \sd -> do
+        applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
     messageProcessed eid
 
 -- | Fires when a drive is marked as 'ready' for use. This is typically

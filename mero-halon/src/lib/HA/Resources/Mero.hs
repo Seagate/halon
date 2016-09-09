@@ -347,6 +347,8 @@ prettySDevState (SDSTransient x) = "Transient failure (" ++ prettySDevState x ++
 --   where the device is failed or already transient.
 sdsFailTransient :: SDevState -> SDevState
 sdsFailTransient SDSFailed = SDSFailed
+sdsFailTransient SDSRepairing = SDSRepairing
+sdsFailTransient SDSRepaired = SDSRepaired
 sdsFailTransient s@(SDSTransient _) = s
 sdsFailTransient x = SDSTransient x
 
@@ -365,13 +367,6 @@ sdsFailFailed :: SDevState -> SDevState
 sdsFailFailed SDSRepairing = SDSRepairing
 sdsFailFailed SDSRepaired = SDSRepaired
 sdsFailFailed _ = SDSFailed
-
-isSDSFailedState :: SDevState -> Bool
-isSDSFailedState SDSFailed = True
-isSDSFailedState SDSRepairing = True
-isSDSFailedState SDSRepaired = True
-isSDSFailedState (SDSTransient _) = True
-isSDSFailedState _ = False
 
 newtype Enclosure = Enclosure Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
