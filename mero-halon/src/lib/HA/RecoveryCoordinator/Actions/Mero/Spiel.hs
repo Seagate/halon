@@ -648,11 +648,8 @@ unsetPoolRepairStatusWithUUID pool uuid = getPoolRepairStatus pool >>= \case
 -- the graph, it means no repairs are going on.
 getPoolRepairInformation :: M0.Pool
                          -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
-getPoolRepairInformation pool = do
-  r <- getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
-  phaseLog "rg-query" $
-    "Looked up pool repair information for " ++ show pool ++ ", got " ++ show r
-  return r
+getPoolRepairInformation pool =
+  getLocalGraph >>= return . join . fmap M0.prsPri . listToMaybe . G.connectedTo pool Has
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any
 -- previously connected @PRI@s are disconnected.
