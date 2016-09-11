@@ -520,7 +520,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
 
         -- Wait for all process configured notifications.
     let
-        mkConfigurationAwait name next = mkLoop name 180 bootstrap_timeout
+        mkConfigurationAwait name next = mkLoop name startProcTimeout bootstrap_timeout
           (\result l ->
              case result of
                ProcessConfigured fid -> return $
