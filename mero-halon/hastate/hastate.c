@@ -24,6 +24,8 @@ void entrypoint_request_cb( struct m0_halon_interface         *hi
                           , const char             *remote_rpc_endpoint
                           , const struct m0_fid               *process_fid
                           , const struct m0_fid               *profile_fid
+                          , const char                        *git_rev_id
+                          , bool                               first_request
                           ) {
     ha_state_cbs.ha_state_entrypoint(req_id, process_fid, profile_fid);
 }
