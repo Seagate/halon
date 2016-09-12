@@ -19,7 +19,6 @@ import HA.RecoveryCoordinator.Actions.Core
   , getLocalGraph
   , messageProcessed
   , promulgateRC
-  , unlessM
   , whenM
   )
 import HA.RecoveryCoordinator.Actions.Hardware

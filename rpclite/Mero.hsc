@@ -49,9 +49,7 @@ import Control.Monad (when, forever)
 import Data.IORef
 import Data.Typeable
 import Data.Foldable
-import Foreign.C.String (CString, withCString)
 import Foreign.C.Types (CInt(..))
-import Foreign.Ptr (nullPtr)
 import System.IO.Unsafe
 
 -- | Initializes mero.

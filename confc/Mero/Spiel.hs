@@ -15,9 +15,6 @@ import Mero.ConfC
 import Mero.Spiel.Context
 import Mero.Spiel.Internal
 
-import Network.RPC.RPCLite
-  ( RPCMachine )
-
 import Control.Exception
   ( bracket
   , bracket_
@@ -64,53 +61,30 @@ import Foreign.Marshal.Utils
   , maybePeek
   )
 import Foreign.Ptr
-  ( nullPtr, Ptr )
+  ( nullPtr )
 import Foreign.Storable
   ( peek
   , poke
   )
 
-data SpielContext = SpielContext (Ptr SpielContextV) (Ptr ReqHServiceV)
-
-spielInit :: IO SpielContext
-spielInit = alloca $ \sc -> alloca $ \rms -> do
-    throwIfNonZero_ (\rc -> "Cannot initialize Spiel context: " ++ show rc)
-      $ c_spiel_init sc rms
-    SpielContext <$> peek sc <*> peek rms
-
-spielFini :: SpielContext -> IO ()
-spielFini (SpielContext sc rms) = c_spiel_fini sc rms
-
-rconfStart :: SpielContext -> IO ()
-rconfStart (SpielContext sc _) =
+-- | Start rconfc server associated with spiel context.
+rconfStart :: IO ()
+rconfStart =
   throwIfNonZero_ (\rc -> "Cannot start spiel command interface: " ++ show rc)
-    $ c_spiel_rconfc_start sc nullPtr
+    $ c_spiel >>= \sc -> c_spiel_rconfc_start sc nullPtr
 
-rconfStop :: SpielContext -> IO ()
-rconfStop (SpielContext sc _) = c_spiel_rconfc_stop sc
+-- | Stop rconfc server associated with spiel context.
+rconfStop :: IO ()
+rconfStop = c_spiel >>= c_spiel_rconfc_stop
 
 -------------------------------------------------------------------------------
 -- Backcompatibility functions
 -------------------------------------------------------------------------------
 
--- | Open a Spiel context with command interface support.
--- If you don't need commands interface, use 'spielInit' instead.
-start :: IO SpielContext
-start = spielInit
-
--- | Close a Spiel context
-stop :: SpielContext
-     -> IO ()
-stop sc = spielFini sc
-
-withRConf :: SpielContext
-          -> IO a       -- ^ Action to undertake with configuration manager
+-- | Helper function to run actions with rconfc setup.
+withRConf :: IO a       -- ^ Action to undertake with configuration manager
           -> IO a
-withRConf spiel = bracket_ (rconfStart spiel) (rconfStop spiel)
-
-withSpiel :: (SpielContext -> IO a)
-          -> IO a
-withSpiel = bracket spielInit spielFini
+withRConf = bracket_ rconfStart rconfStop
 
 ---------------------------------------------------------------
 -- Configuration management                                  --
@@ -118,9 +92,9 @@ withSpiel = bracket spielInit spielFini
 
 newtype SpielTransaction = SpielTransaction (ForeignPtr SpielTransactionV)
 
-openTransaction :: SpielContext
-                      -> IO (SpielTransaction)
-openTransaction (SpielContext sc _) = do
+openTransaction :: IO (SpielTransaction)
+openTransaction = do
+  sc <- c_spiel
   st <- mallocForeignPtrBytes m0_spiel_tx_size
   withForeignPtr st $ \ptr -> c_spiel_tx_open sc ptr
   return $ SpielTransaction st
@@ -150,13 +124,12 @@ commitTransactionForced (SpielTransaction ptr) forced ver quorum =
       poke q_ptr quorum
       c_spiel_tx_commit_forced c_ptr forced ver q_ptr
 
-withTransaction :: SpielContext
-                -> (SpielTransaction -> IO a)
+withTransaction :: (SpielTransaction -> IO a)
                 -> IO a
-withTransaction sc f = bracket
-  (openTransaction sc)
-  (closeTransaction)
-  (\t -> f t >>= \x -> commitTransaction t >> return x)
+withTransaction f = bracket
+    openTransaction
+    closeTransaction
+    (\t -> f t >>= \x -> commitTransaction t >> return x)
 
 dumpTransaction :: SpielTransaction
                 -> Word64 -- ^ Version number
@@ -211,11 +184,11 @@ txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> 
     buflen = 128
 
 
-setCmdProfile :: SpielContext
-              -> Maybe String
+setCmdProfile :: Maybe String
               -> IO ()
-setCmdProfile (SpielContext sc _) ms =
-  throwIfNonZero_ (\rc -> "Cannot set cmd profile: " ++ show rc) $
+setCmdProfile ms =
+  throwIfNonZero_ (\rc -> "Cannot set cmd profile: " ++ show rc) $ do
+    sc <- c_spiel
     case ms of
       Nothing -> c_spiel_cmd_profile_set sc nullPtr
       Just s  -> withCString s $ \cs ->
@@ -616,110 +589,98 @@ instance Spliceable Disk where
 -- Command interface                                         --
 ---------------------------------------------------------------
 
-serviceInit :: SpielContext
-            -> Service
+serviceInit :: Service
             -> IO ()
-serviceInit (SpielContext sc _) cs =
+serviceInit cs =
   with (cs_fid cs) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot initialise service: " ++ show rc)
-      $ c_spiel_service_init sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_service_init sc fid_ptr
 
-serviceStart :: SpielContext
-             -> Service
+serviceStart :: Service
              -> IO ()
-serviceStart (SpielContext sc _) cs =
+serviceStart cs =
   with (cs_fid cs) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot start service: " ++ show rc)
-      $ c_spiel_service_start sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_service_start sc fid_ptr
 
-serviceStop :: SpielContext
-            -> Service
+serviceStop :: Service
             -> IO ()
-serviceStop (SpielContext sc _) cs =
+serviceStop cs =
   with (cs_fid cs) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot stop service: " ++ show rc)
-      $ c_spiel_service_stop sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_service_stop sc fid_ptr
 
-serviceHealth :: SpielContext
-              -> Service
+serviceHealth :: Service
               -> IO ServiceHealth
-serviceHealth (SpielContext sc _) cs =
+serviceHealth cs =
   with (cs_fid cs) $ \fid_ptr ->
     fmap ServiceHealth
       $ throwIfNeg (\rc -> "Cannot query service health: " ++ show rc)
-        $ fmap (fromIntegral) $ c_spiel_service_health sc fid_ptr
+        $ fmap (fromIntegral) $ c_spiel >>= \sc -> c_spiel_service_health sc fid_ptr
 
-serviceQuiesce :: SpielContext
-               -> Service
+serviceQuiesce :: Service
                -> IO ()
-serviceQuiesce (SpielContext sc _) cs =
+serviceQuiesce cs =
   with (cs_fid cs) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce service: " ++ show rc)
-      $ c_spiel_service_quiesce sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_service_quiesce sc fid_ptr
 
-deviceAttach :: SpielContext
-             -> Fid  -- ^ Disk
+deviceAttach :: Fid  -- ^ Disk
              -> IO ()
-deviceAttach (SpielContext sc _) fid =
+deviceAttach  fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot attach device: " ++ show rc)
-      $ c_spiel_device_attach sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_device_attach sc fid_ptr
 
-deviceDetach :: SpielContext
-             -> Fid -- ^ Disk
+deviceDetach :: Fid -- ^ Disk
              -> IO ()
-deviceDetach (SpielContext sc _) fid =
+deviceDetach fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot detach device: " ++ show rc)
-      $ c_spiel_device_detach sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_device_detach sc fid_ptr
 
-deviceFormat :: SpielContext
-             -> Disk
+deviceFormat :: Disk
              -> IO ()
-deviceFormat (SpielContext sc _) ck =
+deviceFormat ck =
   with (ck_fid ck) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot format device: " ++ show rc)
-      $ c_spiel_device_format sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_device_format sc fid_ptr
 
-processStop :: SpielContext
-            -> Process
+processStop :: Process
             -> IO ()
-processStop (SpielContext sc _) pc =
+processStop pc =
   with (pc_fid pc) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot stop process: " ++ show rc)
-      $ c_spiel_process_stop sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_process_stop sc fid_ptr
 
-processReconfig :: SpielContext
-                -> Process
+processReconfig :: Process
                 -> IO ()
-processReconfig (SpielContext sc _) pc =
+processReconfig pc =
   with (pc_fid pc) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot reconfigure process: " ++ show rc)
-      $ c_spiel_process_reconfig sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_process_reconfig sc fid_ptr
 
-processHealth :: SpielContext
-              -> Process
+processHealth :: Process
               -> IO ServiceHealth
-processHealth (SpielContext sc _) pc =
+processHealth pc =
   with (pc_fid pc) $ \fid_ptr ->
     fmap ServiceHealth
       $ throwIfNeg (\rc -> "Cannot query process health: " ++ show rc)
-        $ fmap (fromIntegral) $ c_spiel_process_health sc fid_ptr
+        $ fmap (fromIntegral) $ c_spiel >>= \sc -> c_spiel_process_health sc fid_ptr
 
-processQuiesce :: SpielContext
-               -> Process
+processQuiesce :: Process
                -> IO ()
-processQuiesce (SpielContext sc _) pc =
+processQuiesce pc =
   with (pc_fid pc) $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce process: " ++ show rc)
-      $ c_spiel_process_quiesce sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_process_quiesce sc fid_ptr
 
-processListServices :: SpielContext
-                    -> Process
+processListServices :: Process
                     -> IO [RunningService]
-processListServices (SpielContext sc _) pc = mask $ \restore ->
+processListServices pc = mask $ \restore ->
     alloca $ \fid_ptr ->
       alloca $ \arr_ptr -> do
+        sc <- c_spiel
         poke fid_ptr (pc_fid pc)
         rc <- fmap fromIntegral . restore
               $ c_spiel_process_list_services sc fid_ptr arr_ptr
@@ -731,44 +692,40 @@ processListServices (SpielContext sc _) pc = mask $ \restore ->
           -- _ <- freeRunningServices elt
           return services
 
-poolRepairStart :: SpielContext
-                -> Fid -- ^ Pool Fid
+poolRepairStart :: Fid -- ^ Pool Fid
                 -> IO ()
-poolRepairStart (SpielContext sc _) fid =
+poolRepairStart fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot start pool repair: " ++ show rc)
-      $ c_spiel_pool_repair_start sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_repair_start sc fid_ptr
 
-poolRepairContinue :: SpielContext
-                     -> Fid -- ^ Pool Fid
-                     -> IO ()
-poolRepairContinue (SpielContext sc _) fid =
+poolRepairContinue :: Fid -- ^ Pool Fid
+                   -> IO ()
+poolRepairContinue fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot continue pool repair: " ++ show rc)
-      $ c_spiel_pool_repair_continue sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_repair_continue sc fid_ptr
 
-poolRepairQuiesce :: SpielContext
-                  -> Fid -- ^ Pool Fid
+poolRepairQuiesce :: Fid -- ^ Pool Fid
                   -> IO ()
-poolRepairQuiesce (SpielContext sc _) fid =
+poolRepairQuiesce fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool repair: " ++ show rc)
-      $ c_spiel_pool_repair_quiesce sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_repair_quiesce sc fid_ptr
 
-poolRepairAbort :: SpielContext
-                -> Fid
+poolRepairAbort :: Fid
                 -> IO ()
-poolRepairAbort (SpielContext sc _) fid =
+poolRepairAbort fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot abort pool repair: " ++ show rc)
-      $ c_spiel_pool_repair_abort sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_repair_abort sc fid_ptr
 
-poolRepairStatus :: SpielContext
-                 -> Fid
+poolRepairStatus :: Fid
                  -> IO [SnsStatus]
-poolRepairStatus (SpielContext sc _) fid = mask $ \restore ->
+poolRepairStatus fid = mask $ \restore ->
     with fid $ \fid_ptr ->
       alloca $ \arr_ptr -> do
+        sc <- c_spiel
         poke fid_ptr fid
         rc <- fmap fromIntegral . restore
               $ c_spiel_pool_repair_status sc fid_ptr arr_ptr
@@ -780,44 +737,40 @@ poolRepairStatus (SpielContext sc _) fid = mask $ \restore ->
           free elt
           return x
 
-poolRebalanceStart :: SpielContext
-                   -> Fid -- ^ Pool Fid
+poolRebalanceStart :: Fid -- ^ Pool Fid
                    -> IO ()
-poolRebalanceStart (SpielContext sc _) fid =
+poolRebalanceStart fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot start pool rebalance: " ++ show rc)
-      $ c_spiel_pool_rebalance_start sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_rebalance_start sc fid_ptr
 
-poolRebalanceContinue :: SpielContext
-                     -> Fid -- ^ Pool Fid
+poolRebalanceContinue :: Fid -- ^ Pool Fid
                      -> IO ()
-poolRebalanceContinue (SpielContext sc _) fid =
+poolRebalanceContinue fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot continue pool rebalance: " ++ show rc)
-      $ c_spiel_pool_rebalance_continue sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_rebalance_continue sc fid_ptr
 
-poolRebalanceQuiesce :: SpielContext
-                     -> Fid -- ^ Pool Fid
+poolRebalanceQuiesce :: Fid -- ^ Pool Fid
                      -> IO ()
-poolRebalanceQuiesce (SpielContext sc _) fid =
+poolRebalanceQuiesce fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot quiesce pool rebalance: " ++ show rc)
-      $ c_spiel_pool_rebalance_quiesce sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_rebalance_quiesce sc fid_ptr
 
-poolRebalanceAbort :: SpielContext
-                   -> Fid
+poolRebalanceAbort :: Fid
                    -> IO ()
-poolRebalanceAbort (SpielContext sc _) fid =
+poolRebalanceAbort fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot abort pool rebalance: " ++ show rc)
-      $ c_spiel_pool_rebalance_abort sc fid_ptr
+      $ c_spiel >>= \sc -> c_spiel_pool_rebalance_abort sc fid_ptr
 
-poolRebalanceStatus :: SpielContext
-                    -> Fid
+poolRebalanceStatus :: Fid
                     -> IO [SnsStatus]
-poolRebalanceStatus (SpielContext sc _) fid = mask $ \restore ->
+poolRebalanceStatus fid = mask $ \restore ->
     with fid $ \fid_ptr ->
       alloca $ \arr_ptr -> do
+        sc <- c_spiel
         poke fid_ptr fid
         rc <- fmap fromIntegral . restore
                 $ c_spiel_pool_rebalance_status sc fid_ptr arr_ptr
