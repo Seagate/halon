@@ -38,6 +38,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
   , resetAttemptThreshold
   ) where
 
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
 import HA.RecoveryCoordinator.Castor.Drive.Events
@@ -92,6 +93,7 @@ rules = sequence_
   , Repair.ruleRebalanceStart
   , Repair.ruleSNSOperationAbort
   , Reset.ruleResetAttempt
+  , Raid.rules
   ]
 
 -- | All internal notifications related to disks.
@@ -138,6 +140,7 @@ checkAndHandleDriveReady disk = do
 
   if (not reset && powered && not removed && status == "OK")
   then do
+    promulgateRC $ DriveReady disk
     mm0sdev <- lookupStorageDeviceSDev disk
     forM_ mm0sdev $ \sd -> do
       catch (attachDisk sd)

@@ -92,6 +92,7 @@ Library
                    HA.RecoveryCoordinator.Events.Debug
                    HA.RecoveryCoordinator.Events.Cluster
                    HA.RecoveryCoordinator.Actions.Core
+                   HA.RecoveryCoordinator.Actions.Dispatch
                    HA.RecoveryCoordinator.Actions.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
@@ -199,6 +200,7 @@ Library
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Castor.Drive.Rules
+                      HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Reset

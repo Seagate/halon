@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Expander
 
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Events.Castor.Cluster (StopProcessesRequest(..))
@@ -33,19 +34,21 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL.CEP (sendNodeCmd)
+import HA.Services.SSPL.LL.RC.Actions
+  ( fldCommandAck
+  , mkDispatchAwaitCommandAck
+  )
 import HA.Services.SSPL.LL.Resources
-  ( AckReply(..)
-  , CommandAck(..)
-  , NodeCmd(..)
+  ( NodeCmd(..)
   , RaidCmd(..)
   )
 
 import Control.Distributed.Process (liftIO)
 import Control.Lens
-import Control.Monad (forM_, when)
+import Control.Monad (forM_)
 import Control.Monad.Trans.Maybe
 
-import Data.List (delete, nub)
+import Data.List (nub)
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
@@ -64,56 +67,6 @@ notificationTimeout = 180 -- seconds
 -- | How long to wait for the node to come up again
 nodeUpTimeout :: Int
 nodeUpTimeout = 460 -- seconds
-
--- | Holds dispatching information for complex jumps.
-type FldDispatch = '("dispatch", Dispatch)
-fldDispatch :: Proxy FldDispatch
-fldDispatch = Proxy
-
-data Dispatch = Dispatch {
-    _waitPhases :: [Jump PhaseHandle]
-  , _successPhase :: Jump PhaseHandle
-  , _timeoutPhase :: Maybe (Int, Jump PhaseHandle)
-}
-makeLenses ''Dispatch
-
--- | Pass control back to central dispatcher
-onSuccess :: forall l. (FldDispatch ∈ l)
-          => Jump PhaseHandle
-          -> PhaseM LoopState (FieldRec l) ()
-onSuccess next =
-  modify Local $ rlens fldDispatch . rfield . successPhase .~ next
-
--- | Add a phase to wait for
-waitFor :: forall l. (FldDispatch ∈ l)
-         => Jump PhaseHandle
-         -> PhaseM LoopState (FieldRec l) ()
-waitFor p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
-  (p :)
-
--- | Announce that this phase has finished waiting and remove from dispatch.
-waitDone :: forall l. (FldDispatch ∈ l)
-         => Jump PhaseHandle
-         -> PhaseM LoopState (FieldRec l) ()
-waitDone p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
-  (delete p)
-
-mkDispatcher :: forall l. (FldDispatch ∈ l)
-             => RuleM LoopState (FieldRec l) (Jump PhaseHandle)
-mkDispatcher = do
-  dispatcher <- phaseHandle "dispatcher::dispatcher"
-
-  directly dispatcher $ do
-    dinfo <- gets Local (^. rlens fldDispatch . rfield)
-    phaseLog "dispatcher:awaiting" $ show (dinfo ^. waitPhases)
-    phaseLog "dispatcher:onSuccess" $ show (dinfo ^. successPhase)
-    phaseLog "dispatcher:onTimeout" $ show (dinfo ^. timeoutPhase)
-    case dinfo ^. waitPhases of
-      [] -> continue $ dinfo ^. successPhase
-      xs -> switch (xs ++ (maybe [] ((:[]) . uncurry timeout)
-                                    $ dinfo ^. timeoutPhase))
-
-  return dispatcher
 
 rules :: Definitions LoopState ()
 rules = sequence_
@@ -153,7 +106,6 @@ ruleReassembleRaid =
     define "castor::expander::reassembleRaid" $ do
       expander_reset_evt <- phaseHandle "expander_reset_evt"
       mero_notify_done <- phaseHandle "mero_notify_done"
-      sspl_notify_done <- phaseHandle "sspl_notify_done"
       notify_failed <- phaseHandle "notify_failed"
       stop_mero_services <- phaseHandle "stop_mero_services"
       unmount <- phaseHandle "unmount"
@@ -167,6 +119,7 @@ ruleReassembleRaid =
       finish <- phaseHandle "finish"
       tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
+      sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
 
       setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc) _) -> do
 
@@ -205,8 +158,8 @@ ruleReassembleRaid =
             modifyGraph $ G.connect host R.Is R.ReassemblingRaid
 
             -- Set default jump parameters. If no Mero, just stop RAID directly
-            modify Local $ rlens fldDispatch . rfield .~
-              Dispatch [] stop_raid (Just (notificationTimeout, notify_failed))
+            onSuccess stop_raid
+            onTimeout notificationTimeout notify_failed
 
             -- Mark enclosure as transiently failed. This should cascade down to
             -- controllers, disks etc.
@@ -254,27 +207,6 @@ ruleReassembleRaid =
         modify Local $ rlens fldNotifications . rfield .~ Nothing
         waitDone mero_notify_done
         continue dispatcher
-
-      setPhaseIf sspl_notify_done onCommandAck $ \(eid, uid, ack) -> do
-        phaseLog "debug" "SSPL notification complete"
-        showLocality
-        modify Local $ rlens fldCommandAck . rfield %~ (delete uid)
-        messageProcessed eid
-        remaining <- gets Local (^. rlens fldCommandAck . rfield)
-        when (null remaining) $ waitDone sspl_notify_done
-
-        phaseLog "info" $ "SSPL ack for command "  ++ show (commandAckType ack)
-        case commandAck ack of
-          AckReplyPassed -> do
-            phaseLog "info" $ "SSPL command successful."
-            continue dispatcher
-          AckReplyFailed -> do
-            -- TODO Should we go to failed here?
-            phaseLog "warning" $ "SSPL command failed."
-            continue dispatcher
-          AckReplyError msg -> do
-            phaseLog "error" $ "Error received from SSPL: " ++ (T.unpack msg)
-            continue failed
 
       directly stop_mero_services $ do
         showLocality
@@ -452,12 +384,6 @@ ruleReassembleRaid =
     -- Notifications to wait for
     fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet -> Bool])
     fldNotifications = Proxy
-    -- Command acknowledgements to wait for
-    fldCommandAck :: Proxy '("spplCommandAck", [UUID])
-    fldCommandAck = Proxy
-    -- Message UUID
-    fldUUID :: Proxy '("uuid", Maybe UUID)
-    fldUUID = Proxy
     -- RAID devices
     fldRaidDevices :: Proxy '("raidDevices", [String])
     fldRaidDevices = Proxy
@@ -483,11 +409,6 @@ ruleReassembleRaid =
             (show hardware) (show raidDevs)
             (show $ (\(a,b) -> (M0.showFid a, M0.showFid b)) <$> m0)
 
-    -- SSPL command acknowledgement
-    onCommandAck (HAEvent eid cmd _) _ l =
-      case (l ^. rlens fldCommandAck . rfield, commandAckUUID cmd) of
-        (xs, Just y) | y `elem` xs -> return $ Just (eid, y, cmd)
-        _ -> return Nothing
     onNode x _ l = case (l ^. rlens fldM0 . rfield) of
         Just (_, m0node) | nodeOf x == m0node -> return $ Just x
           where

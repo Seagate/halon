@@ -47,6 +47,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , hasStorageDeviceIdentifier
   , lookupStorageDevicePaths
   , lookupStorageDeviceSerial
+  , lookupStorageDeviceRaidDevice
     -- ** Change State
   , identifyStorageDevice
   , updateDriveStatus
@@ -389,6 +390,14 @@ lookupStorageDeviceSerial sd =
   where
     extractSerial (DISerialNumber x) = Just x
     extractSerial _ = Nothing
+
+-- | Lookup raid device associated with a storage device.
+lookupStorageDeviceRaidDevice :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDeviceRaidDevice sd =
+    mapMaybe extract <$> findStorageDeviceIdentifiers sd
+  where
+    extract (DIRaidDevice x) = Just x
+    extract _ = Nothing
 
 -- | Lookup a storage device in given enclosure at given position.
 lookupStorageDeviceInEnclosure :: Enclosure
