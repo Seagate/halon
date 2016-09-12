@@ -18,7 +18,6 @@ module Mero
   , sendM0Task_
   , M0InitException(..)
   , M0WorkerIsNotStarted(..)
-  , setNodeUUID
   , addM0Finalizer
   ) where
 
@@ -58,7 +57,6 @@ import System.IO.Unsafe
 -- | Initializes mero.
 m0_init :: IO ()
 m0_init = do
-    setNodeUUID Nothing
     rc <- m0_init_wrapper
     when (rc /= 0) $
       fail $ "m0_init: failed with " ++ show rc
@@ -148,7 +146,6 @@ withM0Deferred envInit envFini f = do
               when shouldContinue $ do
                 mt <- readChan globalM0Chan
                 forM_ mt $ \t@(Task _ b) -> do
-                  setNodeUUID Nothing
                   rc <- m0_init_wrapper
                   if (rc == 0)
                     then (myThreadId >>= replaceGlobalWorker >> mainloop t) `finally` m0_fini
@@ -171,11 +168,3 @@ foreign import ccall m0_fini_wrapper :: IO ()
 
 m0_fini :: IO ()
 m0_fini = finalizeM0 >> m0_fini_wrapper
-
-foreign import ccall "<lib/uuid.h> m0_node_uuid_string_set"
-  c_node_uuid_string_set  :: CString -> IO ()
-
--- | Unset node uuid, so library will be able to work without connection to mero instance.
-setNodeUUID :: Maybe String -> IO ()
-setNodeUUID Nothing = c_node_uuid_string_set nullPtr
-setNodeUUID (Just s) = withCString s c_node_uuid_string_set

@@ -39,7 +39,7 @@ int m0_init_wrapper () {
     }
     M0_ASSERT(m0init_hi == NULL);
     m0init_hi = (struct m0_halon_interface*)calloc(1, sizeof(struct m0_halon_interface));
-    rc = m0_halon_interface_init(m0init_hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check);
+    rc = m0_halon_interface_init(m0init_hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check, NULL);
     if (rc != 0) {
 	    free(m0init_hi);
 	    m0init_hi = NULL;
