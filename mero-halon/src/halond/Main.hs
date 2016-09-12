@@ -31,7 +31,6 @@ import Control.Distributed.Process.Node
 
 #ifdef USE_MERO
 import Mero
-import Mero.Environment
 #endif
 import Control.Monad (when)
 import Data.Function (on)
@@ -74,7 +73,7 @@ main = do
     Help -> putStrLn helpString
     Run -> do
 #ifdef USE_MERO
-      withM0Deferred initializeFOPs deinitializeFOPs $ mdo
+      withM0Deferred (return ()) (return ()) $ mdo
 #endif
         -- TODO: Implement a mechanism to propagate env vars in distributed tests.
         -- Perhaps an env var like
