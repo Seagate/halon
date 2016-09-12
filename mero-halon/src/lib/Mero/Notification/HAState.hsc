@@ -398,8 +398,8 @@ instance Storable Note where
 -- Finalizes the hastate interface.
 finiHAState :: IO ()
 finiHAState = do
-    atomicModifyIORef cbRefs (\cbs -> ([],cbs)) >>= mapM_ freeCB
     ha_state_fini
+    atomicModifyIORef cbRefs (\cbs -> ([],cbs)) >>= mapM_ freeCB
   where
     freeCB (SomeFunPtr ptr) = freeHaskellFunPtr ptr
 
