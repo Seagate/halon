@@ -172,7 +172,7 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
         isDown <- hasHostAttr HA_DOWN (Host h)
         isKnown <- knownResource node
         when isKnown $ do
-         publish $ OldNodeRevival node
+          publish $ OldNodeRevival node
         when (hasFailed || isDown) $ do
           phaseLog "info" $ "Reviving old node."
           phaseLog "info" $ "node = " ++ show node
@@ -242,6 +242,7 @@ recoverJob = Job "recover-job"
 ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
 ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
   try_recover <- phaseHandle "try_recover"
+  node_up     <- phaseHandle "Node already up"
   timeout_host <- phaseHandle "timeout_host"
 
   let start_recover (RecoverNode n1) = do
@@ -315,7 +316,15 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
                       then expirySeconds
                       else expirySeconds `div` abs maxRetries
              phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
-             continue $ timeout t' try_recover
+             switch [timeout t' try_recover, node_up]
+
+  setPhaseIf node_up (\(NewNodeConnected node) _ l -> do
+    if Just node == getField (rget fldNode l)
+    then return (Just ())
+    else return Nothing) $ \() -> do
+      Just node <- getField . rget fldNode <$> get Local
+      modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
+      continue finish
 
   directly timeout_host $ do
     Just node <- getField . rget fldNode <$> get Local

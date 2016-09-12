@@ -28,7 +28,6 @@ import           HA.Resources.RC
 import           HA.RecoveryCoordinator.Actions.Core
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 
--- import           HA.Service
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
 
@@ -40,18 +39,16 @@ import           Network.CEP
 import Control.Distributed.Process hiding (try)
 import Control.Distributed.Process.Internal.Types (SpawnRef)
 import Control.Distributed.Process.Closure (mkClosure)
-import Control.Concurrent (yield)
 import Control.Category
-import Control.Monad (unless)
-import Control.Monad.Catch (try)
 import Control.Monad.Fix (fix)
 
 import Data.Binary (Binary,encode)
 import Data.Foldable (for_, traverse_)
 import Data.Functor (void)
-import Data.Function ((&))
 import qualified Data.List as List
 import qualified Data.Map as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
@@ -162,6 +159,8 @@ registerSpawnAsync :: R.Node
                    -> PhaseM LoopState l SpawnRef
 registerSpawnAsync (R.Node nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
+  phaseLog "info" $ "Register spawn async"
+  phaseLog "ref"  $ show ref
   msp <- getStorageRC
   let key = encode ref
   putStorageRC $ RegisteredSpawns $
@@ -173,6 +172,8 @@ registerSpawnAsync (R.Node nid) clo callback = do
 unregisterSpawnAsync :: SpawnRef -> PhaseM LoopState l ()
 unregisterSpawnAsync ref = do
   let key = encode ref
+  phaseLog "info" $ "Unregister spawn async"
+  phaseLog "ref"  $ show ref
   mnmon <- getStorageRC
   for_ mnmon $ \(RegisteredSpawns mons) -> do
     putStorageRC $ RegisteredSpawns $ Map.delete key mons
@@ -182,27 +183,69 @@ unregisterSpawnAsync ref = do
 -- This call provisions node, restart services there and add required
 -- monitoring procedures.
 addNodeToCluster :: [NodeId] -> R.Node -> PhaseM LoopState l ()
-addNodeToCluster eqs node@(R.Node nid) = do
-  isMonitored <- liftProcess $ do
-    self <- getSelfPid
-    nsend "rc.angel.node-monitor" (IsMonitored nid self)
-    expect
-  unless isMonitored $ do
-    liftProcess $ nsend "rc.angel.node-monitor" (AddNode nid)
+addNodeToCluster eqs node = do
+  is_monitored <- isMonitored node
+  if not is_monitored
+  then do
+    startMonitoring node
     sr <- registerSpawnAsync node
-            ( $(mkClosure 'EQT.updateEQNodes) eqs ) $
-              Service.findRegisteredOn node >>= traverse_ (node & Service.start)
+            ( $(mkClosure 'EQT.updateEQNodes) eqs ) $ do
+              phaseLog "node-up" $ "starting services on the node."
+              phaseLog "node"    $ show node
+              Service.findRegisteredOn node >>= traverse_ (Service.start node)
     void $ registerNodeMonitor node $ do
-      phaseLog "warning" "node died"
-      phaseLog "node" $ show node
-      liftProcess $ nsend "rc.angel.node-monitor" (RemoveNode nid)
+      phaseLog "node.angel" "monitored node died - sending restart request"
+      stopMonitoring node
       promulgateRC $ R.RecoverNode node
       unregisterSpawnAsync sr
       return ()
+  else do phaseLog "debug" "Node is already monitored."
+          phaseLog "node" $ show node
 
 -------------------------------------------------------------------------------
 -- Node monitor angel
 -------------------------------------------------------------------------------
+
+labelMonitorAngel :: String
+labelMonitorAngel = "rc.angel.node-monitor"
+
+newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set R.Node}
+
+-- [Note: monitor angel request serialisation]
+-- All requests to the node monitor should be serialised, this is needed
+-- because otherwise we may have a race condition when angel didn't process
+-- some message yet. In order to serialize such requests - we start keeping
+-- wanted information in global RC state.
+
+-- | Check if given monitor node is monitored by angel.
+-- See [Note:monitor angel request serialisation]
+isMonitored :: R.Node -> PhaseM LoopState l Bool
+isMonitored node = do
+  mmns <- getStorageRC
+  return $ maybe False (Set.member node . getMonitoredNodes) mmns
+
+-- | Start node monitoring using angel
+-- See [Note:monitor angel request serialisation]
+startMonitoring :: R.Node -> PhaseM LoopState l ()
+startMonitoring node@(R.Node nid) = do
+  phaseLog "info" "Adding new node to the cluster."
+  phaseLog "node" $ show nid
+  mmns <- getStorageRC
+  putStorageRC $ maybe (MonitoredNodes (Set.singleton node))
+                       (MonitoredNodes . Set.insert node . getMonitoredNodes)
+                       mmns
+  liftProcess $ nsend labelMonitorAngel (AddNode nid)
+
+-- | Stop node monitoring using Angel.
+-- See [Note:monitor angel request serialisation]
+stopMonitoring :: R.Node -> PhaseM LoopState l ()
+stopMonitoring node@(R.Node nid) = do
+  phaseLog "info" "Unregister node monitor"
+  phaseLog "node" $ show nid
+  mmns <- getStorageRC
+  for_ mmns $ \mns -> putStorageRC $
+    MonitoredNodes . Set.delete node . getMonitoredNodes $ mns
+  liftProcess $ nsend labelMonitorAngel (RemoveNode nid)
 
 data MonitorAngelCmd = AddNode NodeId
                      | RemoveNode NodeId
@@ -229,7 +272,7 @@ registerNodeMonitoringAngel = do
     pid <- spawnLocal $ do
       link rc
       me <- getSelfPid
-      register "rc.angel.node-monitor" me
+      register labelMonitorAngel me
       usend rc AngelMonUp
       fix (\loop nodes -> do
         mcommand <- expectTimeout heartbeatDelay
