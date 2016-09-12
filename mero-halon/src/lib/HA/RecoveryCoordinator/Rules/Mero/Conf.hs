@@ -419,28 +419,34 @@ enclosureCascadeControllerRules =
 
 processCascadeServiceRule :: StateCascadeRule M0.Process M0.Service
 processCascadeServiceRule = StateCascadeRule
-  (const True)
-  (const True)
-  (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\s o -> case s of
-            M0.PSStarting -> M0.SSStarting -- error "M0.SSStarting"
-            M0.PSOnline -> M0.SSOnline
-            M0.PSOffline
-              | o == M0.SSFailed -> o
-              | otherwise -> M0.SSOffline
-            M0.PSFailed _
-              | o == M0.SSFailed -> o
-              | otherwise -> M0.SSInhibited o
-            M0.PSQuiescing
-              | o `elem` [M0.SSFailed, M0.SSOffline] -> o
-              | otherwise -> M0.SSInhibited o
-            M0.PSStopping
-              | o == M0.SSFailed -> o
-              | otherwise -> M0.SSStopping
-            M0.PSInhibited _
-              | o == M0.SSFailed -> o
-              | otherwise -> M0.SSInhibited o
-            M0.PSUnknown -> o)
+    (const True)
+    (const True)
+    (\x rg -> G.connectedTo x M0.IsParentOf rg)
+    (\s o -> case s of
+              M0.PSStarting -> M0.SSStarting -- error "M0.SSStarting"
+              M0.PSOnline -> M0.SSOnline
+              M0.PSOffline
+                | o == M0.SSFailed -> o
+                | otherwise -> M0.SSOffline
+              M0.PSFailed _
+                | o == M0.SSFailed -> o
+                | inhibited o -> o
+                | otherwise -> M0.SSInhibited o
+              M0.PSQuiescing
+                | o `elem` [M0.SSFailed, M0.SSOffline] -> o
+                | inhibited o -> o
+                | otherwise -> M0.SSInhibited o
+              M0.PSStopping
+                | o == M0.SSFailed -> o
+                | otherwise -> M0.SSStopping
+              M0.PSInhibited _
+                | o == M0.SSFailed -> o
+                | inhibited o -> o
+                | otherwise -> M0.SSInhibited o
+              M0.PSUnknown -> o)
+  where
+    inhibited (M0.SSInhibited _) = True
+    inhibited _ = False
 
 serviceCascadeDiskRule :: StateCascadeRule M0.Service M0.SDev
 serviceCascadeDiskRule = StateCascadeRule
@@ -469,7 +475,10 @@ nodeFailsProcessRule = StateCascadeRule
   (const True)
   (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\_ -> M0.PSInhibited)
+  (\_ o -> case o of
+    x@(M0.PSInhibited _) -> x
+    y -> M0.PSInhibited y
+  )
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
