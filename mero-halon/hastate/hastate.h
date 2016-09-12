@@ -184,10 +184,10 @@ void ha_state_disconnect(struct m0_ha_link *hl);
 // Populates m0_ha_entrypoint_rep structure by values from haskell world.
 void ha_entrypoint_reply( const struct m0_uint128     *req_id
                         , const int                    rc
-                        , const int                    confd_fid_size
+                        , const uint32_t               confd_fid_size
                         , const struct m0_fid         *confd_fid_data
-                        , const int                    confd_eps_size
                         , const char *                *confd_eps_data
+                        , const uint32_t               confd_quorum
                         , const struct m0_fid         *rm_fid
                         , const char *                 rm_eps
                         );

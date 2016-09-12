@@ -205,16 +205,16 @@ void ha_state_disconnect(struct m0_ha_link *hl) {
 // Replies an entrypoint request.
 void ha_entrypoint_reply( const struct m0_uint128     *req_id
                         , const int                    rc
-                        , int                          confd_fid_size
+                        , uint32_t                     confd_fid_size
                         , const struct m0_fid         *confd_fid_data
-                        , int                          confd_eps_size
                         , const char *                *confd_eps_data
+                        , uint32_t                     confd_quorum
                         , const struct m0_fid         *rm_fid
                         , const char *                 rm_eps
                         ) {
     m0_halon_interface_entrypoint_reply
       ( m0init_hi, req_id, rc, confd_fid_size, confd_fid_data
-      , confd_eps_size, confd_eps_data, rm_fid, rm_eps
+      , confd_eps_data, confd_quorum, rm_fid, rm_eps
       );
 }
 

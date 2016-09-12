@@ -198,11 +198,12 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   start main Nothing
   where
     logEP Nothing = phaseLog "warning" "Entrypoint information not available."
-    logEP (Just (M0.SpielAddress confd_fids confd_eps rm_fid rm_ep)) = do
-       phaseLog "info" $ "confd.fids = " ++ show confd_fids
-       phaseLog "info" $ "confd.eps  = " ++ show confd_eps
-       phaseLog "info" $ "rm.fids    = " ++ show rm_fid
-       phaseLog "info" $ "rm.ep      = " ++ show rm_ep
+    logEP (Just (M0.SpielAddress confd_fids confd_eps quorum rm_fid rm_ep)) = do
+       phaseLog "confd.fids"   $ show confd_fids
+       phaseLog "confd.eps"    $ show confd_eps
+       phaseLog "confd.quorum" $ show quorum
+       phaseLog "rm.fids"      $ show rm_fid
+       phaseLog "rm.ep"        $ show rm_ep
 #endif
 
 goRack :: CI.Rack -> PhaseM LoopState l ()

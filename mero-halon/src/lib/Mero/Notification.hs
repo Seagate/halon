@@ -506,6 +506,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
                    liftGlobalM0 $
                      entrypointReply reqId (sa_confds_fid ep)
                                            (sa_confds_ep  ep)
+                                           (sa_quorum     ep)
                                            (sa_rm_fid     ep)
                                            (sa_rm_ep      ep)
                  Nothing -> do
@@ -722,4 +723,6 @@ getSpielAddress b g =
                      , G.isConnected svc R.Is M0.PrincipalRM g]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
-  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp
+       quorum = ceiling $ fromIntegral (length confdsFid) / 2
+
+  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp <*> pure quorum

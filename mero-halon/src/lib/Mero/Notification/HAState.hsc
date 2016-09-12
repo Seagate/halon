@@ -505,22 +505,23 @@ newtype {-# CTYPE "const char*" #-} ConstCString = ConstCString CString
 
 foreign import capi ha_entrypoint_reply
   :: Ptr Word128 -> CInt
-  -> CInt -> Ptr Fid
-  -> CInt -> Ptr ConstCString
+  -> Word32 -> Ptr Fid
+  -> Ptr ConstCString
+  -> Word32
   -> Ptr Fid -> CString
   -> IO ()
 
 -- | Replies an entrypoint request.
-entrypointReply :: ReqId -> [Fid] -> [String] -> Fid -> String -> IO ()
-entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
+entrypointReply :: ReqId -> [Fid] -> [String] -> Int -> Fid -> String -> IO ()
+entrypointReply (ReqId reqId) confdFids epNames quorum rmFid rmEp =
   withMany (withCString) epNames $ \cnames ->
-    withArrayLen0 nullPtr cnames $ \ceps_len ceps_ptr ->
+    withArrayLen0 nullPtr cnames $ \_ ceps_ptr ->
       withArrayLen confdFids $ \cfids_len cfids_ptr ->
         withCString rmEp $ \crm_ep ->
           with rmFid $ \crmfid ->
             with reqId $ \reqId_ptr ->
               ha_entrypoint_reply reqId_ptr 0 (fromIntegral cfids_len) cfids_ptr
-                                  (fromIntegral ceps_len) (castPtr ceps_ptr)
+                                  (castPtr ceps_ptr) (fromIntegral quorum)
                                   crmfid crm_ep
   where
     _ = ConstCString -- Avoid unused warning for ConstCString
@@ -528,7 +529,7 @@ entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
 -- | Replies an entrypoint request as invalid.
 entrypointNoReply :: ReqId -> IO ()
 entrypointNoReply (ReqId reqId) = with reqId $ \reqId_ptr ->
-  ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+  ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr nullPtr 0 nullPtr nullPtr
 
 -- | Replies to failure vector request
 failureVectorReply :: HALink -> Cookie -> Fid -> NVec -> IO ()
