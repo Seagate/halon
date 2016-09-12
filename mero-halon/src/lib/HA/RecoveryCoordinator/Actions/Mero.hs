@@ -507,8 +507,9 @@ startMeroService host node = do
                   , srvRM  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
                   , M0.s_type srvRM == CST_RMS
                   ]
-    mconf <&> \(proc, _srvHA,srvRM) ->
+    mconf <&> \(proc, srvHA,srvRM) ->
       let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
+                                 (M0.fid srvHA)
                                  (M0.fid srvRM)
                                  kaFreq kaTimeout
                                  (MeroKernelConf uuid)

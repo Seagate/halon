@@ -156,7 +156,8 @@ typedef struct ha_state_callbacks {
 int ha_state_init( const char *local_rpc_endpoint
                  , const struct m0_fid *process_fid
                  , const struct m0_fid *profile_fid
-                 , const struct m0_fid *rm_fid
+                 , const struct m0_fid *ha_service_fid
+                 , const struct m0_fid *rm_service_fid
                  , ha_state_callbacks_t *cbs);
 
 // Finalizes the ha_state interface.

@@ -209,7 +209,8 @@ cbRefs = unsafePerformIO $ newIORef []
 initHAState :: RPCAddress
             -> Fid -- ^ Process Fid
             -> Fid -- ^ Profile Fid
-            -> Fid -- ^ RM Fid
+            -> Fid -- ^ HA Service Fid
+            -> Fid -- ^ RM Service Fid
             -> (HALink -> Word64 -> NVec -> IO ())
                -- ^ Called when a request to get the state of some objects is
                -- received.
@@ -248,7 +249,8 @@ initHAState :: RPCAddress
             -> (HALink -> IO ())
               -- ^ Process keepalive reply
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid rmFid ha_state_get ha_process_event_set
+initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
+            ha_state_get ha_process_event_set
             ha_service_event_set
             ha_be_error
             ha_state_set
@@ -308,8 +310,9 @@ initHAState (RPCAddress rpcAddr) procFid profFid rmFid ha_state_get ha_process_e
         )
       rc <- with procFid $ \procPtr ->
               with profFid $ \profPtr ->
-                with rmFid $ \rmPtr -> 
-                  ha_state_init cRPCAddr procPtr profPtr rmPtr pcbs
+                with haFid $ \haPtr ->
+                  with rmFid $ \rmPtr -> 
+                    ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where
     freeing p = peek p >>= \p' -> free p >> return p'
@@ -395,7 +398,7 @@ peekNote p = do
 data HAStateCallbacksV
 
 foreign import capi ha_state_init ::
-    CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
+    CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapGetCB ::
     (Ptr HALink -> Word64 -> Ptr NVec -> IO ())

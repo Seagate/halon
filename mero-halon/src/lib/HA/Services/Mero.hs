@@ -305,8 +305,9 @@ remotableDecl [ [d|
       profileFid = mcProfile conf
       processFid = mcProcess conf
       rmFid      = mcRM      conf
+      haFid      = mcHA      conf
       haAddr = RPC.rpcAddress $ mcHAAddress conf
-      withEp = Mero.Notification.withNI haAddr processFid profileFid rmFid
+      withEp = Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
 
       -- Kernel
       startKernel = liftIO $ do
@@ -319,7 +320,7 @@ remotableDecl [ [d|
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
       bootstrap = do
         traceM0d "DEBUG: Pre-initialize"
-        Mero.Notification.initialize haAddr processFid profileFid rmFid
+        Mero.Notification.initialize haAddr processFid profileFid haFid rmFid
         traceM0d "DEBUG: Post-initialize"
       teardown = do
         traceM0d "DEBUG: Pre-finalize"

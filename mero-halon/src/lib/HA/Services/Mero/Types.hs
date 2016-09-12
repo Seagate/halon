@@ -50,6 +50,7 @@ data MeroConf = MeroConf
        { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
        , mcProfile          :: Fid            -- ^ FID of the current profile
        , mcProcess          :: Fid            -- ^ Fid of the current process.
+       , mcHA               :: Fid            -- ^ Fid of the HA service.
        , mcRM               :: Fid            -- ^ Fid of the RM service.
        , mcKeepaliveFrequency :: Int
        -- ^ Frequency of keepalive requests in seconds.
@@ -63,10 +64,11 @@ instance Binary MeroConf
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile process rm kaf kat kernel) =
+  toJSON (MeroConf haAddress profile process ha rm kaf kat kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
            , "process"          .= process
+           , "ha"               .= ha
            , "rm"               .= rm
            , "keepalive_frequency" .= kaf
            , "keepalive_timeout" .= kat
@@ -206,7 +208,7 @@ relationDictMeroChanelServiceProcessControlChannel :: Dict (
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> pc <*> rm <*> kaf <*> kat <*> ker
+meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -223,11 +225,16 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> rm <*> kaf <*> kat <*> ker
           <> short 's'
           <> metavar "FID"
           <> summary "halon process Fid"
+    hf = option (maybe (fail "incorrect fid") return . strToFid)
+          $  long "rm"
+          <> short 'h'
+          <> metavar "FID"
+          <> summary "ha service Fid"
     rm = option (maybe (fail "incorrect fid") return . strToFid)
           $  long "rm"
           <> short 'r'
           <> metavar "FID"
-          <> summary "rm service process Fid"
+          <> summary "rm service Fid"
     kaf = intOption
           $ long "keepalive_frequency"
           <> short 'f'
