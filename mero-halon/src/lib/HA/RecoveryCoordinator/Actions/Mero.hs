@@ -278,6 +278,7 @@ isClusterStopped rg = null $
   , M0.getState node rg /= M0.NSFailed
     && M0.getState node rg /= M0.NSFailedUnrecoverable
   , not . psDown $ M0.getState p rg
+  , all (\srv -> M0.s_type srv /= CST_HA) $ G.connectedTo p M0.IsParentOf rg
   ]
   where
     psDown M0.PSOffline = True
