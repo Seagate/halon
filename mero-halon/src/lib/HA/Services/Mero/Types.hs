@@ -50,6 +50,7 @@ data MeroConf = MeroConf
        { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
        , mcProfile          :: Fid            -- ^ FID of the current profile
        , mcProcess          :: Fid            -- ^ Fid of the current process.
+       , mcRM               :: Fid            -- ^ Fid of the RM service.
        , mcKeepaliveFrequency :: Int
        -- ^ Frequency of keepalive requests in seconds.
        , mcKeepaliveTimeout :: Int
@@ -62,10 +63,11 @@ instance Binary MeroConf
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile process kaf kat kernel) =
+  toJSON (MeroConf haAddress profile process rm kaf kat kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
            , "process"          .= process
+           , "rm"               .= rm
            , "keepalive_frequency" .= kaf
            , "keepalive_timeout" .= kat
            , "kernel_config"    .= kernel
@@ -204,7 +206,7 @@ relationDictMeroChanelServiceProcessControlChannel :: Dict (
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> pc <*> kaf <*> kat <*> ker
+meroSchema = MeroConf <$> ha <*> pr <*> pc <*> rm <*> kaf <*> kat <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -221,6 +223,11 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> kaf <*> kat <*> ker
           <> short 's'
           <> metavar "FID"
           <> summary "halon process Fid"
+    rm = option (maybe (fail "incorrect fid") return . strToFid)
+          $  long "rm"
+          <> short 'r'
+          <> metavar "FID"
+          <> summary "rm service process Fid"
     kaf = intOption
           $ long "keepalive_frequency"
           <> short 'f'
