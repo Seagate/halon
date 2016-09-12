@@ -272,7 +272,9 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
              let disk = StorageDevice diskUUID
              locateStorageDeviceInEnclosure enc disk
              mhost <- findNodeHost (Node nid)
-             forM_ mhost $ \host -> locateHostInEnclosure host enc
+             forM_ mhost $ \host -> do
+               locateStorageDeviceOnHost host disk
+               locateHostInEnclosure host enc
              identifyStorageDevice disk [diidx, sn, path]
              selfMessage $ RuleDriveManagerDisk disk
        Just st -> selfMessage (RuleDriveManagerDisk st)
@@ -386,6 +388,10 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           diskUUID <- liftIO $ nextRandom
           let disk = StorageDevice diskUUID
           locateStorageDeviceInEnclosure enc disk
+          mhost <- findNodeHost (Node nid)
+          forM_ mhost $ \host -> do
+            locateStorageDeviceOnHost host disk
+            locateHostInEnclosure host enc
           identifyStorageDevice disk [serial, wwn, idx]
           return disk
 

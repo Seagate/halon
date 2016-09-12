@@ -415,16 +415,23 @@ lookupStorageDeviceInEnclosure enc ident = do
 lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM LoopState l [StorageDevice]
 lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 
+-- | Lookup 'StorageDevice' on a host if it was not found to a lookup
+-- on enclosure that host is on.
 lookupStorageDeviceOnHost :: Host
                           -> DeviceIdentifier
                           -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDeviceOnHost host ident = do
     rg <- getLocalGraph
-    return $ listToMaybe
-           [ device
-           | device <- G.connectedTo  host Has rg :: [StorageDevice]
-           , G.isConnected device Has ident rg :: Bool
-           ]
+    let ml = listToMaybe
+               [ device
+               | device <- G.connectedTo  host Has rg :: [StorageDevice]
+               , G.isConnected device Has ident rg :: Bool
+               ]
+    case ml of
+      Nothing -> case listToMaybe $ G.connectedFrom Has host rg of
+        Nothing -> return Nothing
+        Just enc -> lookupStorageDeviceInEnclosure enc ident
+      Just d  -> return $ Just d
 
 -- | Given a 'DeviceIdentifier', try to find the 'Enclosure' that the
 -- device with the identifier belongs to. Useful when SSPL is unable
