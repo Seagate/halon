@@ -15,7 +15,6 @@ struct m0_halon_interface* m0init_hi = NULL;
 int m0_init_wrapper () {
     const struct m0_build_info* bi = m0_build_info_get();
     int disable_compat_check = getenv("DISABLE_MERO_COMPAT_CHECK") == NULL;
-    int rc;
     if (0 != strcmp(bi->bi_git_rev_id, M0_VERSION_GIT_REV_ID)) {
       fprintf(stderr, "m0_init_wrapper: The loaded mero library (%s) "
                       "is not the expected one (%s)\n"
@@ -37,18 +36,13 @@ int m0_init_wrapper () {
         exit(1);
       }
     }
-    M0_ASSERT(m0init_hi == NULL);
-    m0init_hi = (struct m0_halon_interface*)calloc(1, sizeof(struct m0_halon_interface));
-    rc = m0_halon_interface_init(m0init_hi, M0_VERSION_GIT_REV_ID, M0_VERSION_BUILD_CONFIGURE_OPTS, disable_compat_check, NULL);
-    if (rc != 0) {
-	    free(m0init_hi);
-	    m0init_hi = NULL;
-    }
-    return rc;
+    return m0_halon_interface_init( &m0init_hi
+                                  , M0_VERSION_GIT_REV_ID
+                                  , M0_VERSION_BUILD_CONFIGURE_OPTS
+                                  , disable_compat_check
+                                  , NULL);
 }
 
 void m0_fini_wrapper() {
     m0_halon_interface_fini(m0init_hi);
-    free(m0init_hi);
-    m0init_hi = NULL;
 }
