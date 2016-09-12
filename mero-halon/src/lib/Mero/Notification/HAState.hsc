@@ -386,7 +386,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
   nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
-  let array = #{ptr struct m0_ha_msg_nvec, hmnv_vec} p
+  let array = #{ptr struct m0_ha_msg_nvec, hmnv_arr} p
   peekArray (fromIntegral nr) array
 
 data HAStateCallbacksV
@@ -472,7 +472,7 @@ notify (HALink hl) idx nvec =
     #{poke struct m0_ha_msg_nvec, hmnv_id_of_get} pnvec idx
     #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
         (fromIntegral $ length nvec :: Word64)
-    pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_vec} pnvec) nvec
+    pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_arr} pnvec) nvec
     ha_state_notify hl pnvec
 
 foreign import capi safe ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
