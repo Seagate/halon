@@ -83,14 +83,15 @@ mkAttachDisk getter onFailure onSuccess = do
     phaseLog "disk.fid" $ show $ M0.fid sdev
     mdisk <- lookupSDevDisk sdev
 
+    unlift <- mkUnliftProcess
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . first (show :: SomeException -> String)
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
-        void $ withSpielRC $ \sc m0 ->
-          m0asynchronously m0 next $ withRConfIO sc mp $ Spiel.deviceAttach sc (M0.fid d)
+        void $ withSpielIO $ \sc ->
+          withRConfIO sc mp $ try (Spiel.deviceAttach sc (M0.fid d)) >>= unlift . next
       Nothing -> do
         phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
@@ -137,6 +138,7 @@ mkDetachDisk getter onFailure onSuccess = do
     phaseLog "spiel"    $ "Detaching disk."
     phaseLog "disk.fid" $ show $ M0.fid sdev
     mdisk <- lookupSDevDisk sdev
+    unlift <- mkUnliftProcess
 
     next <- liftProcess $ do
       rc <- getSelfPid
@@ -144,8 +146,8 @@ mkDetachDisk getter onFailure onSuccess = do
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
-        void $ withSpielRC $ \sc m0 -> do
-          m0asynchronously m0 next $ withRConfIO sc mp $ Spiel.deviceDetach sc (M0.fid d)
+        void $ withSpielIO $ \sc ->
+          withRConfIO sc mp $ try (Spiel.deviceDetach sc (M0.fid d)) >>= unlift . next
       Nothing -> do
         phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")

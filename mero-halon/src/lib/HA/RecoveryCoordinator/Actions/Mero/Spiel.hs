@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Spiel
   , getSpielAddressRC
   , LiftRC
   , withSpielRC
+  , withSpielIO
   , withRConfIO
     -- * SNS operations
   , mkRepairStartOperation
@@ -116,11 +117,24 @@ withSpielRC f = withResourceGraphCache $ do
   rpca <- getRPCAddress
   try $ withM0RC $ \lift -> do
      (conn, sc) <- m0synchronously lift $ do
-       Just rpcm <- getRPCMachine
-       conn <- initHASession rpcm rpca
-       sc <- Mero.Spiel.start
-       return (conn, sc)
+        Just rpcm <- getRPCMachine
+        conn <- initHASession rpcm rpca
+        sc <- Mero.Spiel.start
+        return (conn, sc)
      f sc lift `sfinally`  m0asynchronously_ lift (Mero.Spiel.stop sc >> finiHASession conn)
+
+-- | Try to connect to spiel and run the 'IO' action in the 'SpielContext'.
+--
+-- All internal actions are run on m0 thread.
+withSpielIO :: (SpielContext -> IO ())
+            -> PhaseM LoopState l (Either SomeException ())
+withSpielIO f = withResourceGraphCache $ do
+  rpca <- getRPCAddress
+  try $ withM0RC $ flip m0asynchronously_ $ do
+    Just rpcm <- getRPCMachine
+    bracket ((,) <$> initHASession rpcm rpca <*> Mero.Spiel.start)
+            (\(conn, sc) -> Mero.Spiel.stop sc >> finiHASession conn)
+            $ f . snd
 
 -- | Try to start rconf sesion and run 'IO' action in the 'SpielContext'.
 -- This call is required for running spiel management commands.
@@ -154,12 +168,13 @@ mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
 mkGenericSNSOperation operation_name operation_reply operation_action pool = do
   phaseLog "spiel"    $ symbolVal' operation_name
   phaseLog "pool.fid" $ show (M0.fid pool)
+  unlift <- mkUnliftProcess
   next <- liftProcess $ do
     rc <- DP.getSelfPid
     return $ DP.usend rc . operation_reply pool
   mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
-  er <- withSpielRC $ \sc m0 ->
-          m0asynchronously m0 next $ withRConfIO sc mp $ operation_action sc pool
+  er <- withSpielIO $ \sc ->
+          withRConfIO sc mp $ try (operation_action sc pool) >>= unlift . next
   case er of
     Right () -> return ()
     Left e -> liftProcess $ next $ Left e

@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Core
     -- * Mero actions execution
     -- $execution-model
   , LiftRC
+  , mkUnliftProcess
     -- ** Action Runners
   , liftM0RC
   , withM0RC
@@ -195,6 +196,14 @@ withM0RC f = getStorageRC >>= \case
                Nothing -> do deleteStorageRC (Proxy :: Proxy M0Worker)
                              withM0RC f
                Just _  -> f (LiftRC w)
+
+
+-- | Create a highly unsafe function that can run process state in
+-- *any* IO, only different 'sends' are safe to be run in such thread.
+mkUnliftProcess :: PhaseM LoopState l (Process a -> IO a)
+mkUnliftProcess = do
+  lproc <- liftProcess $ DI.Process ask
+  return $ DI.runLocalProcess lproc
 
 -- | Handle that allow to lift 'IO' operations into 'PhaseM'. Actions will be
 -- running in mero thread associated with Recovery Coordinator.
