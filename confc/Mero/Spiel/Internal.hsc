@@ -20,9 +20,6 @@ import Mero.Conf.Fid ( Fid )
 import Mero.Conf.Context
 import Mero.Spiel.Context
 
-import Network.RPC.RPCLite
-  ( RPCMachine(..) )
-
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.String
@@ -32,11 +29,6 @@ import Foreign.Marshal.Error
   ( throwIf_ )
 import Foreign.Ptr
   ( Ptr )
-import Foreign.Storable
-
--- import qualified Language.C.Inline as C
-
-import System.IO.Unsafe (unsafePerformIO)
 
 #include "confc_helpers.h"
 #include "spiel/spiel.h"
