@@ -47,11 +47,6 @@ import System.IO.Unsafe (unsafePerformIO)
 -- | m0_reqh
 data {-# CTYPE "rpc/rpc_machine.h" "struct m0_reqh" #-} ReqHV
 
--- | Extract the request handler from RPC machine
-rm_reqh :: RPCMachine -> Ptr ReqHV
-rm_reqh (RPCMachine rpcmach) = unsafePerformIO $
-  #{peek struct m0_rpc_machine, rm_reqh} rpcmach
-
 -- | m0_spiel
 data {-# CTYPE "spiel/spiel.h" "struct m0_spiel" #-} SpielContextV
 
@@ -65,7 +60,6 @@ m0_spiel_size = #{size struct m0_spiel}
 foreign import capi "confc_helpers.h spiel_init"
   c_spiel_init :: Ptr (Ptr SpielContextV)
                -> Ptr (Ptr ReqHServiceV)
-               -> Ptr ReqHV
                -> IO CInt
 
 foreign import capi "confc_helpers.h spiel_fini"

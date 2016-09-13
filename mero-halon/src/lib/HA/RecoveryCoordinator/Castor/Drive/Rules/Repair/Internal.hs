@@ -6,39 +6,15 @@
 -- A helper module for repair process
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal where
 
-import           Control.Exception (SomeException)
 import           Data.List (nub)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
-
--- | Just like 'repairedNotificationMessage', dispatch the appropriate
--- status checking routine depending on whether we're rebalancing or
--- repairing.
-repairStatus :: M0.PoolRepairType -> M0.Pool
-             -> PhaseM LoopState l (Either SomeException [Spiel.SnsStatus])
-repairStatus M0.Rebalance = statusOfRebalanceOperation
-repairStatus M0.Failure = statusOfRepairOperation
-
--- | Dispatch appropriate continue call depending on repair type
--- happening.
-continueRepair :: M0.PoolRepairType -> M0.Pool
-               -> PhaseM LoopState l (Maybe SomeException)
-continueRepair M0.Rebalance pool = pure Nothing <* promulgateRC (PoolRebalanceRequest pool)
-continueRepair M0.Failure pool = continueRepairOperation pool
-
--- | Quiesces the current repair.
--- TODO This is a bad name, since it aborts rebalance.
-quiesceRepair :: M0.PoolRepairType -> M0.Pool
-              -> PhaseM LoopState l (Maybe SomeException)
-quiesceRepair M0.Rebalance = abortRebalanceOperation
-quiesceRepair M0.Failure = quiesceRepairOperation
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or
@@ -79,37 +55,34 @@ failedNotificationIOS eps rg =
       , CST_IOS <- [M0.s_type s]
       , any (`elem` M0.s_endpoints s) eps ]
 
--- | Check if we're able to use the IOS we know about for
--- repair/rebalance. Checks that all IOS are
--- 'Spiel.M0_SNS_CM_STATUS_IDLE' and the parent process is
--- 'M0.PSOnline'.
-readyToUseIOS :: M0.Pool -> PhaseM LoopState l Bool
-readyToUseIOS pool = allIOSOnline >>= \case
-  False -> do
-    phaseLog "warn" $ "Some IOS not online, not starting repair"
-    return False
-  True -> statusOfRepairOperation pool >>= \case
-    Left err -> do
-      phaseLog "warn" $ "Can't use IOS, IOS status returned " ++ show err
-      return False
-    Right sts
-      | all iosReady sts -> return True
-      | otherwise -> do
-          phaseLog "warn" $ "Can't use IOS, not all IOS are ready " ++ show sts
-          return False
-  where
-    allIOSOnline = do
-      svs <- getIOServices pool
-      rg <- getLocalGraph
-      let sts = [ M0.getState p rg
-                | s <- svs
-                , p :: M0.Process <- G.connectedFrom M0.IsParentOf s rg
-                ]
-      return $ all (== M0.PSOnline) sts
+-- | Check if IOS ready to run new task.
+--
+--  * [IDLE] - SNS is not doing any job
+--  * [FAILED] - SNS failed previous job but cleared up and ready
+iosReady :: Spiel.SnsCmStatus -> Bool
+iosReady Spiel.M0_SNS_CM_STATUS_IDLE   = True
+iosReady Spiel.M0_SNS_CM_STATUS_FAILED = True
+iosReady _                             = False
 
-    iosReady (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_IDLE _) = True
-    iosReady _                                                 = False
 
+-- | Check if IOS paused SNS operation.
+--
+--  * [IDLE] - SNS is not doing any job
+--  * [FAILED] - SNS failed previous job but cleared up and ready
+iosPaused :: Spiel.SnsCmStatus -> Bool
+iosPaused Spiel.M0_SNS_CM_STATUS_PAUSED = True
+iosPaused _                             = False
+
+-- | Check if all IOS are alive according to halon.
+allIOSOnline :: M0.Pool -> PhaseM LoopState l Bool
+allIOSOnline pool = do
+  svs <- getIOServices pool
+  rg <- getLocalGraph
+  let sts = [ M0.getState p rg
+            | s <- svs
+            , p :: M0.Process <- G.connectedFrom M0.IsParentOf s rg
+            ]
+  return $ all (== M0.PSOnline) sts
 
 -- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
 --

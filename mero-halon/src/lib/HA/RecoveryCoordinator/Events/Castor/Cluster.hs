@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , PoolRebalanceRequest(..)
   , PoolRebalanceStarted(..)
   , PoolRepairRequest(..)
-  , PoolRepairStarted(..)
+  , PoolRepairStartResult(..)
   , ClusterResetRequest(..)
     -- ** Node
   , StartCastorNodeRequest(..)
@@ -93,8 +93,12 @@ newtype PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
   deriving (Eq, Show, Ord, Binary, Typeable, Generic)
 
-newtype PoolRepairStarted = PoolRepairStarted M0.Pool
-  deriving (Show, Eq, Ord, Binary, Typeable, Generic)
+data PoolRepairStartResult
+  = PoolRepairStarted M0.Pool
+  | PoolRepairFailedToStart M0.Pool String
+  deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary PoolRepairStartResult
 
 -- | Internal event sent when the cluster changes state.
 data ClusterStateChange =
