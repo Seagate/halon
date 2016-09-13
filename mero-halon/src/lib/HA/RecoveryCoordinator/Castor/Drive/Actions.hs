@@ -47,8 +47,8 @@ instance Binary SpielDeviceDetached
 handleSNSReply :: Either SomeException () -> Either String ()
 handleSNSReply (Right x) = Right x
 handleSNSReply (Left se) = case fromException se of
-  Just t | isAlreadyExistsError t -> Right () -- ^ Drive was already attached - fine
-         | isAlreadyInUseError  t -> Right () -- ^ Drive was already attached - fine
+  Just t | isAlreadyExistsError t -> Right () -- Drive was already attached - fine
+         | isAlreadyInUseError  t -> Right () -- Drive was already attached - fine
   _                               -> Left (show se)
 
 
