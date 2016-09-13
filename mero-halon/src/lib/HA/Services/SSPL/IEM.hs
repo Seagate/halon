@@ -39,6 +39,7 @@ module HA.Services.SSPL.IEM
   , logMeroRebalanceContinue
   , logMeroRebalanceAbort
   , logMeroClientFailed
+  , logMeroBEError
   ) where
 
 import Data.Aeson (ToJSON)
@@ -116,7 +117,6 @@ iemToBytes = Text.encodeUtf8  . iemToText
 halonId :: Text
 halonId = "038"
 
-
 class ToMetadata a where
   toMetadata :: a -> Text
   default toMetadata :: ToJSON a => a -> Text
@@ -180,6 +180,7 @@ type MeroRebalanceQuisise  = Log Mero  "022" "Rebalance quisise"    ()
 type MeroRebalanceContinue = Log Mero  "023" "Rebalance continue"   ()
 type MeroRebalanceAbort    = Log Mero  "024" "Rebalance abort"      ()
 type MeroClientFailed      = Log Mero  "025" "Mero client failed" Text
+type MeroBEError           = Log Mero  "026" "Mero BE error" Text
 
 type IECList =
   '[ HalonDiskStatus
@@ -196,8 +197,8 @@ type IECList =
    , MeroRebalanceContinue
    , MeroRebalanceAbort
    , MeroClientFailed
+   , MeroBEError
    ]
-
 
 logHalonDiskStatus       :: Generator HalonDiskStatus
 logRaidArrayFailure      :: Generator RaidArrayFailure
@@ -213,6 +214,7 @@ logMeroRebalanceQuisise  :: Generator MeroRebalanceQuisise
 logMeroRebalanceContinue :: Generator MeroRebalanceContinue
 logMeroRebalanceAbort    :: Generator MeroRebalanceAbort
 logMeroClientFailed      :: Generator MeroClientFailed
+logMeroBEError           :: Generator MeroBEError
 (logHalonDiskStatus
  ,(logRaidArrayFailure
  ,(logSSPLUnknownMessage
@@ -226,4 +228,6 @@ logMeroClientFailed      :: Generator MeroClientFailed
  ,(logMeroRebalanceQuisise
  ,(logMeroRebalanceContinue
  ,(logMeroRebalanceAbort
- ,(logMeroClientFailed,())))))))))))))) = mkCommands (Proxy :: Proxy IECList)
+ ,(logMeroClientFailed
+ ,(logMeroBEError
+ ,()))))))))))))))) = mkCommands (Proxy :: Proxy IECList)

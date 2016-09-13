@@ -26,113 +26,121 @@ typedef struct ha_msg_metadata {
 /// Callbacks for handling requests made with m0_ha_state_get and m0_ha_state_set.
 typedef struct ha_state_callbacks {
 
-	/**
-	 * Called when a request to get the state of some objects is received.
-	 * This is expected to happen when mero calls m0_ha_state_get(...).
-	 *
-	 * When the requested state is available, ha_state_notify must be called
-	 * on the given link by passing the same note parameter and 0.
-	 * */
-	void (*ha_state_get)(struct m0_ha_link *hl, uint64_t idx, const struct m0_ha_msg_nvec *note);
+  /**
+   * Called when a request to get the state of some objects is received.
+   * This is expected to happen when mero calls m0_ha_state_get(...).
+   *
+   * When the requested state is available, ha_state_notify must be called
+   * on the given link by passing the same note parameter and 0.
+   * */
+  void (*ha_state_get)(struct m0_ha_link *hl, uint64_t idx, const struct m0_ha_msg_nvec *note);
 
 
-	/**
-	 * Called when m0_conf_ha_process event is received.
-         *
-         * * hl   - corresponding ha_link
-         * * meta - metadata associated with connection
-         * * proc - process event
-         *
-	 * */
-	void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
+  /**
+   * Called when m0_conf_ha_process event is received.
+   *
+   * * hl   - corresponding ha_link
+   * * meta - metadata associated with connection
+   * * proc - process event
+   *
+   * */
+  void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
 
-	/**
-	* Called when m0_conf_ha_service event is received.
-	*
-	* * meta - metadata associated with connection
-	* * ss - service event
-	*
-	* */
-	void (*ha_service_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_service *ss);
+  /**
+  * Called when m0_conf_ha_service event is received.
+  *
+  * * meta - metadata associated with connection
+  * * ss - service event
+  *
+  * */
+  void (*ha_service_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_service *ss);
 
-	/**
-	 * Called when a request to update the state of some objects is received.
-	 * This is expected to happen when mero calls m0_ha_state_set(...).
-	 */
-	void (*ha_state_set)(const struct m0_ha_msg_nvec *note);
+  /**
+  * Called when m0_be_io_err event is received.
+  *
+  * * meta - metadata associated with connection
+  * * bee - Error from BE
+  * */
+  void (*ha_be_error)(ha_msg_metadata_t *meta, const struct m0_be_io_err *bee);
 
-	/**
-	 * Called when a request to read confd and rm service state is received.
-         *
-         *  * req_id - id of the request, this Id should be used in order to link
-         *      entrypoint request to the hastate provided in the
-         *      ha_state_link_connected request.
-         *  * process_fid - Fid of the remote process that is requesting
-         *      entrypoint.
-         *  * profile_fid - Fid of the remote prccess's profile.
-         *
-         * For each incoming request it's guarantees that either
-         * ha_state_link_connected or ha_state_link_reused will be called, so
-         * request id is used for making a connection between those callbacks
-         * and entrypoint request.
-	 */
-	void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
+  /**
+   * Called when a request to update the state of some objects is received.
+   * This is expected to happen when mero calls m0_ha_state_set(...).
+   */
+  void (*ha_state_set)(const struct m0_ha_msg_nvec *note);
+
+  /**
+   * Called when a request to read confd and rm service state is received.
+   *
+   *  * req_id - id of the request, this Id should be used in order to link
+   *      entrypoint request to the hastate provided in the
+   *      ha_state_link_connected request.
+   *  * process_fid - Fid of the remote process that is requesting
+   *      entrypoint.
+   *  * profile_fid - Fid of the remote prccess's profile.
+   *
+   * For each incoming request it's guarantees that either
+   * ha_state_link_connected or ha_state_link_reused will be called, so
+   * request id is used for making a connection between those callbacks
+   * and entrypoint request.
+   */
+  void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
                                    , const struct m0_fid *process_fid
                                    , const struct m0_fid *profile_fid
                                    );
 
-	/**
-	 * Called when a new link is connected. The link is alive until
-	 * ha_state_disconnect(..) is called.
-         *   * req_id - id of the entrypoint request for this link.
-         *   * hl     - created link.
-	 */
-	void (*ha_state_link_connected)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
+  /**
+   * Called when a new link is connected. The link is alive until
+   * ha_state_disconnect(..) is called.
+   *   * req_id - id of the entrypoint request for this link.
+   *   * hl     - created link.
+   */
+  void (*ha_state_link_connected)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
 
-	/**
-	 * Called after an existing link requested entrypoint info. The link is alive until
-	 * ha_state_disconnect(..) is called.
-         *   * req_id - id of the entrypoint request for this link.
-         *   * hl     - created link.
-	 */
-	void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
+  /**
+   * Called after an existing link requested entrypoint info. The link is alive until
+   * ha_state_disconnect(..) is called.
+   *   * req_id - id of the entrypoint request for this link.
+   *   * hl     - created link.
+   */
+  void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
 
-	/**
-	 * The link is no longer needed by the remote peer.
-	 * It is safe to call ha_state_disconnect(..) when all ha_state_notify
-	 * calls using the link have completed.
-	 */
-	void (*ha_state_link_disconnecting)(struct m0_ha_link *hl);
+  /**
+   * The link is no longer needed by the remote peer.
+   * It is safe to call ha_state_disconnect(..) when all ha_state_notify
+   * calls using the link have completed.
+   */
+  void (*ha_state_link_disconnecting)(struct m0_ha_link *hl);
 
-	/**
-	 * The link was finally closed.
-	 */
-	void (*ha_state_link_disconnected)(struct m0_ha_link *hl);
+  /**
+   * The link was finally closed.
+   */
+  void (*ha_state_link_disconnected)(struct m0_ha_link *hl);
 
-	/**
-	 * The message on the given link was delivered to the endpoint
-	 */
-	void (*ha_state_is_delivered)(struct m0_ha_link *hl, uint64_t tag);
+  /**
+   * The message on the given link was delivered to the endpoint
+   */
+  void (*ha_state_is_delivered)(struct m0_ha_link *hl, uint64_t tag);
 
-	/**
-	 * The message on the given link will never be delivered to the
-         * endpoint.
-	 */
-	void (*ha_state_is_cancelled)(struct m0_ha_link *hl, uint64_t tag);
+  /**
+   * The message on the given link will never be delivered to the
+   * endpoint.
+   */
+  void (*ha_state_is_cancelled)(struct m0_ha_link *hl, uint64_t tag);
 
-        /**
-         * Request failure vector from halon
-         *
-         *   * hl     - incommit link.
-         *   * cookie - cookie used for identifying request.
-         *   * fid    - fid of the interesting pool object.
-	 */
-	void (*ha_state_failure_vec)(struct m0_ha_link *hl, const struct m0_cookie *cookie, const struct m0_fid* fid);
+  /**
+   * Request failure vector from halon
+   *
+   *   * hl     - incommit link.
+   *   * cookie - cookie used for identifying request.
+   *   * fid    - fid of the interesting pool object.
+   */
+  void (*ha_state_failure_vec)(struct m0_ha_link *hl, const struct m0_cookie *cookie, const struct m0_fid* fid);
 
-	/**
-	 * Keepalive reply came to halon's keepalive request.
-	 */
-	void (*ha_process_keepalive_reply)(struct m0_ha_link *hl);
+  /**
+   * Keepalive reply came to halon's keepalive request.
+   */
+  void (*ha_process_keepalive_reply)(struct m0_ha_link *hl);
 
 } ha_state_callbacks_t;
 

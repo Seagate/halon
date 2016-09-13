@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
@@ -86,6 +87,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Node
   , eventNewHalonNode
   , eventKernelStarted
   , eventKernelFailed
+  , eventBEError
     -- ** Requests
     -- $requests
   , requestStartHalonM0d
@@ -126,15 +128,15 @@ import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Actions (meroChannel)
+import           HA.Services.SSPL.CEP ( sendInterestingEvent )
+import           HA.Services.SSPL.IEM ( logMeroBEError )
+import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import qualified HA.RecoveryCoordinator.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Events.Service as Service
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
-import           Mero.ConfC (Fid, ServiceType(CST_HA))
 
-import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
-import           Control.Distributed.Process.Closure
-import           Control.Monad (when)
-import           Control.Monad.Trans.Maybe
+import           Mero.ConfC (Fid, ServiceType(CST_HA))
+import           Mero.Notification.HAState (BEIoErr, HAMsgMeta(..))
 
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -142,22 +144,33 @@ import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
+
+import           Control.Applicative
+import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
+import           Control.Distributed.Process.Closure
+import           Control.Lens
+import           Control.Monad (void, guard, join, when)
+import           Control.Monad.Trans.Maybe
+
+import qualified Data.Aeson as Aeson
+import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (nub)
-import           Data.Maybe (listToMaybe, isNothing, isJust)
-import           Control.Applicative
-import           Control.Lens
-import           Control.Monad (void, guard, join)
+import           Data.Maybe (listToMaybe, isNothing, isJust, mapMaybe)
+import           Data.Monoid ((<>))
+import qualified Data.Text as T
+import qualified Data.Text.Lazy.Encoding as TL
+import qualified Data.Text.Lazy as TL
+import           Data.Typeable
+import           Data.Vinyl
+
+import           GHC.Generics
+
+import           Network.CEP
 
 import           System.Posix.SysInfo
 
-import Network.CEP
-import Data.Binary (Binary)
-import Data.Typeable
-import Data.Maybe (mapMaybe)
-import           Data.Vinyl
 import           Text.Printf
-import GHC.Generics
 
 -- | All rules related to node.
 -- Expected to be used in RecoveryCoordinator code.
@@ -176,6 +189,7 @@ rules = sequence_
   , eventNewHalonNode
   , eventKernelStarted
   , eventKernelFailed
+  , eventBEError
   ]
 
 -- | Timeout to wait for Mero processes to start.
@@ -248,6 +262,34 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
 
+-- | Handle error being thrown from Mero BE. This typically indicates something
+--   like a RAID failure, but there's nothing we can do about it. It indicates
+--   an unrecoverable failure; we need to mark the node as failed and send an
+--   appropriate IEM.
+eventBEError :: Definitions LoopState ()
+eventBEError = defineSimpleTask "castor::node::event::be-error"
+  $ \(meta, beioerr :: BEIoErr) -> do
+    lookupConfObjByFid (_hm_source_process meta) >>= \case
+      Nothing -> do
+        phaseLog "warning" $ "Unknown source process."
+        phaseLog "metadata" $ show meta
+      Just (sendingProcess :: M0.Process) -> do
+        mnode <- listToMaybe . G.connectedFrom M0.IsParentOf sendingProcess
+                <$> getLocalGraph
+        case mnode of
+          Just (node :: M0.Node) -> do
+              -- Log an IEM about this error
+              sendInterestingEvent . InterestingEventMessage $ logMeroBEError
+                 ( "{ 'metadata':" <> code meta
+                <> ", 'beError':" <> code beioerr
+                <> "}" )
+              applyStateChanges [stateSet node M0.NSFailed]
+            where
+              code :: Aeson.ToJSON a => a -> T.Text
+              code = TL.toStrict . TL.decodeUtf8 . Aeson.encode
+          Nothing -> do
+            phaseLog "error" $ "No node found for source process."
+            phaseLog "metadata" $ show meta
 
 -------------------------------------------------------------------------------
 -- Requests handling

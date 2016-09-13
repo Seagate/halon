@@ -63,6 +63,10 @@ void msg_received_cb ( struct m0_halon_interface *hi
         ha_state_cbs.ha_service_event_set ( get_metadata(msg)
                                           , &msg->hm_data.u.hed_event_service);
         break;
+      case M0_HA_MSG_BE_IO_ERR:
+        ha_state_cbs.ha_be_error( get_metadata(msg)
+                                , &msg->hm_data.u.hed_be_io_err);
+        break;
       case M0_HA_MSG_FAILURE_VEC_REQ:
         ha_state_cbs.ha_state_failure_vec( hl
                                          , &msg->hm_data.u.hed_fvec_req.mfq_cookie

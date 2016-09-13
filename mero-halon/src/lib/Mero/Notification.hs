@@ -425,6 +425,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
                             ha_state_get
                             (ha_process_event_set niRef)
                             ha_service_event_set
+                            ha_be_error
                             (ha_state_set niRef)
                             (ha_entrypoint niRef)
                             (ha_connected niRef)
@@ -476,6 +477,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
 
     ha_service_event_set :: HAMsgMeta -> ServiceEvent -> IO ()
     ha_service_event_set m e = void . CH.forkProcess lnode $ promulgateWait (m, e)
+
+    ha_be_error :: HAMsgMeta -> BEIoErr -> IO ()
+    ha_be_error m e = void . CH.forkProcess lnode $ promulgateWait (m, e)
 
     ha_state_set :: NIRef -> NVec -> IO ()
     ha_state_set _ nvec = atomically $ writeTChan notificationChannel nvec

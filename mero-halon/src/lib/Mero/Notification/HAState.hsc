@@ -37,6 +37,7 @@ module Mero.Notification.HAState
   , ProcessType(..)
   , ServiceEvent(..)
   , ServiceEventType(..)
+  , BEIoErr(..)
   ) where
 
 import HA.Resources.Mero.Note
@@ -47,6 +48,8 @@ import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
 import Control.Monad          ( liftM2, liftM3, liftM4, void )
 import Control.Monad.Catch    ( catch )
+
+import Data.Aeson             ( ToJSON )
 import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
@@ -54,7 +57,7 @@ import Data.Hashable          ( Hashable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
-import Data.Word              ( Word32, Word64 )
+import Data.Word              ( Word8, Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
 import Foreign.Marshal.Alloc  ( allocaBytesAligned, free , alloca)
@@ -69,6 +72,8 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #include "hastate.h"
 #include "conf/obj.h"
 #include "ha/msg.h"
+#include "be/ha.h"
+#include "stob/io.h"
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
@@ -82,6 +87,7 @@ data HAMsgMeta = HAMsgMeta
 
 instance Binary HAMsgMeta
 instance Hashable HAMsgMeta
+instance ToJSON HAMsgMeta
 
 data ProcessEvent = ProcessEvent
   { _chp_event :: ProcessEventType
@@ -131,6 +137,42 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 instance Binary ServiceEventType
 instance Hashable ServiceEventType
 
+data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
+  BELocation =
+      BE_LOC_NONE
+    | BE_LOC_LOG
+    | BE_LOC_SEGMENT_1
+    | BE_LOC_SEGMENT_2
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary BELocation
+instance Hashable BELocation
+instance ToJSON BELocation
+
+data {-# CTYPE "stob/io.h" "struct m0_stob_io_opcode" #-}
+  StobIoOpcode =
+      SIO_INVALID
+    | SIO_READ
+    | SIO_WRITE
+    | SIO_BARRIER
+    | SIO_SYNC
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary StobIoOpcode
+instance Hashable StobIoOpcode
+instance ToJSON StobIoOpcode
+
+data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
+  BEIoErr = BEIoErr {
+    _ber_errcode :: Int
+  , _ber_location :: BELocation
+  , _ber_io_opcode :: StobIoOpcode
+  } deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary BEIoErr
+instance Hashable BEIoErr
+instance ToJSON BEIoErr
+
 -- | Notes telling the state of a given configuration object
 data Note = Note
     { no_id :: Fid
@@ -177,6 +219,8 @@ initHAState :: RPCAddress
                -- ^ Called when process event notification is received
             -> (HAMsgMeta -> ServiceEvent -> IO ())
                -- ^ Called when service event notification is received
+            -> (HAMsgMeta -> BEIoErr -> IO ())
+               -- ^ Called when error is thrown from metadata BE.
             -> (NVec -> IO ())
                -- ^ Called when a request to update the state of some objects is
                -- received.
@@ -205,6 +249,7 @@ initHAState :: RPCAddress
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
             ha_service_event_set
+            ha_be_error
             ha_state_set
             ha_state_entry
             ha_state_link_connected ha_state_link_reused
@@ -217,6 +262,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       wget <- wrapGetCB
       wpset <- wrapSetProcessCB
       wsset <- wrapSetServiceCB
+      wbeerror <- wrapBEErrorCB
       wset <- wrapSetCB
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
@@ -230,6 +276,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
+      #{poke ha_state_callbacks_t, ha_be_error} pcbs wbeerror
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
@@ -246,6 +293,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
         . (SomeFunPtr wsset:)
+        . (SomeFunPtr wbeerror:)
         . (SomeFunPtr wset:)
         . (SomeFunPtr wentry:)
         . (SomeFunPtr wconnected:)
@@ -279,6 +327,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
       (freeing m' >>= \m -> peek se >>= ha_service_event_set m)
       $ \e -> hPutStrLn stderr $
                 "initHAState.wrapSetServiceCB: " ++ show (e :: SomeException)
+
+    wrapBEErrorCB = cwrapBEErrorCB $ \m' se -> catch
+      (freeing m' >>= \m -> peek se >>= ha_be_error m)
+      $ \e -> hPutStrLn stderr $
+                "initHAState.wrapBEErrorCB: " ++ show (e :: SomeException)
 
     wrapSetCB = cwrapSetCB $ \note -> catch
         (peekNote note >>= ha_state_set)
@@ -352,6 +405,10 @@ foreign import ccall "wrapper" cwrapProcessSetCB ::
 foreign import ccall "wrapper" cwrapServiceSetCB ::
                 (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ())
   -> IO (FunPtr (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ()))
+
+foreign import ccall "wrapper" cwrapBEErrorCB ::
+                (Ptr HAMsgMeta -> Ptr BEIoErr -> IO ())
+  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr BEIoErr -> IO ()))
 
 foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
                                           -> IO (FunPtr (Ptr NVec -> IO ()))
@@ -535,6 +592,46 @@ instance Enum ServiceEventType where
   fromEnum TAG_M0_CONF_HA_SERVICE_STOPPED = #{const M0_CONF_HA_SERVICE_STOPPED}
   fromEnum TAG_M0_CONF_HA_SERVICE_FAILED = #{const M0_CONF_HA_SERVICE_FAILED}
 
+instance Enum BELocation where
+  toEnum #{const M0_BE_LOC_NONE} = BE_LOC_NONE
+  toEnum #{const M0_BE_LOC_LOG} = BE_LOC_LOG
+  toEnum #{const M0_BE_LOC_SEGMENT_1} = BE_LOC_SEGMENT_1
+  toEnum #{const M0_BE_LOC_SEGMENT_2} = BE_LOC_SEGMENT_2
+  toEnum i = error $ "BELocation toEnum failed with " ++ show i
+
+  fromEnum BE_LOC_NONE = #{const M0_BE_LOC_NONE}
+  fromEnum BE_LOC_LOG = #{const M0_BE_LOC_LOG}
+  fromEnum BE_LOC_SEGMENT_1 = #{const M0_BE_LOC_SEGMENT_1}
+  fromEnum BE_LOC_SEGMENT_2 = #{const M0_BE_LOC_SEGMENT_2}
+
+instance Enum StobIoOpcode where
+  toEnum #{const SIO_INVALID} = SIO_INVALID
+  toEnum #{const SIO_READ} = SIO_READ
+  toEnum #{const SIO_WRITE} = SIO_WRITE
+  toEnum #{const SIO_BARRIER} = SIO_BARRIER
+  toEnum #{const SIO_SYNC} = SIO_SYNC
+  toEnum i = error $ "StobIoOpcode toEnum failed with " ++ show i
+
+  fromEnum SIO_INVALID = #{const SIO_INVALID}
+  fromEnum SIO_READ = #{const SIO_READ}
+  fromEnum SIO_WRITE = #{const SIO_WRITE}
+  fromEnum SIO_BARRIER = #{const SIO_BARRIER}
+  fromEnum SIO_SYNC = #{const SIO_SYNC}
+
+instance Storable BEIoErr where
+  sizeOf _ = #{size struct m0_be_io_err}
+  alignment _ = #{alignment struct m0_be_io_err}
+
+  peek p = liftM3 BEIoErr
+      (#{peek struct m0_be_io_err, ber_errcode} p)
+      (w8ToEnum <$> (#{peek struct m0_be_io_err, ber_location} p))
+      (w8ToEnum <$> (#{peek struct m0_be_io_err, ber_io_opcode} p))
+
+  poke p (BEIoErr err loc op) = do
+      #{poke struct m0_be_io_err, ber_errcode} p err
+      #{poke struct m0_be_io_err, ber_location} p (enumToW8 loc)
+      #{poke struct m0_be_io_err, ber_io_opcode} p (enumToW8 op)
+
 instance Storable HAMsgMeta where
   sizeOf _ = #{size ha_msg_metadata_t}
   alignment _ = #{alignment ha_msg_metadata_t}
@@ -575,6 +672,12 @@ instance Storable ServiceEvent where
   poke p (ServiceEvent ev et) = do
       #{poke struct m0_conf_ha_service, chs_event} p (enumToW64 ev)
       #{poke struct m0_conf_ha_service, chs_type} p (enumToW64 et)
+
+enumToW8 :: Enum a => a -> Word8
+enumToW8 = fromIntegral . fromEnum
+
+w8ToEnum :: Enum a => Word8 -> a
+w8ToEnum = toEnum . fromIntegral
 
 enumToW64 :: Enum a => a -> Word64
 enumToW64 = fromIntegral . fromEnum
