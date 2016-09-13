@@ -101,8 +101,8 @@ test = testCase "NodeDeath" $
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc
                      ++ " service dummy start -t " ++ m0loc)
-      expectLog [nid1] (isInfixOf "Hello World!")
       expectLog [nid1] (isInfixOf dummyStartedLine)
+      expectLog [nid1] (isInfixOf "Hello World!")
 
       say "Killing satellite ..."
       systemThere [m1] "pkill halond; true"

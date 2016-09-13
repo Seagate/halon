@@ -167,4 +167,6 @@ ruleNodeMonitorNotification = defineSimple "halon::rc::node-monitor-notification
 -- | When process did spawn we run all interested subscribers.
 ruleDidSpawn :: Definitions LoopState ()
 ruleDidSpawn = defineSimple "halon::rc::did-spawn" $
-  \(DidSpawn ref _) -> runSpawnCallback ref
+  \(DidSpawn ref _) -> do
+     phaseLog "ref" $ show ref
+     runSpawnCallback ref
