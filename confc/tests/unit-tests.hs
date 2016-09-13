@@ -18,12 +18,11 @@ C.include "lib/bitmap.h"
 
 main :: IO ()
 main = do
-  setNodeUUID Nothing
   withM0 $ defaultMain tests
 
 tests :: TestTree
 tests = testGroup "ut"
-  [ testGroup "bitmap" 
+  [ testGroup "bitmap"
       [ testCase "peek-poke == id" testPeekPoke
       , testCase "withBitmap works" testWithBitmap
       ]
@@ -77,4 +76,4 @@ testWithBitmap = withBitmap (bitmapFromArray [True, False]) $ \bm_ptr -> do
           return ret;
         }|]
   assertEqual "Bitmap data is correct" 3 i
-   
+
