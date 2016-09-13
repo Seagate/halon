@@ -170,7 +170,6 @@ Library
   if flag(mero)
       c-sources:       src/lib/Version/Read.c
       Exposed-Modules: Mero.Epoch
-                       Mero.Environment
                        Mero.M0Worker
                        Mero.Notification
                        Mero.Notification.HAState

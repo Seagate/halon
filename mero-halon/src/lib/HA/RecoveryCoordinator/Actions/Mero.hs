@@ -278,6 +278,7 @@ isClusterStopped rg = null $
   , M0.getState node rg /= M0.NSFailed
     && M0.getState node rg /= M0.NSFailedUnrecoverable
   , not . psDown $ M0.getState p rg
+  , all (\srv -> M0.s_type srv /= CST_HA) $ G.connectedTo p M0.IsParentOf rg
   ]
   where
     psDown M0.PSOffline = True
@@ -499,16 +500,22 @@ startMeroService host node = do
     haAddr <- mHaAddr
     uuid <- listToMaybe $ G.connectedTo host Has rg
     let mconf = listToMaybe
-                  [ conf
+                  [ (proc, srvHA, srvRM)
                   | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
                   , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-                  , srv  :: M0.Service <- G.connectedTo proc   M0.IsParentOf rg
-                  , M0.s_type srv  == CST_HA
-                  , let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
-                                               kaFreq kaTimeout
-                                               (MeroKernelConf uuid)
+                  , srvHA  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                  , M0.s_type srvHA  == CST_HA
+                  , srvRM  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                  , M0.s_type srvRM == CST_RMS
                   ]
-    (\conf -> encodeP $ ServiceStartRequest Start node m0d conf []) <$> mconf
+    mconf <&> \(proc, srvHA,srvRM) ->
+      let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
+                                 (M0.fid srvHA)
+                                 (M0.fid srvRM)
+                                 kaFreq kaTimeout
+                                 (MeroKernelConf uuid)
+      in encodeP $ ServiceStartRequest Start node m0d conf []
+
 
 -- | It may happen that a node reboots (either through halon or
 -- through external means) during cluster's lifetime. The below

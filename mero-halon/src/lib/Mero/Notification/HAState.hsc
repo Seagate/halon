@@ -209,6 +209,8 @@ cbRefs = unsafePerformIO $ newIORef []
 initHAState :: RPCAddress
             -> Fid -- ^ Process Fid
             -> Fid -- ^ Profile Fid
+            -> Fid -- ^ HA Service Fid
+            -> Fid -- ^ RM Service Fid
             -> (HALink -> Word64 -> NVec -> IO ())
                -- ^ Called when a request to get the state of some objects is
                -- received.
@@ -247,7 +249,8 @@ initHAState :: RPCAddress
             -> (HALink -> IO ())
               -- ^ Process keepalive reply
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_set
+initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
+            ha_state_get ha_process_event_set
             ha_service_event_set
             ha_be_error
             ha_state_set
@@ -305,8 +308,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
         . (SomeFunPtr wfailure:)
         . (SomeFunPtr wkeepaliverep:)
         )
-      rc <- with procFid $ \procPtr -> with profFid $ \profPtr ->
-              ha_state_init cRPCAddr procPtr profPtr pcbs
+      rc <- with procFid $ \procPtr ->
+              with profFid $ \profPtr ->
+                with haFid $ \haPtr ->
+                  with rmFid $ \rmPtr -> 
+                    ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where
     freeing p = peek p >>= \p' -> free p >> return p'
@@ -386,13 +392,13 @@ initHAState (RPCAddress rpcAddr) procFid profFid ha_state_get ha_process_event_s
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
   nr <- #{peek struct m0_ha_msg_nvec, hmnv_nr} p :: IO Word64
-  let array = #{ptr struct m0_ha_msg_nvec, hmnv_vec} p
+  let array = #{ptr struct m0_ha_msg_nvec, hmnv_arr} p
   peekArray (fromIntegral nr) array
 
 data HAStateCallbacksV
 
 foreign import capi ha_state_init ::
-    CString -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
+    CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapGetCB ::
     (Ptr HALink -> Word64 -> Ptr NVec -> IO ())
@@ -472,7 +478,7 @@ notify (HALink hl) idx nvec =
     #{poke struct m0_ha_msg_nvec, hmnv_id_of_get} pnvec idx
     #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
         (fromIntegral $ length nvec :: Word64)
-    pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_vec} pnvec) nvec
+    pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_arr} pnvec) nvec
     ha_state_notify hl pnvec
 
 foreign import capi safe ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
@@ -505,22 +511,23 @@ newtype {-# CTYPE "const char*" #-} ConstCString = ConstCString CString
 
 foreign import capi ha_entrypoint_reply
   :: Ptr Word128 -> CInt
-  -> CInt -> Ptr Fid
-  -> CInt -> Ptr ConstCString
+  -> Word32 -> Ptr Fid
+  -> Ptr ConstCString
+  -> Word32
   -> Ptr Fid -> CString
   -> IO ()
 
 -- | Replies an entrypoint request.
-entrypointReply :: ReqId -> [Fid] -> [String] -> Fid -> String -> IO ()
-entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
+entrypointReply :: ReqId -> [Fid] -> [String] -> Int -> Fid -> String -> IO ()
+entrypointReply (ReqId reqId) confdFids epNames quorum rmFid rmEp =
   withMany (withCString) epNames $ \cnames ->
-    withArrayLen0 nullPtr cnames $ \ceps_len ceps_ptr ->
+    withArrayLen0 nullPtr cnames $ \_ ceps_ptr ->
       withArrayLen confdFids $ \cfids_len cfids_ptr ->
         withCString rmEp $ \crm_ep ->
           with rmFid $ \crmfid ->
             with reqId $ \reqId_ptr ->
               ha_entrypoint_reply reqId_ptr 0 (fromIntegral cfids_len) cfids_ptr
-                                  (fromIntegral ceps_len) (castPtr ceps_ptr)
+                                  (castPtr ceps_ptr) (fromIntegral quorum)
                                   crmfid crm_ep
   where
     _ = ConstCString -- Avoid unused warning for ConstCString
@@ -528,7 +535,7 @@ entrypointReply (ReqId reqId) confdFids epNames rmFid rmEp =
 -- | Replies an entrypoint request as invalid.
 entrypointNoReply :: ReqId -> IO ()
 entrypointNoReply (ReqId reqId) = with reqId $ \reqId_ptr ->
-  ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr 0 nullPtr nullPtr nullPtr
+  ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr nullPtr 0 nullPtr nullPtr
 
 -- | Replies to failure vector request
 failureVectorReply :: HALink -> Cookie -> Fid -> NVec -> IO ()

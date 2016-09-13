@@ -57,16 +57,6 @@ data {-# CTYPE "reqh/reqh_service.h" "struct m0_reqh_service" #-} ReqHServiceV
 m0_spiel_size :: Int
 m0_spiel_size = #{size struct m0_spiel}
 
-foreign import capi "confc_helpers.h spiel_init"
-  c_spiel_init :: Ptr (Ptr SpielContextV)
-               -> Ptr (Ptr ReqHServiceV)
-               -> IO CInt
-
-foreign import capi "confc_helpers.h spiel_fini"
-  c_spiel_fini :: Ptr SpielContextV
-               -> Ptr ReqHServiceV
-               -> IO ()
-
 -- Start spiel instance
 foreign import ccall "spiel/spiel.h m0_spiel_rconfc_start"
   c_spiel_rconfc_start :: Ptr SpielContextV
@@ -413,6 +403,8 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_abort"
                                -> Ptr Fid
                                -> IO CInt
 
+foreign import capi "confc_helpers.h halon_interface_spiel"
+  c_spiel :: IO (Ptr SpielContextV)
 
 ---------------------------------------------------------------
 -- Utility                                                   --

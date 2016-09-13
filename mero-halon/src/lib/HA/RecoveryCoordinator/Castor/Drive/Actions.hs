@@ -101,8 +101,8 @@ mkAttachDisk getter onFailure onSuccess = do
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
-        void $ withSpielIO $ \sc ->
-          withRConfIO sc mp $ try (Spiel.deviceAttach sc (M0.fid d)) >>= unlift . next
+        void $ withSpielIO $
+          withRConfIO mp $ try (Spiel.deviceAttach (M0.fid d)) >>= unlift . next
       Nothing -> do
         phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
@@ -157,8 +157,8 @@ mkDetachDisk getter onFailure onSuccess = do
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
-        void $ withSpielIO $ \sc ->
-          withRConfIO sc mp $ try (Spiel.deviceDetach sc (M0.fid d)) >>= unlift . next
+        void $ withSpielIO $
+          withRConfIO mp $ try (Spiel.deviceDetach (M0.fid d)) >>= unlift . next
       Nothing -> do
         phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")

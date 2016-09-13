@@ -177,10 +177,12 @@ withNI :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
                => RPCAddress
                -> Fid -- ^ Process Fid
                -> Fid -- ^ Profile Fid
+               -> Fid -- ^ HA Service Fid
+               -> Fid -- ^ RM Service Fid
                -> (NIRef -> m a)
                -> m a
-withNI addr processFid profileFid f =
-    liftProcess (initializeInternal addr processFid profileFid)
+withNI addr processFid profileFid haFid rmFid f =
+    liftProcess (initializeInternal addr processFid profileFid haFid rmFid)
       >>= (`withMVarProcess` f)
   where
     trySome :: MonadCatch m => m a -> m (Either SomeException a)
@@ -216,8 +218,10 @@ withNI addr processFid profileFid f =
 initializeInternal :: RPCAddress -- ^ Listen address.
                    -> Fid        -- ^ Process FID
                    -> Fid        -- ^ Profile FID
+                   -> Fid        -- ^ HA Service FID
+                   -> Fid        -- ^ RM Service FID
                    -> Process (MVar EndpointRef, EndpointRef, NIRef)
-initializeInternal addr processFid profileFid = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
+initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
   EndpointRef { _erNIRef = Just niRef } -> do
     say "initializeInternal: using existing endpoint"
     return (globalEndpointRef, ref, niRef)
@@ -236,7 +240,7 @@ initializeInternal addr processFid profileFid = liftIO (takeMVar globalEndpointR
         fdone <- liftIO $ newEmptyMVar
         (barrier, r) <- liftGlobalM0 $ do
            (barrier, niRef) <- initializeHAStateCallbacks (processNode proc)
-                                 addr processFid profileFid fbarrier fdone
+                                 addr processFid profileFid haFid rmFid fbarrier fdone
            addM0Finalizer $ finalizeInternal globalEndpointRef
            let ref' = emptyEndpointRef
                         { _erNIRef = Just niRef
@@ -409,19 +413,21 @@ initializeHAStateCallbacks :: LocalNode
                            -> RPCAddress
                            -> Fid -- ^ Process Fid.
                            -> Fid -- ^ Profile Fid.
+                           -> Fid -- ^ HA Service Fid.
+                           -> Fid -- ^ RM Service Fid.
                            -> MVar () -- ^ The caller should fill this MVar when
                                       -- it wants the ha_interface terminated.
                            -> MVar () -- ^ This MVar will be filled when the ha_interface
                                       -- is terminated.
                            -> IO (MVar (Either SomeException ()), NIRef)
-initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
+initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier fdone = do
     niRef <- NIRef <$> newIORef Map.empty
                    <*> newIORef Map.empty
                    <*> newIORef Map.empty
                    <*> newIORef Map.empty
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
-             er <- Catch.try $ initHAState addr processFid profileFid
+             er <- Catch.try $ initHAState addr processFid profileFid haFid rmFid
                             ha_state_get
                             (ha_process_event_set niRef)
                             ha_service_event_set
@@ -506,6 +512,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid fbarrier fdone = do
                    liftGlobalM0 $
                      entrypointReply reqId (sa_confds_fid ep)
                                            (sa_confds_ep  ep)
+                                           (sa_quorum     ep)
                                            (sa_rm_fid     ep)
                                            (sa_rm_ep      ep)
                  Nothing -> do
@@ -640,10 +647,12 @@ getRPCMachine = HAState.getRPCMachine
 -- users want to simply call 'withNI'.
 initialize :: RPCAddress -- ^ Listen address.
            -> Fid        -- ^ Process Fid.
-           -> Fid        -- ^ Profule Fid.
+           -> Fid        -- ^ Profile Fid.
+           -> Fid        -- ^ HA Service Fid.
+           -> Fid        -- ^ RM Service Fid.
            -> Process (MVar EndpointRef)
-initialize adr processFid profileFid = do
-  (m, ref, _) <- initializeInternal adr processFid profileFid
+initialize adr processFid profileFid haFid rmFid = do
+  (m, ref, _) <- initializeInternal adr processFid profileFid haFid rmFid
   liftIO $ putMVar m ref
   return m
 
@@ -722,4 +731,6 @@ getSpielAddress b g =
                      , G.isConnected svc R.Is M0.PrincipalRM g]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
-  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp
+       quorum = ceiling $ fromIntegral (length confdsFid) / 2
+
+  in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp <*> pure quorum

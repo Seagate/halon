@@ -76,8 +76,5 @@ struct m0_fid *ck_sdev_fid(struct m0_conf_disk *disk);
 // validate cache stashed in m0_spiel_tx
 char *confc_validate_cache_of_tx(struct m0_spiel_tx *tx, size_t buflen);
 
-/// A wrapper for m0_spiel_init which starts the rm service in the given request handler.
-int spiel_init(struct m0_spiel** out_spiel, struct m0_reqh_service** out_service);
-
-/// A wrapper for m0_spiel_fini which also stops the rm service.
-void spiel_fini(struct m0_spiel* spiel, struct m0_reqh_service* service);
+// Get current spiel context from ha_interface.
+struct m0_spiel * halon_interface_spiel();

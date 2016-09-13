@@ -63,13 +63,10 @@ import qualified HA.Resources.Mero as M0
 
 import Mero.ConfC
   ( PDClustAttr(..)
-  , initHASession
-  , finiHASession
   , confPVerLvlDisks
   )
 import Mero.Notification hiding (notifyMero)
-import Mero.Spiel hiding (start)
-import qualified Mero.Spiel
+import Mero.Spiel
 import Mero.ConfC (Fid)
 
 import Control.Applicative
@@ -90,8 +87,6 @@ import Data.UUID.V4 (nextRandom)
 import Data.Bifunctor
 
 import Network.CEP
-import Network.HostName (getHostName)
-import Network.RPC.RPCLite (rpcAddress, RPCAddress(..))
 
 import System.IO
 import System.Directory
@@ -111,40 +106,26 @@ haAddress = ":12345:34:101"
 --
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
-withSpielRC :: (SpielContext -> LiftRC -> PhaseM LoopState l a)
+withSpielRC :: (LiftRC -> PhaseM LoopState l a)
             -> PhaseM LoopState l (Either SomeException a)
-withSpielRC f = withResourceGraphCache $ do
-  rpca <- getRPCAddress
-  try $ withM0RC $ \lift -> do
-     (conn, sc) <- m0synchronously lift $ do
-        Just rpcm <- getRPCMachine
-        conn <- initHASession rpcm rpca
-        sc <- Mero.Spiel.start
-        return (conn, sc)
-     f sc lift `sfinally`  m0asynchronously_ lift (Mero.Spiel.stop sc >> finiHASession conn)
+withSpielRC f = withResourceGraphCache $ try $ withM0RC f
 
 -- | Try to connect to spiel and run the 'IO' action in the 'SpielContext'.
 --
 -- All internal actions are run on m0 thread.
-withSpielIO :: (SpielContext -> IO ())
+withSpielIO :: IO ()
             -> PhaseM LoopState l (Either SomeException ())
-withSpielIO f = withResourceGraphCache $ do
-  rpca <- getRPCAddress
-  try $ withM0RC $ flip m0asynchronously_ $ do
-    Just rpcm <- getRPCMachine
-    bracket ((,) <$> initHASession rpcm rpca <*> Mero.Spiel.start)
-            (\(conn, sc) -> Mero.Spiel.stop sc >> finiHASession conn)
-            $ f . snd
+withSpielIO = withResourceGraphCache . try . withM0RC . flip m0asynchronously_
 
 -- | Try to start rconf sesion and run 'IO' action in the 'SpielContext'.
 -- This call is required for running spiel management commands.
 --
 -- Internal action will be running in mero thread allocated to RC service.
-withRConfIO :: SpielContext -> Maybe M0.Profile -> IO a -> IO a
-withRConfIO spiel mp action = do
-  Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
-  Mero.Spiel.rconfStart spiel
-  action `finally` Mero.Spiel.rconfStop spiel
+withRConfIO :: Maybe M0.Profile -> IO a -> IO a
+withRConfIO mp action = do
+  Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
+  Mero.Spiel.rconfStart
+  action `finally` Mero.Spiel.rconfStop
 
 -------------------------------------------------------------------------------
 -- Generic operations helpers.
@@ -160,7 +141,7 @@ mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
   => Proxy# k -- ^ Operation name
   -> (M0.Pool -> Either SomeException a -> GenericSNSOperationResult k a)
   -- ^ Handler
-  -> (SpielContext -> M0.Pool -> IO a)
+  -> (M0.Pool -> IO a)
   -- ^ SNS action
   -> M0.Pool
   -- ^ Pool of interest
@@ -173,8 +154,8 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
     rc <- DP.getSelfPid
     return $ DP.usend rc . operation_reply pool
   mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
-  er <- withSpielIO $ \sc ->
-          withRConfIO sc mp $ try (operation_action sc pool) >>= unlift . next
+  er <- withSpielIO $
+          withRConfIO mp $ try (operation_action pool) >>= unlift . next
   case er of
     Right () -> return ()
     Left e -> liftProcess $ next $ Left e
@@ -182,12 +163,12 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
 -- | 'mkGenericSpielOperation' specialized for the most common case.
 mkGenericSNSOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
   => Proxy# k
-  -> (SpielContext -> Fid -> IO a)
+  -> (Fid -> IO a)
   -> M0.Pool
   -> PhaseM LoopState l ()
 mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
   (\pool eresult -> GenericSNSOperationResult pool (first show eresult))
-  (\sc pool -> f sc (M0.fid pool))
+  (\pool -> f (M0.fid pool))
 
 -- | Helper for implementation call to generic spiel operation.
 mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable b, Typeable k, KnownSymbol k)
@@ -225,7 +206,7 @@ mkGenericSNSReplyHandlerSimple n onError onResult =
 -- rather than send request and receive reply.
 mkSimpleSNSOperation :: forall a l n . (KnownSymbol n, Typeable a, Typeable n, Binary a, Show a)
                      => Proxy n
-                     -> (SpielContext -> Fid -> IO a)
+                     -> (Fid -> IO a)
                      -> (M0.Pool -> String -> PhaseM LoopState l ())
                      -> (M0.Pool -> a -> PhaseM LoopState l ())
                      -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
@@ -249,7 +230,7 @@ mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
   -> (    (M0.Pool -> String -> PhaseM LoopState l ())
        -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
        -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ()))
-  -> (SpielContext -> Fid -> IO ())
+  -> (Fid -> IO ())
   -> [SnsCmStatus]
   -> Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
@@ -476,14 +457,14 @@ syncToBS = withM0RC $ \lift -> do
 -- | Helper functions for backward compatibility.
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
 syncToConfd = do
-  withSpielRC $ \sc lift -> do
-     setProfileRC sc lift
-     loadConfData >>= traverse_ (\x -> txOpenContext lift sc >>= txPopulate lift x >>= txSyncToConfd lift)
+  withSpielRC $ \lift -> do
+     setProfileRC lift
+     loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd lift)
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
-txOpenContext :: LiftRC -> SpielContext -> PhaseM LoopState l SpielTransaction
-txOpenContext lift = m0synchronously lift . openTransaction
+txOpenContext :: LiftRC -> PhaseM LoopState l SpielTransaction
+txOpenContext lift = m0synchronously lift $ openTransaction
 
 txOpenLocalContext :: LiftRC -> PhaseM LoopState l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
@@ -662,29 +643,13 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
 -- | Load the current conf data, create a transaction that we would
 -- send to spiel and ask mero if the transaction cache is valid.
 validateTransactionCache :: PhaseM LoopState l (Either SomeException (Maybe String))
-validateTransactionCache = withSpielRC $ \sc lift -> loadConfData >>= \case
+validateTransactionCache = withSpielRC $ \lift -> loadConfData >>= \case
   Nothing -> do
     phaseLog "spiel" "validateTransactionCache: loadConfData failed"
     return Nothing
   Just x -> do
     phaseLog "spiel" "validateTransactionCache: validating context"
-    txOpenContext lift sc >>= txPopulate lift x >>= DP.liftIO . txValidateTransactionCache
-
--- | Creates an RPCAddress suitable for 'withNI'
--- and friends. If the information about the current node's endpoint
--- is not found in the RG, we construct an address using the default
--- 'haAddress'.
-getRPCAddress :: PhaseM LoopState l RPCAddress
-getRPCAddress = do
-  h <- DP.liftIO getHostName
-  lookupHostHAAddress (Host h) >>= \case
-    Just addr -> return $ rpcAddress addr
-    Nothing -> do
-      phaseLog "warn" $ "Using default HA endpoint for " ++ show h
-      liftProcess $ rpcAddress . mkAddress <$> DP.getSelfNode
-  where
-    mkAddress = (++ haAddress) . (++ "@tcp") . takeWhile (/= ':')
-                . drop (length ("nid://" :: String)) . show
+    txOpenContext lift >>= txPopulate lift x >>= DP.liftIO . txValidateTransactionCache
 
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
@@ -704,12 +669,6 @@ withResourceGraphCache action = do
   x <- action
   liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache Nothing
   return x
-
-sfinally :: forall m a b. (MonadProcess m, MonadThrow m, MonadCatch m) => m a -> m b -> m a
-sfinally action finalizer = do
-   ev <- try action
-   _  <- finalizer
-   either (throwM :: SomeException -> m a) return ev
 
 ----------------------------------------------------------
 -- Pool repair information functions                    --
@@ -823,9 +782,9 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
     return $ M0.timeSpecToSeconds untilHourPasses
 
 -- | Set profile in current thread.
-setProfileRC :: SpielContext -> LiftRC -> PhaseM LoopState l ()
-setProfileRC spiel lift = do
+setProfileRC :: LiftRC -> PhaseM LoopState l ()
+setProfileRC lift = do
   rg <- getLocalGraph
   let mp = listToMaybe (G.connectedTo Cluster Has rg) :: Maybe M0.Profile -- XXX: multiprofile is not supported
   phaseLog "spiel" $ "set command profile to" ++ show mp
-  m0synchronously lift $ Mero.Spiel.setCmdProfile spiel (fmap (\(M0.Profile p) -> show p) mp)
+  m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)

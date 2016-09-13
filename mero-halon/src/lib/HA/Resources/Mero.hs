@@ -107,6 +107,7 @@ data SpielAddress = SpielAddress {
   , sa_confds_ep :: [String]
   , sa_rm_fid :: Fid
   , sa_rm_ep :: String
+  , sa_quorum :: Int -- ^ number of the confd required for quorum.
 }  deriving (Eq, Generic, Show, Typeable)
 
 instance Binary SpielAddress

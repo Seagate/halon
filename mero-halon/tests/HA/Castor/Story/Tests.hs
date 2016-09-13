@@ -105,6 +105,8 @@ mockMeroConf :: MeroConf
 mockMeroConf = MeroConf ""
                         (Fid 0x7000000000000001 0x1)
                         (Fid 0x7200000000000001 0x18)
+                        (Fid 0x7200000000000001 0x25)
+                        (Fid 0x7200000000000001 0x26)
                         (_hv_keepalive_frequency defaultHalonVars)
                         (_hv_keepalive_timeout defaultHalonVars)
                         (MeroKernelConf UUID.nil)

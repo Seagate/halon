@@ -60,9 +60,8 @@ import Control.Distributed.Process
   )
 import qualified Control.Distributed.Process.Internal.Types as DI
 import Control.Monad.IO.Class
-import Control.Monad.Catch (SomeException, finally, try, bracket)
+import Control.Monad.Catch (SomeException, finally, try)
 import Control.Monad.Trans.Reader (ask)
-import Control.Concurrent.MVar
 import Data.Bits (setBit)
 import Data.Maybe (listToMaybe)
 import Data.Functor (void)
