@@ -26,6 +26,7 @@ import           HA.Resources.Mero.Note (showFid)
 import Control.Distributed.Process hiding (try)
 import Control.Exception (IOException)
 import Control.Monad.Catch (SomeException, try, fromException)
+import System.IO.Error
 
 import Network.CEP
 
@@ -41,6 +42,15 @@ instance Binary SpielDeviceAttached
 data SpielDeviceDetached = SpielDeviceDetached M0.SDev (Either String ())
   deriving (Eq, Show, Typeable, Generic)
 instance Binary SpielDeviceDetached
+
+-- | Handle result of attach or detach action.
+handleSNSReply :: Either SomeException () -> Either String ()
+handleSNSReply (Right x) = Right x
+handleSNSReply (Left se) = case fromException se of
+  Just t | isAlreadyExistsError t -> Right () -- ^ Drive was already attached - fine
+         | isAlreadyInUseError  t -> Right () -- ^ Drive was already attached - fine
+  _                               -> Left (show se)
+
 
 -- | Create all code that allow to ask mero (IO services) to attach certain disk.
 --
@@ -87,12 +97,7 @@ mkAttachDisk getter onFailure onSuccess = do
     unlift <- mkUnliftProcess
     next <- liftProcess $ do
       rc <- getSelfPid
-      let handleExc :: Either SomeException () -> Either String ()
-          handleExc (Left se) = case fromException se of
-            Just (_ :: IOException) -> Right ()
-            _ -> Left (show se)
-          handleExc (Right x) = Right x
-      return $ usend rc . SpielDeviceAttached sdev . handleExc
+      return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
@@ -148,12 +153,7 @@ mkDetachDisk getter onFailure onSuccess = do
 
     next <- liftProcess $ do
       rc <- getSelfPid
-      let handleExc :: Either SomeException () -> Either String ()
-          handleExc (Left se) = case fromException se of
-            Just (_ :: IOException) -> Right ()
-            _ -> Left (show se)
-          handleExc (Right x) = Right x
-      return $ usend rc . SpielDeviceDetached sdev . handleExc
+      return $ usend rc . SpielDeviceDetached sdev . handleSNSReply
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
