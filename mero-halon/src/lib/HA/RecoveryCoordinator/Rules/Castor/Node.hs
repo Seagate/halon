@@ -702,7 +702,12 @@ processStartClientsOnNode = Job "castor::node::client::start"
 -- | Start all clients on the given node.
 ruleStartClientsOnNode :: Definitions LoopState ()
 ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> do
+    configure_clients <- phaseHandle "configure-clients"
+    configure_timeout <- phaseHandle "configure_timeout"
     start_clients <- phaseHandle "start-clients"
+    configure_await <- mkConfigurationAwait "await-configuration"
+                                            start_clients configure_timeout
+                                            finish
     await_barrier <- phaseHandle "await_barrier"
 
     let route (StartClientsOnNodeRequest m0node) = do
@@ -723,7 +728,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
                                      ++ "cluster disposition is OFFLINE."
                   return Nothing
                 Just mcs | M0._mcs_runlevel mcs >= m0t1fsBootLevel && hasM0d
-                  -> return $ Just [start_clients]
+                  -> return $ Just [configure_clients]
                 _ -> return $ Just [await_barrier]
 
         -- Before starting client stuff, we want need the cluster to be
@@ -743,7 +748,35 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
         (nodeRunning (\mcs -> M0._mcs_runlevel mcs >= m0t1fsBootLevel)) $ \() -> do
       Just node <- getField . rget fldNode <$> get Local
       phaseLog "debug" $ "Past barrier on " ++ show node
-      continue start_clients
+      continue configure_clients
+
+    directly configure_clients $ do
+      rg <- getLocalGraph
+      Just node <- getField . rget fldNode <$> get Local
+      Just m0node <- getField . rget fldM0Node <$> get Local
+      Just host <- getField . rget fldHost <$> get Local
+      case meroChannel rg node of
+        Just chan -> do
+          phaseLog "info" $ "Configuring mero client on " ++ show host
+          procs <- configureNodeProcesses host chan M0.PLM0t1fs False
+          if null procs
+          then continue finish
+          else do
+            modify Local $ rlens fldProcessConfig . rfield .~
+              (Just $ M0.fid <$> procs)
+            continue configure_await
+        Nothing -> do
+          modify Local $ rlens fldRep . rfield .~
+            (Just $ ClientsStartFailure m0node "No mero channel")
+          phaseLog "error" $ "can't find mero channel on " ++ show node
+          continue finish
+
+    directly configure_timeout $ do
+      Just m0node <- getField . rget fldM0Node <$> get Local
+      modify Local $ rlens fldRep . rfield .~
+        (Just $ ClientsStartFailure m0node "Process failed to configure.")
+      phaseLog "error" $ "Timeout configuring process on " ++ show m0node
+      continue finish
 
     directly start_clients $ do
       rg <- getLocalGraph
@@ -753,13 +786,13 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
       case meroChannel rg node of
         Just chan -> do
           phaseLog "info" $ "Starting mero client on " ++ show host
-          -- XXX: implement await
-          _ <- configureNodeProcesses host chan M0.PLM0t1fs False
           _ <- startNodeProcesses host chan M0.PLM0t1fs
-          modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartOk m0node)
+          modify Local $ rlens fldRep . rfield .~
+            (Just $ ClientsStartOk m0node)
           continue finish
         Nothing -> do
-          modify Local $ rlens fldRep .~ (Field $ Just $ ClientsStartFailure m0node "No mero channel")
+          modify Local $ rlens fldRep . rfield .~
+            (Just $ ClientsStartFailure m0node "No mero channel")
           phaseLog "error" $ "can't find mero channel on " ++ show node
           continue finish
 
@@ -771,13 +804,33 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
     fldRep = Proxy
     fldM0Node :: Proxy '("reply", Maybe M0.Node)
     fldM0Node = Proxy
+    fldProcessConfig :: Proxy '("processConfig", Maybe [Fid])
+    fldProcessConfig = Proxy
     args  = fldUUID =: Nothing
         <+> fldReq     =: Nothing
         <+> fldRep     =: Nothing
         <+> fldNode    =: Nothing
-        <+> fldM0Node    =: Nothing
+        <+> fldM0Node  =: Nothing
         <+> fldHost    =: Nothing
+        <+> fldProcessConfig =: Nothing
         <+> RNil
+    mkConfigurationAwait name next onTimeout onFailure
+      = mkLoop name startProcTimeout onTimeout
+        (\result l ->
+           case result of
+             ProcessConfigured fid -> return $
+               Right $ ((rlens fldProcessConfig) %~ fieldMap (fmap (filter (/= fid)))) l
+             ProcessConfigureFailed _fid -> do
+               Just m0node <- getField . rget fldM0Node <$> get Local
+               modify Local $ rlens fldRep . rfield .~
+                 (Just $ ClientsStartFailure m0node "Failed configuring processes.")
+               return $ Left onFailure
+        )
+        (\l -> case (getField . rget fldProcessConfig) (l `asTypeOf` args) of
+                 Nothing -> Just [next]
+                 Just [] -> Just [next]
+                 _  -> Nothing
+            )
 
 
 processStopProcessesOnNode :: Job StopProcessesOnNodeRequest StopProcessesOnNodeResult
