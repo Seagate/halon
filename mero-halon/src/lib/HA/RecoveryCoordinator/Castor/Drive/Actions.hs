@@ -24,7 +24,8 @@ import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
 import Control.Distributed.Process hiding (try)
-import Control.Monad.Catch (SomeException, try)
+import Control.Exception (IOException)
+import Control.Monad.Catch (SomeException, try, fromException)
 
 import Network.CEP
 
@@ -86,7 +87,12 @@ mkAttachDisk getter onFailure onSuccess = do
     unlift <- mkUnliftProcess
     next <- liftProcess $ do
       rc <- getSelfPid
-      return $ usend rc . SpielDeviceAttached sdev . first (show :: SomeException -> String)
+      let handleExc :: Either SomeException () -> Either String ()
+          handleExc (Left se) = case fromException se of
+            Just (_ :: IOException) -> Right ()
+            _ -> Left (show se)
+          handleExc (Right x) = Right x
+      return $ usend rc . SpielDeviceAttached sdev . handleExc
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
@@ -142,7 +148,12 @@ mkDetachDisk getter onFailure onSuccess = do
 
     next <- liftProcess $ do
       rc <- getSelfPid
-      return $ usend rc . SpielDeviceDetached sdev . first (show :: SomeException -> String)
+      let handleExc :: Either SomeException () -> Either String ()
+          handleExc (Left se) = case fromException se of
+            Just (_ :: IOException) -> Right ()
+            _ -> Left (show se)
+          handleExc (Right x) = Right x
+      return $ usend rc . SpielDeviceDetached sdev . handleExc
     mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
