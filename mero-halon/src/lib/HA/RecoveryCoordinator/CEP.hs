@@ -261,6 +261,9 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
               False -> do
                 setHostAttr host M0.HA_TRANSIENT
 #ifdef USE_MERO
+                -- ideally we would like to unregister this when
+                -- monitor disconnects and not here: what if node came
+                -- back before recovery fired? unlikely but who knows
                 case nodeToM0Node n1 g of
                   [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
                   ns -> applyStateChanges $ (\n -> stateSet n NSFailed) <$> ns
@@ -402,4 +405,3 @@ sendLogs logs ls = do
                 , n <- G.connectedTo host Runs rg :: [Node]
                 , not . null $ lookupServiceInfo n decisionLog rg
                 ]
-
