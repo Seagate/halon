@@ -227,6 +227,7 @@ replacement = define "castor::drive::raid::replaced" $ do
           done eid -- Not part of a raid array
         (rd:[]) -> do
           phaseLog "device" $ show sdev
+          modify Local $ rlens fldUUID . rfield .~ (Just eid)
           -- Add drive back into array
           mnode <- listToMaybe <$> getSDevNode sdev
           mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
