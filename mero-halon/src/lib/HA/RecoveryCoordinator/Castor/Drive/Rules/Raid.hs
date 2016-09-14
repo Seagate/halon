@@ -221,12 +221,12 @@ replacement = define "castor::drive::raid::replaced" $ do
 
     setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev) _) -> do
       todo eid
-      phaseLog "device" $ show sdev
       -- Check if this is a metadata drive
       lookupStorageDeviceRaidDevice sdev >>= \case
         [] -> do
           done eid -- Not part of a raid array
         (rd:[]) -> do
+          phaseLog "device" $ show sdev
           -- Add drive back into array
           mnode <- listToMaybe <$> getSDevNode sdev
           mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
