@@ -122,12 +122,13 @@ import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Job
+import           HA.RecoveryCoordinator.Actions.Service (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import           HA.Services.Mero
-import           HA.Services.Mero.RC.Actions (meroChannel)
+import           HA.Services.Mero.RC.Actions (meroChannel, lookupMeroChannelByNode)
 import           HA.Services.SSPL.CEP ( sendInterestingEvent )
 import           HA.Services.SSPL.IEM ( logMeroBEError )
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
@@ -156,7 +157,7 @@ import qualified Data.Aeson as Aeson
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (nub)
-import           Data.Maybe (listToMaybe, isNothing, isJust, mapMaybe)
+import           Data.Maybe (listToMaybe, isNothing, isJust)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Encoding as TL
@@ -180,7 +181,6 @@ rules = sequence_
   , ruleStartProcessesOnNode
   , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
-  , ruleRecoverTransientNode
   , ruleFailNodeIfProcessCantRestart
   , ruleAllProcessesFailed
   , ruleAllProcessesOnline
@@ -231,7 +231,7 @@ fldBootLevel = Proxy
 -- Listens: 'Event.NewNodeConnected'
 -- Emits:   'StartProcessNodeNew'
 eventNewHalonNode :: Definitions LoopState ()
-eventNewHalonNode = defineSimpleTask "castor::node::event::new-node" $ \(Event.NewNodeConnected node) ->
+eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNodeConnected node) -> do
   promulgateRC $! StartProcessNodeNew node
 
 -- | Handle a case when mero-kernel was started on node. Trigger bootstrap
@@ -380,8 +380,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
         mhost <- findNodeHost node
         if isNothing mhost
         then do
-          phaseLog "error" $ "NewMeroClient sent for node with no host: " ++ show node
-          return Nothing
+          phaseLog "error" $ "StartProcessNodeNew sent for node with no host: " ++ show node
+          return $ Just [finish]
         else Just <$> route node
 
   directly config_created $ do
@@ -557,8 +557,14 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
               if isJust chan
               then return $ Just [boot_level_0_conf]
               else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
-                      promulgateRC $ StartHalonM0dRequest m0node
-                      return $ Just [kernel_up, kernel_failed, timeout startProcTimeout bootstrap_timeout]
+                      lookupMeroChannelByNode node >>= \case
+                        Nothing -> do
+                          lookupInfoMsg node m0d >>= \case
+                            Nothing -> promulgateRC $ StartHalonM0dRequest m0node
+                            Just _ -> phaseLog "info" "halon:m0d info in RG, waiting for it to come up through monitor"
+                          -- TODO: kernel may already be up or starting, check
+                          return $ Just [kernel_up, kernel_failed, timeout startProcTimeout bootstrap_timeout]
+                        Just _ -> return $ Just [boot_level_0_conf]
 
         -- Wait for all process configured notifications.
     let
@@ -702,6 +708,9 @@ processStartClientsOnNode = Job "castor::node::client::start"
 -- | Start all clients on the given node.
 ruleStartClientsOnNode :: Definitions LoopState ()
 ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> do
+    check_kernel_up <- phaseHandle "check-kernel-up"
+    kernel_up <- phaseHandle "kernel-up"
+    kernel_up_timeout <- phaseHandle "kernel-up-timeout"
     configure_clients <- phaseHandle "configure-clients"
     configure_timeout <- phaseHandle "configure_timeout"
     start_clients <- phaseHandle "start-clients"
@@ -728,7 +737,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
                                      ++ "cluster disposition is OFFLINE."
                   return Nothing
                 Just mcs | M0._mcs_runlevel mcs >= m0t1fsBootLevel && hasM0d
-                  -> return $ Just [configure_clients]
+                  -> return $ Just [check_kernel_up]
                 _ -> return $ Just [await_barrier]
 
         -- Before starting client stuff, we want need the cluster to be
@@ -749,6 +758,33 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
       Just node <- getField . rget fldNode <$> get Local
       phaseLog "debug" $ "Past barrier on " ++ show node
       continue configure_clients
+
+    directly check_kernel_up $ do
+      Just node <- getField . rget fldNode <$> get Local
+      lookupMeroChannelByNode node >>= \case
+        Just _ -> continue configure_clients
+        -- Monitor should be restarting kernel process, wait for
+        -- KernelStarted/KernelFailed message
+        Nothing -> switch [kernel_up, timeout startProcTimeout kernel_up_timeout]
+
+    setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
+       case (ks, getField $ rget fldReq l) of
+         (KernelStarted node, Just (StartClientsOnNodeRequest m0node))
+           | node == m0node -> return $ Just ks
+         _ -> return Nothing
+      ) $ \case
+            KernelStarted _ -> continue configure_clients
+            KernelStartFailure _ -> do
+              Just m0node <- getField . rget fldM0Node <$> get Local
+              modify Local $ rlens fldRep . rfield .~
+                (Just $ ClientsStartFailure m0node "Kernel failed to start")
+              continue finish
+
+    directly kernel_up_timeout $ do
+      Just m0node <- getField . rget fldM0Node <$> get Local
+      modify Local $ rlens fldRep . rfield .~
+        (Just $ ClientsStartFailure m0node "Waited too long for kernel")
+      continue finish
 
     directly configure_clients $ do
       rg <- getLocalGraph
@@ -1027,22 +1063,6 @@ mkLabel :: M0.BootLevel -> M0.ProcessLabel
 mkLabel bl@(M0.BootLevel l)
   | l == maxTeardownLevel = M0.PLM0t1fs
   | otherwise = M0.PLBootLevel bl
-
-
--- | If node becomes transient - we need to start recover job.
-ruleRecoverTransientNode :: Definitions LoopState ()
-ruleRecoverTransientNode = defineSimpleTask "castor::node::recover-start" $ \msg -> do
-    rg <- getLocalGraph
-    let go :: AnyStateChange -> Maybe R.Node
-        go (AnyStateChange (a :: a) _old new _) =
-           ((,) <$> cast a <*> cast new) >>= \(m0node,state) ->
-             if state == M0.NSFailed
-             then listToMaybe (m0nodeToNode m0node rg)
-             else Nothing
-    nodes <- do
-          InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $ mapMaybe go chs
-    for_ nodes $ promulgateRC . R.RecoverNode
 
 -- | We have failed to restart the process of the given fid with due
 -- to the provided reason.

@@ -102,6 +102,7 @@ lookupMeroChannelByNode node = do
 -- | Unregister all channels.
 unregisterMeroChannelsOn :: R.Node -> PhaseM LoopState l ()
 unregisterMeroChannelsOn node = do
+   phaseLog "info" $ "Unregistering mero channels on " ++ show node
    unregisterChannel node (Proxy :: Proxy NotificationMessage)
    unregisterChannel node (Proxy :: Proxy ProcessControlMsg)
 

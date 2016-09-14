@@ -62,7 +62,7 @@ import Mero.Notification.HAState (Note(..))
 import Control.Category
 import Control.Distributed.Process
 import Control.Lens ((<&>))
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 
 import Data.Foldable (for_)
 import Data.Proxy
@@ -311,7 +311,7 @@ startNodeProcesses host chan label = do
       -- already started)
       applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
     unless (null procs) $ do
-      phaseLog "action" $ "Starting mero processe on node."
+      phaseLog "action" $ "Starting mero process on node."
       phaseLog "info"   $ "process.label = " ++ show label
       phaseLog "info"   $ "process.host  = " ++ show host
       startMeroProcesses chan procs label
@@ -375,19 +375,48 @@ configureMeroProcesses (TypedChannel chan) procs label mkfs = do
     toType M0.PLM0t1fs = M0T1FS
     toType _           = M0D
 
--- | Start given mero processes.
+-- | Start given mero processes. If processes are in inhibited state,
+-- we instead restart them: they could still be online but we're
+-- recovering after a node failure but not a node reboot. Asking
+-- systemd to start the process will just result in systemd exiting
+-- and process never doing anything.
+--
+-- TODO: We could potentially use a more gentle method by querying
+-- process status.
 startMeroProcesses :: TypedChannel ProcessControlMsg -- ^ halon:m0d channel.
                    -> [M0.Process]
                    -> M0.ProcessLabel
                    -> PhaseM LoopState a ()
 startMeroProcesses _ [] _ = return ()
 startMeroProcesses (TypedChannel chan) procs label = do
-   let msg = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> procs)
-   phaseLog "debug" $ "starting mero processes: " ++ show (fmap M0.fid procs)
-   liftProcess $ sendChan chan msg
+   rg <- getLocalGraph
+   let (restartProcs, startProcs) = partition (shouldRestart rg) procs
+       msgStart = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> startProcs)
+       msgRestart = RestartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> restartProcs)
+   when (not $ null startProcs) $ do
+     phaseLog "info" $ "Starting mero processes: "  ++ show (fmap M0.fid startProcs)
+     liftProcess $ sendChan chan msgStart
+   when (not $ null restartProcs) $ do
+     phaseLog "info" $ "Restarting mero processes due to inhibited/starting: "  ++ show (fmap M0.fid restartProcs)
+     liftProcess $ sendChan chan msgRestart
+
    where
      toType M0.PLM0t1fs = M0T1FS
      toType _           = M0D
+
+     -- Sometimes we shouldn't run start systemd command but a restart
+     -- instead. For example when the process is inhibited or has been
+     -- requested to start.
+     --
+     -- TODO: Probably shouldn't have a case for Starting but it's
+     -- just in case before reconnect patches land
+     shouldRestart :: G.Graph -> M0.Process -> Bool
+     shouldRestart rg p = case M0.getState p rg of
+       M0.PSInhibited _ -> True
+       M0.PSStarting    -> True
+       _                -> False
+
+
 
 restartNodeProcesses :: TypedChannel ProcessControlMsg
                      -> [M0.Process]

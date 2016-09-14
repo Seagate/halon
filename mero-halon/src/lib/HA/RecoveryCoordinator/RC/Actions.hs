@@ -22,6 +22,7 @@ module HA.RecoveryCoordinator.RC.Actions
   , addNodeToCluster
   ) where
 
+import           HA.Service (ServiceFailed(..))
 import           HA.RecoveryCoordinator.RC.Internal
 import           HA.Resources.RC
 
@@ -37,7 +38,7 @@ import qualified HA.Resources.Castor as R
 import           Network.CEP
 
 import Control.Distributed.Process hiding (try)
-import Control.Distributed.Process.Internal.Types (SpawnRef)
+import Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
 import Control.Distributed.Process.Closure (mkClosure)
 import Control.Category
 import Control.Monad.Fix (fix)
@@ -183,7 +184,7 @@ unregisterSpawnAsync ref = do
 -- This call provisions node, restart services there and add required
 -- monitoring procedures.
 addNodeToCluster :: [NodeId] -> R.Node -> PhaseM LoopState l ()
-addNodeToCluster eqs node = do
+addNodeToCluster eqs node@(R.Node nid) = do
   is_monitored <- isMonitored node
   if not is_monitored
   then do
@@ -196,6 +197,8 @@ addNodeToCluster eqs node = do
     void $ registerNodeMonitor node $ do
       phaseLog "node.angel" "monitored node died - sending restart request"
       stopMonitoring node
+      Service.findRegisteredOn node >>=
+        traverse_ (\svc -> promulgateRC $ ServiceFailed node svc (nullProcessId nid))
       promulgateRC $ R.RecoverNode node
       unregisterSpawnAsync sr
       return ()
