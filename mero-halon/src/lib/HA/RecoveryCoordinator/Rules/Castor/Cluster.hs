@@ -640,7 +640,7 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
 -- 2. Tries to start a client by calling `startMeroProcesses`
 requestStartMeroClient :: Definitions LoopState ()
 requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::start" $ \(StartMeroClientRequest fid) -> do
-  phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
+  phaseLog "info" $ "Start mero client " ++ show fid ++ " requested."
   mproc <- lookupConfObjByFid fid
   forM_ mproc $ \proc -> do
     rg <- getLocalGraph
@@ -648,7 +648,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
     then do
       let chans = [ch | m0node <- G.connectedFrom M0.IsParentOf proc rg
                       , node   <- m0nodeToNode m0node rg
-                      , let Just ch = meroChannel rg node
+                      , Just ch <- return $ meroChannel rg node
                       ]
       case listToMaybe chans of
         Just chan -> do
