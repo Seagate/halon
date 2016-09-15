@@ -17,6 +17,10 @@ packages:
 - sspl
 # vendor packages
 - location:
+    git: https://github.com/tweag/distributed-static.git
+    commit: 0bbb55cfdd6715290828785d4865671660b32edc
+  extra-dep: true
+- location:
     git: https://github.com/tweag/distributed-process.git
     commit: b16d1bd05bcd0b313e53bdf6b6e3d755abcc1e1d
   extra-dep: true
