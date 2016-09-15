@@ -39,6 +39,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.Mero.RC
 
+import Mero.ConfC (ServiceType(..))
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
 
@@ -395,6 +396,7 @@ stateCascadeRules =
   , AnyCascadeRule nodeFailsProcessRule
   , AnyCascadeRule serviceCascadeDiskRule
   ] ++ (AnyCascadeRule <$> enclosureCascadeControllerRules)
+    ++ (AnyCascadeRule <$> iosFailsController)
 
 rackCascadeEnclosureRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeEnclosureRule = StateCascadeRule
@@ -507,6 +509,45 @@ nodeCascadeController = StateCascadeRule
             M0.NSOnline -> M0.CSOnline
             _ -> M0.CSTransient
   )
+
+-- | HALON-425
+--   This is a temporary cascade rule. Normally, there should be no direct link
+--   between service and controller, because there might be multiple Services
+--   per controller. However, until Mero can appropriately escalate failures in
+--   its pool version code, we elevate service failures to controller failures
+--   in Halon.
+iosFailsController :: [StateCascadeRule M0.Service M0.Controller]
+iosFailsController = [
+      StateCascadeRule
+        (const True)
+        serviceFailed
+        (\x rg -> case M0.s_type x of
+          CST_IOS ->  [ controller
+                      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
+                      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
+                      , controller <- G.connectedTo node M0.IsOnHardware rg
+                      ]
+          _ -> []
+        )
+        (\_ _ -> M0.CSTransient)
+    , StateCascadeRule
+        serviceFailed
+        (not . serviceFailed)
+        (\x rg -> case M0.s_type x of
+          CST_IOS ->  [ controller
+                      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
+                      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
+                      , controller <- G.connectedTo node M0.IsOnHardware rg
+                      ]
+          _ -> []
+        )
+        (\_ _ -> M0.CSOnline)
+    ]
+  where
+    serviceFailed M0.SSFailed = True
+    serviceFailed (M0.SSInhibited _) = True
+    serviceFailed (M0.SSOffline) = True
+    serviceFailed _ = False
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
