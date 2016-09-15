@@ -48,6 +48,10 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDevicePaths
   , lookupStorageDeviceSerial
   , lookupStorageDeviceRaidDevice
+    -- ** Device attributes
+  , findStorageDeviceAttrs
+  , setStorageDeviceAttr
+  , unsetStorageDeviceAttr
     -- ** Change State
   , identifyStorageDevice
   , updateDriveStatus

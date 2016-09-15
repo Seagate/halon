@@ -95,6 +95,7 @@ data StorageDeviceAttr
     | SDOnGoingReset
     | SDRemovedAt
     | SDReplaced
+    | SDRemovedFromRAID
     deriving (Eq, Ord, Show, Generic)
 
 instance Binary StorageDeviceAttr

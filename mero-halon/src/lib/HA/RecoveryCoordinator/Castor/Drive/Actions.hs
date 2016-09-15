@@ -6,25 +6,33 @@
 module  HA.RecoveryCoordinator.Castor.Drive.Actions
   ( mkAttachDisk
   , mkDetachDisk
+    -- * RAID Drive functions
+  , isRemovedFromRAID
+  , markRemovedFromRAID
+  , unmarkRemovedFromRAID
   ) where
 
 import Data.Functor (void)
 import Data.Binary (Binary)
 import Data.Typeable
 import Data.Maybe (listToMaybe)
-import Data.Bifunctor
 import GHC.Generics
 
 import qualified HA.ResourceGraph as G
 import           HA.Resources
+import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Hardware
+  ( findStorageDeviceAttrs
+  , setStorageDeviceAttr
+  , unsetStorageDeviceAttr
+  )
 import HA.RecoveryCoordinator.Actions.Mero.Conf
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
 import Control.Distributed.Process hiding (try)
-import Control.Exception (IOException)
 import Control.Monad.Catch (SomeException, try, fromException)
 import System.IO.Error
 
@@ -162,3 +170,21 @@ mkDetachDisk getter onFailure onSuccess = do
       Nothing -> do
         phaseLog "warning" $ "Disk for found for " ++ showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
+
+
+-- | Mark that a device has been removed from the RAID array of which it
+--   is part.
+markRemovedFromRAID :: StorageDevice -> PhaseM LoopState l ()
+markRemovedFromRAID sdev = setStorageDeviceAttr sdev SDRemovedFromRAID
+
+-- | Remove the marker indicating that a device has been removed from the RAID
+--   array of which it is part.
+unmarkRemovedFromRAID :: StorageDevice -> PhaseM LoopState l ()
+unmarkRemovedFromRAID sdev = unsetStorageDeviceAttr sdev SDRemovedFromRAID
+
+-- | Check whether a device has been removed from its RAID array.
+isRemovedFromRAID :: StorageDevice -> PhaseM LoopState l Bool
+isRemovedFromRAID = fmap (not . null) . findStorageDeviceAttrs go
+  where
+    go SDRemovedFromRAID = True
+    go _ = False
