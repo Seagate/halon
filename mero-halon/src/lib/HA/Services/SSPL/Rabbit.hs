@@ -7,11 +7,13 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module HA.Services.SSPL.Rabbit where
 
 import Prelude hiding ((<$>), (<*>))
+import HA.SafeCopy.OrphanInstances()
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
@@ -53,6 +55,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -83,6 +86,7 @@ instance ToJSON ConnectionConf where
            , "username" .= login
            , "password" .= pass
            ]
+deriveSafeCopy 0 'base ''ConnectionConf
 
 -- | Configuration to bind an exchange to a queue. This is slightly weird - on
 --   receipt side, we care only about the queue, and on the send side we care
@@ -102,7 +106,7 @@ instance ToJSON BindConf where
            , "routing_key" .= fromDefault rk
            , "queue_name" .= fromDefault qn
            ]
-
+deriveSafeCopy 0 'base ''BindConf
 
 --------------------------------------------------------------------------------
 -- Schemata                                                                   --

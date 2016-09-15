@@ -14,14 +14,14 @@ module HA.Resources where
 
 import Control.Distributed.Process
 import Data.Binary
-import Data.ByteString (ByteString)
-import Data.Function (on)
 import Data.Hashable (Hashable(..))
+import Data.SafeCopy
 import Data.Typeable (Typeable)
-import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
+import HA.SafeCopy.OrphanInstances
 import HA.Resources.TH
+
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -30,6 +30,7 @@ import HA.Resources.TH
 -- | The root of the resource graph.
 data Cluster = Cluster
   deriving (Eq, Ord, Show, Typeable, Generic)
+deriveSafeCopy 0 'base ''Cluster
 
 instance Binary Cluster
 instance Hashable Cluster
@@ -37,6 +38,7 @@ instance Hashable Cluster
 -- | A resource graph representation for nodes.
 data Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic)
+deriveSafeCopy 0 'base ''Node
 
 instance Binary Node
 instance Hashable Node
@@ -44,6 +46,7 @@ instance Hashable Node
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
   deriving (Eq, Ord, Show, Typeable, Generic, Binary, Hashable)
+deriveSafeCopy 0 'base ''EpochId
 
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -56,11 +59,13 @@ data Has = Has
 
 instance Binary Has
 instance Hashable Has
+deriveSafeCopy 0 'base ''Has
 
 -- | A relation connecting a node to the services it runs.
 data Runs = Runs
   deriving (Eq, Show, Typeable, Generic)
 
+deriveSafeCopy 0 'base ''Runs
 instance Binary Runs
 instance Hashable Runs
 

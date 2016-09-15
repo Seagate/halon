@@ -22,20 +22,23 @@ import Control.Distributed.Process hiding (bracket)
 import Control.Monad.Catch (bracket)
 import Control.Monad (when)
 import Data.Aeson
-import Data.Binary
+import Data.Binary (Binary)
 import Data.Function (on)
 import Data.List (groupBy)
 import Data.Text (Text)
 import Data.Defaultable
 import Data.Hashable
 import Data.Maybe (catMaybes)
+import Data.SafeCopy
 import Data.Time (getCurrentTime)
 import Options.Schema
 import Options.Schema.Builder
-import Network.CEP
+import Network.CEP hiding (get, put)
 import Text.PrettyPrint.Leijen hiding ((<>), (<$>))
 
+import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
+
 
 data DecisionLogOutput
     = FileOutput FilePath
@@ -49,6 +52,8 @@ data DecisionLogOutput
     | DPLogger
       -- ^ Sends logs to the logger of d-p in the local node.
     deriving (Eq, Show, Generic)
+
+deriveSafeCopy 0 'base ''DecisionLogOutput
 
 instance Binary DecisionLogOutput
 instance Hashable DecisionLogOutput
@@ -92,6 +97,7 @@ decisionLogSchema =
 
 $(generateDicts ''DecisionLogConf)
 $(deriveService ''DecisionLogConf 'decisionLogSchema [])
+deriveSafeCopy 0 'base ''DecisionLogConf
 
 data EntriesLogged =
     EntriesLogged

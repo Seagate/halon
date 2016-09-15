@@ -23,6 +23,7 @@ module HA.Services.Empty
 import Data.Aeson
 import Data.Binary
 import Data.Hashable
+import Data.SafeCopy
 import Data.Typeable
 import GHC.Generics
 
@@ -45,3 +46,4 @@ emptySchema = pure EmptyConf
 
 $(generateDicts ''EmptyConf)
 $(deriveService ''EmptyConf 'emptySchema [])
+deriveSafeCopy 0 'base ''EmptyConf

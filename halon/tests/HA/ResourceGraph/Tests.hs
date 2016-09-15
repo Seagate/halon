@@ -27,6 +27,7 @@ import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
 import Data.List (sort, (\\))
 import Data.Proxy
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -97,11 +98,15 @@ instance Resource NodeA where
   resourceDict = $(mkStatic 'resourceDictNodeA)
 instance Resource NodeB where
   resourceDict = $(mkStatic 'resourceDictNodeB)
+deriveSafeCopy 0 'base ''NodeA
+deriveSafeCopy 0 'base ''NodeB
 
 instance Relation HasB NodeA NodeB where
   relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
   relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
+deriveSafeCopy 0 'base ''HasA
+deriveSafeCopy 0 'base ''HasB
 
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --

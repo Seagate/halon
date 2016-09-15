@@ -39,10 +39,11 @@ import HA.RecoveryCoordinator.Actions.Job
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 
 import Control.Monad (when, unless)
-import Data.Binary (encode)
 import Data.Functor (void)
 import Data.Proxy
 import Data.Vinyl hiding ((:~:))
+import Data.SafeCopy
+import Data.Serialize.Put (runPutLazy)
 import Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
 import Data.Foldable (for_)
 
@@ -183,7 +184,8 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
      if startedNode == startingNode
      then case eqTT svc startingSvc of
        Just Refl ->
-         if encode startedConf == encode conf -- XXX: why not keep encoded?
+         if runPutLazy (safePut startedConf) ==
+            runPutLazy (safePut conf) -- XXX: why not keep encoded?
          then do
            putLocal fldRep $ ServiceStartRequestOk
            phaseLog "info" "Service started"

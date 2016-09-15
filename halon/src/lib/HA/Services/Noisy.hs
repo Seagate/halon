@@ -44,6 +44,7 @@ import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -55,6 +56,7 @@ newtype NoisyConf = NoisyConf {
   pings :: Defaultable String
 } deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
+deriveSafeCopy 0 'base ''NoisyConf
 instance ToJSON NoisyConf where
   toJSON (NoisyConf pings) = object [ "pings" .= fromDefault pings ]
 
@@ -67,12 +69,14 @@ noisySchema = let
 
 newtype NoisyPingCount = NoisyPingCount Int
   deriving (Typeable, Binary, Eq, Hashable, Show)
+deriveSafeCopy 0 'base ''NoisyPingCount
 
 data HasPingCount = HasPingCount
   deriving (Typeable, Generic, Eq, Show)
 
 instance Binary HasPingCount
 instance Hashable HasPingCount
+deriveSafeCopy 0 'base ''HasPingCount
 
 relationDictHasPingCountServiceNoisyNoisyPingCount :: Dict (
     Relation HasPingCount (Service NoisyConf) NoisyPingCount

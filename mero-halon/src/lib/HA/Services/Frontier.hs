@@ -21,6 +21,7 @@ import           Prelude hiding ((<$>))
 import           Control.Applicative ((<$>))
 import qualified Data.ByteString      as B
 import           Data.Monoid ((<>))
+import           Data.SafeCopy
 import           Data.Typeable
 import           Control.Monad (forever, void)
 import           Control.Monad.Fix (fix)
@@ -32,7 +33,7 @@ import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Data.Aeson
-import Data.Binary
+import Data.Binary (Binary)
 import Data.Hashable
 import Options.Schema
 import Options.Schema.Builder
@@ -47,9 +48,10 @@ data FrontierConf =
     FrontierConf { _fcPort :: Int }
     deriving (Eq, Generic, Show, Typeable)
 
-instance Binary FrontierConf
 instance Hashable FrontierConf
 instance ToJSON FrontierConf
+instance Binary FrontierConf
+deriveSafeCopy 0 'base ''FrontierConf
 
 frontierSchema :: Schema FrontierConf
 frontierSchema =

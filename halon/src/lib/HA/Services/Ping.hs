@@ -34,6 +34,7 @@ import Control.Monad
 import Data.Aeson
 import Data.Binary (Binary)
 import Data.Hashable (Hashable)
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -56,6 +57,7 @@ pingSchema = pure PingConf
 
 $(generateDicts ''PingConf)
 $(deriveService ''PingConf 'pingSchema [])
+deriveSafeCopy 0 'base ''PingConf
 
 remotableDecl [ [d|
   ping :: Service PingConf

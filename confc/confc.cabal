@@ -26,12 +26,14 @@ Library
                      , Mero.Spiel.Internal
   build-depends:       base
                      , aeson
+                     , cereal
                      , containers
                      , binary
                      , bytestring
                      , hashable
                      , inline-c
                      , rpclite
+                     , safecopy
                      , text
 
   -- cc-options aren't used when compiling Haskell files, and this is necessary

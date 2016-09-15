@@ -63,6 +63,7 @@ Library
                    HA.Replicator.Log
                    HA.Replicator.Mock
                    HA.RecoverySupervisor
+                   HA.SafeCopy.OrphanInstances
                    HA.Storage
                    HA.NodeUp
                    HA.Network.RemoteTables
@@ -85,6 +86,7 @@ Library
                    binary >= 0.6,
                    bytestring,
                    bytestring-trie,
+                   cereal,
                    consensus,
                    consensus-paxos,
                    containers,
@@ -102,6 +104,7 @@ Library
                    mtl >= 2.0,
                    process >= 1.1,
                    replicated-log,
+                   safecopy,
                    stm,
                    unordered-containers,
                    network-transport,
@@ -254,6 +257,7 @@ Test-Suite tests
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     random,
+                    safecopy,
                     tasty >= 0.8,
                     tasty-files,
                     tasty-hunit,

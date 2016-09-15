@@ -24,6 +24,8 @@ import Data.Binary (Binary)
 import Data.Data (Data)
 import Data.Hashable (Hashable)
 import qualified Data.Text as T
+import Data.SafeCopy
+import Data.Serialize
 import Data.Typeable ( Typeable )
 import Data.Word ( Word64 )
 import Foreign.Storable ( Storable(..) )
@@ -60,6 +62,9 @@ instance Binary Fid
 instance Hashable Fid
 instance FromJSON Fid
 instance ToJSON Fid
+instance Serialize Fid
+instance SafeCopy Fid where
+  kind = primitive
 
 instance Storable Fid where
   sizeOf    _           = #{size struct m0_fid}

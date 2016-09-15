@@ -55,6 +55,7 @@ import Data.Hashable (Hashable)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.UUID (toString)
 import Data.UUID.V4 (nextRandom)
@@ -108,6 +109,7 @@ data SSPLHLConf = SSPLHLConf {
 instance Binary SSPLHLConf
 instance Hashable SSPLHLConf
 instance ToJSON SSPLHLConf
+deriveSafeCopy 0 'base ''SSPLHLConf
 
 ssplhlSchema :: Schema SSPLHLConf
 ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema

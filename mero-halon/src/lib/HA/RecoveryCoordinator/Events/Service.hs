@@ -37,6 +37,9 @@ import Data.Binary
 import Data.Binary.Put (runPut)
 import Data.Binary.Get (runGet)
 import qualified Data.ByteString.Lazy as BS
+import Data.SafeCopy
+import Data.Serialize.Get (runGetLazy)
+import Data.Serialize.Put (runPutLazy)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -57,7 +60,8 @@ instance ProcessEncode ServiceStartRequest where
   type BinRep ServiceStartRequest = ServiceStartRequestMsg
 
   encodeP (ServiceStartRequest start node svc@(Service _ _ d) cfg lis) =
-    ServiceStartRequestMsg . runPut $ put d >> put (start, node, svc, cfg, lis)
+    ServiceStartRequestMsg . runPut $
+      put d >> put (runPutLazy $ safePut cfg) >> put (start, node, svc, lis)
 
   decodeP (ServiceStartRequestMsg bs) = let
       get_ :: RemoteTable -> Get ServiceStartRequest
@@ -65,12 +69,17 @@ instance ProcessEncode ServiceStartRequest where
         d <- get
         case unstatic rt d of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
+            bcfg <- get
             rest <- get
-            let (start, node, service, cfg, lis) = extract rest
-                extract :: (ServiceStart, Node, Service s, s, [ProcessId])
-                        -> (ServiceStart, Node, Service s, s, [ProcessId])
+            let (start, node, service, lis) = extract rest
+                extract :: (ServiceStart, Node, Service s, [ProcessId])
+                        -> (ServiceStart, Node, Service s, [ProcessId])
                 extract = id
-            return $ ServiceStartRequest start node service cfg lis
+            case runGetLazy safeGet bcfg of
+              Right cfg ->
+                return $ ServiceStartRequest start node service cfg lis
+              Left err ->
+                error $ "decodeP ServiceStartRequest: runGetLazy: " ++ err
           Left err -> error $ "decode ServiceStartRequest: " ++ err
     in do
       rt <- asks (remoteTable . processNode)
@@ -187,9 +196,9 @@ instance ProcessEncode ServiceStatusResponse where
     encodeP SrvStatNotRunning = ServiceStatusResponseMsg . runPut $
       put (0 :: Int)
     encodeP (SrvStatRunning d pid a) = ServiceStatusResponseMsg . runPut $
-      put (1 :: Int) >> put d >> put pid >> put a
+      put (1 :: Int) >> put d >> put pid >> put (runPutLazy $ safePut a)
     encodeP (SrvStatFailed d a) = ServiceStatusResponseMsg . runPut $
-      put (2 :: Int) >> put d >> put a
+      put (2 :: Int) >> put d >> put (runPutLazy $ safePut a)
     encodeP (SrvStatError s) = ServiceStatusResponseMsg . runPut $
       put (3 :: Int) >> put s
     encodeP (SrvStatStillRunning pid) = ServiceStatusResponseMsg . runPut $
@@ -214,10 +223,18 @@ instance ProcessEncode ServiceStatusResponse where
                 Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) ->
                   do
                     case x of
-                      1 -> do pid <- get
-                              (cfg :: s) <- get
-                              return $ SrvStatRunning d pid cfg
-                      2 -> do (cfg :: s) <- get
-                              return $ SrvStatFailed d cfg
+                      1 -> do
+                        pid <- get
+                        bcfg <- get
+                        case runGetLazy safeGet bcfg of
+                          Right cfg -> return $ SrvStatRunning d pid (cfg :: s)
+                          Left err -> error $
+                            "decodeP SrvStatRunning: runGetLazy: " ++ err
+                      2 -> do
+                        bcfg <- get
+                        case runGetLazy safeGet bcfg of
+                          Right cfg -> return $ SrvStatFailed d (cfg :: s)
+                          Left err -> error $
+                            "decodeP SrvStatFailed: runGetLazy: " ++ err
                       _ -> error "impossible"
                 Left err -> error $ "decode ServiceStatusResponse: " ++ err

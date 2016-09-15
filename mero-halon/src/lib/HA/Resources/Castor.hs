@@ -19,6 +19,7 @@ module HA.Resources.Castor (
   , MI.Interface(..)
 ) where
 
+import HA.SafeCopy.OrphanInstances()
 import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
@@ -29,6 +30,7 @@ import Data.Typeable (Typeable)
 import Data.UUID (UUID, fromText, toText)
 import Data.Aeson
 import Data.Aeson.Types (parseMaybe, typeMismatch)
+import Data.SafeCopy
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -38,16 +40,19 @@ import GHC.Generics (Generic)
 newtype Rack = Rack
   Int -- ^ Rack index
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+deriveSafeCopy 0 'base ''Rack
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure
     String -- ^ Enclosure UUID.
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
   deriving (Eq, Show, Generic, Typeable, Binary, Hashable, FromJSON, ToJSON)
+deriveSafeCopy 0 'base ''Host
 
 -- | Generic 'host attribute'.
 data HostAttr =
@@ -69,6 +74,7 @@ data HostAttr =
 
 instance Binary HostAttr
 instance Hashable HostAttr
+deriveSafeCopy 0 'base ''HostAttr
 
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
@@ -88,6 +94,8 @@ instance ToJSON StorageDevice where
   toEncoding (StorageDevice uuid) =
     pairs ("uuid" .= toText uuid)
 
+deriveSafeCopy 0 'base ''StorageDevice
+
 data StorageDeviceAttr
     = SDResetAttempts !Int
     | SDPowered Bool
@@ -100,6 +108,7 @@ data StorageDeviceAttr
 
 instance Binary StorageDeviceAttr
 instance Hashable StorageDeviceAttr
+deriveSafeCopy 0 'base ''StorageDeviceAttr
 
 -- | Arbitrary identifier for a logical or storage device
 data DeviceIdentifier =
@@ -116,6 +125,7 @@ instance Binary DeviceIdentifier
 instance Hashable DeviceIdentifier
 instance ToJSON DeviceIdentifier
 instance FromJSON DeviceIdentifier
+deriveSafeCopy 0 'base ''DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
@@ -127,6 +137,7 @@ data StorageDeviceStatus = StorageDeviceStatus
 
 instance Binary StorageDeviceStatus
 instance Hashable StorageDeviceStatus
+deriveSafeCopy 0 'base ''StorageDeviceStatus
 
 -- | Marker used to indicate that a host is undergoing RAID reassembly.
 data ReassemblingRaid = ReassemblingRaid
@@ -134,6 +145,7 @@ data ReassemblingRaid = ReassemblingRaid
 
 instance Binary ReassemblingRaid
 instance Hashable ReassemblingRaid
+deriveSafeCopy 0 'base ''ReassemblingRaid
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
 --------------------------------------------------------------------------------
@@ -144,12 +156,14 @@ data Is = Is
 
 instance Binary Is
 instance Hashable Is
+deriveSafeCopy 0 'base ''Is
 
 -- | The relation between a storage device and it's new version.
 data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReplacedBy
 instance Binary ReplacedBy
+deriveSafeCopy 0 'base ''ReplacedBy
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
 -- get GC'd). Helpers elsewhere.
@@ -176,13 +190,13 @@ data HalonVars = HalonVars
 
 instance Binary HalonVars
 instance Hashable HalonVars
+deriveSafeCopy 0 'base ''HalonVars
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
-
 $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''MI.Interface, ''StorageDevice

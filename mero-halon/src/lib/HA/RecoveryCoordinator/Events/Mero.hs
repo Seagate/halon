@@ -5,6 +5,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 module HA.RecoveryCoordinator.Events.Mero
    ( SyncComplete(..)
@@ -55,6 +56,9 @@ import Data.Binary.Get (runGet)
 import qualified Data.ByteString.Lazy as BS
 import Data.Constraint (Dict(..))
 import Data.Foldable (traverse_)
+import Data.SafeCopy
+import Data.Serialize.Get (runGetLazy)
+import Data.Serialize.Put (runPutLazy)
 import Data.Typeable
 import Data.Hashable (Hashable)
 import Data.UUID
@@ -140,6 +144,7 @@ newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
 newtype InternalObjectStateChangeMsg =
     InternalObjectStateChangeMsg BS.ByteString
   deriving (Binary, Typeable, Eq, Show, Ord, Hashable)
+deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg
@@ -151,12 +156,17 @@ instance ProcessEncode InternalObjectStateChange where
         case unstatic rt d of
           Right (SomeHasConfObjectStateDict
                   (Dict :: Dict (HasConfObjectState s))) -> do
-            rest <- get
-            let (obj, old, new) = extract rest
-                extract :: (s, StateCarrier s, StateCarrier s)
-                        -> (s, StateCarrier s, StateCarrier s)
-                extract = id
-            return $ AnyStateChange obj old new d
+            bobj <- get
+            case runGetLazy safeGet bobj of
+              Right obj -> do
+                rest <- get
+                let (old, new) = extract rest
+                    extract :: (StateCarrier s, StateCarrier s)
+                            -> (StateCarrier s, StateCarrier s)
+                    extract = id
+                return $ AnyStateChange (obj :: s) old new d
+              Left err -> error $
+                "decodeP InternalObjectStateChange: runGetLazy: " ++ err
           Left err -> error $ "decode InternalObjectStateChange: " ++ err
     in do
       rt <- fmap (remoteTable . processNode) ask
@@ -165,7 +175,8 @@ instance ProcessEncode InternalObjectStateChange where
   encodeP (InternalObjectStateChange xs) =
       InternalObjectStateChangeMsg . runPut $ traverse_ go xs
     where
-      go (AnyStateChange obj old new dict) = put dict >> put (obj, old, new)
+      go (AnyStateChange obj old new dict) =
+        put dict >> put (runPutLazy $ safePut obj) >> put (old, new)
 
 -- | A message we can use to notify bootstrap that mero-kernel failed
 -- to start.

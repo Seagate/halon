@@ -101,7 +101,6 @@ import HA.Multimap.Implementation
 import Control.Distributed.Process ( Process )
 import Control.Distributed.Process.Internal.Types
     ( remoteTable, processNode )
-import Control.Distributed.Process.Serializable ( Serializable )
 import Control.Distributed.Static
   ( RemoteTable
   , Static
@@ -115,7 +114,7 @@ import Prelude hiding (null)
 import Control.Arrow ( (***), (>>>), second )
 import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
-import Data.Binary ( Binary(..), decode, encode )
+import Data.Binary ( Binary(..), encode )
 import Data.Binary.Get ( runGetOrFail )
 import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
@@ -129,6 +128,9 @@ import Data.Hashable
 import Data.List (foldl', delete)
 import Data.Maybe
 import Data.Proxy
+import Data.SafeCopy
+import Data.Serialize.Get (runGetLazy)
+import Data.Serialize.Put (runPutLazy)
 import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
@@ -138,7 +140,7 @@ rgTrace = mkHalonTracer "RG"
 
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
-class (Eq a, Hashable a, Serializable a, Show a) => Resource a where
+class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a) => Resource a where
   resourceDict :: Static (Dict (Resource a))
 
 deriving instance Typeable Resource
@@ -146,7 +148,8 @@ deriving instance Typeable Resource
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
 -- related through @r@ if an @Relation r a b@ instance does not exist.
-class (Hashable r, Serializable r, Resource a, Resource b, Show r) => Relation r a b where
+class (Hashable r, Typeable r, SafeCopy r, Resource a, Resource b, Show r)
+      => Relation r a b where
   relationDict :: Static (Dict (Relation r a b))
 
 deriving instance Typeable Relation
@@ -633,14 +636,17 @@ encodeRes :: Res -> ByteString
 encodeRes (Res (r :: r)) =
     toStrict $ encode ($(mkStatic 'someResourceDict) `staticApply`
                        (resourceDict :: Static (Dict (Resource r)))) `append`
-    encode r
+    runPutLazy (safePut r)
 
 -- | Decodes a Res from a 'Lazy.ByteString'.
 decodeRes :: RemoteTable -> ByteString -> Res
 decodeRes rt bs =
     case runGetOrFail get $ fromStrict bs of
       Right (rest,_,d) -> case unstatic rt d of
-        Right (SomeResourceDict (Dict :: Dict (Resource s))) -> Res (decode rest :: s)
+        Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
+          case runGetLazy safeGet rest of
+            Right r -> Res (r :: s)
+            Left err -> error $ "decodeRes: runGetLazy: " ++ err
         Left err -> error $ "decodeRes: " ++ err
       Left (_,_,err) -> error $ "decodeRes: " ++ err
 
@@ -648,21 +654,22 @@ encodeRel :: Rel -> ByteString
 encodeRel (InRel (r :: r) (x :: a) (y :: b)) =
   toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
                 (relationDict :: Static (Dict (Relation r a b))))
-            `append` encode (0 :: Word8, r, x, y)
+            `append` runPutLazy (safePut (0 :: Word8, r, x, y))
 encodeRel (OutRel (r :: r) (x :: a) (y :: b)) =
   toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
                 (relationDict :: Static (Dict (Relation r a b))))
-            `append` encode (1 :: Word8, r, x, y)
+            `append` runPutLazy (safePut (1 :: Word8, r, x, y))
 
 decodeRel :: RemoteTable -> ByteString -> Rel
 decodeRel rt bs = case runGetOrFail get $ fromStrict bs of
   Right (rest,_,d) -> case unstatic rt d of
     Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-      let (b, r, x, y) = decode rest :: (Word8, r, a, b)
-      in case b of
-        (0 :: Word8) -> InRel r x y
-        (1 :: Word8) -> OutRel r x y
-        _ -> error $ "decodeRel: Invalid direction bit."
+      case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+        Right (b, r, x, y) -> case b of
+          (0 :: Word8) -> InRel r x y
+          (1 :: Word8) -> OutRel r x y
+          _ -> error $ "decodeRel: Invalid direction bit."
+        Left err -> error $ "decodeRel: runGetLazy: " ++ err
     Left err -> error $ "decodeRel: " ++ err
   Left (_,_,err) -> error $ "decodeRel: " ++ err
 

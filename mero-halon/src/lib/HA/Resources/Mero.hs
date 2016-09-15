@@ -41,6 +41,8 @@ import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Ord (comparing)
 import Data.Proxy (Proxy(..))
+import Data.SafeCopy hiding (Profile)
+import Data.Serialize (Serialize)
 import Data.Scientific
 import Data.Typeable (Typeable)
 import qualified Data.Vector as V
@@ -50,6 +52,7 @@ import qualified "distributed-process-scheduler" System.Clock as C
 
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
+import HA.SafeCopy.OrphanInstances()
 import qualified HA.ResourceGraph as G
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -62,6 +65,7 @@ typMask = 0x00ffffffffffffff
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+deriveSafeCopy 0 'base ''FidSeq
 
 -- | Couple of utility methods for conf objects. Minimal implementation:
 --   fidType and fid
@@ -140,6 +144,7 @@ data At = At
 
 instance Binary At
 instance Hashable At
+deriveSafeCopy 0 'base ''At
 
 -- | Relationship between parent and child entities in confd
 --   Directed from parent to child (e.g. profile IsParentOf filesystem)
@@ -148,6 +153,7 @@ data IsParentOf = IsParentOf
 
 instance Binary IsParentOf
 instance Hashable IsParentOf
+deriveSafeCopy 0 'base ''IsParentOf
 
 -- | Relationship between virtual and real entities in confd.
 --   Directed from real to virtual (e.g. pool IsRealOf pver)
@@ -156,6 +162,7 @@ data IsRealOf = IsRealOf
 
 instance Binary IsRealOf
 instance Hashable IsRealOf
+deriveSafeCopy 0 'base ''IsRealOf
 
 -- | Relationship between conceptual and hardware entities in confd
 --   Directed from sdev to disk (e.g. sdev IsOnHardware disk)
@@ -165,6 +172,7 @@ data IsOnHardware = IsOnHardware
 
 instance Binary IsOnHardware
 instance Hashable IsOnHardware
+deriveSafeCopy 0 'base ''IsOnHardware
 
 newtype Root = Root Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -172,6 +180,7 @@ newtype Root = Root Fid
 instance ConfObj Root where
    fidType _ = fromIntegral . ord $ 't'
    fid (Root f) = f
+deriveSafeCopy 0 'base ''Root
 
 newtype Profile = Profile Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
@@ -179,6 +188,7 @@ newtype Profile = Profile Fid
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
   fid (Profile f) = f
+deriveSafeCopy 0 'base ''Profile
 
 data Filesystem = Filesystem {
     f_fid :: Fid
@@ -193,6 +203,7 @@ instance FromJSON Filesystem
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
+deriveSafeCopy 0 'base ''Filesystem
 
 newtype Node = Node Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
@@ -203,6 +214,7 @@ instance ConfObj Node where
 
 instance FromJSON Node
 instance ToJSON   Node
+deriveSafeCopy 0 'base ''Node
 
 -- | Node state. This is a generalization of what might be reported to Mero.
 data NodeState
@@ -217,6 +229,7 @@ instance Binary NodeState
 instance Hashable NodeState
 instance ToJSON NodeState
 instance FromJSON NodeState
+deriveSafeCopy 0 'base ''NodeState
 
 prettyNodeState :: NodeState -> String
 prettyNodeState NSUnknown = "N/A"
@@ -231,6 +244,7 @@ newtype Rack = Rack Fid
 instance ConfObj Rack where
   fidType _ = fromIntegral . ord $ 'a'
   fid (Rack f) = f
+deriveSafeCopy 0 'base ''Rack
 
 newtype Pool = Pool Fid
   deriving
@@ -239,6 +253,7 @@ newtype Pool = Pool Fid
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
   fid (Pool f) = f
+deriveSafeCopy 0 'base ''Pool
 
 data Process = Process {
     r_fid :: Fid
@@ -261,6 +276,7 @@ instance ConfObj Process where
   fid = r_fid
 instance Ord Process where
   compare = comparing r_fid
+deriveSafeCopy 0 'base ''Process
 
 data Service = Service {
     s_fid :: Fid
@@ -276,6 +292,7 @@ instance FromJSON Service
 instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
+deriveSafeCopy 0 'base ''Service
 
 -- | Service state. This is a generalisation of what might be reported to Mero.
 data ServiceState =
@@ -292,6 +309,7 @@ instance Binary ServiceState
 instance Hashable ServiceState
 instance ToJSON ServiceState
 instance FromJSON ServiceState
+deriveSafeCopy 0 'base ''ServiceState
 
 prettyServiceState :: ServiceState -> String
 prettyServiceState SSUnknown = "N/A"
@@ -309,6 +327,7 @@ data SDev = SDev {
   , d_bsize :: Word32 -- ^ Block size in mb
   , d_path :: String -- ^ Path to logical device
 } deriving (Eq, Generic, Show, Typeable, Ord)
+deriveSafeCopy 0 'base ''SDev
 
 instance Binary SDev
 instance Hashable SDev
@@ -333,6 +352,7 @@ instance Binary SDevState
 instance Hashable SDevState
 instance ToJSON SDevState
 instance FromJSON SDevState
+deriveSafeCopy 0 'base ''SDevState
 
 prettySDevState :: SDevState -> String
 prettySDevState SDSUnknown = "Unknown"
@@ -375,6 +395,7 @@ newtype Enclosure = Enclosure Fid
 instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
   fid (Enclosure f) = f
+deriveSafeCopy 0 'base ''Enclosure
 
 -- | A controller represents an entity which allows access to a number of
 --   disks. It will typically be hosted on a node.
@@ -383,6 +404,7 @@ newtype Controller = Controller Fid
 
 instance ToJSON Controller
 instance FromJSON Controller
+deriveSafeCopy 0 'base ''Controller
 
 -- | Controller state type. Note that:
 --   - A controller cannot be meaningfully turned 'off', so there is no
@@ -395,6 +417,7 @@ data ControllerState
   | CSOnline -- ^ Controller is fine.
   | CSTransient -- ^ Controller is experiencing a failure.
   deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 0 'base ''ControllerState
 
 instance Binary ControllerState
 instance Hashable ControllerState
@@ -405,6 +428,7 @@ instance ConfObj Controller where
 
 newtype Disk = Disk Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
+deriveSafeCopy 0 'base ''Disk
 
 instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
@@ -421,6 +445,7 @@ data PVerType = PVerActual {
 
 instance Binary PVerType
 instance Hashable PVerType
+deriveSafeCopy 0 'base ''PVerType
 
 data PVer = PVer {
     v_fid :: Fid
@@ -429,6 +454,7 @@ data PVer = PVer {
 
 instance Binary PVer
 instance Hashable PVer
+deriveSafeCopy 0 'base ''PVer
 
 newtype PVerCounter = PVerCounter Word32
   deriving (Binary, Eq, Generic, Show, Typeable, Ord, Hashable)
@@ -436,6 +462,7 @@ newtype PVerCounter = PVerCounter Word32
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
   fid = v_fid
+deriveSafeCopy 0 'base ''PVerCounter
 
 newtype RackV = RackV Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -443,6 +470,7 @@ newtype RackV = RackV Fid
 instance ConfObj RackV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (RackV f) = f
+deriveSafeCopy 0 'base ''RackV
 
 newtype EnclosureV = EnclosureV Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -450,6 +478,7 @@ newtype EnclosureV = EnclosureV Fid
 instance ConfObj EnclosureV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (EnclosureV f) = f
+deriveSafeCopy 0 'base ''EnclosureV
 
 newtype ControllerV = ControllerV Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -457,6 +486,7 @@ newtype ControllerV = ControllerV Fid
 instance ConfObj ControllerV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (ControllerV f) = f
+deriveSafeCopy 0 'base ''ControllerV
 
 newtype DiskV = DiskV Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
@@ -464,6 +494,7 @@ newtype DiskV = DiskV Fid
 instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
+deriveSafeCopy 0 'base ''DiskV
 
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
 -- instances.
@@ -471,6 +502,10 @@ instance ConfObj DiskV where
 -- Normally you should use 'mkTimeSpec' to create these.
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
   deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
+
+instance Serialize TimeSpec
+instance SafeCopy TimeSpec where
+  kind = primitive
 
 -- | Create a 'TimeSpec' with the given number of seconds.
 mkTimeSpec :: Int64 -> TimeSpec
@@ -520,6 +555,7 @@ getTime = TimeSpec <$> C.getTime C.Monotonic
 data PoolRepairType = Failure | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
+deriveSafeCopy 0 'base ''PoolRepairType
 instance Binary PoolRepairType
 instance Hashable PoolRepairType
 
@@ -535,6 +571,7 @@ instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
 instance ToJSON PoolRepairInformation
 instance FromJSON PoolRepairInformation
+deriveSafeCopy 0 'base ''PoolRepairInformation
 
 -- | Sets default values for 'PoolRepairInformation'.
 --
@@ -552,15 +589,18 @@ data PoolRepairStatus = PoolRepairStatus
 
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
+deriveSafeCopy 0 'base ''PoolRepairStatus
 
 -- | Vector of failed devices. We keep the order of failures because
 -- mero should always send information about that to mero in the same
 -- order.
 newtype DiskFailureVector = DiskFailureVector [Disk]
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable, Binary)
+deriveSafeCopy 0 'base ''DiskFailureVector
 
 newtype LNid = LNid String
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+deriveSafeCopy 0 'base ''LNid
 
 data HostHardwareInfo = HostHardwareInfo
        { hhMemorySize  :: Word64
@@ -570,6 +610,7 @@ data HostHardwareInfo = HostHardwareInfo
    deriving (Eq, Show, Typeable, Generic)
 instance Binary HostHardwareInfo
 instance Hashable HostHardwareInfo
+deriveSafeCopy 0 'base ''HostHardwareInfo
 
 -- | Alias for process ID. In glibc @pid_t = int@.
 newtype PID = PID Int
@@ -577,6 +618,7 @@ newtype PID = PID Int
 
 instance Binary PID
 instance Hashable PID
+deriveSafeCopy 0 'base ''PID
 
 -- | Process state. This is a generalisation of what might be reported to Mero.
 data ProcessState =
@@ -594,6 +636,7 @@ instance Binary ProcessState
 instance Hashable ProcessState
 instance ToJSON ProcessState
 instance FromJSON ProcessState
+deriveSafeCopy 0 'base ''ProcessState
 
 prettyProcessState :: ProcessState -> String
 prettyProcessState PSUnknown = "N/A"
@@ -630,6 +673,8 @@ instance Hashable ProcessLabel
 newtype BootLevel = BootLevel { unBootLevel :: Int }
   deriving
     (Eq, Show, Typeable, Generic, Binary, Hashable, Ord, FromJSON, ToJSON)
+deriveSafeCopy 0 'base ''BootLevel
+deriveSafeCopy 0 'base ''ProcessLabel
 
 -- | Cluster disposition.
 --   This represents the desired state for the cluster, which is used to
@@ -643,6 +688,7 @@ instance Binary Disposition
 instance Hashable Disposition
 instance ToJSON Disposition
 instance FromJSON Disposition
+deriveSafeCopy 0 'base ''Disposition
 
 -- | Marker to tag the cluster run level
 data RunLevel = RunLevel
@@ -650,6 +696,7 @@ data RunLevel = RunLevel
 
 instance Binary RunLevel
 instance Hashable RunLevel
+deriveSafeCopy 0 'base ''RunLevel
 
 -- | Marker to tag the cluster stop level
 data StopLevel = StopLevel
@@ -657,6 +704,7 @@ data StopLevel = StopLevel
 
 instance Binary StopLevel
 instance Hashable StopLevel
+deriveSafeCopy 0 'base ''StopLevel
 
 -- | Cluster state.
 --   We do not store this cluster state in the graph, but it's a useful
@@ -683,7 +731,7 @@ newtype ConfUpdateVersion = ConfUpdateVersion Word64
 
 instance Binary ConfUpdateVersion
 instance Hashable ConfUpdateVersion
-
+deriveSafeCopy 0 'base ''ConfUpdateVersion
 
 -- | Process property, that shows that process was already bootstrapped,
 -- and no mkfs is needed.
@@ -692,6 +740,7 @@ data ProcessBootstrapped = ProcessBootstrapped
 
 instance Binary ProcessBootstrapped
 instance Hashable ProcessBootstrapped
+deriveSafeCopy 0 'base ''ProcessBootstrapped
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

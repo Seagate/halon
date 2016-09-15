@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -45,11 +46,13 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
 
 #endif
+import           Data.SafeCopy
 import qualified Data.Yaml as Y
 
 data Network = Data | Management | Local
   deriving (Eq, Data, Generic, Show, Typeable)
 
+deriveSafeCopy 0 'base ''Network
 instance Binary Network
 instance Hashable Network
 instance A.FromJSON Network
@@ -61,6 +64,7 @@ data Interface = Interface {
   , if_ipAddrs :: [String]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
+deriveSafeCopy 0 'base ''Interface
 instance Binary Interface
 instance Hashable Interface
 instance A.FromJSON Interface
@@ -464,3 +468,9 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
 #else
 parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
 #endif
+
+#ifdef USE_MERO
+deriveSafeCopy 0 'base ''FailureSetScheme
+deriveSafeCopy 0 'base ''M0Globals
+#endif
+deriveSafeCopy 0 'base ''BMC

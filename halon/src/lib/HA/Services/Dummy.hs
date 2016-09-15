@@ -22,6 +22,7 @@ module HA.Services.Dummy
   , dummyProcess__sdict
   ) where
 
+import HA.SafeCopy.OrphanInstances()
 import HA.Service
 import HA.Service.TH
 
@@ -38,6 +39,7 @@ import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -61,6 +63,7 @@ dummySchema = let
 
 $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
+deriveSafeCopy 0 'base ''DummyConf
 
 -- | An event which produces no action in the RC. Used for testing.
 data DummyEvent = DummyEvent String

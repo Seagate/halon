@@ -27,6 +27,8 @@ import Data.Bits
 import Data.Hashable (Hashable)
 import qualified Data.List as List
 import qualified Data.Map as Map
+import Data.SafeCopy
+import Data.Serialize
 import Data.Word ( Word32, Word64 )
 
 import Foreign.Marshal.Array
@@ -58,6 +60,7 @@ data Bitmap = Bitmap Int [Word64]
 
 instance Binary Bitmap
 instance Hashable Bitmap
+deriveSafeCopy 0 'base ''Bitmap
 
 -- | Bitmap structure is complex, so in order to poke
 -- value to the memory, that memory should be prepared first.
@@ -112,6 +115,9 @@ data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
   deriving (Eq, Ord, Generic, Show)
 
 instance Binary Word128
+instance Serialize Word128
+instance SafeCopy Word128 where
+  kind = primitive
 instance Hashable Word128
 instance Storable Word128 where
   sizeOf _ = #{size struct m0_uint128}
@@ -176,3 +182,5 @@ confCtx = mempty {
     , (C.Struct "m0_bitmap", [t| Bitmap |])
   ]
 }
+
+deriveSafeCopy 0 'base ''PDClustAttr

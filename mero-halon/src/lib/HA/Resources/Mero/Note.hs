@@ -41,6 +41,7 @@ import Data.List (foldl')
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
@@ -83,6 +84,7 @@ data ConfObjectState
       -- reconstructed data is being copied from spare space to the
       -- replacement storage.
     deriving (Eq, Show, Enum, Typeable, Generic, Ord, Read)
+deriveSafeCopy 0 'base ''ConfObjectState
 
 instance Binary ConfObjectState
 instance Hashable ConfObjectState
@@ -104,6 +106,7 @@ data PrincipalRM = PrincipalRM
 
 instance Binary PrincipalRM
 instance Hashable PrincipalRM
+deriveSafeCopy 0 'base ''PrincipalRM
 
 -- | A notification for the following end-points has failed. We use
 -- this message to fail the processes that failed to receive a
@@ -133,7 +136,7 @@ getConfObjState :: HasConfObjectState a => a -> G.Graph -> ConfObjectState
 getConfObjState x rg = toConfObjState x $ getState x rg
 
 -- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a))
+class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a))
   => HasConfObjectState a where
     type StateCarrier a :: *
     type StateCarrier a = ConfObjectState

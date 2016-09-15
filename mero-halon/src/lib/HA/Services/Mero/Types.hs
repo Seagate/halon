@@ -22,11 +22,13 @@ import Mero.Notification (Set)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
-import Data.Aeson
-import Data.Binary (Binary)
+import Data.Aeson hiding (encode, decode)
+import Data.Binary (Binary, encode, decode)
 import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.SafeCopy
+import Data.Serialize (Serialize(..))
 import Data.Typeable (Typeable)
 import Data.UUID as UUID
 import Data.Word (Word64)
@@ -44,6 +46,7 @@ instance Binary MeroKernelConf
 instance Hashable MeroKernelConf
 instance ToJSON MeroKernelConf where
   toJSON (MeroKernelConf uuid) = object [ "uuid" .= UUID.toString uuid ]
+deriveSafeCopy 0 'base ''MeroKernelConf
 
 -- | Mero service configuration
 data MeroConf = MeroConf
@@ -62,6 +65,7 @@ data MeroConf = MeroConf
    deriving (Eq, Generic, Show, Typeable)
 instance Binary MeroConf
 instance Hashable MeroConf
+deriveSafeCopy 0 'base ''MeroConf
 
 instance ToJSON MeroConf where
   toJSON (MeroConf haAddress profile process ha rm kaf kat kernel) =
@@ -78,8 +82,13 @@ instance ToJSON MeroConf where
 newtype TypedChannel a = TypedChannel (SendPort a)
     deriving (Eq, Show, Typeable, Binary, Hashable)
 
+instance (Binary a, Typeable a) => SafeCopy (TypedChannel a) where
+  getCopy = contain $ TypedChannel . decode <$> get
+  putCopy  (TypedChannel p) = contain $ put $ encode p
+
 data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 
+deriveSafeCopy 0 'base ''MeroChannel
 instance Binary MeroChannel
 instance Hashable MeroChannel
 

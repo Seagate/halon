@@ -43,12 +43,12 @@ import Control.Monad.Reader ( asks )
 
 import Data.Aeson
 import Data.Binary as Binary
-import Data.Binary.Get (runGet)
-import Data.Binary.Put (runPut)
 import qualified Data.ByteString.Lazy as BS
 import Data.Foldable (for_)
 import Data.Function (on)
 import Data.Hashable (Hashable, hashWithSalt)
+import Data.SafeCopy
+import qualified Data.Serialize as Serialize
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -68,7 +68,7 @@ import HA.Resources.TH
 -- | A 'Configuration' instance defines the Schema defining configuration
 --   data of type a.
 class
-  ( Binary a
+  ( SafeCopy a
   , Typeable a
   , Hashable a
   , ToJSON a
@@ -98,12 +98,6 @@ data SomeConfigurationDict = forall a. SomeConfigurationDict (Dict (Configuratio
 someConfigDict :: Dict (Configuration a) -> SomeConfigurationDict
 someConfigDict = SomeConfigurationDict
 
--- | A relation connecting the cluster to the services it supports.
-data Supports = Supports
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary Supports
-instance Hashable Supports
-
 -- | Service handle datatype. It's used to keep information about service and to
 -- requests to the graph.
 data Service a = Service
@@ -112,11 +106,20 @@ data Service a = Service
     , configDict :: Static (SomeConfigurationDict) -- ^ Configuration dictionary to use during encoding.
     }
   deriving (Typeable, Generic)
+instance Typeable a => SafeCopy (Service a) where
+  getCopy = contain $
+    Service <$> safeGet
+            <*> fmap Binary.decode Serialize.get
+            <*> fmap Binary.decode Serialize.get
+  putCopy (Service n p d) = contain $ do
+    safePut n
+    Serialize.put (Binary.encode p)
+    Serialize.put (Binary.encode d)
 
 instance Show (Service a) where
     show s = "Service " ++ (show $ serviceName s)
 
-instance (Typeable a, Binary a) => Binary (Service a)
+instance (Typeable a) => Binary (Service a)
 
 instance Eq (Service a) where
   (==) = (==) `on` serviceName
@@ -131,6 +134,13 @@ instance Hashable (Service a) where
 serviceLabel :: Service a -> String
 serviceLabel svc = "service." ++ serviceName svc
 
+-- | A relation connecting the cluster to the services it supports.
+data Supports = Supports
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary Supports
+instance Hashable Supports
+deriveSafeCopy 0 'base ''Supports
+
 -- | Information about a service. 'ServiceInfo' describes all information that
 -- allow to identify and start service on the node.
 data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
@@ -141,16 +151,17 @@ data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
 -- See 'ProcessEncode' for additional details.
 newtype ServiceInfoMsg = ServiceInfoMsg BS.ByteString -- XXX: memoize StaticSomeConfigurationDict
   deriving (Typeable, Binary, Eq, Hashable, Show)
+deriveSafeCopy 0 'base ''ServiceInfoMsg
 
 instance ProcessEncode ServiceInfo where
   type BinRep ServiceInfo = ServiceInfoMsg
   decodeP (ServiceInfoMsg bs) = let
-      get_ :: RemoteTable -> Get ServiceInfo
+      get_ :: RemoteTable -> Serialize.Get ServiceInfo
       get_ rt = do
-        d <- get
-        case unstatic rt d of
+        bd <- Serialize.get
+        case unstatic rt (Binary.decode bd) of
           Right (SomeConfigurationDict (Dict :: Dict (Configuration s))) -> do
-            rest <- get
+            rest <- safeGet
             let (service, s) = extract rest
                 extract :: (Service s, s)
                         -> (Service s, s)
@@ -159,14 +170,20 @@ instance ProcessEncode ServiceInfo where
           Left err -> error $ "decode ServiceExit: " ++ err
     in do
       rt <- asks (remoteTable . processNode)
-      return $ runGet (get_ rt) bs
+      case Serialize.runGetLazy (get_ rt) bs of
+        Right m -> return m
+        Left err -> error $ "decodeP ServiceInfo: " ++ err
 
-  encodeP (ServiceInfo svc@(Service _ _ d) s) = ServiceInfoMsg . runPut $
-    put d >> put (svc, s)
+  encodeP (ServiceInfo svc@(Service _ _ d) s) =
+    ServiceInfoMsg . Serialize.runPutLazy $
+      Serialize.put (Binary.encode d) >> safePut (svc, s)
 
 -- | Extract ServiceDict info without full decoding of the 'ServiceInfoMsg'.
 getServiceInfoDict :: ServiceInfoMsg -> Static SomeConfigurationDict
-getServiceInfoDict (ServiceInfoMsg bs) = runGet get bs
+getServiceInfoDict (ServiceInfoMsg bs) =
+    case  Serialize.runGetLazy Serialize.get bs of
+      Right bd -> Binary.decode bd
+      Left err -> error $ "getServiceInfoDict: " ++ err
 
 --------------------------------------------------------------------------------
 -- Mesages

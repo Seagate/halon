@@ -12,6 +12,7 @@ module HA.Services.SSPL.LL.Resources where
 
 import Control.Distributed.Process (NodeId)
 
+import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
@@ -33,13 +34,15 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Closure
 
-import Data.Aeson
-import Data.Binary (Binary)
+import Data.Aeson hiding (encode, decode)
+import Data.Binary (Binary, encode, decode)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Time
 import qualified Data.Text as T
+import Data.SafeCopy
+import Data.Serialize hiding (encode, decode)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 
@@ -349,16 +352,22 @@ instance Hashable DeclareChannels
 newtype Channel a = Channel (SendPort a)
   deriving (Eq, Show, Typeable, Binary, Hashable)
 
+instance (Typeable a, Binary a) => SafeCopy (Channel a) where
+  putCopy (Channel sp) = contain $ put (encode sp)
+  getCopy = contain $ Channel . decode <$> get
+
 -- | Relation connecting the SSPL service process to its IEM channel.
 data IEMChannel = IEMChannel
   deriving (Eq, Show, Typeable, Generic)
 
+deriveSafeCopy 0 'base ''IEMChannel
 instance Binary IEMChannel
 instance Hashable IEMChannel
 
 data CommandChannel = CommandChannel
   deriving (Eq, Show, Typeable, Generic)
 
+deriveSafeCopy 0 'base ''CommandChannel
 instance Binary CommandChannel
 instance Hashable CommandChannel
 
@@ -414,6 +423,7 @@ instance ToJSON ActuatorConf where
            , "commands" .= command
            , "timeout"  .= fromDefault timeout
            ]
+deriveSafeCopy 0 'base ''ActuatorConf
 
 actuatorSchema :: Schema ActuatorConf
 actuatorSchema = compositeOption subOpts
@@ -444,6 +454,7 @@ dcsSchema = let
 data SensorConf = SensorConf {
     scDCS :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
+deriveSafeCopy 0 'base ''SensorConf
 
 instance Binary SensorConf
 instance Hashable SensorConf
@@ -465,6 +476,7 @@ data SSPLConf = SSPLConf {
 instance Binary SSPLConf
 instance Hashable SSPLConf
 instance ToJSON SSPLConf
+deriveSafeCopy 0 'base ''SSPLConf
 
 ssplSchema :: Schema SSPLConf
 ssplSchema = SSPLConf

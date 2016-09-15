@@ -4,6 +4,7 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
 -- |
@@ -67,6 +68,7 @@ import Data.Binary ( Binary )
 import Data.Data ( Data )
 import Data.Hashable ( Hashable )
 import Data.Word ( Word32, Word64 )
+import Data.SafeCopy (deriveSafeCopy, base)
 import Data.Typeable ( Typeable )
 import Foreign.C.String ( CString, peekCString )
 import Foreign.C.Types ( CInt(..) )
@@ -553,3 +555,6 @@ peekStringArray p = mapM peekCString
                   $ takeWhile (/=nullPtr)
                   $ map (unsafePerformIO . peek)
                   $ iterate (`advancePtr` 1) p
+
+deriveSafeCopy 0 'base ''ServiceType
+deriveSafeCopy 0 'base ''ServiceParams
