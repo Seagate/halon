@@ -13,7 +13,7 @@ import Test.Transport
 
 import HA.EventQueue
 import HA.EventQueue.Producer
-import HA.EventQueue.Types (newPersistMessage, PersistMessage(..), HAEvent(..))
+import HA.EventQueue.Types
 import HA.EQTracker
 import HA.Replicator
 import RemoteTables
@@ -23,12 +23,12 @@ import Control.Distributed.Process.Closure
 
 import Control.Applicative ((<$>))
 import Control.Monad
+import Data.PersistMessage
 import Data.Function (on)
 import Data.List (sortBy)
 import Data.Map (elems)
 import qualified Data.Set as Set
 import Data.Typeable
-import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Network.CEP
 
@@ -45,7 +45,7 @@ triggerEvent x = do
     msg <- newPersistMessage x
     pid <- promulgateEvent msg
     withMonitor pid wait
-    return $ persistEventId msg
+    return $ persistMessageId msg
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
@@ -115,12 +115,12 @@ tests (AbstractTransport transport _breakConnection _) _ = do
               pid <- promulgateEQ [selfNode] (1 :: Int)
               _ <- monitor pid
               (_ :: ProcessMonitorNotification) <- expect
-              PersistMessage _ _ : _ <- getMsgsAsList rGroup
-              _ <- expect :: Process (HAEvent Int)
+              PersistMessage _ _ _ : _ <- getMsgsAsList rGroup
+              _ <- expect :: Process PersistMessage
               return ()
         , testSuccess "eq-one-event" ==> \_ _ rGroup -> do
               eid <- triggerEvent 1
-              PersistMessage eid' _ : _ <- getMsgsAsList rGroup
+              PersistMessage eid' _ _ : _ <- getMsgsAsList rGroup
               assertEqual "one message was sent" eid eid'
         , testSuccess "eq-many-events" ==> \_ _ rGroup -> do
               let msgs = [1..10::Int]
@@ -134,7 +134,7 @@ tests (AbstractTransport transport _breakConnection _) _ = do
               let msgs = [1..10::Int]
               subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent msgs
-              v@(PersistMessage evtid _) :_ <- getMsgsAsList rGroup
+              v@(PersistMessage evtid _ _) :_ <- getMsgsAsList rGroup
               Just elm <- unPersistHAEvent v :: Process (Maybe Int)
               usend eq evtid
               Published (TrimDone eid) _ <- expect
@@ -147,42 +147,42 @@ tests (AbstractTransport transport _breakConnection _) _ = do
         , testSuccess "eq-trim-idempotent" ==> \eq _ rGroup -> do
               subscribe eq (Proxy :: Proxy TrimDone)
               evids <- mapM triggerEvent [1..10]
-              PersistMessage evtid _ : _ <- getMsgsAsList rGroup
+              PersistMessage evtid _ _ : _ <- getMsgsAsList rGroup
               assertBool "event id is one of messages that were sent"
                 (Set.member evtid (Set.fromList evids))
-              before <- map persistEventId <$> getMsgsAsList rGroup
+              before <- map persistMessageId <$> getMsgsAsList rGroup
               usend eq evtid
               Published (TrimDone eid) _ <- expect
               assertEqual "correct event was trimmed" evtid eid
-              trim1 <- map persistEventId <$> getMsgsAsList rGroup
+              trim1 <- map persistMessageId <$> getMsgsAsList rGroup
               usend eq evtid
               Published (TrimDone eid2) _ <- expect
               assertEqual "correct event was trimmed" evtid eid2
 
-              trim2 <- map persistEventId <$> getMsgsAsList rGroup
+              trim2 <- map persistMessageId <$> getMsgsAsList rGroup
               assertBool "trim is idempotent"
                          (before /= trim1 && before /= trim2 && trim1 == trim2)
         , testSuccess "eq-trim-none" ==> \eq _ rGroup -> do
               subscribe eq (Proxy :: Proxy TrimDone)
               mapM_ triggerEvent [1..10]
-              before <- map persistEventId <$> getMsgsAsList rGroup
+              before <- map persistMessageId <$> getMsgsAsList rGroup
               let evtid = UUID.nil
               usend eq evtid
               Published (TrimDone eid) _ <- expect
               assertEqual "correct event was trimmed" evtid eid
-              trim <- map persistEventId <$> getMsgsAsList rGroup
+              trim <- map persistMessageId <$> getMsgsAsList rGroup
               assertEqual "trimming non existing event is nilpotent" before trim
         , testSuccess "eq-with-no-rc-should-replicate" $ setup $ \_ _ rGroup -> do
               eid <- triggerEvent 1
-              PersistMessage eid' _ : _ <- getMsgsAsList rGroup
+              PersistMessage eid' _ _ : _ <- getMsgsAsList rGroup
               assertEqual "if no rc exists eq should replicate message" eid eid'
         , testSuccess "eq-should-lookup-for-rc" $ setup $ \eq _ rGroup -> do
               self <- getSelfPid
               eid <- triggerEvent (1::Int)
-              PersistMessage eid' _ : _ <- getMsgsAsList rGroup
+              PersistMessage eid' _ _ : _ <- getMsgsAsList rGroup
               assertEqual "correct message was received" eid eid'
               usend eq self
-              _ <- expect :: Process (HAEvent Int)
+              _ <- expect :: Process PersistMessage
               return ()
 
         -- Test that until removed, messages in the EQ are sent at least once
@@ -198,7 +198,7 @@ tests (AbstractTransport transport _breakConnection _) _ = do
               rc' <- spawnLocal $ do
                 evs' <- Set.fromList
                      <$> replicateM eventsNum
-                           ((\(HAEvent e (_::Int) _) -> e) <$> expect)
+                           (persistMessageId  <$> expect)
                 usend self (evs' == evs)
               usend eq rc'
               assertBool "event is correct" =<< expect

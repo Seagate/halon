@@ -2,11 +2,13 @@
 -- Module: Test.Helpers
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
+{-# LANGUAGE ScopedTypeVariables #-}
 module Test.Helpers where
 
 import HA.EventQueue.Types
+import Data.PersistMessage
 import Data.Maybe (catMaybes)
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (unwrapMessage)
 import Control.Distributed.Process.Serializable
 
 import qualified Test.Tasty.HUnit as HU
@@ -17,10 +19,8 @@ assertBool s b = liftIO $ HU.assertBool s b
 assertEqual :: (Eq a, Show a) => String -> a -> a -> Process ()
 assertEqual s a b = liftIO $ HU.assertEqual s a b
 
-
 unPersistHAEvent :: (Monad m, Serializable a) => PersistMessage -> m (Maybe a)
-unPersistHAEvent (PersistMessage _ m) = fmap eventPayload <$> unwrapMessage m
+unPersistHAEvent = return . fmap eventPayload . unwrapMessage
 
-unPersistHAEvents :: (Serializable a,Monad m) => [PersistMessage] -> m [a]
+unPersistHAEvents :: (Serializable a, Monad m) => [PersistMessage] -> m [a]
 unPersistHAEvents = fmap catMaybes . traverse unPersistHAEvent
-

@@ -5,9 +5,9 @@
 module HA.EventQueue.Types
     ( HAEvent(..)
     , UUID
-    , PersistMessage(..)
     , newPersistMessage
-    , DoTrimUnknown(..)
+    , PersistMessage
+    , persistMessageId
     , DoClearEQ(..)
     , DoneClearEQ(..)
     , EQStatReq(..)
@@ -25,6 +25,7 @@ import Data.Function (on)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
+import Data.PersistMessage
 
 import GHC.Generics (Generic)
 
@@ -43,20 +44,6 @@ instance Eq (HAEvent a) where
 instance Ord (HAEvent a) where
     compare = compare `on` eventId
 
-data PersistMessage =
-    PersistMessage
-    { persistEventId :: !UUID
-    , persistMsg     :: !Message
-    } deriving (Generic, Show, Typeable)
-
-instance Binary PersistMessage
-
-instance Eq PersistMessage where
-    (==) = (==) `on` persistEventId
-
-instance Ord PersistMessage where
-    compare = compare `on` persistEventId
-
 newPersistMessage :: (Serializable a, MonadIO m) => a -> m PersistMessage
 newPersistMessage msg = liftIO $ do
     uuid <- nextRandom
@@ -65,15 +52,7 @@ newPersistMessage msg = liftIO $ do
               , eventPayload = msg
               , eventHops    = []
               }
-    return PersistMessage
-           { persistEventId = uuid
-           , persistMsg     = wrapMessage evt
-           }
-
--- | Request EQ to remove message of type that is unknown.
-data DoTrimUnknown = DoTrimUnknown Message deriving (Typeable, Generic)
-
-instance Binary DoTrimUnknown
+    return $ persistMessage uuid evt
 
 -- | Request to the EQ to remove all messages.
 data DoClearEQ = DoClearEQ ProcessId deriving (Typeable, Generic)

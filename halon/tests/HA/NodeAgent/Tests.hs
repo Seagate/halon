@@ -11,7 +11,6 @@ module HA.NodeAgent.Tests (tests, __remoteTable) where
 
 import HA.EventQueue ( EventQueue, startEventQueue, emptyEventQueue )
 import HA.EventQueue.Producer (expiate)
-import HA.EventQueue.Types (HAEvent(..))
 import HA.Replicator ( RGroup(..) )
 import HA.EQTracker hiding (__remoteTable)
 import RemoteTables ( remoteTable )
@@ -24,6 +23,7 @@ import Control.Distributed.Process.Serializable ( SerializableDict(..) )
 
 import Data.List (find)
 import Data.Typeable
+import Data.Functor.Identity
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.MVar (newEmptyMVar,putMVar,takeMVar,MVar)
 import Control.Monad.Catch (catch)
@@ -32,6 +32,7 @@ import Control.Exception ( SomeException )
 import Control.Exception as E ( bracket )
 import Network.Transport ( Transport )
 import System.IO.Unsafe ( unsafePerformIO )
+import Test.Helpers
 import Test.Framework
 
 
@@ -43,11 +44,11 @@ dummyRC rGroup =
       usend eq self -- Report me as the RC.
 
       let loop = do
-           HAEvent _ str _ <- expect
-           case str of
-             "hello0" -> liftIO $ putMVar sync0 ()
-             "hello1" -> liftIO $ putMVar sync1 ()
-             _        -> error "Unexpected event"
+           pm <- expect
+           case runIdentity $ unPersistHAEvent pm of
+             Just "hello0" -> liftIO $ putMVar sync0 ()
+             Just "hello1" -> liftIO $ putMVar sync1 ()
+             _   -> error "Unexpected event"
            loop
       loop
 

@@ -27,6 +27,9 @@ import qualified Data.Sequence as S
 import           Data.Int
 import qualified Data.Map as M
 import           Data.Set (Set)
+import           Data.UUID (UUID)
+import           Data.PersistMessage
+import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import           System.Clock
 import           Control.Lens.TH
 
@@ -626,7 +629,7 @@ data Setting s a where
     RuleFinalizer :: Setting s (s -> Process s)
     PhaseBuffer :: Setting s Buffer
     DebugMode :: Setting s Bool
-    DefaultHandler :: Setting s (Message -> s -> Process ())
+    DefaultHandler :: Setting s (UUID -> StablePrint -> Lazy.ByteString -> s -> Process ())
 
 -- | Definition state machine.
 --
@@ -689,9 +692,11 @@ setBuffer b = singleton $ SetSetting PhaseBuffer b
 enableDebugMode :: Specification s ()
 enableDebugMode = singleton $ SetSetting DebugMode True
 
--- | Set a handler for messages that were not consumed by any other rules.
--- This method works only in cruise mode.
-setDefaultHandler :: (Message -> s -> Process ()) -> Specification s ()
+-- | Set a handler for 'PersistMessage's that were not consumed by any other
+-- rules.
+--
+-- Unconsumed raw messages are silently discarded.
+setDefaultHandler :: (UUID -> StablePrint -> Lazy.ByteString -> s -> Process ()) -> Specification s ()
 setDefaultHandler = singleton . SetSetting DefaultHandler
 
 -- | Request runtime information

@@ -27,7 +27,7 @@ module TestRunner
 
 import qualified HA.EQTracker as EQT
 import HA.EventQueue
-import HA.EventQueue.Types (PersistMessage)
+import HA.EventQueue.Types
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Multimap

@@ -50,7 +50,6 @@ import Control.Distributed.Process hiding (catch, finally, mask_, try)
 import Control.Distributed.Process.Pool.Bounded
 import qualified Control.Distributed.Process.Scheduler.Raw as DP
 import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Internal.Types (Message(..))
 import Control.Distributed.Process.Monitor (withMonitoring)
 import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import Network.CEP hiding (continue)
@@ -60,13 +59,14 @@ import Control.Concurrent (yield)
 import Control.Concurrent.STM
 import Control.Monad (when)
 import Control.Monad.Catch
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary)
 import Data.Foldable (forM_)
 import Data.Function (fix)
 import Data.Functor (void)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import Data.PersistMessage
 import Data.Typeable
 import Data.Word (Word64)
 import GHC.Generics
@@ -132,10 +132,10 @@ emptyEventQueue = EventQueue 0 M.empty M.empty
 -- @O(log n)@
 addSerializedEvent :: PersistMessage -> EventQueue -> EventQueue
 addSerializedEvent msg@PersistMessage{..} eq@EventQueue{..} =
-  case M.lookup persistEventId _eqMap of
+  case M.lookup persistMessageId _eqMap of
     Nothing -> eq { _eqSN = succ _eqSN
-                  , _eqMap = M.insert persistEventId (msg, _eqSN) _eqMap
-                  , _eqSnMap = M.insert _eqSN persistEventId _eqSnMap
+                  , _eqMap = M.insert persistMessageId (msg, _eqSN) _eqMap
+                  , _eqSnMap = M.insert _eqSN persistMessageId _eqSnMap
                   }
     Just{} -> eq
 
@@ -148,32 +148,6 @@ filterEvent eid eq =
      in eq { _eqMap = uuidMap'
            , _eqSnMap = maybe id (M.delete . snd) me $ _eqSnMap eq
            }
-
--- | Filter all occurences of the given message inside event queue.
---
--- @O(n)@
-filterMessage :: Message -> EventQueue -> EventQueue
-filterMessage msg eq =
-    eq { _eqMap   = keep
-       , _eqSnMap = M.foldr (\(_, sn) b -> M.delete sn b) (_eqSnMap eq) remove
-       }
-  where
-    (keep, remove) = M.mapEither equalEncoding $ _eqMap eq
-
-    (bfgp,benc) = case msg of
-       EncodedMessage f e -> (f,e)
-       UnencodedMessage f p -> (f, encode p)
-    equalEncoding p@(PersistMessage uuid msg', i) =
-      case msg' of
-        EncodedMessage f e
-           | f == bfgp && e == benc -> Right p
-           | otherwise -> Left p
-        UnencodedMessage f v ->
-           let enc = encode v
-           in if f == bfgp && enc == benc
-                then Right p
-                else Left ((PersistMessage uuid (EncodedMessage f enc)), i)
-
 -- | Remove all messages from the event queue.
 --
 -- @O(1)@
@@ -204,7 +178,6 @@ dummyRead _ = return ()
 
 remotable [ 'addSerializedEvent
           , 'filterEvent
-          , 'filterMessage
           , 'clearQueue
           , 'eqReadEvents
           , 'eqReadStats
@@ -218,6 +191,7 @@ requestTimeout = 2 * 1000 * 1000
   where
     -- Silence warnings about unused definitions produced by 'remotable'.
     _ = ($(functionTDict 'dummyRead), $(functionSDict 'dummyRead))
+    _ = $(functionSDict 'clearQueue)
 
 -- | @startsEventQueue rg@ starts an event queue.
 --
@@ -267,9 +241,9 @@ eqRules rg pool groupMonitor = do
             b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (sp, sn)
             if b then Just <$> receiveChan rp else return Nothing
           when (null ms) $ eqTrace "Poller: No messages"
-          forM_ (ms :: [PersistMessage]) $ \(PersistMessage mid ev) -> do
-            eqTrace $ "Sending to RC: " ++ show mid
-            uforward ev rc
+          forM_ (ms :: [PersistMessage]) $ \sm -> do
+            eqTrace $ "Sending to RC: " ++ show (persistMessageId sm)
+            usend rc sm
           tf <- liftIO $ getTime Monotonic
           -- Wait if any time remains to reach the minimum polling delay.
           let timeSpecToMicro :: TimeSpec -> Int64
@@ -310,8 +284,7 @@ eqRules rg pool groupMonitor = do
     -- When the RC requests to clear the queue, we submit such a task to the
     -- thread pool.
     defineSimple "clearing" $ \(DoClearEQ pid) -> do
-      self <- liftProcess $ getSelfPid
-      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
+      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
         -- Insist here in a loop until it works.
         fix $ \loop -> do
           -- Ensure we have a pid to monitor the rgroup.
@@ -331,33 +304,6 @@ eqRules rg pool groupMonitor = do
             updateStateWith rg $ $(mkStaticClosure 'clearQueue)
           case mr of
             Just True -> usend pid DoneClearEQ
-            _         -> loop
-
-    -- Remove message of unknown type. It's important that all
-    -- messages with similar layout (fingerprint and encoding) will
-    -- be removed.
-    defineSimple "trimming-unknown" $ \(DoTrimUnknown msg) -> do
-      self <- liftProcess getSelfPid
-      (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $
-        -- Insist here in a loop until it works.
-        fix $ \loop -> do
-          -- Ensure we have a pid to monitor the rgroup.
-          -- See Note [RGroup monitor].
-          when schedulerIsEnabled $ fix $ \tmvarLoop -> do
-            -- When the scheduler is enabled, we loop until the TMVar is filled.
-            liftIO (atomically $ tryReadTMVar groupMonitor) >>= \case
-              -- We are going to block on the TMVar, tell the worker monitor.
-              Nothing -> do getSelfPid >>= DP.nsend workerMonitorLabel
-                            () <- DP.expect
-                            () <- expect
-                            tmvarLoop
-              -- We are not blocking on the TMVar, proceed.
-              Just _  -> return ()
-          rgMonitor <- liftIO $ atomically $ readTMVar groupMonitor
-          mr <- withMonitoring (monitor rgMonitor) $
-            updateStateWith rg $ $(mkClosure 'filterMessage) msg
-          case mr of
-            Just True -> usend self (TrimUnknown msg)
             _         -> loop
 
     -- Deals with monitor notifications from the RGroup and from the workers.
@@ -393,7 +339,7 @@ eqRules rg pool groupMonitor = do
       liftProcess $ void $ monitor pid
 
     -- An event arrived. Insert it in the replicated state.
-    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _)) -> do
+    defineSimple "ha-event" $ \(sender, ev@(PersistMessage mid _ _)) -> do
       mRgMonitor <- liftIO $ atomically $ tryReadTMVar groupMonitor
       case mRgMonitor of
         -- When there is no RGroup monitor, assume we can't modify the
@@ -507,12 +453,12 @@ workerMonitorLabel = eventQueueLabel ++ ".workerMonitor"
 startWorkerMonitor :: ProcessId -> Process ()
 startWorkerMonitor pid = do
     let workerMonitor !xs = DP.receiveWait
-          [ DP.match $ \pid -> do DP.monitor pid >> DP.usend pid ()
-                                  workerMonitor (S.insert pid xs)
-          , DP.match $ \(ProcessMonitorNotification _ pid _) ->
-              workerMonitor (S.delete pid xs)
-          , DP.match $ \(pid, ()) -> do DP.usend pid (S.toList xs)
-                                        workerMonitor xs
+          [ DP.match $ \p -> do DP.monitor p >> DP.usend p ()
+                                workerMonitor (S.insert p xs)
+          , DP.match $ \(ProcessMonitorNotification _ p _) ->
+              workerMonitor (S.delete p xs)
+          , DP.match $ \(p, ()) -> do DP.usend p (S.toList xs)
+                                      workerMonitor xs
           ]
     wm <- DP.spawnLocal $ DP.link pid >> workerMonitor S.empty
     -- Insist in registration if the monitor from a previous execution has not

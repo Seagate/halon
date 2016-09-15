@@ -23,9 +23,10 @@ import HA.EventQueue.Types
 import HA.Logger
 import qualified HA.EQTracker as EQT
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when, void)
+import Control.Monad.Catch (bracket)
 
 import Data.Maybe (maybeToList)
 import Data.List ((\\))
@@ -55,7 +56,7 @@ promulgateEQ :: Serializable a
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
     m <- newPersistMessage x
-    producerTrace $ "promulgateEQ: " ++ show (typeOf x, persistEventId m)
+    producerTrace $ "promulgateEQ: " ++ show (typeOf x, persistMessageId m)
     go m
   where
     go evt = do
@@ -70,7 +71,7 @@ promulgateEQPref :: Serializable a
                  -> Process ProcessId
 promulgateEQPref peqnids eqnids x = spawnLocal $ do
     m <- newPersistMessage x
-    producerTrace $ "promulgateEQPref: " ++ show (typeOf x, persistEventId m)
+    producerTrace $ "promulgateEQPref: " ++ show (typeOf x, persistMessageId m)
     go m
   where
     go evt = do
@@ -83,7 +84,7 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 promulgate :: Serializable a => a -> Process ProcessId
 promulgate x = do
     m <- newPersistMessage x
-    producerTrace $ "promulgate: " ++ show (typeOf x, persistEventId m)
+    producerTrace $ "promulgate: " ++ show (typeOf x, persistMessageId m)
     promulgateEvent m
 
 -- | Send message and wait until it will be acknowledged, this method is
@@ -115,11 +116,11 @@ promulgateEvent evt =
           void (receiveTimeout 1000000 []) >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation Nothing rest)) -> do
           res <- promulgateHAEvent rest evt
-          producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
+          producerTrace $ "promulgateEvent: " ++ show (res, persistMessageId evt)
           when (res == Failure) $ receiveTimeout 1000000 [] >> go
         Just (EQT.ReplicaReply (EQT.ReplicaLocation pref rest)) -> do
           res <- promulgateHAEventPref (maybeToList pref) rest evt
-          producerTrace $ "promulgateEvent: " ++ show (res, persistEventId evt)
+          producerTrace $ "promulgateEvent: " ++ show (res, persistMessageId evt)
           when (res == Failure) $ receiveTimeout 1000000 [] >> go
         Nothing -> receiveTimeout 1000000 [] >> go
 
@@ -129,10 +130,10 @@ promulgateHAEvent :: [NodeId] -- ^ EQ nodes.
                   -> PersistMessage
                   -> Process Result
 promulgateHAEvent eqnids msg = do
-  producerTrace $ "Sending " ++ show (persistEventId msg) ++ " to " ++ show eqnids
+  producerTrace $ "Sending " ++ show (persistMessageId msg) ++ " to " ++ show eqnids
   result <- callLocal $
     ncallRemoteSome promulgateTimeout eqnids eventQueueLabel msg snd
-  producerTrace $ "promulgateHAEvent: " ++ show (result, persistEventId msg)
+  producerTrace $ "promulgateHAEvent: " ++ show (result, persistMessageId msg)
   case result of
     (rnid, True) : _ -> do
       nsend EQT.name $ EQT.PreferReplica rnid
@@ -147,7 +148,7 @@ promulgateHAEventPref :: [NodeId] -- ^ Preferred EQ nodes.
                       -> PersistMessage
                       -> Process Result
 promulgateHAEventPref peqnids eqnids msg = do
-  producerTrace $ "Sending " ++ show (persistEventId msg)
+  producerTrace $ "Sending " ++ show (persistMessageId msg)
                    ++ " to " ++ show peqnids
                    ++ " and then to " ++ show (eqnids \\ peqnids)
   result <- callLocal $ ncallRemoteSomePrefer
@@ -155,7 +156,7 @@ promulgateHAEventPref peqnids eqnids msg = do
       peqnids (eqnids \\ peqnids)
       eventQueueLabel msg
       snd
-  producerTrace $ "promulgateHAEventPref: " ++ show (result, persistEventId msg)
+  producerTrace $ "promulgateHAEventPref: " ++ show (result, persistMessageId msg)
   case result of
     (rnid, True) : _ -> do
       nsend EQT.name $ EQT.PreferReplica rnid

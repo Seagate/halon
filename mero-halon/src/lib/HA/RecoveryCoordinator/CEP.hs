@@ -115,14 +115,9 @@ rcRules argv additionalRules = do
 
     -- Forward all messages that no rule is interested in back to EQ,
     -- so EQ could delete them.
-    setDefaultHandler $ \msg s -> do
-      let smsg = case msg of
-            EncodedMessage f e -> "{ fingerprint = " ++ show f
-              ++ ", encoding " ++ show e ++ " }"
-            UnencodedMessage f b -> "{ fingerprint = " ++ show f
-              ++ ", encoding " ++ show (encode b) ++ " }"
-      liftProcess $ sayRC $ "unhandled message " ++ smsg
-      liftProcess $ usend (lsEQPid s) (DoTrimUnknown msg)
+    setDefaultHandler $ \uuid st _ s -> do
+      liftProcess $ sayRC $ "unhandled message " ++ show uuid ++ ": " ++ show st
+      liftProcess $ usend (lsEQPid s) uuid
 
     initRule $ rcInitRule argv
     sequence_ [ ruleNodeUp argv

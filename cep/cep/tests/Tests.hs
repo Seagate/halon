@@ -6,9 +6,14 @@ import Control.Distributed.Process hiding (catch)
 import Control.Monad (replicateM, replicateM_)
 import Control.Monad.Catch (SomeException, catch)
 import Data.Binary (Binary)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Typeable
 import Data.List (sort)
 import Data.IORef
+import Data.PersistMessage
+import Data.Binary (encode)
+import qualified Data.UUID as UUID
 import GHC.Generics
 
 import System.Clock
@@ -59,6 +64,7 @@ tests launch =
   , testsException launch
   , testsDefaultHandler launch
   , testsPhaseIf launch
+  , testsSMessage launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -1186,7 +1192,7 @@ defaultHandlerWorks = do
     self <- getSelfPid
 
     let specs = do
-          setDefaultHandler $ \_ _ -> do
+          setDefaultHandler $ \_ _ _ _ -> do
             liftProcess $ usend self ("default"::String)
           defineSimple "defaultHandler" $ \(Donut _) -> do
             liftProcess $ usend self ("rule"::String)
@@ -1196,7 +1202,7 @@ defaultHandlerWorks = do
     assertEqual "rule handled" ("rule"::String) =<< expect
     usend pid donut
     assertEqual "rule handled" ("rule"::String) =<< expect
-    usend pid (3::Int)
+    usend pid (persistMessage UUID.nil (3::Int))
     assertEqual "default handler" ("default"::String) =<< expect
 
 testsPhaseIf :: (Process () -> IO ()) -> TestTree
@@ -1224,3 +1230,29 @@ setPhaseIfPartial = do
 
     i <- expect
     assertEqual "Handle second message" "foo" i
+
+testsSMessage :: (Process () -> IO ()) -> TestTree
+testsSMessage launch = testGroup "PersistedMessage"
+  [ testCase "PersistMessage works" $ launch stableMessageWorks
+  ]
+
+stableMessageWorks :: Process ()
+stableMessageWorks = do
+    self <- getSelfPid
+
+    let specs = define "exception-handling" $ do
+          ph0 <- phaseHandle "ph0"
+          setPhase ph0 $ \Baz{} -> liftProcess $ usend self "foo"
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () $ do
+             setDefaultHandler $ \_ _ _ _ -> do
+               liftProcess $ usend self ("default"::String)
+             specs
+    link pid
+    let a = Baz 3
+    usend pid $ persistMessage UUID.nil a
+    usend pid $ persistMessage UUID.nil B
+
+    assertEqual "Handle second message" "foo" =<< expect
+    assertEqual "Second message was not processed" "default" =<< expect

@@ -34,7 +34,8 @@ import qualified Data.Map.Strict     as M
 import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
 import           Data.Traversable (mapAccumL)
-import           Data.Foldable (forM_)
+import           Data.UUID (UUID)
+import           Data.ByteString.Lazy (ByteString)
 import           Debug.Trace (traceEventIO)
 import           Control.Lens
 
@@ -44,6 +45,7 @@ import GHC.DataSize (recursiveSize)
 #endif
 import System.IO.Unsafe (unsafePerformIO)
 
+import Data.PersistMessage
 import Network.CEP.Buffer
 import Network.CEP.Execution
 import Network.CEP.SM
@@ -79,7 +81,6 @@ data Mode = Read | Write | Execute
 data Request :: Mode -> * -> * where
     Query :: Select a -> Request 'Read a
     Run :: Action a -> Request 'Write (Process (a, Engine))
-    DefaultAction :: Message -> Request 'Execute (Process ())
 
 data Select a = GetSetting (EngineSetting a)
                 -- ^ Get CEP 'Engine' internal setting.
@@ -89,6 +90,7 @@ data Select a = GetSetting (EngineSetting a)
 data Action a where
     Tick           :: Action RunInfo
     Incoming       :: Message   -> Action RunInfo
+    Unpersist      :: PersistMessage  -> Action RunInfo
     NewSub         :: Subscribe -> Action ()
     Unsub          :: Unsubscribe -> Action ()
     TimeoutArrived :: Timeout -> Action RunInfo
@@ -146,15 +148,14 @@ rawUnsubRequest = Run . Unsub
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
 rawIncoming = Run . Incoming
 
+rawPersisted :: PersistMessage -> Request 'Write (Process (RunInfo, Engine))
+rawPersisted = Run . Unpersist
+
 timeoutMsg :: Timeout -> Request 'Write (Process (RunInfo, Engine))
 timeoutMsg = Run . TimeoutArrived
 
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
 requestAction (Run a) = a
-
-runDefaultHandler :: Message -> Request 'Execute (Process ())
-runDefaultHandler = DefaultAction
-
 
 -- CEP Engine finit state machine represented as a Mealy machine.
 newtype Engine = Engine { _unE :: forall a m. Request m a -> a }
@@ -208,10 +209,12 @@ data Machine s =
       -- ^ List of SM that is in a runnable state
     , _machSuspendedSM :: [SMData s]
       -- ^ List of SM that are in suspended state
-    , _machDefaultHandler :: !(Maybe (Message -> s -> Process ()))
-      -- ^ Handler for messages of the unknown type
+    , _machDefaultHandler :: !(Maybe (UUID -> StablePrint -> ByteString -> s -> Process ()))
+      -- ^ Handler for 'PersistMessages' of an unknown type.
+      -- Raw messages of unknown type are silently discarded.
     , _machMaxThreadId :: !SMId
       -- ^ Maximum SMId
+    , _machSFingerprint :: !(M.Map StablePrint Fingerprint)
     }
 
 makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
@@ -242,6 +245,7 @@ emptyMachine s =
     , _machSuspendedSM    = []
     , _machDefaultHandler = Nothing
     , _machMaxThreadId    = 0
+    , _machSFingerprint   = M.empty
     }
 
 newEngine :: Machine s -> Engine
@@ -301,8 +305,12 @@ defaultHandler st next (Run (Incoming _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (TimeoutArrived _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
-defaultHandler st _ (DefaultAction msg) =
-    forM_ (_machDefaultHandler st) $ \f -> f msg (_machState st)
+defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
+  case M.lookup sfp (_machSFingerprint st) of
+    Nothing -> do for_ (_machDefaultHandler st) $ \handler ->
+                    handler uuid sfp payload (_machState st)
+                  return (RunInfo 0 MsgIgnored, Engine $ next st)
+    Just fp -> next st (rawIncoming (EncodedMessage fp payload))
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st

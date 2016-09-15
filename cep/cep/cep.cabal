@@ -21,7 +21,8 @@ Flag profiling
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Network.CEP
+  exposed-modules:     Data.PersistMessage
+                       Network.CEP
                        Network.CEP.Testing
   other-modules:       Network.CEP.Buffer
                        Network.CEP.Engine
@@ -43,9 +44,11 @@ library
                        containers==0.5.*,
                        netwire,
                        operational,
+                       text,
                        transformers,
                        exceptions,
-                       lens
+                       lens,
+                       uuid
   default-language:    Haskell2010
   ghc-options:         -Wall
 
@@ -80,6 +83,8 @@ Test-Suite unit-tests
                  tasty,
                  tasty-hunit,
                  tasty-files,
+                 uuid,
+                 bytestring,
                  exceptions
 
 Test-Suite unit-tests-scheduler
@@ -109,4 +114,6 @@ Test-Suite unit-tests-scheduler
                  tasty-files,
                  unix,
                  time,
+                 uuid,
+                 bytestring,
                  exceptions

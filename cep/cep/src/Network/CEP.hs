@@ -101,14 +101,16 @@ import           Control.Monad
 import           Data.Dynamic
 import           Data.Foldable (for_)
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
+import           Control.Monad.Catch (bracket_)
 import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
+import Data.Typeable (typeRep)
 import           FRP.Netwire (dtime)
 
 import Network.CEP.Buffer
@@ -117,6 +119,7 @@ import Network.CEP.Execution
 import Network.CEP.SM
 import Network.CEP.Types
 import Network.CEP.Utils
+import Data.PersistMessage
 
 import Debug.Trace (traceEventIO)
 
@@ -124,11 +127,17 @@ import Debug.Trace (traceEventIO)
 --   rules.
 fillMachineTypeMap :: Machine s -> Machine s
 fillMachineTypeMap st@Machine{..} =
-    st { _machTypeMap = M.foldrWithKey go MM.empty _machRuleData }
+    st { _machTypeMap = M.foldrWithKey go MM.empty _machRuleData
+       , _machSFingerprint = M.foldrWithKey gos M.empty _machRuleData
+       }
   where
     go key rd m =
         let insertF i@(TypeInfo fprt _) = MM.insert fprt (key, i) in
         foldr insertF m $ _ruleTypes rd
+    gos _key rd m =
+        let insertF (TypeInfo fprt r) =
+              M.insert (stableprintTypeRep $ typeRep r) fprt
+        in foldr insertF m $ _ruleTypes rd
 
 -- | Fills a type tracking map with every type of messages needed by the init
 --   rule.
@@ -212,6 +221,7 @@ data AcceptedMsg
     | Debug RuntimeInfoRequest
     | UnsubMsg Unsubscribe
     | SomeMsg Message
+    | SomeSMsg PersistMessage
 
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
@@ -234,6 +244,7 @@ runItForever start_eng = do
                [ match (return . SubMsg)
                , match (return . UnsubMsg)
                , match (return . TimeoutMsg)
+               , match (return . SomeSMsg)
                , matchAny (return . SomeMsg)
                ]
       case msg of
@@ -248,6 +259,7 @@ runItForever start_eng = do
               m = case other of
                     TimeoutMsg t -> timeoutMsg t
                     SomeMsg x    -> rawIncoming x
+                    SomeSMsg x   -> rawPersisted x
                     _            -> error "impossible: runItForever"
               act' = requestAction m
           (ri', nxt_eng') <- stepForward m eng
@@ -281,6 +293,7 @@ runItForever start_eng = do
                                     , match (return . TimeoutMsg)
                                     , match (return . Debug)
                                     , match (return . UnsubMsg)
+                                    , match (return . SomeSMsg)
                                     , matchAny (return . SomeMsg)
                                     ]
       | otherwise =
@@ -288,6 +301,7 @@ runItForever start_eng = do
                                       , match (return . TimeoutMsg)
                                       , match (return . Debug)
                                       , match (return . UnsubMsg)
+                                      , match (return . SomeSMsg)
                                       , matchAny (return . SomeMsg)
                                       ]
       where
@@ -312,14 +326,10 @@ runItForever start_eng = do
             let m :: Request 'Write (Process (RunInfo, Engine))
                 m = case other of
                       TimeoutMsg t -> timeoutMsg t
+                      SomeSMsg x   -> rawPersisted x
                       SomeMsg x    -> rawIncoming x
                       _            -> error "impossible: runItForever"
             (ri, nxt_eng) <- stepForward m inner
-            case runResult ri of
-              MsgIgnored -> case other of
-                SomeMsg x -> stepForward (runDefaultHandler x) nxt_eng
-                _ -> return ()
-              _ -> return ()
             let act = requestAction m
             when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
             return nxt_eng

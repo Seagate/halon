@@ -48,7 +48,7 @@ import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions 
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (testCase, assertFailure)
+import           Test.Tasty.HUnit (testCase, assertFailure, assertEqual)
 import           TestRunner
 
 tests :: (RGroup g, Typeable g) => Transport -> Proxy g -> [TestTree]
@@ -167,11 +167,11 @@ testEQTrimUnknown transport pg = runDefaultTest transport $ do
 
   say $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs eq _ _) -> do
-    subscribe eq (Proxy :: Proxy TrimUnknown)
+    subscribe eq (Proxy :: Proxy TrimDone)
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] AbraCadabra
-    Published (TrimUnknown _) _ <- expect
-    say $ "Everything got trimmed"
+    Published (TrimDone _) _ <- expect
+    return ()
 
 -- | Tests decision-log service by starting it and redirecting the logs to own
 --  process, then starting a dummy service and checking that logs were
