@@ -317,7 +317,7 @@ ruleDriveInserted = define "drive-inserted" $ do
          let markIfNotMeroFailure = do
                -- TODO this should be more general and should check for
                -- e.g. smart failure as well.
-               let isMeroFailure (StorageDeviceStatus "MERO-FAILED" _) = True
+               let isMeroFailure (StorageDeviceStatus "HALON-FAILED" _) = True
                    isMeroFailure _ = False
                meroFailure <- maybe False isMeroFailure <$> driveStatus disk
                if meroFailure
@@ -506,7 +506,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
   where
     filterMaybeM _ Nothing = return Nothing
     filterMaybeM f j@(Just x) = f x >>= \q -> return $ if q then j else Nothing
-    isRealFailure (StorageDeviceStatus "MERO-FAILED" _) = True
+    isRealFailure (StorageDeviceStatus "HALON-FAILED" _) = True
     isRealFailure (StorageDeviceStatus "FAILED" _) = True
     isRealFailure _ = False
     m0failed SDSFailed = True
