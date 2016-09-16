@@ -47,8 +47,8 @@ formulaicStrategy formulas = Strategy
         -- Following change is temporary, and would work as long as failures
         -- above controllers (encl, racks) are not to be supported
         -- (ref. HALON-406)
-          quotient =  (n + 2*k) `quot` (fromIntegral (noCtlrs))
-          remainder = (n + 2*k) `rem` (fromIntegral (noCtlrs))
+          quotient =  (n + 2*k) `quot` (fromIntegral noCtlrs)
+          remainder = (n + 2*k) `rem` (fromIntegral noCtlrs)
           kc = remainder * (quotient + 1)
           ctrlFailures
               | kc > k = k `quot` (quotient + 1)
