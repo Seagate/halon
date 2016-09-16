@@ -21,6 +21,7 @@ import Control.Exception
   , mask
   )
 
+import Data.ByteString (ByteString, packCString)
 import Data.Word ( Word32, Word64 )
 
 import Foreign.C.Error
@@ -52,7 +53,7 @@ import Foreign.Marshal.Array
   , withArray0
   , withArrayLen
   )
-import Foreign.Marshal.Error (throwIfNeg)
+import Foreign.Marshal.Error (throwIfNeg, throwIf_)
 import Foreign.Marshal.Utils
   ( fillBytes
   , with
@@ -116,13 +117,15 @@ commitTransaction tx@(SpielTransaction ptr) =
 commitTransactionForced :: SpielTransaction
                         -> Bool
                         -> Word64 -- ^ Version number
-                        -> Word32 -- ^ Quorum
-                        -> IO ()
-commitTransactionForced (SpielTransaction ptr) forced ver quorum =
-  throwIfNonZero_ (\rc -> "Cannot commmit Spiel transaction: " ++ show rc)
-    $ withForeignPtr ptr $ \c_ptr -> alloca $ \q_ptr -> do
-      poke q_ptr quorum
-      c_spiel_tx_commit_forced c_ptr forced ver q_ptr
+                        -> IO (Either String ())
+commitTransactionForced tx@(SpielTransaction ptr) forced ver =
+  txValidateTransactionCache tx >>= \case
+    Nothing -> do
+      throwIfNonZero_ (\rc -> "Cannot commmit Spiel transaction: " ++ show rc)
+        $ withForeignPtr ptr $ \c_ptr -> alloca $ \q_ptr -> do
+          c_spiel_tx_commit_forced c_ptr forced ver q_ptr
+      return $ Right ()
+    Just err -> return $ Left err
 
 withTransaction :: (SpielTransaction -> IO a)
                 -> IO a
@@ -130,6 +133,22 @@ withTransaction f = bracket
     openTransaction
     closeTransaction
     (\t -> f t >>= \x -> commitTransaction t >> return x)
+
+txToBS :: SpielTransaction
+       -> Word64
+       -> IO ByteString
+txToBS (SpielTransaction ptr) verno = withForeignPtr ptr $ \c_ptr -> do
+  valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
+  case valid of
+    x | x == eOK -> alloca $ \c_str_ptr -> do
+          _ <- throwIf_ (/= 0) (\rc -> "Cannot dump Spiel transaction: " ++ show rc) (c_spiel_tx_to_str c_ptr verno c_str_ptr)
+          cs <- peek c_str_ptr
+          bs <- packCString cs
+          c_spiel_tx_str_free cs
+          return bs
+    x | x == eBUSY -> error "Not all objects are ready."
+    x | x == eNOENT -> error "Not all objects have a parent."
+    (Errno x) -> error $ "Unknown error return: " ++ show x
 
 dumpTransaction :: SpielTransaction
                 -> Word64 -- ^ Version number

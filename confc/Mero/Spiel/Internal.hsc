@@ -102,6 +102,15 @@ foreign import capi "spiel/spiel.h m0_spiel_tx_dump"
                   -> CString
                   -> IO CInt
 
+foreign import ccall "spiel/spiel.h m0_spiel_tx_to_str"
+  c_spiel_tx_to_str :: Ptr SpielTransactionV
+                    -> Word64
+                    -> Ptr CString
+                    -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_tx_str_free"
+  c_spiel_tx_str_free :: CString -> IO ()
+
 foreign import capi "spiel/spiel.h m0_spiel_cmd_profile_set"
   c_spiel_cmd_profile_set :: Ptr SpielContextV
                           -> CString

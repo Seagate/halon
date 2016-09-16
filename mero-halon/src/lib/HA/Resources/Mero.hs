@@ -726,12 +726,19 @@ prettyStatus MeroClusterState{..} = unlines [
   , "Current stop level: " ++ (show . unBootLevel $ _mcs_stoplevel)
   ]
 
-newtype ConfUpdateVersion = ConfUpdateVersion Word64
+-- | Information about the update state of the conf database. Holds
+-- version number of the current data and its hash. When we want to
+-- potentially update the database, we don't want to recommit and
+-- increase the version number when no actual changes have happened:
+-- we can just check against the hash if we actually have some changes
+-- to commit.
+data ConfUpdateVersion = ConfUpdateVersion Word64 (Maybe Int)
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ConfUpdateVersion
 instance Hashable ConfUpdateVersion
 deriveSafeCopy 0 'base ''ConfUpdateVersion
+
 
 -- | Process property, that shows that process was already bootstrapped,
 -- and no mkfs is needed.

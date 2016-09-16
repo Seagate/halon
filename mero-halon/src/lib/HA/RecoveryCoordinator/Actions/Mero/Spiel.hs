@@ -79,6 +79,7 @@ import Data.Binary
 import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
 import Data.Typeable
+import Data.Hashable (hash)
 import Data.IORef (writeIORef)
 import Data.List (sortOn)
 import Data.Maybe (catMaybes, listToMaybe)
@@ -420,7 +421,7 @@ syncAction meid sync =
     case sync of
       SyncToConfdServersInRG -> flip catch (handler (const $ return ())) $ do
         phaseLog "info" "Syncing RG to confd servers in RG."
-        void $ syncToConfd
+        void syncToConfd
       SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
         bs <- syncToBS
         liftProcess . DP.usend pid . M0.SyncDumpToBSReply $ Right bs
@@ -443,15 +444,9 @@ syncAction meid sync =
 -- 'DP.ProcessId'.
 syncToBS :: PhaseM LoopState l BS.ByteString
 syncToBS = withM0RC $ \lift -> do
-  fp <- DP.liftIO $ do
-    tmpdir <- getTemporaryDirectory
-    (fp, h) <- openTempFile tmpdir "conf.xc"
-    hClose h >> return fp
-  phaseLog "info" $ "Dumping conf in RG to: " ++ show fp
-  loadConfData >>= traverse_ (\x -> txOpenLocalContext lift >>= txPopulate lift x
-                                    >>= txDumpToFile lift fp)
-  bs <- DP.liftIO $ BS.readFile fp
-  DP.liftIO $ removeFile fp
+  M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
+  Just bs <- loadConfData >>= traverse (\x -> txOpenLocalContext lift >>= txPopulate lift x
+                                              >>= m0synchronously lift . flip txToBS verno)
   return bs
 
 -- | Helper functions for backward compatibility.
@@ -464,7 +459,7 @@ syncToConfd = do
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
 txOpenContext :: LiftRC -> PhaseM LoopState l SpielTransaction
-txOpenContext lift = m0synchronously lift $ openTransaction
+txOpenContext lift = m0synchronously lift openTransaction
 
 txOpenLocalContext :: LiftRC -> PhaseM LoopState l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
@@ -472,26 +467,20 @@ txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 txSyncToConfd :: LiftRC -> SpielTransaction -> PhaseM LoopState l ()
 txSyncToConfd lift t = do
   phaseLog "spiel" "Committing transaction to confd"
-  m0synchronously lift (commitTransaction t) >>= \case
-    Nothing -> do
+  M0.ConfUpdateVersion v h <- getConfUpdateVersion
+  h' <- return . hash <$> m0synchronously lift (txToBS t v)
+  if h /= h'
+  then m0synchronously lift (commitTransactionForced t False v) >>= \case
+    Right () -> do
       -- spiel increases conf version here so we should too; alternative
       -- would be querying spiel after transaction for the new version
-      modifyConfUpdateVersion (\(M0.ConfUpdateVersion i) -> M0.ConfUpdateVersion $ i + 1)
-      phaseLog "spiel" "Transaction committed."
-    Just err ->
+      modifyConfUpdateVersion (\(M0.ConfUpdateVersion i _) -> M0.ConfUpdateVersion (succ i) h')
+      phaseLog "spiel" $ "Transaction committed, new hash: " ++ show h'
+    Left err ->
       phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
+  else phaseLog "spiel" $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   m0asynchronously_ lift $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
-
-txDumpToFile :: LiftRC -> FilePath -> SpielTransaction -> PhaseM LoopState l ()
-txDumpToFile lift fp t = do
-  M0.ConfUpdateVersion ver <- getConfUpdateVersion
-  phaseLog "spiel" $ "Writing transaction to " ++ fp ++ " with ver " ++ show ver
-  m0synchronously lift $ dumpTransaction t ver fp
-  phaseLog "spiel" "Transaction written."
-  m0asynchronously_ lift $ closeTransaction t
-  phaseLog "spiel" "Transaction closed."
-  modifyConfUpdateVersion $ const (M0.ConfUpdateVersion $ ver + 1)
 
 data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 
@@ -505,12 +494,11 @@ loadConfData = liftA3 TxConfData
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
 getConfUpdateVersion :: PhaseM LoopState l M0.ConfUpdateVersion
 getConfUpdateVersion = do
-  phaseLog "rg-query" "Looking for ConfUpdateVersion"
   g <- getLocalGraph
   case listToMaybe $ G.connectedTo Cluster Has g of
     Just ver -> return ver
     Nothing -> do
-      let csu = M0.ConfUpdateVersion 1
+      let csu = M0.ConfUpdateVersion 1 Nothing
       modifyLocalGraph $ G.newResource csu >>> return . G.connect Cluster Has csu
       return csu
 
