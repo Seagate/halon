@@ -70,15 +70,15 @@ mkJobRule (Job name)
       then do
          phaseLog "info" $ "Job " ++ name ++ " is already running for " ++ show input
          messageProcessed eid
-      else
+      else do
+        modify Local $ rlens fldRequest .~ (Field $ Just input)
+        modify Local $ rlens fldUUID    .~ (Field $ Just eid)
         check_input input >>= \case
           Nothing -> messageProcessed eid
           Just next -> do
             insertStorageSetRC input
             fork CopyNewerBuffer $ do
               phaseLog "info" $ "  request: " ++ show input
-              modify Local $ rlens fldRequest .~ (Field $ Just input)
-              modify Local $ rlens fldUUID    .~ (Field $ Just eid)
               switch next
 
     directly finish $ do  -- XXX: use rule finalier, when implemented
