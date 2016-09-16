@@ -70,6 +70,3 @@ nix:
             , libiconv
             , pcre
             ]
-
-extra-include-dirs:
-- ../rpclite/rpclite

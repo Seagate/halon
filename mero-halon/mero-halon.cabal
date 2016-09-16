@@ -223,6 +223,7 @@ Library
                    -optc-DM0_EXTERN=extern -optc-Wall
       c-sources: hastate/hastate.c
       include-dirs: hastate
+                    ../rpclite/rpclite
       Build-Depends: rpclite,
                      confc,
                      template-haskell,
