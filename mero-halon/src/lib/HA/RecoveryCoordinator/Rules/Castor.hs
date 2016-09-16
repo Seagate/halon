@@ -19,7 +19,6 @@ module HA.RecoveryCoordinator.Rules.Castor where
 
 import Control.Distributed.Process hiding (catch)
 
-import HA.Encode (decodeP)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
@@ -28,7 +27,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 #ifdef USE_MERO
-import Control.Applicative
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Cluster
@@ -40,10 +38,8 @@ import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
-import Mero.Notification.HAState (Note(..))
 #endif
 import Data.Foldable
 import Control.Category
@@ -69,7 +65,6 @@ castorRules = sequence_
 #ifdef USE_MERO
   , setStateChangeHandlers
   , ruleMeroNoteSet
-  , ruleInternalStateChangeHandler
   , ruleGetEntryPoint
   , Process.rules
   , Disk.rules
@@ -122,7 +117,6 @@ setStateChangeHandlers = do
       finish <- phaseHandle "finish"
       directly setThem $ do
         putStorageRC $ ExternalNotificationHandlers stateChangeHandlersE
-        putStorageRC $ InternalNotificationHandlers stateChangeHandlersI
         continue finish
 
       directly finish stop
@@ -131,8 +125,6 @@ setStateChangeHandlers = do
   where
     stateChangeHandlersE = concat
       [ Disk.externalNotificationHandlers ]
-    stateChangeHandlersI = concat
-      [ Disk.internalNotificationHandlers ]
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do
@@ -142,22 +134,6 @@ ruleMeroNoteSet = do
     traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
   Repair.querySpiel
   Repair.querySpielHourly
-
-ruleInternalStateChangeHandler :: Definitions LoopState ()
-ruleInternalStateChangeHandler = do
-  defineSimpleTask "castor::internal-state-change-controller::run" $ \msg ->
-    liftProcess (decodeP msg) >>= \(InternalObjectStateChange changes) -> let
-        -- XXX: Using mapMaybe is a hack here to workound the problem
-        -- that same event could be sent multiple times without
-        -- actual state change.
-        notes = mapMaybe extractNote changes
-        s = Set notes
-        extractNote (AnyStateChange a old new _)
-          | old == new = Nothing
-          | otherwise  = Just $ Note (M0.fid a) (toConfObjState a new)
-      in unless (null notes) $ do
-        mhandlers <- getStorageRC
-        traverse_ (traverse_ ($ s) . getInternalNotificationHandlers) mhandlers
 
 -- | Timeout between entrypoint retry.
 entryPointTimeout :: Int
