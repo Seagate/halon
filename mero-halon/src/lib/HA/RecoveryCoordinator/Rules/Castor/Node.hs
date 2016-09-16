@@ -796,7 +796,11 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
           phaseLog "info" $ "Configuring mero client on " ++ show host
           procs <- configureNodeProcesses host chan M0.PLM0t1fs False
           if null procs
-          then continue finish
+          then do
+            Just m0node <- getField . rget fldM0Node <$> get Local
+            modify Local $ rlens fldRep . rfield .~
+              (Just $ ClientsStartOk m0node)
+            continue finish
           else do
             modify Local $ rlens fldProcessConfig . rfield .~
               (Just $ M0.fid <$> procs)
