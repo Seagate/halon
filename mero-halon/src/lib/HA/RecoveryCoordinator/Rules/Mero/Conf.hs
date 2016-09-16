@@ -324,7 +324,7 @@ setPhaseInternalNotification :: forall b l g.
                                 -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
                                 -> RuleM g l ()
 setPhaseInternalNotification handle act =
-  setPhaseInternalNotificationWithState handle (const True) act
+  setPhaseInternalNotificationWithState handle (const $ const True) act
 
 -- | Given a predicate on object state, retrieve all objects and
 -- states satisfying the predicate from the internal state change
@@ -332,16 +332,11 @@ setPhaseInternalNotification handle act =
 setPhaseInternalNotificationWithState :: forall b l g.
                                       (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
                                       => Jump PhaseHandle
-                                      -> (M0.StateCarrier b -> Bool)
+                                      -> (M0.StateCarrier b -> M0.StateCarrier b -> Bool)
                                       -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
                                       -> RuleM g l ()
 setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGuard act
   where
-    extractStateSet (AnyStateChange a _ n _) = stateSet a n
-
-    getObj :: AnyStateSet -> Maybe (b, M0.StateCarrier b)
-    getObj (AnyStateSet a n) = (,) <$> cast a <*> cast n
-
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
     changeGuard (HAEvent eid msg _) _ _ =
@@ -350,9 +345,10 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
           [] -> return Nothing
           objs -> return $ Just (eid, objs)
 
-    getObjP x = case getObj $ extractStateSet x of
-      obj@(Just (_, st)) | p st -> obj
-      _ -> Nothing
+    getObjP x = case x of
+      AnyStateChange (a::z) o n _ -> case eqT :: Maybe (z :~: b) of
+        Just Refl | p o n -> Just (a,n)
+        _ -> Nothing
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
