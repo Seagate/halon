@@ -119,7 +119,6 @@ getNotificationChannels = do
   things <- for nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
      let procs = filter (\p -> case M0.getState p rg of
-                                 M0.PSUnknown -> True
                                  M0.PSOnline  -> True
                                  M0.PSStarting -> True
                                  M0.PSStopping -> True
