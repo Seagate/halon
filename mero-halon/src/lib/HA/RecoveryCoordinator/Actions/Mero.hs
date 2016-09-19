@@ -213,14 +213,34 @@ calculateRunLevel = do
       return $ length onlineProcs == length lvl1procs
     guard (M0.BootLevel _) = return False
 
--- | Calculate the current stop level of the cluster.
+-- | Calculate the current stop level of the cluster. A stop level of x
+--   indicates that it is valid to stop processes on that level. A stop level
+--   of (-1) indicates that we may stop the halon:m0d service.
 calculateStopLevel :: PhaseM LoopState l M0.BootLevel
 calculateStopLevel = do
     vals <- traverse guard lvls
     return . fst . findLast $ zip lvls vals
   where
     findLast = head . reverse . takeWhile snd
-    lvls = M0.BootLevel <$> reverse [0..2]
+    lvls = M0.BootLevel <$> reverse [(-1)..2]
+    filterHA :: G.Graph -> M0.Process -> Bool
+    filterHA g p = all (\srv -> M0.s_type srv /= CST_HA)
+                       (G.connectedTo (p::M0.Process) M0.IsParentOf g)
+      -- We allow stopping m0d when there are no running Mero processes.
+    guard (M0.BootLevel (-1)) = do
+      stillUnstopped <- getLocalGraph <&> \g -> filter
+          ( \p -> not . null $
+          [ () | M0.getState p g `elem` [ M0.PSOnline
+                                        , M0.PSQuiescing
+                                        , M0.PSStopping
+                                        , M0.PSStarting
+                                        ]
+              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , M0.getState n g /= M0.NSFailed
+                && M0.getState n g /= M0.NSFailedUnrecoverable
+          ]) . filter (filterHA g)
+          $ M0.getM0Processes g
+      return $ null stillUnstopped
     guard (M0.BootLevel 0) = do
       -- We allow stopping a process on level i if there are no running
       -- processes on level i+1

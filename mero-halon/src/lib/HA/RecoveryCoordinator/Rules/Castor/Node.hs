@@ -966,7 +966,8 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      cluster_lvl <- getClusterStatus <$> getLocalGraph
      case cluster_lvl of
        Just (M0.MeroClusterState M0.OFFLINE _ s)
-          | i < 0 -> continue stop_service
+          | i < 0 && s <= (M0.BootLevel (-1)) -> continue stop_service
+          | i < 0 -> switch [await_barrier, timeout barrierTimeout barrier_timeout]
           | s < lvl -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - skipping"
                                         (show node) (show lvl) (show s)
