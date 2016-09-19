@@ -27,7 +27,6 @@
 module HA.RecoveryCoordinator.Castor.Drive.Rules
   ( -- & All rules
     rules
-  , internalNotificationHandlers
   , externalNotificationHandlers
     -- * Internal rules (exported for test use)
   , ruleDriveFailed
@@ -95,13 +94,10 @@ rules = sequence_
   , Repair.ruleSNSOperationQuiesce
   , Repair.ruleSNSOperationContinue
   , Repair.ruleOnSnsOperationQuiesceFailure
+  , Repair.ruleHandleRepair
   , Reset.ruleResetAttempt
   , Raid.rules
   ]
-
--- | All internal notifications related to disks.
-internalNotificationHandlers :: [Set -> PhaseM LoopState l ()]
-internalNotificationHandlers = [ Repair.handleRepairInternal ]
 
 -- | All external notifications related to disks.
 externalNotificationHandlers :: [Set -> PhaseM LoopState l ()]
@@ -559,7 +555,10 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
 
   m0_drive_failed <- phaseHandle "m0_drive_failed"
 
-  setPhaseInternalNotificationWithState m0_drive_failed (== M0.SDSFailed)
+  setPhaseInternalNotificationWithState m0_drive_failed
+    (\o n -> not (o `elem` [ M0.SDSRepaired
+                           , M0.SDSFailed
+                           , M0.SDSRepairing]) && n == M0.SDSFailed)
     $ \(uuid, objs) -> forM_ objs $ \(m0sdev, _) -> do
       todo uuid
       mdiskinfo <- runMaybeT $ do

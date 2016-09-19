@@ -3,6 +3,8 @@
 {-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE GADTs #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -17,8 +19,7 @@
 --
 -- TODO: Only abort repair on notification failure if it's IOS that failed
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
-  ( handleRepairInternal
-  , handleRepairExternal
+  ( handleRepairExternal
   , ruleRebalanceStart
   , ruleRepairStart
   , noteToSDev
@@ -30,6 +31,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
   , ruleOnSnsOperationQuiesceFailure
+  , ruleHandleRepair
   ) where
 
 import           Control.Applicative
@@ -45,14 +47,16 @@ import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import           Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as T
+import           Data.Traversable (for)
 import           Data.Monoid ((<>))
-import           Data.Typeable (Typeable)
-import           Data.Vinyl
+import           Data.Typeable (Typeable, (:~:)(..), eqT)
+import           Data.Vinyl hiding ((:~:))
 import           GHC.Generics (Generic)
 
+import           HA.Encode
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
@@ -945,16 +949,19 @@ handleRepairExternal noteSet = do
 -- * Handle messages that only include information about devices and
 -- not pools.
 --
--- TODO Make this use `InternalStateChangeNotification`
-handleRepairInternal :: Set -> PhaseM LoopState l ()
-handleRepairInternal noteSet = do
-  liftIO $ traceEventIO "START mero-halon:internal-handlers:repair-rebalance"
+ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
   getClusterStatus <$> getLocalGraph >>= \case
-    Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) ->
-      processDevices noteSet >>= traverse_ go
+    Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) -> do
+      InternalObjectStateChange chs <- liftProcess $ decodeP msg
+      mdeviceOnly <- processDevices ignoreSome chs
+      traverse_ go mdeviceOnly
     _ -> return ()
-  liftIO $ traceEventIO "STOP mero-halon:internal-handlers:repair-rebalance"
   where
+    ignoreSome :: StateCarrier SDev -> StateCarrier SDev -> Bool
+    ignoreSome SDSRepaired  SDSFailed = False -- Should not happen.
+    ignoreSome SDSRepairing SDSFailed = False -- Cancelation of the repair operation.
+    ignoreSome o n | o == n = False     -- Not a change - ignoring
+    ignoreSome _ _ = True
     -- Handle information from internal messages that didn't include pool
     -- information. That is, DevicesOnly is a list of all devices and
     -- their states that were reported in the given 'Set' message. Most
@@ -1119,31 +1126,34 @@ getPoolInfo (Set ns) =
 -- | Updates of sdev, that doesn't contain Pool version.
 newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 
--- | Given a 'Set', figure if update contains only info about devices
+-- | Given a 'Set', figure if update contains only info about devices.
 --
--- XXX: do we really need it, can we just read info about devices here?
-processDevices :: Set -> PhaseM LoopState l (Maybe DevicesOnly)
-processDevices (Set ns) =
-  mapMaybeM (\(Note fid' _) -> lookupConfObjByFid fid') ns >>= \case
-    ([] :: [M0.Pool]) -> do
-      disks <- mapMaybeM noteToSDev ns
-      pdisks <- mapM (\x@(_stType,sdev) -> (,x) <$> getSDevPool sdev) disks
-      {-
-      pdisks <- mapMaybeM (\(stType, sdev) -> getSDevPool sdev
-                             >>= return . fmap (,(stType, sdev)))
-                          disks
-                          -}
-
-      let ndisks = M.toList
-                 . M.map (SDevStateMap . M.fromListWith (<>))
-                 . M.fromListWith (<>)
-                 . map (\(pool, (st', sdev)) -> (pool, [(st', S.singleton sdev)]))
-                 $ pdisks
-      case ndisks of
-        [] -> return Nothing
-        x  -> return (Just (DevicesOnly x))
-
-    _ -> return Nothing
+-- This function takes a predicate that allow to remove certain chages
+-- from the set.
+--
+-- XXX: This function is a subject of change in future, because there is no
+-- point in of hiding old state and halon state, this allowes much range
+-- of decisions that could be done by the caller.
+processDevices :: (StateCarrier SDev -> StateCarrier SDev -> Bool) -- ^ Predicate
+                -> [AnyStateChange]
+                -> PhaseM LoopState l (Maybe DevicesOnly)
+processDevices p changes = do
+    for msdevs $ \sdevs -> do
+      pdevs <- for sdevs $ \x@(sdev,_) -> (,x) <$> getSDevPool sdev
+      return . DevicesOnly . M.toList
+             . M.map (SDevStateMap . M.fromListWith (<>))
+             . M.fromListWith (<>)
+             . map (\(pool, (sdev,st)) -> (pool, [(st, S.singleton sdev)]))
+             $ pdevs
+  where
+    go :: AnyStateChange -> Maybe (Maybe (SDev, ConfObjectState))
+    go (AnyStateChange (a::x) o n _) = case eqT :: Maybe (x :~: M0.Process) of
+      Nothing -> case eqT :: Maybe (x :~: M0.SDev) of
+        Just Refl | p o n -> Just (Just (a,toConfObjState a n))
+        _ -> Nothing
+      Just _  -> Just (Nothing)
+    msdevs :: Maybe [(SDev, ConfObjectState)]
+    msdevs = sequence (mapMaybe go changes)
 
 -- | A mapping of 'ConfObjectState's to 'M0.SDev's.
 newtype SDevStateMap = SDevStateMap (M.Map ConfObjectState (S.HashSet SDev))
@@ -1167,7 +1177,8 @@ checkRepairOnServiceUp :: Definitions LoopState ()
 checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
   init_rule <- phaseHandle "init_rule"
 
-  setPhaseInternalNotificationWithState init_rule (== M0.SSOnline) $ \(eid, srvs :: [(M0.Service, M0.ServiceState)]) -> do
+  setPhaseInternalNotificationWithState init_rule (\o n -> o /= M0.SSOnline &&  n == M0.SSOnline)
+    $ \(eid, srvs :: [(M0.Service, M0.ServiceState)]) -> do
     todo eid
     -- Check if any of the services are IOS: if no service is IOS then
     -- we can just do nothing early and save ourselves some lookups

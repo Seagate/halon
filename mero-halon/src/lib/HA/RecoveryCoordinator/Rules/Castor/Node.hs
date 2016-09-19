@@ -1092,7 +1092,7 @@ ruleAllProcessChangesNode :: String -- ^ Rule name
                           -> Definitions LoopState ()
 ruleAllProcessChangesNode rName pGuard nodeNewState = define rName $ do
   rule_init <- phaseHandle "rule_init"
-  setPhaseInternalNotificationWithState rule_init pGuard $ \(eid, map fst -> (procs :: [M0.Process])) -> do
+  setPhaseInternalNotificationWithState rule_init (\_ -> pGuard) $ \(eid, map fst -> (procs :: [M0.Process])) -> do
     todo eid
     rg <- getLocalGraph
     for_ (nub $ concatMap (`getNode` rg) procs) $ \(ctrl, ps) -> do
