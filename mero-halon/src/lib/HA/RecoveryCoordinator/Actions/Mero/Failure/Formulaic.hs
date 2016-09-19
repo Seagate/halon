@@ -36,6 +36,24 @@ formulaicStrategy formulas = Strategy
                     , _pa_unit_size = 4096
                     , _pa_seed = Word128 101 102
                     }
+
+          n = CI.m0_data_units globs
+          k = CI.m0_parity_units globs
+          noCtlrs = length [ cntr
+                     | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                     , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+                     , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+                     ]
+        -- Following change is temporary, and would work as long as failures
+        -- above controllers (encl, racks) are not to be supported
+        -- (ref. HALON-406)
+          quotient =  (n + 2*k) `quot` (fromIntegral noCtlrs)
+          remainder = (n + 2*k) `rem` (fromIntegral noCtlrs)
+          kc = remainder * (quotient + 1)
+          ctrlFailures
+              | kc > k = k `quot` (quotient + 1)
+              | kc < k = (k - remainder) `quot` quotient
+              | otherwise = remainder
           addFormulas g = flip execState g $ do
             for_ (G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) -> do
               for_ (G.connectedTo pool M0.IsRealOf g) $ \(pver::M0.PVer) -> do
@@ -46,6 +64,6 @@ formulaicStrategy formulas = Strategy
                                                        <*> pure (M0.fid pver))
                   modify (G.connect pool M0.IsRealOf pvf)
       (flip id) <$> Just (addFormulas $ createPoolVersions fs
-           [PoolVersion Set.empty (Failures 0 0 0 0 0) attrs] True rg)
+           [PoolVersion Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)
   , onFailure = const Nothing
   }
