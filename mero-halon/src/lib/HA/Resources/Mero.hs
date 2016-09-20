@@ -97,8 +97,19 @@ fidIsType :: ConfObj a
           => Proxy a
           -> Fid
           -> Bool
-fidIsType p (Fid ctr _) =
-  (ctr .&. (complement typMask)) == (fidType p `shiftL` (64 - 8))
+fidIsType p fid' = fidToFidType fid' == confToFidType p
+
+-- | Like 'fidType' but shifted which allows for a much easier
+-- comparison of proxy fid types with raw 'Fid's.
+confToFidType :: ConfObj a => Proxy a -> Word64
+confToFidType p = fidType p `shiftL` (64 - 8)
+
+-- | Take a raw 'Fid' and extract the the type.
+-- Useful when the container may have been poluted with extra
+-- information such as through 'fidInit'.
+fidToFidType :: Fid -> Word64
+fidToFidType (Fid ctr _) = ctr .&. complement typMask
+
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
   deriving (Typeable)
