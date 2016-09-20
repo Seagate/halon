@@ -282,17 +282,15 @@ remotableDecl [ [d|
     Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
       traceM0d "Kernel module loaded."
       case rc of
-        ExitSuccess -> bracket_ bootstrap teardown $ do
+        ExitSuccess -> withEp $ \ep -> do
           self <- getSelfPid
           traceM0d "DEBUG: Pre-withEp"
-          c <- withEp $ \ep -> do
-            _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
-                                               (mcKeepaliveTimeout conf) ep self
-            spawnChannelLocal (statusProcess ep self)
+          _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
+                                             (mcKeepaliveTimeout conf) ep self
+          c <- spawnChannelLocal (statusProcess ep self)
           traceM0d "DEBUG: Pre-withEp"
           cc <- spawnChannelLocal (controlProcess conf self)
           sendMeroChannel c cc
-
           traceM0d "Starting service m0d on mero client"
           go
         ExitFailure i -> do
@@ -318,14 +316,6 @@ remotableDecl [ [d|
       -- XXX: halon uses mero kernel module so it's not possible to
       -- unload that.
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
-      bootstrap = do
-        traceM0d "DEBUG: Pre-initialize"
-        Mero.Notification.initialize haAddr processFid profileFid haFid rmFid
-        traceM0d "DEBUG: Post-initialize"
-      teardown = do
-        traceM0d "DEBUG: Pre-finalize"
-        Mero.Notification.finalize
-        traceM0d "DEBUG: Post-finalize"
 
       -- mainloop
       go = do

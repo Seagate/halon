@@ -20,7 +20,6 @@ module Mero.Notification
     ( Set(..)
     , Get(..)
     , GetReply(..)
-    , initialize
     , finalize
     , NIRef
     , getRPCMachine
@@ -637,22 +636,6 @@ pruneLinks ni expireSecs = do
 -- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
 getRPCMachine :: IO (Maybe RPCMachine)
 getRPCMachine = HAState.getRPCMachine
-
--- | Initialiazes the 'EndpointRef' subsystem.
---
--- This function is not too useful by itself as by the time the
--- resulting 'MVar' is to be used, it could be finalized already. Most
--- users want to simply call 'withNI'.
-initialize :: RPCAddress -- ^ Listen address.
-           -> Fid        -- ^ Process Fid.
-           -> Fid        -- ^ Profile Fid.
-           -> Fid        -- ^ HA Service Fid.
-           -> Fid        -- ^ RM Service Fid.
-           -> Process (MVar EndpointRef)
-initialize adr processFid profileFid haFid rmFid = do
-  (m, ref, _) <- initializeInternal adr processFid profileFid haFid rmFid
-  liftIO $ putMVar m ref
-  return m
 
 -- | Internal initialization routine, should not be called by external
 -- users. Only to be called when the lock on the lock is already held.
