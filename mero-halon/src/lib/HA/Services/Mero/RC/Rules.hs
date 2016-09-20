@@ -91,6 +91,8 @@ ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::
 ruleNotificationsFailedToBeDeliveredToM0d :: Definitions LoopState ()
 ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivery-failed" $
   \(NotificationFailure epoch fid) -> do
+      phaseLog "epoch" $ show epoch
+      phaseLog "fid"   $ show fid
       mdiff <- getStateDiffByEpoch epoch
       for_ mdiff $ \diff -> do
         mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
