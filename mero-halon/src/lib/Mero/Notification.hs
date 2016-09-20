@@ -551,11 +551,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
         liftIO $ traceEventIO "START ha_request_failure_vector"
 
     ha_disconnecting :: NIRef -> HALink -> IO ()
-    ha_disconnecting _ _ = do
-      -- our implementation of ha_disconnecting to date has always been
-      -- a copy of ha_disconnected which was redundant: doing nothing at
-      -- all here until we need special behaviour seems reasonable
-      return ()
+    ha_disconnecting ni hl = do
+      atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
+      disconnect hl
 
     ha_disconnected :: NIRef -> HALink -> IO ()
     ha_disconnected ni hl = do
