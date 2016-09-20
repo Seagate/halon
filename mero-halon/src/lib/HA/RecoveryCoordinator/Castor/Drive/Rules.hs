@@ -41,6 +41,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart  as Smart
 import HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -97,6 +98,7 @@ rules = sequence_
   , Repair.ruleHandleRepair
   , Reset.ruleResetAttempt
   , Raid.rules
+  , Smart.rules
   ]
 
 -- | All external notifications related to disks.
