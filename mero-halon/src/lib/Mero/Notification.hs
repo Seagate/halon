@@ -197,13 +197,13 @@ withNI addr processFid profileFid haFid rmFid f =
       newRef <- liftIO $ takeMVar m >>= \x ->
         return (x { _erRefCount = max 0 (_erRefCount x - 1) })
 
-      liftIO $ case _erWantsFinalize newRef && _erRefCount newRef <= 0 of
+      case _erRefCount newRef <= 0 of
         -- There's either more workers or we don't want to finalize,
         -- just put the endpoint with decreased refcount back
-        False -> putMVar m newRef
-        -- We are not finalizing endpoint here, because it may be not
-        -- safe to do, because RC may still be using endpoint.
-        True -> putMVar m newRef
+        False -> liftIO $ putMVar m newRef
+        -- We can finalize endpoint now.
+        True -> do liftIO $ putMVar m newRef
+                   liftProcess finalize
       either Catch.throwM return ev
 
 -- | Initialiazes the 'EndpointRef' subsystem.
@@ -651,9 +651,8 @@ finalizeInternal m = do
 -- and do nothing.
 finalize :: Process ()
 finalize = liftIO $ takeMVar globalEndpointRef >>= \case
-  -- We can't finalize EndPoint here, because it may be unsafe to do so
-  -- as RC could use that.
-  ref | _erRefCount ref <= 0 -> putMVar globalEndpointRef ref
+  ref | _erRefCount ref <= 0 -> do putMVar globalEndpointRef ref
+                                   finalizeInternal globalEndpointRef
   -- There are some workers active so just signal that we want to
   -- finalize and put the MVar back. Once the last worker finishes, it
   -- will check this flag and run the finalization itself
