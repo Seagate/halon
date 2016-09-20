@@ -66,7 +66,7 @@ import Control.Monad (unless, when)
 
 import Data.Foldable (for_)
 import Data.Proxy
-import Data.List (partition, sort)
+import Data.List (partition, sort, foldl')
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
@@ -356,8 +356,8 @@ configureNodeProcesses host chan label mkfs = do
                     ]
     unless (null allProcs) $ do
       phaseLog "begin" "Configure node processes"
-      phaseLog "info"  $ "label = " ++ show label
-      phaseLog "info"  $ "host  = " ++ show host
+      phaseLog "label" $ show label
+      phaseLog "host"  $ show host
       configureMeroProcesses chan allProcs label mkfs
       phaseLog "end"  "Configure node processes"
     return allProcs
@@ -373,7 +373,7 @@ configureMeroProcesses :: TypedChannel ProcessControlMsg
 configureMeroProcesses _ [] _ _ = return ()
 configureMeroProcesses (TypedChannel chan) procs label mkfs = do
     rg <- getLocalGraph
-    phaseLog "info" $ "configuring processes: " ++ show (M0.fid <$> procs)
+    phaseLog "processes" $ show (M0.fid <$> procs)
     let (confds, others) = partition (\proc -> runsMgs proc rg) procs
     msg_confds <- if null confds
                   then return []
@@ -384,9 +384,9 @@ configureMeroProcesses (TypedChannel chan) procs label mkfs = do
          (\(p,conf) -> (toType label, conf, mkfs && not (G.isConnected p Is M0.ProcessBootstrapped rg)))
          <$> (msg_confds ++ msg_others)
     for_ procs $ \p -> modifyGraph
-      $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStarting)
-                      (M0.setState p M0.PSStarting rg')
-                      (G.connectedTo p M0.IsParentOf rg')
+      $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStarting g)
+                       (M0.setState p M0.PSStarting rg')
+                       (G.connectedTo p M0.IsParentOf rg')
     registerSyncGraph $ sendChan chan msg
   where
     runsMgs proc rg =
@@ -413,11 +413,19 @@ startMeroProcesses (TypedChannel chan) procs label = do
    let (restartProcs, startProcs) = partition (shouldRestart rg) procs
        msgStart = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> startProcs)
        msgRestart = RestartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> restartProcs)
+
    when (not $ null startProcs) $ do
      phaseLog "info" $ "Starting mero processes: "  ++ show (fmap M0.fid startProcs)
-     liftProcess $ sendChan chan msgStart
    when (not $ null restartProcs) $ do
      phaseLog "info" $ "Restarting mero processes due to inhibited/starting: "  ++ show (fmap M0.fid restartProcs)
+
+   for_ procs $ \p -> modifyGraph
+     $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStarting g)
+                      (M0.setState p M0.PSStarting rg')
+                      (G.connectedTo p M0.IsParentOf rg')
+
+   registerSyncGraph $ do
+     liftProcess $ sendChan chan msgStart
      liftProcess $ sendChan chan msgRestart
 
    where
@@ -435,8 +443,6 @@ startMeroProcesses (TypedChannel chan) procs label = do
        M0.PSInhibited _ -> True
        M0.PSStarting    -> True
        _                -> False
-
-
 
 restartNodeProcesses :: TypedChannel ProcessControlMsg
                      -> [M0.Process]
@@ -459,9 +465,9 @@ stopNodeProcesses (TypedChannel chan) ps = do
    phaseLog "debug" $ "Stop message: " ++ show msg
    liftProcess $ sendChan chan msg
    for_ ps $ \p -> modifyGraph
-     $ \rg' -> foldr (\s -> M0.setState (s::M0.Service) M0.SSStopping)
-                    (G.connectUniqueFrom p Is M0.PSStopping rg')
-                    (G.connectedTo p M0.IsParentOf rg')
+     $ \rg' -> foldl' (\rg s -> M0.setState (s::M0.Service) M0.SSStopping rg)
+                      (M0.setState p M0.PSStopping rg')
+                      (G.connectedTo p M0.IsParentOf rg')
    where
      go rg p = case G.connectedTo p Has rg of
         [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
