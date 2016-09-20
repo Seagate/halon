@@ -20,7 +20,6 @@ module Mero.Notification
     ( Set(..)
     , Get(..)
     , GetReply(..)
-    , initialize
     , finalize
     , NIRef
     , getRPCMachine
@@ -198,13 +197,13 @@ withNI addr processFid profileFid haFid rmFid f =
       newRef <- liftIO $ takeMVar m >>= \x ->
         return (x { _erRefCount = max 0 (_erRefCount x - 1) })
 
-      liftIO $ case _erWantsFinalize newRef && _erRefCount newRef <= 0 of
+      case _erRefCount newRef <= 0 of
         -- There's either more workers or we don't want to finalize,
         -- just put the endpoint with decreased refcount back
-        False -> putMVar m newRef
-        -- We are not finalizing endpoint here, because it may be not
-        -- safe to do, because RC may still be using endpoint.
-        True -> putMVar m newRef
+        False -> liftIO $ putMVar m newRef
+        -- We can finalize endpoint now.
+        True -> do liftIO $ putMVar m newRef
+                   liftProcess finalize
       either Catch.throwM return ev
 
 -- | Initialiazes the 'EndpointRef' subsystem.
@@ -551,11 +550,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
         liftIO $ traceEventIO "START ha_request_failure_vector"
 
     ha_disconnecting :: NIRef -> HALink -> IO ()
-    ha_disconnecting _ _ = do
-      -- our implementation of ha_disconnecting to date has always been
-      -- a copy of ha_disconnected which was redundant: doing nothing at
-      -- all here until we need special behaviour seems reasonable
-      return ()
+    ha_disconnecting ni hl = do
+      atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
+      disconnect hl
 
     ha_disconnected :: NIRef -> HALink -> IO ()
     ha_disconnected ni hl = do
@@ -640,22 +637,6 @@ pruneLinks ni expireSecs = do
 getRPCMachine :: IO (Maybe RPCMachine)
 getRPCMachine = HAState.getRPCMachine
 
--- | Initialiazes the 'EndpointRef' subsystem.
---
--- This function is not too useful by itself as by the time the
--- resulting 'MVar' is to be used, it could be finalized already. Most
--- users want to simply call 'withNI'.
-initialize :: RPCAddress -- ^ Listen address.
-           -> Fid        -- ^ Process Fid.
-           -> Fid        -- ^ Profile Fid.
-           -> Fid        -- ^ HA Service Fid.
-           -> Fid        -- ^ RM Service Fid.
-           -> Process (MVar EndpointRef)
-initialize adr processFid profileFid haFid rmFid = do
-  (m, ref, _) <- initializeInternal adr processFid profileFid haFid rmFid
-  liftIO $ putMVar m ref
-  return m
-
 -- | Internal initialization routine, should not be called by external
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
@@ -670,9 +651,8 @@ finalizeInternal m = do
 -- and do nothing.
 finalize :: Process ()
 finalize = liftIO $ takeMVar globalEndpointRef >>= \case
-  -- We can't finalize EndPoint here, because it may be unsafe to do so
-  -- as RC could use that.
-  ref | _erRefCount ref <= 0 -> putMVar globalEndpointRef ref
+  ref | _erRefCount ref <= 0 -> do putMVar globalEndpointRef ref
+                                   finalizeInternal globalEndpointRef
   -- There are some workers active so just signal that we want to
   -- finalize and put the MVar back. Once the last worker finishes, it
   -- will check this flag and run the finalization itself

@@ -341,7 +341,15 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
      rg <- getLocalGraph
      case listToMaybe $ m0nodeToNode m0node rg of
        Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
-       Just node -> do applyStateChanges [stateSet m0node M0.NSOffline]
+       Just node -> do let ps = [ stateSet p M0.PSStopping
+                                | p <- G.connectedTo m0node M0.IsParentOf rg
+                                , any (\s -> M0.s_type s == CST_HA)
+                                      $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
+                                ]
+                       applyStateChanges ps
+                       -- XXX: currently stop of the halon:m0d does not stop
+                       -- mero-kernel, thus node should no online.
+                       -- applyStateChanges [stateSet m0node M0.NSOffline]
                        promulgateRC $ encodeP $ ServiceStopRequest node m0d
 
 
@@ -966,7 +974,8 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      cluster_lvl <- getClusterStatus <$> getLocalGraph
      case cluster_lvl of
        Just (M0.MeroClusterState M0.OFFLINE _ s)
-          | i < 0 -> continue stop_service
+          | i < 0 && s <= (M0.BootLevel (-1)) -> continue stop_service
+          | i < 0 -> switch [await_barrier, timeout barrierTimeout barrier_timeout]
           | s < lvl -> do
               phaseLog "debug" $ printf "%s is on %s while cluster is on %s - skipping"
                                         (show node) (show lvl) (show s)
@@ -1046,6 +1055,9 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      Just node <- getField . rget fldNode <$> get Local
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
+     Just (StopProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+     promulgateRC $ (StopHalonM0dRequest m0node)
+     modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeOk)
      continue finish
    return route
   where
