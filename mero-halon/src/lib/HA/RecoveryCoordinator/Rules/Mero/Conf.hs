@@ -518,23 +518,17 @@ iosFailsController = [
         (const True)
         serviceFailed
         (\x rg -> case M0.s_type x of
-          CST_IOS ->  [ controller
-                      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
-                      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
-                      , controller <- G.connectedTo node M0.IsOnHardware rg
-                      ]
+          CST_IOS -> iosToController rg x
           _ -> []
         )
         (\_ _ -> M0.CSTransient)
     , StateCascadeRule
-        serviceFailed
+        (const True)  -- XXX: this is workaround as halon sets IOS to unknown
+                      -- in prior to cluster start. As a result this rule never
+                      -- started upon a restart.
         (not . serviceFailed)
         (\x rg -> case M0.s_type x of
-          CST_IOS ->  [ controller
-                      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
-                      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
-                      , controller <- G.connectedTo node M0.IsOnHardware rg
-                      ]
+          CST_IOS ->  iosToController rg x
           _ -> []
         )
         (\_ _ -> M0.CSOnline)
@@ -544,6 +538,12 @@ iosFailsController = [
     serviceFailed (M0.SSInhibited _) = True
     serviceFailed (M0.SSOffline) = True
     serviceFailed _ = False
+    iosToController rg x =
+      [ controller
+      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
+      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
+      , controller <- G.connectedTo node M0.IsOnHardware rg
+      ]
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
