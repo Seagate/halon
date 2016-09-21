@@ -2042,8 +2042,9 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
           forM_ ρs $ flip whereisRemoteAsync (batcherLabel logId)
           self <- getSelfPid
           forM_ ρs $ \ρ -> sendReplica logId ρ self
-        Just b ->
+        Just b -> do
           -- Ping the leader node periodically to detect disconnections.
+          nlogTrace logId $ "ambassador: ping leader. " ++ show b
           usend (nullProcessId (processNodeId b)) ()
       usend timerPid leaseTimeout
 
