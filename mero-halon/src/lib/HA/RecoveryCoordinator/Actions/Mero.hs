@@ -42,6 +42,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Events.Service
 import HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.Events.Castor.Process
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 
 import HA.Resources.Castor (Is(..))
@@ -412,22 +413,25 @@ startMeroProcesses (TypedChannel chan) procs label = do
    rg <- getLocalGraph
    let (restartProcs, startProcs) = partition (shouldRestart rg) procs
        msgStart = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> startProcs)
-       msgRestart = RestartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> restartProcs)
-
-   when (not $ null startProcs) $ do
-     phaseLog "info" $ "Starting mero processes: "  ++ show (fmap M0.fid startProcs)
-   when (not $ null restartProcs) $ do
-     phaseLog "info" $ "Restarting mero processes due to inhibited/starting: "  ++ show (fmap M0.fid restartProcs)
-
    for_ procs $ \p -> modifyGraph
      $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStarting g)
                       (M0.setState p M0.PSStarting rg')
                       (G.connectedTo p M0.IsParentOf rg')
-
-   registerSyncGraph $ do
-     liftProcess $ sendChan chan msgStart
-     liftProcess $ sendChan chan msgRestart
-
+   when (not $ null startProcs) $ do
+     phaseLog "info" $ "Starting mero processes: "  ++ show (fmap M0.fid startProcs)
+     registerSyncGraph $ do
+       liftProcess $ sendChan chan msgStart
+   when (not $ null restartProcs) $ do
+     phaseLog "info" $ "Requesting mero processes restart due to inhibited/starting for "
+                    ++ show (fmap M0.fid restartProcs)
+     -- We don't just send to the channel straight away: we want all
+     -- the nice things inside process restart rule like messing with
+     -- process state, timeout and processing restart result message.
+     -- Trigger that rule instead of directly dispatching to the
+     -- channel here. The alternative would be to split up
+     -- 'ruleProcessRestart' and move timeout into the process restart
+     -- function in mero service.
+     for_ restartProcs $ promulgateRC . ProcessRestartRequest
    where
      toType M0.PLM0t1fs = M0T1FS
      toType _           = M0D
