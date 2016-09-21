@@ -10,6 +10,9 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , isRemovedFromRAID
   , markRemovedFromRAID
   , unmarkRemovedFromRAID
+    -- * Exported for test
+  , SpielDeviceAttached(..)
+  , SpielDeviceDetached(..)
   ) where
 
 import Data.Functor (void)

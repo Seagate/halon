@@ -192,6 +192,7 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Actions.Mero.Core
+                       HA.RecoveryCoordinator.Castor.Drive.Actions
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
                        HA.RecoveryCoordinator.Events.Castor.Process
@@ -200,7 +201,6 @@ Library
                        HA.Services.Mero.RC
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
-                      HA.RecoveryCoordinator.Castor.Drive.Actions
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
