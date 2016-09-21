@@ -771,7 +771,7 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                -> (ProcessId, ProcessId, SystemMsg)
                   -- ^ (sender, destination, message)
                -> Process (SchedulerState, Bool)
-    handleSend st (source, pid, msg) | Set.member pid (stateAlive st) = do
+    handleSend st (source, pid, msg) = do
       let mp = Map.lookup (DP.processNodeId source, DP.processNodeId pid)
                           (stateFailures st)
       case mp of
@@ -782,7 +782,8 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                          (DP.processNodeId pid)
                          DP.DiedDisconnect
         -- queue the message
-        _ -> return
+        _ | Set.member pid (stateAlive st) ->
+          return
              (st
                { stateMessages =
                    Map.insertWith
@@ -791,11 +792,11 @@ startScheduler seed0 clockDelta numNodes transport rtable = do
                }
              , True
              )
-    handleSend st (_, _, msg) = do
-      -- If the target is not known to the scheduler we assume it doesn't
-      -- matter in which order messages are delivered to it.
-      forwardSystemMsg msg
-      return (st, True)
+        -- If the target is not known to the scheduler we assume it doesn't
+        -- matter in which order messages are delivered to it.
+        _ -> do
+          forwardSystemMsg msg
+          return (st, True)
 
     -- Like 'handleSend' but messages are directed to process with a label and
     -- a 'NodeId'.
