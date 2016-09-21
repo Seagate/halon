@@ -282,7 +282,6 @@ ruleResetAttempt = define "reset-attempt" $ do
         phaseLog "info" "Cancelling drive reset as drive removed."
         -- Claim all things are complete
         markResetComplete sdev
-        markSMARTTestComplete sdev
         continue end
 
       startFork home Nothing

@@ -99,7 +99,6 @@ deriveSafeCopy 0 'base ''StorageDevice
 data StorageDeviceAttr
     = SDResetAttempts !Int
     | SDPowered Bool
-    | SDSMARTRunning
     | SDOnGoingReset
     | SDRemovedAt
     | SDReplaced
