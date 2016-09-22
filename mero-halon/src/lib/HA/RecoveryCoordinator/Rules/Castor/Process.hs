@@ -34,14 +34,12 @@ import           Control.Distributed.Process (usend)
 import           Control.Lens
 import           Control.Monad (unless)
 import           Control.Monad.Trans.Maybe
-import           Data.Binary (Binary)
 import           Data.Either (partitionEithers, rights, lefts)
 import           Data.Foldable
 import           Data.List (nub, sort)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
 import           Data.Vinyl
-import           GHC.Generics
 import           Text.Printf
 
 rules :: Definitions LoopState ()
@@ -56,10 +54,6 @@ rules = sequence_ [
   , ruleFailedNotificationFailsProcess
   , ruleProcessKeepaliveReply
   ]
-
-newtype ProcessRestartRequest = ProcessRestartRequest M0.Process
-  deriving (Show, Eq, Ord, Typeable, Generic)
-instance Binary ProcessRestartRequest
 
 -- | Catch 'InternalObjectChange's flying by and dispatch
 -- 'ProcessRestartRequest' for every failed process, allowing
@@ -83,18 +77,10 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
 jobProcessRestart :: Job ProcessRestartRequest ProcessRecoveryFailure
 jobProcessRestart = Job "process-restarted"
 
--- | Watch for internal process failure notifications and orchestrate
--- their restart. Common scenario is:
---
--- * Fail the services associated with the process
--- * Request restart of the process through systemd
--- * Wait for the systemd process exit code. Deal with non-successful
---   exit code here. If successful, do nothing more here and let other
---   rules handle ONLINE notifications as they come in.
+-- | Listen for 'ProcessRestartRequest' and trigger the restart of the
+-- process in question, dealing with timeout and systemd exit codes.
 ruleProcessRestart :: Definitions LoopState ()
 ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
-  services_notified <- phaseHandle "process_notified"
-  notification_timeout <- phaseHandle "notification_timeout"
   restart_result <- phaseHandle "restart_result"
   restart_timeout <- phaseHandle "restart_timeout"
 
@@ -108,51 +94,42 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
 
       rule_init (ProcessRestartRequest p) = do
         rg <- getLocalGraph
-        phaseLog "info" $ "Starting restart procedure for " ++ show (M0.fid p)
-        let mpl = getProcessBootLevel p rg
-        case (,,) <$> mpl <*> getClusterStatus rg <*> pure (getState p rg) of
-          Just (pl, M0.MeroClusterState M0.ONLINE rl _, M0.PSFailed _) | rl >= pl -> do
-            let notificationSet = [ stateSet srv (M0.SSInhibited M0.SSFailed)
-                                  | (srv :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
-
+        case (,) <$> getProcessBootLevel p rg <*> getClusterStatus rg of
+          Just (pl, M0.MeroClusterState M0.ONLINE rl _) | rl >= pl -> do
             case listToMaybe [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
               Nothing -> do
                 phaseLog "warn" $ "Couldn't find node associated with " ++ show p
+                setFailure (M0.fid p) "No node info in RG"
                 return $ Just [finish]
               Just (m0node :: M0.Node) -> do
                 modify Local $ rlens fldNode .~ Field (Just m0node)
-                modify Local $ rlens fldNotifications .~ Field (Just notificationSet)
-                applyStateChanges notificationSet
-                return $ Just [services_notified, timeout 5 notification_timeout]
-          cst -> do
-            phaseLog "warn" $ "Process restart requested for "
-                           ++ "(process state, cluster state): "
-                           ++ show cst
+                mrunRestart <- runMaybeT $ do
+                  node <- MaybeT . return $ M0.m0nodeToNode m0node rg
+                  ch <- MaybeT . return $ meroChannel rg node
+                  return $ do
+                    phaseLog "info" $ "Requesting restart for " ++ show p
+                    -- TODO: Probably should check that the controller we're on
+                    -- (if any) is still online, might not want to try and restart
+                    -- the process if it's the last one on controller to fail (and
+                    -- therefore failing the controller)
+                    restartNodeProcesses ch [p]
+                case mrunRestart of
+                  Nothing -> do
+                    phaseLog "warn" $ "Couldn't begin restart for " ++ show p
+                    return $ Just [finish]
+                  Just act -> do
+                    act
+                    return $ Just [restart_result, timeout 180 restart_timeout]
+          Just (pl, cst) -> do
+            phaseLog "warn" "Requested process restart but process can't restart on this cluster boot level"
+            phaseLog "process.bootlevel" $ show pl
+            phaseLog "cluster.status" $ show cst
+            setFailure (M0.fid p) "Wrong boot level"
             return $ Just [finish]
-
-  setPhaseAllNotified services_notified (rlens fldNotifications . rfield) $ do
-    Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
-    Just m0node <- getField . rget fldNode <$> get Local
-
-    phaseLog "info" $ "Notification for " ++ show (M0.fid p) ++ " landed."
-    rg <- getLocalGraph
-    mrunRestart <- runMaybeT $ do
-      node <- MaybeT . return $ M0.m0nodeToNode m0node rg
-      ch <- MaybeT . return $ meroChannel rg node
-      return $ do
-        phaseLog "info" $ "Requesting restart for " ++ show p
-        -- TODO: Probably should check that the controller we're on
-        -- (if any) is still online, might not want to try and restart
-        -- the process if it's the last one on controller to fail (and
-        -- therefore failing the controller)
-        restartNodeProcesses ch [p]
-    case mrunRestart of
-      Nothing -> do
-        phaseLog "warn" $ "Couldn't begin restart for " ++ show p
-        continue finish
-      Just act -> do
-        act
-        switch [restart_result, timeout 180 restart_timeout]
+          Nothing -> do
+            phaseLog "error" "Couldn't find process bootlevel or cluster status in RG"
+            setFailure (M0.fid p) "No bootlevel/cluster status in RG"
+            return $ Just [finish]
 
   setPhaseIf restart_result resetNodeGuard $ \(eid', results) -> do
     todo eid'
@@ -169,30 +146,37 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
         phaseLog "info" $ "Managed to initiate restart following processes: " ++ show okFids
         continue finish
 
-      (_, failures@(fl : _)) -> do
+      -- TODO: it's only an implementation detail that this (pfid,
+      -- msg) happens to be ‘the right one’ because we check that
+      -- M0.fid is in results and we only request one process to
+      -- restart so the result happens to only hold one process. It's
+      -- not unimaginable however that something else requests restart
+      -- of more processes at once in which case these values may be
+      -- wrong.
+      (_, failures@((pfid, msg) : _)) -> do
         phaseLog "warn" $ "Following processes failed to restart: " ++ show failures
-        modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure fl)
+        setFailure pfid msg
     done eid'
     continue finish
 
   directly restart_timeout $ do
     Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
     phaseLog "warn" $ "Restart for " ++ show p ++ " taking too long, bailing."
-    modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure (M0.fid p, "Restart timed out"))
+    setFailure (M0.fid p) "Restart timed out"
     continue finish
 
   return rule_init
   where
+    setFailure pfid msg = modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure (pfid, msg))
+
     fldReq = Proxy :: Proxy '("request", Maybe ProcessRestartRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe ProcessRecoveryFailure)
     fldNode = Proxy :: Proxy '("node", Maybe M0.Node)
-    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
        <+> fldRep           =: Nothing
        <+> fldNode          =: Nothing
-       <+> fldNotifications =: Nothing
 
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions LoopState ()
