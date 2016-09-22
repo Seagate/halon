@@ -386,3 +386,4 @@ ruleServiceStarted = defineSimpleTask "rc::service::started" $
     phaseLog "service.node"   $ show node
     phaseLog "service.pid"    $ show pid
     phaseLog "service.config" $ show config
+    notify (ServiceStartedInternal node config pid)

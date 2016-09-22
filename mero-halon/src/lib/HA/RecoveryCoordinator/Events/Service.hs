@@ -24,6 +24,8 @@ module HA.RecoveryCoordinator.Events.Service
   , ServiceStatusRequestMsg(..)
   , ServiceStatusResponse(..)
   , ServiceStatusResponseMsg(..)
+    -- * Internal actions
+  , ServiceStartedInternal(..)
   ) where
 
 import HA.Service
@@ -238,3 +240,9 @@ instance ProcessEncode ServiceStatusResponse where
                             "decodeP SrvStatFailed: runGetLazy: " ++ err
                       _ -> error "impossible"
                 Left err -> error $ "decode ServiceStatusResponse: " ++ err
+
+-- | Internal notification about service being started and registered.
+data ServiceStartedInternal a = ServiceStartedInternal Node a ProcessId
+  deriving (Typeable, Generic, Show)
+
+instance Binary a => Binary (ServiceStartedInternal a)
