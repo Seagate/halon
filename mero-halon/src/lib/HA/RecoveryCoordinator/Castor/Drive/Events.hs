@@ -82,6 +82,7 @@ instance Binary DriveRemoved
 -- drive insertion rule.
 data DriveInserted = DriveInserted
        { diUUID :: UUID -- ^ Event UUID.
+       , diNode :: Node -- ^ Node where event happens.
        , diDevice :: StorageDevice -- ^ Inserted device.
        , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
        , diDiskNum :: Int -- ^ Unique location of device in enclosure.
