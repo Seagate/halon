@@ -182,6 +182,7 @@ Library
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
                        HA.Services.Mero
+                       HA.Services.Mero.RC.Actions
                        HA.Services.Mero.Types
                        HA.RecoveryCoordinator.Actions.Castor
                        HA.RecoveryCoordinator.Actions.Castor.Cluster
@@ -197,7 +198,6 @@ Library
                        HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
                        HA.RecoveryCoordinator.Events.Mero
                        HA.Services.Mero.RC
-
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Castor.Drive.Actions
@@ -211,7 +211,6 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.Node
                       HA.RecoveryCoordinator.Rules.Castor.Expander
                       HA.Resources.Mero.Note.TH
-                      HA.Services.Mero.RC.Actions
                       HA.Services.Mero.RC.Rules
                       HA.Services.Mero.RC.Events
                       HA.Services.Mero.RC.Resources
@@ -535,6 +534,7 @@ Test-Suite tests
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.InternalStateChanges
+                    HA.Test.NotificationSort
                     HA.Test.SSPL
                     Helper.SSPL
                     RemoteTables

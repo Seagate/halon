@@ -12,6 +12,7 @@ import qualified HA.Autoboot.Tests
 #ifdef USE_MERO
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 import qualified HA.Test.InternalStateChanges
+import qualified HA.Test.NotificationSort
 import qualified HA.Castor.Story.ProcessRestart
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
@@ -89,6 +90,8 @@ ut _host transport _breakConnection = do
                  , HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
                  , [testCase "Ignore me" $ return ()]
                  )
+      , MERO_TEST( testGroup, "NotificationSort", HA.Test.NotificationSort.tests
+                 , [testCase "ignore me" $ return ()])
       ]
 
 it :: String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
@@ -134,7 +137,7 @@ it _host transport breakConnection = do
 -- | Set up a 'Transport' and a way to break connections before
 -- passing it off to the given test tree.
 runTests :: (String -> Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
-runTests tests = do
+runTests tests' = do
     -- TODO: Remove threadDelay after RPC transport closes cleanly
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
@@ -169,7 +172,7 @@ runTests tests = do
             TCP.socketBetween internals there here >>= TCP.close
 #endif
     defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-      =<< tests host0 transport connectionBreak
+      =<< tests' host0 transport connectionBreak
 
 main :: IO ()
 main = prepare $ runTests tests where

@@ -19,6 +19,7 @@ module HA.Services.Mero.RC.Actions
    , tryCompleteStateDiff
    , failNotificationsOnNode
    , notifyMeroAsync
+   , orderSet
    ) where
 
 -- Mero service
@@ -45,13 +46,17 @@ import Control.Distributed.Process
 import Network.CEP
 
 import qualified Mero.Notification
+import Mero.Notification.HAState (Note(..))
+import Mero.ConfC (Fid(..))
 
 import Control.Category
 import Control.Monad (when, unless)
 import Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import Data.Traversable (for)
+import Data.List (sortBy)
 import Data.Maybe (listToMaybe, catMaybes)
+import Data.Function (on)
 import Data.Foldable (for_)
 import Data.Word (Word64)
 import Data.Proxy (Proxy(..))
@@ -237,7 +242,38 @@ notifyMeroAsync diff s = do
     modifyGraph $ execState $ for recipients $
       State.modify . G.connect diff ShouldDeliverTo
     registerSyncGraph $
-      sendChan chan $ NotificationMessage (stateEpoch diff) s (map M0.fid recipients)
+      sendChan chan $ NotificationMessage (stateEpoch diff) (orderSet notifyOrdering s) (map M0.fid recipients)
+
+-- | There are cases where mero cares about the order of elements
+-- inside the NVec. We impose the ordering by the first argument. See
+-- 'notifyOrdering' for an example.
+orderSet :: [Word64] -> Mero.Notification.Set -> Mero.Notification.Set
+orderSet ordering (Mero.Notification.Set nvec) = Mero.Notification.Set $ sortBy (sorter `on` no_id) nvec
+  where
+    sorter :: Fid -> Fid -> Ordering
+    sorter f1 f2
+      -- fids of same type, end it here without lookup
+      | M0.fidToFidType f1 == M0.fidToFidType f2 = compare f1 f2
+      -- we have f1 in list, check if it's in front of f2
+      | M0.fidToFidType f1 `elem` ordering =
+          if M0.fidToFidType f2 `elem` takeWhile (/= M0.fidToFidType f1) ordering
+          then GT
+          else LT
+      -- f1 wasn't in the list to begin with, if f2 is then f2 > f1
+      | M0.fidToFidType f2 `elem` ordering = GT
+      -- neither type was interesting, just sort them however
+      | otherwise = compare f1 f2
+
+
+-- | Default ordering used in 'notifyMeroAsync' for 'orderSet'. The
+-- fid types appearing earlier in the list take precedence over any
+-- appearing later in the list which in turn take precedence over any
+-- unmentioned types.
+notifyOrdering :: [Word64]
+notifyOrdering = [ M0.confToFidType (Proxy :: Proxy M0.Controller)
+                 , M0.confToFidType (Proxy :: Proxy M0.Disk)
+                 , M0.confToFidType (Proxy :: Proxy M0.SDev)
+                 ]
 
 -- | Apply on commit actions for the state diff.
 applyOnCommit :: OnCommit -> Process ()
