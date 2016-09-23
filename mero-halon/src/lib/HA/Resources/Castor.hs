@@ -79,7 +79,7 @@ deriveSafeCopy 0 'base ''HostAttr
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
     UUID -- ^ Internal UUID used to refer to the disk
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+  deriving (Eq, Show, Ord, Generic, Typeable, Binary, Hashable)
 
 instance FromJSON StorageDevice where
   parseJSON jsn@(Object v) = case fromText =<< parseMaybe (.: "uuid") v of
@@ -99,7 +99,6 @@ deriveSafeCopy 0 'base ''StorageDevice
 data StorageDeviceAttr
     = SDResetAttempts !Int
     | SDPowered Bool
-    | SDSMARTRunning
     | SDOnGoingReset
     | SDRemovedAt
     | SDReplaced

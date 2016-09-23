@@ -56,10 +56,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , identifyStorageDevice
   , updateDriveStatus
   , driveStatus
-    --- *** Smart
-  , markSMARTTestComplete
-  , markSMARTTestIsRunning
-  , isStorageDeviceRunningSmartTest
     --- *** Reset
   , markOnGoingReset
   , markResetComplete
@@ -682,33 +678,6 @@ markDiskPowerOff :: StorageDevice -> PhaseM LoopState l ()
 markDiskPowerOff sdev = do
   setStorageDeviceAttr sdev (SDPowered False)
   unsetStorageDeviceAttr sdev (SDPowered True)
-
-isStorageDeviceRunningSmartTest :: StorageDevice -> PhaseM LoopState l Bool
-isStorageDeviceRunningSmartTest sdev = do
-    phaseLog "rg"
-          $ "Checking SMART test status for storage device: " ++ show sdev
-    fmap (maybe False (const True) . listToMaybe) . findStorageDeviceAttrs go $ sdev
-  where
-    go SDSMARTRunning = True
-    go _              = False
-
-markSMARTTestIsRunning :: StorageDevice -> PhaseM LoopState l ()
-markSMARTTestIsRunning sdev = do
-  let _F SDSMARTRunning = True
-      _F _              = False
-  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
-  case m of
-    Nothing -> setStorageDeviceAttr sdev SDSMARTRunning
-    _       -> return ()
-
-markSMARTTestComplete :: StorageDevice -> PhaseM LoopState l ()
-markSMARTTestComplete sdev = do
-  let _F SDSMARTRunning = True
-      _F _              = False
-  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
-  case m of
-    Nothing  -> return ()
-    Just old -> unsetStorageDeviceAttr sdev old
 
 getDiskResetAttempts :: StorageDevice -> PhaseM LoopState l Int
 getDiskResetAttempts sdev = do

@@ -22,6 +22,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
 import HA.RecoveryCoordinator.Events.Service
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 import HA.RecoveryCoordinator.Castor.Drive
+import HA.RecoveryCoordinator.Castor.Drive.Actions
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor.Initial
@@ -477,13 +478,15 @@ failDrive recv (ADisk _ (Just sdev) serial _ _) = let
     liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
     debug "failDrive: OK"
 
-resetComplete :: StoreChan -> ThatWhichWeCallADisk -> Process ()
-resetComplete mm (ADisk sdev _ serial _ _) = let
+resetComplete :: ProcessId -> StoreChan -> ThatWhichWeCallADisk -> Process ()
+resetComplete rc mm (ADisk sdev m0sdev serial _ _) = let
     tserial = pack serial
     resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
     debug "resetComplete"
     nid <- getSelfNode
+    -- Send 'SpielDeviceDetached' to the RC
+    forM_ m0sdev $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
     _ <- promulgateEQ [nid] resetCmd
     let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                          $ nodeCmdString (SmartTest tserial)
@@ -493,8 +496,9 @@ resetComplete mm (ADisk sdev _ serial _ _) = let
     debug "resetComplete: finished"
 
 
-smartTestComplete :: ReceivePort NotificationMessage -> AckReply -> ThatWhichWeCallADisk -> Process ()
-smartTestComplete recv success (ADisk _ msdev serial _ _) = let
+smartTestComplete :: ProcessId -> ReceivePort NotificationMessage
+                  -> AckReply -> ThatWhichWeCallADisk -> Process ()
+smartTestComplete rc recv success (ADisk _ msdev serial _ _) = let
     tserial = pack serial
     smartComplete = CommandAck Nothing
                         (Just $ SmartTest tserial)
@@ -511,6 +515,9 @@ smartTestComplete recv success (ADisk _ msdev serial _ _) = let
 
     -- If the sdev is there
     forM_ msdev $ \sdev -> do
+      -- Send 'SpielDeviceAttached' to the RC
+      usend rc $ SpielDeviceAttached sdev (Right ())
+
       Set [Note fid stat, Note _ _] <- nextNotificationFor (M0.fid sdev) recv
       debug "smartTestComplete: Mero notification received"
       liftIO $ assertEqual
@@ -530,8 +537,8 @@ testDiskFailure transport pg = run transport pg interceptor [] test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
-    resetComplete mm sdev
-    smartTestComplete recv AckReplyPassed sdev
+    resetComplete rc mm sdev
+    smartTestComplete rc recv AckReplyPassed sdev
 
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHitResetLimit transport pg = run transport pg interceptor [] test where
@@ -544,8 +551,8 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
     replicateM_ (resetAttemptThreshold + 1) $ do
       debug "============== FAILURE START ================================"
       failDrive recv sdev
-      resetComplete mm sdev
-      smartTestComplete recv AckReplyPassed sdev
+      resetComplete rc mm sdev
+      smartTestComplete rc recv AckReplyPassed sdev
       debug "============== FAILURE Finish ================================"
 
     forM_ (aDiskMero sdev) $ \m0sdev -> do
@@ -568,8 +575,8 @@ testFailedSMART transport pg = run transport pg interceptor [] test where
 
     sdev <- G.getGraph mm >>= findSDev
     failDrive recv sdev
-    resetComplete mm sdev
-    smartTestComplete recv AckReplyFailed sdev
+    resetComplete rc mm sdev
+    smartTestComplete rc recv AckReplyFailed sdev
 
 testSecondReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testSecondReset transport pg = run transport pg interceptor [] test where
@@ -582,10 +589,10 @@ testSecondReset transport pg = run transport pg interceptor [] test where
 
     failDrive recv sdev
     failDrive recv sdev2
-    resetComplete mm sdev2
-    smartTestComplete recv AckReplyPassed sdev2
-    resetComplete mm sdev
-    smartTestComplete recv AckReplyPassed sdev
+    resetComplete rc mm sdev2
+    smartTestComplete rc recv AckReplyPassed sdev2
+    resetComplete rc mm sdev
+    smartTestComplete rc recv AckReplyPassed sdev
 
 -- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: (Typeable g, RGroup g)
@@ -768,8 +775,8 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
         liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
 
       debug "Reset command received at SSPL"
-      resetComplete mm disk2
-      smartTestComplete recv AckReplyPassed disk2
+      resetComplete rc mm disk2
+      smartTestComplete rc recv AckReplyPassed disk2
 
       do
         msg <- expectNodeMsg ssplTimeout

@@ -41,6 +41,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart  as Smart
 import HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.RecoveryCoordinator.Actions.Core
@@ -97,6 +98,7 @@ rules = sequence_
   , Repair.ruleHandleRepair
   , Reset.ruleResetAttempt
   , Raid.rules
+  , Smart.rules
   ]
 
 -- | All external notifications related to disks.
@@ -115,11 +117,14 @@ driveRemovalTimeout = 60
 --   - Powered
 --   - Inserted
 --   - Visible to the OS (e.g. have a drivemanager 'OK' status)
+--   - Have a successful SMART test run. This will be checked by this rule.
 mkCheckAndHandleDriveReady ::
      (l -> Maybe StorageDevice) -- ^ accessor to curent storage device in a local state.
   -> (M0.SDev -> PhaseM LoopState l ()) -- ^ Action to run when drive is handled.
-  -> RuleM LoopState l (Jump PhaseHandle, StorageDevice -> PhaseM LoopState l ())
+  -> RuleM LoopState l (Jump PhaseHandle, Node -> StorageDevice -> PhaseM LoopState l ())
 mkCheckAndHandleDriveReady getter next = do
+
+  smart_result <- phaseHandle "smart_result"
 
   let post_process m0sdev = do
         oldState <- getLocalGraph <&> getState m0sdev
@@ -146,13 +151,42 @@ mkCheckAndHandleDriveReady getter next = do
           SDSRebalancing -> return ()
         next m0sdev
 
+      onSameSdev (SMARTResponse sdev' status) _ (getter -> (Just sdev)) =
+        if sdev' == sdev
+        then return $ Just status
+        else return Nothing
+      onSameSdev _ _ _ = return Nothing
+
   (device_attached, deviceAttach) <- mkAttachDisk
     (fmap join . traverse (lookupStorageDeviceSDev) . getter)
     (\sdev e -> do phaseLog "warning" e
                    post_process sdev)
     post_process
 
-  return (device_attached, \disk -> do
+  setPhaseIf smart_result onSameSdev $ \status -> do
+    Just sdev <- getter <$> get Local
+    phaseLog "sdev" $ show sdev
+    phaseLog "smart.response" $ show status
+    smartSuccess <- case status of
+      SRSSuccess -> return True
+      SRSNotAvailable -> do
+        phaseLog "warning" "SMART functionality not available."
+        return True
+      _ -> do
+        phaseLog "info" "Unsuccessful SMART test."
+        return False
+
+    if smartSuccess
+    then do
+      promulgateRC $ DriveReady sdev
+      mm0sdev <- lookupStorageDeviceSDev sdev
+      forM_ mm0sdev $ \sd -> do
+        deviceAttach sd
+        continue device_attached
+    else
+      phaseLog "warning" "Unsuccessful SMART test. Drive cannot be used."
+
+  return (device_attached, \node disk -> do
     reset <- hasOngoingReset disk
     powered <- isStorageDevicePowered disk
     removed <- isStorageDriveRemoved disk
@@ -161,11 +195,9 @@ mkCheckAndHandleDriveReady getter next = do
 
     if not reset && powered && not removed && status == "OK"
     then do
-      promulgateRC $ DriveReady disk
-      mm0sdev <- lookupStorageDeviceSDev disk
-      forM_ mm0sdev $ \sd -> do
-        deviceAttach sd
-        continue device_attached
+      phaseLog "info" "Device ready. Running SMART test."
+      promulgateRC $ SMARTRequest node disk
+      continue smart_result
      else
        phaseLog "info" $ unwords [
            "Device not ready:", show disk
@@ -302,6 +334,7 @@ ruleDriveInserted = define "drive-inserted" $ do
 
   directly main $ do
     Just (_, di@DriveInserted{ diUUID = uuid
+                             , diNode = node
                              , diDevice = disk
                              , diSerial = sn
                              , diPowered = powered
@@ -323,7 +356,7 @@ ruleDriveInserted = define "drive-inserted" $ do
          when powered $ markDiskPowerOn disk
          markIfNotMeroFailure
          put Local $ Just (UUID.nil, di)
-         checkAndHandleDriveReady disk
+         checkAndHandleDriveReady node disk
          continue checked
        False -> do
          lookupStorageDeviceReplacement disk >>= \case
@@ -351,8 +384,8 @@ ruleDriveInserted = define "drive-inserted" $ do
         if (req == request) then (Just ()) else Nothing
       )
     $ \() -> do
-    Just (_, DriveInserted{diDevice=disk}) <- get Local
-    checkAndHandleDriveReady disk
+    Just (_, DriveInserted{diDevice=disk, diNode = node}) <- get Local
+    checkAndHandleDriveReady node disk
     continue finish
 
   directly finish $ do
@@ -452,7 +485,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       phaseLog "info" $ "Device " ++ (show dpcSerial) ++ " has been repowered."
       markDiskPowerOn dpcDevice
 
-      checkAndHandleDriveReady dpcDevice
+      checkAndHandleDriveReady dpcNode dpcDevice
       continue checked
 
   directly power_removed_duration $ do
@@ -495,7 +528,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
           phaseLog "info" $ "Storage device: " ++ show dpcDevice
           phaseLog "info" $ "Mero device: " ++ showFid m0sdev
           markStorageDeviceReplaced dpcDevice
-          checkAndHandleDriveReady dpcDevice
+          checkAndHandleDriveReady dpcNode dpcDevice
           continue checked
 
   start handle Nothing
@@ -542,9 +575,9 @@ ruleDriveOK = define "castor::disk::ready" $ do
       Just (eid,_) <- get Local
       messageProcessed eid
 
-  setPhase handle $ \(DriveOK eid _ _ disk) -> do
+  setPhase handle $ \(DriveOK eid node _ disk) -> do
     put Local $ Just (eid, disk)
-    checkAndHandleDriveReady disk
+    checkAndHandleDriveReady node disk
     continue checked
 
   start handle Nothing

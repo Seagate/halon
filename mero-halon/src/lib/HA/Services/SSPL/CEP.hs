@@ -412,7 +412,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
         ]
       more_needed <- case (is_installed, is_powered) of
        (True, _) | was_removed -> do
-         notify $ DriveInserted uuid sdev enc diskNum serial is_powered
+         notify $ DriveInserted uuid (Node nid) sdev enc diskNum serial is_powered
          return True
        (False, _) | (not was_removed) -> do
          notify $ DriveRemoved uuid (Node nid) enc sdev diskNum is_powered

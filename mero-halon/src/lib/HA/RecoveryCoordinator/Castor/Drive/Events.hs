@@ -18,6 +18,10 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , ResetFailure(..)
     -- * Metadata drive events
   , RaidUpdate(..)
+    -- * SMART test EventsΩ
+  , SMARTRequest(..)
+  , SMARTResponse(..)
+  , SMARTResponseStatus(..)
   ) where
 
 import HA.Resources
@@ -78,6 +82,7 @@ instance Binary DriveRemoved
 -- drive insertion rule.
 data DriveInserted = DriveInserted
        { diUUID :: UUID -- ^ Event UUID.
+       , diNode :: Node -- ^ Node where event happens.
        , diDevice :: StorageDevice -- ^ Inserted device.
        , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
        , diDiskNum :: Int -- ^ Unique location of device in enclosure.
@@ -136,3 +141,33 @@ data RaidUpdate = RaidUpdate
 
 instance Hashable RaidUpdate
 instance Binary RaidUpdate
+
+-- | Sent to request a SMART test is run on the system.
+data SMARTRequest = SMARTRequest {
+    srqNode :: Node
+  , srqDevice :: StorageDevice
+} deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Hashable SMARTRequest
+instance Binary SMARTRequest
+
+-- | Possible response from SMART testing.
+data SMARTResponseStatus
+  = SRSSuccess
+  | SRSFailed
+  | SRSTimeout
+  | SRSNotAvailable -- ^ Sent when SMART functionality is not available.
+  | SRSNotPossible -- ^ Sent when it is not possible to run a SMART test.
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SMARTResponseStatus
+instance Hashable SMARTResponseStatus
+
+-- | Response from SMART test job.
+data SMARTResponse = SMARTResponse {
+    srpDevice :: StorageDevice
+  , srpStatus :: SMARTResponseStatus
+} deriving (Eq, Show, Typeable, Generic)
+
+instance Binary SMARTResponse
+instance Hashable SMARTResponse

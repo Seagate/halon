@@ -74,9 +74,9 @@ resetAttemptThreshold = 10
 driveResetTimeout :: Int
 driveResetTimeout = 5*60
 
--- | Time to allow for SSPL reply on a smart test request.
+-- | Time to allow for SMART rule to reply on SMART request.
 smartTestTimeout :: Int
-smartTestTimeout = 15*60
+smartTestTimeout = 16*60
 
 -- | Drive state change handler for 'reset' functionality.
 --
@@ -151,8 +151,7 @@ ruleResetAttempt = define "reset-attempt" $ do
       reset         <- phaseHandle "reset"
       resetComplete <- phaseHandle "reset-complete"
       smart         <- phaseHandle "smart"
-      smartSuccess  <- phaseHandle "smart-success"
-      smartFailure  <- phaseHandle "smart-failure"
+      smartResponse <- phaseHandle "smart-response"
       failure       <- phaseHandle "failure"
       end           <- phaseHandle "end"
       drive_removed <- phaseHandle "drive-removed"
@@ -174,9 +173,6 @@ ruleResetAttempt = define "reset-attempt" $ do
               phaseLog "info" $ "Cancelling drive reset as drive is removed."
               phaseLog "sdev" $ show sdev
               continue end
-            whenM (isStorageDeviceRunningSmartTest sdev) $ do
-              phaseLog "info" $ "Device running SMART test: " ++ show sdev
-              switch [drive_removed, smartSuccess, smartFailure, timeout smartTestTimeout failure]
             markOnGoingReset sdev
             switch [drive_removed, reset]
           [] -> do
@@ -212,7 +208,6 @@ ruleResetAttempt = define "reset-attempt" $ do
           else continue failure
         else continue failure
 
-
       setPhaseIf resetComplete (onCommandAck DriveReset) $ \(result, eid) -> do
         Just (sdev, _, _, _) <- get Local
         markResetComplete sdev
@@ -228,15 +223,10 @@ ruleResetAttempt = define "reset-attempt" $ do
           continue failure
 
       directly smart $ do
-        Just (sdev, serial, Node nid, _) <- get Local
-        sent <- sendNodeCmd nid Nothing (SmartTest serial)
-        if sent
-        then do phaseLog "info" $ "Running SMART test on " ++ show sdev
-                markSMARTTestIsRunning sdev
-                switch [ drive_removed, smartSuccess
-                        , smartFailure, timeout smartTestTimeout failure
-                        ]
-        else continue failure
+        Just (sdev, serial, node, _) <- get Local
+        promulgateRC $ SMARTRequest node sdev
+        switch [ drive_removed, smartResponse
+               , timeout smartTestTimeout failure ]
 
       (disk_attached, attachDisk) <- mkAttachDisk
         (fmap join . traverse (\(sdev, _, _, _) -> lookupStorageDeviceSDev sdev) )
@@ -251,24 +241,21 @@ ruleResetAttempt = define "reset-attempt" $ do
                                ++ show x
            continue end)
 
-      setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
+      setPhaseIf smartResponse onSameSdev $ \status -> do
         Just (sdev, _, _, _) <- get Local
-        phaseLog "info" $ "Successful SMART test on " ++ show sdev
-        markSMARTTestComplete sdev
-        promulgateRC $ ResetSuccess sdev
-        sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev -> do
-          attachDisk m0sdev
-          continue disk_attached
-        messageProcessed eid
-        continue end
-
-      setPhaseIf smartFailure onSmartFailure $ \eid -> do
-        Just (sdev, _, _, _) <- get Local
-        phaseLog "info" $ "SMART test failed on " ++ show sdev
-        markSMARTTestComplete sdev
-        messageProcessed eid
-        continue failure
+        phaseLog "sdev" $ show sdev
+        phaseLog "smart.response" $ show status
+        case status of
+          SRSSuccess -> do
+            promulgateRC $ ResetSuccess sdev
+            sd <- lookupStorageDeviceSDev sdev
+            forM_ sd $ \m0sdev -> do
+              attachDisk m0sdev
+              continue disk_attached
+            continue end
+          _ -> do
+            phaseLog "info" "Unsuccessful SMART test."
+            continue failure
 
       directly failure $ do
         Just (sdev, _, _, _) <- get Local
@@ -295,7 +282,6 @@ ruleResetAttempt = define "reset-attempt" $ do
         phaseLog "info" "Cancelling drive reset as drive removed."
         -- Claim all things are complete
         markResetComplete sdev
-        markSMARTTestComplete sdev
         continue end
 
       startFork home Nothing
@@ -318,37 +304,6 @@ onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
            | otherwise       -> return Nothing
     _ -> return Nothing
 
-onSmartSuccess :: HAEvent CommandAck
-               -> g
-               -> Maybe (StorageDevice, Text, Node, UUID)
-               -> Process (Maybe UUID)
-onSmartSuccess (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
-    case commandAckType cmd of
-      Just (SmartTest x)
-        | serial == x ->
-          case commandAck cmd of
-            AckReplyPassed -> return $ Just eid
-            _              -> return Nothing
-        | otherwise -> return Nothing
-      _ -> return Nothing
-onSmartSuccess _ _ _ = return Nothing
-
-onSmartFailure :: HAEvent CommandAck
-               -> g
-               -> Maybe (StorageDevice, Text, Node, UUID)
-               -> Process (Maybe UUID)
-onSmartFailure (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
-    case commandAckType cmd of
-      Just (SmartTest x)
-        | serial == x ->
-          case commandAck cmd of
-            AckReplyFailed  -> return $ Just eid
-            AckReplyError _ -> return $ Just eid
-            _               -> return Nothing
-        | otherwise -> return Nothing
-      _ -> return Nothing
-onSmartFailure _ _ _ = return Nothing
-
 onDriveRemoved :: DriveRemoved
                -> g
                -> Maybe (StorageDevice, Text, Node, UUID)
@@ -358,3 +313,13 @@ onDriveRemoved dr _ (Just (sdev, _, _, _)) =
     then return $ Just sdev
     else return Nothing
 onDriveRemoved _ _ _ = return Nothing
+
+onSameSdev :: SMARTResponse
+           -> g
+           -> Maybe (StorageDevice, Text, Node, UUID)
+           -> Process (Maybe SMARTResponseStatus)
+onSameSdev (SMARTResponse sdev' status) _ (Just (sdev, _, _, _)) =
+  if sdev' == sdev
+  then return $ Just status
+  else return Nothing
+onSameSdev _ _ _ = return Nothing
