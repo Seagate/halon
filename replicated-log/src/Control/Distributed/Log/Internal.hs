@@ -817,7 +817,7 @@ replica Dict
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs or when the
     -- watermark increases beyond the proposed decree.
-    proposer ρ bpid w s αs =
+    proposer ρ bpid !w !s αs =
       receiveWait
         [ match $ \r@(ProposerRequest d _ _
                                       (Request {requestValue = v :: Value a}))
