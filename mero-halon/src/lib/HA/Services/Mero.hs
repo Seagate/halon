@@ -18,6 +18,7 @@ module HA.Services.Mero
     , ProcessControlResultStopMsg(..)
     , MeroConf(..)
     , MeroKernelConf(..)
+    , ServiceStateRequest(..)
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
@@ -27,10 +28,8 @@ module HA.Services.Mero
     ) where
 
 import HA.Logger
-import HA.EventQueue.Producer (expiate, promulgate, promulgateWait)
+import HA.EventQueue.Producer (promulgate, promulgateWait)
 import qualified HA.RecoveryCoordinator.Events.Mero as M0
-import HA.Resources
-import HA.Encode
 import HA.Service
 import HA.Services.Mero.Types
 
@@ -51,14 +50,17 @@ import Control.Distributed.Process.Closure
   )
 import Control.Distributed.Static
   ( staticApply )
-import Control.Distributed.Process hiding (catch, bracket_)
-import Control.Monad.Catch (catch, bracket_)
+import Control.Distributed.Process hiding (catch)
+import Control.Monad.Catch (catch)
 import Control.Monad (forever, void)
 import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
 import Data.Char (toUpper)
 import Data.Maybe (maybeToList)
+import Data.Binary
+import Data.Typeable
+import GHC.Generics
 import qualified Data.UUID as UUID
 
 import System.Exit
@@ -69,6 +71,13 @@ import qualified System.Timeout as ST
 
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
+
+
+-- | Request information about service
+data ServiceStateRequest = ServiceStateRequest
+  deriving (Show, Typeable, Generic)
+
+instance Binary ServiceStateRequest
 
 -- | Store information about communication channel in resource graph.
 sendMeroChannel :: SendPort NotificationMessage
@@ -292,7 +301,7 @@ remotableDecl [ [d|
           cc <- spawnChannelLocal (controlProcess conf self)
           sendMeroChannel c cc
           traceM0d "Starting service m0d on mero client"
-          go
+          go c cc
         ExitFailure i -> do
           self <- getSelfPid
           traceM0d $ "Kernel module did not load correctly: " ++ show i
@@ -318,32 +327,9 @@ remotableDecl [ [d|
       stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
 
       -- mainloop
-      go = do
-          let shutdownAndTellThem = do
-                node <- getSelfNode
-                pid  <- getSelfPid
-                expiate $ ServiceFailed (Node node) (encodeP $ ServiceInfo m0d conf) pid
-          receiveWait $
-            [ match $ \buf ->
-                case examine buf of
-                   True -> go
-                   False -> shutdownAndTellThem
-            , match $ \() ->
-                shutdownAndTellThem
-            ]
-
-      -- In lieu of properly parsing the YAML output,
-      -- we just aply a simple heuristic. This may or
-      -- may not be adequate in the long term. Returns
-      -- true if okay, false otherwise.
-      examine :: [String] -> Bool
-      examine xs = not $ or $ map hasError xs
-         where
-           hasError line =
-              let w = words line
-               in if length w > 0
-                     then head w == "error:" ||
-                          last w == "FAILED"
-                     else False
-
+      go c cc = forever $
+        receiveWait
+          [ match $ \ServiceStateRequest -> do
+             sendMeroChannel c cc
+          ]
     |] ]

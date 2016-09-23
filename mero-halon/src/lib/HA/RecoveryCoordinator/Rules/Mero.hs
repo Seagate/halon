@@ -16,13 +16,16 @@ import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Events.Service
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources        as R
+import HA.Services.Mero
 import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
-import Control.Distributed.Process (usend, sendChan)
+import Control.Monad (when)
+import Control.Distributed.Process (usend, sendChan, getSelfNode)
 import Data.Maybe (listToMaybe)
 
 import Network.CEP
@@ -53,3 +56,7 @@ meroRules = do
     phaseLog "debug" $ "FailureVector="++show mv
     liftProcess $ sendChan port mv
 
+  defineSimple "mero:service-started" $ \(ServiceStartedInternal node (a::MeroConf) pid) -> do
+    phaseLog "info" "request mero channel"
+    phaseLog "service.pid" $ show pid
+    liftProcess $ usend pid ServiceStateRequest

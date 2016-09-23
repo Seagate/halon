@@ -75,6 +75,7 @@ class
   , Resource (Service a)
   , Relation Supports Cluster (Service a)
   , Show a
+  , Binary a
   , Eq a
   ) => Configuration a where
     -- | Dictionary providing evidence of the serializability of a
