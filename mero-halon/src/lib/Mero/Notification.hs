@@ -35,6 +35,7 @@ module Mero.Notification
     , sentInterval
     , pendingInterval
     , cancelledInterval
+    , getM0Worker
     ) where
 
 import Control.Distributed.Process
@@ -722,3 +723,7 @@ getSpielAddress b g =
        quorum = ceiling $ fromIntegral (length confdsFid) / (2::Double)
 
   in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp <*> pure quorum
+
+-- | Get current M0Worker, return nothing if worker is not yet initilized.
+getM0Worker :: IO (Maybe M0Worker)
+getM0Worker = _erWorker <$> readMVar globalEndpointRef

@@ -140,9 +140,6 @@ newMeroChannel pid = do
               $ DeclareMeroChannel pid sdChan connChan
   return (recv, recv1, notfication)
 
-data MkWorker = MkWorker deriving (Typeable, Generic)
-instance Binary MkWorker
-
 testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
@@ -175,10 +172,6 @@ testRules = do
         (sd:_) -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
         [] -> return ()
       messageProcessed eid
-  defineSimple "mk-worker" $ \(HAEvent eid MkWorker _) -> do
-      worker <- liftIO $ newM0Worker
-      putStorageRC worker
-      liftProcess $ register halonRCMeroWorkerLabel =<< spawnLocal (receiveWait [])
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -849,7 +842,6 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
 
     nid <- getSelfNode
 
-    promulgateEQ [nid] MkWorker
     rg <- G.getGraph mm
     let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
                      , enc <- G.connectedTo rack Has rg]
