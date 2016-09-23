@@ -188,13 +188,15 @@ data MeroKernelFailed = MeroKernelFailed ProcessId String
 
 instance Binary MeroKernelFailed
 
-
 newtype NodeKernelFailed = NodeKernelFailed M0.Node
   deriving (Eq, Show, Typeable, Generic, Binary)
 
--- | Request abort on the given pool.
-newtype AbortSNSOperation = AbortSNSOperation M0.Pool
-  deriving (Eq, Show, Ord, Typeable, Generic, Binary)
+-- | Request abort on the given pool. If 'UUID' is provided, only
+-- abort if the pool repair status has the Poolgiven 'UUID'
+data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary AbortSNSOperation
 
 -- | Reply to SNS operation abort.
 data AbortSNSOperationResult

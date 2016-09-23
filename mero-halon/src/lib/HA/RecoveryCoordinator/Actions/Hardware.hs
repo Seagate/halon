@@ -513,13 +513,12 @@ updateDriveStatus :: StorageDevice
                   -> String -- ^ Reason.
                   -> PhaseM LoopState l ()
 updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Updating status for device"
-  phaseLog "status" $ status
-  phaseLog "reason" $ reason
   ds <- driveStatus dev
-  phaseLog "rg" $ "Old status was " ++ show ds
   let statusNode = StorageDeviceStatus status reason
-      rg' = G.newResource statusNode
+  phaseLog "rg" $ "Updating status for device"
+  phaseLog "status.old" $ show ds
+  phaseLog "status.new" $ show statusNode
+  let rg' = G.newResource statusNode
         >>> G.connectUniqueFrom dev Is statusNode
           $ rg
   return rg'

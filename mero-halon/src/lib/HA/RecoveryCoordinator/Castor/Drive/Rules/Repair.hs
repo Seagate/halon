@@ -247,7 +247,7 @@ querySpiel = define "spiel::sns:query-status" $ do
   setPhase abort_on_quiesce $
     \(HAEvent _ (QuiesceSNSOperation _pool) _) -> return ()
   setPhase abort_on_abort $
-    \(HAEvent _ (AbortSNSOperation _pool) _) -> return ()
+    \(HAEvent _ (AbortSNSOperation _pool _) _) -> return ()
 
   start query_status Nothing
 
@@ -285,7 +285,7 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
   setPhase abort_on_quiesce $
     \(HAEvent _ (QuiesceSNSOperation _pool) _) -> continue finish
   setPhase abort_on_abort   $
-    \(HAEvent _ (AbortSNSOperation _pool) _) -> continue finish
+    \(HAEvent _ (AbortSNSOperation _pool _) _) -> continue finish
 
   (repair_status, repairStatus) <-
      mkRepairStatusRequestOperation process_failure process_info
@@ -356,7 +356,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
             else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
                     return $ Just [finish]
           False -> do
-            phaseLog "info" "Not starting rebalance, some IOS are not online"
+            phaseLog "warn" "Not starting rebalance, some IOS are not online"
             return Nothing
         Just info -> do
           phaseLog "warn" $ "Pool repair/rebalance is already running: " ++ show info
@@ -677,19 +677,26 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   ok    <- phaseHandle "ok"
   failure <- phaseHandle "SNS abort failed."
 
-  let route (AbortSNSOperation pool) = getPoolRepairStatus pool >>= \case
+  let route (AbortSNSOperation pool uuid) = getPoolRepairStatus pool >>= \case
         Nothing -> do
           phaseLog "repair" $ "Abort requested on " ++ show pool
                            ++ "but no repair seems to be happening."
           modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationSkip pool)
           return $ Just [finish]
-        Just (M0.PoolRepairStatus prt uuid _) -> do
+        Just (M0.PoolRepairStatus prt uuid' _) | uuid == uuid' -> do
           modify Local $ rlens fldPrt .~ (Field . Just $ prt)
-          modify Local $ rlens fldUUID .~ (Field . Just $ uuid)
+          modify Local $ rlens fldRepairUUID .~ (Field . Just $ uuid')
           return $ Just [entry]
+        Just (M0.PoolRepairStatus _ uuid' _) -> do
+          phaseLog "repair" $ "Abort requested on " ++ show pool ++ " but UUIDs mismatch"
+          phaseLog "request.uuid" $ show uuid
+          phaseLog "PRS.uuid" $ show uuid'
+          let msg = show uuid ++ " /= " ++ show uuid'
+          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool msg)
+          return $ Just [finish]
 
   (ph_repair_abort, abortRepair) <- mkRepairAbortOperation 15
-      (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
+      (\l -> (\(Just (AbortSNSOperation pool _)) -> pool) $ getField (rget fldReq l))
       (\pool s -> do
          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
          continue failure)
@@ -700,7 +707,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
          else continue entry)
 
   (ph_rebalance_abort, abortRebalance) <- mkRebalanceAbortOperation 15
-      (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
+      (\l -> (\(Just (AbortSNSOperation pool _)) -> pool) $ getField (rget fldReq l))
       (\pool s -> do
          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
          continue failure)
@@ -711,7 +718,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
          else continue entry)
 
   directly entry $ do
-    Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
+    Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
     Just prt <- getField . rget fldPrt <$> get Local
     case prt of
       M0.Failure -> do
@@ -722,16 +729,16 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
         continue ph_rebalance_abort
 
   directly ok $ do
-    Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
-    Just uuid <- getField . rget fldUUID <$> get Local
+    Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
+    Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
     modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
     continue finish
 
   directly failure $ do
     phaseLog "warning" "SNS abort failed - removing Pool repair info."
-    Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
-    Just uuid <- getField . rget fldUUID <$> get Local
+    Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
+    Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
     continue finish
 
@@ -743,10 +750,13 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
     fldRep = Proxy
     fldPrt :: Proxy '("prt", Maybe PoolRepairType)
     fldPrt = Proxy
+    fldRepairUUID :: Proxy '("repairUUID", Maybe UUID)
+    fldRepairUUID = Proxy
     args =  fldReq  =: Nothing
         <+> fldRep  =: Nothing
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
+        <+> fldRepairUUID =: Nothing
         <+> RNil
 
 
@@ -828,7 +838,7 @@ ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-e
        mprs <- getPoolRepairStatus pool
        case mprs of
          Nothing -> return ()
-         Just _  -> promulgateRC $ AbortSNSOperation pool
+         Just prs  -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
     _ -> return ()
 
 --------------------------------------------------------------------------------
@@ -1085,7 +1095,9 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
 -- it seems some devices belonging to the pool failed, abort repair.
 processPoolInfo pool _ m
   | fa <- getSDevs m M0_NC_FAILED
-  , not (S.null fa) = promulgateRC (AbortSNSOperation pool)
+  , not (S.null fa) = getPoolRepairStatus pool >>= \case
+      Nothing -> return ()
+      Just prs  -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
 -- All the devices we were notified in the pool came up as ONLINE. In
 -- this case we may want to continue repair if no other devices in the
 -- pool are transient.
