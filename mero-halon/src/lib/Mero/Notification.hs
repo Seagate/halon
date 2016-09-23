@@ -130,19 +130,20 @@ data EndpointRef = EndpointRef
     -- The second MVar will be filled when the ha_interface is terminated.
   , _erFinalizationBarriers :: Maybe (MVar (), MVar ())
     -- ^ Marker if HA state should be stopped.
+  , _erWorker :: Maybe M0Worker
+    -- ^ Dedicated worker for the spiel operations.
   }
 
 emptyEndpointRef :: EndpointRef
-emptyEndpointRef = EndpointRef Nothing 0 False Nothing
+emptyEndpointRef = EndpointRef Nothing 0 False Nothing Nothing
 
 -- | Multiple places such as mero service or confc may need an
 -- 'RPCMachine'. In order to ensure we don't end up initializing the machine
 -- multiple times or finalizing it while it is still in use, we use a global
 -- lock.
 --
--- This lock is internal to the module. All users except 'initalize'
--- and 'finalizeInternal' should use 'withNI',
--- 'initializeInternal' and 'finalize' themselves.
+-- This lock is internal to the module. All users except 'finalizeInternal'
+-- should use 'withNI', 'initializeInternal' and 'finalize' themselves.
 globalEndpointRef :: MVar EndpointRef
 globalEndpointRef = unsafePerformIO $ newMVar emptyEndpointRef
 {-# NOINLINE globalEndpointRef #-}
@@ -237,17 +238,19 @@ initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar glo
         proc <- ask
         fbarrier <- liftIO $ newEmptyMVar
         fdone <- liftIO $ newEmptyMVar
-        (barrier, r) <- liftGlobalM0 $ do
-           (barrier, niRef) <- initializeHAStateCallbacks (processNode proc)
-                                 addr processFid profileFid haFid rmFid fbarrier fdone
-           addM0Finalizer $ finalizeInternal globalEndpointRef
-           let ref' = emptyEndpointRef
+        (barrier, niRef) <- liftGlobalM0 $
+           initializeHAStateCallbacks (processNode proc)
+             addr processFid profileFid haFid rmFid fbarrier fdone
+        eresult <- liftIO $ takeMVar barrier
+        case eresult of
+          Left exc -> Catch.throwM exc
+          Right worker ->
+            let ref' = emptyEndpointRef
                         { _erNIRef = Just niRef
                         , _erFinalizationBarriers = Just (fbarrier, fdone)
+                        , _erWorker = Just worker
                         }
-           return (barrier, (globalEndpointRef, ref', niRef))
-        liftIO $ either (Catch.throwM) return =<< takeMVar barrier
-        return r)
+            in return (globalEndpointRef, ref', niRef))
       (do
         say "initializeInternal: error"
         liftIO $ putMVar globalEndpointRef ref )
@@ -420,7 +423,7 @@ initializeHAStateCallbacks :: LocalNode
                                       -- it wants the ha_interface terminated.
                            -> MVar () -- ^ This MVar will be filled when the ha_interface
                                       -- is terminated.
-                           -> IO (MVar (Either SomeException ()), NIRef)
+                           -> IO (MVar (Either SomeException M0Worker), NIRef)
 initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier fdone = do
     niRef <- NIRef <$> newMVar  Map.empty
                    <*> newIORef Map.empty
@@ -443,13 +446,16 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                             (ha_cancelled niRef)
                             (ha_request_failure_vector niRef)
                             (ha_keepalive_reply niRef)
-             putMVar barrier er
              case er of
                Right{} -> do
+                 worker <- newM0Worker
+                 putMVar barrier (Right worker)
+                 addM0Finalizer $ finalizeInternal globalEndpointRef
                  takeMVar fbarrier
+                 terminateM0Worker worker
                  finiHAState
                  putMVar fdone ()
-               Left{} -> return ()
+               Left e -> putMVar barrier (Left e)
     return (barrier, niRef)
   where
     ha_state_get :: HALink -> Word64 -> NVec -> IO ()
