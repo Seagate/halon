@@ -47,7 +47,13 @@ import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
+import           Data.Maybe
+  ( catMaybes
+  , isJust
+  , fromMaybe
+  , listToMaybe
+  , mapMaybe
+  )
 import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Traversable (for)
@@ -1169,29 +1175,20 @@ allWithState :: SDevStateMap -> ConfObjectState -> Maybe (S.HashSet SDev)
 allWithState sm@(SDevStateMap m) st =
   if M.member st m && M.size m == 1 then Just $ getSDevs sm st else Nothing
 
-
-
 -- | Check if processes associated with IOS are up. If yes, try to
 -- restart repair/rebalance on the pools.
 checkRepairOnServiceUp :: Definitions LoopState ()
 checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
-  init_rule <- phaseHandle "init_rule"
+    init_rule <- phaseHandle "init_rule"
 
-  setPhaseInternalNotificationWithState init_rule (\o n -> o /= M0.SSOnline &&  n == M0.SSOnline)
-    $ \(eid, srvs :: [(M0.Service, M0.ServiceState)]) -> do
-    todo eid
-    -- Check if any of the services are IOS: if no service is IOS then
-    -- we can just do nothing early and save ourselves some lookups
-    case filter ((== CST_IOS) . M0.s_type . fst) srvs of
-      [] -> return ()
-      -- but if we do have IOS, we don't care about which one it is as
-      -- we have to check that all IOS-related processes are up anyway
-      _ -> do
-        rg <- getLocalGraph
+    setPhaseInternalNotificationWithState init_rule (\o n -> o /= M0.PSOnline &&  n == M0.PSOnline)
+      $ \(eid, procs :: [(M0.Process, M0.ProcessState)]) -> do
+      todo eid
+      rg <- getLocalGraph
+      when (isJust $ find (flip isIOSProcess rg) (fst <$> procs)) $ do
         let failedIOS = [ p | p <- getAllProcesses rg
                             , M0.PSFailed _ <- [getState p rg]
-                            , s <- G.connectedTo p M0.IsParentOf rg
-                            , CST_IOS <- [M0.s_type s] ]
+                            , isIOSProcess p rg ]
         case failedIOS of
           [] -> do
             pools <- getPool
@@ -1205,6 +1202,10 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
               st -> phaseLog "warn" $
                 "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
           ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)
-    done eid
+      done eid
 
-  start init_rule ()
+    start init_rule ()
+
+  where
+    isIOSProcess p rg = not . null $ [s | s <- G.connectedTo p M0.IsParentOf rg
+                                        , CST_IOS <- [M0.s_type s] ]
