@@ -127,7 +127,7 @@ handleResetExternal (Set ns) = do
                       -- We handle this status inside external rule, because we need to
                       -- update drive manager if and only if failure is set because of
                       -- mero notifications, not because drive removal or other event.
-                      when (status == M0.SDSFailed) $ do
+                      when (ratt > resetAttemptThreshold) $ do
                         phaseLog "warning" "drive have failed to reset too many times => making as failed."
                         updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
