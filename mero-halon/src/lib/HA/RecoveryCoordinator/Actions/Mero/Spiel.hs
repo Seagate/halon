@@ -90,7 +90,6 @@ import Data.Bifunctor
 import Network.CEP
 
 import System.IO
-import System.Directory
 
 import Text.Printf (printf)
 import GHC.Generics

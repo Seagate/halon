@@ -23,7 +23,7 @@ module HA.Services.Mero.RC.Actions
    ) where
 
 -- Mero service
-import           HA.Services.Mero.Types
+import           HA.Services.Mero
 import           HA.Services.Mero.RC.Events
 import           HA.Services.Mero.RC.Resources
 
