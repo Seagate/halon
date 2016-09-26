@@ -34,13 +34,9 @@ import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0
-#ifdef USE_MERO
-import HA.RecoveryCoordinator.Actions.Mero.Core -- XXX: remove ifdef
-#endif
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
-import qualified Control.Monad.Catch as Catch
 
 import Control.Wire hiding (when)
 
@@ -126,11 +122,7 @@ makeRecoveryCoordinator mm eq rm = do
    maybe (register labelRecoveryCoordinator self)
          (const $ reregister labelRecoveryCoordinator self)
          =<< whereis labelRecoveryCoordinator
-#ifdef USE_MERO
-   flip Catch.finally tryCloseMeroWorker $ execute init_st $ do
-#else
    execute init_st $ do
-#endif
      rm
      setRuleFinalizer $ \ls -> do
        newGraph <- G.sync (lsGraph ls) (return ())

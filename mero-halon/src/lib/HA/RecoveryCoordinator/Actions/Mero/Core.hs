@@ -25,47 +25,27 @@ module HA.RecoveryCoordinator.Actions.Mero.Core
   , m0synchronously
   , m0asynchronously
   , m0asynchronously_
-    -- * Mero Worker
-    -- $mero-worker
-  , halonRCMeroWorkerLabel
-  , createMeroWorker
-  , tryCloseMeroWorker
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import HA.Services.Mero
-import HA.Service (serviceLabel)
+import HA.Services.Mero (getM0Worker)
 
 import Mero.ConfC ( Fid(..) )
 import Mero.M0Worker
 
-import Control.Distributed.Process
-  ( getSelfPid
-  , register
-  , unregister
-  , monitor
-  , receiveWait
-  , receiveTimeout
-  , matchIf
-  , kill
-  , link
-  , spawnLocal
-  , whereis
-  , Process
-  , ProcessMonitorNotification(..)
-  )
+import Control.Distributed.Process (Process)
 import qualified Control.Distributed.Process.Internal.Types as DI
 import Control.Monad.IO.Class
-import Control.Monad.Catch (SomeException, finally, try)
+import Control.Monad.Catch (SomeException, try, throwM)
 import Control.Monad.Trans.Reader (ask)
 import Data.Bits (setBit)
 import Data.Maybe (listToMaybe)
 import Data.Functor (void)
-import Data.Foldable
 import Data.Proxy
 import Data.Word ( Word64, Word32 )
 
@@ -173,7 +153,7 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 --
 -- This call will return Nothing if no RC worker was created.
 liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
-liftM0RC task = getStorageRC >>= traverse (\worker -> runOnM0Worker worker task)
+liftM0RC task = liftIO getM0Worker >>= traverse (\worker -> runOnM0Worker worker task)
 
 -- | A operation with guarantee that mero worker is available. This call provide
 -- an operation for running 'IO' in m0 thread.
@@ -186,16 +166,9 @@ liftM0RC task = getStorageRC >>= traverse (\worker -> runOnM0Worker worker task)
 -- @@@
 withM0RC :: (LiftRC -> PhaseM LoopState l b)
          -> PhaseM LoopState l b
-withM0RC f = getStorageRC >>= \case
-  Nothing -> do mworker <- createMeroWorker
-                case mworker of
-                  Nothing -> error "No worker loaded."
-                  Just w  -> f (LiftRC w)
-  Just w  -> liftProcess (whereis halonRCMeroWorkerLabel) >>= \case
-               Nothing -> do deleteStorageRC (Proxy :: Proxy M0Worker)
-                             withM0RC f
-               Just _  -> f (LiftRC w)
-
+withM0RC f = liftIO getM0Worker >>= \case
+  Nothing -> throwM WorkerIsNotAvailable
+  Just w  -> f (LiftRC w)
 
 -- | Create a highly unsafe function that can run process state in
 -- *any* IO, only different 'sends' are safe to be run in such thread.
@@ -239,58 +212,3 @@ m0asynchronously_ :: LiftRC
                   -> PhaseM LoopState l ()
 m0asynchronously_ (LiftRC w) = liftIO . queueM0Worker w . void
 
---------------------------------------------------------------------------------
--- Mero actions execution
---------------------------------------------------------------------------------
--- TODO rename to mero-angel :)
-
--- $mero-worker
--- Dedicated thread that is running together with RC, and controls mero thread
--- decidated to RC actions.
-
--- | Label of the mero worker.
-halonRCMeroWorkerLabel :: String
-halonRCMeroWorkerLabel = "halon:rc-mero-worker"
-
--- | Creates a worker if m0d service is running on the node.
--- This method registers accompaniment process "halon:rc-mero-worker"
-createMeroWorker :: PhaseM LoopState l (Maybe M0Worker)
-createMeroWorker = do
-  pid <- liftProcess getSelfPid
-  lprocess <- liftProcess $ whereis $ serviceLabel m0d
-  case lprocess of
-    Just{} -> do
-      worker <- liftIO newM0Worker
-      liftProcess $ do
-        whereis halonRCMeroWorkerLabel >>= \case
-          Nothing -> return ()
-          Just q  -> do mref <- monitor q
-                        kill q "exit"
-                        receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
-                                              $ \_ -> return ()]
-        wrkPid <- liftProcess $ spawnLocal $ do
-          link pid
-          finally (receiveWait [])
-                  (do sayRC "worker-closed"
-                      liftGlobalM0 $ terminateM0Worker worker)
-        register halonRCMeroWorkerLabel wrkPid
-      putStorageRC worker
-      return (Just worker)
-    _ -> do
-      phaseLog "error" "Mero service is not running on the node, can't create worker"
-      return Nothing
-
--- | Try to close mero worker process if it's running.
--- Do nothing if no process is registered. Blocks until process or for 8 seconds
--- if process didn't exit first.
-tryCloseMeroWorker :: Process ()
-tryCloseMeroWorker = do
-  mpid <- whereis halonRCMeroWorkerLabel
-  forM_ mpid $ \pid -> do
-    unregister halonRCMeroWorkerLabel
-    mon <- monitor pid
-    kill pid "RC exit"
-    receiveTimeout (8*1000000)
-      [matchIf (\(ProcessMonitorNotification mref _ _) -> mref == mon)
-               (\_ -> return ())
-      ]

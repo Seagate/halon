@@ -32,6 +32,8 @@ module HA.RecoveryCoordinator.Events.Mero
    , InternalObjectStateChangeMsg(..)
    , stateSet
    , unStateSet
+   -- * Exceptions
+   , WorkerIsNotAvailableException(..)
    )
    where
 
@@ -46,6 +48,7 @@ import Control.Applicative (many)
 import Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static (unstatic)
+import Control.Exception (Exception)
 import Control.Monad.Reader (ask)
 import Mero.ConfC (Fid(..))
 import Mero.Notification.HAState (Note(..))
@@ -216,3 +219,9 @@ instance Binary QuiesceSNSOperationResult
 data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 instance Binary GetFailureVector
+
+
+data WorkerIsNotAvailableException = WorkerIsNotAvailable
+  deriving (Show, Typeable, Generic)
+instance Exception WorkerIsNotAvailableException
+instance Binary WorkerIsNotAvailableException

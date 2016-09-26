@@ -24,8 +24,7 @@ import HA.Services.Mero
 import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
-import Control.Monad (when)
-import Control.Distributed.Process (usend, sendChan, getSelfNode)
+import Control.Distributed.Process (usend, sendChan)
 import Data.Maybe (listToMaybe)
 
 import Network.CEP
@@ -56,7 +55,7 @@ meroRules = do
     phaseLog "debug" $ "FailureVector="++show mv
     liftProcess $ sendChan port mv
 
-  defineSimple "mero:service-started" $ \(ServiceStartedInternal node (a::MeroConf) pid) -> do
+  defineSimple "mero:service-started" $ \(ServiceStartedInternal _node (_::MeroConf) pid) -> do
     phaseLog "info" "request mero channel"
     phaseLog "service.pid" $ show pid
     liftProcess $ usend pid ServiceStateRequest

@@ -25,6 +25,7 @@ module HA.Services.Mero
     , m0dProcess__sdict
     , m0dProcess__tdict
     , m0d__static
+    , Mero.Notification.getM0Worker
     ) where
 
 import HA.Logger
