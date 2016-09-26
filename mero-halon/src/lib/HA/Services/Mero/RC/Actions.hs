@@ -243,6 +243,10 @@ notifyMeroAsync diff s = do
       State.modify . G.connect diff ShouldDeliverTo
     registerSyncGraph $
       sendChan chan $ NotificationMessage (stateEpoch diff) (orderSet notifyOrdering s) (map M0.fid recipients)
+  -- there are no processes to send notification to - just try no accomplish
+  -- notification delivery.
+  when (null chans) $ do
+    tryCompleteStateDiff diff
 
 -- | There are cases where mero cares about the order of elements
 -- inside the NVec. We impose the ordering by the first argument. See
