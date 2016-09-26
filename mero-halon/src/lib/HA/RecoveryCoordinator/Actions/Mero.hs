@@ -295,9 +295,9 @@ isClusterStopped rg = null $
   | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
-  , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed
-    && M0.getState node rg /= M0.NSFailedUnrecoverable
+  , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+  , M0.getState node rg /= M0.NSFailedUnrecoverable
   , not . psDown $ M0.getState p rg
   , all (\srv -> M0.s_type srv /= CST_HA) $ G.connectedTo p M0.IsParentOf rg
   ]
