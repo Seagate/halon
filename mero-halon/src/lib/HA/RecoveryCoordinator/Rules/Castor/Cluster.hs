@@ -320,6 +320,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       filesystem <- getFilesystem
       repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairInformation p) =<< getPool
       let status = getClusterStatus rg
+          stats = filesystem >>= \fs -> listToMaybe $ G.connectedTo fs R.Has rg
       hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
             let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
@@ -343,6 +344,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
         { csrStatus = status
         , csrSNS    = repairs
         , csrInfo   = (liftA2 (,) profile filesystem)
+        , csrStats  = stats
         , csrHosts  = hosts
         }
       messageProcessed eid

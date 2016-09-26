@@ -21,6 +21,7 @@ import Mero.ConfC
 
 import Control.Monad (liftM2, liftM3)
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary
 import Data.Hashable (Hashable)
 import qualified Data.Map as Map
@@ -257,6 +258,8 @@ data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
 
 instance Binary FSStats
 instance Hashable FSStats
+instance FromJSON FSStats
+instance ToJSON FSStats
 
 instance Storable FSStats where
   sizeOf _ = #{size struct m0_fs_stats}

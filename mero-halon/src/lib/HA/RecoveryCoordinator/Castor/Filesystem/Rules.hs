@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
 import HA.RecoveryCoordinator.Actions.Core
   ( LoopState
   , getLocalGraph
+  , modifyGraph
   , notify
   )
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
@@ -29,7 +30,6 @@ import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 
-import Mero.Spiel (FSStats)
 import qualified Mero.Spiel as Spiel
 
 import Control.Arrow (left, right)
@@ -38,10 +38,7 @@ import Control.Distributed.Process
   , liftIO
   , usend
   )
-import Control.Exception
-  ( SomeException(..)
-  , try
-  )
+import Control.Exception ( try )
 import Control.Monad (void)
 
 import Data.Binary (Binary)
@@ -102,7 +99,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                                     ++ se
       Right stats -> do
         Just fs <- get Local
-        G.connectUniqueFrom fs R.Has stats <$> getLocalGraph
+        modifyGraph $ G.connectUniqueFrom fs R.Has stats
         notify $ StatsUpdated fs stats
     continue $ timeout queryInterval stats_fetch
 

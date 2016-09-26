@@ -123,6 +123,7 @@ data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
       , csrSNS        :: [(M0.Pool, M0.PoolRepairInformation)]
       , csrInfo       :: Maybe (M0.Profile, M0.Filesystem)
+      , csrStats      :: Maybe M0.FilesystemStats
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]
       } deriving (Eq, Show, Typeable, Generic)
 

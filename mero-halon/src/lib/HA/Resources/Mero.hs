@@ -769,6 +769,8 @@ data FilesystemStats = FilesystemStats {
 
 instance Binary FilesystemStats
 instance Hashable FilesystemStats
+instance ToJSON FilesystemStats
+instance FromJSON FilesystemStats
 
 deriveSafeCopy 0 'base ''FSStats
 deriveSafeCopy 0 'base ''FilesystemStats
