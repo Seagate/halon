@@ -365,7 +365,9 @@ mkRepairQuiesceOperation =
     (Proxy :: Proxy "Repair quiesce")
     mkRepairStatusRequestOperation
     poolRepairQuiesce
-    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_PAUSED]
+    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
+    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
 
 -- | Create an action and helper phases that will allow to abort SNS operation
 -- and wait until it will be really aborted.
@@ -394,7 +396,9 @@ mkRebalanceQuiesceOperation = do
     (Proxy :: Proxy "Rebalance quiesce")
     mkRebalanceStatusRequestOperation
     poolRebalanceQuiesce
-    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_PAUSED]
+    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
+    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
 
 -- | Generate code to call abort operation.
 mkRebalanceAbortOperation ::
