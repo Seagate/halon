@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -20,9 +21,10 @@ import Mero.ConfC
 
 import Control.Monad (liftM2, liftM3)
 
+import Data.Binary
+import Data.Hashable (Hashable)
 import qualified Data.Map as Map
 
-import Data.Binary
 import Foreign.C.String
   ( CString
   , newCString
@@ -41,6 +43,8 @@ import Foreign.Ptr
   )
 import Foreign.Storable
   ( Storable(..) )
+
+import GHC.Generics
 
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Context as C
@@ -240,6 +244,38 @@ spielCtx = mempty {
   ]
 }
 
+-- | @spiel.h m0_fs_stats@
+data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
+  FSStats {
+      _fss_free_seg :: Word64
+    , _fss_total_seg :: Word64
+    , _fss_free_disk :: Word64
+    , _fss_total_disk :: Word64
+    , _fss_svc_total :: Word32
+    , _fss_svc_replied :: Word32
+  } deriving (Eq, Generic, Show)
+
+instance Binary FSStats
+instance Hashable FSStats
+
+instance Storable FSStats where
+  sizeOf _ = #{size struct m0_fs_stats}
+  alignment _ = #{alignment struct m0_fs_stats}
+  peek p = FSStats
+    <$> (#{peek struct m0_fs_stats, fs_free_seg} p)
+    <*> (#{peek struct m0_fs_stats, fs_total_seg} p)
+    <*> (#{peek struct m0_fs_stats, fs_free_disk} p)
+    <*> (#{peek struct m0_fs_stats, fs_total_disk} p)
+    <*> (#{peek struct m0_fs_stats, fs_svc_total} p)
+    <*> (#{peek struct m0_fs_stats, fs_svc_replied} p)
+
+  poke p f = do
+    #{poke struct m0_fs_stats, fs_free_seg} p (_fss_free_seg f)
+    #{poke struct m0_fs_stats, fs_total_seg} p (_fss_total_seg f)
+    #{poke struct m0_fs_stats, fs_free_disk} p (_fss_free_disk f)
+    #{poke struct m0_fs_stats, fs_total_disk} p (_fss_total_disk f)
+    #{poke struct m0_fs_stats, fs_svc_total} p (_fss_svc_total f)
+    #{poke struct m0_fs_stats, fs_svc_replied} p (_fss_svc_replied f)
 --------------------------------------------------------------------------------
 -- Utility
 --------------------------------------------------------------------------------

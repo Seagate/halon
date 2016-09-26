@@ -407,6 +407,13 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_abort"
 foreign import capi "confc_helpers.h halon_interface_spiel"
   c_spiel :: IO (Ptr SpielContextV)
 
+
+foreign import capi "spiel/spiel.h m0_spiel_filesystem_stats_fetch"
+  c_spiel_filesystem_stats_fetch :: Ptr SpielContextV
+                                 -> Ptr Fid
+                                 -> Ptr FSStats
+                                 -> IO CInt
+
 ---------------------------------------------------------------
 -- Utility                                                   --
 ---------------------------------------------------------------

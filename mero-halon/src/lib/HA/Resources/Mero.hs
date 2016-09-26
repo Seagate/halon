@@ -30,6 +30,7 @@ import Mero.ConfC
   , ServiceParams
   , ServiceType
   )
+import Mero.Spiel (FSStats)
 
 import Data.Aeson
 import Data.Aeson.Types (typeMismatch)
@@ -760,6 +761,17 @@ instance Binary ProcessBootstrapped
 instance Hashable ProcessBootstrapped
 deriveSafeCopy 0 'base ''ProcessBootstrapped
 
+-- | Filesystem statistics
+data FilesystemStats = FilesystemStats {
+    _fs_fetched_on :: TimeSpec
+  , _fs_stats :: FSStats
+} deriving (Eq, Show, Typeable, Generic)
+
+instance Binary FilesystemStats
+instance Hashable FilesystemStats
+
+deriveSafeCopy 0 'base ''FSStats
+deriveSafeCopy 0 'base ''FilesystemStats
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -773,7 +785,7 @@ $(mkDicts
   , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
-  , ''BootLevel, ''RunLevel, ''StopLevel
+  , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -827,6 +839,7 @@ $(mkDicts
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
   , (''Controller,    ''R.Is, ''ControllerState)
+  , (''Filesystem, ''R.Has, ''FilesystemStats)
   ]
   )
 
@@ -839,7 +852,7 @@ $(mkResRel
   , ''Disposition, ''ProcessBootstrapped
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
-  , ''BootLevel, ''RunLevel, ''StopLevel
+  , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -893,6 +906,7 @@ $(mkResRel
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
   , (''Controller,    ''R.Is, ''ControllerState)
+  , (''Filesystem, ''R.Has, ''FilesystemStats)
   ]
   []
   )
