@@ -675,6 +675,7 @@ ruleSNSOperationAbort :: Definitions LoopState ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   entry <- phaseHandle "entry"
   ok    <- phaseHandle "ok"
+  failure <- phaseHandle "SNS abort failed."
 
   let route (AbortSNSOperation pool) = getPoolRepairStatus pool >>= \case
         Nothing -> do
@@ -691,7 +692,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
       (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
       (\pool s -> do
          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
-         continue finish)
+         continue failure)
       (\pool sns -> do
          if all R.iosReady $ snd <$> sns
          then do modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
@@ -702,7 +703,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
       (\l -> (\(Just (AbortSNSOperation pool)) -> pool) $ getField (rget fldReq l))
       (\pool s -> do
          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool s)
-         continue finish)
+         continue failure)
       (\pool sns -> do
          if all R.iosReady $ snd <$> sns
          then do modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
@@ -725,6 +726,13 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
     Just uuid <- getField . rget fldUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
     modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
+    continue finish
+
+  directly failure $ do
+    phaseLog "warning" "SNS abort failed - removing Pool repair info."
+    Just (AbortSNSOperation pool) <- getField . rget fldReq <$> get Local
+    Just uuid <- getField . rget fldUUID <$> get Local
+    unsetPoolRepairStatusWithUUID pool uuid
     continue finish
 
   return route
