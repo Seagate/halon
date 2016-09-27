@@ -817,11 +817,11 @@ replica Dict
     -- The proposer process makes consensus proposals.
     -- Proposals are aborted when a reconfiguration occurs or when the
     -- watermark increases beyond the proposed decree.
-    proposer ρ bpid w s αs =
+    proposer ρ bpid !w !s αs =
       receiveWait
         [ match $ \r@(ProposerRequest d _ _
                                       (Request {requestValue = v :: Value a}))
-                  ->
+                  -> {-# SCC "ProposerRequest" #-}
            cond (d < w) (usend ρ r >> proposer ρ bpid w s αs) $ do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
@@ -849,11 +849,13 @@ replica Dict
                   when (not blocked) expect
                   return blocked
             (αs', w', blocked) <- fix $ \loop -> receiveWait
-                      [ match $ \() -> return (αs, w, False)
-                      , match $ \αs' -> do
+                      [ match $ \() -> {-# SCC "p-finished" #-}
+                          return (αs, w, False)
+                      , match $ \αs' -> {-# SCC "reconf-a" #-}
                           -- reconfiguration of the proposer
                           (,,) αs' w <$> clearNotifications
-                      , match $ \w' -> if w' <= d then loop
+                      , match $ \w' -> {-# SCC "reconf-w" #-}
+                          if w' <= d then loop
                           else -- the watermark increased beyond the proposed
                                -- decree
                             (,,) αs w' <$> clearNotifications
@@ -875,8 +877,9 @@ replica Dict
               usend ρ (v', r)
               proposer ρ bpid w' s' αs'
 
-        , match $ proposer ρ bpid w s
-        , match $ \w' -> proposer ρ bpid (max w w') s αs
+        , match $ \αs' -> {-# SCC "update-a" #-} proposer ρ bpid w s αs'
+        , match $ \w' -> {-# SCC "update-w" #-}
+            proposer ρ bpid (max w w') s αs
         ]
 
     -- Makes a lease request. It takes the decree to use for consensus.

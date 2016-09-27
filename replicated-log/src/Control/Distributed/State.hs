@@ -81,13 +81,7 @@ selectWrapper SerializableDict α f s = do
     usend α x
     return s
 
-updateWrapper :: (s -> Process s)
-              -> s
-              -> Process s
-updateWrapper = ($)
-
-remotable [ 'commandEqDict, 'commandSerializableDict
-          , 'selectWrapper, 'updateWrapper ]
+remotable [ 'commandEqDict, 'commandSerializableDict, 'selectWrapper ]
 
 cpSelectWrapper :: (Typeable a, Typeable s)
                 => Static (SerializableDict a)
@@ -98,11 +92,6 @@ cpSelectWrapper dict α f =
     staticClosure $(mkStatic 'selectWrapper)
       `closureApply` staticClosure dict
       `closureApply` closure (staticDecode sdictProcessId) (encode α)
-      `closureApply` f
-
-cpUpdateWrapper :: Typeable s => CP s s -> CP s s
-cpUpdateWrapper f =
-    staticClosure $(mkStatic 'updateWrapper)
       `closureApply` f
 
 -- | A port for sending commands to the log. Currently, at most one command
@@ -158,4 +147,4 @@ select sdict port@(CommandPort _ h) f = callLocal $ do
 update :: Typeable s => CommandPort s -> CP s s -> Process Bool
 update port@(CommandPort _ h) f = do
     cid <- nextCommandId port
-    Log.append h Log.None $ Command cid $ cpUpdateWrapper f
+    Log.append h Log.None $ Command cid f

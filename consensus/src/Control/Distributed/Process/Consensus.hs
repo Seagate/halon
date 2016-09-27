@@ -60,8 +60,8 @@ instance Show LegislatureId where
 instance Binary LegislatureId
 
 data DecreeId = DecreeId
-    { decreeLegislatureId :: LegislatureId
-    , decreeNumber        :: Int
+    { decreeLegislatureId :: !LegislatureId
+    , decreeNumber        :: !Int
     } deriving (Eq, Ord, Typeable, Generic)
 
 instance Enum DecreeId where
