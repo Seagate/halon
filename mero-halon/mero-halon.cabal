@@ -194,6 +194,7 @@ Library
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Actions.Mero.Core
                        HA.RecoveryCoordinator.Castor.Drive.Actions
+                       HA.RecoveryCoordinator.Castor.Filesystem
                        HA.RecoveryCoordinator.Rules.Mero.Conf
                        HA.RecoveryCoordinator.Events.Castor.Cluster
                        HA.RecoveryCoordinator.Events.Castor.Process
@@ -207,6 +208,8 @@ Library
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
+                      HA.RecoveryCoordinator.Castor.Filesystem.Events
+                      HA.RecoveryCoordinator.Castor.Filesystem.Rules
                       HA.RecoveryCoordinator.Rules.Castor.Cluster
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Node

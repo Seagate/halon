@@ -37,6 +37,7 @@ import HA.RecoveryCoordinator.Mero
   ( labelRecoveryCoordinator )
 
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
+import Mero.Spiel (FSStats(..))
 import Network.CEP
 #endif
 
@@ -401,7 +402,7 @@ clusterCommand eqnids mk output = do
     wait = void (expect :: Process ProcessMonitorNotification)
 
 prettyReport :: Bool -> ReportClusterState -> IO ()
-prettyReport showDevices (ReportClusterState status sns info' hosts) = do
+prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
   putStrLn $ "Cluster is " ++ maybe "N/A" M0.prettyStatus status
   case info' of
     Nothing -> putStrLn "cluster information is not available, load initial data.."
@@ -409,6 +410,12 @@ prettyReport showDevices (ReportClusterState status sns info' hosts) = do
       putStrLn   "  cluster info:"
       putStrLn $ "    profile:    " ++ fidToStr pfid
       putStrLn $ "    filesystem: " ++ fidToStr ffid
+      forM_ mstats $ \stats -> do
+        putStrLn $ "    Filesystem stats:"
+        putStrLn $ "      Total space: " ++ show (_fss_total_disk . M0._fs_stats $ stats)
+        putStrLn $ "      Free space: " ++ show (_fss_free_disk . M0._fs_stats $ stats)
+        putStrLn $ "      Total segments: " ++ show (_fss_total_seg . M0._fs_stats $ stats)
+        putStrLn $ "      Free segments: " ++ show (_fss_free_seg . M0._fs_stats $ stats)
       unless (null sns) $ do
          putStrLn $ "    sns repairs:"
          forM_ sns $ \(M0.Pool pool_fid, s) -> do

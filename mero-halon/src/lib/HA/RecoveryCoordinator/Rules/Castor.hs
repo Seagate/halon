@@ -32,7 +32,8 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Cluster
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
-import qualified HA.RecoveryCoordinator.Castor.Drive as Disk
+import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
+import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
@@ -66,8 +67,9 @@ castorRules = sequence_
   , setStateChangeHandlers
   , ruleMeroNoteSet
   , ruleGetEntryPoint
+  , Filesystem.rules
   , Process.rules
-  , Disk.rules
+  , Drive.rules
   , Expander.rules
   , Node.rules
 #endif
@@ -124,7 +126,7 @@ setStateChangeHandlers = do
       start setThem ()
   where
     stateChangeHandlersE = concat
-      [ Disk.externalNotificationHandlers ]
+      [ Drive.externalNotificationHandlers ]
 
 ruleMeroNoteSet :: Definitions LoopState ()
 ruleMeroNoteSet = do

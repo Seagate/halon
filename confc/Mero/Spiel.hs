@@ -798,3 +798,12 @@ poolRebalanceStatus fid = mask $ \restore ->
         else do
           elt <- peek arr_ptr
           peekArray rc elt
+
+filesystemStatsFetch :: Fid
+                     -> IO FSStats
+filesystemStatsFetch fid = with fid $ \fid_ptr -> do
+  alloca $ \stats -> do
+    rc <- c_spiel >>= \sc -> c_spiel_filesystem_stats_fetch sc fid_ptr stats
+    if rc < 0
+    then error $ "Cannot fetch filesystem stats: " ++ show rc
+    else peek stats
