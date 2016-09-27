@@ -124,7 +124,7 @@ rcRules argv additionalRules = do
               , ruleRecoverNode argv
               , ruleDummyEvent
               , ruleSyncPing
-              , rulePidRequest
+              , ruleRCInfoRequest
               , ruleSetHalonVars
               ]
     setLogger sendLogs
@@ -373,18 +373,26 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 #endif
 
 -- | Ask RC for its pid. Send the answer back to given process.
-newtype RequestRCPid = RequestRCPid ProcessId
-  deriving (Show, Eq, Generic, Typeable)
-newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
+newtype RequestRCInfo = RequestRCInfo ProcessId
   deriving (Show, Eq, Generic, Typeable)
 
-instance Binary RequestRCPid
-instance Binary RequestRCPidAnswer
+data RequestRCInfoAnswer = RequestRCInfoAnswer { _rci_eq_pid :: ProcessId
+                                               , _rci_rc_pid :: ProcessId
+                                               }
+  deriving (Show, Eq, Generic, Typeable)
+
+instance Binary RequestRCInfo
+instance Binary RequestRCInfoAnswer
 
 -- | Asks RC for its own 'ProcessId'.
-rulePidRequest :: Specification LoopState ()
-rulePidRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCPid caller) -> do
-  liftProcess $ getSelfPid >>= usend caller . RequestRCPidAnswer
+ruleRCInfoRequest :: Specification LoopState ()
+ruleRCInfoRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCInfo caller) -> do
+  eqPid <- lsEQPid <$> get Global
+  rcPid <- liftProcess getSelfPid
+  liftProcess . usend caller $
+    RequestRCInfoAnswer { _rci_eq_pid = eqPid
+                        , _rci_rc_pid = rcPid
+                        }
 
 -- | Send 'Logs' to decision-log services. If no service
 --   is found across all nodes, just defaults to 'printLogs'.

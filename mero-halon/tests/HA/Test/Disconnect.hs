@@ -160,8 +160,9 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      _ <- promulgateEQ (localNodeId <$> [m0, m1, m2]) $ RequestRCPid self
-      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+        -- TODO: just use subscribeOnTo
+      _ <- promulgateEQ (localNodeId <$> [m0, m1, m2]) $ RequestRCInfo self
+      RequestRCInfoAnswer _ rc <- expect :: Process RequestRCInfoAnswer
 
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
@@ -239,8 +240,8 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
-      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCInfo self
+      RequestRCInfoAnswer _ rc <- expect :: Process RequestRCInfoAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
       subscribe rc (Proxy :: Proxy OldNodeRevival)
@@ -325,8 +326,8 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
-      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCInfo self
+      RequestRCInfoAnswer _ rc <- expect :: Process RequestRCInfoAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
       subscribe rc (Proxy :: Proxy OldNodeRevival)
@@ -415,8 +416,8 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
         usend self ((), ())
       ((), ()) <- expect
 
-      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
-      RequestRCPidAnswer rc <- expect :: Process RequestRCPidAnswer
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCInfo self
+      RequestRCInfoAnswer _ rc <- expect :: Process RequestRCInfoAnswer
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
       subscribe rc (Proxy :: Proxy OldNodeRevival)
