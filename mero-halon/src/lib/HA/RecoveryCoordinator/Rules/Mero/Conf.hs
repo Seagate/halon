@@ -473,10 +473,11 @@ nodeFailsProcessRule = StateCascadeRule
   (const True)
   (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\_ o -> case o of
-    x@(M0.PSInhibited _) -> x
-    y -> M0.PSInhibited y
-  )
+  (\_ o -> inhibit o)
+  where
+    inhibit (M0.PSFailed x) = M0.PSFailed x
+    inhibit x@(M0.PSInhibited _) = x
+    inhibit y = M0.PSInhibited y
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
