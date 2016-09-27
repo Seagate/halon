@@ -35,7 +35,7 @@ simpleStrategy :: Word32 -- ^ No. of disk failures to tolerate
                -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                -> Strategy
 simpleStrategy df cf cfe = Strategy {
-    onInit = \rg ->
+    onInit = Iterative $ \rg ->
       let mchunks = do
             prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
             fs <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem

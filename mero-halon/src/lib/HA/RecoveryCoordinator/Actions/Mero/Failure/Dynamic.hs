@@ -28,7 +28,7 @@ import qualified Data.Set as S
 --   version matching the set of failed devices.
 dynamicStrategy :: Strategy
 dynamicStrategy = Strategy {
-    onInit = \rg -> do
+    onInit = Iterative $ \rg -> do
       prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
       fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
       globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals

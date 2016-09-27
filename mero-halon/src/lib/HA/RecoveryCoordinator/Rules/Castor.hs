@@ -76,7 +76,7 @@ castorRules = sequence_
 -- | Load initial data from facts file into the system.
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions LoopState ()
-ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
+ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   racks <- do rg <- getLocalGraph
               return (G.connectedTo Cluster Has rg :: [Rack])
   if null racks
@@ -89,20 +89,34 @@ ruleInitialDataLoad = defineSimple "Initial-data-load" $ \(HAEvent eid CI.Initia
           loadMeroServers filesystem id_m0_servers
           createMDPoolPVer filesystem
           graph <- getLocalGraph
-          syncGraphBlocking
           Just strategy <- getCurrentStrategy
-          let update = onInit strategy graph
-          for_ update $ \updateGraph -> do
-            graph' <- updateGraph $ \rg -> do
-              putLocalGraph rg
-              syncGraphBlocking
-              getLocalGraph
-            putLocalGraph graph'
-            syncGraphBlocking
-          (if isJust update then liftProcess else registerSyncGraph) $
-            say "Loaded initial data")
+          let updateType = onInit strategy
+          case updateType of
+            Iterative update -> do
+              phaseLog "warning" "iterative graph population - can't test sanity prior to update."
+              let mupdate = update graph
+              for_ mupdate $ \updateGraph -> do
+                graph' <- updateGraph $ \rg -> do
+                  putLocalGraph rg
+                  syncGraphBlocking
+                  getLocalGraph
+                putLocalGraph graph'
+                syncGraphBlocking
+                notify InitialDataLoaded
+              (if isJust mupdate then liftProcess else registerSyncGraph) $
+                say "Loaded initial data"
+            Monolithic update -> do
+              modifyLocalGraph update
+              eresult <- validateTransactionCache
+              case eresult of
+                Left e -> do
+                 phaseLog "error" $ "Exception during validation: " ++ show e
+                 modifyLocalGraph $ const $ return  graph
+                Right Nothing -> notify InitialDataLoaded
+                Right (Just e) -> do
+                 phaseLog "error" $ "Error in inital data: " ++ show e
+                 modifyLocalGraph $ const $ return  graph)
           `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
-      notify InitialDataLoaded
 #else
       liftProcess $ say "Loaded initial data"
 #endif

@@ -7,6 +7,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
   ( Strategy(..)
   , Failures(..)
   , PoolVersion(..)
+  , UpdateType(..)
   , failuresToArray
   , createPoolVersions
   , createPoolVersionsInPool
@@ -60,38 +61,31 @@ data PoolVersion = PoolVersion !(Set Fid) !Failures !PDClustAttr
 failuresToArray :: Failures -> [Word32]
 failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
+
+-- | Description of how halon run update of the graph.
+data UpdateType m
+  = Monolithic (G.Graph -> m G.Graph)
+    -- ^ Transaction can be done into single atomic step.
+  | Iterative  (G.Graph -> Maybe ((G.Graph -> m G.Graph) -> m G.Graph))
+    -- ^ Transaction should be done iteratively. Function may return
+    -- a graph synchronization function. If caller should provide a graph
+    -- Returns all updates in chunks so caller can synchronize and stream
+    -- graph updates in chunks of reasonable size.
+
+
 -- | Strategy for generating pool versions. There may be multiple
 --   implementations corresponding to different strategies.
 data Strategy = Strategy {
 
     -- | Initial set of pool versions created at the start of the system,
-    --   or when the cluster configuration changes. Returns all updates
-    --   in chunks so caller can synchronize and stream graph updates
-    --   in chunks of reasonable size.
-    onInit :: forall m . Monad m => G.Graph
-           -> Maybe ((G.Graph -> m G.Graph) -> m G.Graph)
+    --   or when the cluster configuration changes.
+    onInit :: forall m . Monad m => UpdateType m
 
     -- | Action to take on failure
   , onFailure :: G.Graph
               -> Maybe (G.Graph) -- ^ Returns `Nothing` if the graph is
                                  --   unmodified, else the updated graph.)
 }
-
--- | Allow combining strategies.
---   The 'empty' strategy generates no pool versions.
---   Combining strategies will generate pool versions when either strategy
---   generates them.
-instance Monoid Strategy where
-  mempty = Strategy { onInit = const Nothing, onFailure = const Nothing }
-  (Strategy i1 f1) `mappend` (Strategy i2 f2) = Strategy {
-      onInit = \g -> case i1 g of
-                       Nothing -> i2 g
-                       Just l  -> Just $ \u -> do g' <- l u
-                                                  maybe (return g') ($u) (i2 g')
-
-    , onFailure = f1 >=> f2
-  }
-
 
 createPoolVersionsInPool :: M0.Filesystem
                          -> M0.Pool
@@ -136,7 +130,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                  >>> G.connect rack M0.IsRealOf rackv
                i <- for (filter (test fids)
                         $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
-                        $ \encl -> do 
+                        $ \encl -> do
                       enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
                       rg2 <- S.get
                       S.modify'
@@ -165,7 +159,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
 
                unless (or i) $ S.put rg1
                return (or i)
-              
+
         unless (or i) $ S.put rg0
 
 -- | Create specified pool versions in the resource graph.
