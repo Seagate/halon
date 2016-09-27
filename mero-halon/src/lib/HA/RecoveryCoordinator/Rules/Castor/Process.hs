@@ -183,8 +183,7 @@ ruleProcessOnline :: Definitions LoopState ()
 ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
-    todo eid
+  setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
     rg <- getLocalGraph
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
@@ -272,8 +271,7 @@ ruleProcessStopped :: Definitions LoopState ()
 ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIf rule_init stoppedProc $ \(eid, p, _) -> do
-    todo eid
+  setPhaseIfConsume rule_init stoppedProc $ \(eid, p, _) -> do
     getLocalGraph >>= \rg -> case alreadyFailed p rg of
       -- The process is already in what we consider a failed state:
       -- either we're already done dealing with it (it's offline or it
