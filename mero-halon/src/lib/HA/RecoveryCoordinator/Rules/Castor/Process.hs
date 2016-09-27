@@ -425,18 +425,6 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
 
     continue finish
 
-    -- TODO Remove this from here and handle in a separate node rule
-    -- let failedProcs = rights results
-    -- unless (null failedProcs) $ do
-    --   forM_ failedProcs $ \(x,s) -> do
-    --     phaseLog "error" $ printf "failed to stop process %s : %s" (show x) s
-    --   -- We're trying to stop the processes on the node but it's
-    --   -- failing. Fail the node.
-    --   applyStateChanges $ (\n -> stateSet n M0_NC_FAILED) <$> nodeToM0Node (Node nid) rg
-    --
-    -- forM_ (lefts results) $ \x ->
-    --   phaseLog "info" $ printf "process stopped: %s" (show x)
-
   return $ \(StopProcessesRequest _ _) -> return $ Just [quiesce]
 
   where
