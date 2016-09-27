@@ -258,7 +258,13 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
   g <- getLocalGraph
   let node = R.Node $ processNodeId pid
       m0nodes = nodeToM0Node node g
-  applyStateChanges $ (`stateSet` M0.NSFailed) <$> m0nodes
+      haprocesses = [ p
+                    | m0node <- m0nodes
+                    , (p :: M0.Process) <- G.connectedTo m0node M0.IsParentOf g
+                    , any (\s -> M0.s_type s == CST_HA)
+                       $ G.connectedTo p M0.IsParentOf g
+                    ]
+  applyStateChanges $ (`stateSet` M0.PSFailed "mero-kernel failed to start") <$> haprocesses
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
 
@@ -415,7 +421,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     for_ mreq $ \(StartProcessNodeNew node) -> do
       -- TOOD: shuffle retrigger around a bit
       rg <- getLocalGraph
-      case nodeToM0Node node rg of
+      let m0nodes = nodeToM0Node node rg
+      applyStateChanges $ flip stateSet M0.NSOnline <$> m0nodes
+      case m0nodes of
         [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
         [m0node] -> retriggerMeroNodeBootstrap m0node
         m0ns -> do
