@@ -24,7 +24,6 @@ import HA.RecoveryCoordinator.Rules.Mero.Conf
   )
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -36,7 +35,6 @@ import Mero.Notification.HAState
 
 import Control.Monad (when)
 
-import Data.List ((\\))
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 
@@ -104,45 +102,28 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
      phaseLog "action" $ "Check if all services for process are online"
      phaseLog "info" $ "transaction.id = " ++ show eid
      phaseLog "info" $ "process.fid = " ++ show (fmap M0.fid mproc)
-     -- find the process, the service belongs to, check if all
-     -- services are online, if yes then update process state and
-     -- notify barrier
      case (st, mproc) of
-       (M0.SSOnline, Just (p :: M0.Process)) -> do
-         let allSrvs :: [M0.Service]
-             allSrvs = G.connectedTo p M0.IsParentOf rg
-             onlineSrvs = [ s | s <- allSrvs
-                              , M0.SSOnline <- G.connectedTo s R.Is rg ]
-             newProcessState = M0.PSOnline
-
-         put Local $ Just (eid, Just (srv, st), Just (p, newProcessState))
-         if length allSrvs == length onlineSrvs
-         then do phaseLog "info" "all services online -> marking process as online" -- XXX: move to process rule.
-                 -- TODO: maybe we should not notify here but instead
-                 -- notify after mero itself sends the process
-                 -- notification
-                 applyStateChanges [stateSet p newProcessState]
-                 switch [process_notified, timeout 30 timed_out]
-         else do phaseLog "info" $ "waiting for = " ++ show (map M0.fid $ allSrvs \\ onlineSrvs)
-                 continue finish
+       (M0.SSOnline, Just p) -> case M0.getState p rg of
+         M0.PSStopping -> do
+           phaseLog "warning" "Service ONLINE received while process is stopping."
+         M0.PSOffline -> do
+           phaseLog "warning" "Service ONLINE received while process is offline."
+         _ -> return ()
        (M0.SSOffline, Just p) -> case M0.getState p rg of
          M0.PSInhibited{} -> do
-           phaseLog "info" $ "Not notifying about process through service as it's inhibited"
-           continue finish
+           phaseLog "info" $ "Service offline, process inhibited."
          M0.PSOffline  -> do
-           phaseLog "info" $ "Not notifying about process through service as it's offline"
-           continue finish
+           phaseLog "info" $ "Service offline, process offline"
          M0.PSStopping -> do
-           phaseLog "info" $ "Not notifying about process through service as it's stopping"
-           continue finish
+           phaseLog "info" $ "Service offline, process stopping"
          pst -> do
            phaseLog "info" $ "Service for process failed, process state was " ++ show pst
            let failMsg = "Underlying service failed: " ++ show (M0.fid srv)
            applyStateChanges [stateSet p . M0.PSFailed $ failMsg]
-           continue finish
-       err -> do phaseLog "warn" $ "Couldn't handle bad state for " ++ M0.showFid srv
-                                ++ ": " ++ show err
-                 continue finish
+       err ->
+         phaseLog "warn" $ "Couldn't handle bad state for " ++ M0.showFid srv
+                        ++ ": " ++ show err
+     continue finish
 
    setPhaseNotified process_notified viewProc $ \(p, pst) -> do
      Just (eid, srvi, _) <- get Local
