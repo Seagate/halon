@@ -2,9 +2,10 @@
 
 module Tests where
 
-import Control.Distributed.Process hiding (catch)
+import Control.Distributed.Process hiding (catch, try)
 import Control.Monad (replicateM, replicateM_)
-import Control.Monad.Catch (SomeException, catch)
+import Control.Monad.Catch (SomeException(..), catch, try, throwM)
+import Control.Exception (Exception, fromException)
 import Data.Binary (Binary)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -1163,6 +1164,7 @@ testFinalizerDirectly = do
 testsException :: (Process () -> IO ()) -> TestTree
 testsException launch = testGroup "Exception"
   [ testCase "Exception can be handled" $ launch exceptionWorks
+  , testCase "Try workds" $ launch tryWorks
   ]
 
 exceptionWorks :: Process ()
@@ -1181,6 +1183,36 @@ exceptionWorks = do
 
     i <- expect
     assertEqual "Ph2 should fire first" "foo" i
+
+newtype MyE = MyE String deriving (Show, Typeable, Eq, Binary)
+
+instance Exception MyE
+
+tryWorks :: Process ()
+tryWorks = do
+    self <- getSelfPid
+
+    let specs = define "exception-handling" $ do
+          ph0 <- phaseHandle "ph0"
+          setPhase ph0 $ \(Donut _) -> do
+            eresult <- trySome $ throwM $ MyE "failure"
+            liftProcess . usend self $ case eresult of
+              Left s -> case fromException s of
+                Nothing -> Right ()
+                Just e  -> Left (e :: MyE)
+              Right () -> Right ()
+          start ph0 ()
+
+    pid <- spawnLocal $ execute () specs
+    usend pid donut
+
+    let e = Left (MyE "failure") :: Either MyE ()
+    assertEqual "Exception should be caught" e =<< expect
+  where
+    trySome :: PhaseM g l () -> PhaseM g l (Either SomeException ())
+    trySome = try
+    usend' :: ProcessId -> Either MyE () -> Process ()
+    usend' = usend
 
 
 testsDefaultHandler :: (Process () -> IO ()) -> TestTree
