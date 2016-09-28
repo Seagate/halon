@@ -13,6 +13,8 @@ module HA.RecoveryCoordinator.Job.Actions
    , mkJobRule
    , startJob
    , ListenerId
+   , FldListenerId
+   , fldListenerId
    ) where
 
 import HA.RecoveryCoordinator.Job.Events
@@ -35,6 +37,11 @@ import Data.Vinyl
 import qualified Data.UUID.V4 as UUID
 
 import Network.CEP
+
+type FldListenerId = '("listenerId", Maybe ListenerId)
+
+fldListenerId :: Proxy FldListenerId
+fldListenerId = Proxy
 
 -- | Process handle. Process is a long running rule
 -- that is triggered when some @input@ event is received
