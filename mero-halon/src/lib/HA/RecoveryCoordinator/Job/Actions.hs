@@ -7,7 +7,7 @@
 -- Copyright:  (C) 2015 Seagate Technology Limited.
 --
 -- Helpers that simplifies creation of the long running processes
-module HA.RecoveryCoordinator.Actions.Job
+module HA.RecoveryCoordinator.Job.Actions
    ( -- * Process
      Job(..)
    , mkJobRule

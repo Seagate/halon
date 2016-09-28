@@ -67,7 +67,7 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf
      ( applyStateChanges
      , setPhaseNotified
      )
-import           HA.RecoveryCoordinator.Actions.Job
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.Services.Mero.RC (meroChannel)
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP

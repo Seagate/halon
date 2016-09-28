@@ -67,8 +67,8 @@ import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
@@ -963,6 +963,7 @@ handleRepairExternal noteSet = do
 -- * Handle messages that only include information about devices and
 -- not pools.
 --
+ruleHandleRepair :: Specification LoopState ()
 ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
   getClusterStatus <$> getLocalGraph >>= \case
     Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) -> do

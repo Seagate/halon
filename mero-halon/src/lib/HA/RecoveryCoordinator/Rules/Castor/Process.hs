@@ -13,7 +13,7 @@ module HA.RecoveryCoordinator.Rules.Castor.Process
 
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Job
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
