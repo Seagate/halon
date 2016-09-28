@@ -11,17 +11,28 @@ module HA.RecoveryCoordinator.Job.Actions
    ( -- * Process
      Job(..)
    , mkJobRule
+   , startJob
+   , ListenerId
    ) where
+
+import HA.RecoveryCoordinator.Job.Events
+import HA.RecoveryCoordinator.Job.Internal
 
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 
 import Control.Distributed.Process.Serializable
 import Control.Lens
+import Control.Monad (unless, join)
+import Control.Monad.IO.Class (liftIO)
 
+import Data.Binary (Binary)
 import Data.Foldable (for_)
+import Data.Traversable (for)
+import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl
+import qualified Data.UUID.V4 as UUID
 
 import Network.CEP
 
@@ -47,57 +58,82 @@ newtype Job input output = Job String
 -- It's not legitimate to call 'Network.CEP.stop' inside
 -- this @body@.
 mkJobRule :: forall input output l s .
-   ( FldUUID ∈ l, '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
+   ( '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
    , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
    -> (Jump PhaseHandle -> RuleM LoopState s (input -> PhaseM LoopState s (Maybe [Jump PhaseHandle])))
    -- ^ Rule body, takes final handle as paramter, returns an action  used to
    -- decide how to process rule
-   -> Specification LoopState ()
+   -> Definitions LoopState ()
 mkJobRule (Job name)
               args
               body = define name $ do
-    request <- phaseHandle $ name ++ " -> request"
-    finish  <- phaseHandle $ name ++ " -> finish"
-    end     <- phaseHandle $ name ++ " -> end"
+    request         <- phaseHandle $ name ++ " -> request"
+    indexed_request <- phaseHandle $ name ++ " -> indexed request"
+    finish          <- phaseHandle $ name ++ " -> finish"
+    end             <- phaseHandle $ name ++ " -> end"
 
     check_input <- body finish
 
-    setPhase request $ \(HAEvent eid input _) -> do
-      isRunning <- memberStorageSetRC input
-      if isRunning
-      then do
-         phaseLog "info" $ "Job " ++ name ++ " is already running for " ++ show input
-         messageProcessed eid
-      else do
-        modify Local $ rlens fldRequest .~ (Field $ Just input)
-        modify Local $ rlens fldUUID    .~ (Field $ Just eid)
-        check_input input >>= \case
-          Nothing -> messageProcessed eid
-          Just next -> do
-            insertStorageSetRC input
-            fork CopyNewerBuffer $ do
-              phaseLog "info" $ "  request: " ++ show input
-              switch next
+    let processRequest eid input listeners = do
+          isRunning <- memberStorageMapRC pJD input
+          if isRunning
+          then do
+            phaseLog "info" $ "Job is already running"
+            phaseLog "input" $ show input
+            if null listeners
+            then do phaseLog "action" "Mark message processed"
+                    messageProcessed eid
+            else do phaseLog "action" "Adding listeners"
+                    insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
+          else do
+              phaseLog "request" $ show input
+              modify Local $ rlens fldRequest .~ (Field $ Just input)
+              check_input input >>= \case
+                Nothing -> do
+                  phaseLog "action" "Ignoring message due to rule filter."
+                  messageProcessed eid
+                Just next -> do
+                  phaseLog "action" "Starting execution."
+                  insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
+                  fork CopyNewerBuffer $ switch next
+
+
+    setPhase request $ \(HAEvent eid input _) -> processRequest eid input []
+    setPhase indexed_request $ \(HAEvent eid (JobStartRequest uuid input) _) ->
+       processRequest eid input [uuid]
 
     directly finish $ do  -- XXX: use rule finalier, when implemented
-      state  <- get Local
-      let uuid = state ^. rlens fldUUID
-          req  = state ^. rlens fldRequest
+      state <- get Local
+      let req  = state ^. rlens fldRequest
           rep  = state ^. rlens fldReply
-      phaseLog "info" $ "  request: " ++ maybe "N/A" show (getField req)
-      phaseLog "info" $ "  reply: " ++ show (getField rep)
+      phaseLog "request" $ maybe "N/A" show (getField req)
+      phaseLog "reply"   $ show (getField rep)
+      mdescription <- fmap join $ for (getField req) $ \input -> do
+        x <- lookupStorageMapRC input
+        deleteStorageMapRC pJD input
+        return x
       for_ (getField rep) notify
-      for_ (getField req) deleteStorageSetRC
-      for_ (getField uuid) messageProcessed
+      for_ mdescription $ \(JobDescription uuids listeners) -> do
+         for_ uuids messageProcessed
+         unless (null listeners) $ do
+           for_ (getField rep) $ notify . JobFinished listeners
       continue end
 
     directly end stop
 
-    startFork request args
+    startForks [request, indexed_request] args
   where
+    pJD :: Proxy JobDescription
+    pJD = Proxy
     fldRequest :: Proxy '("request", Maybe input)
     fldRequest = Proxy
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
+
+startJob :: (Typeable r, Binary r) => r -> PhaseM LoopState l ListenerId
+startJob request = do
+  l <- ListenerId <$> liftIO UUID.nextRandom
+  promulgateRC $ JobStartRequest l request
+  return l

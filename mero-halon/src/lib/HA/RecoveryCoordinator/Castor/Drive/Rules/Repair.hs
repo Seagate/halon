@@ -187,7 +187,7 @@ processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete 
 -- rule.
 --
 -- TODO Can we remove these?
-querySpiel :: Specification LoopState ()
+querySpiel :: Definitions LoopState ()
 querySpiel = define "spiel::sns:query-status" $ do
   query_status    <- phaseHandle "run status request"
   dispatch_hourly <- phaseHandle "dispatch hourly event"
@@ -260,7 +260,7 @@ jobHourlyStatus  = Job "castor::sns::hourly-status"
 --
 -- * it runs hourly
 -- * it runs until repairs complete
-querySpielHourly :: Specification LoopState ()
+querySpielHourly :: Definitions LoopState ()
 querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
   run_query <- phaseHandle "run status query"
   abort_on_quiesce <- phaseHandle "abort due to SNS operation pause"
@@ -321,7 +321,7 @@ jobRebalanceStart = Job "castor::sns::rebalance::start"
 -- Emits 'PoolRebalanceStarted' if successful.
 --
 -- See 'ruleRepairStart' for some caveats.
-ruleRebalanceStart :: Specification LoopState ()
+ruleRebalanceStart :: Definitions LoopState ()
 ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
@@ -468,7 +468,7 @@ jobRepairStart = Job "castor-repair-start"
 -- IOS becoming unavailable. For now we just check IOS status right
 -- before repairing but there is no guarantee we won't try to start
 -- repair on IOS that's down. HALON-403 should help.
-ruleRepairStart :: Specification LoopState ()
+ruleRepairStart :: Definitions LoopState ()
 ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
@@ -963,7 +963,7 @@ handleRepairExternal noteSet = do
 -- * Handle messages that only include information about devices and
 -- not pools.
 --
-ruleHandleRepair :: Specification LoopState ()
+ruleHandleRepair :: Definitions LoopState ()
 ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
   getClusterStatus <$> getLocalGraph >>= \case
     Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) -> do

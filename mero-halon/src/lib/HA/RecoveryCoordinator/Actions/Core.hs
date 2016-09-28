@@ -25,9 +25,15 @@ module HA.RecoveryCoordinator.Actions.Core
   , putStorageRC
   , getStorageRC
   , deleteStorageRC
+    -- ** Helpers for Set
   , insertStorageSetRC
   , memberStorageSetRC
   , deleteStorageSetRC
+    -- ** Helpers for Map
+  , insertWithStorageMapRC
+  , memberStorageMapRC
+  , deleteStorageMapRC
+  , lookupStorageMapRC
     -- * Communication with the EQ
   , messageProcessed
   , mkMessageProcessed
@@ -86,7 +92,7 @@ import Control.Distributed.Process
   , spawnLocal
   , link
   )
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, (<=<))
 import Control.Distributed.Process.Serializable
 
 import Data.Typeable (Typeable)
@@ -94,6 +100,7 @@ import Data.Functor (void)
 import Data.Proxy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Maybe (fromMaybe)
 
 import Network.CEP
 
@@ -134,6 +141,32 @@ deleteStorageSetRC x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
     Nothing -> g
     Just z  -> g{lsStorage = Storage.put (Set.delete x z)  $ lsStorage g}
+
+-- | Helper that wraps. 'Data.Map.member' for map kept in Storage.
+memberStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
+                   => proxy v -> k -> PhaseM LoopState l Bool
+memberStorageMapRC _ x =
+  maybe False (\m -> Map.member x (m :: Map.Map k v))
+    . Storage.get . lsStorage <$> get Global
+
+insertWithStorageMapRC :: (Typeable k, Typeable v, Ord k)
+                       => (v -> v -> v) -> k -> v -> PhaseM LoopState l ()
+insertWithStorageMapRC f k v = modify Global $ \g -> do
+  let z = fromMaybe Map.empty $ Storage.get (lsStorage g)
+  g{lsStorage = Storage.put (Map.insertWith f k v z) $ lsStorage g}
+
+deleteStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
+                   => proxy v -> k -> PhaseM LoopState l ()
+deleteStorageMapRC _ x = modify Global $ \g -> do
+  case Storage.get (lsStorage g) of
+    Nothing -> g
+    Just (z::Map.Map k v) -> g{lsStorage = Storage.put (Map.delete x z)  $ lsStorage g}
+
+lookupStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
+                   => k -> PhaseM LoopState l (Maybe v)
+lookupStorageMapRC x =
+  ((\m -> Map.lookup x (m :: Map.Map k v))
+    <=< Storage.get . lsStorage) <$> get Global
 
 -- | Is a given resource existent in the RG?
 knownResource :: G.Resource a => a -> PhaseM LoopState l Bool
