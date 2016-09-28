@@ -22,6 +22,7 @@
 --       See "HA.RecoveryCoordinator.Rules.Castor.Disk.Repair" for details.
 
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE GADTs #-}
 module HA.RecoveryCoordinator.Castor.Drive.Rules
@@ -48,6 +49,8 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
+import HA.RecoveryCoordinator.Job.Actions
+import HA.RecoveryCoordinator.Job.Events
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
@@ -61,7 +64,7 @@ import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
 
 import Control.Distributed.Process hiding (catch)
-import Control.Lens ((<&>))
+import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.Maybe
 
@@ -120,9 +123,10 @@ driveRemovalTimeout = 60
 --   - Have a successful SMART test run. This will be checked by this rule.
 mkCheckAndHandleDriveReady ::
      (l -> Maybe StorageDevice) -- ^ accessor to curent storage device in a local state.
+  -> Lens' l (Maybe ListenerId) -- ^ Simple lens to listener ID for SMART test
   -> (M0.SDev -> PhaseM LoopState l ()) -- ^ Action to run when drive is handled.
   -> RuleM LoopState l (Jump PhaseHandle, Node -> StorageDevice -> PhaseM LoopState l ())
-mkCheckAndHandleDriveReady getter next = do
+mkCheckAndHandleDriveReady getter smartLens next = do
 
   smart_result <- phaseHandle "smart_result"
 
@@ -151,11 +155,13 @@ mkCheckAndHandleDriveReady getter next = do
           SDSRebalancing -> return ()
         next m0sdev
 
-      onSameSdev (SMARTResponse sdev' status) _ (getter -> (Just sdev)) =
-        if sdev' == sdev
-        then return $ Just status
-        else return Nothing
-      onSameSdev _ _ _ = return Nothing
+      onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
+        return $ case (,) <$> ( getter l )
+                          <*> ( l ^. smartLens ) of
+          Just (sdev, smartId)
+               | smartId `elem` listenerIds
+              && sdev == sdev' -> Just status
+          _ -> Nothing
 
   (device_attached, deviceAttach) <- mkAttachDisk
     (fmap join . traverse (lookupStorageDeviceSDev) . getter)
@@ -196,7 +202,8 @@ mkCheckAndHandleDriveReady getter next = do
     if not reset && powered && not removed && status == "OK"
     then do
       phaseLog "info" "Device ready. Running SMART test."
-      promulgateRC $ SMARTRequest node disk
+      smartId <- startJob $ SMARTRequest node disk
+      modify Local $ smartLens .~ Just smartId
       continue smart_result
      else
        phaseLog "info" $ unwords [
@@ -291,7 +298,7 @@ ruleDriveInserted = define "drive-inserted" $ do
   finish        <- phaseHandle "finish"
 
   setPhase handler $ \di -> do
-    put Local $ Just (UUID.nil, di)
+    put Local $ (Just (UUID.nil, di), Nothing)
     fork CopyNewerBuffer $
        switch [ removed
               , inserted
@@ -301,7 +308,7 @@ ruleDriveInserted = define "drive-inserted" $ do
     (\(DriveRemoved _ _ enc _ loc _) _
       (Just (_,DriveInserted{diUUID=uuid
                             ,diEnclosure=enc'
-                            ,diDiskNum=loc'})) -> do
+                            ,diDiskNum=loc'}), _) -> do
        if enc == enc' && loc == loc'
           then return (Just uuid)
           else return Nothing)
@@ -319,7 +326,7 @@ ruleDriveInserted = define "drive-inserted" $ do
     (\(DriveInserted{diEnclosure=enc, diDiskNum=loc}) _
       (Just (_, DriveInserted{ diUUID=uuid
                              , diEnclosure=enc'
-                             , diDiskNum=loc'})) -> do
+                             , diDiskNum=loc'}), _) -> do
         if enc == enc' && loc == loc'
            then return (Just uuid)
            else return Nothing)
@@ -329,16 +336,18 @@ ruleDriveInserted = define "drive-inserted" $ do
         continue finish
 
   (checked, checkAndHandleDriveReady) <-
-    mkCheckAndHandleDriveReady (fmap (\(_,DriveInserted{diDevice=disk})->disk))
-      $ \_ -> continue finish
+    mkCheckAndHandleDriveReady
+      (fmap (\(_,DriveInserted{diDevice=disk})->disk) . fst)
+      _2 -- TODO make this a better lens!
+      (\_ -> continue finish)
 
   directly main $ do
-    Just (_, di@DriveInserted{ diUUID = uuid
+    (Just (_, di@DriveInserted{ diUUID = uuid
                              , diNode = node
                              , diDevice = disk
                              , diSerial = sn
                              , diPowered = powered
-                             }) <- get Local
+                             }), _) <- get Local
     -- Check if we already have device that was inserted.
     -- In case it this is the same device, then we do not need to update confd.
     hasStorageDeviceIdentifier disk sn >>= \case
@@ -355,7 +364,7 @@ ruleDriveInserted = define "drive-inserted" $ do
          unmarkStorageDeviceRemoved disk
          when powered $ markDiskPowerOn disk
          markIfNotMeroFailure
-         put Local $ Just (UUID.nil, di)
+         put Local $ (Just (UUID.nil, di), Nothing)
          checkAndHandleDriveReady node disk
          continue checked
        False -> do
@@ -375,25 +384,25 @@ ruleDriveInserted = define "drive-inserted" $ do
          when powered $ markDiskPowerOn disk
          markStorageDeviceReplaced disk
          request <- liftIO $ nextRandom
-         put Local $ Just (request, di)
+         put Local $ (Just (request, di), Nothing)
          registerSyncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
          continue sync_complete
 
   setPhaseIf sync_complete
-    (\(SyncComplete request) _ (Just (req, _)) -> return $
+    (\(SyncComplete request) _ (Just (req, _), _) -> return $
         if (req == request) then (Just ()) else Nothing
       )
     $ \() -> do
-    Just (_, DriveInserted{diDevice=disk, diNode = node}) <- get Local
+    (Just (_, DriveInserted{diDevice=disk, diNode = node}), _) <- get Local
     checkAndHandleDriveReady node disk
     continue finish
 
   directly finish $ do
-    Just (_, DriveInserted{diUUID=uuid}) <- get Local
+    (Just (_, DriveInserted{diUUID=uuid}), _) <- get Local
     registerSyncGraphProcessMsg uuid
     stop
 
-  startFork handler Nothing
+  startFork handler (Nothing, Nothing)
 
 -- | Mark drive as failed when SMART fails.
 --
@@ -426,9 +435,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       if dpcPowered then return Nothing else return (Just evt)
     power_on evt@(DrivePowerChange{..}) _ _ =
       if dpcPowered then return (Just evt) else return Nothing
-    matching_device _ _ Nothing = return Nothing
-    matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev, _, _)) =
+    matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev, _, _), Nothing) =
       if dev == dpcDevice then return (Just evt) else return Nothing
+    matching_device _ _ _ = return Nothing
     x `gAnd` y = \a g l -> x a g l >>= \case
       Nothing -> return Nothing
       Just b -> y b g l
@@ -438,7 +447,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
         applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
         continue post_power_removed
   (device_detached, detachDisk) <- mkDetachDisk
-    (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d))
+    (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
     (\sdev e -> do phaseLog "warning" e
                    post_process sdev) post_process
 
@@ -447,7 +456,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       (Node nid) = dpcNode
     in do
       todo dpcUUID
-      put Local $ Just (dpcUUID, dpcDevice, nid, dpcSerial)
+      put Local $ (Just (dpcUUID, dpcDevice, nid, dpcSerial), Nothing)
       markDiskPowerOff dpcDevice
 
       -- Mark Mero device as transient
@@ -458,7 +467,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       continue post_power_removed
 
   directly post_power_removed $ do
-      Just (_, _, nid, serial) <- get Local
+      (Just (_, _, nid, serial), _) <- get Local
       -- Attempt to power the disk back on
       sent <- sendNodeCmd nid Nothing (DrivePoweron serial)
       if sent
@@ -476,9 +485,11 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
         continue power_removed_duration
 
   (checked, checkAndHandleDriveReady) <-
-    mkCheckAndHandleDriveReady (fmap (\(_,d,_,_) -> d)) $ \_ -> do
-      Just (uuid, _, _, _) <- get Local
-      done uuid
+    mkCheckAndHandleDriveReady (fmap (\(_,d,_,_) -> d) . fst)
+      _2 -- TODO better lens!
+      $ \_ -> do
+        (Just (uuid, _, _, _), _) <- get Local
+        done uuid
 
   setPhaseIf power_returned (power_on `gAnd` matching_device)
     $ \(DrivePowerChange{..}) -> do
@@ -489,7 +500,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       continue checked
 
   directly power_removed_duration $ do
-    Just (uuid, dpcDevice, _, _) <- get Local
+    (Just (uuid, dpcDevice, _, _), _) <- get Local
 
     -- Mark Mero device as permanently failed
     mm0sdev <- lookupStorageDeviceSDev dpcDevice
@@ -498,7 +509,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
     done uuid
 
-  startFork power_removed Nothing
+  startFork power_removed (Nothing, Nothing)
 
 -- | If a drive is powered on, and it wasn't failed due to Mero issues
 --   or SMART test failures (e.g. it had just been depowered), then mark
@@ -509,13 +520,15 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
   handle <- phaseHandle "Drive power change event received."
 
   (checked, checkAndHandleDriveReady) <-
-    mkCheckAndHandleDriveReady (fmap snd) $ \_ -> do
-      Just (uuid,_) <- get Local
-      done uuid
+    mkCheckAndHandleDriveReady (fmap snd . fst)
+      _2
+      $ \_ -> do
+        (Just (uuid,_), _) <- get Local
+        done uuid
 
   setPhase handle $ \(DrivePowerChange{..}) -> do
     when dpcPowered $ do
-      put Local $ Just (dpcUUID, dpcDevice)
+      put Local (Just (dpcUUID, dpcDevice), Nothing)
       todo dpcUUID
       markDiskPowerOn dpcDevice
       realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
@@ -531,7 +544,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
           checkAndHandleDriveReady dpcNode dpcDevice
           continue checked
 
-  start handle Nothing
+  start handle (Nothing, Nothing)
   where
     filterMaybeM _ Nothing = return Nothing
     filterMaybeM f j@(Just x) = f x >>= \q -> return $ if q then j else Nothing
@@ -571,16 +584,18 @@ ruleDriveOK = define "castor::disk::ready" $ do
   handle <- phaseHandle "Drive ready event received"
 
   (checked, checkAndHandleDriveReady) <-
-    mkCheckAndHandleDriveReady (fmap snd) $ \_ -> do
-      Just (eid,_) <- get Local
-      messageProcessed eid
+    mkCheckAndHandleDriveReady (fmap snd . fst)
+      _2
+      $ \_ -> do
+        (Just (eid,_), _) <- get Local
+        messageProcessed eid
 
   setPhase handle $ \(DriveOK eid node _ disk) -> do
-    put Local $ Just (eid, disk)
+    put Local $ (Just (eid, disk), Nothing)
     checkAndHandleDriveReady node disk
     continue checked
 
-  start handle Nothing
+  start handle (Nothing, Nothing)
 
 -- | When a drive is marked as failed, power it down.
 rulePowerDownDriveOnFailure :: Definitions LoopState ()
