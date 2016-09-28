@@ -25,7 +25,7 @@ import qualified Data.Set as Set
 
 formulaicStrategy :: [[Word32]] -> Strategy
 formulaicStrategy formulas = Strategy
-  { onInit = \rg -> do
+  { onInit = Monolithic $ \rg -> maybe (return rg) return $ do
       prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
       fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
       globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
@@ -63,7 +63,7 @@ formulaicStrategy formulas = Strategy
                                                        <*> pure formula
                                                        <*> pure (M0.fid pver))
                   modify (G.connect pool M0.IsRealOf pvf)
-      (flip id) <$> Just (addFormulas $ createPoolVersions fs
-           [PoolVersion Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)
+      Just (addFormulas $ createPoolVersions fs
+                            [PoolVersion Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)
   , onFailure = const Nothing
   }

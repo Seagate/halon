@@ -181,12 +181,8 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroServers filesystem (CI.id_m0_servers iData)
       graph <- getLocalGraph
       Just strategy <- getCurrentStrategy
-      let update = onInit strategy graph
-      for_ update $ \ updateGraph -> do
-         graph' <- updateGraph $ \rg -> do
-           putLocalGraph rg
-           getLocalGraph
-         putLocalGraph graph'
+      let Monolithic update = onInit strategy
+      modifyLocalGraph update
 
     let g = lsGraph ls'
 
@@ -232,7 +228,8 @@ loadInitialData transport pg = do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
       rg <- getLocalGraph
-      let Just updateGraph = onInit (simpleStrategy 2 2 1) rg
+      let Iterative update = onInit (simpleStrategy 2 2 1)
+      let Just updateGraph = update rg
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
@@ -307,7 +304,8 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
       rg <- getLocalGraph
-      let Just updateGraph = onInit (simpleStrategy 0 1 0) rg
+      let Iterative update = onInit (simpleStrategy 0 1 0)
+      let Just updateGraph = update rg
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly

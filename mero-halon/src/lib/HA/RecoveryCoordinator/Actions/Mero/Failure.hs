@@ -7,6 +7,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Failure
   ( Failures(..)
   , PoolVersion(..)
   , Strategy(..)
+  , UpdateType(..)
   , createPoolVersions
   , getCurrentStrategy
   ) where
