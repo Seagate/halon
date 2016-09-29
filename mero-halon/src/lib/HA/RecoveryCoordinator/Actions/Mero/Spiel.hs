@@ -441,17 +441,21 @@ syncAction meid sync =
       phaseLog "error" $ "Exception during sync: " ++ show e
       liftProcess $ act e
 
--- | Dump the conf into a file, read it back and return the conf in
--- form of a 'BS.ByteString'. Users which want this config but aren't
--- the RC should use 'syncAction' with 'M0.SyncDumpToBS' instead which
--- will catch exceptions and forward the result to the given
--- 'DP.ProcessId'.
+-- | Dump the conf into a 'BS.ByteString'.
+--
+--   Note that this uses a local worker, because it may be invoked before
+--   `ha_interface` is loaded and hence no Spiel context is available.
 syncToBS :: PhaseM LoopState l BS.ByteString
-syncToBS = withM0RC $ \lift -> do
-  M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
-  Just bs <- loadConfData >>= traverse (\x -> txOpenLocalContext lift >>= txPopulate lift x
-                                              >>= m0synchronously lift . flip txToBS verno)
-  return bs
+syncToBS = loadConfData >>= \case
+  Just tx -> do
+    M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
+    wrk <- DP.liftIO $ newM0Worker
+    bs <- txOpenLocalContext (mkLiftRC wrk)
+      >>= txPopulate (mkLiftRC wrk) tx
+      >>= m0synchronously (mkLiftRC wrk) .flip txToBS verno
+    DP.liftIO $ terminateM0Worker wrk
+    return bs
+  Nothing -> error "Cannot load configuration data from graph."
 
 -- | Helper functions for backward compatibility.
 syncToConfd :: PhaseM LoopState l (Either SomeException ())
