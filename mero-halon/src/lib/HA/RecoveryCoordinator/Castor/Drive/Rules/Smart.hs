@@ -34,7 +34,7 @@ import HA.RecoveryCoordinator.Actions.Hardware
   , isStorageDevicePowered
   , lookupStorageDeviceSerial
   )
-import HA.RecoveryCoordinator.Actions.Job
+import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( SMARTRequest(..)
   , SMARTResponse(..)

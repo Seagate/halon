@@ -1,4 +1,8 @@
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE ViewPatterns          #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -16,6 +20,7 @@ import HA.EventQueue.Types
   )
 import HA.RecoveryCoordinator.Actions.Core
   ( LoopState
+  , fldUUID
   , getLocalGraph
   , messageProcessed
   , promulgateRC
@@ -25,6 +30,8 @@ import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
+import HA.RecoveryCoordinator.Job.Actions
+import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Rules.Mero.Conf
 import HA.Resources (Node(..))
 import HA.Resources.Castor
@@ -46,7 +53,7 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Distributed.Process
   ( Process )
-import Control.Lens ((<&>))
+import Control.Lens
 import Control.Monad
   ( forM_
   , when
@@ -56,10 +63,25 @@ import Control.Monad
 import Control.Monad.IO.Class
 
 import Data.Foldable (for_)
+import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
+import Data.Vinyl
 import Debug.Trace (traceEventIO)
 
 import Network.CEP
+
+data DeviceInfo = DeviceInfo {
+    _diSDev :: StorageDevice
+  , _diSerial :: Text
+}
+
+fldNode :: Proxy '("node", Maybe Node)
+fldNode = Proxy
+
+type FldDeviceInfo = '("deviceInfo", Maybe DeviceInfo)
+-- | Device info used in SMART rule
+fldDeviceInfo :: Proxy FldDeviceInfo
+fldDeviceInfo = Proxy
 
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
@@ -168,7 +190,11 @@ ruleResetAttempt = define "reset-attempt" $ do
         paths <- lookupStorageDeviceSerial sdev
         case paths of
           serial:_ -> do
-            put Local (Just (sdev, pack serial, node, uid))
+            modify Local $ rlens fldUUID . rfield .~ Just uid
+            modify Local $ rlens fldNode . rfield .~ Just node
+            modify Local $ rlens fldDeviceInfo . rfield .~
+              (Just $ DeviceInfo sdev (pack serial))
+
             whenM (isStorageDriveRemoved sdev) $ do
               phaseLog "info" $ "Cancelling drive reset as drive is removed."
               phaseLog "sdev" $ show sdev
@@ -184,12 +210,15 @@ ruleResetAttempt = define "reset-attempt" $ do
             stop
 
       (disk_detached, detachDisk) <- mkDetachDisk
-         (fmap join . traverse (\(sdev,_,_,_) -> lookupStorageDeviceSDev sdev))
-         (\_ _ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
-         (\_ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
+        (\l -> fmap join $ traverse
+          (lookupStorageDeviceSDev . _diSDev)
+          (l ^. rlens fldDeviceInfo . rfield))
+        (\_ _ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
+        (\_ -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure])
 
       directly reset $ do
-        Just (sdev, serial, Node nid, _) <- get Local
+        Just (DeviceInfo sdev serial) <- gets Local (^. rlens fldDeviceInfo . rfield)
+        Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
         i <- getDiskResetAttempts sdev
         phaseLog "debug" $ "Current reset attempts: " ++ show i
         if i <= resetAttemptThreshold
@@ -209,7 +238,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         else continue failure
 
       setPhaseIf resetComplete (onCommandAck DriveReset) $ \(result, eid) -> do
-        Just (sdev, _, _, _) <- get Local
+        Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
         markResetComplete sdev
         if result
         then do
@@ -223,13 +252,17 @@ ruleResetAttempt = define "reset-attempt" $ do
           continue failure
 
       directly smart $ do
-        Just (sdev, serial, node, _) <- get Local
-        promulgateRC $ SMARTRequest node sdev
+        Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
+        Just node <- gets Local (^. rlens fldNode . rfield)
+        smartId <- startJob $ SMARTRequest node sdev
+        modify Local $ rlens fldListenerId . rfield .~ Just smartId
         switch [ drive_removed, smartResponse
                , timeout smartTestTimeout failure ]
 
       (disk_attached, attachDisk) <- mkAttachDisk
-        (fmap join . traverse (\(sdev, _, _, _) -> lookupStorageDeviceSDev sdev) )
+        (\l -> fmap join $ traverse
+          (lookupStorageDeviceSDev . _diSDev)
+          (l ^. rlens fldDeviceInfo . rfield))
         (\_ _ -> do phaseLog "error" "failed to attach disk"
                     continue end)
         (\m0sdev -> do
@@ -242,7 +275,7 @@ ruleResetAttempt = define "reset-attempt" $ do
            continue end)
 
       setPhaseIf smartResponse onSameSdev $ \status -> do
-        Just (sdev, _, _, _) <- get Local
+        Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
         phaseLog "sdev" $ show sdev
         phaseLog "smart.response" $ show status
         case status of
@@ -258,7 +291,7 @@ ruleResetAttempt = define "reset-attempt" $ do
             continue failure
 
       directly failure $ do
-        Just (sdev, _, _, _) <- get Local
+        Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
         phaseLog "info" $ "Drive reset failure for " ++ show sdev
         promulgateRC $ ResetFailure sdev
         sd <- lookupStorageDeviceSDev sdev
@@ -274,7 +307,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         continue end
 
       directly end $ do
-        Just (_, _, _, uid) <- get Local
+        Just uid <- gets Local (^. rlens fldUUID . rfield)
         messageProcessed uid
         stop
 
@@ -284,42 +317,54 @@ ruleResetAttempt = define "reset-attempt" $ do
         markResetComplete sdev
         continue end
 
-      startFork home Nothing
-
+      startFork home args
+  where
+    args = fldUUID       =: Nothing
+       <+> fldNode       =: Nothing
+       <+> fldDeviceInfo =: Nothing
+       <+> fldListenerId =: Nothing
 
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
 
-onCommandAck :: (Text -> NodeCmd)
-           -> HAEvent CommandAck
-           -> g
-           -> Maybe (StorageDevice, Text, Node, UUID)
-           -> Process (Maybe (Bool, UUID))
-onCommandAck _ _ _ Nothing = return Nothing
-onCommandAck k (HAEvent eid cmd _) _ (Just (_, serial, _, _)) =
+onCommandAck :: forall g l. (FldDeviceInfo ∈ l)
+             => (Text -> NodeCmd)
+             -> HAEvent CommandAck
+             -> g
+             -> FieldRec l
+             -> Process (Maybe (Bool, UUID))
+onCommandAck k (HAEvent eid cmd _) _
+               ((view $ rlens fldDeviceInfo . rfield)
+                -> Just (DeviceInfo _ serial)) =
   case commandAckType cmd of
     Just x | (k serial) == x -> return $ Just
               (commandAck cmd == AckReplyPassed, eid)
            | otherwise       -> return Nothing
     _ -> return Nothing
+onCommandAck _ _ _ _ = return Nothing
 
-onDriveRemoved :: DriveRemoved
+onDriveRemoved :: forall g l. (FldDeviceInfo ∈ l)
+               => DriveRemoved
                -> g
-               -> Maybe (StorageDevice, Text, Node, UUID)
+               -> FieldRec l
                -> Process (Maybe StorageDevice)
-onDriveRemoved dr _ (Just (sdev, _, _, _)) =
+onDriveRemoved dr _ ((view $ rlens fldDeviceInfo . rfield)
+                      -> Just (DeviceInfo sdev _)) =
     if drDevice dr == sdev
     then return $ Just sdev
     else return Nothing
 onDriveRemoved _ _ _ = return Nothing
 
-onSameSdev :: SMARTResponse
+onSameSdev :: forall g l. (FldDeviceInfo ∈ l, FldListenerId ∈ l)
+           => JobFinished SMARTResponse
            -> g
-           -> Maybe (StorageDevice, Text, Node, UUID)
+           -> FieldRec l
            -> Process (Maybe SMARTResponseStatus)
-onSameSdev (SMARTResponse sdev' status) _ (Just (sdev, _, _, _)) =
-  if sdev' == sdev
-  then return $ Just status
-  else return Nothing
-onSameSdev _ _ _ = return Nothing
+onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
+  return $ case (,) <$> ( l ^. rlens fldDeviceInfo . rfield )
+                    <*> ( l ^. rlens fldListenerId . rfield ) of
+    Just (DeviceInfo sdev _, smartId)
+         | smartId `elem` listenerIds
+        && sdev == sdev' -> Just status
+    _ -> Nothing

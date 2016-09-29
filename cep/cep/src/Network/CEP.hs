@@ -38,6 +38,7 @@ module Network.CEP
     , start
     , start_
     , startFork
+    , startForks
     , get
     , gets
     , put

@@ -35,7 +35,7 @@ import           HA.Service
   )
 
 import HA.RecoveryCoordinator.Events.Service
-import HA.RecoveryCoordinator.Actions.Job
+import HA.RecoveryCoordinator.Job.Actions
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 
 import Control.Monad (when, unless)

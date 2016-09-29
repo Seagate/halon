@@ -121,8 +121,8 @@ import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Actions.Job
 import           HA.RecoveryCoordinator.Actions.Service (lookupInfoMsg)
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero

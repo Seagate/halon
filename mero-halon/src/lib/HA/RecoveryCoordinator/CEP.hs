@@ -43,7 +43,7 @@ import           HA.RecoveryCoordinator.Events.Cluster
 import           HA.RecoveryCoordinator.Rules.Castor
 import qualified HA.RecoveryCoordinator.Rules.Service
 import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
-import           HA.RecoveryCoordinator.Actions.Job
+import           HA.RecoveryCoordinator.Job.Actions
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor

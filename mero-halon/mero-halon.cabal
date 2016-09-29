@@ -97,7 +97,8 @@ Library
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Service
                    HA.RecoveryCoordinator.Actions.Test
-                   HA.RecoveryCoordinator.Actions.Job
+                   HA.RecoveryCoordinator.Job.Actions
+                   HA.RecoveryCoordinator.Job.Events
                    HA.RecoveryCoordinator.Rules.Castor
                    HA.RecoveryCoordinator.Rules.Debug
                    HA.RecoveryCoordinator.Rules.Service
@@ -124,6 +125,7 @@ Library
                    HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions
+                   HA.RecoveryCoordinator.Job.Internal
 
   Build-Depends:   base,
                    aeson,
