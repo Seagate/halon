@@ -18,6 +18,7 @@ module HA.RecoveryCoordinator.Actions.Mero.Core
     -- * Mero actions execution
     -- $execution-model
   , LiftRC
+  , mkLiftRC
   , mkUnliftProcess
     -- ** Action Runners
   , liftM0RC
@@ -180,6 +181,11 @@ mkUnliftProcess = do
 -- | Handle that allow to lift 'IO' operations into 'PhaseM'. Actions will be
 -- running in mero thread associated with Recovery Coordinator.
 data LiftRC = LiftRC M0Worker
+
+
+-- | Wrap known worker into lift  handle.
+mkLiftRC :: M0Worker -> LiftRC
+mkLiftRC = LiftRC
 
 -- XXX introduce m0now modifier, modifier should create new thread
 -- if current one is running some actions.

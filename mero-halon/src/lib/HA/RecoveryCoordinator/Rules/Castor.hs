@@ -79,8 +79,8 @@ castorRules = sequence_
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
-  racks <- do rg <- getLocalGraph
-              return (G.connectedTo Cluster Has rg :: [Rack])
+  rg  <- getLocalGraph
+  let racks  = G.connectedTo Cluster Has rg :: [Rack]
   if null racks
   then do
       mapM_ goRack id_racks
@@ -113,11 +113,11 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
               case eresult of
                 Left e -> do
                  phaseLog "error" $ "Exception during validation: " ++ show e
-                 modifyLocalGraph $ const $ return  graph
+                 modifyLocalGraph $ const $ return rg
                 Right Nothing -> notify InitialDataLoaded
                 Right (Just e) -> do
                  phaseLog "error" $ "Error in inital data: " ++ show e
-                 modifyLocalGraph $ const $ return  graph)
+                 modifyLocalGraph $ const $ return  rg)
           `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
 #else
       liftProcess $ say "Loaded initial data"

@@ -68,6 +68,7 @@ import Mero.ConfC
 import Mero.Notification hiding (notifyMero)
 import Mero.Spiel
 import Mero.ConfC (Fid)
+import Mero.M0Worker
 
 import Control.Applicative
 import Control.Category ((>>>))
@@ -634,13 +635,22 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
 -- | Load the current conf data, create a transaction that we would
 -- send to spiel and ask mero if the transaction cache is valid.
 validateTransactionCache :: PhaseM LoopState l (Either SomeException (Maybe String))
-validateTransactionCache = withSpielRC $ \lift -> loadConfData >>= \case
+validateTransactionCache = loadConfData >>= \case
   Nothing -> do
     phaseLog "spiel" "validateTransactionCache: loadConfData failed"
-    return Nothing
+    return (Right Nothing)
   Just x -> do
     phaseLog "spiel" "validateTransactionCache: validating context"
-    txOpenContext lift >>= txPopulate lift x >>= DP.liftIO . txValidateTransactionCache
+    -- We can use withSpielRC because SpielRC require ha_interface to be started
+    -- in order to read spiel context out of it. However we may not be able to
+    -- start ha_interface because it require configuraion to be loaded. And this
+    -- call can be run on unbootstrapped cluster.
+    wrk <- DP.liftIO $ newM0Worker
+    r <- try $ txOpenLocalContext (mkLiftRC wrk)
+           >>= txPopulate (mkLiftRC wrk) x
+           >>= m0synchronously (mkLiftRC wrk) . txValidateTransactionCache
+    DP.liftIO $ terminateM0Worker wrk
+    return r
 
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
