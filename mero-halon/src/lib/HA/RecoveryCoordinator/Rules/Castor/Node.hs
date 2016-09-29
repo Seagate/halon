@@ -149,8 +149,10 @@ import qualified HA.ResourceGraph as G
 import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
 import           Control.Distributed.Process.Closure
+import           Control.Exception (SomeException)
 import           Control.Lens
 import           Control.Monad (void, guard, join, when)
+import           Control.Monad.Catch (try)
 import           Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
@@ -632,12 +634,17 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       g <- getLocalGraph
       case meroChannel g node of
         Just chan -> do
-          ps <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
-          when (null ps) $ do
-            phaseLog "info" "No services on boot_level 0 - continue to next level"
-            continue boot_level_0
-          modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> ps)
-          continue await_configure_0
+          eps <- try $ configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 0)) True
+          case eps of
+            Left e -> do phaseLog "error" $ "Exception during configure."
+                         phaseLog "text"  $ show (e :: SomeException)
+                         continue finish
+            Right ps | null ps ->  do
+              phaseLog "info" "No services on boot_level 0 - continue to next level"
+              continue boot_level_0
+                     | otherwise -> do
+              modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> ps)
+              continue await_configure_0
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
@@ -670,12 +677,14 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       g <- getLocalGraph
       case meroChannel g node of
         Just chan -> do
-          procs <- configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
-          if null procs
-          then continue finish
-          else do
-            modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> procs)
-            continue await_configure_1
+          eprocs <- try $ configureNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1)) True
+          case eprocs of
+            Left e -> do phaseLog "error" $ "Exception during configure " ++ show (e::SomeException)
+                         continue finish
+            Right procs | null procs -> continue finish
+                        | otherwise -> do
+              modify Local $ rlens fldProcessConfig . rfield .~ (Just $ M0.fid <$> procs)
+              continue await_configure_1
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish
@@ -810,17 +819,20 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
       case meroChannel rg node of
         Just chan -> do
           phaseLog "info" $ "Configuring mero client on " ++ show host
-          procs <- configureNodeProcesses host chan M0.PLM0t1fs False
-          if null procs
-          then do
-            Just m0node <- getField . rget fldM0Node <$> get Local
-            modify Local $ rlens fldRep . rfield .~
-              (Just $ ClientsStartOk m0node)
-            continue finish
-          else do
-            modify Local $ rlens fldProcessConfig . rfield .~
-              (Just $ M0.fid <$> procs)
-            continue configure_await
+          eprocs <- try $ configureNodeProcesses host chan M0.PLM0t1fs False
+          case eprocs of
+            Left e -> do phaseLog "error" $ "Exception during configure " ++ show (e::SomeException)
+                         continue finish
+            Right procs
+              | null procs -> do
+                Just m0node <- getField . rget fldM0Node <$> get Local
+                modify Local $ rlens fldRep . rfield .~
+                  (Just $ ClientsStartOk m0node)
+                continue finish
+              | otherwise -> do
+                modify Local $ rlens fldProcessConfig . rfield .~
+                  (Just $ M0.fid <$> procs)
+                continue configure_await
         Nothing -> do
           modify Local $ rlens fldRep . rfield .~
             (Just $ ClientsStartFailure m0node "No mero channel")

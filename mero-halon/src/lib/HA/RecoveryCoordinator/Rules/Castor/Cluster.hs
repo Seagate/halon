@@ -75,8 +75,10 @@ import           Network.CEP
 import           Control.Applicative
 import           Control.Category
 import           Control.Distributed.Process hiding (catch, try)
+import           Control.Exception (SomeException)
 import           Control.Lens
 import           Control.Monad (join, unless, when)
+import           Control.Monad.Catch (try)
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
@@ -656,7 +658,10 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
         Just chan -> do
            phaseLog "info" $ "Starting client"
            -- TODO switch to 'StartProcessesRequest' (HALON-373)
-           configureMeroProcesses chan [proc] M0.PLM0t1fs False
-           startMeroProcesses chan [proc] M0.PLM0t1fs
+           eresult <- try $ configureMeroProcesses chan [proc] M0.PLM0t1fs False
+           case eresult of
+             Left e -> do phaseLog "error" "Exception during client start."
+                          phaseLog "text" $ show (e :: SomeException)
+             Right _ -> startMeroProcesses chan [proc] M0.PLM0t1fs
         Nothing -> phaseLog "warning" $ "can't find mero channel."
     else phaseLog "warning" $ show fid ++ " is not a client process."

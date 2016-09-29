@@ -37,6 +37,7 @@ formulaicStrategy formulas = Strategy
                     , _pa_seed = Word128 101 102
                     }
 
+          mdpool = M0.Pool (M0.f_mdpool_fid fs)
           n = CI.m0_data_units globs
           k = CI.m0_parity_units globs
           noCtlrs = length [ cntr
@@ -55,7 +56,7 @@ formulaicStrategy formulas = Strategy
               | kc < k = (k - remainder) `quot` quotient
               | otherwise = remainder
           addFormulas g = flip execState g $ do
-            for_ (G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) -> do
+            for_ (filter (/= mdpool) $ G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) -> do
               for_ (G.connectedTo pool M0.IsRealOf g) $ \(pver::M0.PVer) -> do
                 for_ formulas $ \formula -> do
                   pvf <- M0.PVer <$> state (first mkVirtualFid . newFid (Proxy :: Proxy M0.PVer))
