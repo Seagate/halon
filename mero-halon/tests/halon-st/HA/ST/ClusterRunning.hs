@@ -55,10 +55,12 @@ isClusterRunningRule = defineSimpleTask "st-cluster-running" $ \(ST_IsClusterRun
 -- | Gather information about cluster disposition, process and service
 -- states then expect everything to be online.
 test :: HASTTest
-test = HASTTest "cluster-running" [isClusterRunningRule] $ \(TestArgs eqs _ _) -> do
+test = HASTTest "cluster-running" [isClusterRunningRule] $ \(TestArgs eqs _ _) step -> do
+  liftIO $ step "Connected to cluster, requesting information"
   self <- getSelfPid
   let timeout_secs = 10
   _ <- promulgateEQ eqs $ ST_IsClusterRunning self
+  liftIO $ step  "Waiting for reply from cluster"
   expectTimeout (timeout_secs * 1000000) >>= \case
     Nothing -> liftIO . assertFailure $
       "No reply in " ++ show timeout_secs ++ " seconds."

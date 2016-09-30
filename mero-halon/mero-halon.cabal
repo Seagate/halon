@@ -137,10 +137,12 @@ Library
   if flag(enable-st)
     Hs-Source-Dirs: tests/halon-st
     Other-Modules:   HA.ST.ClusterRunning
+                   , HA.ST.ProcessKeepalive
     Exposed-Modules: HA.ST.Common
                      HA.ST.Rules
     Build-Depends:  tasty,
-                    tasty-hunit
+                    tasty-hunit,
+                    distributed-commands
 
 
   Build-Depends:   base,

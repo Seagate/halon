@@ -23,7 +23,8 @@ import           Network.CEP
 
 -- | Process replies to keepalive requests sent to mero.
 ruleProcessKeepaliveReply :: Definitions LoopState ()
-ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \(KeepaliveTimedOut fids) -> do
+ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \msg@(KeepaliveTimedOut fids) -> do
+  publish msg -- For HA.ST.ProcessKeepalive
   ps <- getProcs fids <$> getLocalGraph
   unless (Prelude.null ps) $ do
     ct <- liftIO M0.getTime
