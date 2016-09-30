@@ -238,8 +238,8 @@ mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
   -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
   -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
-mkStatusCheckingSNSOperation _ mk action interesting n getter onFailure onSuccess = do
-  next_request <- phaseHandle "next request"
+mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuccess = do
+  next_request <- phaseHandle $ symbolVal name ++ "::next request"
   (status_received, statusRequest) <- mk onFailure $ \pool xs -> do
      if all (`elem` interesting) (map _sss_state xs)
      then onSuccess pool (map ((,) <$> _sss_fid <*> _sss_state) xs)
@@ -409,7 +409,7 @@ mkRebalanceAbortOperation ::
   -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
 mkRebalanceAbortOperation = do
   mkStatusCheckingSNSOperation
-    (Proxy :: Proxy "Rebalance quiesce")
+    (Proxy :: Proxy "Rebalance abort")
     mkRebalanceStatusRequestOperation
     poolRebalanceAbort
     [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
