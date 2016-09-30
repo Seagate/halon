@@ -228,6 +228,8 @@ ruleProcessOnline = define "castor::process::online" $ do
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
 -- | Handled process configure event.
