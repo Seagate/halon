@@ -19,7 +19,7 @@ import Prelude hiding ((.), id)
 import Control.Category
 import Control.Lens
 import Control.Monad (void, when)
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary)
 import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
 import Data.Proxy
@@ -28,7 +28,6 @@ import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
-import           Control.Distributed.Process.Internal.Types (Message(..))
 import           Network.CEP
 import           Network.HostName
 
@@ -73,6 +72,10 @@ import           HA.Services.Frontier.CEP (frontierRules)
 
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
+
+#ifdef ENABLED_ST
+import HA.ST.Rules (rules)
+#endif
 
 enableRCDebug :: Definitions LoopState ()
 enableRCDebug = unsafePerformIO $ do
@@ -139,6 +142,9 @@ rcRules argv additionalRules = do
     HA.Services.Mero.RC.rules
     HA.RecoveryCoordinator.Rules.Mero.meroRules
     HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
+#endif
+#ifdef ENABLED_ST
+    HA.ST.Rules.rules
 #endif
     sequence_ additionalRules
 

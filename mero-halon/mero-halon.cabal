@@ -49,6 +49,10 @@ Flag long-tests
   Description: Enable very long tests
   Default: False
 
+Flag enable-st
+  Description: Enable code used for purpose of st
+  Default: True
+
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
@@ -56,6 +60,9 @@ Library
     CPP-Options:    -DUSE_RPC
   if flag(mero)
     CPP-Options:    -DUSE_MERO
+  if flag(enable-st)
+    CPP-Options:    -DENABLED_ST
+
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -126,6 +133,15 @@ Library
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions
                    HA.RecoveryCoordinator.Job.Internal
+
+  if flag(enable-st)
+    Hs-Source-Dirs: tests/halon-st
+    Other-Modules:   HA.ST.ClusterRunning
+    Exposed-Modules: HA.ST.Common
+                     HA.ST.Rules
+    Build-Depends:  tasty,
+                    tasty-hunit
+
 
   Build-Depends:   base,
                    aeson,
@@ -374,10 +390,8 @@ Executable halond
                      network-transport-tcp >= 0.3.1
 
 Executable halon-st
-  Hs-Source-Dirs:     tests/halon-st
+  Hs-Source-Dirs:     tests/halon-st/exec
   Main-Is:            Main.hs
-  Other-Modules:      HA.ST.ClusterRunning
-                      HA.ST.Common
 
   Ghc-Options: -threaded -Wall
 
@@ -399,12 +413,15 @@ Executable halon-st
   if !flag(mero)
     Buildable:          False
 
+  if !flag(enable-st)
+    Buildable:          False
+
   Build-Depends:      halon,
                       mero-halon,
-                      tasty,
-                      tasty-hunit,
                       network >= 2.4,
                       network-transport-tcp >= 0.3,
+                      tasty,
+                      tasty-hunit,
                       aeson,
                       aeson-pretty,
                       base >= 4.5,

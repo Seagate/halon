@@ -6,6 +6,8 @@
 module HA.ST.Common where
 
 import Control.Distributed.Process
+import HA.RecoveryCoordinator.Actions.Core (LoopState)
+import Network.CEP (Definitions)
 
 data STArgs = STArgs { _sta_test :: HASTTest
                      , _sta_listen :: String
@@ -21,12 +23,18 @@ data TestArgs = TestArgs { _ta_eq_nids :: [NodeId]
                          }
   deriving (Show, Eq, Ord)
 
-data HASTTest = HASTTest { _st_name :: String
-                           -- ^ ST name
-                         , _st_action :: TestArgs -> IO (Maybe String)
-                           -- ^ Test runner that can fail with error
-                           -- message
-                         }
+data HASTTest = HASTTest
+  { _st_name :: String
+    -- ^ ST name
+  , _st_rules :: [Definitions LoopState ()]
+    -- ^ Any unique rules that this test relies on. That is, the rules
+    -- here should only be used by this test. If you want to re-use a
+    -- rule throughout multiple tests, add it directly to
+    -- 'HA.ST.Rules.sharedRules'.
+  , _st_action :: TestArgs -> Process ()
+    -- ^ Test runner that can fail with error
+    -- message
+  }
 
 instance Show HASTTest where
   show = _st_name
