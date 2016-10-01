@@ -589,11 +589,16 @@ requestClusterReset :: Definitions LoopState ()
 requestClusterReset = defineSimple "castor::cluster::reset"
   $ \(HAEvent eid (ClusterResetRequest deepReset) _) -> do
     phaseLog "info" "Cluster reset requested."
-    -- Mark all processes and services as unknown.
+    -- Mark all nodes, processes and services as unknown.
+    nodes <- getLocalGraph <&> \rg -> [ node
+              | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
+              , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node]
+              ]
     procs <- getLocalGraph <&> M0.getM0Processes
     srvs <- getLocalGraph <&> \rg -> join
       $ (\p -> G.connectedTo p M0.IsParentOf rg :: [M0.Service])
       <$> procs
+    modifyGraph $ foldl' (.) id (flip M0.setState M0.NSUnknown <$> nodes)
     modifyGraph $ foldl' (.) id (flip M0.setState M0.SSUnknown <$> srvs)
     modifyGraph $ foldl' (.) id (flip M0.setState M0.PSUnknown <$> procs)
     if deepReset
