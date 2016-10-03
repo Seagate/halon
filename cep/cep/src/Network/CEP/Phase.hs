@@ -244,7 +244,7 @@ runPhaseM pname subs plogs idx pl mindex pb action = consume [(idx, (pb,pl,actio
                       NoBuffer -> emptyFifoBuffer
                       CopyBuffer -> buf
                       CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
-          in do ((b', out), sm, s) <- go l (fmap (const S.empty) lgs) buf (k ())
+          in do ((b', out), sm, s) <- go l lgs buf (k ())
                 return ((b', out), (buf',l,naction):sm, s)
         inner (Lift m :>>= k) = do
           a' <- lift m

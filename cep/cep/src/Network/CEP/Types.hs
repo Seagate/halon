@@ -614,7 +614,7 @@ data Logs =
       -- ^ Rule name associated with those logs.
     , logsPhaseEntries :: ![(String, String, String)]
       -- ^ Each entry is compound of 'Phase' name, a context and a log value.
-    } deriving (Show, Typeable, Generic)
+    } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary Logs
 

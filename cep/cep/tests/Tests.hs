@@ -7,13 +7,10 @@ import Control.Monad (replicateM, replicateM_)
 import Control.Monad.Catch (SomeException(..), catch, try, throwM)
 import Control.Exception (Exception, fromException)
 import Data.Binary (Binary)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
 import Data.Typeable
 import Data.List (sort)
 import Data.IORef
 import Data.PersistMessage
-import Data.Binary (encode)
 import qualified Data.UUID as UUID
 import GHC.Generics
 
@@ -66,6 +63,7 @@ tests launch =
   , testsDefaultHandler launch
   , testsPhaseIf launch
   , testsSMessage launch
+  , testsLogging launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -1211,9 +1209,6 @@ tryWorks = do
   where
     trySome :: PhaseM g l () -> PhaseM g l (Either SomeException ())
     trySome = try
-    usend' :: ProcessId -> Either MyE () -> Process ()
-    usend' = usend
-
 
 testsDefaultHandler :: (Process () -> IO ()) -> TestTree
 testsDefaultHandler launch = testGroup "State"
@@ -1288,3 +1283,95 @@ stableMessageWorks = do
 
     assertEqual "Handle second message" "foo" =<< expect
     assertEqual "Second message was not processed" "default" =<< expect
+
+testsLogging :: (Process () -> IO ()) -> TestTree
+testsLogging launch = testGroup "Logging"
+  [ testCase "Forked logging works" $ launch forkedLoggingWorksSimple
+  , testCase "Forked logging, multiple forks" $ launch forkedLoggingMultiple
+  ]
+
+forkedLoggingWorksSimple :: Process ()
+forkedLoggingWorksSimple = do
+  self <- getSelfPid
+  let (rn, phN, ctx, val1, val2) = ("fork-logging", "ph0", "test", "prefork", "postfork")
+  _ <- spawnLocal . execute () $ do
+    setLogger $ logger self
+    define rn $ do
+      ph0 <- phaseHandle phN
+      ph1 <- phaseHandle "all"
+      directly ph0 $ do
+        phaseLog ctx val1
+        fork NoBuffer $ do
+          phaseLog ctx val2
+          rulePid <- liftProcess getSelfPid
+          liftProcess $ usend rulePid donut
+          stop
+        continue ph1
+
+      setPhase ph1 $ \Donut{} -> phaseLog "logs" "finished"
+
+      start ph0 ()
+
+  let mkLog v = Logs rn [(phN, ctx, v)]
+  assertEqual "logs" [mkLog val1] =<< takeLogs []
+
+  where
+    logger :: ProcessId -> Logs -> s -> Process ()
+    logger pid logs _ = usend pid logs
+
+    takeLogs :: [Logs] -> Process [Logs]
+    takeLogs r = do
+      l <- expect :: Process (Logs)
+      case logsPhaseEntries l of
+        [("all", "logs", "finished")] -> return $ reverse r
+        _ -> takeLogs $ l : r
+
+forkedLoggingMultiple :: Process ()
+forkedLoggingMultiple = do
+  self <- getSelfPid
+  let (rn, phN, ctx) = ("fork-logging", "ph0", "test")
+      (val1, val2, val3, val4) = ("v1", "v2", "v3", "v4")
+  _ <- spawnLocal . execute () $ do
+    setLogger $ logger self
+    define rn $ do
+      ph0 <- phaseHandle phN
+      ph1 <- phaseHandle "barrier"
+      ph1' <- phaseHandle "all"
+      end <- phaseHandle "end"
+      directly ph0 $ do
+        phaseLog ctx val1
+        rulePid <- liftProcess getSelfPid
+
+        fork NoBuffer $ do
+          phaseLog ctx val2
+          liftProcess $ usend rulePid donut
+          continue end
+
+        fork NoBuffer $ do
+          phaseLog ctx val3
+          liftProcess $ usend rulePid (Foo 1)
+          stop
+
+        phaseLog ctx val4
+        continue ph1
+
+      setPhase ph1 $ \Donut{} -> continue ph1'
+      setPhase ph1' $ \Foo{} -> phaseLog "logs" "finished"
+      directly end stop
+
+      start ph0 ()
+
+  let mkLog = Logs rn . map (\v -> (phN, ctx, v))
+  assertEqual "logs" [mkLog [val1, val4], mkLog [val2]] =<< takeLogs []
+
+  where
+    logger :: ProcessId -> Logs -> s -> Process ()
+    logger pid logs _ = usend pid logs
+
+    takeLogs :: [Logs] -> Process [Logs]
+    takeLogs r = do
+      l <- expect :: Process (Logs)
+      case logsPhaseEntries l of
+        [("all", "logs", "finished")] -> return $ reverse r
+        [] -> takeLogs r
+        _ -> takeLogs $ l : r
