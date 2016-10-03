@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -28,7 +29,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..))
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note()
+import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.RC
@@ -54,7 +55,9 @@ import Data.Yaml
   )
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
+import Text.Printf (printf)
 import Text.Read (readMaybe)
+import System.Exit (exitFailure)
 
 data ClusterOptions =
     LoadData LoadOptions
@@ -84,7 +87,7 @@ parseCluster =
         "Query mero-cluster status")))
   <|> ( Start <$> Opt.subparser ( Opt.command "start" (Opt.withDesc parseStartOptions
         "Start mero cluster")))
-  <|> ( Stop <$> Opt.subparser ( Opt.command "stop" (Opt.withDesc (pure StopOptions)
+  <|> ( Stop <$> Opt.subparser ( Opt.command "stop" (Opt.withDesc parseStopOptions
         "Stop mero cluster")))
   <|> ( ClientCmd <$> Opt.subparser ( Opt.command "client" (Opt.withDesc parseClientOptions
         "Control m0t1fs clients")))
@@ -124,9 +127,7 @@ cluster nids' opt = do
     cluster' nids (Start (StartOptions async))  = do
       say "Starting cluster."
       clusterStartCommand nids async
-    cluster' nids (Stop  _)  = do
-      say "Stopping cluster."
-      clusterCommand nids ClusterStopRequest (liftIO . print)
+    cluster' nids (Stop opts)  = clusterStopCommand nids opts
     cluster' nids (ClientCmd s) = client nids s
     cluster' nids (NotifyCmd (NotifyOptions s)) = notifyHalon nids s
     cluster' nids (ResetCmd r) = clusterReset nids r
@@ -208,7 +209,12 @@ data StatusOptions = StatusOptions {
   , statusOptDevices :: Bool
 } deriving (Eq, Show)
 data StartOptions  = StartOptions Bool deriving (Eq, Show)
-data StopOptions   = StopOptions deriving (Eq, Show)
+data StopOptions   = StopOptions
+  { _so_silent :: Bool
+  , _so_async :: Bool
+  , _so_timeout :: Int }
+  deriving (Eq, Show)
+
 data ClientOptions = ClientStopOption String
                    | ClientStartOption String
                    deriving (Eq, Show)
@@ -296,6 +302,21 @@ parseStartOptions = StartOptions
        <> Opt.short 'a'
        <> Opt.help "Do not wait for cluster start.")
 
+parseStopOptions :: Opt.Parser StopOptions
+parseStopOptions = StopOptions
+  <$> Opt.switch
+    ( Opt.long "silent"
+    <> Opt.help "Do not print any output" )
+  <*> Opt.switch
+    ( Opt.long "async"
+    <> Opt.help "Don't wait for stop to happen." )
+  <*> Opt.option Opt.auto
+    ( Opt.metavar "TIMEOUT(µs)"
+    <> Opt.long "timeout"
+    <> Opt.help "How long to wait for successful cluster stop before halonctl gives up on waiting."
+    <> Opt.value 300000000
+    <> Opt.showDefault )
+
 parseMkfsDoneOptions :: Opt.Parser MkfsDoneOptions
 parseMkfsDoneOptions = MkfsDoneOptions
   <$> Opt.switch
@@ -354,6 +375,46 @@ clusterStartCommand eqnids True = do
   -- FIXME implement async also
   promulgateEQ eqnids ClusterStartRequest
   liftIO $ putStrLn "Cluster start request sent."
+
+clusterStopCommand :: [NodeId] -> StopOptions -> Process ()
+clusterStopCommand nids (StopOptions silent async stopTimeout) = do
+  say' "Stopping cluster."
+  self <- getSelfPid
+  clusterCommand nids ClusterStopRequest (say' . show)
+  promulgateEQ nids (MonitorClusterStop self) >>= flip withMonitor wait
+  case async of
+    True -> return ()
+    False -> do
+      void . spawnLocal $ receiveTimeout stopTimeout [] >> usend self ()
+      fix $ \loop -> void $ receiveWait
+        [ match $ \() -> do
+            say' $ "Giving up on waiting for cluster stop after " ++ show stopTimeout ++ "µs"
+            liftIO exitFailure
+        , match $ \csd -> do
+            outputClusterStopDiff csd
+            if _csp_cluster_stopped csd then return () else loop
+        ]
+
+  where
+    say' msg = if silent then return () else liftIO (putStrLn msg)
+    wait = void (expect :: Process ProcessMonitorNotification)
+    outputClusterStopDiff :: ClusterStopDiff -> Process ()
+    outputClusterStopDiff ClusterStopDiff{..} = do
+      let o `movedTo` n = show o ++ " -> " ++ show n
+          formatChange obj os ns = showFid obj ++ ": " ++ os `movedTo` ns
+          warn m = say' $ "Warning: " ++ m
+      for_ _csp_procs $ \(p, o, n) -> say' $ formatChange p o n
+      for_ _csp_servs $ \(s, o, n) -> say' $ formatChange s o n
+      for_ _csp_disposition $ \(od, nd) -> do
+        say' $ "Cluster disposition: " ++ od `movedTo` nd
+
+      let (op, np) = _csp_progress
+      when (op /= np) $ do
+        say' $ printf "Progress: %.2f%% -> %.2f%%" (fromRational op :: Float) (fromRational np :: Float)
+      if _csp_cluster_stopped then say' "Cluster stopped successfully" else return ()
+
+      if op > np then warn "Cluster stop progress decreased!" else return ()
+      for_ _csp_warnings $ \w -> warn w
 
 clusterReset :: [NodeId]
              -> ResetOptions

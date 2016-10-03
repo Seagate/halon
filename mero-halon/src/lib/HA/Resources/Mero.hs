@@ -297,6 +297,9 @@ data Service = Service {
   , s_params :: ServiceParams
 } deriving (Eq, Generic, Show, Typeable)
 
+instance Ord Service where
+  compare = comparing s_fid
+
 instance Binary Service
 instance Hashable Service
 instance ToJSON Service
