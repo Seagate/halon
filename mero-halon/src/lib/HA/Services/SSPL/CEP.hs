@@ -1,4 +1,3 @@
--- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -26,6 +25,7 @@ import HA.Resources (Node(..), Has(..), Cluster(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
+import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (showFid)
 import Mero.ConfC (strToFid)
@@ -456,9 +456,11 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
         Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
           rg <- getLocalGraph
-          case (listToMaybe $ connectedTo p Is rg, listToMaybe $ connectedTo p Has rg) of
-            (Just (M0.PSFailed _), _) ->
-              phaseLog "info" "Failed SSPL notification for already failed process, doing nothing."
+          case (getState p rg, listToMaybe $ connectedTo p Has rg) of
+            (M0.PSFailed _, _) ->
+              phaseLog "info" "Failed SSPL notification for already failed process - doing nothing."
+            (M0.PSStopping, _) ->
+              phaseLog "info" "Failed SSPL notification for process that is stopping - doing nothing."
             (_, Just (M0.PID pid))
               | pid == currentPid ->
                   markFailed p False
