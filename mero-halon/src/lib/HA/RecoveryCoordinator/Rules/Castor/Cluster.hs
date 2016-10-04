@@ -27,6 +27,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeOperators         #-}
@@ -84,11 +85,13 @@ import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 
 import           Data.List ((\\))
-import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, isJust)
+import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, isJust, isNothing)
+import           Data.Ratio
 import           Data.Foldable
+import qualified Data.Map.Strict as M
 import           Data.Traversable (forM)
 import           Data.Typeable
-import           Data.Vinyl
+import           Data.Vinyl hiding ((:~:))
 import qualified Data.Set as Set
 
 import           Prelude hiding ((.), id)
@@ -107,6 +110,7 @@ clusterRules = sequence_
   , ruleServiceNotificationHandler
   , requestClusterReset
   , ruleMarkProcessesBootstrapped
+  , ruleClusterMonitorStop
   ]
 
 -------------------------------------------------------------------------------
@@ -444,9 +448,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
           phaseLog "update" $ "cluster.disposition=ONLINE"
           modifyGraph $ G.connectUnique R.Cluster R.Has (M0.ONLINE)
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host::R.Host) (node::M0.Node) rg -> G.isConnected host R.Has R.HA_M0SERVER rg
-                            && M0.getState node rg /= M0.NSFailed
-                            && M0.getState node rg /= M0.NSFailedUnrecoverable
+            $ \(host::R.Host) (node::M0.Node) rg' -> G.isConnected host R.Has R.HA_M0SERVER rg'
+                            && M0.getState node rg' /= M0.NSFailed
+                            && M0.getState node rg' /= M0.NSFailedUnrecoverable
           for_ servers $ \s -> do
             phaseLog "debug" $ "starting server processes on node=" ++ M0.showFid s
             promulgateRC $ StartProcessesOnNodeRequest s
@@ -467,18 +471,18 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                         else fail_job $ ClusterStartFailure "Cluster not fully stopped." [] []
 
     setPhase wait_server_jobs $ \s -> do
-       servers <- getField . rget fldNodes <$> get Local
        (node, result) <- case s of
          NodeProcessesStarted node ->
            return (node, "success")
-         s@(NodeProcessesStartTimeout node) -> do
+         s'@(NodeProcessesStartTimeout node) -> do
            modify Local $ rlens fldNext . rfield .~ Just finalize
-           appendServerFailure s
+           appendServerFailure s'
            return (node, "timeout")
-         s@(NodeProcessesStartFailure node) -> do
+         s'@(NodeProcessesStartFailure node) -> do
            modify Local $ rlens fldNext . rfield .~ Just finalize
-           appendServerFailure s
+           appendServerFailure s'
            return (node, "failure")
+       servers <- getField . rget fldNodes <$> get Local
        phaseLog "job finished" $ "node=" ++ M0.showFid node
        phaseLog "job finished" $ "result=" ++ result
        let servers' = Set.delete node servers
@@ -670,3 +674,208 @@ requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::star
              Right _ -> startMeroProcesses chan [proc] M0.PLM0t1fs
         Nothing -> phaseLog "warning" $ "can't find mero channel."
     else phaseLog "warning" $ show fid ++ " is not a client process."
+
+-- | Caller 'ProcessId' signals that it's interested in cluster
+-- stopping ('MonitorClusterStop') and wants to receive information
+-- about it. The idea behind this rule is that it passively (i.e.
+-- without actually invoking any cluster-changing actions itself)
+-- monitors events relevant to cluster stopping that are flying by and
+-- reports progress back to the caller. The caller can choose to block
+-- until it's satisfied, report to the user with progress and so on.
+ruleClusterMonitorStop :: Definitions LoopState ()
+ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
+  start_monitoring <- phaseHandle "start-monitoring"
+  caller_died <- phaseHandle "caller-died"
+  isc_watcher <- phaseHandle "internal-state-change-watcher"
+  cluster_level_watcher <- phaseHandle "cluster-level-watcher"
+  finish <- phaseHandle "finish"
+
+  let watchForChanges = switch [caller_died, isc_watcher, cluster_level_watcher]
+
+  setPhase start_monitoring $ \(HAEvent uuid (MonitorClusterStop caller) _) -> do
+    todo uuid
+    st <- calculateStoppingState
+    mref <- liftProcess $ monitor caller
+    modify Local $ rlens fldCallerPid . rfield .~ Just caller
+    modify Local $ rlens fldClusterStopProgress . rfield .~ Just st
+    modify Local $ rlens fldUUID . rfield .~ Just uuid
+    modify Local $ rlens fldMonitorRef . rfield .~ Just mref
+    watchForChanges
+
+  setPhaseIf isc_watcher iscGuard $ \() -> do
+    notifyCallerWithDiff finish
+    watchForChanges
+
+  setPhase cluster_level_watcher $ \ClusterStateChange{} -> do
+    notifyCallerWithDiff finish
+    watchForChanges
+
+  setPhaseIf caller_died monitorGuard $ \() -> do
+    caller <- getField . rget fldCallerPid <$> get Local
+    phaseLog "info" "Calling process died: did user ^C?"
+    phaseLog "caller.ProcessId" $ show caller
+    continue finish
+
+  directly finish $ do
+    getField . rget fldMonitorRef <$> get Local >>= \case
+      Nothing -> phaseLog "warn" "No monitor ref"
+      Just mref -> liftProcess $ unmonitor mref
+    getField . rget fldUUID <$> get Local >>= \case
+      Nothing -> phaseLog "warn" "No UUID"
+      Just uuid -> done uuid
+
+  startFork start_monitoring args
+  where
+    fldCallerPid :: Proxy '("caller-pid", Maybe ProcessId)
+    fldCallerPid = Proxy
+    fldClusterStopProgress :: Proxy '("cluster-stop-progress", Maybe ClusterStoppingState)
+    fldClusterStopProgress = Proxy
+    fldMonitorRef :: Proxy '("monitor-ref", Maybe MonitorRef)
+    fldMonitorRef = Proxy
+
+    args = fldCallerPid =: Nothing
+       <+> fldClusterStopProgress =: Nothing
+       <+> fldMonitorRef =: Nothing
+       <+> fldUUID =: Nothing
+
+    -- Look for any service or process notification. If things are
+    -- going wrong with processes transitioning out of offline, this
+    -- gives us a chance to notify the user about it.
+    --
+    -- We check if the transitions are interesting early on: it may
+    -- just be process going from online to to quescing which we don't
+    -- care about for stop purposes so we save ourselves work and
+    -- empty sends.
+    iscGuard :: HAEvent InternalObjectStateChangeMsg -> g -> l -> Process (Maybe ())
+    iscGuard (HAEvent _ msg _) _ _ = decodeP msg >>= \(InternalObjectStateChange iosc) ->
+      let isInteresting :: forall t. Typeable t
+                        => (t -> M0.StateCarrier t -> M0.StateCarrier t -> Bool)
+                        -> AnyStateChange -> Bool
+          isInteresting p (AnyStateChange (obj :: t') o n _) =
+            case eqT :: Maybe (t :~: t') of
+              Just Refl -> p obj o n
+              _ -> False
+          interestingServ :: M0.Service -> M0.ServiceState -> M0.ServiceState -> Bool
+          interestingServ obj o n = isJust $ servTransitioned obj o n
+          interestingProc :: M0.Process -> M0.ProcessState -> M0.ProcessState -> Bool
+          interestingProc obj o n = isJust $ procTransitioned obj o n
+      in if any (\c -> isInteresting interestingServ c || isInteresting interestingProc c) iosc
+         then return $ Just ()
+         else return Nothing
+
+    monitorGuard :: forall g l s. ( '("monitor-ref", Maybe MonitorRef) ∈ s
+                                  , l ~ Rec ElField s )
+                 => ProcessMonitorNotification -> g -> l -> Process (Maybe ())
+    monitorGuard (ProcessMonitorNotification mref _ _) _ l =
+      return $ case getField $ rget fldMonitorRef l of
+        Just mref' | mref == mref' -> Just ()
+        _ -> Nothing
+
+    notifyCallerWithDiff finish = do
+      newSt <- calculateStoppingState
+      moldSt <- getField . rget fldClusterStopProgress <$> get Local
+      mcaller <- getField . rget fldCallerPid <$> get Local
+      modify Local $ rlens fldClusterStopProgress . rfield .~ Just newSt
+      case (moldSt, mcaller) of
+        (Nothing, _) -> do
+          phaseLog "warn" "No previous cluster state known (‘impossible’)"
+          continue finish
+        (_, Nothing) -> do
+          phaseLog "warn" "No caller known (‘impossible’)"
+          continue finish
+        (Just oldSt, Just caller) -> do
+          let diff = calculateStopDiff oldSt newSt
+          when (not $ isEmptyDiff diff) $ do
+            liftProcess $ usend caller diff
+            when (_csp_cluster_stopped diff) $ continue finish
+
+    calculateStoppingState :: PhaseM LoopState l ClusterStoppingState
+    calculateStoppingState = do
+      rg <- getLocalGraph
+      let ps = [ (p, M0.getState p rg)
+               | pr :: M0.Profile <- G.connectedTo R.Cluster R.Has rg
+               , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
+               , mn :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
+               , p  :: M0.Process  <- G.connectedTo mn M0.IsParentOf rg ]
+          donePs = filter ((== M0.PSOffline) . snd) ps
+          svs = [ (s, M0.getState s rg)
+                | (p, _) <- ps
+                , s :: M0.Service <- G.connectedTo p M0.IsParentOf rg  ]
+          doneSvs = filter ((== M0.SSOffline) . snd) svs
+
+          disp :: [M0.Disposition]
+          disp = G.connectedTo R.Cluster R.Has rg
+          doneDisp = filter (== M0.OFFLINE) disp
+
+          allParts = toInteger $ length ps + length svs + length disp
+          doneParts = toInteger $ length donePs + length doneSvs + length doneDisp
+
+          progress :: Rational
+          progress = (100 % allParts) * (doneParts % 1)
+
+          allDone = allParts == doneParts
+      return $ ClusterStoppingState ps svs disp progress allDone
+
+    -- It may happen that previously sent state already covered all
+    -- interesting changes and the newly calculated diff is just empty
+    -- and boring in which case we detect this and don't send anything.
+    isEmptyDiff :: ClusterStopDiff -> Bool
+    isEmptyDiff ClusterStopDiff{..} =
+      null _csp_procs && null _csp_servs && isNothing _csp_disposition
+      && fst _csp_progress == snd _csp_progress && not _csp_cluster_stopped
+      && null _csp_warnings
+
+    calculateStopDiff :: ClusterStoppingState -> ClusterStoppingState
+                      -> ClusterStopDiff
+    calculateStopDiff old new =
+      let (nPs, wps) = diffProcs (M.fromList $ _css_procs old) (_css_procs new)
+          (nSs, wss) = diffServs (M.fromList $ _css_svs old) (_css_svs new)
+          (nDs, wds) = diffDisps (listToMaybe $ _css_disposition old) (listToMaybe $ _css_disposition new)
+      in ClusterStopDiff { _csp_procs = nPs
+                         , _csp_servs = nSs
+                         , _csp_disposition = nDs
+                         , _csp_progress = (_css_progress old, _css_progress new)
+                         , _csp_cluster_stopped = _css_done new
+                         , _csp_warnings = wps ++ wss ++ wds
+                         }
+
+    -- compare object to some old version
+    filterWithWarnings :: forall a b. Ord a
+                       => M.Map a b
+                       -> [(a, b)]
+                       -> b
+                       -> (a -> b -> b -> Maybe (a, b, b, [String]))
+                       -> ([(a, b, b)], [String])
+    filterWithWarnings mo new def f =
+      let n :: [(a, b, b, [String])]
+          n = flip mapMaybe new $ \(a, b) -> f a (M.findWithDefault def a mo) b
+      in (map (\(a, b, b', _) -> (a, b, b')) n, concatMap (\(_, _, _, w) -> w) n)
+
+    diffProcs mold new = filterWithWarnings mold new M0.PSUnknown procTransitioned
+    diffServs mold new = filterWithWarnings mold new M0.SSUnknown servTransitioned
+
+    diffDisps dold dnew | dold == dnew = (Nothing, [])
+    diffDisps Nothing _ = (Nothing, ["Cluster disposition was not previously set"])
+    diffDisps _ Nothing = (Nothing, ["Cluster disposition no longer set"])
+    diffDisps (Just o@M0.OFFLINE) (Just n@M0.ONLINE) = (Just (o, n), ["Cluster disposition went back to online"])
+    diffDisps (Just o@M0.ONLINE) (Just n@M0.OFFLINE) = (Just (o, n), [])
+    diffDisps _ _ = (Nothing, [])
+
+    procTransitioned _ o n | o == n = Nothing
+    procTransitioned p o n@M0.PSOffline = Just (p, o, n, [])
+    procTransitioned p o@M0.PSOffline n = Just (p, o, n, [M0.showFid p ++ " transitioned out of offline to " ++ show n])
+    procTransitioned _ _ _ = Nothing
+
+    servTransitioned _ o n | o == n = Nothing
+    servTransitioned s o n@M0.SSOffline = Just (s, o, n, [])
+    servTransitioned s o@M0.SSOffline n = Just (s, o, n, [M0.showFid s ++ " transitioned out of offline to " ++ show n])
+    servTransitioned _ _ _ = Nothing
+
+-- | State used throughout 'ruleClusterMonitorStop'.
+data ClusterStoppingState = ClusterStoppingState
+  { _css_procs :: [(M0.Process, M0.ProcessState)]
+  , _css_svs :: [(M0.Service, M0.ServiceState)]
+  , _css_disposition :: [M0.Disposition]
+  , _css_progress :: Rational
+  , _css_done :: Bool
+  }

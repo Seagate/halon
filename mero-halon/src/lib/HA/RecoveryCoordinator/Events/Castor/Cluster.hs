@@ -41,6 +41,9 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , ClusterStateChange(..)
   -- * Debug
   , MarkProcessesBootstrapped(..)
+  -- * Cluster stop monitoring
+  , MonitorClusterStop(..)
+  , ClusterStopDiff(..)
   ) where
 
 import Control.Distributed.Process
@@ -232,3 +235,30 @@ instance Binary StopProcessesResult
 -- | Request to mark all processes as finished mkfs.
 newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
   deriving (Eq, Show,Generic, Binary, Typeable)
+
+-- * Messages used for cluster stop monitoring
+
+-- | Signal that the 'ProcessId' is interested in
+-- 'ClusterStopProgress' messages.
+newtype MonitorClusterStop = MonitorClusterStop ProcessId
+  deriving (Show, Eq, Typeable, Generic)
+
+instance Binary MonitorClusterStop
+
+data ClusterStopDiff = ClusterStopDiff
+  { _csp_procs :: [(M0.Process, M0.ProcessState, M0.ProcessState)]
+    -- ^ @(Process, old state, new state)@
+  , _csp_servs :: [(M0.Service, M0.ServiceState, M0.ServiceState)]
+    -- ^ @(Service, old state, new state)@
+  , _csp_disposition :: Maybe (M0.Disposition, M0.Disposition)
+    -- ^ Cluster 'M0.Disposition'
+  , _csp_progress :: (Rational, Rational)
+    -- ^ Percentage of cluster stopped, @(old, new)@
+  , _csp_cluster_stopped :: Bool
+    -- ^ Is cluster considered stopped
+  , _csp_warnings :: [String]
+    -- ^ Any warnings user could want to see found when calculating the diff.
+  }
+  deriving (Show, Eq, Typeable, Generic)
+
+instance Binary ClusterStopDiff
