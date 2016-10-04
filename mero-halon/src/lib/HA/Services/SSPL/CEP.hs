@@ -217,8 +217,9 @@ ruleMonitorDriveManager :: Definitions LoopState ()
 ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
    pinit  <- phaseHandle "init"
    pcommit <- phaseHandle "after commit to graph"
+   finish <- phaseHandle "finish"
 
-   setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> do
+   setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> fork CopyNewerBuffer $ do
      let enc' = Enclosure . T.unpack
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                           $ srdm
@@ -302,7 +303,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
      else
        case (disk_status, disk_reason) of
         (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) -> do
-          phaseLog "sspl-service" "status unchanged"
+          phaseLog "sspl-service" $ "status unchanged: " ++ show oldDriveStatus
           messageProcessed uuid
         (T.toUpper -> "FAILED", _) -> do
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
@@ -324,6 +325,10 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
           in do
             sendInterestingEvent msg
             messageProcessed uuid
+     continue finish
+
+   directly finish stop
+
    start pinit Nothing
 
 -- | Handle information messages about drive changes from HPI system.
@@ -414,13 +419,13 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
        (True, _) | was_removed -> do
          notify $ DriveInserted uuid (Node nid) sdev enc diskNum serial is_powered
          return True
-       (False, _) | (not was_removed) -> do
+       (False, _) | not was_removed -> do
          notify $ DriveRemoved uuid (Node nid) enc sdev diskNum is_powered
          return True
-       (_, True) | ((not isOngoingReset) && (not was_powered)) -> do
+       (_, True) | not isOngoingReset && not was_powered -> do
          notify $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str True
          return True
-       (_, False) | (was_powered && (not isOngoingReset)) -> do
+       (_, False) | was_powered && not isOngoingReset -> do
          notify $ DrivePowerChange uuid (Node nid) enc sdev diskNum serial_str False
          return True
        _ -> return False

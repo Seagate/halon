@@ -183,7 +183,7 @@ parseControlState t
 halonPriority :: Int
 halonPriority = 7
 
--- | Convert @NodeCmd@ to text represetnation.
+-- | Convert @NodeCmd@ to text representation.
 nodeCmdString :: NodeCmd -> T.Text
 nodeCmdString (IPMICmd op ip) = T.intercalate " "
   [ "IPMI:", ip, ipmiOpString op ]

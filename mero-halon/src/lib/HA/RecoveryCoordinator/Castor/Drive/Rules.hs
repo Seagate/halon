@@ -68,6 +68,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.Maybe
 
+import Data.Foldable (for_)
 import Data.Maybe
 import Data.Proxy (Proxy(..))
 import qualified Data.Text as T
@@ -129,6 +130,7 @@ mkCheckAndHandleDriveReady ::
 mkCheckAndHandleDriveReady getter smartLens next = do
 
   smart_result <- phaseHandle "smart_result"
+  abort_result <- phaseHandle "abort_result"
 
   let post_process m0sdev = do
         oldState <- getLocalGraph <&> getState m0sdev
@@ -136,24 +138,32 @@ mkCheckAndHandleDriveReady getter smartLens next = do
           SDSUnknown -> do
             -- We do not know the old state, so set the new state to online
             applyStateChanges [ stateSet m0sdev SDSOnline ]
+            next m0sdev
           SDSOnline -> return () -- Do nothing
           SDSFailed -> do
             -- Drive was permanently failed, and has not yet been repaired.
             -- We should not have to do anything here.
-            return ()
+            next m0sdev
           SDSRepairing -> do
             -- Drive is repairing. When it's finished, rebalance should start
             -- automatically.
-            return ()
+            next m0sdev
           SDSRepaired -> do
             -- Start rebalance
             pool <- getSDevPool m0sdev
-            promulgateRC $ PoolRebalanceRequest pool
+            getPoolRepairStatus pool >>= \case
+              Nothing -> do
+                promulgateRC $ PoolRebalanceRequest pool
+                next m0sdev
+              Just prs -> do
+                promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+                continue abort_result
           SDSTransient _ -> do
             -- Transient failure - recover
             applyStateChanges [ stateSet m0sdev . sdsRecoverTransient $ oldState ]
-          SDSRebalancing -> return ()
-        next m0sdev
+            next m0sdev
+          SDSRebalancing -> next m0sdev
+
 
       onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
         return $ case (,) <$> ( getter l )
@@ -191,6 +201,16 @@ mkCheckAndHandleDriveReady getter smartLens next = do
         continue device_attached
     else
       phaseLog "warning" "Unsuccessful SMART test. Drive cannot be used."
+
+  setPhase abort_result $ \msg -> do
+    case msg of
+      AbortSNSOperationOk pool -> promulgateRC $ PoolRebalanceRequest pool
+      AbortSNSOperationFailure _ err -> do
+        phaseLog "warn" "Failed to abort SNS operation, doing nothing."
+        phaseLog "warn.message" err
+      AbortSNSOperationSkip pool -> promulgateRC $ PoolRebalanceRequest pool
+    mm0sdev <- getter <$> get Local >>= fmap join . traverse lookupStorageDeviceSDev
+    for_ mm0sdev next
 
   return (device_attached, \node disk -> do
     reset <- hasOngoingReset disk
@@ -428,6 +448,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   power_returned <- phaseHandle "power_returned"
   power_removed_duration <- phaseHandle "power_removed_duration"
   post_power_removed <- phaseHandle "post-power-removed"
+  finish <- phaseHandle "finish"
 
   let
     power_down_timeout = 300 -- seconds
@@ -451,11 +472,10 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     (\sdev e -> do phaseLog "warning" e
                    post_process sdev) post_process
 
-  setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) ->
-    let
-      (Node nid) = dpcNode
-    in do
+  setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
+    fork CopyNewerBuffer $ do
       todo dpcUUID
+      let Node nid = dpcNode
       put Local $ (Just (dpcUUID, dpcDevice, nid, dpcSerial), Nothing)
       markDiskPowerOff dpcDevice
 
@@ -490,6 +510,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       $ \_ -> do
         (Just (uuid, _, _, _), _) <- get Local
         done uuid
+        continue finish
 
   setPhaseIf power_returned (power_on `gAnd` matching_device)
     $ \(DrivePowerChange{..}) -> do
@@ -508,6 +529,9 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       old_state <- getLocalGraph <&> getState m0sdev
       applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
     done uuid
+    continue finish
+
+  directly finish stop
 
   startFork power_removed (Nothing, Nothing)
 
@@ -518,6 +542,7 @@ ruleDrivePoweredOn :: Definitions LoopState ()
 ruleDrivePoweredOn = define "drive-powered-on" $ do
 
   handle <- phaseHandle "Drive power change event received."
+  finish <- phaseHandle "finish"
 
   (checked, checkAndHandleDriveReady) <-
     mkCheckAndHandleDriveReady (fmap snd . fst)
@@ -525,10 +550,11 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
       $ \_ -> do
         (Just (uuid,_), _) <- get Local
         done uuid
+        continue finish
 
   setPhase handle $ \(DrivePowerChange{..}) -> do
-    when dpcPowered $ do
-      put Local (Just (dpcUUID, dpcDevice), Nothing)
+    when dpcPowered . fork CopyNewerBuffer $ do
+      put Local $ (Just (dpcUUID, dpcDevice), Nothing)
       todo dpcUUID
       markDiskPowerOn dpcDevice
       realFailure <- maybe False isRealFailure <$> driveStatus dpcDevice
@@ -543,6 +569,8 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
           markStorageDeviceReplaced dpcDevice
           checkAndHandleDriveReady dpcNode dpcDevice
           continue checked
+
+  directly finish stop
 
   start handle (Nothing, Nothing)
   where
