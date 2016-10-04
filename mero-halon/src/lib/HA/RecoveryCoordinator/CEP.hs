@@ -125,7 +125,6 @@ rcRules argv additionalRules = do
               , ruleDummyEvent
               , ruleSyncPing
               , rulePidRequest
-              , ruleSetHalonVars
               ]
     setLogger sendLogs
     HA.RecoveryCoordinator.Rules.Service.rules

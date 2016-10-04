@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -30,9 +31,11 @@ import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note()
 import qualified HA.Resources.Castor as Castor
+import qualified HA.Resources.HalonVars as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.RC
   ( subscribeOnTo, unsubscribeOnFrom )
+import HA.RecoveryCoordinator.RC.Events
 import HA.RecoveryCoordinator.Mero
   ( labelRecoveryCoordinator )
 
@@ -68,8 +71,10 @@ data ClusterOptions =
   | NotifyCmd NotifyOptions
   | ResetCmd ResetOptions
   | MkfsDone MkfsDoneOptions
+  | VarsCmd VarsOptions
 #endif
   deriving (Eq, Show)
+
 
 parseCluster :: Opt.Parser ClusterOptions
 parseCluster =
@@ -94,6 +99,8 @@ parseCluster =
         "Reset Halon's cluster knowledge to ground state." )))
   <|> ( MkfsDone <$> Opt.subparser ( Opt.command "mkfs-done" (Opt.withDesc parseMkfsDoneOptions
         "Mark all processes as finished mkfs.")))
+  <|> ( VarsCmd  <$> Opt.subparser ( Opt.command "vars" (Opt.withDesc parseVarsOptions
+        "Control variable parameters of the halon.")))
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -134,6 +141,8 @@ cluster nids' opt = do
       liftIO $ putStrLn "Please check that cluster fits all requirements first."
     cluster' nids (MkfsDone (MkfsDoneOptions True)) = do
       clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
+    cluster' nids (VarsCmd VarsGet) = clusterCommand nids GetHalonVars (liftIO . print)
+    cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
 #endif
 
 data LoadOptions = LoadOptions
@@ -219,6 +228,17 @@ data ResetOptions = ResetOptions Bool Bool
   deriving (Eq, Show)
 data MkfsDoneOptions  = MkfsDoneOptions Bool deriving (Eq, Show)
 
+data VarsOptions
+       = VarsGet
+       | VarsSet
+          { recoveryExpirySeconds :: Maybe Int
+          , recoveryMaxRetries    :: Maybe Int
+          , keepaliveFrequency    :: Maybe Int
+          , keepaliveTimeout      :: Maybe Int
+          , driveResetMaxRetries  :: Maybe Int
+          }
+       deriving (Show, Eq)
+
 parseNotifyOptions :: Opt.Parser NotifyOptions
 parseNotifyOptions = NotifyOptions <$>
   Opt.many (Opt.option noteReader
@@ -299,9 +319,41 @@ parseStartOptions = StartOptions
 parseMkfsDoneOptions :: Opt.Parser MkfsDoneOptions
 parseMkfsDoneOptions = MkfsDoneOptions
   <$> Opt.switch
-    ( Opt.long "configm"
+    ( Opt.long "confirm"
     <> Opt.help "Confirm that all that cluster fits all requirements for running this call."
     )
+
+parseVarsOptions :: Opt.Parser VarsOptions
+parseVarsOptions
+    =  Opt.subparser (Opt.command "get" (Opt.withDesc (pure VarsGet) "Load variables"))
+   <|> Opt.subparser (Opt.command "set" (Opt.withDesc (inner) "Set variables"))
+   where
+     inner :: Opt.Parser VarsOptions
+     inner = VarsSet <$> recoveryExpiry
+                     <*> recoveryRetry
+                     <*> keepaliveFreq
+                     <*> keepaliveTimeout
+                     <*> driveResetMax
+     recoveryExpiry = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "recovery-expiry"
+       <> Opt.metavar "[SECONDS]"
+       <> Opt.help "How long we want node recovery to last overall (sec).")
+     recoveryRetry = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "recovery-retry"
+       <> Opt.metavar "[SECONDS]"
+       <> Opt.help "Number of tries to try recovery, negative for infinite.")
+     keepaliveFreq = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "keepalive-frequency"
+       <> Opt.metavar "[SECONDS]"
+       <> Opt.help "How ofter should we try to send keepalive messages. Seconds.")
+     keepaliveTimeout = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "keepalive-timeout"
+       <> Opt.metavar "[SECONDS]"
+       <> Opt.help "How long to allow process to run without replying to keepalive.")
+     driveResetMax = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "drive-reset-max-retries"
+       <> Opt.metavar "[NUMBER]"
+       <> Opt.help "Number of times we could try to reset drive.")
 
 dumpConfd :: [NodeId]
           -> DumpOptions
@@ -445,6 +497,25 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
        | otherwise                                        = "m0t1fs   "
      showNodeFid Nothing = ""
      showNodeFid (Just (M0.Node fid)) = " ==> " ++ show fid ++ " "
+
+clusterHVarsUpdate eqnids (VarsSet{..}) = do
+  (schan, rchan) <- newChan
+  x <- promulgateEQ eqnids (GetHalonVars schan) >>= flip withMonitor wait
+  mc <- receiveTimeout 10000000 [ matchChan rchan return ]
+  case mc of
+    Nothing -> liftIO $ putStrLn "failed to contant EQ in 10s."
+    Just  c ->
+      let hv = foldr ($) c
+                 [ maybe id (\s -> \x -> x{Castor._hv_recovery_expiry_seconds = s}) recoveryExpirySeconds
+                 , maybe id (\s -> \x -> x{Castor._hv_recovery_max_retries = s}) recoveryMaxRetries
+                 , maybe id (\s -> \x -> x{Castor._hv_keepalive_frequency = s}) keepaliveFrequency
+                 , maybe id (\s -> \x -> x{Castor._hv_keepalive_timeout = s}) keepaliveTimeout
+                 , maybe id (\s -> \x -> x{Castor._hv_drive_reset_max_retries = s}) driveResetMaxRetries
+                 ]
+      in promulgateEQ eqnids (Castor.SetHalonVars hv) >>= flip withMonitor wait
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)
+clusterHVarsUpdate _ VarsGet = return ()
 
 jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . Data.Aeson.encode

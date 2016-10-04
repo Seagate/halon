@@ -185,6 +185,8 @@ data HalonVars = HalonVars
   , _hv_keepalive_timeout :: Int
   -- ^ How long to allow for a process to go on without a keepalive
   -- reply coming back. Seconds.
+  , _hv_drive_reset_max_retries :: Int
+  -- ^ How many times we want to retry disk reset procedure before giving up.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Binary HalonVars

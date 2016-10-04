@@ -16,6 +16,7 @@ import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
 import           HA.Resources.RC
 import qualified HA.Resources as R
 import qualified HA.ResourceGraph as G
+import           HA.Resources.HalonVars
 import Network.CEP
 
 
@@ -27,6 +28,7 @@ import Control.Distributed.Process
   , monitor
   , usend
   , say
+  , sendChan
   )
 import Control.Distributed.Process.Serializable
   ( decodeFingerprint
@@ -48,6 +50,8 @@ rules = sequence_
   , ruleProcessMonitorNotification
   , ruleNodeMonitorNotification
   , ruleDidSpawn
+  , ruleSetHalonVars
+  , ruleGetHalonVars
   ]
 
 -- | Describe how to update recovery coordinator, in case
@@ -170,3 +174,14 @@ ruleDidSpawn = defineSimple "halon::rc::did-spawn" $
   \(DidSpawn ref _) -> do
      phaseLog "ref" $ show ref
      runSpawnCallback ref
+
+-- | Set the given 'HalonVars' in RG.
+ruleSetHalonVars :: Definitions LoopState ()
+ruleSetHalonVars = defineSimpleTask "halon::rc::set-halon-vars" $ \(SetHalonVars hvs) -> do
+  setHalonVars hvs
+  notify $ HalonVarsUpdated hvs
+
+-- | Set the given 'HalonVars' in RG.
+ruleGetHalonVars :: Definitions LoopState ()
+ruleGetHalonVars = defineSimpleTask "halon::rc::get-halon-vars" $ \(GetHalonVars pid) -> do
+  liftProcess . sendChan pid =<< getHalonVars

@@ -30,6 +30,7 @@ defaultHalonVars = HalonVars
   , _hv_recovery_max_retries = (-5)
   , _hv_keepalive_frequency = 30
   , _hv_keepalive_timeout = 115
+  , _hv_drive_reset_max_retries = 3
   }
 
 -- | Get 'HalonVars' from RG
@@ -59,9 +60,3 @@ newtype HalonVarsUpdated = HalonVarsUpdated HalonVars
   deriving (Show, Eq, Generic, Typeable)
 instance Binary HalonVarsUpdated
 instance Hashable HalonVarsUpdated
-
--- | Set the given 'HalonVars' in RG.
-ruleSetHalonVars :: Definitions LoopState ()
-ruleSetHalonVars = defineSimpleTask "set-halon-vars" $ \(SetHalonVars hvs) -> do
-  setHalonVars hvs
-  notify $ HalonVarsUpdated hvs

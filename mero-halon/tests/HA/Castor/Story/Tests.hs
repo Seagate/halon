@@ -541,6 +541,7 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
 
     sdev <- G.getGraph mm >>= findSDev
 
+    let resetAttemptThreshold = _hv_drive_reset_max_retries defaultHalonVars
     replicateM_ (resetAttemptThreshold + 1) $ do
       debug "============== FAILURE START ================================"
       failDrive recv sdev
