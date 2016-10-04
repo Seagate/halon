@@ -84,7 +84,6 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
   if null racks
   then do
       mapM_ goRack id_racks
-      syncGraphBlocking
 #ifdef USE_MERO
       (do filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
