@@ -28,6 +28,7 @@ import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), s
 import           HA.Services.Mero.RC.Actions (meroChannel)
 import           HA.Services.Mero.Types
 import           Mero.Notification.HAState
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 import           Control.Distributed.Process (usend)
@@ -216,7 +217,14 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.old_pid = " ++ show oldPid
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connectUniqueFrom p Has processPid
-        applyStateChanges [ stateSet p M0.PSOnline ]  -- XXX: registerSyncGraph
+        applyStateChanges [ stateSet p M0.PSOnline ]
+      (_, _)
+        | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
+        phaseLog "action" "HA Process started."
+        phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
+        phaseLog "info" $ "process.pid     = " ++ show processPid
+        modifyGraph $ G.connectUniqueFrom p Has processPid
+        applyStateChanges [ stateSet p M0.PSOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
