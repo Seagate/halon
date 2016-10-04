@@ -35,8 +35,6 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
   , ruleDriveRemoved
   , driveRemovalTimeout
   , driveInsertionTimeout
-  -- * Constants (for test use)
-  , resetAttemptThreshold
   ) where
 
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid

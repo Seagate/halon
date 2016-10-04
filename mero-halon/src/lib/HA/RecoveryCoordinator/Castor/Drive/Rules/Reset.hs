@@ -10,7 +10,6 @@
 -- Module containing some reset bits that multiple rules may want access to
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
   ( handleResetExternal
-  , resetAttemptThreshold
   , ruleResetAttempt
   ) where
 
@@ -37,6 +36,7 @@ import HA.Resources (Node(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..), getState)
+import HA.Resources.HalonVars
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
   , updateDriveManagerWithFailure
@@ -86,11 +86,6 @@ fldDeviceInfo = Proxy
 --------------------------------------------------------------------------------
 -- Reset bit                                                                  --
 --------------------------------------------------------------------------------
-
--- | When the number of reset attempts is greater than this threshold, a 'Disk'
---   should be in 'DiskFailure' status.
-resetAttemptThreshold :: Int
-resetAttemptThreshold = 10
 
 -- | Time to allow for SSPL to reply on a reset request.
 driveResetTimeout :: Int
@@ -142,6 +137,7 @@ handleResetExternal (Set ns) = do
                     then phaseLog "debug" $ "Reset ongoing on a drive - ignoring message"
                     else do
                       ratt <- getDiskResetAttempts sdev
+                      resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
                       let status = if ratt <= resetAttemptThreshold
                                    then M0.sdsFailTransient st
                                    else M0.SDSFailed
@@ -221,6 +217,7 @@ ruleResetAttempt = define "reset-attempt" $ do
         Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
         i <- getDiskResetAttempts sdev
         phaseLog "debug" $ "Current reset attempts: " ++ show i
+        resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
         if i <= resetAttemptThreshold
         then do
           incrDiskResetAttempts sdev

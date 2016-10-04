@@ -6,13 +6,15 @@ module HA.RecoveryCoordinator.RC.Events
   ( SubscribeToRequest(..)
   , SubscribeToReply(..)
   , UnsubscribeFromRequest(..)
+  , GetHalonVars(..)
   ) where
 
 import Control.Distributed.Process
-  ( ProcessId )
+  ( ProcessId, SendPort )
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
 import Data.Typeable (Typeable)
+import HA.Resources.HalonVars
 import GHC.Generics
 
 -- | Request for process subscription.
@@ -30,3 +32,7 @@ data UnsubscribeFromRequest = UnsubscribeFromRequest !ProcessId {- Fingerprint -
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary UnsubscribeFromRequest
+
+-- | Request current halon vars.
+newtype GetHalonVars = GetHalonVars (SendPort HalonVars)
+  deriving (Eq, Show, Generic, Typeable, Binary)
