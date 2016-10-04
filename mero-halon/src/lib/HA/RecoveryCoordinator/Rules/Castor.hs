@@ -27,6 +27,8 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 #ifdef USE_MERO
+import Control.Category
+import Control.Monad
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Cluster
@@ -44,10 +46,6 @@ import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
 #endif
 import Data.Foldable
-import Control.Category
-
-
-import Control.Monad
 import Data.Maybe
 
 import Network.CEP
@@ -99,8 +97,8 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
               phaseLog "warning" "iterative graph population - can't test sanity prior to update."
               let mupdate = update graph
               for_ mupdate $ \updateGraph -> do
-                graph' <- updateGraph $ \rg -> do
-                  putLocalGraph rg
+                graph' <- updateGraph $ \rg' -> do
+                  putLocalGraph rg'
                   syncGraphBlocking
                   getLocalGraph
                 putLocalGraph graph'

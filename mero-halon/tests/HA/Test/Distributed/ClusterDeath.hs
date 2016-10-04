@@ -46,7 +46,6 @@ import System.Timeout
 
 import HA.EventQueue.Producer
 import HA.Test.Distributed.Helpers
-import HA.Resources.Castor (HalonVars (..))
 import HA.Resources.HalonVars
 
 fastReconnectVars :: HalonVars
@@ -105,7 +104,7 @@ test = testCase "ClusterDeath" $
       -- By default halond tries to search for the failed nodes
       -- once per minute, this makes test run really slow and timeout on a slow
       -- CI. So we setup a new options that will query new node once per 10s.
-      promulgateEQ [nid0] $ SetHalonVars fastReconnectVars
+      _ <- promulgateEQ [nid0] $ SetHalonVars fastReconnectVars
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"

@@ -469,7 +469,7 @@ stopNodeProcesses (TypedChannel chan) ps = do
    phaseLog "debug" $ "Stop message: " ++ show msg
    liftProcess $ sendChan chan msg
    for_ ps $ \p -> modifyGraph
-     $ \rg' -> foldl' (\rg s -> M0.setState (s::M0.Service) M0.SSStopping rg)
+     $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStopping g)
                       (M0.setState p M0.PSStopping rg')
                       (G.connectedTo p M0.IsParentOf rg')
    where

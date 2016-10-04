@@ -193,7 +193,6 @@ testProcessCrash t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
 -- * M0_NC_ONLINE sent to mero for process and services
 testProcessStartsOK :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testProcessStartsOK t pg = doRestart t pg M0.PSStarting $ \p srvs recv -> do
-  nid <- getSelfNode
   let mkMsg k t' = Note (M0.fid k) t'
 
   promulgateWait $ mkProcessStartedNotification p (M0.PID testProcessNewPid)

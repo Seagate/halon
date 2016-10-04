@@ -19,7 +19,7 @@ import Prelude hiding ((.), id)
 import Control.Category
 import Control.Lens
 import Control.Monad (void, when)
-import Data.Binary (Binary, encode)
+import Data.Binary (Binary)
 import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
 import Data.Proxy
@@ -28,7 +28,6 @@ import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
-import           Control.Distributed.Process.Internal.Types (Message(..))
 import           Network.CEP
 import           Network.HostName
 
@@ -61,12 +60,13 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero.RC (rules)
+import           HA.Services.SSPL (sendInterestingEvent, sendNodeCmd)
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
 #endif
 import           Data.Foldable (for_)
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
-import           HA.Services.SSPL (sspl, sendInterestingEvent, sendNodeCmd)
+import           HA.Services.SSPL (sspl)
 import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.Frontier.CEP (frontierRules)

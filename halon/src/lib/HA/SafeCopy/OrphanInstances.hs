@@ -4,7 +4,8 @@
 --
 -- Orphan SafeCopy instances. We might move this upstream at some point.
 --
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.SafeCopy.OrphanInstances where
 
 import Control.Distributed.Process (ProcessId, NodeId)
@@ -12,7 +13,6 @@ import Data.Binary (Binary, encode, decode)
 import Data.Defaultable (Defaultable)
 import Data.SafeCopy (SafeCopy(..), primitive, contain, deriveSafeCopy, base)
 import Data.Serialize (Serialize(..))
-import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 import Network.Transport (EndPointAddress)
 import System.Clock (TimeSpec)

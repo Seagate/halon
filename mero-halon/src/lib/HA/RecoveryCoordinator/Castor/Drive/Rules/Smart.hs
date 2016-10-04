@@ -93,7 +93,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     smartTimeout  <- phaseHandle "smart-timeout"
 
     directly smart $ do
-      Just (node@(Node nid)) <- gets Local (^. rlens fldNode . rfield)
+      Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
       Just (DeviceInfo sdev serial) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
 
@@ -152,8 +152,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
       continue finish
 
     return $ \(SMARTRequest node sdev) -> do
-      serial <- lookupStorageDeviceSerial sdev
-      case serial of
+      lookupStorageDeviceSerial sdev >>= \case
         (T.pack -> serial):_ -> do
           modify Local $ rlens fldNode . rfield .~ (Just node)
           modify Local $ rlens fldDeviceInfo . rfield .~

@@ -17,7 +17,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE CPP #-}
 module HA.Test.SSPL where
 
 import Test.Framework
@@ -68,8 +67,6 @@ import qualified Data.UUID as UUID
 import Network.AMQP
 import GHC.Generics
 
-
-import Helper.Environment (systemHostname)
 import TestRunner
 
 data RChan = RChan String deriving (Generic, Typeable)

@@ -14,17 +14,14 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
--- import qualified Control.Exception as Exception
-import Data.Binary
-import Data.Typeable
 import Data.List
 
-import GHC.Generics
 import Network.Transport (Transport(..))
 import Network.Transport.InMemory (createTransport)
 import qualified Data.Set as Set
 
 import qualified Control.Exception as E
+import qualified Control.Monad.Catch as C
 import Control.Monad.Reader
 import HA.Multimap (StoreChan)
 import HA.Network.RemoteTables (haRemoteTable)
@@ -180,9 +177,9 @@ testIgnition transport =
                     (Set.fromList (map localNodeId $ head nids1:nids2))
                     (Set.fromList trackers)
       _ <- liftIO $ forkProcess (head nids1) $ do
-        (sp, rp) <- newChan
-        getTrackingStationMembership sp
-        receiveChan rp >>= usend self
+        (sp', rp') <- newChan
+        getTrackingStationMembership sp'
+        receiveChan rp' >>= usend self
       actual <- expect
       liftIO $ unless (fmap sort actual == Just (sort trackers)) $
         assertFailure $ "replicas should contain all of the " ++ show trackers ++
@@ -201,7 +198,7 @@ runTest numNodes numReps tr rt action
           let s' = s + i - 1 in do
             m <- timeout (7 * 60 * 1000000) $
               Scheduler.withScheduler s' 500 numNodes tr' rt' $ \nodes ->
-                action nodes `finally` stopHalon nodes
+                action nodes `C.finally` stopHalon nodes
             maybe (error "Timeout") return m
           `E.onException`
             liftIO (hPutStrLn stderr $ "Failed with seed: " ++ show (s', i))
@@ -209,7 +206,7 @@ runTest numNodes numReps tr rt action
         withTmpDirectory $ withLocalNodes numNodes tr rt' $
           \nodes@(n : ns) -> do
             m <- timeout (7 * 60 * 1000000) $ runProcess n $
-              action ns `finally` stopHalon nodes
+              action ns `C.finally` stopHalon nodes
             maybe (error "Timeout") return m
   where
     rt' = Scheduler.__remoteTable rt

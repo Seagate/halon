@@ -13,11 +13,6 @@ import           HA.Service
 import           HA.RecoveryCoordinator.Events.Service
 import           HA.Resources
 import           HA.Encode
-import           HA.Service
-  ( Configuration
-  , Service(..)
-  , ServiceInfo(..)
-  )
 import           Network.CEP (Published(..))
 import           Network.Transport (Transport(..))
 import           Data.Typeable
