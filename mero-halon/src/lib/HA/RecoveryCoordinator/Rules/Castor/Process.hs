@@ -28,6 +28,7 @@ import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), s
 import           HA.Services.Mero.RC.Actions (meroChannel)
 import           HA.Services.Mero.Types
 import           Mero.Notification.HAState
+import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 import           Control.Distributed.Process (usend)
@@ -183,8 +184,7 @@ ruleProcessOnline :: Definitions LoopState ()
 ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIf rule_init onlineProc $ \(eid, p, processPid) -> do
-    todo eid
+  setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
     rg <- getLocalGraph
     case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
@@ -217,7 +217,14 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.old_pid = " ++ show oldPid
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connectUniqueFrom p Has processPid
-        applyStateChanges [ stateSet p M0.PSOnline ]  -- XXX: registerSyncGraph
+        applyStateChanges [ stateSet p M0.PSOnline ]
+      (_, _)
+        | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
+        phaseLog "action" "HA Process started."
+        phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
+        phaseLog "info" $ "process.pid     = " ++ show processPid
+        modifyGraph $ G.connectUniqueFrom p Has processPid
+        applyStateChanges [ stateSet p M0.PSOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
@@ -228,6 +235,8 @@ ruleProcessOnline = define "castor::process::online" $ do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
@@ -272,8 +281,7 @@ ruleProcessStopped :: Definitions LoopState ()
 ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIf rule_init stoppedProc $ \(eid, p, _) -> do
-    todo eid
+  setPhaseIfConsume rule_init stoppedProc $ \(eid, p, _) -> do
     getLocalGraph >>= \rg -> case alreadyFailed p rg of
       -- The process is already in what we consider a failed state:
       -- either we're already done dealing with it (it's offline or it
@@ -426,18 +434,6 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
       (Just $ StopProcessesResult m0node resultProcs)
 
     continue finish
-
-    -- TODO Remove this from here and handle in a separate node rule
-    -- let failedProcs = rights results
-    -- unless (null failedProcs) $ do
-    --   forM_ failedProcs $ \(x,s) -> do
-    --     phaseLog "error" $ printf "failed to stop process %s : %s" (show x) s
-    --   -- We're trying to stop the processes on the node but it's
-    --   -- failing. Fail the node.
-    --   applyStateChanges $ (\n -> stateSet n M0_NC_FAILED) <$> nodeToM0Node (Node nid) rg
-    --
-    -- forM_ (lefts results) $ \x ->
-    --   phaseLog "info" $ printf "process stopped: %s" (show x)
 
   return $ \(StopProcessesRequest _ _) -> return $ Just [quiesce]
 

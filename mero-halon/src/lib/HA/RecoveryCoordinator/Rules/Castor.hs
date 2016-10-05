@@ -34,6 +34,7 @@ import HA.RecoveryCoordinator.Actions.Mero.Failure
 import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
 import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
+import qualified HA.RecoveryCoordinator.Castor.Service as Service
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
@@ -72,6 +73,7 @@ castorRules = sequence_
   , Drive.rules
   , Expander.rules
   , Node.rules
+  , Service.rules
 #endif
   ]
 

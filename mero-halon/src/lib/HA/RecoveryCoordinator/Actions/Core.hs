@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes                 #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -48,6 +49,7 @@ module HA.RecoveryCoordinator.Actions.Core
   , done
   , isNotHandled
   , defineSimpleTask
+  , setPhaseIfConsume
     -- * Lifted functions in PhaseM
   , decodeMsg
   , getSelfProcessId
@@ -372,6 +374,24 @@ defineSimpleTask :: Serializable a
 defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
    todo uuid >> f a >> done uuid
 
+-- | Variant on `setPhaseIf` which will consume the message if it's not
+--   needed. Messages are consumed using 'todo' and 'done' so should be
+--   available for other rules.
+--   Note that if the message passes the guard, `todo` will already have been
+--   called.
+setPhaseIfConsume :: (Serializable a, Serializable b)
+                  => Jump PhaseHandle
+                  -> (HAEvent a -> LoopState -> l -> Process (Maybe b))
+                  -> (b -> PhaseM LoopState l ())
+                  -> RuleM LoopState l ()
+setPhaseIfConsume handle guard phase = setPhase handle $
+  \msg@(HAEvent eid _ _) -> do
+    todo eid
+    g <- get Global
+    l <- get Local
+    liftProcess (guard msg g l) >>= \case
+      Just b -> phase b
+      Nothing -> done eid
 
 -- | Notify about event. This event will be sent to the internal rules
 -- in addition it will be broadcasted to all external listeners as
