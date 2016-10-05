@@ -13,7 +13,6 @@ import           Data.Binary (Binary)
 import           Data.List (sort)
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
 import           Data.Typeable
-import           Data.Traversable (for)
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
@@ -112,7 +111,6 @@ stateCascade t pg = doTest t pg [rule] test'
             lset Nothing _ = Nothing
             lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
             lget = fmap (\(_,_,x,_) -> x)
-          viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
 
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         rg <- getLocalGraph
@@ -165,7 +163,7 @@ failvecCascade t pg = doTest t pg [rule] test'
       self <- getSelfPid
       _ <- promulgateEQ [nid] $ RuleHook self
       (d0:d1:_disks) <- expect :: Process [M0.Disk]
-      Set ns' <- H.nextNotificationFor (M0.fid d0) recv
+      Set _ <- H.nextNotificationFor (M0.fid d0) recv
       mfailvec <- expect :: Process (Maybe [Note])
       H.debug $ "Notifications: " ++ show mfailvec
       case mfailvec of
@@ -189,7 +187,6 @@ failvecCascade t pg = doTest t pg [rule] test'
             lset Nothing _ = Nothing
             lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
             lget = fmap (\(_,_,x,_) -> x)
-          viewNode = maybe Nothing (\(_, _, m0node, st, _) -> (,) <$> m0node <*> st)
 
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         phaseLog "info" "Set hooks"
@@ -212,7 +209,7 @@ failvecCascade t pg = doTest t pg [rule] test'
         switch [notified, timeout 15 timed_out]
 
       setPhaseAllNotified notified viewNotifySet $ do
-        Just (eid, pid, _, meroSet) <- get Local
+        Just (eid, pid, _, _) <- get Local
         phaseLog "info" $ "All notified"
         rg <- getLocalGraph
         let pools =

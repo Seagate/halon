@@ -66,10 +66,7 @@ Library
                       StandaloneDeriving
                       TupleSections
 
-  Ghc-Options:  -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options:  -Wall -Werror
 
   Exposed-Modules: Mero.FakeEpoch
                    Mero.Messages
@@ -260,11 +257,7 @@ Executable halonctl
                       Lookup
                       Options.Applicative.Extras
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
     ghc-options:      -eventlog -debug -with-rtsopts=-l-au
@@ -315,10 +308,7 @@ Executable haloninfo
   Hs-Source-Dirs:     src/haloninfo
   Main-Is:            Main.hs
   default-language:   Haskell2010
-  Ghc-Options: -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
@@ -336,10 +326,7 @@ Executable halond
   -- Reduce the context-switch interval to improve sharing
   -- of the CPU when there are CPU-intensive computations
   -- in the RC.
-  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -rtsopts -g
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -rtsopts -g -Werror
 
   if flag(debug)
     ghc-options:      -debug "-with-rtsopts=-C0 -l-au"
@@ -379,10 +366,7 @@ Executable genders2yaml
   Hs-Source-Dirs:     src/genders2yaml
   Main-Is:            Main.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-   Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
    ghc-options:     -eventlog -debug -with-rtsopts=-l-au -rtsopts
@@ -403,15 +387,13 @@ Executable genders2yaml
                       vector,
                       yaml
 
-
-
 Test-Suite distributed-tests
   Type:             exitcode-stdio-1.0
   default-language: Haskell2010
   Hs-Source-Dirs:  tests
   Main-Is:         distributed-tests.hs
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -Werror
 
   Other-Modules:
       HA.Test.Distributed.Autoboot
@@ -431,9 +413,6 @@ Test-Suite distributed-tests
       HA.Test.Distributed.TSRecovers2
       HA.Test.Distributed.TSTotalIsolation
       HA.Test.Distributed.TSTotalIsolation2
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
 
   Build-Depends:   distributed-process,
                    base,
@@ -555,10 +534,7 @@ Test-Suite tests
 
   Main-Is:          tests.hs
 
-  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -rtsopts -with-rtsopts=-T -Werror
 
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -637,10 +613,7 @@ Test-Suite scheduler-tests
                     HA.RecoveryCoordinator.Tests
   Main-Is:          scheduler-tests.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   CPP-Options:      -DMC_RG=RLogGroup
   if flag(debug)

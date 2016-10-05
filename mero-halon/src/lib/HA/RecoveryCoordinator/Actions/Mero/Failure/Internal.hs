@@ -19,7 +19,7 @@ import qualified HA.Resources.Mero as M0
 import Mero.ConfC (Fid(..), PDClustAttr(..))
 
 import Control.Category
-import Control.Monad ((>=>), unless)
+import Control.Monad (unless)
 import qualified Control.Monad.State.Lazy as S
 import           Data.Set (Set)
 import qualified Data.Set as Set

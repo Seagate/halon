@@ -38,7 +38,6 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
 import Mero.ConfC (PDClustAttr(..))
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
@@ -179,7 +178,6 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
-      graph <- getLocalGraph
       Just strategy <- getCurrentStrategy
       let Monolithic update = onInit strategy
       modifyLocalGraph update
@@ -192,7 +190,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                                 , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
                                 , let pvers :: [M0.PVer] = connectedTo pool M0.IsRealOf g
                                 ]
-    for_ ppvers $ \(pool, pvers) -> do
+    for_ ppvers $ \(_, pvers) -> do
       unless (Prelude.null pvers) $ do -- skip metadata pool
         let (actual, formulaic) = partition (\(M0.PVer _ t) -> case t of M0.PVerActual{} -> True ; _ -> False) pvers
         liftIO $ Tasty.assertEqual "There should be only one actual PVer for Pool" 1 (length actual)
@@ -362,104 +360,29 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
 testApplyStateChanges :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
-    ls <- emptyLoopState pid (nullProcessId me)
-    (ls, _) <- run ls $ do
+    ls0 <- emptyLoopState pid (nullProcessId me)
+    (ls1, _) <- run ls0 $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
       RC.initialRule (IgnitionArguments [])
 
-    let procs = getResourcesOfType (lsGraph ls) :: [M0.Process]
+    let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
 
-    (ls, _) <- run ls $ applyStateChanges $ (\p -> stateSet p M0.PSOnline) <$> procs
+    (ls2, _) <- run ls1 $ applyStateChanges $ (\p -> stateSet p M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
-      $ length (connectedFrom Is M0.PSOnline (lsGraph ls) :: [M0.Process]) ==
+      $ length (connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
         length procs
 
-    (ls, _) <- run ls $ applyStateChanges $ (\p -> stateSet p M0.PSStopping) <$> procs
+    (ls3, _) <- run ls2 $ applyStateChanges $ (\p -> stateSet p M0.PSStopping) <$> procs
 
     assertMsg "All processes should be stopping"
-      $ length (connectedFrom Is M0.PSStopping (lsGraph ls) :: [M0.Process]) ==
+      $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
         length procs
   where
     iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
-
-{-
-printMem :: IO String
-printMem = do
-  performGC
-  l1 <- fmap (unlines . filter (\x -> any (`isPrefixOf` x) ["VmHWM", "VmRSS"])
-                      . lines) (readFile "/proc/self/status")
-  stats <- getGCStats
-  let l2 = "In use according to GC stats: " ++ show (currentBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-      l3 = "HWM according the GC stats: " ++ show (maxBytesUsed stats `div` (1024 * 1024)) ++ " MB"
-  return $ unlines [l1,l2,l3]
-
-largeInitialData :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> IO ()
-largeInitialData host transport pg = let
-    numDisks = 300
-    initD = (initialDataAddr host "192.0.2.2" numDisks)
-    myHost = Host systemHostname
-  in
-    rGroupTest transport pg $ \pid -> do
-      me <- getSelfNode
-      ls <- emptyLoopState pid (nullProcessId me)
-      (ls', _) <- run ls $ do
-        -- TODO: the interface address is hard-coded here: currently we
-        -- don't use it so it doesn't impact us but in the future we
-        -- should also take it as a parameter to the test, just like the
-        -- host
-        mapM_ goRack (CI.id_racks initD)
-        filesystem <- initialiseConfInRG
-        loadMeroGlobals (CI.id_m0_globals initD)
-        loadMeroServers filesystem (CI.id_m0_servers initD)
-        self <- liftProcess $ getSelfPid
-        syncGraph $ usend self ()
-        liftProcess (expect :: Process ())
-        rg <- getLocalGraph
-        let Just updateGraph = onInit (simpleStrategy 1 0 0) rg
-        rg' <- updateGraph $ \g -> do
-          putLocalGraph g
-          syncGraph (return ())
-          getLocalGraph
-        putLocalGraph rg'
-
-
-      -- Verify that everything is set up correctly
-      bmc <- runGet ls' $ findBMCAddress myHost
-      assertMsg "Get BMC Address." $ bmc == Just host
-      hosts <- runGet ls' $ findHosts ".*"
-      assertMsg "Find correct hosts." $ hosts == [myHost]
-      hostAttrs <- runGet ls' $ findHostAttrs myHost
-      assertMsg "Host attributes"
-        $ sort hostAttrs == sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8]
-      (Just fs) <- runGet ls' getFilesystem
-      let pool = M0.Pool (M0.f_mdpool_fid fs)
-      assertMsg "MDPool is stored in RG"
-        $ memberResource pool (lsGraph ls')
-      mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
-      assertMsg "MDPool is findable by Fid"
-        $ mdpool == Just pool
-
-      say =<< liftIO printMem
-      g <- getGraph pid
-      let racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
-          encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
-          ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
-          disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-          sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
-          disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
-
-      say =<< liftIO printMem
-      liftIO $ Tasty.assertEqual "Numbe of racks" 1 (length racks)
-      assertMsg "Number of enclosures" $ length encls == 1
-      assertMsg "Number of controllers" $ length ctrls == 1
-      assertMsg "Number of storage devices" $ length sdevs == numDisks
-      assertMsg "Number of disks (reached by host)" $ length disksByHost == numDisks
-      assertMsg "Number of disks" $ length disks == numDisks
--}
 
 run :: forall g. g
     -> PhaseM g Int ()

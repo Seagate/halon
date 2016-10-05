@@ -1,7 +1,6 @@
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -35,9 +34,6 @@ import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator
 import HA.Startup (stopHalonNode)
-#ifdef USE_MERO
-import Mero.Notification
-#endif
 
 import Control.Distributed.Process hiding (bracket, finally, onException)
 import Control.Distributed.Process.Closure

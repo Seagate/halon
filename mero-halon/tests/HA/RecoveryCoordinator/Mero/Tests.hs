@@ -31,12 +31,10 @@ import           Data.Binary
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
-import           HA.Encode
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK(..))
-import           HA.RecoveryCoordinator.Events.Service
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
@@ -49,7 +47,6 @@ import           Helper.SSPL
 import           Network.CEP (defineSimple, Definitions, Published, subscribe)
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
-import qualified SSPL.Bindings as SSPL
 import           Test.Framework
 import           Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 import           TestRunner
@@ -58,7 +55,9 @@ import           Helper.Environment
 import           Control.Category ((>>>))
 import           Data.Function (on)
 import           Data.List (sortBy, sort)
+import           HA.Encode
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
+import           HA.RecoveryCoordinator.Events.Service
 import           HA.Services.Mero
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0

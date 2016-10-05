@@ -16,14 +16,14 @@ module Handler.Cluster
   , cluster
   ) where
 
-import HA.EventQueue.Producer (promulgateEQ)
-import qualified HA.Resources.Castor.Initial as CI
-import Lookup (findEQFromNodes)
-
 #ifdef USE_MERO
+import Control.Distributed.Process.Serializable
+import Control.Monad.Fix (fix)
 import qualified Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import Data.Foldable
+import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
 import HA.EventQueue (eventQueueLabel)
@@ -34,33 +34,27 @@ import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
-import HA.RecoveryCoordinator.RC
-  ( subscribeOnTo, unsubscribeOnFrom )
-import HA.RecoveryCoordinator.RC.Events
-import HA.RecoveryCoordinator.Mero
-  ( labelRecoveryCoordinator )
 
+import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
+import HA.RecoveryCoordinator.RC.Events
+import HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 import Mero.Spiel (FSStats(..))
 import Network.CEP
-#endif
-
-import Data.Foldable
-import Options.Applicative
-import Control.Distributed.Process
-import Control.Distributed.Process.Serializable
-import Control.Monad (void, unless, when)
-import Control.Monad.Fix (fix)
-
-import Data.Proxy
-import Data.Yaml
-  ( prettyPrintParseException
-  )
-import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import System.Exit (exitFailure)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import System.Exit (exitFailure)
+#endif
+
+import Control.Distributed.Process
+import Control.Monad
+import Data.Yaml (prettyPrintParseException)
+import HA.EventQueue.Producer (promulgateEQ)
+import qualified HA.Resources.Castor.Initial as CI
+import Lookup (findEQFromNodes)
+import Options.Applicative
+import qualified Options.Applicative as Opt
+import qualified Options.Applicative.Extras as Opt
 
 data ClusterOptions =
     LoadData LoadOptions
@@ -214,8 +208,8 @@ newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)
 
 data StatusOptions = StatusOptions {
-    statusOptJSON :: Bool
-  , statusOptDevices :: Bool
+    _statusOptJSON :: Bool
+  , _statusOptDevices :: Bool
 } deriving (Eq, Show)
 data StartOptions  = StartOptions Bool deriving (Eq, Show)
 data StopOptions   = StopOptions
@@ -419,13 +413,13 @@ clusterStartCommand :: [NodeId]
 clusterStartCommand eqnids False = do
   -- FIXME implement async also
   subscribeOnTo eqnids (Proxy :: Proxy ClusterStartResult)
-  promulgateEQ eqnids ClusterStartRequest
+  _ <- promulgateEQ eqnids ClusterStartRequest
   Published msg _ <- expect :: Process (Published ClusterStartResult)
   unsubscribeOnFrom eqnids (Proxy :: Proxy ClusterStartResult)
   liftIO $ print msg
 clusterStartCommand eqnids True = do
   -- FIXME implement async also
-  promulgateEQ eqnids ClusterStartRequest
+  _ <- promulgateEQ eqnids ClusterStartRequest
   liftIO $ putStrLn "Cluster start request sent."
 
 clusterStopCommand :: [NodeId] -> StopOptions -> Process ()
@@ -559,9 +553,10 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
      showNodeFid Nothing = ""
      showNodeFid (Just (M0.Node fid)) = " ==> " ++ show fid ++ " "
 
+clusterHVarsUpdate :: [NodeId] -> VarsOptions -> Process ()
 clusterHVarsUpdate eqnids (VarsSet{..}) = do
   (schan, rchan) <- newChan
-  x <- promulgateEQ eqnids (GetHalonVars schan) >>= flip withMonitor wait
+  _ <- promulgateEQ eqnids (GetHalonVars schan) >>= flip withMonitor wait
   mc <- receiveTimeout 10000000 [ matchChan rchan return ]
   case mc of
     Nothing -> liftIO $ putStrLn "failed to contant EQ in 10s."

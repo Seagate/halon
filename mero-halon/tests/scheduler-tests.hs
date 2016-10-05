@@ -11,9 +11,7 @@ import qualified HA.RecoveryCoordinator.Tests
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import HA.Replicator.Log
 import qualified HA.Test.Disconnect
-
 import Helper.Environment
-import Test.Framework (withTmpDirectory)
 import Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
@@ -31,6 +29,7 @@ import System.IO
 #ifdef USE_MERO
 import Mero
 import qualified Mero.Notification.Tests
+import Test.Framework (withTmpDirectory)
 #endif
 
 

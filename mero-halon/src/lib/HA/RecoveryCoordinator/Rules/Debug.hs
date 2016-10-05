@@ -6,7 +6,6 @@
 --
 module HA.RecoveryCoordinator.Rules.Debug where
 
-import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Events.Debug
 import HA.RecoveryCoordinator.Mero

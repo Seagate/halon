@@ -42,7 +42,6 @@ import Control.Exception ( try )
 import Control.Monad (void)
 
 import Data.Binary (Binary)
-import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 
 import Network.CEP
@@ -89,7 +88,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
         continue stats_fetched
       Nothing ->
         phaseLog "info" "No filesystem found in graph."
-      Just (fs, M0.MeroClusterState _ rl _) ->
+      Just (_, M0.MeroClusterState _ rl _) ->
         phaseLog "info" $ "Cluster is on runlevel " ++ show rl
     continue $ timeout queryInterval stats_fetch
 

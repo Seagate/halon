@@ -10,7 +10,6 @@ module HA.RecoveryCoordinator.Job.Events
   ) where
 
 import HA.RecoveryCoordinator.Job.Internal
-import Data.UUID (UUID)
 
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
@@ -31,4 +30,3 @@ data JobFinished a = JobFinished [ListenerId] a
   deriving (Typeable, Generic, Show)
 
 instance Binary a => Binary (JobFinished a)
-

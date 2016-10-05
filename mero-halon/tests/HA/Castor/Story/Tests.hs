@@ -35,7 +35,6 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.Multimap
 import HA.Encode
-import HA.Service
 import HA.Services.Mero
 import HA.Services.Mero.Types
 import HA.Services.SSPL
@@ -76,8 +75,6 @@ import Data.Defaultable
 import qualified Data.UUID as UUID
 import Data.UUID.V4 (nextRandom)
 import Mero.ConfC (Fid(..))
-import Mero.M0Worker
-import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.Resources.HalonVars
 
 import GHC.Generics (Generic)
@@ -143,7 +140,7 @@ newMeroChannel pid = do
 testRules :: Definitions LoopState ()
 testRules = do
   defineSimple "register-mock-service" $
-    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel sp _ _)) _) -> do
+    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel _ _ _)) _) -> do
       rg <- getLocalGraph
       nid <- liftProcess $ getSelfNode
       let node = Node nid
@@ -214,11 +211,11 @@ run :: (Typeable g, RGroup g)
          -> Process ()
        ) -- actual test
     -> Assertion
-run transport pg interceptor rules test =
+run transport pg interceptor extraRules test =
   runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
     self <- getSelfPid
     nid <- getSelfNode
-    withTrackingStation pg (testRules:rules) $ \ta -> do
+    withTrackingStation pg (testRules:extraRules) $ \ta -> do
       nodeUp ([nid], 1000000)
       registerInterceptor $ \string ->
         case string of
@@ -472,7 +469,7 @@ failDrive recv (ADisk _ (Just sdev) serial _ _) = let
     debug "failDrive: OK"
 
 resetComplete :: ProcessId -> StoreChan -> ThatWhichWeCallADisk -> Process ()
-resetComplete rc mm (ADisk sdev m0sdev serial _ _) = let
+resetComplete rc _ (ADisk _ m0sdev serial _ _) = let
     tserial = pack serial
     resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
@@ -678,7 +675,6 @@ testDrivePoweredDown :: (Typeable g, RGroup g)
 testDrivePoweredDown transport pg = run transport pg interceptor [] test where
   interceptor _rc _str = return ()
   test (TestArgs _ mm rc) rmq recv _ = let
-      host = pack systemHostname
       enc = Enclosure "enclosure_2"
     in do
       prepareSubscriptions rc rmq
@@ -747,16 +743,17 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
 
       rg <- G.getGraph mm
       -- Look up the storage device by path
-      let [sd]  = [ sd | sd <- G.connectedTo (Host systemHostname) Has rg
-                       , di <- G.connectedTo sd Has rg
-                       , di == DIPath "/dev/mddisk2"
-                       ]
+      let [sd]  = [ d |  d <- G.connectedTo (Host systemHostname) Has rg
+                      , di <- G.connectedTo sd Has rg
+                      , di == DIPath "/dev/mddisk2"
+                      ]
 
       let disk2 = ADisk {
           aDiskSD = sd
         , aDiskMero = Nothing
         , aDiskSN = "mdserial2"
         , aDiskPath = "/dev/mddisk2"
+        , aDiskWWN = error "WWN not initialised"
       }
 
       debug "ResetAttempt message published"
@@ -868,7 +865,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                (Note (M0.fid m0enc) M0_NC_TRANSIENT) `elem` notes
 
     -- Should also expect a message to SSPL asking it to disable swap
-    do
+    _ <- do
       Just (uid, msg) <- expectNodeMsgUid ssplTimeout
       debug $ "sspl_msg(disable_swap): " ++ show msg
       let nc = SwapEnable False
@@ -879,7 +876,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Mero services should be stopped
-    do
+    _ <- do
       StopProcesses pcs <- receiveChan recc
       liftIO $ assertEqual "One process on node" 1 $ length pcs
       -- Reply with successful stoppage
@@ -890,7 +887,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
     -- We will not see 'OFFLINE' since the process on this node is offline
 
     -- Should see unmount message
-    do
+    _ <- do
       Just (uid, msg) <- expectNodeMsgUid ssplTimeout
       debug $ "sspl_msg(unmount): " ++ show msg
       let nc = (Unmount "/var/mero")
@@ -901,7 +898,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Should see 'stop RAID' message
-    do
+    _ <- do
       Just (uid, msg) <- expectNodeMsgUid ssplTimeout
       debug $ "sspl_msg(stop_raid): " ++ show msg
       let nc = NodeRaidCmd raidDevice RaidStop
@@ -912,7 +909,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Should see 'reassemble RAID' message
-    do
+    _ <- do
       Just (uid, msg) <- expectNodeMsgUid ssplTimeout
       debug $ "sspl_msg(assemble_raid): " ++ show msg
       let nc = NodeRaidCmd "--scan" (RaidAssemble [])
@@ -944,13 +941,13 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
           liftIO $ assertEqual "One process on node" 1 $ length pcs
           -- Reply with successful stoppage
           let [(_, fid)] = pcs
-          promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
+          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
           -- Also send ONLINE for the process
-          promulgateEQ [nid]  ( HAMsgMeta fid fid fid 0
-                              , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
-                                             TAG_M0_CONF_HA_PROCESS_M0D
-                                             123
-                              )
+          _ <- promulgateEQ [nid] ( HAMsgMeta fid fid fid 0
+                                  , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
+                                                 TAG_M0_CONF_HA_PROCESS_M0D
+                                                 123
+                                  )
           return ()
         s ->  liftIO $ assertFailure $ "Expected start request, but received " ++ show s
 
@@ -962,6 +959,5 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       debug $ "Enc-online-notes: " ++ show notes
       liftIO $ assertBool "enclosure is in online state" $
                (Note (M0.fid m0enc) M0_NC_ONLINE) `elem` notes
-
 
     return ()

@@ -71,12 +71,12 @@ schema = let
             <> Opt.metavar "DELAY"
   in Config <$> trackers <*> pingDelay
 
-self :: String
-self = "HA.Satellite"
+selfName :: String
+selfName = "HA.Satellite"
 
 start :: NodeId -> Config -> Process (Maybe String)
 start nid Config{..} = do
-    say $ "This is " ++ self
+    say $ "This is " ++ selfName
     (sender, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
                    (trackers, fromDefault configDelay)
 #ifdef USE_RPC

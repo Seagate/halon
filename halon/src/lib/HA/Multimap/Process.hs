@@ -30,6 +30,7 @@ import Control.Concurrent.MVar
 import Control.Concurrent.STM.TChan
 import Control.Exception (SomeException, throwIO)
 import Control.Monad ( when, void )
+import qualified Control.Monad.Catch as C
 import Control.Monad.STM
 import Data.Binary ( encode )
 import Data.ByteString ( ByteString )
@@ -105,10 +106,10 @@ startMultimap rg f = mdo
 -- and replicated together.
 multimap :: RGroup g => StoreChan -> g (MetaInfo, Multimap) -> Process ()
 multimap (StoreChan _ rchan wchan) rg =
-    flip finally (mmTrace "terminated") $
-    flip catch (\e -> do mmTrace $ "exception " ++ show (e :: SomeException)
-                         liftIO $ throwIO e
-               ) $
+    flip C.finally (mmTrace "terminated") $
+    flip C.catch (\e -> do mmTrace $ "exception " ++ show (e :: SomeException)
+                           liftIO $ throwIO e
+                 ) $
     fix $ \go ->
     when schedulerIsEnabled (expect :: Process ()) >>
     liftIO (atomically $
@@ -145,7 +146,7 @@ multimap (StoreChan _ rchan wchan) rg =
               when schedulerIsEnabled (expect :: Process ())
               readBatch (upds_cb' : acc)
       )
-      (\caller -> mask_ $ do
+      (\caller -> C.mask_ $ do
         -- Read the multimap from the replicated state.
         -- We need to handle here the case when the read request to
         -- replicas is lost and the case where the connection fails

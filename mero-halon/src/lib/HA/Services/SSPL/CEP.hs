@@ -27,7 +27,6 @@ import HA.Resources.Castor
 import HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (showFid)
 import Mero.ConfC (strToFid)
 import Mero.Notification
 import Text.Read (readMaybe)

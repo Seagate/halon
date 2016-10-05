@@ -237,13 +237,11 @@ data NodeStatsOptions = NodeStatsOptions
   deriving (Eq, Show)
 
 nodeStats :: [NodeId] -> NodeStatsOptions -> Process ()
-nodeStats nids (NodeStatsOptions t) = do
-    self <- getSelfPid
+nodeStats nids (NodeStatsOptions _) = do
     for_ nids $ \nid -> do
       liftIO $ putStrLn $ "Node: " ++ show nid
       getNodeStats nid >>= display
   where
-    labelRecoveryCoordinator = "mero-halon.RC"
     display :: Either DiedReason NodeStats -> Process ()
     display (Right NodeStats{..}) = liftIO $ do
       putStrLn $ printf (unlines

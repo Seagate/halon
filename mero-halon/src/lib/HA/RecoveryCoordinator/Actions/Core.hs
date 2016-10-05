@@ -164,7 +164,7 @@ deleteStorageMapRC _ x = modify Global $ \g -> do
     Nothing -> g
     Just (z::Map.Map k v) -> g{lsStorage = Storage.put (Map.delete x z)  $ lsStorage g}
 
-lookupStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
+lookupStorageMapRC :: forall k v l . (Typeable k, Typeable v, Ord k)
                    => k -> PhaseM LoopState l (Maybe v)
 lookupStorageMapRC x =
   ((\m -> Map.lookup x (m :: Map.Map k v))

@@ -42,10 +42,7 @@ Library
                       StandaloneDeriving
                       TupleSections
 
-  Ghc-Options:  -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options:  -Wall -Werror
 
   Exposed-Modules: HA.CallTimeout
                    HA.Resources
@@ -224,10 +221,7 @@ Test-Suite tests
                     Test.Run
                     Test.Transport
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -283,10 +277,7 @@ Test-Suite scheduler-tests
                     Test.Run
                     Test.Transport
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au

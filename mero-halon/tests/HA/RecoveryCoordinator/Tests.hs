@@ -21,34 +21,29 @@ module HA.RecoveryCoordinator.Tests
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
-import           Control.Distributed.Process.Node
-import           Control.Monad (void, replicateM_)
+import           Control.Monad (replicateM_)
 import           Data.Binary
 import           Data.Defaultable
-import           Data.List (isInfixOf)
 import           Data.Typeable
 import           GHC.Generics
 import           HA.Encode
-import           HA.EQTracker
 import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
+import           HA.RecoveryCoordinator.Actions.Core (LoopState)
 import           HA.RecoveryCoordinator.Helpers
-import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Service
-import           HA.Services.Ping
 import           HA.Replicator
-import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
-import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions , Published(..), Logs(..))
+import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions, Published(..), Logs(..))
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (testCase, assertFailure, assertEqual)
+import           Test.Tasty.HUnit (testCase)
 import           TestRunner
 
 tests :: (RGroup g, Typeable g) => Transport -> Proxy g -> [TestTree]
@@ -63,6 +58,7 @@ tests transport pg =
 
 newtype Step = Step () deriving (Binary)
 
+stepRule :: Definitions LoopState ()
 stepRule = defineSimple "step" $ \(HAEvent _ Step{} _) -> do
   liftProcess $ say "step"
   return ()

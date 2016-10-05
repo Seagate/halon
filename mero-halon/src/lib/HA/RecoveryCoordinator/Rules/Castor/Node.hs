@@ -825,7 +825,6 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
                          continue finish
             Right procs
               | null procs -> do
-                Just m0node <- getField . rget fldM0Node <$> get Local
                 modify Local $ rlens fldRep . rfield .~
                   (Just $ ClientsStartOk m0node)
                 continue finish

@@ -19,7 +19,7 @@ import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
-import HA.SafeCopy.OrphanInstances
+import HA.SafeCopy.OrphanInstances ()
 import HA.Resources.TH
 
 

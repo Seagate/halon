@@ -52,13 +52,13 @@ ssplHLRules = defineSimple "status-query" $
 
 -- | Calculate the cluster status from the resource graph.
 clusterStatus :: G.Graph -> [CommandResponseMessageStatusResponseItem]
-clusterStatus g = CommandResponseMessageStatusResponseItem {
+clusterStatus _g = CommandResponseMessageStatusResponseItem {
     commandResponseMessageStatusResponseItemEntityId = "cluster"
   , commandResponseMessageStatusResponseItemStatus = T.pack status
   } : []
   where
 #ifdef USE_MERO
-    status = maybe "No status" id $ prettyStatus <$> getClusterStatus g
+    status = maybe "No status" id $ prettyStatus <$> getClusterStatus _g
 #else
     status = "No mero support."
 #endif

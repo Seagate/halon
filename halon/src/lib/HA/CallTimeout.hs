@@ -37,10 +37,10 @@ import Control.Distributed.Process.Serializable (Serializable)
 import Control.Distributed.Process.Timeout (timeout)
 
 import Control.Monad (forM_)
+import qualified Control.Monad.Catch as C
 import Data.Function (fix)
 import Data.IORef (newIORef, readIORef, modifyIORef)
 import Data.List (delete, partition)
-import Data.Maybe (catMaybes)
 
 
 callTrace :: String -> Process ()
@@ -103,8 +103,8 @@ withLabeledProcesses ::
   -> ([ProcessId] -> Process a) -- ^ Action to perform
   -> Process a
 withLabeledProcesses t nodes label action = (action =<<) $ callLocal $
-    bracket (mapM monitorNode nodes)
-            (mapM_ unmonitor)        $ \refs -> do
+    C.bracket (mapM monitorNode nodes)
+              (mapM_ unmonitor)        $ \_ -> do
     forM_ nodes $ \node -> whereisRemoteAsync node label
     r <- liftIO $ newIORef []
     _ <- timeout t (forM_ nodes $ const $ receiveWait
@@ -130,7 +130,7 @@ receiveFrom :: Serializable b
              => ((NodeId, b) -> Bool)
              -> [ProcessId]
              -> Process [(NodeId, b)]
-receiveFrom p pids = bracket (mapM monitor pids) (mapM unmonitor) $ \refs -> do
+receiveFrom p pids = C.bracket (mapM monitor pids) (mapM unmonitor) $ \refs -> do
     callTrace $ "receiveFrom: " ++ show pids
     (\a b c -> fix c a b) []  (zip (map processNodeId pids) refs) $ \loop
                           acc nrefs                                       ->
@@ -179,7 +179,7 @@ ncallRemoteSomePrefer softTimeout t preferNodes nodes label msg p =
         let (preferred, rest) = partition ((`elem` preferNodes) . processNodeId)
                                           pids
         self <- getSelfPid
-        bracket (spawnLocal $ do
+        C.bracket (spawnLocal $ do
             _ <- receiveTimeout softTimeout []
             forM_ rest $ \pid -> usend pid (self, msg)
           )

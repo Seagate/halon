@@ -81,7 +81,6 @@ import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 
-import           Data.List ((\\))
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe, isJust, isNothing)
 import           Data.Ratio
 import           Data.Foldable

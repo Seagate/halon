@@ -11,14 +11,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
-
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.NodeUp
   ( NodeUp(..)
   , nodeUp
   , nodeUp__static
   , nodeUp__sdict
+  , nodeUp__tdict
   , __remoteTable
   )
 where
@@ -38,9 +36,9 @@ import Control.Distributed.Process
   , whereis
   , receiveTimeout
   , expectTimeout
-  , catch
   )
 import Control.Distributed.Process.Closure ( remotable )
+import Control.Monad.Catch (catch)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Fix ( fix )
 
