@@ -75,7 +75,7 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
     isProcFailed _ _ = False
 
 -- | Job used in 'ruleProcessRestart'
-jobProcessRestart :: Job ProcessRestartRequest ProcessRecoveryFailure
+jobProcessRestart :: Job ProcessRestartRequest ProcessRecoveryResult
 jobProcessRestart = Job "process-restarted"
 
 -- | Listen for 'ProcessRestartRequest' and trigger the restart of the
@@ -125,11 +125,11 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
             phaseLog "warn" "Requested process restart but process can't restart on this cluster boot level"
             phaseLog "process.bootlevel" $ show pl
             phaseLog "cluster.status" $ show cst
-            setFailure (M0.fid p) "Wrong boot level"
+            setNotNeeded (M0.fid p)
             return $ Just [finish]
           Nothing -> do
             phaseLog "error" "Couldn't find process bootlevel or cluster status in RG"
-            setFailure (M0.fid p) "No bootlevel/cluster status in RG"
+            setNotNeeded (M0.fid p)
             return $ Just [finish]
 
   setPhaseIf restart_result resetNodeGuard $ \(eid', results) -> do
@@ -169,9 +169,10 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
   return rule_init
   where
     setFailure pfid msg = modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure (pfid, msg))
+    setNotNeeded pfid = modify Local $ rlens fldRep . rfield .~ (Just $ ProcessRecoveryNotNeeded pfid)
 
     fldReq = Proxy :: Proxy '("request", Maybe ProcessRestartRequest)
-    fldRep = Proxy :: Proxy '("reply", Maybe ProcessRecoveryFailure)
+    fldRep = Proxy :: Proxy '("reply", Maybe ProcessRecoveryResult)
     fldNode = Proxy :: Proxy '("node", Maybe M0.Node)
 
     args = fldUUID          =: Nothing
