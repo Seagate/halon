@@ -463,8 +463,6 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
           case (getState p rg, listToMaybe $ connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
               phaseLog "info" "Failed SSPL notification for already failed process - doing nothing."
-            (M0.PSOffline, _) ->
-              phaseLog "info" "Failed SSPL notification for stopped process - doing nothing."
             (M0.PSStopping, _) ->
               phaseLog "info" "Failed SSPL notification for process that is stopping - doing nothing."
             (_, Just (M0.PID pid))

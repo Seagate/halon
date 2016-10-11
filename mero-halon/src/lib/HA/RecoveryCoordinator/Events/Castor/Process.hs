@@ -4,7 +4,7 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Events.Castor.Process
-  ( ProcessRecoveryResult(..)
+  ( ProcessRecoveryFailure(..)
   , ProcessRestartRequest(..)
   ) where
 
@@ -17,16 +17,11 @@ import           Mero.ConfC (Fid)
 
 -- | Event is arrived in case if recovery failed, this event goes
 -- via replicated state.
-data ProcessRecoveryResult
-  = ProcessRecoveryFailure (Fid, String)
-    -- ^ When process recovery fails
-  | ProcessRecoveryNotNeeded Fid
-    -- ^ When there is no need to recover the process,
-    -- due to e.g. cluster state being invalid.
+newtype ProcessRecoveryFailure = ProcessRecoveryFailure (Fid, String)
   deriving (Show, Eq, Ord, Generic, Typeable)
 
-instance Binary ProcessRecoveryResult
-instance Hashable ProcessRecoveryResult
+instance Binary ProcessRecoveryFailure
+instance Hashable ProcessRecoveryFailure
 
 newtype ProcessRestartRequest = ProcessRestartRequest M0.Process
   deriving (Show, Eq, Ord, Typeable, Generic)

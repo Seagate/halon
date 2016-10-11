@@ -1105,14 +1105,12 @@ mkLabel bl@(M0.BootLevel l)
 -- Currently just fails the node the process is on.
 ruleFailNodeIfProcessCantRestart :: Definitions LoopState ()
 ruleFailNodeIfProcessCantRestart = defineSimpleTask "castor::node::process-restart-failure" $
-  \case
-    (ProcessRecoveryFailure (pfid, r)) -> do
-      phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
-      rg <- getLocalGraph
-      let m0ns = nub [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
-                         , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
-      applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
-    _ -> return ()
+  \(ProcessRecoveryFailure (pfid, r)) -> do
+    phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
+    rg <- getLocalGraph
+    let m0ns = nub [ n | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
+                       , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
+    applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
 
 -- | Create a rule that transitions node if all processes on the
 -- node meet the given predicates.
