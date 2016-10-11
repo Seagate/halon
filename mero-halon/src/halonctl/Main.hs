@@ -20,6 +20,7 @@ import Handler.Debug
 
 import Mero.RemoteTables (meroRemoteTable)
 
+import Network.Transport (closeTransport)
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
 import HA.Network.Transport (writeTransportGlobalIVar)
@@ -27,13 +28,15 @@ import HA.Network.Transport (writeTransportGlobalIVar)
 import Network.Transport.TCP as TCP
 #endif
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode
+  , closeLocalNode
   , runProcess
   )
+import Control.Monad.Catch
 import Data.Traversable
 import Data.Maybe (fromMaybe)
 
@@ -60,23 +63,24 @@ version = do
   versionString >>= putStrLn
 
 run :: Options -> IO ()
-run (Options { .. }) = do
+run (Options { .. }) =
 #ifdef USE_RPC
-  rpcTransport <- RPC.createTransport "s1"
-                                      (RPC.rpcAddress $ optOurAddress)
-                                      RPC.defaultRPCParameters
+  bracket (RPC.createTransport "s1" (RPC.rpcAddress $ optOurAddress)
+                                    RPC.defaultRPCParameters
+          ) closeTransport $ \rpcTransport -> do
   writeTransportGlobalIVar rpcTransport
   let transport = RPC.networkTransport rpcTransport
 #else
-  let (hostname, _:port) = break (== ':') optOurAddress
-  transport <- either (error . show) id <$>
+  let (hostname, _:port) = break (== ':') optOurAddress in
+  bracket (either (error . show) id <$>
                TCP.createTransport hostname port
                defaultTCPParameters { tcpUserTimeout = Just 2000
                                     , tcpNoDelay = True
                                     , transportConnectTimeout = Just 2000000
                                     }
+          ) closeTransport $ \transport ->
 #endif
-  lnid <- newLocalNode transport myRemoteTable
+  bracket (newLocalNode transport myRemoteTable) closeLocalNode $ \lnid -> do
   let rnids = fmap conjureRemoteNodeId optTheirAddress
   runProcess lnid $ do
     replies <- forM rnids $ \nid -> do
