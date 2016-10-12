@@ -1307,9 +1307,11 @@ replica Dict
 
                   nlogTrace logId $ "replica: proposal result " ++
                              show (di, passed, fromBatcher)
-                  when (not passed && fromBatcher) $
+                  when (not passed && fromBatcher) $ do
                     -- Send rejection ack.
                     usend bpid ()
+                    -- Notify the clients.
+                    forM_ κs $ flip usend False
 
                   -- Avoid moving to unreachable decrees.
                   let d' = if d == cd then d else min cd (max d (succ di))
