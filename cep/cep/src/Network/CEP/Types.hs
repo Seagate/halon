@@ -468,10 +468,11 @@ startForks rules state = do
       wrapper_init <- phaseHandle "wrapper_init"
       wrapper_clear <- phaseHandle "wrapper_clear"
       wrapper_end <- phaseHandle "wrapper_end"
+
       directly wrapper_init $ Network.CEP.Types.switch (rules ++ [wrapper_clear])
 
       directly wrapper_clear $ do
-        fork NoBuffer $ Network.CEP.Types.switch rules
+        fork NoBuffer $ Network.CEP.Types.switch (timeout 60 wrapper_clear:rules)
         continue wrapper_end
 
       directly wrapper_end stop
