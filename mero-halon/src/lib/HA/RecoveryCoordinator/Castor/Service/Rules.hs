@@ -23,7 +23,6 @@ import HA.RecoveryCoordinator.Rules.Mero.Conf
   , setPhaseNotified
   )
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -32,8 +31,6 @@ import Mero.Notification.HAState
   , ServiceEvent(..)
   , ServiceEventType(..)
   )
-
-import Control.Monad (when)
 
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
@@ -55,15 +52,11 @@ ruleNotificationHandler :: Definitions LoopState ()
 ruleNotificationHandler = define "castor::service::notification-handler" $ do
    start_rule <- phaseHandle "start"
    service_notified <- phaseHandle "service-notified"
-   process_notified <- phaseHandle "process-notified"
    timed_out <- phaseHandle "timed-out"
    finish <- phaseHandle "finish"
 
    let startState :: ClusterTransitionLocal
        startState = Nothing
-
-       viewProc :: ClusterTransitionLocal -> Maybe (M0.Process, M0.ProcessState)
-       viewProc = maybe Nothing (\(_, _, proci) -> proci)
 
        viewSrv :: ClusterTransitionLocal -> Maybe (M0.Service, M0.ServiceState)
        viewSrv = maybe Nothing (\(_,srvi,_) -> srvi)
@@ -123,18 +116,6 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
        err ->
          phaseLog "warn" $ "Couldn't handle bad state for " ++ M0.showFid srv
                         ++ ": " ++ show err
-     continue finish
-
-   setPhaseNotified process_notified viewProc $ \(p, pst) -> do
-     Just (eid, srvi, _) <- get Local
-     phaseLog "info" $ "transaction.eid = " ++ show eid
-     phaseLog "info" $ "process.fid    = " ++ show (M0.fid p)
-     phaseLog "info" $ "process.status = " ++ show pst
-     rg <- getLocalGraph
-     when (G.isConnected R.Cluster R.Has M0.OFFLINE rg) $
-      phaseLog "warn" $
-         unwords [ "Received service start notification about", show srvi
-                 , "but cluster disposition is OFFLINE" ]
      continue finish
 
    directly timed_out $ do
