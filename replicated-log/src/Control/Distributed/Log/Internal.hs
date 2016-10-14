@@ -577,7 +577,7 @@ replica Dict
         leaseStart0
         decree
         legD0
-        replicas0 = do
+        replicas0 = reportTermination "replica" $ do
 
    say $ "Starting new replica for " ++ show logId
    self <- getSelfPid
@@ -652,15 +652,16 @@ replica Dict
     bpid <- if mLeader == Just here then do
         bpid <- spawnLocal $ do
           nlogTrace logId "spawned batcher"
-          link self >> batcher (sendBatch self) (epoch, replicas)
-                         `finally` nlogTrace logId "batcher: process terminated"
+          link self >> reportTermination "batcher"
+                         (batcher (sendBatch self) (epoch, replicas))
         register (batcherLabel logId) bpid
         return bpid
       else
         return $ nullProcessId here
     ppid <- spawnLocal $ do
               nlogTrace logId "spawned proposer"
-              link self >> proposer self bpid w0 Bottom replicas
+              link self >> reportTermination "proposer"
+                             (proposer self bpid w0 Bottom replicas)
 
     go ReplicaState
          { stateProposerPid = ppid
@@ -691,6 +692,15 @@ replica Dict
          }
   where
     cond b t f = if b then t else f
+
+    reportTermination name m = do
+      let LogId nLogId = logId
+      catch (do
+        m
+        say $ nLogId ++ ": " ++ name ++ " terminated normally"
+       ) $ \e -> do
+        say $ nLogId ++ ": " ++ name ++ " terminated with exception: " ++ show e
+        throwM (e :: SomeException)
 
     -- Terminates any processes doinf async IO before the persistent store
     -- handle is closed.
@@ -1091,9 +1101,8 @@ replica Dict
                         Nothing | mLeader == Just here -> do
                           bpid' <- spawnLocal $ do
                             nlogTrace logId "respawned batcher"
-                            link self >> batcher (sendBatch self) (epoch', ρs')
-                              `finally`
-                                nlogTrace logId "batcher: process terminated"
+                            link self >> reportTermination "batcher"
+                              (batcher (sendBatch self) (epoch', ρs'))
                           register (batcherLabel logId) bpid'
                           return bpid'
                         Just bpid' -> return bpid'
