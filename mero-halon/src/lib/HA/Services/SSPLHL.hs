@@ -145,7 +145,7 @@ cmdHandler statusHandler responseChan supervisor msg = case decode (msgBody msg)
              . commandRequestMessage $ cr -> do
       traceSSPLHL $ "Received: " ++ show cr
       _ <- promulgate cr
-      let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
+      let (CommandRequestMessage _ _ _ _ msgId) = commandRequestMessage cr
       uuid <- liftIO nextRandom
       sendChan responseChan $ CommandResponseMessage
         { commandResponseMessageStatusResponse = Nothing

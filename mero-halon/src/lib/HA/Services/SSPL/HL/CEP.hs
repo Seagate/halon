@@ -10,6 +10,7 @@ module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
 
+import Control.Distributed.Process (newChan)
 import HA.EventQueue.Types
 import HA.Resources
 import HA.Resources.Castor
@@ -20,6 +21,7 @@ import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 #endif
 
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Events.Castor.Cluster
 
 import SSPL.Bindings
 import Network.CEP
@@ -30,9 +32,26 @@ import Data.UUID (toString)
 import Control.Distributed.Process (usend)
 import Text.Regex.TDFA ((=~))
 
--- | Set of SSPL HL rules. Contain rules for status queries inside a graph.
+-- | Set of SSPL HL rules.
 ssplHLRules :: Definitions LoopState ()
-ssplHLRules = defineSimple "status-query" $
+ssplHLRules = sequence_
+  [ ruleStatusRequest
+  , ruleClusterCommand
+  ]
+
+ruleClusterCommand :: Definitions LoopState ()
+ruleClusterCommand = defineSimpleTask "cluster-command" $
+  \(CommandRequestMessageClusterStatusChangeRequest cmd) -> do
+    case cmd of
+      Aeson.String "start" -> promulgateRC ClusterStartRequest
+      Aeson.String "stop" -> do
+        (schan, _) <- liftProcess newChan
+        promulgateRC $ ClusterStopRequest schan
+      v -> phaseLog "warn" $ "Can't parse status command: " ++ show v
+
+-- | Rule handling status queries inside the graph
+ruleStatusRequest :: Definitions LoopState ()
+ruleStatusRequest = defineSimple "status-query" $
   \(HAEvent uuid (CommandRequestMessageStatusRequest mef et,msgId, pid) _) -> do
       rg <- getLocalGraph
       let

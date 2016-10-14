@@ -16,15 +16,16 @@ import Control.Distributed.Process
   , sendChan
   , spawnLocal
   )
-import Control.Monad (forever)
+import Control.Monad (forever, void)
 import Data.Foldable (forM_)
 
 start :: SendPort CommandResponseMessage
       -> Process ProcessId
 start sp = spawnLocal $ forever $ do
   cr <- expect
-  let CommandRequestMessage _ _ msr msgId = commandRequestMessage cr
+  let CommandRequestMessage _ _ ccr msr msgId = commandRequestMessage cr
   self <- getSelfPid
+  forM_ ccr $ void . promulgate
   forM_ msr $ \req -> do
     _ <- promulgate (req, msgId, self)
     rep <- expect

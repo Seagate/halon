@@ -92,6 +92,15 @@ schema = [schemaQQ|
               "description" : "Regex on node FQDNs. If not specified, applies to all nodes."
             }
           }
+        },
+        "clusterStatusChangeRequest" : {
+          "type": "object",
+          "properties" : {
+            "command" : {
+              "required" : true,
+              "enum" : ["start", "stop"]
+            }
+          }
         }
       }
     }
