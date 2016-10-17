@@ -131,6 +131,8 @@ mkCheckAndHandleDriveReady getter smartLens next = do
   abort_result <- phaseHandle "abort_result"
 
   let post_process m0sdev = do
+        Just sdev <- getter <$> get Local
+        promulgateRC $ DriveReady sdev
         oldState <- getLocalGraph <&> getState m0sdev
         case oldState of
           SDSUnknown -> do
@@ -192,11 +194,13 @@ mkCheckAndHandleDriveReady getter smartLens next = do
 
     if smartSuccess
     then do
-      promulgateRC $ DriveReady sdev
       mm0sdev <- lookupStorageDeviceSDev sdev
-      forM_ mm0sdev $ \sd -> do
-        deviceAttach sd
-        continue device_attached
+      case mm0sdev of
+        Just sd -> do
+          deviceAttach sd
+          continue device_attached
+        Nothing ->
+          promulgateRC $ DriveReady sdev
     else
       phaseLog "warning" "Unsuccessful SMART test. Drive cannot be used."
 

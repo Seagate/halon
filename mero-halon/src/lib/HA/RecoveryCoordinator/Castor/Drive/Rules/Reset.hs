@@ -242,13 +242,13 @@ ruleResetAttempt = define "reset-attempt" $ do
           phaseLog "debug" $ "Drive reset success for sdev: " ++ show sdev
           markDiskPowerOn sdev
           messageProcessed eid
-          switch [drive_removed, smart]
+          switch [drive_removed, smart, timeout driveResetTimeout failure]
         else do
           phaseLog "debug" $ "Drive reset failure for sdev: " ++ show sdev
           messageProcessed eid
           continue failure
 
-      directly smart $ do
+      setPhaseIf smart driveOKSdev $ \() -> do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
         Just node <- gets Local (^. rlens fldNode . rfield)
         smartId <- startJob $ SMARTRequest node sdev
@@ -364,4 +364,14 @@ onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
     Just (DeviceInfo sdev _, smartId)
          | smartId `elem` listenerIds
         && sdev == sdev' -> Just status
+    _ -> Nothing
+
+driveOKSdev :: forall g l. (FldDeviceInfo ∈ l)
+            => DriveOK
+            -> g
+            -> FieldRec l
+            -> Process (Maybe ())
+driveOKSdev (DriveOK _ _ _ x) _ l =
+  return $ case l ^. rlens fldDeviceInfo . rfield of
+    Just (DeviceInfo sdev _) | sdev == x -> Just ()
     _ -> Nothing

@@ -468,8 +468,11 @@ failDrive recv (ADisk _ (Just sdev) serial _ _) = let
     liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
     debug "failDrive: OK"
 
-resetComplete :: ProcessId -> StoreChan -> ThatWhichWeCallADisk -> Process ()
-resetComplete rc _ (ADisk _ m0sdev serial _ _) = let
+resetComplete :: ProcessId -> StoreChan
+              -> ThatWhichWeCallADisk
+              -> Process ()
+resetComplete rc _ (ADisk sdev m0sdev serial _ _) = let
+    enc = Enclosure "enclosure_2"
     tserial = pack serial
     resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
   in do
@@ -477,6 +480,9 @@ resetComplete rc _ (ADisk _ m0sdev serial _ _) = let
     nid <- getSelfNode
     -- Send 'SpielDeviceDetached' to the RC
     forM_ m0sdev $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
+    -- Send 'DriveOK'
+    uuid <- liftIO $ nextRandom
+    _ <- usend rc $ DriveOK uuid (Node nid) enc sdev
     _ <- promulgateEQ [nid] resetCmd
     let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                          $ nodeCmdString (SmartTest tserial)
