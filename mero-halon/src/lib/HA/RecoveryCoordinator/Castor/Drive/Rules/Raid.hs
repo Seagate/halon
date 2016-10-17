@@ -55,7 +55,6 @@ import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)
 import Control.Lens
-import Control.Monad (when)
 
 import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
@@ -235,33 +234,33 @@ replacement = define "castor::drive::raid::replaced" $ do
           removed <- isRemovedFromRAID sdev
           phaseLog "device" $ show sdev
           phaseLog "removed from RAID" $ show removed
-          when removed $ do
-            modify Local $ rlens fldUUID . rfield .~ (Just eid)
-            -- Add drive back into array
-            mnode <- listToMaybe <$> getSDevNode sdev
-            mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
-            case (,) <$> mnode <*> mpath of
-              Just (node@(Node nid), path) -> do
-                modify Local $ rlens fldNode . rfield .~ (Just node)
-                modify Local $ rlens fldRaidInfo . rfield .~
-                  (Just $ RaidInfo (T.pack rd) sdev (T.pack path))
-                cmdUUID <- liftIO $ nextRandom
-                sent <- sendNodeCmd nid Nothing (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
-                if sent
-                then do
-                  modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]
-                  waitFor sspl_notify_done
-                  onSuccess success
-                  onTimeout 30 failure
-                  continue dispatcher
-                else do
-                  phaseLog "error" "Cannot send drive add command to SSPL."
-                  continue failure
-              Nothing -> do
-                phaseLog "warning" "Cannot find node or path for device."
-                phaseLog "node" $ show mnode
-                phaseLog "path" $ show mpath
+          modify Local $ rlens fldUUID . rfield .~ (Just eid)
+          -- Add drive back into array
+          mnode <- listToMaybe <$> getSDevNode sdev
+          mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
+          case (,) <$> mnode <*> mpath of
+            Just (node@(Node nid), path) -> do
+              modify Local $ rlens fldNode . rfield .~ (Just node)
+              modify Local $ rlens fldRaidInfo . rfield .~
+                (Just $ RaidInfo (T.pack rd) sdev (T.pack path))
+              cmdUUID <- liftIO $ nextRandom
+              sent <- sendNodeCmd nid Nothing (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
+              if sent
+              then do
+                modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]
+                waitFor sspl_notify_done
+                onSuccess success
+                onTimeout 30 failure
+                continue dispatcher
+              else do
+                phaseLog "error" "Cannot send drive add command to SSPL."
                 continue failure
+            Nothing -> do
+              phaseLog "warning" "Cannot find node or path for device."
+              phaseLog "node" $ show mnode
+              phaseLog "path" $ show mpath
+              continue failure
+
         xs -> do
           phaseLog "warning" "Device is part of multiple RAID arrays"
           phaseLog "raidDevices" $ show xs
