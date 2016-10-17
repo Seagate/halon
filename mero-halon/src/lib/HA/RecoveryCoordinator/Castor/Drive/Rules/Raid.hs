@@ -141,6 +141,7 @@ failed = define "castor::drive::raid::failed" $ do
       Just sdev <- (fmap (^. riCompSDev)) <$> gets Local (^. rlens fldRaidInfo . rfield)
       markRemovedFromRAID sdev
       promulgateRC $ ResetAttempt sdev
+      publish $ ResetAttempt sdev
       switch [reset_success, reset_failure]
 
     setPhaseIf reset_success

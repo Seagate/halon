@@ -67,7 +67,7 @@ newContainer credentials args = do
         , Just (String st)        <- HM.lookup "Id" obj
         -> do
               -- container created - now start it
-              void $ callCURLPost json (dockerHost credentials ++ "/containers/" ++ (unpack st) ++ "/start")
+              void $ callCURLPost "" (dockerHost credentials ++ "/containers/" ++ (unpack st) ++ "/start")
 
               containerData <- showContainer credentials (unpack st)
 

@@ -5,6 +5,11 @@
 -- | Module testing handling of notifications from SSPL and
 -- notification interface related to systemd services and their
 -- underlying process being restarted.
+--
+-- TODO: Just delete this when halon-st test for restart is around: at
+-- this point all it does is test that we fail the process when SSPL
+-- message comes. It's not useful and goes out of date every other
+-- day.
 module HA.Castor.Story.ProcessRestart (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
@@ -133,15 +138,24 @@ doRestart transport pg startingState runRestartTest =
   rule :: Definitions LoopState ()
   rule = defineSimple "testProcessRestart" $ \(HAEvent eid (RuleHook pid) _) -> do
     rg <- getLocalGraph
-    let procs = [ (p, G.connectedTo p M0.IsParentOf rg :: [M0.Service])
+    -- Processes with IOS filtered out
+    let procs = [ (p, srvs)
                 | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
                 , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+                , let srvs = filter (\s -> M0.s_type s /= CST_IOS)
+                                    (G.connectedTo p M0.IsParentOf rg)
                 ]
+        ios :: M0.Process -> G.Graph -> [M0.Service]
+        ios p g0 = filter (\s -> M0.s_type s == CST_IOS)
+                          (G.connectedTo p M0.IsParentOf g0)
+
     for_ procs $ \(p, _) -> modifyGraph $
       G.connectUniqueFrom p Is startingState
       . G.connectUniqueFrom p Has (M0.PID testProcessPid)
+      -- disconnect IOS so we don't have to account for drive cascades
+      . (\g0 -> foldr (G.disconnect p M0.IsParentOf) g0 (ios p g0))
 
 
     -- Attach a dummy online process so that notifications during the
@@ -159,7 +173,9 @@ doRestart transport pg startingState runRestartTest =
       G.connectUniqueFrom newProc Is M0.PSOnline
       . (\g0 -> foldr (G.connect newProc M0.IsParentOf) g0 newSrvs)
       . G.connect n M0.IsParentOf newProc
-
+    phaseLog "procs" $ show procs
+    phaseLog "newProc" $ show newProc
+    phaseLog "newSrvs" $ show newSrvs
     liftProcess $ usend pid procs
     messageProcessed eid
 
@@ -172,8 +188,6 @@ doRestart transport pg startingState runRestartTest =
 -- * Process is online
 -- * SSPL notification about the process failure comes
 -- * M0_NC_FAILED for process is sent, TRANSIENT for services
--- * Process restart rule starts, sends M0_NC_FAILED for services
-
 testProcessCrash :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testProcessCrash t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   nid <- getSelfNode
@@ -182,10 +196,6 @@ testProcessCrash t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "SSPL handler sets process to failed"
            (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_TRANSIENT) srvs) (sort nt)
-
-  Set nt' <- H.nextNotificationFor (M0.fid $ head srvs) recv
-  liftIO $ assertEqual "ruleProcessRestart sets services to failed"
-           (sort $ map (`mkMsg` M0_NC_FAILED) srvs) (sort nt')
 
 -- |
 -- * Process in starting state

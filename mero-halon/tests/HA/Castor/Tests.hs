@@ -2,24 +2,21 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
-module HA.Castor.Tests ( tests, loadInitialData
-                       ) where
+module HA.Castor.Tests ( tests ) where
 
-import Control.Concurrent.MVar
 import Control.Distributed.Process
   ( Process
   , RemoteTable
   , liftIO
   , getSelfNode
-  , say
   , unClosure
   )
 import Control.Distributed.Process.Internal.Types (nullProcessId)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
-import Control.Monad (forM_, join, void, unless)
+import Control.Monad (forM_, join, unless)
 
-import Data.List (sort, partition)
+import Data.List (partition)
 import Data.Foldable (for_)
 import qualified Data.Set as Set
 
@@ -90,8 +87,6 @@ tests _host transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport pg
   , testSuccess "failure-sets-2" $ testFailureSets2 transport pg
   , testSuccess "failure-sets-formulaic" $ testFailureSetsFormulaic transport pg
-  , testSuccess "initial-data-doesn't-error" $
-      void (loadInitialData transport pg)
   , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
   -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
@@ -206,90 +201,6 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     sets = [[0,0,0,0,1],[0,0,0,1,1]]
     iData = initialData systemHostname "192.0.2" 4 4
             $ defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets}
-
--- | Load the initial data into local RG and verify that it loads as expected.
---
--- Returns the loaded RG for use by others (@initial-data-gc@).
-loadInitialData :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO Graph
-loadInitialData transport pg = do
-  gmv <- newEmptyMVar
-  rGroupTest transport pg $ \pid -> do
-    me <- getSelfNode
-    ls <- emptyLoopState pid (nullProcessId me)
-    (ls', _) <- run ls $ do
-      -- TODO: the interface address is hard-coded here: currently we
-      -- don't use it so it doesn't impact us but in the future we
-      -- should also take it as a parameter to the test, just like the
-      -- host
-      mapM_ goRack (CI.id_racks iData)
-      filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
-      rg <- getLocalGraph
-      let Iterative update = onInit (simpleStrategy 2 2 1)
-      let Just updateGraph = update rg
-      rg' <- updateGraph return
-      putLocalGraph rg'
-    -- Verify that everything is set up correctly
-    bmc <- runGet ls' $ findBMCAddress myHost
-    say $ "BMC: " ++ show bmc
-    assertMsg "Get BMC Address." $ bmc == Just "192.0.2.1"
-    hosts <- runGet ls' $ findHosts ".*"
-    assertMsg "Find correct hosts." $ hosts == [myHost]
-    hostAttrs <- runGet ls' $ findHostAttrs myHost
-    liftIO $ Tasty.assertEqual "Host attributes"
-                               (sort [HA_MEMSIZE_MB 4096, HA_CPU_COUNT 8, HA_M0SERVER])
-                               (sort hostAttrs)
-    (Just fs) <- runGet ls' getFilesystem
-    let pool = M0.Pool (M0.f_mdpool_fid fs)
-    assertMsg "MDPool is stored in RG"
-      $ memberResource pool (lsGraph ls')
-    mdpool <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
-    assertMsg "MDPool is findable by Fid"
-      $ mdpool == Just pool
-    -- We have 8 disks in only a single enclosure. Thus, each disk should
-    -- be in 29 pool versions (1 with 0 failures, 7 with 1 failure, 21 with
-    -- 2 failures)
-
-    let g = lsGraph ls'
-        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
-        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
-        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
-        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-
-        sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
-        disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
-
-        disk1 = head disks
-        dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
-
-
-    assertMsg "Number of racks" $ length racks == 1
-    assertMsg "Number of enclosures" $ length encls == 1
-    assertMsg "Number of controllers" $ length ctrls == 1
-    assertMsg "Number of storage devices" $ length sdevs == 12
-    assertMsg "Number of disks (reached by host)" $ length disksByHost == 12
-    assertMsg "Number of disks" $ length disks == 12
-    assertMsg "Number of disk versions" $ length dvers1 == 67
-    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
-      let PDClustAttr { _pa_N = paN
-                      , _pa_K = paK
-                      , _pa_P = paP
-                      } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver -- XXX partial
-      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
-      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
-      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
-                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
-                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
-                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
-      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
-    liftIO $ putMVar gmv g
-  tryTakeMVar gmv >>= \case
-    Nothing -> error "HA.Castor.Tests.loadInitialData: gmv empty"
-    Just g -> return g
-  where
-    myHost = Host systemHostname
-    iData = initialData systemHostname "192.0.2" 1 12 defaultGlobals
 
 -- | Test that failure domain logic works correctly when we are
 testControllerFailureDomain :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()

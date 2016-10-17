@@ -22,12 +22,9 @@ module HA.RecoveryCoordinator.Mero.Tests
   ) where
 
 import           Control.Distributed.Process
-#ifdef USE_MERO
-import           Control.Distributed.Process.Node (runProcess)
-#endif
 import           Data.List (isInfixOf, isPrefixOf, tails)
 import           Control.Monad (when, void)
-import           Data.Binary
+import           Data.Binary (Binary)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
@@ -37,14 +34,14 @@ import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK(..))
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
-import           HA.Replicator
+import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Services.SSPL.CEP
 import           Helper.SSPL
-import           Network.CEP (defineSimple, Definitions, Published, subscribe)
+import           Network.CEP
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
@@ -53,11 +50,14 @@ import           TestRunner
 import           Helper.Environment
 #ifdef USE_MERO
 import           Control.Category ((>>>))
+import           Control.Distributed.Process.Node (runProcess)
 import           Data.Function (on)
 import           Data.List (sortBy, sort)
 import           HA.Encode
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
+import           HA.RecoveryCoordinator.Events.Cluster (InitialDataLoaded)
 import           HA.RecoveryCoordinator.Events.Service
+import           HA.RecoveryCoordinator.Rules.Mero.Conf (setPhaseNotified)
 import           HA.Services.Mero
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -291,6 +291,16 @@ testRCsyncToConfd transport pg = do
                   $ \lnid ->
       runProcess lnid f
 
+-- | Used by rule in 'testConfObjectStateQuery'
+data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
+  deriving (Show, Eq, Generic, Typeable)
+
+data WaitFailedSDevReply = WaitFailedSDevReply M0.SDev M0.SDevState
+  deriving (Show, Eq, Generic, Typeable)
+
+instance Binary WaitFailedSDev
+instance Binary WaitFailedSDevReply
+
 -- | Test that the recovery coordinator answers queries of configuration object
 -- states.
 testConfObjectStateQuery :: (Typeable g, RGroup g)
@@ -300,21 +310,18 @@ testConfObjectStateQuery host transport pg =
       nid <- getSelfNode
       self <- getSelfPid
 
-      registerInterceptor $ \string -> do
-        when ("Loaded initial data" `isInfixOf` string) $
-          usend self ("Loaded initial data" :: String)
-        when ("handleReset synchronized" `isInfixOf` string) $
-          usend self ("mero-note-set synchronized" :: String)
-
       say $ "tests node: " ++ show nid
-      withTrackingStation pg emptyRules $ \(TestArgs _ mm _) -> do
+      withTrackingStation pg [waitFailedSDev] $ \(TestArgs _ mm rc) -> do
+        subscribe rc (Proxy :: Proxy InitialDataLoaded)
         nodeUp ([nid], 1000000)
         say "Loading graph."
         void $ promulgateEQ [nid] $
           Helper.InitialData.initialData host "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
-        "Loaded initial data" :: String <- expect
+        Just _ <- expectTimeout 20000000 :: Process (Maybe (Published InitialDataLoaded))
+
         graph <- G.getGraph mm
-        let sdevFids = fmap M0.fid (G.getResourcesOfType graph :: [M0.SDev])
+        let sdevs = G.getResourcesOfType graph :: [M0.SDev]
+            sdevFids = fmap M0.fid sdevs
             otherFids =
                  fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
@@ -324,11 +331,20 @@ testConfObjectStateQuery host transport pg =
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
               ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
             failFid : okSDevFids = sdevFids
+            failSDev : _ = sdevs
             okayFids = okSDevFids ++ otherFids
+
+        self' <- getSelfPid
+        void . promulgateEQ [nid] $ WaitFailedSDev self' failSDev (getState failSDev graph)
+        Just () <- expectTimeout 10000000
 
         say "Set to failed one of the objects"
         void $ promulgateEQ [nid] (Set [Note failFid M0_NC_FAILED])
-        "mero-note-set synchronized" :: String <- expect
+
+        Just rep@(WaitFailedSDevReply _ _) <-
+          expectTimeout 20000000 :: Process (Maybe WaitFailedSDevReply)
+
+        say $ "Got reply of " ++ show rep
 
         say "Send Get message to the RC"
         void $ promulgateEQ [nid] (Get self (failFid : okayFids))
@@ -340,6 +356,23 @@ testConfObjectStateQuery host transport pg =
         liftIO $ assertEqual "result is expected"
                    (sortBy (compare `on` no_id) expected)
                    (sortBy (compare `on` no_id) notes)
+  where
+    waitFailedSDev :: Definitions LoopState ()
+    waitFailedSDev = define "testConfObjectStateQuery::wait-failed-sdev" $ do
+      init_state <- phaseHandle "init_state"
+      wait_failure <- phaseHandle "wait_failure"
+
+      setPhase init_state $ \(HAEvent uuid (WaitFailedSDev caller m0sdev st) _) -> do
+        put Local (uuid, caller, m0sdev, M0.sdsFailTransient st)
+        liftProcess $ usend caller ()
+        continue wait_failure
+
+      setPhaseNotified wait_failure (\(_, _, m0sdev, st) -> Just (m0sdev, st)) $ \(d, st) -> do
+        (uuid, caller, _, _) <- get Local
+        liftProcess . usend caller $ WaitFailedSDevReply d st
+        messageProcessed uuid
+
+      start init_state (error "waitFailedSDev: state not initialised")
 #endif
 
 #ifdef USE_MERO

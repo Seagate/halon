@@ -508,7 +508,9 @@ smartTestComplete rc recv success (ADisk _ msdev serial _ _) = let
       -- Send 'SpielDeviceAttached' to the RC
       usend rc $ SpielDeviceAttached sdev (Right ())
 
-      Set [Note fid stat, Note _ _] <- nextNotificationFor (M0.fid sdev) recv
+      -- Note: this is sensitive to ordering imposed by
+      -- 'HA.Services.Mero.RC.Actions.notifyMeroAsync'
+      Set [Note _ _, Note fid stat] <- nextNotificationFor (M0.fid sdev) recv
       debug "smartTestComplete: Mero notification received"
       liftIO $ assertEqual
         "Smart test succeeded. Drive fids and status should match."
@@ -619,9 +621,21 @@ testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
     _ <- receiveTimeout 1000000 []
     debug "Check drive removed"
     True <- checkStorageDeviceRemoved enclosure devIdx <$> G.getGraph mm
+
+    -- XXX: dirty hack: deviceDetach call in mkDetachDisk can't
+    -- complete (or even begin) without m0worker. To arrange a mero
+    -- worker, we need a better test that also sets up (and tears
+    -- down) env than this one here. To temporarily unblock this test,
+    -- we "pretend" that the detach went OK by sending the message
+    -- that mkDetachDisk would send on successful detach: this is the
+    -- message the rule is waiting for.
+    forM_ (aDiskMero sdev) $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
+
     debug "Check notification"
     forM_ (aDiskMero sdev) $ \m0disk -> do
-      Set [Note _ st, Note _ _] <- nextNotificationFor (M0.fid m0disk) recv
+      -- make sure we're inspecting the right state, ordering can change
+      let getCorrectNote (Set ns) = filter (\(Note fid' _) -> M0.fid m0disk == fid') ns
+      [Note _ st] <- getCorrectNote <$> nextNotificationFor (M0.fid m0disk) recv
       liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
 
 #ifdef USE_MERO
@@ -727,16 +741,21 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
       subscribe rc (Proxy :: Proxy (HAEvent ResetFailure))
 
       usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
+      nid <- getSelfNode
 
       debug "RAID message published"
       -- Expect the message to be processed by RC
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
 
-      -- We should see a message to SSPL to remove the drive
-      liftIO . assertEqual "drive removal command is issued"
-        (Just $ ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString (NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")))
-        =<< expectNodeMsg (20*1000000) -- ssplTimeout
+      do
+        Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+        -- We should see a message to SSPL to remove the drive
+        let nc = NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")
+            cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+                  $ nodeCmdString nc
+        liftIO $ assertEqual "drive removal command is issued" cmd msg
+        void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+
       -- The RC should issue a 'ResetAttempt' and should be handled.
       debug "RAID removal for drive received at SSPL"
       _ <- expect :: Process (Published (HAEvent ResetAttempt))
@@ -873,7 +892,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                 $ nodeCmdString nc
       liftIO $ assertEqual "Swap is disabled" cmd msg
       -- Reply with a command acknowledgement
-      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Mero services should be stopped
     _ <- do
@@ -881,7 +900,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       liftIO $ assertEqual "One process on node" 1 $ length pcs
       -- Reply with successful stoppage
       let [(_, fid)] = pcs
-      promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Left fid]
+      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Left fid]
 
     debug "Mero process stop result sent"
     -- We will not see 'OFFLINE' since the process on this node is offline
@@ -895,7 +914,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                 $ nodeCmdString nc
       liftIO $ assertEqual "/var/mero is unmounted" cmd msg
       -- Reply with a command acknowledgement
-      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Should see 'stop RAID' message
     _ <- do
@@ -906,7 +925,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                 $ nodeCmdString nc
       liftIO $ assertEqual "RAID is stopped" cmd msg
       -- Reply with a command acknowledgement
-      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Should see 'reassemble RAID' message
     _ <- do
@@ -917,7 +936,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                 $ nodeCmdString nc
       liftIO $ assertEqual "RAID is assembling" cmd msg
       -- Reply with a command acknowledgement
-      promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
     -- Mero services should be restarted
     do
@@ -937,7 +956,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       debug "start process"
       mstart <- receiveChan recc
       case mstart of
-        StartProcesses pcs -> do
+        RestartProcesses pcs -> do
           liftIO $ assertEqual "One process on node" 1 $ length pcs
           -- Reply with successful stoppage
           let [(_, fid)] = pcs
@@ -949,7 +968,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                                                  123
                                   )
           return ()
-        s ->  liftIO $ assertFailure $ "Expected start request, but received " ++ show s
+        s ->  liftIO $ assertFailure $ "Expected (re)start request, but received " ++ show s
 
     debug "Mero process start result sent"
 

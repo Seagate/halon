@@ -200,6 +200,7 @@ addNodeToCluster eqs node@(R.Node nid) = do
       Service.findRegisteredOn node >>=
         traverse_ (\svc -> promulgateRC $ ServiceFailed node svc (nullProcessId nid))
       promulgateRC $ R.RecoverNode node
+      publish $ R.RecoverNode node
       unregisterSpawnAsync sr
       return ()
   else do phaseLog "debug" "Node is already monitored."
