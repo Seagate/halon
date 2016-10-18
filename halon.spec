@@ -46,6 +46,7 @@ mkdir -p %{buildroot}/etc/halon/role_maps
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
+cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
 cp mero-halon/scripts/mero_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/genders.ede
@@ -71,6 +72,7 @@ rm -rf %{buildroot}
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
+/etc/logrotate.d/halon
 
 %post
 systemctl daemon-reload
