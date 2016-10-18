@@ -14,6 +14,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , DriveReady(..)
   , ExpanderReset(..)
   , ResetAttempt(..)
+  , ResetAttemptResult(..)
   , ResetSuccess(..)
   , ResetFailure(..)
     -- * Metadata drive events
@@ -37,7 +38,7 @@ import GHC.Generics
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
 data ResetAttempt = ResetAttempt StorageDevice
-  deriving (Eq, Generic, Show, Typeable)
+  deriving (Eq, Generic, Show, Typeable, Ord)
 
 instance Binary ResetAttempt
 
@@ -50,6 +51,16 @@ newtype ResetSuccess =
 newtype ResetFailure =
     ResetFailure StorageDevice
     deriving (Eq, Show, Binary)
+
+-- | Result for 'ResetAttempt'
+--
+-- TODO: Consider merging 'ResetFailure' and 'ResetSuccess' and
+-- migrating the rules. Or renaming this.
+data ResetAttemptResult = ResetAttemptFailure ResetFailure
+                        | ResetAttemptSuccess ResetSuccess
+  deriving (Eq, Show, Typeable, Generic)
+
+instance Binary ResetAttemptResult
 
 -- | DrivePowerChange event is sent when the power status of a
 --   drive changes.

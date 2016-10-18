@@ -19,16 +19,15 @@ import HA.EventQueue.Types
   )
 import HA.RecoveryCoordinator.Actions.Core
   ( LoopState
-  , fldUUID
   , getLocalGraph
   , messageProcessed
   , promulgateRC
-  , whenM
   )
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
+import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Rules.Mero.Conf
@@ -62,6 +61,7 @@ import Control.Monad
   )
 import Control.Monad.IO.Class
 
+import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
@@ -142,16 +142,24 @@ handleResetExternal (Set ns) = do
                                    then M0.sdsFailTransient st
                                    else M0.SDSFailed
 
+                      sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
                       -- We handle this status inside external rule, because we need to
                       -- update drive manager if and only if failure is set because of
                       -- mero notifications, not because drive removal or other event.
                       when (ratt > resetAttemptThreshold) $ do
                         phaseLog "warning" "drive have failed to reset too many times => making as failed."
-                        updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+                        when (isRight sdevTransition) $
+                          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
                       -- Notify rest of system if stat actually changed
                       when (st /= status) $ do
-                        applyStateChangesCreateFS [ stateSet m0sdev status ]
+                        either
+                          (\failedTransition -> do
+                            iemFailureOverTolerance m0sdev
+                            applyStateChangesCreateFS [ failedTransition ])
+                          (\okTransition -> applyStateChangesCreateFS [ okTransition ])
+                          sdevTransition
+
                         promulgateRC $ ResetAttempt sdev
 
             _ -> do
@@ -163,47 +171,46 @@ handleResetExternal (Set ns) = do
       _ -> return () -- Should we do anything here?
   liftIO $ traceEventIO "STOP mero-halon:external-handler:reset"
 
+jobResetAttempt :: Job ResetAttempt ResetAttemptResult
+jobResetAttempt = Job "reset-attempt"
+
 ruleResetAttempt :: Definitions LoopState ()
-ruleResetAttempt = define "reset-attempt" $ do
-      home          <- phaseHandle "home"
+ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
       reset         <- phaseHandle "reset"
       resetComplete <- phaseHandle "reset-complete"
       smart         <- phaseHandle "smart"
       smartResponse <- phaseHandle "smart-response"
       failure       <- phaseHandle "failure"
-      end           <- phaseHandle "end"
       drive_removed <- phaseHandle "drive-removed"
 
-      setPhase home $ \(HAEvent uid (ResetAttempt sdev) _) -> fork NoBuffer $ do
-        nodes <- getSDevNode sdev
-        node <- case nodes of
-          node:_ -> return node
-          [] -> do
-             -- XXX: send IEM message
-             phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
-             messageProcessed uid
-             stop
-        paths <- lookupStorageDeviceSerial sdev
-        case paths of
-          serial:_ -> do
-            modify Local $ rlens fldUUID . rfield .~ Just uid
-            modify Local $ rlens fldNode . rfield .~ Just node
-            modify Local $ rlens fldDeviceInfo . rfield .~
-              (Just $ DeviceInfo sdev (pack serial))
+      let home (ResetAttempt sdev) = do
+            nodes <- getSDevNode sdev
+            paths <- lookupStorageDeviceSerial sdev
+            case (nodes, paths) of
+              (node : _, serial : _) -> do
+                modify Local $ rlens fldNode . rfield .~ Just node
+                modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptFailure $ ResetFailure sdev)
+                modify Local $ rlens fldDeviceInfo . rfield .~
+                  (Just $ DeviceInfo sdev (pack serial))
 
-            whenM (isStorageDriveRemoved sdev) $ do
-              phaseLog "info" $ "Cancelling drive reset as drive is removed."
-              phaseLog "sdev" $ show sdev
-              continue end
-            markOnGoingReset sdev
-            switch [drive_removed, reset]
-          [] -> do
-            -- XXX: send IEM message
-            phaseLog "warning" $ "Cannot perform reset attempt for drive "
-                              ++ show sdev
-                              ++ " as it has no device serial number associated."
-            messageProcessed uid
-            stop
+                isStorageDriveRemoved sdev >>= \case
+                  True -> do
+                    phaseLog "info" $ "Cancelling drive reset as drive is removed."
+                    phaseLog "sdev" $ show sdev
+                    return $ Just [finish]
+                  False -> do
+                    markOnGoingReset sdev
+                    return $ Just [drive_removed, reset]
+              ([], _) -> do
+                 -- XXX: send IEM message
+                 phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
+                 return $ Just [finish]
+              (_, []) -> do
+                -- XXX: send IEM message
+                phaseLog "warning" $ "Cannot perform reset attempt for drive "
+                                  ++ show sdev
+                                  ++ " as it has no device serial number associated."
+                return $ Just [finish]
 
       (disk_detached, detachDisk) <- mkDetachDisk
         (\l -> fmap join $ traverse
@@ -261,15 +268,17 @@ ruleResetAttempt = define "reset-attempt" $ do
           (lookupStorageDeviceSDev . _diSDev)
           (l ^. rlens fldDeviceInfo . rfield))
         (\_ _ -> do phaseLog "error" "failed to attach disk"
-                    continue end)
+                    continue finish)
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
-             M0.SDSTransient _ ->
+             M0.SDSTransient _ -> do
                applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
+               Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
+               modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
              x ->
                phaseLog "info" $ "Cannot bring drive Online from state "
                                ++ show x
-           continue end)
+           continue finish)
 
       setPhaseIf smartResponse onSameSdev $ \status -> do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
@@ -282,7 +291,8 @@ ruleResetAttempt = define "reset-attempt" $ do
             forM_ sd $ \m0sdev -> do
               attachDisk m0sdev
               continue disk_attached
-            continue end
+            modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
+            continue finish
           _ -> do
             phaseLog "info" "Unsuccessful SMART test."
             continue failure
@@ -293,33 +303,39 @@ ruleResetAttempt = define "reset-attempt" $ do
         promulgateRC $ ResetFailure sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
-          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-          -- Let note handler deal with repair logic
+          sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
+          when (isRight sdevTransition) $
+            updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+
+            -- Let note handler deal with repair logic
           getLocalGraph <&> getState m0sdev >>= \case
-            M0.SDSTransient _ ->
-              applyStateChangesCreateFS [ stateSet m0sdev M0.SDSFailed ]
+            M0.SDSTransient _ -> do
+              either (\failedTransition -> do
+                         iemFailureOverTolerance m0sdev
+                         applyStateChangesCreateFS [ failedTransition ])
+                     (\okTransition -> applyStateChangesCreateFS [ okTransition ])
+                     sdevTransition
             x -> do
               phaseLog "info" $ "Cannot bring drive Failed from state "
                               ++ show x
-        continue end
-
-      directly end $ do
-        Just uid <- gets Local (^. rlens fldUUID . rfield)
-        messageProcessed uid
-        stop
+        continue finish
 
       setPhaseIf drive_removed onDriveRemoved $ \sdev -> do
         phaseLog "info" "Cancelling drive reset as drive removed."
         -- Claim all things are complete
         markResetComplete sdev
-        continue end
+        modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
+        continue finish
 
-      startFork home args
+      return home
   where
-    args = fldUUID       =: Nothing
-       <+> fldNode       =: Nothing
+    fldRep = Proxy :: Proxy '("reply", Maybe ResetAttemptResult)
+    fldReq = Proxy :: Proxy '("request", Maybe ResetAttempt)
+    args = fldNode       =: Nothing
        <+> fldDeviceInfo =: Nothing
        <+> fldListenerId =: Nothing
+       <+> fldRep        =: Nothing
+       <+> fldReq        =: Nothing
 
 --------------------------------------------------------------------------------
 -- Helpers

@@ -348,6 +348,9 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
                   else do
                     phaseLog "info" "starting rebalance"
                     disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
+                    -- Can ignore K here: disks are in Repaired state
+                    -- so moving to rebalancing does not increase
+                    -- number of failures.
                     let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
                     modify Local $ rlens fldNotifications .~ Field (Just messages)
                     modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
@@ -411,7 +414,9 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
       Nothing -> phaseLog "error" "No pool info in local state"
       Just (pool, _) -> do
         ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
-        applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
+        -- Don't need to think about K here as both rebalance and
+        -- repaired are failed states.
+        applyStateChanges $ map (\d -> stateSet d M0.SDSRepaired) ds
 
     -- Is this device ready to be rebalanced onto?
     deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
@@ -484,6 +489,8 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
             fa <- getPoolSDevsWithState pool M0_NC_FAILED
             case null tr && not (null fa) of
               True -> do
+                -- OK to just set repairing here without checking K:
+                -- @fa@ are already failed by this point.
                 let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0.SDSRepairing <$> fa)
                 modify Local $ rlens fldNotifications .~ Field (Just msgs)
                 modify Local $ rlens fldPool .~ Field (Just pool)

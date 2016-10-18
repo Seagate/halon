@@ -25,6 +25,7 @@ module HA.Services.SSPL.IEM
   -- ** Disks
   , logHalonDiskStatus
   , logRaidArrayFailure
+  , logFailureOverK
   -- ** SSPL
   , logSSPLUnknownMessage
   -- ** Mero
@@ -164,6 +165,7 @@ dumpCSV =
 type Disks = '("Halon Disk Subsystem", "001")
 type HalonDiskStatus       = Log Disks "001" "HALON DISK STATUS" Text
 type RaidArrayFailure      = Log Disks "026" "Raid Array Failed" Text
+type FailureOverK          = Log Disks "027" "Disk failure over tolerance" Text
 
 type SSPL  = '("Halon SSPL Subsystem", "002")
 type SSPLUnknownMessage    = Log SSPL  "042" "UNKNOWN MESSAGE"   Text
@@ -185,6 +187,7 @@ type MeroBEError           = Log Mero  "026" "Mero BE error" Text
 type IECList =
   '[ HalonDiskStatus
    , RaidArrayFailure
+   , FailureOverK
    , SSPLUnknownMessage
    , MeroRepairStart
    , MeroRepairFinish
@@ -202,6 +205,7 @@ type IECList =
 
 logHalonDiskStatus       :: Generator HalonDiskStatus
 logRaidArrayFailure      :: Generator RaidArrayFailure
+logFailureOverK          :: Generator FailureOverK
 logSSPLUnknownMessage    :: Generator SSPLUnknownMessage
 logMeroRepairStart       :: Generator MeroRepairStart
 logMeroRepairFinish      :: Generator MeroRepairFinish
@@ -217,6 +221,7 @@ logMeroClientFailed      :: Generator MeroClientFailed
 logMeroBEError           :: Generator MeroBEError
 (logHalonDiskStatus
  ,(logRaidArrayFailure
+ ,(logFailureOverK
  ,(logSSPLUnknownMessage
  ,(logMeroRepairStart
  ,(logMeroRepairFinish
@@ -230,4 +235,4 @@ logMeroBEError           :: Generator MeroBEError
  ,(logMeroRebalanceAbort
  ,(logMeroClientFailed
  ,(logMeroBEError
- ,()))))))))))))))) = mkCommands (Proxy :: Proxy IECList)
+ ,())))))))))))))))) = mkCommands (Proxy :: Proxy IECList)

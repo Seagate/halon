@@ -27,6 +27,7 @@ import HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDevicePaths
   , lookupStorageDeviceRaidDevice
   )
+import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( RaidUpdate(..)
@@ -36,6 +37,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   , DriveReady(..)
   )
 import HA.Resources (Node(..))
+import HA.Resources.Mero (SDevState(SDSFailed))
 import HA.Resources.Castor (StorageDevice)
 import HA.Services.SSPL.CEP
   ( sendInterestingEvent
@@ -56,6 +58,8 @@ import HA.Services.SSPL.IEM
 import Control.Distributed.Process (liftIO)
 import Control.Lens
 
+import Control.Monad (when)
+import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
@@ -193,8 +197,7 @@ failed = define "castor::drive::raid::failed" $ do
            ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
           <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
           <> "}")
-        updateDriveManagerWithFailure (rinfo ^. riCompSDev)
-          "HALON-FAILED" (Just "RAID_FAILURE")
+        failStorageDevice (rinfo ^. riCompSDev)
         done eid
         continue end
 
@@ -204,8 +207,7 @@ failed = define "castor::drive::raid::failed" $ do
          ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
         <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
         <> "}")
-      updateDriveManagerWithFailure (rinfo ^. riCompSDev)
-        "HALON-FAILED" (Just "RAID_FAILURE")
+      failStorageDevice (rinfo ^. riCompSDev)
       continue end
 
     directly end stop
@@ -217,6 +219,15 @@ failed = define "castor::drive::raid::failed" $ do
           <+> fldRaidInfo =: Nothing
           <+> fldCommandAck =: []
           <+> fldDispatch =: Dispatch [] st Nothing
+
+    failStorageDevice sd = lookupStorageDeviceSDev sd >>= \case
+      Nothing -> phaseLog "warn" $ "No SDev for " ++ show sd
+      Just m0sdev -> do
+        -- We're not actually setting SDSFailed but want to check
+        -- if we could so we know if we should tell DM anything.
+        sdevTransition <- checkDiskFailureWithinTolerance m0sdev SDSFailed <$> getLocalGraph
+        when (isRight sdevTransition) $
+          updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | RAID device replacement
 --   This is triggered on drive being declared ready for use to the system.
