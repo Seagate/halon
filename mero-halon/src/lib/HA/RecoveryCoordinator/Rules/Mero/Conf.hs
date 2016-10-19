@@ -4,6 +4,7 @@
 --
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE StaticPointers      #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -20,6 +21,7 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
   , ExternalNotificationHandlers(..)
   , InternalNotificationHandlers(..)
     -- * Rule helpers
+  , mkPhaseNotify
   , setPhaseNotified
   , setPhaseAllNotified
   , setPhaseAllNotifiedBy
@@ -349,6 +351,31 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
       AnyStateChange (a::z) o n _ -> case eqT :: Maybe (z :~: b) of
         Just Refl | p o n -> Just (a,n)
         _ -> Nothing
+
+-- | Notify mero about the given object and wait for the arrival on
+-- notification, handling failure.
+mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+              => Int -- ^ timeout
+              -> (l -> Maybe (b, M0.StateCarrier b)) -- ^ state getter
+              -> PhaseM LoopState l () -- ^ on failure
+              -> (b -> M0.StateCarrier b -> PhaseM LoopState l [Jump PhaseHandle]) -- ^ on success
+              -> RuleM LoopState l (b -> M0.StateCarrier b -> PhaseM LoopState l [Jump PhaseHandle])
+mkPhaseNotify t getter onFailure onSuccess = do
+  notify_done <- phaseHandle "Notification done"
+  notify_failed <- phaseHandle "Notification timed out"
+
+  setPhaseNotified notify_done getter $ \(o, oSt) -> onSuccess o oSt >>= switch
+  directly notify_failed onFailure
+
+  return $ \obj objSt -> do
+    rg <- getLocalGraph
+    if M0.getState obj rg == objSt
+    then do
+      phaseLog "info" "Object already in desired state, not notifying"
+      onSuccess obj objSt
+    else do
+      applyStateChanges [stateSet obj objSt]
+      return [notify_done, timeout t notify_failed]
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
