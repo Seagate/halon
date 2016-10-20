@@ -769,7 +769,7 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
       rg <- G.getGraph mm
       -- Look up the storage device by path
       let [sd]  = [ d |  d <- G.connectedTo (Host systemHostname) Has rg
-                      , di <- G.connectedTo sd Has rg
+                      , di <- G.connectedTo d Has rg
                       , di == DIPath "/dev/mddisk2"
                       ]
 
