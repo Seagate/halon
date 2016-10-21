@@ -81,7 +81,7 @@ import Data.List (nub)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
 import Data.Monoid ((<>))
 import Data.Tuple (swap)
 import Data.Typeable (Typeable)
@@ -593,28 +593,17 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
--- | 'disconnect' 'HALink's which haven't replied to keepalive in
--- specified amount of time.
+-- | Find processes with "dead" links and fail them. Do not disconnect
+-- the links manually: mero will invoke a callback we set in
+-- 'initializeHAStateCallbacks' which will do the disconnecting.
 --
--- Returns a list of process 'Fid's for the processes we know have
--- timed out the keepalive as well as the time last keepalive request
--- was sent to the process.
+-- We don't have to account for multiple links, some timing out and
+-- some alive: when process reconnects, it re-uses old link. Only new
+-- processes use new links. We won't see a new process unless we have
+-- failed and restarted an old one, which will run the callback and
+-- disconnect the old link.
 --
--- It should be noted that this list does not cleanly map onto what
--- 'HALink's are actually 'disconnect'ed: consider a failed link for a
--- process (link @A@) and process subsequently reconnecting on a new
--- link (link @B@). The request sent on @A@ will time out but in
--- reality the process is fine, we can talk to it on @B@ and don't
--- want to fail the process. In this case we still want to
--- 'disconnect' @A@ but don't return the process 'Fid'.
---
--- Briefly, the process 'Fid's returned here are only for processes
--- whose all links are known to be timed out.
---
--- For processes where multiple links are detected to have timed out
--- in the same run of 'pruneLinks', the 'Fid' will be reported only
--- once with 'M0.TimeSpec' for one of the links though all links will
--- be 'disconnect'ed.
+-- <https://seagate.slack.com/archives/mero-halon/p1476267532005945>
 pruneLinks :: NIRef
            -> Int -- ^ How many seconds should pass since we last saw
                   -- a keepalive reply to consider the process as
@@ -622,25 +611,17 @@ pruneLinks :: NIRef
            -> IO [(Fid, M0.TimeSpec)]
 pruneLinks ni expireSecs = do
   now <- getTime Monotonic
-  (dead,live) <- atomicModifyIORef' (_ni_last_seen ni) $ \mp ->
-    let (dead, live) = Map.partition (isExpired now) mp
-    in (live, (dead, live))
+  dead <- atomicModifyIORef' (_ni_last_seen ni) $ \mp ->
+    -- Keep alive processes in map and extract dead ones
+    swap (Map.partition (isExpired now) mp)
 
   case Map.null dead of
     True -> return []
     False -> do
-      -- Could remove the link from the map here but let disconnect
-      -- callbacks do it and deal with removing entries from the (ReqId ->
-      -- Fid) Map while there.
-      sendM0Task $ for_ (Map.keys dead) disconnect
-
       info <- readIORef (_ni_info ni)
-      -- We exclude processes that have any link that is alive.
       let deadFids = Map.fromList . Map.elems
                    $ Map.mapMaybeWithKey (\l t -> (,M0.TimeSpec t) <$> Map.lookup l info) dead
-          liveFids = Set.fromList $ mapMaybe (\l -> Map.lookup l info)
-                   $ Map.keys live
-      return . Map.toList $ Map.filterWithKey (\l _ -> l `Set.notMember` liveFids) deadFids
+      return $ Map.toList deadFids
   where
     isExpired now (TimeSpec secs ns) =
       TimeSpec (secs + fromIntegral expireSecs) ns <= now
