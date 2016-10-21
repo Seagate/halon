@@ -200,6 +200,7 @@ Library
                        HA.RecoveryCoordinator.Events.Castor.Process
                        HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
                        HA.RecoveryCoordinator.Events.Mero
+                       HA.RecoveryCoordinator.Mero.Events
                        HA.Services.Mero.RC
       Other-Modules:
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
@@ -215,6 +216,7 @@ Library
                       HA.RecoveryCoordinator.Rules.Castor.Process
                       HA.RecoveryCoordinator.Rules.Castor.Node
                       HA.RecoveryCoordinator.Rules.Castor.Expander
+                      HA.RecoveryCoordinator.Mero.Rules.Maintenance
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.RC.Rules
                       HA.Services.Mero.RC.Events

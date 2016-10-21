@@ -34,9 +34,11 @@ import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
 import HA.RecoveryCoordinator.Events.Castor.Cluster
+import Mero.ConfC ( Fid )
 
 import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import HA.RecoveryCoordinator.RC.Events
+import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 import Mero.Spiel (FSStats(..))
@@ -69,6 +71,7 @@ data ClusterOptions =
   | ResetCmd ResetOptions
   | MkfsDone MkfsDoneOptions
   | VarsCmd VarsOptions
+  | StateUpdate StateUpdateOptions
 #endif
   deriving (Eq, Show)
 
@@ -98,6 +101,8 @@ parseCluster =
         "Mark all processes as finished mkfs.")))
   <|> ( VarsCmd  <$> Opt.subparser ( Opt.command "vars" (Opt.withDesc parseVarsOptions
         "Control variable parameters of the halon.")))
+  <|> ( StateUpdate <$> Opt.subparser (Opt.command "update" (Opt.withDesc parseStateUpdateOptions
+        "Force update state of the mero objects")))
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -138,6 +143,8 @@ cluster nids' opt = do
       clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
     cluster' nids (VarsCmd VarsGet) = clusterCommand nids GetHalonVars (liftIO . print)
     cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
+    cluster' nids (StateUpdate (StateUpdateOptions s))
+      = clusterCommand nids (ForceObjectStateUpdateRequest s) (liftIO . print)
 #endif
 
 data LoadOptions = LoadOptions
@@ -262,6 +269,23 @@ notifyHalon eqnids notes = do
   promulgateEQ eqnids (M0.Set notes) >>= flip withMonitor wait
   where
     wait = void (expect :: Process ProcessMonitorNotification)
+
+newtype StateUpdateOptions = StateUpdateOptions [(Fid, String)]
+  deriving (Eq, Show)
+
+parseStateUpdateOptions :: Opt.Parser StateUpdateOptions
+parseStateUpdateOptions = StateUpdateOptions <$>
+  Opt.many (Opt.option (Opt.eitherReader updateReader)
+    (  Opt.help "List of updates to send to halon. Format: <fid>@<conf state>"
+    <> Opt.long "set"
+    <> Opt.metavar "NOTE"
+    ))
+  where
+   updateReader :: String -> Either String (Fid, String)
+   updateReader (break (=='@') -> (fid', '@':state)) = case strToFid fid' of
+     Nothing -> Left $ "Couldn't parse fid: " ++ show fid'
+     Just fid -> Right $ (fid, state)
+   updateReader s = Left $ "Could not parse " ++ s
 
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>

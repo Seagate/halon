@@ -235,7 +235,7 @@ data NodeState
   | NSFailedUnrecoverable -- ^ Node is failed
   | NSFailed              -- ^ Node is failed, possibly can be recovered.
   | NSOnline              -- ^ Node is online.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Read)
 
 instance Binary NodeState
 instance Hashable NodeState
@@ -319,7 +319,7 @@ data ServiceState =
   | SSStopping
   | SSInhibited ServiceState -- ^ Service state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Read)
 instance Binary ServiceState
 instance Hashable ServiceState
 instance ToJSON ServiceState
@@ -361,7 +361,7 @@ data SDevState =
   | SDSRebalancing
   | SDSTransient SDevState -- Transient failure, and state before said
                            -- transient failure.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Read)
 
 instance Binary SDevState
 instance Hashable SDevState
@@ -431,7 +431,7 @@ data ControllerState
   = CSUnknown -- ^ We do not know the state of the controller.
   | CSOnline -- ^ Controller is fine.
   | CSTransient -- ^ Controller is experiencing a failure.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Read)
 deriveSafeCopy 0 'base ''ControllerState
 
 instance Binary ControllerState
@@ -646,7 +646,7 @@ data ProcessState =
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Read)
 instance Binary ProcessState
 instance Hashable ProcessState
 instance ToJSON ProcessState

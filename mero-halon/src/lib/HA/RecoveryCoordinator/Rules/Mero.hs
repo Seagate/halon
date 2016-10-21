@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -17,6 +16,7 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Events.Service
+import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources        as R
@@ -59,3 +59,5 @@ meroRules = do
     phaseLog "info" "request mero channel"
     phaseLog "service.pid" $ show pid
     liftProcess $ usend pid ServiceStateRequest
+
+  M.rules

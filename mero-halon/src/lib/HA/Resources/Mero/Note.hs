@@ -136,7 +136,7 @@ getConfObjState :: HasConfObjectState a => a -> G.Graph -> ConfObjectState
 getConfObjState x rg = toConfObjState x $ getState x rg
 
 -- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a))
+class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a), Read (StateCarrier a))
   => HasConfObjectState a where
     type StateCarrier a :: *
     type StateCarrier a = ConfObjectState
@@ -162,7 +162,7 @@ class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateC
 
 -- | Associated type used where we carry no explicit state for a type.
 data NoExplicitConfigState = NoExplicitConfigState
-  deriving (Eq, Generic, Typeable, Show)
+  deriving (Eq, Generic, Typeable, Show, Read)
 instance Binary NoExplicitConfigState
 
 -- A dictionary wrapper for configuration objects
@@ -394,6 +394,7 @@ instance ShowFidObj M0.Process
 instance ShowFidObj M0.Service
 instance ShowFidObj M0.Disk
 instance ShowFidObj M0.SDev
+
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
