@@ -80,7 +80,7 @@ allIOSOnline pool = do
   rg <- getLocalGraph
   let sts = [ M0.getState p rg
             | s <- svs
-            , p :: M0.Process <- G.connectedFrom M0.IsParentOf s rg
+            , Just (p :: M0.Process) <- [G.connectedFrom M0.IsParentOf s rg]
             ]
   return $ all (== M0.PSOnline) sts
 
@@ -93,8 +93,9 @@ getIOServices pool = getLocalGraph >>= \g -> return $ nub
         , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
         , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]
-        , ct <- G.connectedFrom M0.IsRealOf cv g :: [M0.Controller]
-        , nd <- G.connectedFrom M0.IsOnHardware ct g :: [M0.Node]
+        , Just ct <- [G.connectedFrom M0.IsRealOf cv g :: Maybe M0.Controller]
+        , Just nd <- [G.connectedFrom M0.IsOnHardware ct g :: Maybe M0.Node]
         , pr <- G.connectedTo nd M0.IsParentOf g :: [M0.Process]
-        , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr M0.IsParentOf g
+        , svc@(M0.Service { M0.s_type = CST_IOS }) <-
+            G.connectedTo pr M0.IsParentOf g
         ]

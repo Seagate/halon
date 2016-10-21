@@ -2,8 +2,10 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -83,8 +85,8 @@ $(mkDicts
   ])
 $(mkResRel
   [''Cluster, ''Node, ''EpochId]
-  [ (''Cluster, ''Has, ''Node)
-  , (''Cluster, ''Has, ''EpochId)
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
   ]
   []
   )

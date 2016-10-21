@@ -33,7 +33,6 @@ import Mero.Notification.HAState
   , ServiceEventType(..)
   )
 
-import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 
 import Network.CEP
@@ -91,7 +90,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
    setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
      rg <- getLocalGraph
-     let mproc = listToMaybe $ G.connectedFrom M0.IsParentOf srv rg :: Maybe M0.Process
+     let mproc = G.connectedFrom M0.IsParentOf srv rg :: Maybe M0.Process
      Just (eid, _, _) <- get Local
      phaseLog "action" $ "Check if all services for process are online"
      phaseLog "info" $ "transaction.id = " ++ show eid

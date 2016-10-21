@@ -17,7 +17,7 @@ import Mero.ConfC
   , Word128(..)
   )
 
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, maybeToList)
 import Data.List (find)
 import Data.Ratio
 import Data.Proxy (Proxy(..))
@@ -29,14 +29,16 @@ import qualified Data.Set as S
 dynamicStrategy :: Strategy
 dynamicStrategy = Strategy {
     onInit = Iterative $ \rg -> do
-      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
-      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+      prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
+      fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
+                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+      globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       (\rg' -> \sync -> sync rg') <$> createTopLevelPVer fs globs rg
   , onFailure = \rg -> do
-      prof <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.Profile
-      fs   <- listToMaybe $ G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-      globs <- listToMaybe $ G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+      prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
+      fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
+                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+      globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       createPVerIfNotExists rg fs globs
 }
 
@@ -45,13 +47,13 @@ dynamicStrategy = Strategy {
 findRealObjsInPVer :: G.Graph -> M0.PVer -> S.Set Fid
 findRealObjsInPVer rg pver = let
     rackvs = G.connectedTo pver M0.IsParentOf rg :: [M0.RackV]
-    racks  = rackvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Rack])
+    racks  = rackvs >>= \x -> (maybeToList $ G.connectedFrom M0.IsRealOf x rg :: [M0.Rack])
     enclvs = rackvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.EnclosureV])
-    encls  = enclvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Enclosure])
+    encls  = enclvs >>= \x -> (maybeToList $ G.connectedFrom M0.IsRealOf x rg :: [M0.Enclosure])
     ctrlvs = enclvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.ControllerV])
-    ctrls  = ctrlvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Controller])
+    ctrls  = ctrlvs >>= \x -> (maybeToList $ G.connectedFrom M0.IsRealOf x rg :: [M0.Controller])
     diskvs = ctrlvs >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.DiskV])
-    disks  = diskvs >>= \x -> (G.connectedFrom M0.IsRealOf x rg :: [M0.Disk])
+    disks  = diskvs >>= \x -> (maybeToList $ G.connectedFrom M0.IsRealOf x rg :: [M0.Disk])
   in S.unions . fmap S.fromList $
       [ fmap M0.fid racks
       , fmap M0.fid encls
@@ -64,9 +66,12 @@ findRealObjsInPVer rg pver = let
 findFailableObjs :: G.Graph -> M0.Filesystem -> S.Set Fid
 findFailableObjs rg fs = let
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
-    encls = racks >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
-    ctrls = encls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
-    disks = ctrls >>= \x -> (G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
+    encls = racks >>= \x ->
+             (G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
+    ctrls = encls >>= \x ->
+             (G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
+    disks = ctrls >>= \x ->
+             (G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
   in S.unions . fmap S.fromList $
     [ fmap M0.fid racks
     , fmap M0.fid encls
@@ -113,11 +118,12 @@ createTopLevelPVer fs globs rg = let
     mcur = findMatchingPVer rg fs S.empty
     n = CI.m0_data_units globs
     k = CI.m0_parity_units globs
-    noCtlrs = length [ cntr
-                     | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
-                     , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-                     , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-                     ]
+    noCtlrs = length
+      [ cntr
+      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+      , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+      , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+      ]
     ctrlFailures = floor $ noCtlrs % (fromIntegral $ n+k)
     failures = Failures 0 0 0 ctrlFailures k
     attrs = PDClustAttr {

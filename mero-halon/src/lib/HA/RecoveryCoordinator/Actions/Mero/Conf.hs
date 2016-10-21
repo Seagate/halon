@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 --
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -116,14 +117,14 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.newResource fs
         >>> G.newResource pool
         >>> G.newResource mdpool
-        >>> G.connectUniqueFrom Cluster Has profile
-        >>> G.connectUniqueFrom Cluster Has M0.OFFLINE
-        >>> G.connectUniqueFrom Cluster M0.RunLevel (M0.BootLevel 0)
-        >>> G.connectUniqueFrom Cluster M0.StopLevel (M0.BootLevel 0)
-        >>> G.connectUniqueFrom profile M0.IsParentOf fs
+        >>> G.connect Cluster Has profile
+        >>> G.connect Cluster Has M0.OFFLINE
+        >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
+        >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+        >>> G.connect profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connect fs M0.IsParentOf mdpool
-        >>> G.connectUniqueFrom Cluster Has root
+        >>> G.connect Cluster Has root
         >>> G.connect root M0.IsParentOf profile
 
       rg <- getLocalGraph
@@ -139,7 +140,7 @@ initialiseConfInRG = getFilesystem >>= \case
       m0e <- mapM mirrorEncl encls
       modifyGraph
           $ G.newResource m0r
-        >>> G.connectUnique m0r M0.At r
+        >>> G.connect m0r M0.At r
         >>> G.connect fs M0.IsParentOf m0r
         >>> ( foldl' (.) id
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
@@ -149,7 +150,7 @@ initialiseConfInRG = getFilesystem >>= \case
       Nothing -> do
          m0r <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
          modifyLocalGraph $ return
-           . (G.newResource m0r >>> G.connectUnique m0r M0.At r)
+           . (G.newResource m0r >>> G.connect m0r M0.At r)
          return m0r
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
@@ -190,9 +191,9 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         mapM_ (goProc node devs) m0h_processes
 
         rg <- getLocalGraph
-        let enc = head $ [ e | e1 <- G.connectedFrom Has host rg :: [Enclosure]
-                             , e <- G.connectedFrom M0.At e1 rg :: [M0.Enclosure]
-                             ]
+        let enc = maybe (error "loadMeroServers: can't find enclosure") id $ do
+              e1 <- G.connectedFrom Has host rg :: Maybe Enclosure
+              G.connectedFrom M0.At e1 rg :: Maybe M0.Enclosure
 
         modifyGraph $ G.newResource ctrl
                   >>> G.connect enc M0.IsParentOf ctrl
@@ -220,7 +221,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                 >>> G.newResource proc
                 >>> G.newResource procLabel
                 >>> G.connect node M0.IsParentOf proc
-                >>> G.connectUniqueFrom proc Has procLabel
+                >>> G.connect proc Has procLabel
 
   goSrv proc devs CI.M0Service{..} = let
       filteredDevs = maybe
@@ -305,9 +306,8 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   might be multiple profiles and this function will need
 --   to change.
 getProfile :: PhaseM LoopState l (Maybe M0.Profile)
-getProfile = getLocalGraph >>= \rg -> do
-  return . listToMaybe
-    $ G.connectedTo Cluster Has rg
+getProfile =
+    G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Fetch the Mero filesystem in the system. Currently, we
 --   only support a single filesystem, though in future there
@@ -316,7 +316,7 @@ getProfile = getLocalGraph >>= \rg -> do
 getFilesystem :: PhaseM LoopState l (Maybe M0.Filesystem)
 getFilesystem = getLocalGraph >>= \rg -> do
   return . listToMaybe
-    $ [ fs | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+    $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
       ]
 
@@ -326,10 +326,11 @@ getPool = rgGetPool <$> getLocalGraph
 
 rgGetPool :: G.Graph -> [M0.Pool]
 rgGetPool rg =
-  [ pl | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
-       , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
-       , pl <- G.connectedTo fs M0.IsParentOf rg
-       , M0.fid pl /= M0.f_mdpool_fid fs
+  [ pl
+  | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
+  , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+  , pl <- G.connectedTo fs M0.IsParentOf rg
+  , M0.fid pl /= M0.f_mdpool_fid fs
   ]
 
 -- | RC wrapper for 'getM0Services'.
@@ -339,47 +340,42 @@ getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
-    let sds =
-          [ sd | dev  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-               , sd   <- G.connectedTo dev M0.At rg :: [StorageDevice]
-               ]
-    return $ listToMaybe sds
+    return $ do
+      dev  <- G.connectedTo sdev M0.IsOnHardware rg
+      G.connectedTo (dev :: M0.Disk) M0.At rg
 
 -- | Return the Mero SDev associated with the given storage device
 lookupStorageDeviceSDev :: StorageDevice -> PhaseM LoopState l (Maybe M0.SDev)
 lookupStorageDeviceSDev sdev = do
   rg <- getLocalGraph
-  let sds =
-        [ sd | disk <- G.connectedFrom M0.At sdev rg :: [M0.Disk]
-             , sd <- G.connectedFrom M0.IsOnHardware disk rg :: [M0.SDev]
-             ]
-  return $ listToMaybe sds
+  return $ do
+    disk <- G.connectedFrom M0.At sdev rg
+    G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
 
 lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
-lookupSDevDisk sdev = do
-  rg <- getLocalGraph
-  return . listToMaybe $ G.connectedTo sdev M0.IsOnHardware rg
+lookupSDevDisk sdev =
+    G.connectedTo sdev M0.IsOnHardware <$> getLocalGraph
 
 -- | Given a 'M0.Disk', find the 'M0.SDev' attached to it.
 lookupDiskSDev :: M0.Disk -> PhaseM LoopState l (Maybe M0.SDev)
-lookupDiskSDev disk = do
-  rg <- getLocalGraph
-  return . listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
+lookupDiskSDev disk =
+    G.connectedFrom M0.IsOnHardware disk <$> getLocalGraph
 
 getSDevPool :: M0.SDev -> PhaseM LoopState l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
     let ps =
-          [ p | d  <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-              , dv <- G.connectedTo d M0.IsRealOf rg :: [M0.DiskV]
-              , ct <- G.connectedFrom M0.IsParentOf dv rg :: [M0.ControllerV]
-              , ev <- G.connectedFrom M0.IsParentOf ct rg :: [M0.EnclosureV]
-              , rv <- G.connectedFrom M0.IsParentOf ev rg :: [M0.RackV]
-              , pv <- G.connectedFrom M0.IsParentOf rv rg :: [M0.PVer]
-              , p  <- G.connectedFrom M0.IsRealOf pv rg :: [M0.Pool]
-              , fs <- G.connectedFrom M0.IsParentOf p rg :: [M0.Filesystem]
-              , M0.fid p /= M0.f_mdpool_fid fs
-              ]
+          [ p
+          | Just d  <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
+          , dv <- G.connectedTo d M0.IsRealOf rg :: [M0.DiskV]
+          , Just (ct :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf dv rg]
+          , Just (ev :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ct rg]
+          , Just rv <- [G.connectedFrom M0.IsParentOf ev rg :: Maybe M0.RackV]
+          , Just pv <- [G.connectedFrom M0.IsParentOf rv rg :: Maybe M0.PVer]
+          , Just (p :: M0.Pool) <- [G.connectedFrom M0.IsRealOf pv rg]
+          , Just (fs :: M0.Filesystem) <- [G.connectedFrom M0.IsParentOf p rg]
+          , M0.fid p /= M0.f_mdpool_fid fs
+          ]
     case ps of
       -- TODO throw a better exception
       [] -> error "getSDevPool: No pool found for sdev."
@@ -402,14 +398,16 @@ getSDevPool sdev = do
 getPoolSDevs :: M0.Pool -> PhaseM LoopState l [M0.SDev]
 getPoolSDevs pool = getLocalGraph >>= \rg -> do
   -- Find SDevs for every single pool version belonging to the disk.
-  let sdevs = [ sd | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
-                   , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
-                   , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
-                   , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
-                   , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]
-                   , d <- G.connectedFrom M0.IsRealOf dv rg :: [M0.Disk]
-                   , sd <- G.connectedFrom M0.IsOnHardware d rg :: [M0.SDev]
-                   ]
+  let sdevs =
+        [ sd
+        | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
+        , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
+        , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
+        , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
+        , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]
+        , Just d <- [G.connectedFrom M0.IsRealOf dv rg :: Maybe M0.Disk]
+        , Just sd <- [G.connectedFrom M0.IsOnHardware d rg :: Maybe M0.SDev]
+        ]
   -- Find the largest sdev set, that is the set holding all disks.
   return . S.toList . S.fromList $ sdevs
 
@@ -425,7 +423,7 @@ getPoolSDevsWithState pool st = getPoolSDevs pool >>= \devs -> do
 
 lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
-  listToMaybe . G.connectedFrom M0.At enc <$> getLocalGraph
+    G.connectedFrom M0.At enc <$> getLocalGraph
 
 -- | Lookup the HA endpoint to be used for the node. This is stored as the
 --   endpoint for the HA service hosted by processes on that node. Whilst in
@@ -435,20 +433,20 @@ lookupHostHAAddress :: Host -> PhaseM LoopState l (Maybe String)
 lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
   [ ep | node <- G.connectedTo host Runs rg :: [M0.Node]
         , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
-        , svc <- G.connectedTo ps M0.IsParentOf rg ::[M0.Service]
+        , svc <- G.connectedTo ps M0.IsParentOf rg :: [M0.Service]
         , M0.s_type svc == CST_HA
         , ep <- M0.s_endpoints svc
         ]
 
 -- | Get all children of the conf object.
-getChildren :: G.Relation M0.IsParentOf a b => a -> PhaseM LoopState l [b]
-getChildren obj = do
-  G.connectedTo obj M0.IsParentOf <$> getLocalGraph
+getChildren :: forall a b l. G.Relation M0.IsParentOf a b
+            => a -> PhaseM LoopState l [b]
+getChildren obj = G.connectedToList obj M0.IsParentOf <$> getLocalGraph
 
--- | Get parrents of the conf objects.
-getParents :: G.Relation M0.IsParentOf a b => b -> PhaseM LoopState l [a]
-getParents obj = do
-  G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
+-- | Get parents of the conf objects.
+getParents :: forall a b l. G.Relation M0.IsParentOf a b
+           => b -> PhaseM LoopState l [a]
+getParents obj = G.connectedFromList M0.IsParentOf obj <$> getLocalGraph
 
 -- | Set object in a new state.
 setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
@@ -456,7 +454,7 @@ setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
                 -> PhaseM LoopState l ()
 setObjectStatus obj state = do
   phaseLog "rg" $ "Setting " ++ show obj ++ " to state " ++ show state
-  modifyGraph $ G.connectUniqueFrom obj Is state
+  modifyGraph $ G.connect obj Is state
 
 -- | Test if a service is the principal RM service
 isPrincipalRM :: M0.Service
@@ -475,42 +473,50 @@ setPrincipalRMIfUnset :: M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
-    modifyGraph $ G.connectUnique Cluster Has M0.PrincipalRM
-              >>> G.connectUnique svc Is M0.PrincipalRM
+    modifyGraph $ G.connect Cluster Has M0.PrincipalRM
+              >>> G.connect svc Is M0.PrincipalRM
     return svc
 
 -- | Pick a Principal RM out of the available RM services.
 pickPrincipalRM :: PhaseM LoopState l (Maybe M0.Service)
 pickPrincipalRM = getLocalGraph >>= \g ->
-  let rms = [ rm | (prof :: M0.Profile) <- G.connectedTo Cluster Has g
-                  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf g
-                  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
-                  , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf g
-                  , G.isConnected proc Is M0.PSOnline g
-                  , let srv_types = M0.s_type <$> G.connectedTo proc M0.IsParentOf g
-                  , CST_MGS `elem` srv_types
-                  , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
-                  , G.isConnected proc Is M0.PSOnline g
-                  , M0.s_type rm == CST_RMS
-                  ]
+  let rms =
+        [ rm
+        | Just (prof :: M0.Profile) <-
+            [G.connectedTo Cluster Has g]
+        , (fs :: M0.Filesystem) <-
+            G.connectedTo prof M0.IsParentOf g
+        , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
+        , (proc :: M0.Process) <-
+            G.connectedTo node M0.IsParentOf g
+        , G.isConnected proc Is M0.PSOnline g
+        , let srv_types = M0.s_type <$>
+                (G.connectedTo proc M0.IsParentOf g)
+        , CST_MGS `elem` srv_types
+        , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
+        , G.isConnected proc Is M0.PSOnline g
+        , M0.s_type rm == CST_RMS
+        ]
   in traverse setPrincipalRMIfUnset $ listToMaybe rms
 
 
 m0nodeToNode :: M0.Node -> G.Graph -> [R.Node]
 m0nodeToNode m0node rg =
-  [ node | (h :: R.Host) <- G.connectedFrom R.Runs m0node rg
-         , node <- G.connectedTo h R.Runs rg ]
+  [ node
+  | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
+  , node <- G.connectedTo h R.Runs rg ]
 
 -- | Lookup 'Node' associated with the given 'R.Node'.
 nodeToM0Node :: R.Node -> G.Graph -> [M0.Node]
 nodeToM0Node node rg =
-  [ m0node | (h :: R.Host) <- G.connectedFrom R.Runs node rg
-           , m0node <- G.connectedTo h R.Runs rg ]
+  [ m0node
+  | Just (h :: R.Host) <- [G.connectedFrom R.Runs node rg]
+  , m0node <- G.connectedTo h R.Runs rg ]
 
 -- | Lookup enclosure corresponding to Mero enclosure.
-m0encToEnc :: M0.Enclosure -> G.Graph -> [R.Enclosure]
+m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure
 m0encToEnc m0enc rg = G.connectedTo m0enc M0.At rg
 
 -- | Lookup Mero enclosure corresponding to enclosure.
-encToM0Enc :: R.Enclosure -> G.Graph -> [M0.Enclosure]
+encToM0Enc :: R.Enclosure -> G.Graph -> Maybe M0.Enclosure
 encToM0Enc enc rg = G.connectedFrom M0.At enc rg

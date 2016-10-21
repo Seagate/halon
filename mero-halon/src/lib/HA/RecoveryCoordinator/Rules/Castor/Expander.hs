@@ -126,10 +126,10 @@ ruleReassembleRaid =
         todo eid
 
         mm0 <- runMaybeT $ do
-          m0enc <- MaybeT $ getLocalGraph <&> listToMaybe . encToM0Enc enc
+          m0enc <- MaybeT $ getLocalGraph <&> encToM0Enc enc
           m0node <- MaybeT $ getLocalGraph <&> \rg -> listToMaybe
             [ node | ctrl <- G.connectedTo m0enc M0.IsParentOf rg :: [M0.Controller]
-                   , node <- G.connectedFrom M0.IsOnHardware ctrl rg
+                   , Just node <- [G.connectedFrom M0.IsOnHardware ctrl rg]
                    ]
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe

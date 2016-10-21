@@ -112,7 +112,7 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
         rg <- getLocalGraph
         case (,) <$> getProcessBootLevel p rg <*> getClusterStatus rg of
           Just (pl, M0.MeroClusterState M0.ONLINE rl _) | rl >= pl -> do
-            case listToMaybe [ n | n <- G.connectedFrom M0.IsParentOf p rg ] of
+            case G.connectedFrom M0.IsParentOf p rg of
               Nothing -> do
                 phaseLog "warn" $ "Couldn't find node associated with " ++ show p
                 setFailure (M0.fid p) "No node info in RG"
@@ -159,7 +159,7 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
           (mres :: Maybe M0.Process) <- M0.lookupConfObjByFid fid
                                       <$> getLocalGraph
           forM_ ((,) <$> mres <*> mpid) $ \(res, pid) ->
-              modifyGraph $ G.connectUniqueFrom res Has (M0.PID pid)
+              modifyGraph $ G.connect res Has (M0.PID pid)
 
         done eid'
         switch [process_online, process_failed, timeout 180 restart_timeout]
@@ -240,7 +240,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
     rg <- getLocalGraph
-    case (getState p rg, listToMaybe $ G.connectedTo p Has rg) of
+    case (getState p rg, G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
       -- we don't care what the PID is as it either is the PID we
       -- already know about which suggest duplicate message or a new
@@ -257,7 +257,7 @@ ruleProcessOnline = define "castor::process::online" $ do
       -- if the process was set to online through all its services
       -- coming up online and now we're receiving the process
       -- notification itself. Just store the PID.x
-      (M0.PSOnline, Nothing) -> modifyGraph $ G.connectUniqueFrom p Has processPid
+      (M0.PSOnline, Nothing) -> modifyGraph $ G.connect p Has processPid
 
       -- Process was starting: we don't care what the PID was because
       -- it's now out of date. We log it anyway, it's probably PID of
@@ -270,14 +270,14 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.old_pid = " ++ show oldPid
         phaseLog "info" $ "process.pid     = " ++ show processPid
-        modifyGraph $ G.connectUniqueFrom p Has processPid
+        modifyGraph $ G.connect p Has processPid
         applyStateChanges [ stateSet p M0.PSOnline ]
       (_, _)
         | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
         phaseLog "action" "HA Process started."
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
-        modifyGraph $ G.connectUniqueFrom p Has processPid
+        modifyGraph $ G.connect p Has processPid
         applyStateChanges [ stateSet p M0.PSOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
@@ -319,7 +319,7 @@ ruleProcessConfigured = defineSimpleTask "castor::process::handle-configured" $
        phaseLog "error" $ printf "failed to configure %s : %s" (showFid p) s
     for_ (lefts resultProcs) $ \p -> do
        phaseLog "info" $ printf "%s: configured" (showFid p)
-       modifyGraph $ G.connectUniqueFrom p Is M0.ProcessBootstrapped
+       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
     -- XXX: use notification somehow
     registerSyncGraphProcess $ \rc -> do
       for_ results $ \r -> case r of
@@ -398,7 +398,7 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
     (mres :: Maybe M0.Process) <- M0.lookupConfObjByFid fid
                                 <$> getLocalGraph
     for_ ((,) <$> mres <*> mpid) $ \(res, pid) ->
-        modifyGraph $ G.connectUniqueFrom res Has (M0.PID pid)
+        modifyGraph $ G.connect res Has (M0.PID pid)
 
 
 jobStop :: Job StopProcessesRequest StopProcessesResult

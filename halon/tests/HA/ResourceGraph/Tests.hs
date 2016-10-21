@@ -2,15 +2,17 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module HA.ResourceGraph.Tests ( tests ) where
 
 import Control.Distributed.Process hiding (catch)
-import Control.Distributed.Process.Closure (mkStatic, remotable)
+import Control.Distributed.Process.Closure (mkStatic)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable (SerializableDict(..))
 
@@ -38,17 +40,20 @@ import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
 import HA.ResourceGraph hiding (__remoteTable)
+import HA.Resources.TH
 
 import RemoteTables (remoteTable)
 import Test.Framework
 import Test.Helpers (assertBool, assertEqual)
 
+mmSDict :: SerializableDict (MetaInfo, Multimap)
+mmSDict = SerializableDict
 --------------------------------------------------------------------------------
 -- Types                                                                      --
 --------------------------------------------------------------------------------
 
 data NodeA = NodeA Int
-  deriving (Eq, Typeable, Generic, Show)
+  deriving (Eq, Ord, Typeable, Generic, Show)
 
 instance Hashable NodeA
 instance Binary NodeA
@@ -58,6 +63,12 @@ data NodeB = NodeB Int
 
 instance Hashable NodeB
 instance Binary NodeB
+
+data NodeC = NodeC Int
+  deriving (Eq, Typeable, Generic, Show)
+
+instance Hashable NodeC
+instance Binary NodeC
 
 data HasA = HasA
   deriving (Eq, Typeable, Generic, Show)
@@ -71,43 +82,36 @@ data HasB = HasB
 instance Hashable HasB
 instance Binary HasB
 
-resourceDictNodeA :: Dict (Resource NodeA)
-resourceDictNodeB :: Dict (Resource NodeB)
+data HasC = HasC
+  deriving (Eq, Typeable, Generic, Show)
 
-resourceDictNodeA = Dict
-resourceDictNodeB = Dict
+instance Hashable HasC
+instance Binary HasC
 
-relationDictHasBNodeANodeB :: Dict (Relation HasB NodeA NodeB)
-relationDictHasANodeBNodeA :: Dict (Relation HasA NodeB NodeA)
-
-relationDictHasBNodeANodeB = Dict
-relationDictHasANodeBNodeA = Dict
-
-mmSDict :: SerializableDict (MetaInfo, Multimap)
-mmSDict = SerializableDict
-
-remotable
-  [ 'resourceDictNodeA
-  , 'resourceDictNodeB
-  , 'relationDictHasBNodeANodeB
-  , 'relationDictHasANodeBNodeA
-  , 'mmSDict
-  ]
-
-instance Resource NodeA where
-  resourceDict = $(mkStatic 'resourceDictNodeA)
-instance Resource NodeB where
-  resourceDict = $(mkStatic 'resourceDictNodeB)
 deriveSafeCopy 0 'base ''NodeA
 deriveSafeCopy 0 'base ''NodeB
+deriveSafeCopy 0 'base ''NodeC
 
-instance Relation HasB NodeA NodeB where
-  relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
-instance Relation HasA NodeB NodeA where
-  relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
 deriveSafeCopy 0 'base ''HasA
 deriveSafeCopy 0 'base ''HasB
+deriveSafeCopy 0 'base ''HasC
 
+$(mkDicts
+  [''NodeA, ''NodeB, ''NodeC]
+  [ (''NodeA, ''HasB, ''NodeB)
+  , (''NodeB, ''HasA, ''NodeA)
+  , (''NodeA, ''HasC, ''NodeC)
+  , (''NodeB, ''HasC, ''NodeC)
+  ])
+$(mkResRel
+  [''NodeA, ''NodeB, ''NodeC]
+  [ (''NodeA, Unbounded, ''HasB, Unbounded, ''NodeB)
+  , (''NodeB, Unbounded, ''HasA, Unbounded, ''NodeA)
+  , (''NodeA, Unbounded, ''HasC, AtMostOne, ''NodeC)
+  , (''NodeB, AtMostOne, ''HasC, AtMostOne, ''NodeC)
+  ]
+  ['mmSDict]
+  )
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --
 --------------------------------------------------------------------------------
@@ -221,10 +225,12 @@ tests transport _ = do
           assert $ length es1 == 1
           assert $ es1 == [NodeA 1]
 
-          assert $ Prelude.null (connectedTo (NodeB 1) HasA g3 :: [NodeA])
+          assert $ Prelude.null
+            (connectedTo (NodeB 1) HasA g3 :: [NodeA])
 
           g4 <- getGraph mm
-          assert $ Prelude.null (connectedTo (NodeB 1) HasA g4 :: [NodeA])
+          assert $ Prelude.null
+            (connectedTo (NodeB 1) HasA g4 :: [NodeA])
 
       , testSuccess "back-edge" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
@@ -324,4 +330,24 @@ tests transport _ = do
           assertEqual "es1 is empty" [] es1
           assertEqual "es2 is empty" [] es2
           assertEqual "es3 is empty" [] es3
+      , testSuccess "cardinalities" $ rGroupTest transport g $ \mm -> do
+          g1 <- syncWait . sampleGraph =<< getGraph mm
+          g2 <- syncWait . connect (NodeA 1) HasC (NodeC 1)
+                         . connect (NodeA 2) HasC (NodeC 1)
+                         . connect (NodeB 1) HasC (NodeC 1)
+                         $ g1
+          do
+            -- Should get both NodeA nodes back
+            let res = connectedFromList HasC (NodeC 1) g2 :: [NodeA]
+            assertEqual "res is [NodeA 1, NodeA 2]"
+              [NodeA 1, NodeA 2] (sort res)
+          do
+            -- Should get NodeC 1 back as a Maybe
+            let es1 = connectedTo (NodeA 1) HasC g2 :: Maybe NodeC
+            assertEqual "es1 is Just (NodeC 1)" (Just (NodeC 1)) es1
+          g3 <- syncWait $ connect (NodeA 1) HasC (NodeC 2) g2
+          do
+            -- Should have replaced the NodeC due to cardinality
+            let res = connectedToList (NodeA 1) HasC g3 :: [NodeC]
+            assertEqual "res is [NodeC 2]" [NodeC 2] res
       ]

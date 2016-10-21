@@ -42,7 +42,6 @@ import Control.Exception ( try )
 import Control.Monad (void)
 
 import Data.Binary (Binary)
-import Data.Maybe (listToMaybe)
 
 import Network.CEP
 
@@ -81,7 +80,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
     status <- getClusterStatus <$> getLocalGraph
     case ((,) <$> mfs <*> status) of
       Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 1 -> do
-        mp <- listToMaybe . G.connectedTo R.Cluster R.Has <$> getLocalGraph
+        mp <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
         void . withSpielIO . withRConfIO mp
           $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
         put Local $ Just fs
@@ -98,7 +97,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                                     ++ se
       Right stats -> do
         Just fs <- get Local
-        modifyGraph $ G.connectUniqueFrom fs R.Has stats
+        modifyGraph $ G.connect fs R.Has stats
         notify $ StatsUpdated fs stats
     continue $ timeout queryInterval stats_fetch
 

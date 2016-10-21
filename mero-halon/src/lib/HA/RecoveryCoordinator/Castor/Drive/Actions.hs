@@ -21,7 +21,6 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
 
 import Data.Binary (Binary)
 import Data.Functor (void)
-import Data.Maybe (listToMaybe)
 import Data.Maybe (mapMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
@@ -126,7 +125,7 @@ mkAttachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
-    mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $
@@ -182,7 +181,7 @@ mkDetachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceDetached sdev . handleSNSReply
-    mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $
@@ -260,27 +259,27 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     mk :: Maybe (Int, Int)
     mk = let pvers = nub
                [ pver
-               | disk  <- G.connectedTo  sdev M0.IsOnHardware     rg :: [M0.Disk]
-               , cntrl <- G.connectedFrom     M0.IsParentOf disk  rg :: [M0.Controller]
-               , encl  <- G.connectedFrom     M0.IsParentOf cntrl rg :: [M0.Enclosure]
-               , rack  <- G.connectedFrom     M0.IsParentOf encl  rg :: [M0.Rack]
+               | disk  <- G.connectedToList sdev M0.IsOnHardware  rg :: [M0.Disk]
+               , cntrl <- G.connectedFromList M0.IsParentOf disk  rg :: [M0.Controller]
+               , encl  <- G.connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
+               , rack  <- G.connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
                , rackv <- G.connectedTo  rack M0.IsRealOf         rg :: [M0.RackV]
-               , pver  <- G.connectedFrom     M0.IsParentOf rackv rg :: [M0.PVer]
-               , pool  <- G.connectedFrom     M0.IsRealOf   pver  rg :: [M0.Pool]
+               , pver  <- G.connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
+               , pool  <- G.connectedFromList M0.IsRealOf   pver  rg :: [M0.Pool]
                -- exclude metadata pools
                , M0.fid pool `notElem` mdFids
                ]
              mdFids = [ M0.f_mdpool_fid fs
-                      | p <- G.connectedTo Res.Cluster Has rg :: [M0.Profile]
+                      | p <- G.connectedToList Res.Cluster Has rg :: [M0.Profile]
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
-             failedDisks = [ d | prof :: M0.Profile <- G.connectedTo Res.Cluster Has rg
+             failedDisks = [ d | prof :: M0.Profile <- G.connectedToList Res.Cluster Has rg
                                , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
                                , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                                , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
                                , ctrl :: M0.Controller <- G.connectedTo enc M0.IsParentOf rg
                                , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                               , d :: M0.SDev <- G.connectedFrom M0.IsOnHardware disk rg
+                               , d :: M0.SDev <- G.connectedFromList M0.IsOnHardware disk rg
                                , failingState d (M0.getState d rg)
                                ]
          in case mapMaybe getK pvers of

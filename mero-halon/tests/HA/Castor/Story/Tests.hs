@@ -66,7 +66,6 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (find)
 import Data.Function (fix)
 import Data.Hashable (Hashable)
-import Data.Maybe (listToMaybe)
 import Data.Proxy
 import qualified Data.Set as S
 import Data.Typeable
@@ -146,8 +145,8 @@ testRules = do
       let node = Node nid
           host = Host systemHostname
           procs = [ proc
-                  | m0cont <- G.connectedFrom M0.At host rg :: [M0.Controller]
-                  , m0node <- G.connectedFrom M0.IsOnHardware m0cont rg :: [M0.Node]
+                  | Just (m0cont :: M0.Controller) <- [G.connectedFrom M0.At host rg]
+                  , Just (m0node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware m0cont rg]
                   , proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                   ]
       -- We have to mark the process as online in order for our mock mero
@@ -156,7 +155,7 @@ testRules = do
       forM_ procs $ \proc -> do
         modifyGraph $ setState proc M0.PSOnline
       -- Also mark the cluster disposition as ONLINE.
-      modifyGraph $ G.connectUniqueFrom Cluster Has M0.ONLINE
+      modifyGraph $ G.connect Cluster Has M0.ONLINE
       -- Calculate cluster status.
       notifyOnClusterTransition Nothing
       locateNodeOnHost node host
@@ -315,8 +314,8 @@ findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
   let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-            , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-            , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
+            , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
             , DISerialNumber serial <- G.connectedTo storage Has rg
             , DIPath path <- G.connectedTo storage Has rg
             , DIWWN wwn <- G.connectedTo storage Has rg
@@ -330,8 +329,8 @@ find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
   let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-            , disk <- G.connectedTo sdev M0.IsOnHardware rg :: [M0.Disk]
-            , storage <- G.connectedTo disk M0.At rg :: [StorageDevice]
+            , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
             , DISerialNumber serial <- G.connectedTo storage Has rg
             , DIPath path <- G.connectedTo storage Has rg
             , DIWWN wwn <- G.connectedTo storage Has rg
@@ -342,8 +341,7 @@ find2SDev rg =
                error "Unreachable"
 
 devAttrs :: StorageDevice -> G.Graph -> [StorageDeviceAttr]
-devAttrs sd rg =
-  [ attr | attr <- G.connectedTo sd Has rg :: [StorageDeviceAttr] ]
+devAttrs sd rg = G.connectedTo sd Has rg
 
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
@@ -674,7 +672,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
             then "Pool version should exist"
             else "Pool version should not exist"
       check = if yes then elem else \a -> not . elem a
-      [fs] = [ x | p <- G.connectedTo Cluster Has rg :: [M0.Profile]
+      [fs] = [ x | Just (p :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                  , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
                  ]
       pv1 = G.getResourcesOfType rg :: [M0.PVer]
@@ -694,7 +692,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     failDrive recv sdev
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
-    let [disk] = G.connectedTo m0sdev M0.IsOnHardware rg1 :: [M0.Disk]
+    let Just (disk :: M0.Disk) = G.connectedTo m0sdev M0.IsOnHardware rg1
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
@@ -702,7 +700,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
-    let [disk2] = G.connectedTo m0sdev2 M0.IsOnHardware rg2 :: [M0.Disk]
+    let Just (disk2 :: M0.Disk) = G.connectedTo m0sdev2 M0.IsOnHardware rg2
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
 
@@ -890,7 +888,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
 
     debug $ "Enclosures: " ++ show encs
     let [enc] = encs
-        (Just m0enc) = listToMaybe $ encToM0Enc enc rg
+        (Just m0enc) = encToM0Enc enc rg
 
     debug $ "(enc, m0enc): " ++ show (enc, m0enc)
 

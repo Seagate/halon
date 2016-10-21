@@ -106,7 +106,7 @@ createMeroKernelConfig host lnid = modifyLocalGraph $ \rg -> do
   return  $ G.newResource uuid
         >>> G.newResource (M0.LNid lnid)
         >>> G.connect host Has (M0.LNid lnid)
-        >>> G.connectUnique host Has uuid
+        >>> G.connect host Has uuid
           $ rg
 
 -- | Create relevant configuration for a mero client in the RG.
@@ -121,9 +121,9 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
   createMeroKernelConfig host nid
   modifyLocalGraph $ \rg -> do
     -- Check if node is already defined in RG
-    m0node <- case listToMaybe [ n | (c :: M0.Controller) <- G.connectedFrom M0.At host rg
-                                   , (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
-                                   ] of
+    m0node <- case do (c :: M0.Controller) <- G.connectedFrom M0.At host rg
+                      (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+                      return n of
       Just nd -> return nd
       Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
     -- Check if process is already defined in RG
@@ -236,7 +236,7 @@ calculateStopLevel = do
                                         , M0.PSStopping
                                         , M0.PSStarting
                                         ]
-              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
               , M0.getState n g /= M0.NSFailed
                 && M0.getState n g /= M0.NSFailedUnrecoverable
           ]) . filter (filterHA g)
@@ -253,7 +253,7 @@ calculateStopLevel = do
                                         , M0.PSStopping
                                         , M0.PSStarting
                                         ]
-              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
               , M0.getState n g /= M0.NSFailed
                 && M0.getState n g /= M0.NSFailedUnrecoverable
           ] )
@@ -269,7 +269,7 @@ calculateStopLevel = do
                                         , M0.PSStopping
                                         , M0.PSStarting
                                         ]
-              , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p g
+              , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
               , M0.getState n g /= M0.NSFailed
                 && M0.getState n g /= M0.NSFailedUnrecoverable
           ] )
@@ -280,9 +280,9 @@ calculateStopLevel = do
 -- | Get an aggregate cluster status report.
 getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState
 getClusterStatus rg = let
-    dispo = listToMaybe $ G.connectedTo Res.Cluster Has rg
-    runLevel = listToMaybe $ G.connectedTo Res.Cluster M0.RunLevel rg
-    stopLevel = listToMaybe $ G.connectedTo Res.Cluster M0.StopLevel rg
+    dispo = G.connectedTo Res.Cluster Has rg
+    runLevel = G.connectedTo Res.Cluster M0.RunLevel rg
+    stopLevel = G.connectedTo Res.Cluster M0.StopLevel rg
   in M0.MeroClusterState <$> dispo <*> runLevel <*> stopLevel
 
 
@@ -292,7 +292,7 @@ getClusterStatus rg = let
 isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
-  | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
+  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed
@@ -483,7 +483,7 @@ getLabeledProcesses :: M0.ProcessLabel
                     -> [M0.Process]
 getLabeledProcesses label predicate rg =
   [ proc
-  | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
+  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
@@ -493,7 +493,7 @@ getLabeledProcesses label predicate rg =
 
 getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
 getLabeledNodeProcesses node label rg =
-   [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
+   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
        , G.isConnected p Is M0.PSOnline rg
@@ -523,7 +523,7 @@ getProcessBootLevel proc rg = let
 
 getNodeProcesses :: Res.Node -> G.Graph -> [M0.Process]
 getNodeProcesses node rg =
-  [ p | host <- G.connectedFrom Runs node rg :: [Castor.Host]
+  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
   ]
@@ -532,7 +532,7 @@ getNodeProcesses node rg =
 getAllProcesses :: G.Graph -> [M0.Process]
 getAllProcesses rg =
   [ p
-  | (prof :: M0.Profile) <- G.connectedTo Res.Cluster Has rg
+  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
@@ -551,13 +551,14 @@ startMeroService host node = do
     -- if there is no HA service running to give us an endpoint, pass
     -- the lnid to mkHAAddress instead of the host address: trust user
     -- setting
-    Nothing -> case listToMaybe . G.connectedTo host Has $ rg of
+    Nothing -> case listToMaybe $ -- TODO: Don't ignore the other addresses?
+                      G.connectedTo host Has $ rg of
       Just (M0.LNid lnid) -> return . Just $ lnid ++ haAddress
       Nothing -> return Nothing
   mapM_ promulgateRC $ do
     profile <- mprofile
     haAddr <- mHaAddr
-    uuid <- listToMaybe $ G.connectedTo host Has rg
+    uuid <- G.connectedTo host Has rg
     let mconf = listToMaybe
                   [ (proc, srvHA, srvRM)
                   | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
@@ -587,7 +588,7 @@ startMeroService host node = do
 retriggerMeroNodeBootstrap :: M0.Node -> PhaseM LoopState a ()
 retriggerMeroNodeBootstrap n = do
   rg <- getLocalGraph
-  case listToMaybe $ G.connectedTo Res.Cluster Has rg of
+  case G.connectedTo Res.Cluster Has rg of
     Just M0.ONLINE -> restartMeroOnNode
     cst -> phaseLog "info"
            $ "Not trying to retrigger mero as cluster state is " ++ show cst
@@ -595,8 +596,8 @@ retriggerMeroNodeBootstrap n = do
     restartMeroOnNode = do
       rg <- getLocalGraph
       case G.connectedFrom Runs n rg of
-        [] -> phaseLog "info" $ "Not a mero node: " ++ show n
-        h : _ -> announceTheseMeroHosts [h] (\_ _ -> True)
+        Nothing -> phaseLog "info" $ "Not a mero node: " ++ show n
+        Just h  -> announceTheseMeroHosts [h] (\_ _ -> True)
 
 -- | Send notifications about new mero nodes and new mero servers for
 -- the given set of 'Castor.Host's.

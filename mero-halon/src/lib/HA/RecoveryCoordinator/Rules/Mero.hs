@@ -25,7 +25,6 @@ import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
 import Control.Distributed.Process (usend, sendChan)
-import Data.Maybe (listToMaybe)
 
 import Network.CEP
 
@@ -51,7 +50,7 @@ meroRules = do
   defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
     rg <- getLocalGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
-           <$> listToMaybe (G.connectedTo (M0.Pool pool) R.Has rg)
+           <$> G.connectedTo (M0.Pool pool) R.Has rg
     phaseLog "debug" $ "FailureVector="++show mv
     liftProcess $ sendChan port mv
 

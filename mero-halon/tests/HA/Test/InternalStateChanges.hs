@@ -115,12 +115,12 @@ stateCascade t pg = doTest t pg [rule] test'
       setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
         rg <- getLocalGraph
         let Just p = listToMaybe $
-                [ proc | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
                 , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
                 , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
-                , (node :: M0.Node) <- G.connectedFrom M0.IsOnHardware ctrl rg
+                , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
                 , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
                 ]
             -- Just encl = listToMaybe
@@ -192,7 +192,7 @@ failvecCascade t pg = doTest t pg [rule] test'
         phaseLog "info" "Set hooks"
         rg <- getLocalGraph
         let disks@(d0:d1:_) =
-                [ disk | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                [ disk | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
                 , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
@@ -213,13 +213,13 @@ failvecCascade t pg = doTest t pg [rule] test'
         phaseLog "info" $ "All notified"
         rg <- getLocalGraph
         let pools =
-                [ pool | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                [ pool | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg
                 ]
         let mvs = mapMaybe (\pl -> (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w)
                  (toConfObjState w (HA.Resources.Mero.Note.getState w rg))) <$> v)
-              <$> listToMaybe (G.connectedTo pl Has rg)) pools
+              <$> (G.connectedTo pl Has rg)) pools
         case mvs of
           [] -> liftProcess . usend pid $ (Nothing :: Maybe [Note])
           (mv:_) -> do

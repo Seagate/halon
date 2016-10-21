@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies     #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -72,11 +74,12 @@ registerChannel :: ( Resource (TypedChannel a)
 registerChannel sp chan =
   modifyGraph $ G.newResource sp
             >>> G.newResource chan
-            >>> G.connectUniqueTo sp MeroChannel chan
+            >>> G.connect sp MeroChannel chan
 
 -- | Unregister mero channel inside RG.
 unregisterChannel :: forall a l proxy .
    ( Resource (TypedChannel a)
+   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
    , Relation MeroChannel R.Node (TypedChannel a)
    ) => R.Node -> proxy a -> PhaseM LoopState l ()
 unregisterChannel node _ = modifyGraph $ \rg ->
@@ -85,12 +88,13 @@ unregisterChannel node _ = modifyGraph $ \rg ->
 
 -- | Find mero channel.
 meroChannel :: ( Resource (TypedChannel a)
+               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
                , Relation MeroChannel R.Node (TypedChannel a)
                )
             => Graph
             -> R.Node
             -> Maybe (TypedChannel a)
-meroChannel rg sp = listToMaybe [ chan | chan <- G.connectedTo sp MeroChannel rg ]
+meroChannel rg sp = listToMaybe $ G.connectedTo sp MeroChannel rg
 
 
 -- | Fetch all Mero notification channels.
@@ -101,8 +105,7 @@ meroChannels node rg = G.connectedTo node MeroChannel rg
 lookupMeroChannelByNode :: R.Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do
    rg <- getLocalGraph
-   let mlchan = listToMaybe $ G.connectedTo node MeroChannel rg
-   return mlchan
+   return $ listToMaybe $ G.connectedTo node MeroChannel rg
 
 -- | Unregister all channels.
 unregisterMeroChannelsOn :: R.Node -> PhaseM LoopState l ()
@@ -160,7 +163,7 @@ mkStateDiff f msg onCommit = do
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM LoopState l (Maybe StateDiff)
-getStateDiffByEpoch idx = listToMaybe . G.connectedTo epoch R.Is <$> getLocalGraph
+getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
   where
     epoch = StateDiffIndex idx
 

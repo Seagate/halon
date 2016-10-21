@@ -51,7 +51,7 @@ import Prelude hiding (id, (.))
 
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
-    mapMaybe extractPath $ ids
+    mapMaybe extractPath ids
   where
     ids = G.connectedTo sd Has g
     extractPath (DIPath x) = Just x

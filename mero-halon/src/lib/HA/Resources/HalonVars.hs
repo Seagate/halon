@@ -35,13 +35,13 @@ defaultHalonVars = HalonVars
 
 -- | Get 'HalonVars' from RG
 getHalonVars :: PhaseM LoopState l HalonVars
-getHalonVars = G.connectedTo Cluster Has <$> getLocalGraph >>= return . \case
-  hv : _ -> hv
-  _ -> defaultHalonVars
+getHalonVars =
+    maybe defaultHalonVars id . G.connectedTo Cluster Has <$>
+    getLocalGraph
 
 -- | Set a new 'HalonVars' in RG.
 setHalonVars :: HalonVars -> PhaseM LoopState l ()
-setHalonVars = modifyGraph . G.connectUniqueFrom Cluster Has
+setHalonVars = modifyGraph . G.connect Cluster Has
 
 -- | Change existing 'HalonVars' in RG.
 modifyHalonVars :: (HalonVars -> HalonVars) -> PhaseM LoopState l ()

@@ -55,6 +55,7 @@ import qualified Test.Tasty.HUnit as Tasty
 import Helper.InitialData
 import Helper.Environment (systemHostname)
 import Helper.RC
+import Data.Maybe (catMaybes)
 import Data.Proxy
 import Data.Typeable
 
@@ -179,8 +180,8 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
 
     let g = lsGraph ls'
 
-    let ppvers = [(pool, pvers) | root :: M0.Root     <- connectedTo Cluster Has g
-                                , profile :: M0.Profile <- connectedTo root M0.IsParentOf g
+    let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [connectedTo Cluster Has g]
+                                , Just (profile :: M0.Profile) <- [connectedTo root M0.IsParentOf g]
                                 , fs :: M0.Filesystem <- connectedTo profile M0.IsParentOf g
                                 , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
                                 , let pvers :: [M0.PVer] = connectedTo pool M0.IsRealOf g
@@ -239,7 +240,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
         disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
 
         sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) hosts
-        disksByHost = join $ fmap (\r -> connectedFrom M0.At r g :: [M0.Disk]) sdevs
+        disksByHost = catMaybes $ fmap (\r -> connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
 
         disk1 = head disks
         dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]

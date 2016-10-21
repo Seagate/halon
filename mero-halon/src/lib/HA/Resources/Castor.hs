@@ -5,10 +5,12 @@
 -- Castor specific resources.
 
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
@@ -216,7 +218,7 @@ $(mkDicts
   , (''Host, ''Runs, ''Node)
   , (''StorageDevice, ''Is, ''StorageDeviceStatus)
   , (''Host, ''Has, ''StorageDevice)
-  , (''StorageDevice, ''Has, ''StorageDeviceStatus)
+  -- , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
@@ -231,24 +233,24 @@ $(mkResRel
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   ]
-  [ (''Cluster, ''Has, ''Rack)
-  , (''Cluster, ''Has, ''Host)
-  , (''Cluster, ''Has, ''HalonVars)
-  , (''Rack, ''Has, ''Enclosure)
-  , (''Host, ''Has, ''MI.Interface)
-  , (''Host, ''Has, ''HostAttr)
-  , (''Host, ''Has, ''UUID)
-  , (''Enclosure, ''Has, ''StorageDevice)
-  , (''Enclosure, ''Has, ''Host)
-  , (''Enclosure, ''Has, ''MI.BMC)
-  , (''Host, ''Runs, ''Node)
-  , (''StorageDevice, ''Is, ''StorageDeviceStatus)
-  , (''Host, ''Has, ''StorageDevice)
-  , (''StorageDevice, ''Has, ''StorageDeviceStatus)
-  , (''StorageDevice, ''Has, ''DeviceIdentifier)
-  , (''StorageDevice, ''Has, ''StorageDeviceAttr)
-  , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
-  , (''Host, ''Is, ''ReassemblingRaid)
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
+  , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
+  , (''Host, AtMostOne, ''Has, Unbounded, ''MI.Interface)
+  , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
+  , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''StorageDevice)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''MI.BMC)
+  , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)
+  , (''StorageDevice, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
+  , (''Host, AtMostOne, ''Has, Unbounded, ''StorageDevice)
+  -- , (''StorageDevice, Unbounded, ''Has, AtMostOne, ''StorageDeviceStatus)
+  , (''StorageDevice, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)
+  , (''StorageDevice, Unbounded, ''Has, Unbounded, ''StorageDeviceAttr)
+  , (''StorageDevice, AtMostOne, ''ReplacedBy, AtMostOne, ''StorageDevice)
+  , (''Host, Unbounded, ''Is, AtMostOne, ''ReassemblingRaid)
   ]
   []
   )

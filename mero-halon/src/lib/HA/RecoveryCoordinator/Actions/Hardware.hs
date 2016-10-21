@@ -149,7 +149,7 @@ findBMCAddress host = do
     g <- getLocalGraph
     return . listToMaybe $
       [ bmc_addr bmc
-      | (enc :: Enclosure) <- G.connectedFrom Has host g
+      | Just (enc :: Enclosure) <- [G.connectedFrom Has host g]
       , bmc <- G.connectedTo enc Has g
       ]
 
@@ -160,20 +160,13 @@ findBMCAddress host = do
 -- | Find the host running the given node
 findNodeHost :: Node
              -> PhaseM LoopState l (Maybe Host)
-findNodeHost node =  do
-  g <- getLocalGraph
-  return $ case G.connectedFrom Runs node g of
-    [h] -> Just h
-    _ -> Nothing
+findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
 -- | Find the enclosure containing the given host.
 findHostEnclosure :: Host
                   -> PhaseM LoopState l (Maybe Enclosure)
-findHostEnclosure host = do
-  g <- getLocalGraph
-  return $ case G.connectedFrom Has host g of
-    [h] -> Just h
-    _ -> Nothing
+findHostEnclosure host =
+    G.connectedFrom Has host <$> getLocalGraph
 
 -- | Find a list of all hosts in the system matching a given
 --   regular expression.
@@ -303,8 +296,7 @@ findHostAttrs :: Host
               -> PhaseM LoopState l [HostAttr]
 findHostAttrs host = do
   phaseLog "rg-query" $ "Getting attributes for host " ++ show host
-  g <- getLocalGraph
-  return $ G.connectedTo host Has g
+  G.connectedTo host Has <$> getLocalGraph
 
 ----------------------------------------------------------
 -- Interface related functions                          --
@@ -356,7 +348,8 @@ hasStorageDeviceIdentifier ld di = do
 isStorageDriveRemoved :: StorageDevice -> PhaseM LoopState l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
-  return $ not . null $ [ () | SDRemovedAt{} <- G.connectedTo sd Has rg ]
+  return $ not . null $
+    [ () | SDRemovedAt{} <- G.connectedTo sd Has rg ]
 
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
@@ -406,10 +399,10 @@ lookupStorageDeviceInEnclosure :: Enclosure
 lookupStorageDeviceInEnclosure enc ident = do
     rg <- getLocalGraph
     return $ listToMaybe
-           [ device
-           | device <- G.connectedTo  enc  Has rg :: [StorageDevice]
-           , G.isConnected device Has ident rg :: Bool
-           ]
+          [ device
+          | device <- G.connectedTo enc Has rg :: [StorageDevice]
+          , G.isConnected device Has ident rg :: Bool
+          ]
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
 lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM LoopState l [StorageDevice]
@@ -424,11 +417,11 @@ lookupStorageDeviceOnHost host ident = do
     rg <- getLocalGraph
     let ml = listToMaybe
                [ device
-               | device <- G.connectedTo  host Has rg :: [StorageDevice]
+               | device <- G.connectedTo host Has rg :: [StorageDevice]
                , G.isConnected device Has ident rg :: Bool
                ]
     case ml of
-      Nothing -> case listToMaybe $ G.connectedFrom Has host rg of
+      Nothing -> case G.connectedFrom Has host rg of
         Nothing -> return Nothing
         Just enc -> lookupStorageDeviceInEnclosure enc ident
       Just d  -> return $ Just d
@@ -440,7 +433,7 @@ lookupStorageDeviceOnHost host ident = do
 lookupEnclosureOfStorageDevice :: StorageDevice
                                -> PhaseM LoopState l (Maybe Enclosure)
 lookupEnclosureOfStorageDevice sd =
-  listToMaybe . G.connectedFrom Has sd <$> getLocalGraph
+    G.connectedFrom Has sd <$> getLocalGraph
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
@@ -464,7 +457,7 @@ locateStorageDeviceOnHost :: Host
                           -> StorageDevice
                           -> PhaseM LoopState l ()
 locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
-  let menc = listToMaybe (G.connectedFrom Has host rg :: [Enclosure])
+  let menc = G.connectedFrom Has host rg :: Maybe Enclosure
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
               ++ " on host "
@@ -501,11 +494,7 @@ mergeStorageDevices sds = do
 -- | Get the status of a storage device.
 driveStatus :: StorageDevice
             -> PhaseM LoopState l (Maybe StorageDeviceStatus)
-driveStatus dev = do
-  rg <- getLocalGraph
-  return $ case G.connectedTo dev Is rg of
-    [a] -> Just a
-    _ -> Nothing
+driveStatus dev = G.connectedTo dev Is <$> getLocalGraph
 
 -- | Update the status of a storage device.
 updateDriveStatus :: StorageDevice
@@ -519,7 +508,7 @@ updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
   phaseLog "status.old" $ show ds
   phaseLog "status.new" $ show statusNode
   let rg' = G.newResource statusNode
-        >>> G.connectUniqueFrom dev Is statusNode
+        >>> G.connect dev Is statusNode
           $ rg
   return rg'
 
@@ -534,9 +523,10 @@ rgUpdateStorageDeviceSDev :: StorageDevice -> G.Graph -> G.Graph
 #ifdef USE_MERO
 rgUpdateStorageDeviceSDev sdev rg =
    let mdev =  do
-         (disk :: M0.Disk) <- listToMaybe $ G.connectedFrom M0.At sdev rg
-         (dev  :: M0.SDev) <- listToMaybe $ G.connectedFrom M0.IsOnHardware disk rg
-         path <- listToMaybe $ [p | (DIPath p) <- G.connectedTo sdev Has rg]
+         (disk :: M0.Disk) <- G.connectedFrom M0.At sdev rg
+         (dev  :: M0.SDev) <- G.connectedFrom M0.IsOnHardware disk rg
+         path <- listToMaybe
+                   [p | (DIPath p) <- G.connectedTo sdev Has rg]
          return (dev{M0.d_path = path}, dev)
    in maybe rg (\(new, dev) -> G.mergeResources (const new) [dev] rg) mdev
 #else
@@ -548,7 +538,7 @@ actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
 actualizeStorageDeviceReplacement sdev = do
     phaseLog "rg" "Set disk candidate as an active disk"
     modifyLocalGraph $ \rg ->
-      case listToMaybe $ G.connectedFrom ReplacedBy sdev rg of
+      case G.connectedFrom ReplacedBy sdev rg of
         Nothing -> do
           phaseLog "rg" "failed to find disk that was attached"
           return rg
@@ -572,9 +562,8 @@ attachStorageDeviceReplacement dev dis = do
 
 -- | Find if storage device has replacement and return new drive if this is a case.
 lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
-lookupStorageDeviceReplacement sdev = do
-    gr <- getLocalGraph
-    return $ listToMaybe $ G.connectedTo sdev ReplacedBy gr
+lookupStorageDeviceReplacement sdev =
+    G.connectedTo sdev ReplacedBy <$> getLocalGraph
 
 -- | Set an attribute on a storage device.
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
@@ -690,17 +679,19 @@ getDiskResetAttempts sdev = do
 getSDevNode :: StorageDevice -> PhaseM LoopState l [Node]
 getSDevNode sdev = do
   rg <- getLocalGraph
-  let nds = [ node | encl <- G.connectedFrom Has sdev rg :: [Enclosure]
-                   , host <- G.connectedTo encl Has rg :: [Host]
-                   , node <- G.connectedTo host Runs rg :: [Node]
+  let nds = [ node
+            | Just encl <- [G.connectedFrom Has sdev rg :: Maybe Enclosure]
+            , host <- G.connectedTo encl Has rg :: [Host]
+            , node <- G.connectedTo host Runs rg :: [Node]
             ]
   return nds
 
 getSDevHost :: StorageDevice -> PhaseM LoopState l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
-  return [ host | encl <- G.connectedFrom Has sdev rg :: [Enclosure]
-                , host <- G.connectedTo encl Has rg :: [Host]
+  return [ host
+         | Just encl <- [G.connectedFrom Has sdev rg :: Maybe Enclosure]
+         , host <- G.connectedTo encl Has rg :: [Host]
          ]
 
 markStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()

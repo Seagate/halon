@@ -99,11 +99,12 @@ createPoolVersionsInPool fs pool pvers invert rg =
   where
     test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
     totalDrives = length
-       [ disk | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
-              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
-              ]
+      [ disk
+      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+      , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+      , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+      , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
+      ]
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
     createPoolVersion (PoolVersion fids failures attrs) = do
@@ -146,7 +147,8 @@ createPoolVersionsInPool fs pool pvers invert rg =
                                  $ G.newResource ctrlv
                                >>> G.connect enclv M0.IsParentOf ctrlv
                                >>> G.connect ctrl M0.IsRealOf ctrlv
-                             let disks = filter (test fids) $ G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk]
+                             let disks = filter (test fids) $
+                                   G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk]
                              for_ disks $ \disk -> do
                                diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
                                S.modify'

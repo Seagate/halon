@@ -163,7 +163,7 @@ testHpiNewWWN = mkHpiTest rules test
       defineSimple "check-test" $ \() -> do
         rg <- getLocalGraph
         let d = DIIndexInEnclosure 10
-        liftProcess $ usend self $ Prelude.null $ (connectedFrom Has d rg :: [StorageDevice])
+        liftProcess $ usend self $ Data.Foldable.null $ (connectedFrom Has d rg :: [StorageDevice])
     test rc = do
       me <- getSelfNode
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))

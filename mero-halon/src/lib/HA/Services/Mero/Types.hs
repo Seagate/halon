@@ -1,7 +1,9 @@
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -280,7 +282,15 @@ instance Resource (TypedChannel ProcessControlMsg) where
     resourceDict = $(mkStatic 'resourceDictControlChannel)
 
 instance Relation MeroChannel R.Node (TypedChannel NotificationMessage) where
+    type CardinalityFrom MeroChannel R.Node (TypedChannel NotificationMessage)
+      = 'AtMostOne
+    type CardinalityTo MeroChannel R.Node (TypedChannel NotificationMessage)
+      = 'Unbounded
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
 
 instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
+    type CardinalityFrom MeroChannel R.Node (TypedChannel ProcessControlMsg)
+      = 'AtMostOne
+    type CardinalityTo MeroChannel R.Node (TypedChannel ProcessControlMsg)
+      = 'Unbounded
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)

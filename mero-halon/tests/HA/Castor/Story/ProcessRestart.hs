@@ -140,7 +140,7 @@ doRestart transport pg startingState runRestartTest =
     rg <- getLocalGraph
     -- Processes with IOS filtered out
     let procs = [ (p, srvs)
-                | (prof :: M0.Profile) <- G.connectedTo Cluster Has rg
+                | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                 , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
                 , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
                 , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
@@ -152,8 +152,8 @@ doRestart transport pg startingState runRestartTest =
                           (G.connectedTo p M0.IsParentOf g0)
 
     for_ procs $ \(p, _) -> modifyGraph $
-      G.connectUniqueFrom p Is startingState
-      . G.connectUniqueFrom p Has (M0.PID testProcessPid)
+      G.connect p Is startingState
+      . G.connect p Has (M0.PID testProcessPid)
       -- disconnect IOS so we don't have to account for drive cascades
       . (\g0 -> foldr (G.disconnect p M0.IsParentOf) g0 (ios p g0))
 
@@ -163,14 +163,14 @@ doRestart transport pg startingState runRestartTest =
     -- failed.
     let incFid (Fid low high) = Fid low (high + 50)
         (p, srvs) : _ = procs
-        (n :: M0.Node) : _ = G.connectedFrom M0.IsParentOf p rg
+        Just (n :: M0.Node) = G.connectedFrom M0.IsParentOf p rg
 
         newProc = p { M0.r_fid = incFid $ M0.r_fid p }
         newSrvs = [ s { M0.s_fid = incFid $ M0.s_fid s }
                   | s <- srvs, M0.s_type s /= CST_RMS ]
 
     modifyGraph $
-      G.connectUniqueFrom newProc Is M0.PSOnline
+      G.connect newProc Is M0.PSOnline
       . (\g0 -> foldr (G.connect newProc M0.IsParentOf) g0 newSrvs)
       . G.connect n M0.IsParentOf newProc
     phaseLog "procs" $ show procs

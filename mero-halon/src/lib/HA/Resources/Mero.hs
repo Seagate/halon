@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
@@ -864,58 +866,58 @@ $(mkResRel
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''Root)
-  , (''R.Cluster, ''R.Has, ''Disposition)
-  , (''R.Cluster, ''R.Has, ''PVerCounter)
-  , (''Root, ''IsParentOf, ''Profile)
-  , (''R.Cluster, ''R.Has, ''Profile)
-  , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''R.Host)
-  , (''Rack, ''At, ''R.Rack)
-  , (''Enclosure, ''At, ''R.Enclosure)
-  , (''Disk, ''At, ''R.StorageDevice)
+    (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
+  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
+  , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack)
+  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
+  , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
-  , (''Profile, ''IsParentOf, ''Filesystem)
-  , (''Filesystem, ''IsParentOf, ''Node)
-  , (''Filesystem, ''IsParentOf, ''Rack)
-  , (''Filesystem, ''IsParentOf, ''Pool)
-  , (''Node, ''IsParentOf, ''Process)
-  , (''Process, ''IsParentOf, ''Service)
-  , (''Service, ''IsParentOf, ''SDev)
-  , (''Rack, ''IsParentOf, ''Enclosure)
-  , (''Enclosure, ''IsParentOf, ''Controller)
-  , (''Controller, ''IsParentOf, ''Disk)
-  , (''PVer, ''IsParentOf, ''RackV)
-  , (''RackV, ''IsParentOf, ''EnclosureV)
-  , (''EnclosureV, ''IsParentOf, ''ControllerV)
-  , (''ControllerV, ''IsParentOf, ''DiskV)
+  , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
+  , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
+  , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
+  , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)
+  , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
+  , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
+  , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
+  , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
+  , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
+  , (''EnclosureV, AtMostOne, ''IsParentOf, Unbounded, ''ControllerV)
+  , (''ControllerV, AtMostOne, ''IsParentOf, Unbounded, ''DiskV)
     -- Virtual relationships between conf entities
-  , (''Pool, ''IsRealOf, ''PVer)
-  , (''Rack, ''IsRealOf, ''RackV)
-  , (''Enclosure, ''IsRealOf, ''EnclosureV)
-  , (''Controller, ''IsRealOf, ''ControllerV)
-  , (''Disk, ''IsRealOf, ''DiskV)
+  , (''Pool, AtMostOne, ''IsRealOf, Unbounded, ''PVer)
+  , (''Rack, AtMostOne, ''IsRealOf, Unbounded, ''RackV)
+  , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
+  , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)
+  , (''Disk, AtMostOne, ''IsRealOf, Unbounded, ''DiskV)
     -- Conceptual/hardware relationships between conf entities
-  , (''SDev, ''IsOnHardware, ''Disk)
-  , (''Node, ''IsOnHardware, ''Controller)
+  , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
+  , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
     -- Other things!
-  , (''R.Cluster, ''R.Has, ''FidSeq)
-  , (''R.Cluster, ''R.Has, ''CI.M0Globals)
-  , (''R.Cluster, ''RunLevel, ''BootLevel)
-  , (''R.Cluster, ''StopLevel, ''BootLevel)
-  , (''Pool, ''R.Has, ''PoolRepairStatus)
-  , (''Pool, ''R.Has, ''DiskFailureVector)
-  , (''R.Host, ''R.Has, ''LNid)
-  , (''R.Host, ''R.Runs, ''Node)
-  , (''Process, ''R.Has, ''ProcessLabel)
-  , (''Process, ''R.Has, ''PID)
-  , (''Process, ''R.Is, ''ProcessBootstrapped)
-  , (''Process, ''R.Is, ''ProcessState)
-  , (''Service, ''R.Is, ''ServiceState)
-  , (''SDev, ''R.Is, ''SDevState)
-  , (''Node,    ''R.Is, ''NodeState)
-  , (''Controller,    ''R.Is, ''ControllerState)
-  , (''Filesystem, ''R.Has, ''FilesystemStats)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''FidSeq)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals)
+  , (''R.Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
+  , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
+  , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
+  , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
+  , (''R.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
+  , (''R.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
+  , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessLabel)
+  , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
+  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
+  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)
+  , (''Service, Unbounded, ''R.Is, AtMostOne, ''ServiceState)
+  , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
+  , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
+  , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
+  , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
   ]
   []
   )
@@ -931,7 +933,7 @@ getM0Services g =
 -- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
 getM0Processes :: G.Graph -> [Process]
 getM0Processes g =
-  [ p | (prof :: Profile) <- G.connectedTo R.Cluster R.Has g
+  [ p | Just (prof :: Profile) <- [G.connectedTo R.Cluster R.Has g]
        , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
        , (node :: Node) <- G.connectedTo fs IsParentOf g
        , p <- G.connectedTo node IsParentOf g
@@ -950,5 +952,5 @@ lookupConfObjByFid f =
 -- | Lookup 'Node' associated with the given 'R.Node'.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
-  [ node | (h :: R.Host) <- G.connectedFrom R.Runs m0node rg
+  [ node | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
          , node <- G.connectedTo h R.Runs rg ]

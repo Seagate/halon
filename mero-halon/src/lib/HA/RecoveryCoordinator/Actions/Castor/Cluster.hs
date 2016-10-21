@@ -20,7 +20,6 @@ import Control.Distributed.Process (Process, usend)
 import Control.Lens ((<&>))
 
 import Data.Foldable (for_)
-import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 
 import Network.CEP
@@ -55,12 +54,12 @@ notifyOnClusterTransition meid = do
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
   disposition <- getLocalGraph <&> maybe M0.OFFLINE id
-                                 . listToMaybe . G.connectedTo R.Cluster R.Has
+                                 . G.connectedTo R.Cluster R.Has
   let newState = M0.MeroClusterState disposition newRunLevel newStopLevel
   phaseLog "oldState" $ show oldState
   phaseLog "newState" $ show newState
-  modifyGraph $ G.connectUnique R.Cluster M0.RunLevel newRunLevel
-            >>> G.connectUnique R.Cluster M0.StopLevel newStopLevel
+  modifyGraph $ G.connect R.Cluster M0.RunLevel newRunLevel
+            >>> G.connect R.Cluster M0.StopLevel newStopLevel
   registerSyncGraphCallback $ \self proc -> do
     usend self (Event.ClusterStateChange oldState newState)
     for_ meid proc

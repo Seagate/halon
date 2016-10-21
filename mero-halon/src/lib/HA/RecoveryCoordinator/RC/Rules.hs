@@ -72,7 +72,8 @@ initialRule argv = do
   -- subscribe all processes with persistent subscription.
   rg <- getLocalGraph
   l "subscribers"
-  for_ (G.connectedFrom SubscribedTo rc rg) $ \(Subscriber p bs) -> do
+  for_ (G.connectedFrom SubscribedTo rc rg) $
+      \(Subscriber p bs) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
@@ -148,11 +149,11 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
 
       -- Remove external subscribers
       modifyLocalGraph $ \g -> do
-        let subs =
-             [ (sub,rc)
-             | sub <- G.connectedTo (SubProcessId pid) IsSubscriber g :: [Subscriber]
-             , rc  <- G.connectedTo sub SubscribedTo g :: [RC]
-             ]
+        let subs = do
+              sub <- G.connectedTo (SubProcessId pid) IsSubscriber g
+                         :: Maybe Subscriber
+              rc  <- G.connectedTo sub SubscribedTo g :: Maybe RC
+              return (sub,rc)
         flip execStateT g $ do
           for_ subs $ \(sub@(Subscriber _ bs), rc) -> do
             let fp = decodeFingerprint bs

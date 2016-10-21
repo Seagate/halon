@@ -103,7 +103,8 @@ sendLoggingCmd :: Host
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
   rg <- getLocalGraph
-  mchan <- listToMaybe . catMaybes <$> for (connectedTo host Runs rg) getCommandChannel
+  mchan <- listToMaybe . catMaybes <$>
+             for (connectedTo host Runs rg) getCommandChannel
   case mchan of
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing, makeLoggerMsg req)
     _ -> phaseLog "error" "Cannot find sspl channel!"
@@ -126,7 +127,8 @@ sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM LoopState l Bool
 sendLedUpdate status host sn = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
-  let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
+  let mnode = listToMaybe $
+                connectedTo host Runs rg -- XXX: try all nodes
   case mnode of
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
@@ -452,13 +454,13 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
       let markFailed p updatePid = do
             phaseLog "info" $ "Failing " ++ showFid p
             when updatePid $ do
-              modifyLocalGraph $ return . connectUniqueFrom p Has (M0.PID currentPid)
+              modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
             applyStateChanges [stateSet p $ M0.PSFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
         Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
           rg <- getLocalGraph
-          case (getState p rg, listToMaybe $ connectedTo p Has rg) of
+          case (getState p rg, connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
               phaseLog "info" "Failed SSPL notification for already failed process - doing nothing."
             (M0.PSOffline, _) ->
@@ -694,11 +696,11 @@ updateDriveManagerWithFailure disk st reason = do
                                                (maybe "unknown reason" T.pack reason)
   where
     withHost rg d f =
-      case listToMaybe $ connectedFrom Has d rg of
+      case connectedFrom Has d rg of
         Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
-        Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
-          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e
-          Just h -> f (h::Host)
+        Just e -> case connectedTo (e::Enclosure) Has rg of
+          []    -> phaseLog "error" $ "Unable to find host for " ++ show e
+          h : _ -> f (h::Host)
 
 ruleSSPLTimeout :: Service SSPLConf -> Definitions LoopState ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $

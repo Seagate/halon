@@ -4,6 +4,7 @@
 --
 -- Contains RC rules that are required for SSPL HL service
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE CPP #-}
 module HA.Services.SSPL.HL.CEP
@@ -78,4 +79,5 @@ hostStatus rg regex = fmap (\h@(Host name) ->
                        , hn =~? regex]
         a =~? (Just ef) = a =~ ef
         _ =~? Nothing = True
-        status host = T.pack . show $ (G.connectedTo host Has rg :: [HostAttr])
+        status host = T.pack . show $
+          (G.connectedTo host Has rg :: [HostAttr])

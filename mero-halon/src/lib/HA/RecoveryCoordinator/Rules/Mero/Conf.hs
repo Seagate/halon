@@ -2,6 +2,7 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -53,7 +54,7 @@ import Control.Lens
 
 import Data.Constraint (Dict)
 import Data.Foldable (forM_)
-import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
@@ -513,21 +514,21 @@ sdevCascadeDisk :: StateCascadeRule M0.SDev M0.Disk
 sdevCascadeDisk = StateCascadeRule
   (const True)
   (const True)
-  (\x rg -> G.connectedTo x M0.IsOnHardware rg)
+  (\x rg -> maybeToList $ G.connectedTo x M0.IsOnHardware rg)
   const
 
 diskCascadeSdev :: StateCascadeRule M0.Disk M0.SDev
 diskCascadeSdev = StateCascadeRule
   (const True)
   (const True)
-  (\x rg -> G.connectedFrom M0.IsOnHardware x rg)
+  (\x rg -> maybeToList $ G.connectedFrom M0.IsOnHardware x rg)
   const
 
 nodeCascadeController :: StateCascadeRule M0.Node M0.Controller
 nodeCascadeController = StateCascadeRule
   (const True)
   (const True)
-  (\x rg -> G.connectedTo x M0.IsOnHardware rg)
+  (\x rg -> maybeToList $ G.connectedTo x M0.IsOnHardware rg)
   (\s o -> case s of
             M0.NSUnknown -> o
             M0.NSOnline -> M0.CSOnline
@@ -566,24 +567,24 @@ iosFailsController = [
     serviceFailed (M0.SSInhibited _) = True
     serviceFailed (M0.SSOffline) = True
     serviceFailed _ = False
-    iosToController rg x =
-      [ controller
-      | (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
-      , (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
-      , controller <- G.connectedTo node M0.IsOnHardware rg
-      ]
+    iosToController rg x = maybeToList $ do
+      (proc :: M0.Process) <- G.connectedFrom M0.IsParentOf x rg
+      (node :: M0.Node) <- G.connectedFrom M0.IsParentOf proc rg
+      G.connectedTo node M0.IsOnHardware rg
 
 diskFailsPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFailsPVer = StateCascadeRule
   (const True)
   (M0.SDSFailed ==)
-  (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
-                                 contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
-                                 enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
-                                 rackv <- G.connectedFrom M0.IsParentOf enclv rg :: [M0.RackV]
-                                 pver  <- G.connectedFrom M0.IsParentOf rackv rg :: [M0.PVer]
-                                 guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
-                                 return pver
+  (\x rg -> let pvers = nub $
+                 do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
+                    Just pver <- [ do
+                      contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
+                      enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
+                      rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
+                      G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
+                    guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
+                    return pver
             in lefts $ map (checkBroken rg) pvers)
   (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
@@ -594,13 +595,17 @@ diskFailsPVer = StateCascadeRule
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
+       check :: forall a b c . ( G.Relation M0.IsParentOf a b
+                               , G.Relation M0.IsRealOf c b
+                               , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
+                               , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
+                               , M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
          let broken = genericLength [ realm
                                     | n     <- next
-                                    , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
+                                    , Just realm <- [G.connectedFrom M0.IsRealOf n rg :: Maybe c]
                                     , M0.M0_NC_FAILED == M0.getConfObjState realm rg
                                     ]
          when (broken > limit) $ Left pver
@@ -611,13 +616,15 @@ diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFixesPVer = StateCascadeRule
   (const True)
   (M0.SDSOnline==)
-  (\x rg -> let pvers = nub $ do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
-                                 contv <- G.connectedFrom M0.IsParentOf diskv rg :: [M0.ControllerV]
-                                 enclv <- G.connectedFrom M0.IsParentOf contv rg :: [M0.EnclosureV]
-                                 rackv <- G.connectedFrom M0.IsParentOf enclv rg :: [M0.RackV]
-                                 pver  <- G.connectedFrom M0.IsParentOf rackv rg :: [M0.PVer]
-                                 guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
-                                 return pver
+  (\x rg -> let pvers = nub $
+                  do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
+                     Just pver <- [ do
+                       contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
+                       enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
+                       rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
+                       G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
+                     guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
+                     return pver
             in lefts $ map (checkBroken rg) pvers)
   (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
   where
@@ -628,15 +635,21 @@ diskFixesPVer = StateCascadeRule
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . (G.Relation M0.IsParentOf a b, G.Relation M0.IsRealOf c b, M0.HasConfObjectState c)
+       check :: forall a b c . ( G.Relation M0.IsParentOf a b
+                               , G.Relation M0.IsRealOf c b
+                               , M0.HasConfObjectState c
+                               , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
+                               , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
+                               )
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ realm
-                                    | n     <- next
-                                    , realm <- G.connectedFrom M0.IsRealOf n rg :: [c]
-                                    , M0.M0_NC_ONLINE == M0.getConfObjState realm rg
-                                    ]
+         let broken = genericLength
+               [ realm
+               | n     <- next
+               , Just realm <- [G.connectedFrom M0.IsRealOf n rg :: Maybe c]
+               , M0.M0_NC_ONLINE == M0.getConfObjState realm rg
+               ]
          when (broken <= limit) $ Left pver
          return next
    checkBroken _ _ = Right ()
