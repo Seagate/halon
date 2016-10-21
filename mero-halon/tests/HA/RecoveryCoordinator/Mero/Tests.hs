@@ -132,7 +132,7 @@ testDriveAddition transport pg = runDefaultTest transport $ do
 
     graph <- G.getGraph mm
     let enc = Enclosure "enc1"
-        drive = head (G.connectedTo enc Has graph :: [StorageDevice])
+        drive = head (G.connectedToU enc Has graph :: [StorageDevice])
         status = StorageDeviceStatus "OK" "NONE"
     liftIO $ do
       assertBool "Enclosure exists in a graph"  $ G.memberResource enc graph
@@ -179,8 +179,8 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
 
     say "Checking drive status sanity"
     graph <- G.getGraph mm
-    let [drive] = [ d | d <- G.connectedTo (Enclosure enc) Has graph :: [StorageDevice]
-                      , DISerialNumber sn <- G.connectedTo d Has graph
+    let [drive] = [ d | d <- G.connectedToU (Enclosure enc) Has graph :: [StorageDevice]
+                      , DISerialNumber sn <- G.connectedToU d Has graph
                       , sn == interestingSN
                   ]
     assert $ G.memberResource drive graph
@@ -196,7 +196,7 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
           -- Find what should be the only SD in the enclosure and trigger
           -- repair on it
           graph <- getLocalGraph
-          let [sd] = G.connectedTo (Enclosure enc) Has graph
+          let [sd] = G.connectedToU (Enclosure enc) Has graph
           updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
           messageProcessed eid
         -- Required because normal `DriveOK` handling is only enabled with

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -91,7 +92,9 @@ generateDicts n = do
 -- will produce:
 --
 -- @
--- instance Relation (Supports Cluster Sevice N) where
+-- instance Relation Supports Cluster (Sevice N) where
+--   type CardinalityFrom Supports Cluster (Service N) = AtMostOne
+--   type CardinalityTo   Supports Cluster (Service N) = AtMostOne
 --   relationDict = $(mkStatic relationDictSupportsClusterService_x)
 --
 -- instance Resource N where
@@ -116,12 +119,13 @@ deriveService :: Name   -- ^ Configuration data constructor
 deriveService n nschema othernames = do
     -- Relation Supports Cluster (Service a)
     let namSCS = mkName "relationDictSupportsClusterService"
-        relSCS = conT ''Relation `appT`
-                 conT ''Supports `appT`
-                 conT ''Cluster  `appT`
-                 (conT ''Service `appT` conT n)
-    rSCS <- instanceD (cxt []) relSCS
-            [ funD 'relationDict [clause [] (normalB $ mkStatic namSCS) []]]
+    rSCS <- [d| instance Relation Supports Cluster (Service $(conT n)) where
+                  type CardinalityFrom Supports Cluster (Service $(conT n))
+                    = 'AtMostOne
+                  type CardinalityTo   Supports Cluster (Service $(conT n))
+                    = 'AtMostOne
+                  relationDict = $(mkStatic namSCS)
+              |]
 
     -- Resource a
     let namRA = mkName "resourceDictServiceInfo"
@@ -153,8 +157,8 @@ deriveService n nschema othernames = do
                          , namSCS
                          ] ++ othernames)
 
-    let decs = [ rSCS
-               , rRA
+    let decs = rSCS ++
+               [ rRA
                , rRSA
                , saConf
                ]

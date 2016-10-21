@@ -18,7 +18,6 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
 import Data.Functor (void)
 import Data.Binary (Binary)
 import Data.Typeable
-import Data.Maybe (listToMaybe)
 import GHC.Generics
 
 import qualified HA.ResourceGraph as G
@@ -109,7 +108,7 @@ mkAttachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
-    mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo1 Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $
@@ -165,7 +164,7 @@ mkDetachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceDetached sdev . handleSNSReply
-    mp <- listToMaybe . G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo1 Cluster Has <$> getLocalGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $

@@ -45,7 +45,6 @@ import Control.Monad.IO.Class
 import Control.Monad.Catch (SomeException, try, throwM)
 import Control.Monad.Trans.Reader (ask)
 import Data.Bits (setBit)
-import Data.Maybe (listToMaybe)
 import Data.Functor (void)
 import Data.Proxy
 import Data.Word ( Word64, Word32 )
@@ -55,12 +54,12 @@ import Network.CEP
 import Prelude hiding (id)
 
 newFidSeq :: G.Graph -> (Word64, G.Graph)
-newFidSeq rg = case G.connectedTo Cluster Has rg of
-    ((M0.FidSeq w):_) -> go w
-    [] -> go 0
+newFidSeq rg = case G.connectedTo1 Cluster Has rg of
+    Just (M0.FidSeq w) -> go w
+    Nothing -> go 0
   where
     go w = let w' = w + 1
-               rg' = G.connectUniqueFrom Cluster Has (M0.FidSeq w') $ rg
+               rg' = G.connect Cluster Has (M0.FidSeq w') $ rg
            in (w, rg')
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
@@ -79,9 +78,10 @@ newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
 
 uniquePVerCounter :: G.Graph -> (Word32, G.Graph)
-uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
-   [] -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
-   ((M0.PVerCounter i):_) -> (i+1, G.connectUnique Cluster Has (M0.PVerCounter (i+1)) rg)
+uniquePVerCounter rg = case G.connectedTo1 Cluster Has rg of
+   Nothing -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
+   Just (M0.PVerCounter i) ->
+     (i+1, G.connect Cluster Has (M0.PVerCounter (i+1)) rg)
 
 mkVirtualFid :: Fid -> Fid
 mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
@@ -93,8 +93,7 @@ mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 getM0Globals :: PhaseM LoopState l (Maybe CI.M0Globals)
 getM0Globals = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero globals."
-  return . listToMaybe
-    $ G.connectedTo Cluster Has rg
+  return $ G.connectedTo1 Cluster Has rg
 
 -- | Load Mero global data into the graph
 loadMeroGlobals :: CI.M0Globals

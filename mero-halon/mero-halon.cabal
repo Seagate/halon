@@ -254,6 +254,7 @@ Executable halonctl
                       Handler.Bootstrap.TrackingStation
                       Handler.Bootstrap.Cluster
                       Handler.Cluster
+                      Handler.Debug
                       Handler.Service
                       Handler.Status
                       Lookup

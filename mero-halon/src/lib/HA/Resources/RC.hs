@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
@@ -85,10 +87,10 @@ $(mkResRel
   , ''Stopping
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''RC)
-  , (''RC, ''R.Is, ''Active)
-  , (''Subscriber, ''SubscribedTo, ''RC)
-  , (''SubProcessId, ''IsSubscriber, ''Subscriber)
-  , (''R.Node, ''Stopping, ''ServiceInfoMsg)
+    (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''RC)
+  , (''RC, AtMostOne, ''R.Is, AtMostOne, ''Active)
+  , (''Subscriber, Unbounded, ''SubscribedTo, AtMostOne, ''RC)
+  , (''SubProcessId, Unbounded, ''IsSubscriber, AtMostOne, ''Subscriber)
+  , (''R.Node, Unbounded, ''Stopping, Unbounded, ''ServiceInfoMsg)
   ]
   [])

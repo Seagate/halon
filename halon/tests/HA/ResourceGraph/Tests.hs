@@ -2,9 +2,11 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module HA.ResourceGraph.Tests ( tests ) where
@@ -102,8 +104,12 @@ deriveSafeCopy 0 'base ''NodeA
 deriveSafeCopy 0 'base ''NodeB
 
 instance Relation HasB NodeA NodeB where
+  type CardinalityFrom HasB NodeA NodeB = 'Unbounded
+  type CardinalityTo   HasB NodeA NodeB = 'Unbounded
   relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
+  type CardinalityFrom HasA NodeB NodeA = 'Unbounded
+  type CardinalityTo   HasA NodeB NodeA = 'Unbounded
   relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
 deriveSafeCopy 0 'base ''HasA
 deriveSafeCopy 0 'base ''HasB
@@ -194,19 +200,19 @@ tests transport _ = do
 
       , testSuccess "edge-nodeB-2" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
-          let es1 = connectedTo (NodeB 2) HasA g1
+          let es1 = connectedToU (NodeB 2) HasA g1
           assert $ length es1 == 2
           assert $ [] == es1 \\ [NodeA 1, NodeA 2]
-          assert $ [] == (connectedTo (NodeB 1) HasA g1 :: [NodeA])
+          assert $ [] == (connectedToU (NodeB 1) HasA g1 :: [NodeA])
 
       , testSuccess "edge-nodeB-2-disconnect" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           _ <- syncWait $ disconnect (NodeB 2) HasA (NodeA 1) g1
           g2 <- getGraph mm
-          let es2 = connectedTo (NodeB 2) HasA g2
+          let es2 = connectedToU (NodeB 2) HasA g2
           assert $ length es2 == 1
           assert $ [] == es2 \\ [NodeA 2]
-          let ed2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
+          let ed2 = connectedFromU HasA (NodeA 1) g2 :: [NodeB]
           assert $ length ed2 == 0
 
       , testSuccess "async-updates" $ rGroupTest transport g $ \mm -> do
@@ -217,14 +223,16 @@ tests transport _ = do
           receiveChan rp
           receiveChan rp
 
-          let es1 = connectedTo (NodeB 1) HasA g2
+          let es1 = connectedToU (NodeB 1) HasA g2
           assert $ length es1 == 1
           assert $ es1 == [NodeA 1]
 
-          assert $ Prelude.null (connectedTo (NodeB 1) HasA g3 :: [NodeA])
+          assert $ Prelude.null
+            (connectedToU (NodeB 1) HasA g3 :: [NodeA])
 
           g4 <- getGraph mm
-          assert $ Prelude.null (connectedTo (NodeB 1) HasA g4 :: [NodeA])
+          assert $ Prelude.null
+            (connectedToU (NodeB 1) HasA g4 :: [NodeA])
 
       , testSuccess "back-edge" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
@@ -305,9 +313,9 @@ tests transport _ = do
       , testSuccess "merge-resources" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1
-          let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
-              es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
-              es3 = connectedTo (NodeB 2) HasA g2 :: [NodeA]
+          let es1 = connectedToU (NodeA 1) HasB g2 :: [NodeB]
+              es2 = connectedFromU HasA (NodeA 1) g2 :: [NodeB]
+              es3 = connectedToU (NodeB 2) HasA g2 :: [NodeA]
           assert $ memberResource (NodeA 1) g2 == True
           assert $ memberResource (NodeA 2) g2 == False
           assert $ length es1 == 1
@@ -318,9 +326,9 @@ tests transport _ = do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ removeResource (NodeB 2) g1
           -- NodeB 2 connects everything - graph should now be totally disconnected
-          let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
-              es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
-              es3 = connectedTo (NodeB 2) HasA g2 :: [NodeA]
+          let es1 = connectedToU (NodeA 1) HasB g2 :: [NodeB]
+              es2 = connectedFromU HasA (NodeA 1) g2 :: [NodeB]
+              es3 = connectedToU (NodeB 2) HasA g2 :: [NodeA]
           assertEqual "es1 is empty" [] es1
           assertEqual "es2 is empty" [] es2
           assertEqual "es3 is empty" [] es3

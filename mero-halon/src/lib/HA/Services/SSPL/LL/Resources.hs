@@ -3,10 +3,12 @@
 -- License   : All rights reserved.
 --
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module HA.Services.SSPL.LL.Resources where
 
@@ -16,7 +18,6 @@ import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
-import qualified HA.Resources as R
 import HA.ResourceGraph
 
 import Prelude
@@ -502,21 +503,9 @@ resourceDictChannelIEM = Dict
 resourceDictChannelSystemd :: Dict (Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
 resourceDictChannelSystemd = Dict
 
-relationDictIEMChannelServiceProcessChannel :: Dict (
-    Relation IEMChannel R.Node (Channel InterestingEventMessage)
-  )
-relationDictIEMChannelServiceProcessChannel = Dict
-
-relationDictCommandChannelServiceProcessChannel :: Dict (
-    Relation CommandChannel R.Node (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type))
-  )
-relationDictCommandChannelServiceProcessChannel = Dict
-
 $(generateDicts ''SSPLConf)
 $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
-                                       , 'relationDictIEMChannelServiceProcessChannel
                                        , 'resourceDictChannelSystemd
-                                       , 'relationDictCommandChannelServiceProcessChannel
                                        ])
 
 instance Resource (Channel InterestingEventMessage) where
@@ -525,15 +514,6 @@ instance Resource (Channel InterestingEventMessage) where
 instance Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
-instance Relation IEMChannel
-                  R.Node
-                  (Channel InterestingEventMessage) where
-  relationDict = $(mkStatic 'relationDictIEMChannelServiceProcessChannel)
-
-instance Relation CommandChannel
-                  R.Node
-                  (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
-  relationDict = $(mkStatic 'relationDictCommandChannelServiceProcessChannel)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------

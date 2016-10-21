@@ -108,7 +108,7 @@ unregisterServicesOnNode service node rg = (configs, foldr (disconnect node Has)
 -- | Find and decode config for the given service attached to node.
 lookupServiceInfo :: Node -> Service a -> Graph -> [ServiceInfoMsg]
 lookupServiceInfo node srv = filter (\i -> configDict srv == getServiceInfoDict i)
-                           . connectedTo node Has
+                           . connectedToU node Has
 
 -- | Synchronously start service on the remote node.
 --

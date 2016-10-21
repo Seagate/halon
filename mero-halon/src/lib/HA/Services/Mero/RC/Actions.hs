@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies     #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -72,37 +74,38 @@ registerChannel :: ( Resource (TypedChannel a)
 registerChannel sp chan =
   modifyGraph $ G.newResource sp
             >>> G.newResource chan
-            >>> G.connectUniqueTo sp MeroChannel chan
+            >>> G.connect sp MeroChannel chan
 
 -- | Unregister mero channel inside RG.
 unregisterChannel :: forall a l proxy .
    ( Resource (TypedChannel a)
+   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
    , Relation MeroChannel R.Node (TypedChannel a)
    ) => R.Node -> proxy a -> PhaseM LoopState l ()
 unregisterChannel node _ = modifyGraph $ \rg ->
-  let res = G.connectedTo node MeroChannel rg :: [TypedChannel a]
+  let res = G.connectedToU node MeroChannel rg :: [TypedChannel a]
   in foldr (G.disconnect node MeroChannel) rg res
 
 -- | Find mero channel.
 meroChannel :: ( Resource (TypedChannel a)
+               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
                , Relation MeroChannel R.Node (TypedChannel a)
                )
             => Graph
             -> R.Node
             -> Maybe (TypedChannel a)
-meroChannel rg sp = listToMaybe [ chan | chan <- G.connectedTo sp MeroChannel rg ]
+meroChannel rg sp = listToMaybe $ G.connectedToU sp MeroChannel rg
 
 
 -- | Fetch all Mero notification channels.
 meroChannels :: R.Node -> Graph -> [TypedChannel NotificationMessage]
-meroChannels node rg = G.connectedTo node MeroChannel rg
+meroChannels node rg = G.connectedToU node MeroChannel rg
 
 -- | Find mero channel registered on the given node.
 lookupMeroChannelByNode :: R.Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do
    rg <- getLocalGraph
-   let mlchan = listToMaybe $ G.connectedTo node MeroChannel rg
-   return mlchan
+   return $ listToMaybe $ G.connectedToU node MeroChannel rg
 
 -- | Unregister all channels.
 unregisterMeroChannelsOn :: R.Node -> PhaseM LoopState l ()
@@ -117,8 +120,8 @@ getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [M
 getNotificationChannels = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
-              | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-              , node <- G.connectedTo host R.Runs rg
+              | host <- G.connectedToU R.Cluster R.Has rg :: [R.Host]
+              , node <- G.connectedToU host R.Runs rg
               , m0node <- nodeToM0Node node rg
               ]
   things <- for nodes $ \(node, m0node) -> do
@@ -128,7 +131,7 @@ getNotificationChannels = do
                                  M0.PSStarting -> True
                                  M0.PSStopping -> True
                                  _ -> False)
-               $ (G.connectedTo m0node M0.IsParentOf rg :: [M0.Process])
+               $ (G.connectedToU m0node M0.IsParentOf rg :: [M0.Process])
      case (mchan, procs) of
        (_, []) -> return Nothing
        (Nothing, r) -> do
@@ -160,7 +163,7 @@ mkStateDiff f msg onCommit = do
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM LoopState l (Maybe StateDiff)
-getStateDiffByEpoch idx = listToMaybe . G.connectedTo epoch R.Is <$> getLocalGraph
+getStateDiffByEpoch idx = G.connectedTo1 epoch R.Is <$> getLocalGraph
   where
     epoch = StateDiffIndex idx
 
@@ -196,11 +199,11 @@ tryCompleteStateDiff :: StateDiff -> PhaseM LoopState l ()
 tryCompleteStateDiff diff = do
   rc <- getCurrentRC
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
-  ps <- G.connectedTo diff WaitingFor <$> getLocalGraph
+  ps <- G.connectedToU diff WaitingFor <$> getLocalGraph
   when (null (ps :: [M0.Process]) && notSent) $ do
     modifyGraph $ G.disconnect rc R.Has diff
-    okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
-    failProcesses <- G.connectedTo diff WaitingFor  <$> getLocalGraph
+    okProcesses <- G.connectedToU diff DeliveredTo <$> getLocalGraph
+    failProcesses <- G.connectedToU diff WaitingFor  <$> getLocalGraph
     phaseLog "epoch" $ show (stateEpoch diff)
     registerSyncGraph $ do
       for_ (stateDiffOnCommit diff) applyOnCommit
@@ -215,15 +218,15 @@ failNotificationsOnNode node = do
   ps <- (\rg ->
            [ m0process
            | m0node <- nodeToM0Node node rg :: [M0.Node]
-           , m0process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
+           , m0process <- G.connectedToU m0node M0.IsParentOf rg :: [M0.Process]
            ])
         <$> getLocalGraph
   -- For each notification to the target process mark all notifications
   -- as failed.
   for_ ps $ \p -> do
     rg <- getLocalGraph
-    let diffs = (++) <$> G.connectedFrom WaitingFor p
-                     <*> G.connectedFrom ShouldDeliverTo p
+    let diffs = (++) <$> G.connectedFromU WaitingFor p
+                     <*> G.connectedFromU ShouldDeliverTo p
                       $ rg
     for_ diffs $ \diff -> do
       modifyGraph $ G.disconnect diff WaitingFor p

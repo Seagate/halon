@@ -4,6 +4,7 @@
 --
 -- Mero notification specific resources.
 
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -37,7 +38,6 @@ import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)
 import Data.Hashable (Hashable)
-import Data.List (foldl')
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
@@ -148,13 +148,14 @@ class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateC
     setState :: a -> StateCarrier a -> G.Graph -> G.Graph
     default setState :: G.Relation Is a ConfObjectState
                      => a -> ConfObjectState -> G.Graph -> G.Graph
-    setState x st = G.connectUniqueFrom x Is st
+    setState x st = G.connect x Is st
 
     getState :: a -> G.Graph -> StateCarrier a
-    default getState :: G.Relation Is a ConfObjectState
+    default getState :: ( G.CardinalityTo Is a ConfObjectState ~ 'AtMostOne
+                        , G.Relation Is a ConfObjectState
+                        )
                      => a -> G.Graph -> ConfObjectState
-    getState x rg = fromMaybe M0_NC_ONLINE
-                            . listToMaybe $ G.connectedTo x Is rg
+    getState x rg = fromMaybe M0_NC_ONLINE $ G.connectedTo1 x Is rg
 
     toConfObjState :: a -> StateCarrier a -> ConfObjectState
     default toConfObjState  :: a -> StateCarrier a -> StateCarrier a
@@ -214,8 +215,8 @@ instance HasConfObjectState M0.Enclosure where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Enclosure
 instance HasConfObjectState M0.Controller where
   type StateCarrier M0.Controller = M0.ControllerState
-  getState x rg = fromMaybe M0.CSUnknown . listToMaybe $ G.connectedTo x Is rg
-  setState x st = G.connectUniqueFrom x Is st
+  getState x rg = fromMaybe M0.CSUnknown $ G.connectedTo1 x Is rg
+  setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Controller
 
   toConfObjState _ M0.CSUnknown = M0_NC_ONLINE
@@ -223,8 +224,8 @@ instance HasConfObjectState M0.Controller where
   toConfObjState _ M0.CSTransient = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Node where
   type StateCarrier M0.Node = M0.NodeState
-  getState x rg = fromMaybe M0.NSUnknown . listToMaybe $ G.connectedTo x Is rg
-  setState x st = G.connectUniqueFrom x Is st
+  getState x rg = fromMaybe M0.NSUnknown $ G.connectedTo1 x Is rg
+  setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 
   toConfObjState _ M0.NSUnknown = M0_NC_ONLINE
@@ -234,8 +235,8 @@ instance HasConfObjectState M0.Node where
   toConfObjState _ M0.NSOnline  = M0_NC_ONLINE
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  getState x rg = fromMaybe M0.PSUnknown . listToMaybe $ G.connectedTo x Is rg
-  setState x st = G.connectUniqueFrom x Is st
+  getState x rg = fromMaybe M0.PSUnknown $ G.connectedTo1 x Is rg
+  setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
 
   toConfObjState _ M0.PSUnknown = M0_NC_ONLINE
@@ -250,8 +251,8 @@ instance HasConfObjectState M0.Process where
 
 instance HasConfObjectState M0.Service where
   type StateCarrier M0.Service = M0.ServiceState
-  getState x rg = fromMaybe M0.SSUnknown . listToMaybe $ G.connectedTo x Is rg
-  setState x st = G.connectUniqueFrom x Is st
+  getState x rg = fromMaybe M0.SSUnknown $ G.connectedTo1 x Is rg
+  setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
 
   toConfObjState _ M0.SSUnknown = M0_NC_ONLINE
@@ -268,20 +269,21 @@ instance HasConfObjectState M0.Disk where
   type StateCarrier M0.Disk = M0.SDevState
   getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $
     [ st
-    | (sdev :: M0.SDev) <- G.connectedFrom M0.IsOnHardware x rg
-    , st <- G.connectedTo sdev Is rg
+    | Just (sdev :: M0.SDev) <-
+        [G.connectedFrom1 M0.IsOnHardware x rg]
+    , Just st <- [G.connectedTo1 sdev Is rg]
     ]
   setState x st = \rg1 -> let
-      sdevs = G.connectedFrom M0.IsOnHardware x rg1 :: [M0.SDev]
-      fun = foldl' (.) id $ (\d -> setState d st) <$> sdevs
-    in fun rg1
+      sdevs :: Maybe M0.SDev
+      sdevs = G.connectedFrom1 M0.IsOnHardware x rg1
+    in maybe id (`setState` st) sdevs $ rg1
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 
   toConfObjState _ x = toConfObjState (undefined :: M0.SDev) x
 instance HasConfObjectState M0.SDev where
   type StateCarrier M0.SDev = M0.SDevState
-  getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $ G.connectedTo x Is rg
-  setState x st = G.connectUniqueFrom x Is st
+  getState x rg = fromMaybe M0.SDSUnknown $ G.connectedTo1 x Is rg
+  setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_SDev
 
   toConfObjState _ M0.SDSUnknown = M0_NC_ONLINE
@@ -414,13 +416,13 @@ $(mkDicts
 
 $(mkResRel
   [ ''ConfObjectState, ''PrincipalRM ]
-  [ (''Cluster, ''Has, ''PrincipalRM)
-  , (''M0.Rack, ''Is, ''ConfObjectState)
-  , (''M0.Enclosure, ''Is, ''ConfObjectState)
-  , (''M0.Controller, ''Is, ''ConfObjectState)
-  , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Pool, ''Is, ''ConfObjectState)
-  , (''M0.PVer, ''Is, ''ConfObjectState)
+  [ (''Cluster, AtMostOne, ''Has, AtMostOne, ''PrincipalRM)
+  , (''M0.Rack, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
+  , (''M0.Enclosure, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
+  , (''M0.Controller, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
+  , (''M0.Service, Unbounded, ''Is, AtMostOne, ''PrincipalRM)
+  , (''M0.Pool, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
+  , (''M0.PVer, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   ]
   []
   )
