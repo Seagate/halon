@@ -417,6 +417,7 @@ stateCascadeRules =
   , AnyCascadeRule diskRemoveFromFailureVector
   , AnyCascadeRule processCascadeServiceRule
   , AnyCascadeRule nodeFailsProcessRule
+  , AnyCascadeRule nodeUnfailsProcessRule
   , AnyCascadeRule serviceCascadeDiskRule
   ] ++ (AnyCascadeRule <$> enclosureCascadeControllerRules)
     ++ (AnyCascadeRule <$> iosFailsController)
@@ -505,6 +506,22 @@ nodeFailsProcessRule = StateCascadeRule
     inhibit (M0.PSFailed x) = M0.PSFailed x
     inhibit x@(M0.PSInhibited _) = x
     inhibit y = M0.PSInhibited y
+
+-- | When node becames online again, we should mark it as
+nodeUnfailsProcessRule :: StateCascadeRule M0.Node M0.Process
+nodeUnfailsProcessRule = StateCascadeRule
+  (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
+  (== M0.NSOnline)
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  (\_ o -> uninhibit o)
+  where
+    uninhibit (M0.PSInhibited M0.PSOffline) = M0.PSOffline
+    uninhibit (M0.PSInhibited M0.PSUnknown) = M0.PSUnknown
+    uninhibit (M0.PSInhibited x@M0.PSInhibited{}) = uninhibit x
+    -- if process was in inhibited state because of the node
+    -- failure then process should be failed.
+    uninhibit (M0.PSInhibited _)           = M0.PSFailed "node failure"
+    uninhibit x                            = x
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
