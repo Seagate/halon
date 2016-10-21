@@ -416,23 +416,22 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
     -- Is this device ready to be rebalanced onto?
     deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
     deviceReadyStatus rg s = case stats of
-        [(_, True, False, True, "OK")] -> Right s
-        [other] -> Left $ "Device not ready: " ++ showFid s
+        Just (_, True, False, True, "OK") -> Right s
+        Just other -> Left $ "Device not ready: " ++ showFid s
                       ++ " (sdev, Replaced, Removed, Powered, OK): "
                       ++ show other
-        [] -> Left $ "No storage device or status could be found for " ++ showFid s
-        xs -> Left $ "Device has multiple storage devices connected! " ++ show xs
+        Nothing -> Left $ "No storage device or status could be found for " ++ showFid s
       where
-        stats = [ ( sd
-                  , G.isConnected sd Has SDReplaced rg
-                  , G.isConnected sd Has SDRemovedAt rg
-                  , G.isConnected sd Has (SDPowered True) rg
-                  , sds
-                  )
-                | (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
-                , (sd :: StorageDevice) <- G.connectedTo disk At rg
-                , (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
-                ]
+        stats = do
+          (disk :: M0.Disk) <- G.connectedTo1 s M0.IsOnHardware rg
+          (sd :: StorageDevice) <- G.connectedTo1 disk At rg
+          (StorageDeviceStatus sds _) <- G.connectedTo1 sd Is rg
+          return ( sd
+                 , G.isConnected sd Has SDReplaced rg
+                 , G.isConnected sd Has SDRemovedAt rg
+                 , G.isConnected sd Has (SDPowered True) rg
+                 , sds
+                 )
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRebalanceRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRebalanceStarted)
@@ -1228,5 +1227,5 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
     start init_rule ()
 
   where
-    isIOSProcess p rg = not . null $ [s | s <- G.connectedTo p M0.IsParentOf rg
+    isIOSProcess p rg = not . null $ [s | s <- G.connectedToU p M0.IsParentOf rg
                                         , CST_IOS <- [M0.s_type s] ]

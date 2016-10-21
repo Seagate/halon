@@ -20,7 +20,6 @@ import Control.Category
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Binary (Binary)
-import Data.Maybe (listToMaybe)
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl hiding ((:~:))
@@ -241,7 +240,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 
   let start_recover (RecoverNode n1) = do
         g <- getLocalGraph
-        case listToMaybe (G.connectedFrom Runs n1 g) of
+        case G.connectedFrom1 Runs n1 g of
           Nothing -> do
             phaseLog "warn" $ "Couldn't find host for " ++ show n1
             continue finish
@@ -395,7 +394,7 @@ sendLogs logs ls = do
             nsendRemote nid (serviceLabel decisionLog) logs
   where
     rg = lsGraph ls
-    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
-                , n <- G.connectedTo host Runs rg :: [Node]
+    nodes = [ n | host <- G.connectedToU Cluster Has rg :: [Host]
+                , n <- G.connectedToU host Runs rg :: [Node]
                 , not . null $ lookupServiceInfo n decisionLog rg
                 ]

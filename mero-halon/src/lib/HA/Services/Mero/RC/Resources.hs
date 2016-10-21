@@ -1,5 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -84,11 +86,11 @@ $(mkResRel
   [ ''StateDiff, ''WaitingFor, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
   , ''StateDiffIndex
   ]
-  [ (''RC.RC, ''R.Has, ''StateDiff)
-  , (''StateDiff, ''WaitingFor, ''M0.Process)
-  , (''StateDiff, ''DeliveredTo, ''M0.Process)
-  , (''StateDiff, ''ShouldDeliverTo, ''M0.Process)
-  , (''StateDiff, ''DeliveryFailedTo, ''M0.Process)
-  , (''StateDiffIndex, ''R.Is, ''StateDiff)
+  [ (''RC.RC, AtMostOne, ''R.Has, Unbounded, ''StateDiff)
+  , (''StateDiff, Unbounded, ''WaitingFor, Unbounded, ''M0.Process)
+  , (''StateDiff, Unbounded, ''DeliveredTo, Unbounded, ''M0.Process)
+  , (''StateDiff, Unbounded, ''ShouldDeliverTo, Unbounded, ''M0.Process)
+  , (''StateDiff, Unbounded, ''DeliveryFailedTo, Unbounded, ''M0.Process)
+  , (''StateDiffIndex, AtMostOne, ''R.Is, AtMostOne, ''StateDiff)
   ]
   [])

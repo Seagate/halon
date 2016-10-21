@@ -61,7 +61,7 @@ findRegisteredOn :: Node -> PhaseM LoopState l [ServiceInfoMsg]
 findRegisteredOn node = go <$> getLocalGraph
   where
     go rg = [ info
-            | info <- G.connectedTo node Has rg
+            | info <- G.connectedToU node Has rg
             , not $ G.isConnected node Stopping (info :: ServiceInfoMsg) rg
             ]
 
@@ -73,7 +73,7 @@ findRegisteredOn node = go <$> getLocalGraph
 declare  :: Configuration a
          => Service a
          -> PhaseM LoopState l ()
-declare svc = modifyGraph $ G.newResource svc >>> G.connectUnique Cluster Supports svc
+declare svc = modifyGraph $ G.newResource svc >>> G.connect Cluster Supports svc
 
 -- | Register service on a given node. After this halon will know that it needs
 -- to send information to regular monitor services.

@@ -4,6 +4,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
@@ -159,7 +160,7 @@ import qualified Data.Aeson as Aeson
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (nub)
-import           Data.Maybe (listToMaybe, isNothing, isJust)
+import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Encoding as TL
@@ -260,12 +261,13 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
   g <- getLocalGraph
   let node = R.Node $ processNodeId pid
       m0nodes = nodeToM0Node node g
-      haprocesses = [ p
-                    | m0node <- m0nodes
-                    , (p :: M0.Process) <- G.connectedTo m0node M0.IsParentOf g
-                    , any (\s -> M0.s_type s == CST_HA)
-                       $ G.connectedTo p M0.IsParentOf g
-                    ]
+      haprocesses =
+        [ p
+        | m0node <- m0nodes
+        , (p :: M0.Process) <- G.connectedToU m0node M0.IsParentOf g
+        , any (\s -> M0.s_type s == CST_HA)
+           $ G.connectedToU p M0.IsParentOf g
+        ]
   applyStateChanges $ (`stateSet` M0.PSFailed "mero-kernel failed to start") <$> haprocesses
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
@@ -282,7 +284,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
         phaseLog "warning" $ "Unknown source process."
         phaseLog "metadata" $ show meta
       Just (sendingProcess :: M0.Process) -> do
-        mnode <- listToMaybe . G.connectedFrom M0.IsParentOf sendingProcess
+        mnode <- G.connectedFrom1 M0.IsParentOf sendingProcess
                 <$> getLocalGraph
         case mnode of
           Just (node :: M0.Node) -> do
@@ -326,9 +328,9 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                  Just host -> do
                    phaseLog "info" $ "Starting new mero server."
                    phaseLog "info" $ "node.host = " ++ show nid
-                   let mlnid = (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
+                   let mlnid = (listToMaybe [ ip | M0.LNid ip <- G.connectedToU host R.Has rg ])
                            <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
-                                                   <- G.connectedTo host R.Has rg ])
+                                                   <- G.connectedToU host R.Has rg ])
                    case mlnid of
                      Nothing ->
                        phaseLog "error" $ "Unable to find Data IP addr for host " ++ show host
@@ -350,9 +352,9 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
      case listToMaybe $ m0nodeToNode m0node rg of
        Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
        Just node -> do let ps = [ stateSet p M0.PSStopping
-                                | p <- G.connectedTo m0node M0.IsParentOf rg
+                                | p <- G.connectedToU m0node M0.IsParentOf rg
                                 , any (\s -> M0.s_type s == CST_HA)
-                                      $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
+                                      $ G.connectedToU (p::M0.Process) M0.IsParentOf rg
                                 ]
                        applyStateChanges ps
                        -- XXX: currently stop of the halon:m0d does not stop
@@ -1021,14 +1023,14 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
 
      -- Unstopped processes on this node
      let stillUnstopped = getLabeledProcesses lbl
-                          ( \proc g -> not . null $
-                          [ () | state <- G.connectedTo proc R.Is g
-                               , state `elem` [ M0.PSOnline, M0.PSQuiescing
-                                              , M0.PSStopping, M0.PSStarting ]
-                               , m0node <- G.connectedFrom M0.IsParentOf proc g
-                               , Just n <- [M0.m0nodeToNode m0node g]
-                               , n == node
-                          ] ) rg
+                          ( \proc g -> isJust $ do
+                            state <- G.connectedTo1 proc R.Is g
+                            guard (state `elem` [ M0.PSOnline, M0.PSQuiescing
+                                                , M0.PSStopping, M0.PSStarting ])
+                            m0node <- G.connectedFrom1 M0.IsParentOf proc g
+                            n <- M0.m0nodeToNode m0node g
+                            guard $ n == node
+                          ) rg
 
      case stillUnstopped of
        [] -> do phaseLog "info" $ printf "%s R.Has no services on level %s - skipping to the next level"
@@ -1109,9 +1111,9 @@ ruleFailNodeIfProcessCantRestart =
     ProcessRecoveryFailure (pfid, r) -> do
       phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
       rg <- getLocalGraph
-      let m0ns = nub [ n
-                     | Just (p :: M0.Process) <- [M0.lookupConfObjByFid pfid rg]
-                     , (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg ]
+      let m0ns = maybeToList $ do
+                   (p :: M0.Process) <- M0.lookupConfObjByFid pfid rg
+                   G.connectedFrom1 M0.IsParentOf p rg :: Maybe M0.Node
       applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
     _ -> return ()
 
@@ -1137,12 +1139,13 @@ ruleAllProcessChangesNode rName pGuard nodeNewState = define rName $ do
   startFork rule_init ()
   where
     isHalonProcess p rg =
-      any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
+      any (\s -> M0.s_type s == CST_HA) $ G.connectedToU p M0.IsParentOf rg
 
-    getNode p rg = [ (n, (G.connectedTo n M0.IsParentOf rg :: [M0.Process]))
-                   | (n :: M0.Node) <- G.connectedFrom M0.IsParentOf p rg
-                   , M0.getState n rg /= nodeNewState
-                   ]
+    getNode p rg =
+      [ (n, (G.connectedToU n M0.IsParentOf rg :: [M0.Process]))
+      | Just (n :: M0.Node) <- [G.connectedFrom1 M0.IsParentOf p rg]
+      , M0.getState n rg /= nodeNewState
+      ]
 
 
 -- | If every process on node fails, fail the node too

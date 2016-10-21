@@ -72,7 +72,8 @@ initialRule argv = do
   -- subscribe all processes with persistent subscription.
   rg <- getLocalGraph
   l "subscribers"
-  for_ (G.connectedFrom SubscribedTo rc rg) $ \(Subscriber p bs) -> do
+  for_ (G.connectedFromU SubscribedTo rc rg) $
+      \(Subscriber p bs) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
@@ -84,7 +85,7 @@ initialRule argv = do
   -- Add all known nodes to cluster.
   phaseLog "info" "Adding known nodes" -- XXX: do not add ones that are not up
   l "add nodes"
-  for_ (G.connectedTo R.Cluster R.Has rg) $
+  for_ (G.connectedToU R.Cluster R.Has rg) $
     addNodeToCluster (eqNodes argv)
 
 -- | When new process is subscribed to some interesting events persistently,
@@ -148,11 +149,11 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
 
       -- Remove external subscribers
       modifyLocalGraph $ \g -> do
-        let subs =
-             [ (sub,rc)
-             | sub <- G.connectedTo (SubProcessId pid) IsSubscriber g :: [Subscriber]
-             , rc  <- G.connectedTo sub SubscribedTo g :: [RC]
-             ]
+        let subs = do
+              sub <- G.connectedTo1 (SubProcessId pid) IsSubscriber g
+                         :: Maybe Subscriber
+              rc  <- G.connectedTo1 sub SubscribedTo g :: Maybe RC
+              return (sub,rc)
         flip execStateT g $ do
           for_ subs $ \(sub@(Subscriber _ bs), rc) -> do
             let fp = decodeFingerprint bs

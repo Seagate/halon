@@ -11,6 +11,7 @@ module HA.Resources.TH (
   , mkResRel
   , mkResource
   , mkRelation
+  , Cardinality(..)
 ) where
 
 import HA.ResourceGraph
@@ -31,7 +32,7 @@ mkDicts res rel = do
   return $ resD ++ relD
 
 mkResRel :: [Name] -- ^ Resources
-         -> [(Name, Name, Name)] -- ^ Relations
+         -> [(Name, Cardinality, Name, Cardinality, Name)] -- ^ Relations
          -> [Name] -- ^ Any additional functions to add to `remotable`
          -> Q [Dec] -- ^ Decls
 mkResRel res rel othernames = do
@@ -52,15 +53,21 @@ mkResource res = do
     dictName = mkResourceName res
 
 -- | Make the given (from, rel, to) tuple into a @Relation@
-mkRelation :: (Name, Name, Name)
+mkRelation :: (Name, Cardinality, Name, Cardinality, Name)
            -> Q (Name, [Dec])
-mkRelation r@(from, by, to) = do
-    inst <- instanceD (cxt []) dictType [instDec]
-    return (dictName, [inst])
+mkRelation (from, cfrom, by, cto, to) = do
+    inst <- [d| instance  Relation $(conT by) $(conT from) $(conT to) where
+                  type CardinalityFrom $(conT by) $(conT from) $(conT to)
+                    = $(liftCardinalityT cfrom)
+                  type CardinalityTo $(conT by) $(conT from) $(conT to)
+                    = $(liftCardinalityT cto)
+                  relationDict = $(mkStatic dictName)
+              |]
+    return (dictName, inst)
   where
-    dictType = conT ''Relation `appT` conT by `appT` conT from `appT` conT to
-    instDec = funD 'relationDict [clause [] (normalB $ mkStatic dictName) []]
-    dictName = mkRelationName r
+    dictName = mkRelationName (from, by, to)
+    liftCardinalityT AtMostOne = conT 'AtMostOne
+    liftCardinalityT Unbounded = conT 'Unbounded
 
 mkResourceDict :: Name -> Q [Dec]
 mkResourceDict res = do

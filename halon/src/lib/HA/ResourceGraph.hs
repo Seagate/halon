@@ -18,6 +18,7 @@
 -- is an element of.
 
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -28,6 +29,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -40,14 +42,15 @@ module HA.ResourceGraph
     , Dict(..)
     , Res(..)
     , Rel(..)
+    , Cardinality(..)
+    , Quantify(..)
+    , QuantifyFrom
+    , QuantifyTo
     -- * Operations
     , newResource
     , insertEdge
     , deleteEdge
     , connect
-    , connectUnique
-    , connectUniqueFrom
-    , connectUniqueTo
     , disconnect
     , disconnectAllFrom
     , disconnectAllTo
@@ -58,6 +61,8 @@ module HA.ResourceGraph
     , getGraph
     , garbageCollect
     , garbageCollectRoot
+    , qAtMostOne
+    , qUnbounded
     -- * Queries
     , null
     , memberResource
@@ -66,6 +71,10 @@ module HA.ResourceGraph
     , edgesToDst
     , connectedFrom
     , connectedTo
+    , connectedToU
+    , connectedTo1
+    , connectedFromU
+    , connectedFrom1
     , anyConnectedFrom
     , anyConnectedTo
     , isConnected
@@ -131,6 +140,7 @@ import Data.Proxy
 import Data.SafeCopy
 import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
+import Data.Singletons.TH
 import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
@@ -145,11 +155,41 @@ class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a) => Resource a where
 
 deriving instance Typeable Resource
 
+-- The cardinalities of relations allow for at most one element
+-- or any amount of elements.
+$(singletons [d|
+  data Cardinality = AtMostOne | Unbounded
+    deriving Show
+  |])
+
+-- | Determines how many values of a type can be yielded according to
+-- the cardinality.
+data Quantify (c :: Cardinality) a where
+  QAtMostOne :: Maybe a -> Quantify 'AtMostOne a
+  QUnbounded :: [a] -> Quantify 'Unbounded a
+
+-- | Yields the element of an at-most-one quantified result.
+qAtMostOne :: Quantify 'AtMostOne a -> Maybe a
+qAtMostOne (QAtMostOne m) = m
+
+-- | Yields the element of an unbounded quantified result.
+qUnbounded :: Quantify 'Unbounded a -> [a]
+qUnbounded (QUnbounded xs) = xs
+
+-- | Shorthand for @Quantify (CardinalityFrom r a b) a@.
+type QuantifyFrom r a b = Quantify (CardinalityFrom r a b) a
+
+-- | Shorthand for @Quantify (CardinalityTo r a b) b@.
+type QuantifyTo r a b = Quantify (CardinalityTo r a b) b
+
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
 -- related through @r@ if an @Relation r a b@ instance does not exist.
-class (Hashable r, Typeable r, SafeCopy r, Resource a, Resource b, Show r)
+class ( Hashable r, Typeable r, SafeCopy r, Resource a, Resource b, Show r
+      , SingI (CardinalityFrom r a b), SingI (CardinalityTo r a b))
       => Relation r a b where
+  type CardinalityFrom r a b :: Cardinality
+  type CardinalityTo r a b :: Cardinality
   relationDict :: Static (Dict (Relation r a b))
 
 deriving instance Typeable Relation
@@ -359,8 +399,20 @@ deleteEdge e@Edge{..} g = modifySinceGC (+ 1) $
       }
 
 -- | Adds a relation without making a conversion from 'Edge'.
-connect :: Relation r a b => a -> r -> b -> Graph -> Graph
-connect x r y g =
+connect :: forall r a b. Relation r a b => a -> r -> b -> Graph -> Graph
+connect = case ( sing :: Sing (CardinalityFrom r a b)
+               , sing :: Sing (CardinalityTo r a b)
+               ) of
+    (SAtMostOne, SAtMostOne) -> connectUnique
+    (SAtMostOne, SUnbounded) -> connectUniqueTo
+    (SUnbounded, SAtMostOne) -> connectUniqueFrom
+    (SUnbounded, SUnbounded) -> connectUnbounded
+
+-- | Adds a relation without making a conversion from 'Edge'.
+--
+-- Unlike 'connect', it doesn't check cardinalities.
+connectUnbounded :: Relation r a b => a -> r -> b -> Graph -> Graph
+connectUnbounded x r y g =
    g { grChangeLog = flip updateChangeLog (grChangeLog g) $
          InsertMany [ (encodeRes (Res x),[ encodeRel $ OutRel r x y ])
                     , (encodeRes (Res y),[ encodeRel $ InRel r x y ])
@@ -535,13 +587,50 @@ edgesToDst x0 g =
 
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.
-connectedTo :: forall a r b . Relation r a b => a -> r -> Graph -> [b]
-connectedTo a r g = mapMaybe (\(Res x) -> cast x) $ anyConnectedTo a r g
+connectedTo :: forall a r b. Relation r a b
+            => a -> r -> Graph -> QuantifyTo r a b
+connectedTo a r g =
+    let rs = mapMaybe (\(Res x) -> cast x :: Maybe b) $ anyConnectedTo a r g
+     in case sing :: Sing (CardinalityTo r a b) of
+          SAtMostOne -> QAtMostOne $ listToMaybe rs
+          SUnbounded -> QUnbounded rs
+  where
+    -- Get rid of unused warnings
+    _ = undefined :: (SCardinality c, Proxy AtMostOneSym0, Proxy UnboundedSym0)
+
+-- | 'connectedTo' specialized for the case when the destination cardinality is
+-- unbounded. 
+connectedToU :: (CardinalityTo r a b ~ 'Unbounded, Relation r a b)
+           => a -> r -> Graph -> [b]
+connectedToU a r = qUnbounded . connectedTo a r
+
+-- | 'connectedTo' specialized for the case when the destination cardinality is
+-- at most one. 
+connectedTo1 :: (CardinalityTo r a b ~ 'AtMostOne, Relation r a b)
+           => a -> r -> Graph -> Maybe b
+connectedTo1 a r = qAtMostOne . connectedTo a r
 
 -- | List of all nodes connected through a given relation with a provided
 --   destination resource.
-connectedFrom :: forall a r b . Relation r a b => r -> b -> Graph -> [a]
-connectedFrom r b g = mapMaybe (\(Res x) -> cast x) $ anyConnectedFrom r b g
+connectedFrom :: forall a r b . Relation r a b
+              => r -> b -> Graph -> QuantifyFrom r a b
+connectedFrom r b g =
+    let rs = mapMaybe (\(Res x) -> cast x :: Maybe a) $ anyConnectedFrom r b g
+     in case sing :: Sing (CardinalityFrom r a b) of
+          SAtMostOne -> QAtMostOne $ listToMaybe rs
+          SUnbounded -> QUnbounded rs
+
+-- | 'connectedFrom' specialized for the case when the source cardinality is
+-- unbounded. 
+connectedFromU :: (CardinalityFrom r a b ~ 'Unbounded, Relation r a b)
+           => r -> b -> Graph -> [a]
+connectedFromU r b = qUnbounded . connectedFrom r b
+
+-- | 'connectedTo' specialized for the case when the source cardinality is
+-- unbounded. 
+connectedFrom1 :: (CardinalityFrom r a b ~ 'AtMostOne, Relation r a b)
+           => r -> b -> Graph -> Maybe a
+connectedFrom1 r b = qAtMostOne . connectedFrom r b
 
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.

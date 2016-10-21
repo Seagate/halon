@@ -88,8 +88,8 @@ makeCurrentRC update = do
     mkRC = modifyGraph $ \g ->
       let g' = G.newResource currentRC
            >>> G.newResource Active
-           >>> G.connectUnique R.Cluster R.Has currentRC
-           >>> G.connectUnique currentRC R.Is  Active
+           >>> G.connect R.Cluster R.Has currentRC
+           >>> G.connect currentRC R.Is  Active
              $ g
       in g'
 
@@ -98,10 +98,11 @@ makeCurrentRC update = do
 tryGetCurrentRC :: PhaseM LoopState l (Maybe RC)
 tryGetCurrentRC = do
   rg <- getLocalGraph
-  return $ listToMaybe [ rc
-                       | rc <- G.connectedTo R.Cluster R.Has rg :: [RC]
-                       , G.isConnected rc R.Is Active rg
-                       ]
+  return $ listToMaybe
+    [ rc
+    | Just rc <- [G.connectedTo1 R.Cluster R.Has rg :: Maybe RC]
+    , G.isConnected rc R.Is Active rg
+    ]
 
 -- | Increment epoch
 incrementEpoch :: Word64 -> R.EpochId
@@ -109,14 +110,14 @@ incrementEpoch = R.EpochId . succ
 
 -- | Get current epoch
 getCurrentEpoch :: PhaseM LoopState l Word64
-getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i). listToMaybe
-                . G.connectedTo R.Cluster R.Has <$> getLocalGraph
+getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i) .
+                  G.connectedTo1 R.Cluster R.Has <$> getLocalGraph
 
 -- | Read old epoch value and update it to the next one.
 updateEpoch :: PhaseM LoopState l Word64
 updateEpoch = do
   old <- getCurrentEpoch
-  modifyGraph $ G.connectUnique R.Cluster R.Has (incrementEpoch old)
+  modifyGraph $ G.connect R.Cluster R.Has (incrementEpoch old)
   return old
 
 -- | Monitor node and register callback to run when node dies.

@@ -53,9 +53,9 @@ import Prelude hiding (id, (.))
 
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
-    mapMaybe extractPath $ ids
+    mapMaybe extractPath ids
   where
-    ids = G.connectedTo sd Has g
+    ids = G.connectedToU sd Has g
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
@@ -80,7 +80,7 @@ castorRules = sequence_
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   rg  <- getLocalGraph
-  let racks  = G.connectedTo Cluster Has rg :: [Rack]
+  let racks  = G.connectedToU Cluster Has rg :: [Rack]
   if null racks
   then do
       mapM_ goRack id_racks

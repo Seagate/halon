@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -283,7 +284,7 @@ $(mkDicts
    ])
 $(mkResRel
    [ ''ServiceInfoMsg ]
-   [ (''Node, ''Has, ''ServiceInfoMsg)
+   [ (''Node, AtMostOne, ''Has, Unbounded, ''ServiceInfoMsg)
    ]
    [ 'someConfigDict
    , 'remoteStartService

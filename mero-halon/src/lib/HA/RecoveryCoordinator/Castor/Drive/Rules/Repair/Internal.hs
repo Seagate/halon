@@ -51,7 +51,7 @@ failedNotificationIOS :: [String] -- ^ List of endpoints to check against
                       -> G.Graph -> [M0.Process]
 failedNotificationIOS eps rg =
   [ p | p <- getAllProcesses rg
-      , s <- G.connectedTo p M0.IsParentOf rg
+      , s <- G.connectedToU p M0.IsParentOf rg
       , CST_IOS <- [M0.s_type s]
       , any (`elem` M0.s_endpoints s) eps ]
 
@@ -80,7 +80,7 @@ allIOSOnline pool = do
   rg <- getLocalGraph
   let sts = [ M0.getState p rg
             | s <- svs
-            , p :: M0.Process <- G.connectedFrom M0.IsParentOf s rg
+            , Just (p :: M0.Process) <- [G.connectedFrom1 M0.IsParentOf s rg]
             ]
   return $ all (== M0.PSOnline) sts
 
@@ -89,12 +89,13 @@ allIOSOnline pool = do
 -- We use this helper both in repair module and spiel module so it lives here.
 getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
 getIOServices pool = getLocalGraph >>= \g -> return $ nub
-  [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
-        , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
-        , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
-        , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]
-        , ct <- G.connectedFrom M0.IsRealOf cv g :: [M0.Controller]
-        , nd <- G.connectedFrom M0.IsOnHardware ct g :: [M0.Node]
-        , pr <- G.connectedTo nd M0.IsParentOf g :: [M0.Process]
-        , svc@(M0.Service { M0.s_type = CST_IOS }) <- G.connectedTo pr M0.IsParentOf g
+  [ svc | pv <- G.connectedToU pool M0.IsRealOf g :: [M0.PVer]
+        , rv <- G.connectedToU pv M0.IsParentOf g :: [M0.RackV]
+        , ev <- G.connectedToU rv M0.IsParentOf g :: [M0.EnclosureV]
+        , cv <- G.connectedToU ev M0.IsParentOf g :: [M0.ControllerV]
+        , Just ct <- [G.connectedFrom1 M0.IsRealOf cv g :: Maybe M0.Controller]
+        , Just nd <- [G.connectedFrom1 M0.IsOnHardware ct g :: Maybe M0.Node]
+        , pr <- G.connectedToU nd M0.IsParentOf g :: [M0.Process]
+        , svc@(M0.Service { M0.s_type = CST_IOS }) <-
+            G.connectedToU pr M0.IsParentOf g
         ]

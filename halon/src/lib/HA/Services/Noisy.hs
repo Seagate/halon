@@ -4,10 +4,12 @@
 --
 -- Should import qualified.
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE CPP #-}
 
 module HA.Services.Noisy
@@ -92,6 +94,10 @@ $(deriveService ''NoisyConf 'noisySchema [ 'relationDictHasPingCountServiceNoisy
                                          ])
 
 instance Relation HasPingCount (Service NoisyConf) NoisyPingCount where
+  type CardinalityFrom HasPingCount (Service NoisyConf) NoisyPingCount
+    = 'Unbounded
+  type CardinalityTo   HasPingCount (Service NoisyConf) NoisyPingCount
+    = 'AtMostOne
   relationDict = $(mkStatic 'relationDictHasPingCountServiceNoisyNoisyPingCount)
 
 instance Resource NoisyPingCount where
