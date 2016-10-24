@@ -57,19 +57,15 @@ ut _host transport = do
 #ifdef USE_MERO
         -- Run these two only if we have USE_MERO as we needed some initial
         -- data preloaded
-      , testCase "testRejoin [disabled: HALON-486]" $
-          if True
-          then return ()
-          else HA.Test.Disconnect.testRejoin
-                 transport (error "breakConnection not supplied in test")
+      , testCase "testRejoin" $
+          HA.Test.Disconnect.testRejoin
+            transport (error "breakConnection not supplied in test")
       , testCase "testRejoinTimeout" $
           HA.Test.Disconnect.testRejoinTimeout
             transport (error "breakConnection not supplied in test")
-      , testCase "testRejoinRCDeath [disabled] " $
-          if True
-          then return ()
-          else HA.Test.Disconnect.testRejoinRCDeath
-                 transport (error "breakConnection not supplied in test")
+      , testCase "testRejoinRCDeath " $
+          HA.Test.Disconnect.testRejoinRCDeath
+            transport (error "breakConnection not supplied in test")
       , Mero.Notification.Tests.tests transport
 #endif
       ]

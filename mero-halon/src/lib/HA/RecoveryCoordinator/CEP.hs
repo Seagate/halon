@@ -200,13 +200,12 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
        <+> fldRep     =: Nothing
        <+> RNil
 
+-- | TODO: Port tests to subscription and remove use of 'sayRC'
 ruleDummyEvent :: Definitions LoopState () -- XXX: move to rules file
-ruleDummyEvent = defineSimple "dummy-event" $
-      \(HAEvent uuid (DummyEvent str) _) -> do
-        i <- getNoisyPingCount
-        liftProcess $ sayRC $ "received DummyEvent " ++ str
-        liftProcess $ sayRC $ "Noisy ping count: " ++ show i
-        messageProcessed uuid
+ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
+  i <- getNoisyPingCount
+  liftProcess $ sayRC $ "received DummyEvent " ++ str
+  liftProcess $ sayRC $ "Noisy ping count: " ++ show i
 
 ruleSyncPing :: Definitions LoopState () -- XXX: move to rules file
 ruleSyncPing = defineSimple "sync-ping" $

@@ -133,8 +133,9 @@ testEQTrimming transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
   say $ "tests node: " ++ show nid
-  withTrackingStation pg [stepRule] $ \(TestArgs eq _ _) -> do
+  withTrackingStation pg [stepRule] $ \(TestArgs eq _ rc) -> do
     nodeUp ([nid], 1000000)
+    subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     subscribe eq (Proxy :: Proxy TrimDone)
     replicateM_ 10 $ promulgateEQ [nid] $ Step ()
     Published (TrimDone _) _ <- expect
@@ -143,9 +144,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
         Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         []
     Published (TrimDone _) _ <- expect
-
-    whereisRemoteAsync nid (serviceLabel Dummy.dummy)
-    WhereIsReply _ (Just pid) <- expect
+    pid <- serviceStarted Dummy.dummy
     kill pid "test"
     replicateM_ 10 $ promulgateEQ [nid] $ Step ()
 
@@ -199,17 +198,16 @@ testServiceStopped transport pg = runDefaultTest transport $ do
       _ -> return ()
 
   say $ "tests node: " ++ show nid
-  withTrackingStation pg emptyRules $ \(TestArgs _ _ _) -> do
+  withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     nodeUp ([nid], 1000000)
+    subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
-    "Starting service dummy" :: String <- expect
+    pid <- serviceStarted Dummy.dummy
     say $ "dummy service started successfully."
 
-    whereisRemoteAsync nid (serviceLabel Dummy.dummy)
-    WhereIsReply _ (Just pid) <- expect
     _ <- monitor pid
     _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node nid)
                                                            Dummy.dummy

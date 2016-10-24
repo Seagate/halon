@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Copyright : (C) 2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -7,6 +9,7 @@
 module HA.RecoveryCoordinator.Helpers where
 
 import           Control.Distributed.Process
+import           Control.Distributed.Process.Serializable
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.Service
@@ -46,6 +49,13 @@ serviceStart svc conf = do
     _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
     return ()
 
+expectPublished :: Serializable a => Proxy a -> Process a
+expectPublished p = do
+  say $ "Expecting " ++ show (typeRep p) ++ " to be published."
+  Published r _ <- expect
+  say $ "Received a published " ++ show (typeRep p)
+  return r
+
 -- | Gets the pid of the given service on the given node. It blocks
 -- until the service actually starts.
 getServiceProcessPid :: Configuration a
@@ -56,3 +66,8 @@ getServiceProcessPid (Node nid) sc = do
   whereisRemoteAsync nid (serviceLabel sc)
   WhereIsReply _ (Just pid) <- expect
   return pid
+
+emptyMailbox :: Serializable t => Proxy t -> Process ()
+emptyMailbox t@(Proxy :: Proxy t) = expectTimeout 0 >>= \case
+  Nothing -> return ()
+  Just (_ :: t) -> emptyMailbox t
