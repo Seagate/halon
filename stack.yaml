@@ -30,7 +30,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/tweag/network-transport-tcp.git
-    commit: cf1cce0baf2b286f33330cf742a1f66de13cc16d
+    commit: dd1369e8ed3af660e46fdaad913e04f8dd34d2cc
   extra-dep: true
 - location: vendor/netwire
   extra-dep: true
