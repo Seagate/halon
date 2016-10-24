@@ -242,8 +242,8 @@ instance HasConfObjectState M0.Process where
   toConfObjState _ (M0.PSFailed _) = M0_NC_FAILED
   toConfObjState _ M0.PSOffline = M0_NC_FAILED
   toConfObjState _ M0.PSStarting = M0_NC_FAILED
-  toConfObjState _ M0.PSQuiescing = M0_NC_FAILED
-  toConfObjState _ M0.PSStopping = M0_NC_FAILED
+  toConfObjState _ M0.PSQuiescing = M0_NC_TRANSIENT
+  toConfObjState _ M0.PSStopping = M0_NC_TRANSIENT
   toConfObjState _ M0.PSOnline = M0_NC_ONLINE
   toConfObjState _ (M0.PSInhibited M0.PSOnline) = M0_NC_TRANSIENT
   toConfObjState x (M0.PSInhibited y) = toConfObjState x y
