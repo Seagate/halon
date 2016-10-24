@@ -454,10 +454,7 @@ processCascadeServiceRule = StateCascadeRule
               M0.PSOffline
                 | o == M0.SSFailed -> o
                 | otherwise -> M0.SSOffline
-              M0.PSFailed _
-                | o == M0.SSFailed -> o
-                | inhibited o -> o
-                | otherwise -> M0.SSInhibited o
+              M0.PSFailed _ -> M0.SSFailed
               M0.PSQuiescing
                 | o `elem` [M0.SSFailed, M0.SSOffline] -> o
                 | inhibited o -> o
