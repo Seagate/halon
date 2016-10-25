@@ -100,7 +100,7 @@ tryGetCurrentRC = do
   rg <- getLocalGraph
   return $ listToMaybe
     [ rc
-    | Just rc <- [G.connectedTo1 R.Cluster R.Has rg :: Maybe RC]
+    | Just rc <- [G.connectedTo R.Cluster R.Has rg :: Maybe RC]
     , G.isConnected rc R.Is Active rg
     ]
 
@@ -111,7 +111,7 @@ incrementEpoch = R.EpochId . succ
 -- | Get current epoch
 getCurrentEpoch :: PhaseM LoopState l Word64
 getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i) .
-                  G.connectedTo1 R.Cluster R.Has <$> getLocalGraph
+                  G.connectedTo R.Cluster R.Has <$> getLocalGraph
 
 -- | Read old epoch value and update it to the next one.
 updateEpoch :: PhaseM LoopState l Word64

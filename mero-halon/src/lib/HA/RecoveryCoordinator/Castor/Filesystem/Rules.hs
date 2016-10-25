@@ -80,7 +80,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
     status <- getClusterStatus <$> getLocalGraph
     case ((,) <$> mfs <*> status) of
       Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 0 -> do
-        mp <- G.connectedTo1 R.Cluster R.Has <$> getLocalGraph
+        mp <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
         void . withSpielIO . withRConfIO mp
           $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
         put Local $ Just fs

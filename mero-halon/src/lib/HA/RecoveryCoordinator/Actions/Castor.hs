@@ -47,17 +47,17 @@ updateDiskFailure :: (M0.Pool -> G.Graph -> G.Graph) -- ^ Default action if stru
 updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` pools) where
   pools = nub
     [ pool
-    | Just cntrl <- [G.connectedFrom1     M0.IsParentOf disk  graph :: Maybe M0.Controller]
-    , Just encl  <- [G.connectedFrom1     M0.IsParentOf cntrl graph :: Maybe M0.Enclosure]
-    , Just rack  <- [G.connectedFrom1     M0.IsParentOf encl  graph :: Maybe M0.Rack]
-    , rackv <- G.connectedToU  rack M0.IsRealOf         graph :: [M0.RackV]
-    , Just pver  <- [G.connectedFrom1     M0.IsParentOf rackv graph :: Maybe M0.PVer]
-    , Just pool  <- [G.connectedFrom1     M0.IsRealOf   pver  graph :: Maybe M0.Pool]
+    | Just cntrl <- [G.connectedFrom     M0.IsParentOf disk  graph :: Maybe M0.Controller]
+    , Just encl  <- [G.connectedFrom     M0.IsParentOf cntrl graph :: Maybe M0.Enclosure]
+    , Just rack  <- [G.connectedFrom     M0.IsParentOf encl  graph :: Maybe M0.Rack]
+    , rackv <- G.connectedTo  rack M0.IsRealOf         graph :: [M0.RackV]
+    , Just pver  <- [G.connectedFrom     M0.IsParentOf rackv graph :: Maybe M0.PVer]
+    , Just pool  <- [G.connectedFrom     M0.IsRealOf   pver  graph :: Maybe M0.Pool]
     ]
   -- Get all pools, except metadata pools.
   allPools = rgGetPool graph
   apply rg pool =
-    case G.connectedTo1 pool R.Has rg of
+    case G.connectedTo pool R.Has rg of
       Nothing -> df pool rg
       Just (M0.DiskFailureVector v) -> case f disk v of
         Nothing -> rg

@@ -239,7 +239,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 
   let start_recover (RecoverNode n1) = do
         g <- getLocalGraph
-        case G.connectedFrom1 Runs n1 g of
+        case G.connectedFrom Runs n1 g of
           Nothing -> do
             phaseLog "warn" $ "Couldn't find host for " ++ show n1
             continue finish
@@ -393,7 +393,7 @@ sendLogs logs ls = do
             nsendRemote nid (serviceLabel decisionLog) logs
   where
     rg = lsGraph ls
-    nodes = [ n | host <- G.connectedToU Cluster Has rg :: [Host]
-                , n <- G.connectedToU host Runs rg :: [Node]
+    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
+                , n <- G.connectedTo host Runs rg :: [Node]
                 , not . null $ lookupServiceInfo n decisionLog rg
                 ]

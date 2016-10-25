@@ -108,7 +108,7 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
         rg <- getLocalGraph
         case (,) <$> getProcessBootLevel p rg <*> getClusterStatus rg of
           Just (pl, M0.MeroClusterState M0.ONLINE rl _) | rl >= pl -> do
-            case G.connectedFrom1 M0.IsParentOf p rg of
+            case G.connectedFrom M0.IsParentOf p rg of
               Nothing -> do
                 phaseLog "warn" $ "Couldn't find node associated with " ++ show p
                 setFailure (M0.fid p) "No node info in RG"
@@ -191,7 +191,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
     rg <- getLocalGraph
-    case (getState p rg, G.connectedTo1 p Has rg) of
+    case (getState p rg, G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
       -- we don't care what the PID is as it either is the PID we
       -- already know about which suggest duplicate message or a new
@@ -224,7 +224,7 @@ ruleProcessOnline = define "castor::process::online" $ do
         modifyGraph $ G.connect p Has processPid
         applyStateChanges [ stateSet p M0.PSOnline ]
       (_, _)
-        | any (\s -> M0.s_type s == CST_HA) (G.connectedToU p M0.IsParentOf rg) -> do
+        | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
         phaseLog "action" "HA Process started."
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
@@ -490,7 +490,7 @@ ruleFailedNotificationFailsProcess =
               -- failed and we try to notify about it below and that still
               -- fails, we'll just run ourselves in circles
               , not . isProcFailed $ getState p rg
-              , s <- G.connectedToU p M0.IsParentOf rg
+              , s <- G.connectedTo p M0.IsParentOf rg
               , any (`elem` M0.s_endpoints s) eps ]
 
     -- We don't wait for confirmation of the notification, we're after

@@ -19,7 +19,7 @@ getNoisyPingCount = do
     phaseLog "rg-query" "Querying noisy ping count."
     rg <- getLocalGraph
     let (rg', i) =
-          case G.connectedTo1 noisy HasPingCount rg of
+          case G.connectedTo noisy HasPingCount rg of
             Nothing ->
               let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
                         G.newResource (NoisyPingCount 0) rg in

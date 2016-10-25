@@ -923,16 +923,16 @@ $(mkResRel
 getM0Services :: G.Graph -> [Service]
 getM0Services g =
   [ sv | p <- getM0Processes g
-       , sv <- G.connectedToU p IsParentOf g
+       , sv <- G.connectedTo p IsParentOf g
   ]
 
 -- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
 getM0Processes :: G.Graph -> [Process]
 getM0Processes g =
-  [ p | Just (prof :: Profile) <- [G.connectedTo1 R.Cluster R.Has g]
-       , (fs :: Filesystem) <- G.connectedToU prof IsParentOf g
-       , (node :: Node) <- G.connectedToU fs IsParentOf g
-       , p <- G.connectedToU node IsParentOf g
+  [ p | Just (prof :: Profile) <- [G.connectedTo R.Cluster R.Has g]
+       , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
+       , (node :: Node) <- G.connectedTo fs IsParentOf g
+       , p <- G.connectedTo node IsParentOf g
   ]
 
 -- | Lookup a configuration object in the resource graph.
@@ -948,5 +948,5 @@ lookupConfObjByFid f =
 -- | Lookup 'Node' associated with the given 'R.Node'.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: R.Host) <- [G.connectedFrom1 R.Runs m0node rg]
-         , node <- G.connectedToU h R.Runs rg ]
+  [ node | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
+         , node <- G.connectedTo h R.Runs rg ]

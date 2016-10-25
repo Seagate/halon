@@ -104,7 +104,7 @@ sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
   rg <- getLocalGraph
   mchan <- listToMaybe . catMaybes <$>
-             for (connectedToU host Runs rg) getCommandChannel
+             for (connectedTo host Runs rg) getCommandChannel
   case mchan of
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing, makeLoggerMsg req)
     _ -> phaseLog "error" "Cannot find sspl channel!"
@@ -128,7 +128,7 @@ sendLedUpdate status host sn = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
   let mnode = listToMaybe $
-                connectedToU host Runs rg -- XXX: try all nodes
+                connectedTo host Runs rg -- XXX: try all nodes
   case mnode of
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
@@ -190,8 +190,8 @@ ssplRules sspl = sequence_
 initialRule :: Service SSPLConf -> PhaseM LoopState l () -- XXX: remove first argument
 initialRule sspl = do
    rg <- getLocalGraph
-   let nodes = [ n | host <- connectedToU Cluster Has rg :: [Host]
-               , n <- connectedToU host Runs rg :: [Node]
+   let nodes = [ n | host <- connectedTo Cluster Has rg :: [Host]
+               , n <- connectedTo host Runs rg :: [Node]
                , not . null $ lookupServiceInfo n sspl rg
                ]
    liftProcess $ for_ nodes $ \(Node nid) -> -- XXX: wait for reply ?!
@@ -462,7 +462,7 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
         Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
           rg <- getLocalGraph
-          case (getState p rg, connectedTo1 p Has rg) of
+          case (getState p rg, connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
               phaseLog "info" "Failed SSPL notification for already failed process - doing nothing."
             (M0.PSOffline, _) ->
@@ -699,9 +699,9 @@ updateDriveManagerWithFailure disk st reason = do
                                                (maybe "unknown reason" T.pack reason)
   where
     withHost rg d f =
-      case connectedFrom1 Has d rg of
+      case connectedFrom Has d rg of
         Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
-        Just e -> case connectedToU (e::Enclosure) Has rg of
+        Just e -> case connectedTo (e::Enclosure) Has rg of
           []    -> phaseLog "error" $ "Unable to find host for " ++ show e
           h : _ -> f (h::Host)
 

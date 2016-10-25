@@ -54,7 +54,7 @@ notifyOnClusterTransition meid = do
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
   disposition <- getLocalGraph <&> maybe M0.OFFLINE id
-                                 . G.connectedTo1 R.Cluster R.Has
+                                 . G.connectedTo R.Cluster R.Has
   let newState = M0.MeroClusterState disposition newRunLevel newStopLevel
   phaseLog "oldState" $ show oldState
   phaseLog "newState" $ show newState

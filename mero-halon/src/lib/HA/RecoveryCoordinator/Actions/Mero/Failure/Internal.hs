@@ -100,10 +100,10 @@ createPoolVersionsInPool fs pool pvers invert rg =
     test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
     totalDrives = length
       [ disk
-      | rack :: M0.Rack <- G.connectedToU fs M0.IsParentOf rg
-      , encl :: M0.Enclosure <- G.connectedToU rack M0.IsParentOf rg
-      , cntr :: M0.Controller <- G.connectedToU encl M0.IsParentOf rg
-      , disk :: M0.Disk <- G.connectedToU cntr M0.IsParentOf rg
+      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+      , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+      , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+      , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
       ]
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
@@ -122,7 +122,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
             $ G.newResource pver
           >>> G.connect pool M0.IsRealOf pver
         i <- for (filter (test fids)
-                 $ G.connectedToU fs M0.IsParentOf rg0 :: [M0.Rack]) $ \rack -> do
+                 $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack]) $ \rack -> do
                rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
                rg1 <- S.get
                S.modify'
@@ -130,7 +130,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                  >>> G.connect pver M0.IsParentOf rackv
                  >>> G.connect rack M0.IsRealOf rackv
                i <- for (filter (test fids)
-                        $ G.connectedToU rack M0.IsParentOf rg1 :: [M0.Enclosure])
+                        $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
                         $ \encl -> do
                       enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
                       rg2 <- S.get
@@ -139,7 +139,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                         >>> G.connect rackv M0.IsParentOf enclv
                         >>> G.connect encl M0.IsRealOf enclv
                       i <- for (filter (test fids)
-                               $ G.connectedToU encl M0.IsParentOf rg2 :: [M0.Controller])
+                               $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
                                $ \ctrl -> do
                              ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
                              rg3 <- S.get
@@ -148,7 +148,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                                >>> G.connect enclv M0.IsParentOf ctrlv
                                >>> G.connect ctrl M0.IsRealOf ctrlv
                              let disks = filter (test fids) $
-                                   G.connectedToU ctrl M0.IsParentOf rg3 :: [M0.Disk]
+                                   G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk]
                              for_ disks $ \disk -> do
                                diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
                                S.modify'
@@ -175,4 +175,4 @@ createPoolVersions fs pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
   where
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
-    pools = filter (/= mdpool) $ G.connectedToU fs M0.IsParentOf rg
+    pools = filter (/= mdpool) $ G.connectedTo fs M0.IsParentOf rg

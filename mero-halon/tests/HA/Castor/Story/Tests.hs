@@ -145,9 +145,9 @@ testRules = do
       let node = Node nid
           host = Host systemHostname
           procs = [ proc
-                  | Just (m0cont :: M0.Controller) <- [G.connectedFrom1 M0.At host rg]
-                  , Just (m0node :: M0.Node) <- [G.connectedFrom1 M0.IsOnHardware m0cont rg]
-                  , proc <- G.connectedToU m0node M0.IsParentOf rg :: [M0.Process]
+                  | Just (m0cont :: M0.Controller) <- [G.connectedFrom M0.At host rg]
+                  , Just (m0node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware m0cont rg]
+                  , proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
                   ]
       -- We have to mark the process as online in order for our mock mero
       -- service to be sent notifications for them.
@@ -314,11 +314,11 @@ findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
   let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-            , Just (disk :: M0.Disk) <- [G.connectedTo1 sdev M0.IsOnHardware rg]
-            , Just (storage :: StorageDevice) <- [G.connectedTo1 disk M0.At rg]
-            , DISerialNumber serial <- G.connectedToU storage Has rg
-            , DIPath path <- G.connectedToU storage Has rg
-            , DIWWN wwn <- G.connectedToU storage Has rg
+            , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
+            , DISerialNumber serial <- G.connectedTo storage Has rg
+            , DIPath path <- G.connectedTo storage Has rg
+            , DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     dv:_ -> return dv
@@ -329,11 +329,11 @@ find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
   let dvs = [ ADisk storage (Just sdev) serial path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-            , Just (disk :: M0.Disk) <- [G.connectedTo1 sdev M0.IsOnHardware rg]
-            , Just (storage :: StorageDevice) <- [G.connectedTo1 disk M0.At rg]
-            , DISerialNumber serial <- G.connectedToU storage Has rg
-            , DIPath path <- G.connectedToU storage Has rg
-            , DIWWN wwn <- G.connectedToU storage Has rg
+            , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
+            , DISerialNumber serial <- G.connectedTo storage Has rg
+            , DIPath path <- G.connectedTo storage Has rg
+            , DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     _:dv:_ -> return dv
@@ -341,16 +341,16 @@ find2SDev rg =
                error "Unreachable"
 
 devAttrs :: StorageDevice -> G.Graph -> [StorageDeviceAttr]
-devAttrs sd rg = G.connectedToU sd Has rg
+devAttrs sd rg = G.connectedTo sd Has rg
 
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
-  [ () | dev  <- G.connectedToU (Enclosure enc) Has rg :: [StorageDevice]
+  [ () | dev  <- G.connectedTo (Enclosure enc) Has rg :: [StorageDevice]
        , any (==(DIIndexInEnclosure idx))
-             (G.connectedToU dev Has rg :: [DeviceIdentifier])
+             (G.connectedTo dev Has rg :: [DeviceIdentifier])
        , any (==SDRemovedAt)
-             (G.connectedToU dev Has rg :: [StorageDeviceAttr])
+             (G.connectedTo dev Has rg :: [StorageDeviceAttr])
        ]
 
 isPowered :: StorageDeviceAttr -> Bool
@@ -653,8 +653,8 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
             then "Pool version should exist"
             else "Pool version should not exist"
       check = if yes then elem else \a -> not . elem a
-      [fs] = [ x | Just (p :: M0.Profile) <- [G.connectedTo1 Cluster Has rg]
-                 , x <- G.connectedToU p M0.IsParentOf rg :: [M0.Filesystem]
+      [fs] = [ x | Just (p :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+                 , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
                  ]
       pv1 = G.getResourcesOfType rg :: [M0.PVer]
       pvFids = fmap (findRealObjsInPVer rg) pv1
@@ -673,7 +673,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     failDrive recv sdev
     -- Should now have a pool version corresponding to single failed drive
     rg1 <- G.getGraph mm
-    let Just (disk :: M0.Disk) = G.connectedTo1 m0sdev M0.IsOnHardware rg1
+    let Just (disk :: M0.Disk) = G.connectedTo m0sdev M0.IsOnHardware rg1
     checkPVerExistence rg (S.singleton (M0.fid disk)) False
     checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
 
@@ -681,7 +681,7 @@ testDynamicPVer transport pg = run transport pg interceptor [] test where
     failDrive recv sdev2
     -- Should now have a pool version corresponding to two failed drives
     rg2 <- G.getGraph mm
-    let Just (disk2 :: M0.Disk) = G.connectedTo1 m0sdev2 M0.IsOnHardware rg2
+    let Just (disk2 :: M0.Disk) = G.connectedTo m0sdev2 M0.IsOnHardware rg2
     checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
     checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
 
@@ -766,8 +766,8 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
 
       rg <- G.getGraph mm
       -- Look up the storage device by path
-      let [sd]  = [ d |  d <- G.connectedToU (Host systemHostname) Has rg
-                      , di <- G.connectedToU d Has rg
+      let [sd]  = [ d |  d <- G.connectedTo (Host systemHostname) Has rg
+                      , di <- G.connectedTo d Has rg
                       , di == DIPath "/dev/mddisk2"
                       ]
 
@@ -864,8 +864,8 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
     nid <- getSelfNode
 
     rg <- G.getGraph mm
-    let encs = [ enc | rack <- G.connectedToU Cluster Has rg :: [Rack]
-                     , enc <- G.connectedToU rack Has rg]
+    let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
+                     , enc <- G.connectedTo rack Has rg]
 
     debug $ "Enclosures: " ++ show encs
     let [enc] = encs

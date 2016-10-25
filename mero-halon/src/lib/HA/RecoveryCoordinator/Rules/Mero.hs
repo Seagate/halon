@@ -50,7 +50,7 @@ meroRules = do
   defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
     rg <- getLocalGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
-           <$> G.connectedTo1 (M0.Pool pool) R.Has rg
+           <$> G.connectedTo (M0.Pool pool) R.Has rg
     phaseLog "debug" $ "FailureVector="++show mv
     liftProcess $ sendChan port mv
 

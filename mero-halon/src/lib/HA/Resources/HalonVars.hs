@@ -36,7 +36,7 @@ defaultHalonVars = HalonVars
 -- | Get 'HalonVars' from RG
 getHalonVars :: PhaseM LoopState l HalonVars
 getHalonVars =
-    maybe defaultHalonVars id . G.connectedTo1 Cluster Has <$>
+    maybe defaultHalonVars id . G.connectedTo Cluster Has <$>
     getLocalGraph
 
 -- | Set a new 'HalonVars' in RG.

@@ -128,21 +128,21 @@ ruleReassembleRaid =
         mm0 <- runMaybeT $ do
           m0enc <- MaybeT $ getLocalGraph <&> encToM0Enc enc
           m0node <- MaybeT $ getLocalGraph <&> \rg -> listToMaybe
-            [ node | ctrl <- G.connectedToU m0enc M0.IsParentOf rg :: [M0.Controller]
-                   , Just node <- [G.connectedFrom1 M0.IsOnHardware ctrl rg]
+            [ node | ctrl <- G.connectedTo m0enc M0.IsParentOf rg :: [M0.Controller]
+                   , Just node <- [G.connectedFrom M0.IsOnHardware ctrl rg]
                    ]
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe
           [ (host, node)
-          | host <- G.connectedToU enc R.Has rg :: [R.Host]
-          , node <- G.connectedToU host R.Runs rg
+          | host <- G.connectedTo enc R.Has rg :: [R.Host]
+          , node <- G.connectedTo host R.Runs rg
           ]
         raidDevs <- getLocalGraph <&> \rg -> let
             extractRaidDev (R.DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
           in nub $ mapMaybe extractRaidDev [
-              lbl | d <- G.connectedToU enc R.Has rg :: [R.StorageDevice]
-                  , lbl <- G.connectedToU d R.Has rg :: [R.DeviceIdentifier]
+              lbl | d <- G.connectedTo enc R.Has rg :: [R.StorageDevice]
+                  , lbl <- G.connectedTo d R.Has rg :: [R.DeviceIdentifier]
                   ]
 
         -- If we don't have the node, we can't do much, but it is valid

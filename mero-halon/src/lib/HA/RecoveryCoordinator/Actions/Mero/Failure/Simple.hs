@@ -37,10 +37,10 @@ simpleStrategy :: Word32 -- ^ No. of disk failures to tolerate
 simpleStrategy df cf cfe = Strategy {
     onInit = Iterative $ \rg ->
       let mchunks = do
-            prof <- G.connectedTo1 Cluster Has rg :: Maybe M0.Profile
+            prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
             fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
-                    G.connectedToU prof M0.IsParentOf rg :: Maybe M0.Filesystem
-            globs <- G.connectedTo1 Cluster Has rg :: Maybe M0.M0Globals
+                    G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+            globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
             let fsets = generateFailureSets df cf cfe rg globs
                 attrs = PDClustAttr {
                           _pa_N = CI.m0_data_units globs
@@ -78,16 +78,16 @@ generateFailureSets df cf cfe rg globs = let
     k = CI.m0_parity_units globs
     allCtrls =
       [ ctrl
-      | (host :: Host) <- G.connectedToU Cluster Has rg
+      | (host :: Host) <- G.connectedTo Cluster Has rg
       , Just (ctrl :: M0.Controller) <-
-          [G.connectedFrom1 M0.At host rg]
+          [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to
     allDisks = Map.fromListWith (Set.union) . fmap (fmap Set.singleton) $
         [ (M0.fid ctrl, M0.fid disk)
-        | (_host :: Host) <- G.connectedToU Cluster Has rg
+        | (_host :: Host) <- G.connectedTo Cluster Has rg
         , ctrl <- allCtrls
-        , (disk :: M0.Disk) <- G.connectedToU ctrl M0.IsParentOf rg
+        , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
         ]
 
     buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (Failures, Set Fid)

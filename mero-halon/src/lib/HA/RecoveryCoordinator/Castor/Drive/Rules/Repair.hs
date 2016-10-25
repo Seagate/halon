@@ -423,9 +423,9 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
         Nothing -> Left $ "No storage device or status could be found for " ++ showFid s
       where
         stats = do
-          (disk :: M0.Disk) <- G.connectedTo1 s M0.IsOnHardware rg
-          (sd :: StorageDevice) <- G.connectedTo1 disk At rg
-          (StorageDeviceStatus sds _) <- G.connectedTo1 sd Is rg
+          (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
+          (sd :: StorageDevice) <- G.connectedTo disk At rg
+          (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
           return ( sd
                  , G.isConnected sd Has SDReplaced rg
                  , G.isConnected sd Has SDRemovedAt rg
@@ -1227,5 +1227,5 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
     start init_rule ()
 
   where
-    isIOSProcess p rg = not . null $ [s | s <- G.connectedToU p M0.IsParentOf rg
+    isIOSProcess p rg = not . null $ [s | s <- G.connectedTo p M0.IsParentOf rg
                                         , CST_IOS <- [M0.s_type s] ]

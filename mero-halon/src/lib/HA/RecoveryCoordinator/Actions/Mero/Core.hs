@@ -54,7 +54,7 @@ import Network.CEP
 import Prelude hiding (id)
 
 newFidSeq :: G.Graph -> (Word64, G.Graph)
-newFidSeq rg = case G.connectedTo1 Cluster Has rg of
+newFidSeq rg = case G.connectedTo Cluster Has rg of
     Just (M0.FidSeq w) -> go w
     Nothing -> go 0
   where
@@ -78,7 +78,7 @@ newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
 
 uniquePVerCounter :: G.Graph -> (Word32, G.Graph)
-uniquePVerCounter rg = case G.connectedTo1 Cluster Has rg of
+uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
    Nothing -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
    Just (M0.PVerCounter i) ->
      (i+1, G.connect Cluster Has (M0.PVerCounter (i+1)) rg)
@@ -93,7 +93,7 @@ mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 getM0Globals :: PhaseM LoopState l (Maybe CI.M0Globals)
 getM0Globals = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero globals."
-  return $ G.connectedTo1 Cluster Has rg
+  return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph
 loadMeroGlobals :: CI.M0Globals

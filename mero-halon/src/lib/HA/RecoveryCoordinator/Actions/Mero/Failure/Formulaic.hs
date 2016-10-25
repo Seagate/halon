@@ -26,10 +26,10 @@ import qualified Data.Set as Set
 formulaicStrategy :: [[Word32]] -> Strategy
 formulaicStrategy formulas = Strategy
   { onInit = Monolithic $ \rg -> maybe (return rg) return $ do
-      prof <- G.connectedTo1 Cluster Has rg :: Maybe M0.Profile
+      prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
       fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
-        G.connectedToU prof M0.IsParentOf rg :: Maybe M0.Filesystem
-      globs <- G.connectedTo1 Cluster Has rg :: Maybe M0.M0Globals
+        G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+      globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
       let attrs = PDClustAttr
                     { _pa_N = CI.m0_data_units globs
                     , _pa_K = CI.m0_parity_units globs
@@ -43,9 +43,9 @@ formulaicStrategy formulas = Strategy
           k = CI.m0_parity_units globs
           noCtlrs = length
             [ cntr
-            | rack :: M0.Rack <- G.connectedToU fs M0.IsParentOf rg
-            , encl :: M0.Enclosure <- G.connectedToU rack M0.IsParentOf rg
-            , cntr :: M0.Controller <- G.connectedToU encl M0.IsParentOf rg
+            | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+            , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+            , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
             ]
         -- Following change is temporary, and would work as long as failures
         -- above controllers (encl, racks) are not to be supported
@@ -59,8 +59,8 @@ formulaicStrategy formulas = Strategy
               | otherwise = remainder
           addFormulas g = flip execState g $ do
             for_ (filter (/= mdpool) $
-              G.connectedToU fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
-              for_ (G.connectedToU pool M0.IsRealOf g) $
+              G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
+              for_ (G.connectedTo pool M0.IsRealOf g) $
                 \(pver::M0.PVer) -> do
                 for_ formulas $ \formula -> do
                   pvf <- M0.PVer <$> state (first mkVirtualFid . newFid (Proxy :: Proxy M0.PVer))

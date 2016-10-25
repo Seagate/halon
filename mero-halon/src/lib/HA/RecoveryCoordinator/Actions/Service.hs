@@ -61,7 +61,7 @@ findRegisteredOn :: Node -> PhaseM LoopState l [ServiceInfoMsg]
 findRegisteredOn node = go <$> getLocalGraph
   where
     go rg = [ info
-            | info <- G.connectedToU node Has rg
+            | info <- G.connectedTo node Has rg
             , not $ G.isConnected node Stopping (info :: ServiceInfoMsg) rg
             ]
 

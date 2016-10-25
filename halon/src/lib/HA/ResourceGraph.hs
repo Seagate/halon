@@ -43,9 +43,7 @@ module HA.ResourceGraph
     , Res(..)
     , Rel(..)
     , Cardinality(..)
-    , Quantify(..)
-    , QuantifyFrom
-    , QuantifyTo
+    -- , Quantify(..)
     -- * Operations
     , newResource
     , insertEdge
@@ -61,8 +59,6 @@ module HA.ResourceGraph
     , getGraph
     , garbageCollect
     , garbageCollectRoot
-    , qAtMostOne
-    , qUnbounded
     -- * Queries
     , null
     , memberResource
@@ -71,10 +67,6 @@ module HA.ResourceGraph
     , edgesToDst
     , connectedFrom
     , connectedTo
-    , connectedToU
-    , connectedTo1
-    , connectedFromU
-    , connectedFrom1
     , anyConnectedFrom
     , anyConnectedTo
     , isConnected
@@ -164,23 +156,9 @@ $(singletons [d|
 
 -- | Determines how many values of a type can be yielded according to
 -- the cardinality.
-data Quantify (c :: Cardinality) a where
-  QAtMostOne :: Maybe a -> Quantify 'AtMostOne a
-  QUnbounded :: [a] -> Quantify 'Unbounded a
-
--- | Yields the element of an at-most-one quantified result.
-qAtMostOne :: Quantify 'AtMostOne a -> Maybe a
-qAtMostOne (QAtMostOne m) = m
-
--- | Yields the element of an unbounded quantified result.
-qUnbounded :: Quantify 'Unbounded a -> [a]
-qUnbounded (QUnbounded xs) = xs
-
--- | Shorthand for @Quantify (CardinalityFrom r a b) a@.
-type QuantifyFrom r a b = Quantify (CardinalityFrom r a b) a
-
--- | Shorthand for @Quantify (CardinalityTo r a b) b@.
-type QuantifyTo r a b = Quantify (CardinalityTo r a b) b
+type family Quantify (c :: Cardinality) :: (* -> *) where
+  Quantify 'AtMostOne = Maybe
+  Quantify 'Unbounded = []
 
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
@@ -588,49 +566,25 @@ edgesToDst x0 g =
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.
 connectedTo :: forall a r b. Relation r a b
-            => a -> r -> Graph -> QuantifyTo r a b
+            => a -> r -> Graph -> Quantify (CardinalityTo r a b) b
 connectedTo a r g =
     let rs = mapMaybe (\(Res x) -> cast x :: Maybe b) $ anyConnectedTo a r g
      in case sing :: Sing (CardinalityTo r a b) of
-          SAtMostOne -> QAtMostOne $ listToMaybe rs
-          SUnbounded -> QUnbounded rs
+          SAtMostOne -> listToMaybe rs
+          SUnbounded -> rs
   where
     -- Get rid of unused warnings
     _ = undefined :: (SCardinality c, Proxy AtMostOneSym0, Proxy UnboundedSym0)
 
--- | 'connectedTo' specialized for the case when the destination cardinality is
--- unbounded. 
-connectedToU :: (CardinalityTo r a b ~ 'Unbounded, Relation r a b)
-           => a -> r -> Graph -> [b]
-connectedToU a r = qUnbounded . connectedTo a r
-
--- | 'connectedTo' specialized for the case when the destination cardinality is
--- at most one. 
-connectedTo1 :: (CardinalityTo r a b ~ 'AtMostOne, Relation r a b)
-           => a -> r -> Graph -> Maybe b
-connectedTo1 a r = qAtMostOne . connectedTo a r
-
 -- | List of all nodes connected through a given relation with a provided
 --   destination resource.
 connectedFrom :: forall a r b . Relation r a b
-              => r -> b -> Graph -> QuantifyFrom r a b
+              => r -> b -> Graph -> Quantify (CardinalityFrom r a b) a
 connectedFrom r b g =
     let rs = mapMaybe (\(Res x) -> cast x :: Maybe a) $ anyConnectedFrom r b g
      in case sing :: Sing (CardinalityFrom r a b) of
-          SAtMostOne -> QAtMostOne $ listToMaybe rs
-          SUnbounded -> QUnbounded rs
-
--- | 'connectedFrom' specialized for the case when the source cardinality is
--- unbounded. 
-connectedFromU :: (CardinalityFrom r a b ~ 'Unbounded, Relation r a b)
-           => r -> b -> Graph -> [a]
-connectedFromU r b = qUnbounded . connectedFrom r b
-
--- | 'connectedTo' specialized for the case when the source cardinality is
--- unbounded. 
-connectedFrom1 :: (CardinalityFrom r a b ~ 'AtMostOne, Relation r a b)
-           => r -> b -> Graph -> Maybe a
-connectedFrom1 r b = qAtMostOne . connectedFrom r b
+          SAtMostOne -> listToMaybe rs
+          SUnbounded -> rs
 
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.

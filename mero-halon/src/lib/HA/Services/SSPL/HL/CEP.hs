@@ -75,9 +75,9 @@ hostStatus rg regex = fmap (\h@(Host name) ->
       , commandResponseMessageStatusResponseItemStatus = status h
       }
     ) hosts
-  where hosts = [ host | host@(Host hn) <- G.connectedToU Cluster Has rg
+  where hosts = [ host | host@(Host hn) <- G.connectedTo Cluster Has rg
                        , hn =~? regex]
         a =~? (Just ef) = a =~ ef
         _ =~? Nothing = True
         status host = T.pack . show $
-          (G.connectedToU host Has rg :: [HostAttr])
+          (G.connectedTo host Has rg :: [HostAttr])

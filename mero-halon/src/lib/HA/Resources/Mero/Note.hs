@@ -155,7 +155,7 @@ class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateC
                         , G.Relation Is a ConfObjectState
                         )
                      => a -> G.Graph -> ConfObjectState
-    getState x rg = fromMaybe M0_NC_ONLINE $ G.connectedTo1 x Is rg
+    getState x rg = fromMaybe M0_NC_ONLINE $ G.connectedTo x Is rg
 
     toConfObjState :: a -> StateCarrier a -> ConfObjectState
     default toConfObjState  :: a -> StateCarrier a -> StateCarrier a
@@ -215,7 +215,7 @@ instance HasConfObjectState M0.Enclosure where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Enclosure
 instance HasConfObjectState M0.Controller where
   type StateCarrier M0.Controller = M0.ControllerState
-  getState x rg = fromMaybe M0.CSUnknown $ G.connectedTo1 x Is rg
+  getState x rg = fromMaybe M0.CSUnknown $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Controller
 
@@ -224,7 +224,7 @@ instance HasConfObjectState M0.Controller where
   toConfObjState _ M0.CSTransient = M0_NC_TRANSIENT
 instance HasConfObjectState M0.Node where
   type StateCarrier M0.Node = M0.NodeState
-  getState x rg = fromMaybe M0.NSUnknown $ G.connectedTo1 x Is rg
+  getState x rg = fromMaybe M0.NSUnknown $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Node
 
@@ -235,7 +235,7 @@ instance HasConfObjectState M0.Node where
   toConfObjState _ M0.NSOnline  = M0_NC_ONLINE
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
-  getState x rg = fromMaybe M0.PSUnknown $ G.connectedTo1 x Is rg
+  getState x rg = fromMaybe M0.PSUnknown $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Process
 
@@ -251,7 +251,7 @@ instance HasConfObjectState M0.Process where
 
 instance HasConfObjectState M0.Service where
   type StateCarrier M0.Service = M0.ServiceState
-  getState x rg = fromMaybe M0.SSUnknown $ G.connectedTo1 x Is rg
+  getState x rg = fromMaybe M0.SSUnknown $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Service
 
@@ -270,19 +270,19 @@ instance HasConfObjectState M0.Disk where
   getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $
     [ st
     | Just (sdev :: M0.SDev) <-
-        [G.connectedFrom1 M0.IsOnHardware x rg]
-    , Just st <- [G.connectedTo1 sdev Is rg]
+        [G.connectedFrom M0.IsOnHardware x rg]
+    , Just st <- [G.connectedTo sdev Is rg]
     ]
   setState x st = \rg1 -> let
       sdevs :: Maybe M0.SDev
-      sdevs = G.connectedFrom1 M0.IsOnHardware x rg1
+      sdevs = G.connectedFrom M0.IsOnHardware x rg1
     in maybe id (`setState` st) sdevs $ rg1
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 
   toConfObjState _ x = toConfObjState (undefined :: M0.SDev) x
 instance HasConfObjectState M0.SDev where
   type StateCarrier M0.SDev = M0.SDevState
-  getState x rg = fromMaybe M0.SDSUnknown $ G.connectedTo1 x Is rg
+  getState x rg = fromMaybe M0.SDSUnknown $ G.connectedTo x Is rg
   setState x st = G.connect x Is st
   hasStateDict = staticPtr $ static dict_HasConfObjectState_SDev
 

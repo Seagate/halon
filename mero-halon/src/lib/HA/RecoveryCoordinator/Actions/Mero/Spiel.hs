@@ -154,7 +154,7 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
   next <- liftProcess $ do
     rc <- DP.getSelfPid
     return $ DP.usend rc . operation_reply pool
-  mp <- G.connectedTo1 Cluster Has <$> getLocalGraph
+  mp <- G.connectedTo Cluster Has <$> getLocalGraph
   er <- withSpielIO $
           withRConfIO mp $ try (operation_action pool) >>= unlift . next
   case er of
@@ -503,7 +503,7 @@ loadConfData = liftA3 TxConfData
 getConfUpdateVersion :: PhaseM LoopState l M0.ConfUpdateVersion
 getConfUpdateVersion = do
   g <- getLocalGraph
-  case G.connectedTo1 Cluster Has g of
+  case G.connectedTo Cluster Has g of
     Just ver -> return ver
     Nothing -> do
       let csu = M0.ConfUpdateVersion 1 Nothing
@@ -524,10 +524,10 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
   let m0_pool_width = length [ disk
-                             | rack :: M0.Rack <- G.connectedToU fs M0.IsParentOf g
-                             , encl :: M0.Enclosure <- G.connectedToU rack M0.IsParentOf g
-                             , cntr :: M0.Controller <- G.connectedToU encl M0.IsParentOf g
-                             , disk :: M0.Disk <- G.connectedToU cntr M0.IsParentOf g
+                             | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf g
+                             , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf g
+                             , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf g
+                             , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
                              ]
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   m0synchronously lift $ do
@@ -535,27 +535,27 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
     addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
-  let racks = G.connectedToU fs M0.IsParentOf g :: [M0.Rack]
+  let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
   for_ racks $ \rack -> do
     m0synchronously lift $ addRack t (M0.fid rack) f_fid
-    let encls = G.connectedToU rack M0.IsParentOf g :: [M0.Enclosure]
+    let encls = G.connectedTo rack M0.IsParentOf g :: [M0.Enclosure]
     for_ encls $ \encl -> do
       m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
-      let ctrls = G.connectedToU encl M0.IsParentOf g :: [M0.Controller]
+      let ctrls = G.connectedTo encl M0.IsParentOf g :: [M0.Controller]
       for_ ctrls $ \ctrl -> do
         -- Get node fid
-        let Just node = G.connectedFrom1 M0.IsOnHardware ctrl g :: Maybe M0.Node
+        let Just node = G.connectedFrom M0.IsOnHardware ctrl g :: Maybe M0.Node
         m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
-        let disks = G.connectedToU ctrl M0.IsParentOf g :: [M0.Disk]
+        let disks = G.connectedTo ctrl M0.IsParentOf g :: [M0.Disk]
         for_ disks $ \disk -> do
           m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
-  let nodes = G.connectedToU fs M0.IsParentOf g :: [M0.Node]
+  let nodes = G.connectedTo fs M0.IsParentOf g :: [M0.Node]
   for_ nodes $ \node -> do
     let attrs =
-          [ a | Just ctrl <- [G.connectedTo1 node M0.IsOnHardware g :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo1 ctrl M0.At g :: Maybe Host]
-              , a <- G.connectedToU host Has g :: [HostAttr]]
+          [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware g :: Maybe M0.Controller]
+              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host]
+              , a <- G.connectedTo host Has g :: [HostAttr]]
         defaultMem = 1024
         defCPUCount = 1
         memsize = maybe defaultMem fromIntegral
@@ -567,48 +567,48 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         getCpuCount (HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
-    let procs = G.connectedToU node M0.IsParentOf g :: [M0.Process]
+    let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
     for_ procs $ \(proc@M0.Process{..}) -> do
       m0synchronously lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
                             r_endpoint
-      let servs = G.connectedToU proc M0.IsParentOf g :: [M0.Service]
+      let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
       for_ servs $ \(serv@M0.Service{..}) -> do
         m0synchronously lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
-        let sdevs = G.connectedToU serv M0.IsParentOf g :: [M0.SDev]
+        let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
-          let disk = G.connectedTo1 sdev M0.IsOnHardware g :: Maybe M0.Disk
+          let disk = G.connectedTo sdev M0.IsOnHardware g :: Maybe M0.Disk
           m0synchronously lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   phaseLog "spiel" "Finished adding concrete entities."
   -- Pool versions
-  let pools = G.connectedToU fs M0.IsParentOf g :: [M0.Pool]
+  let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
       pvNegWidth pver = case pver of
                          M0.PVer _ a@M0.PVerActual{}    -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) f_fid 0
-    let pvers = sortOn pvNegWidth $ G.connectedToU pool M0.IsRealOf g :: [M0.PVer]
+    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_type pver of
         pva@M0.PVerActual{} -> do
           m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
-          let rackvs = G.connectedToU pver M0.IsParentOf g :: [M0.RackV]
+          let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
           for_ rackvs $ \rackv -> do
-            let (Just (rack :: M0.Rack)) = G.connectedFrom1 M0.IsRealOf rackv g
+            let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv g
             m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
-            let enclvs = G.connectedToU rackv M0.IsParentOf g :: [M0.EnclosureV]
+            let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
             for_ enclvs $ \enclv -> do
-              let (Just (encl :: M0.Enclosure)) = G.connectedFrom1 M0.IsRealOf enclv g
+              let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv g
               m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
-              let ctrlvs = G.connectedToU enclv M0.IsParentOf g :: [M0.ControllerV]
+              let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
               for_ ctrlvs $ \ctrlv -> do
-                let (Just (ctrl :: M0.Controller)) = G.connectedFrom1 M0.IsRealOf ctrlv g
+                let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv g
                 m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-                let diskvs = G.connectedToU ctrlv M0.IsParentOf g :: [M0.DiskV]
+                let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
                 for_ diskvs $ \diskv -> do
-                  let (Just (disk :: M0.Disk)) = G.connectedFrom1 M0.IsRealOf diskv g
+                  let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv g
 
                   m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
@@ -677,7 +677,7 @@ withResourceGraphCache action = do
 -- the graph, it means no repairs are going on
 getPoolRepairStatus :: M0.Pool
                     -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
-getPoolRepairStatus pool = G.connectedTo1 pool Has <$> getLocalGraph
+getPoolRepairStatus pool = G.connectedTo pool Has <$> getLocalGraph
 
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.
@@ -705,7 +705,7 @@ unsetPoolRepairStatusWithUUID pool uuid = getPoolRepairStatus pool >>= \case
 getPoolRepairInformation :: M0.Pool
                          -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
 getPoolRepairInformation pool =
-    join . fmap M0.prsPri . G.connectedTo1 pool Has <$>
+    join . fmap M0.prsPri . G.connectedTo pool Has <$>
     getLocalGraph
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any
@@ -736,7 +736,7 @@ modifyPoolRepairInformation :: M0.Pool
                             -> (M0.PoolRepairInformation -> M0.PoolRepairInformation)
                             -> PhaseM LoopState l ()
 modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
-  case G.connectedTo1 pool Has $ g of
+  case G.connectedTo pool Has $ g of
     Just (M0.PoolRepairStatus prt uuid (Just pri)) ->
       return $ G.connect pool Has (M0.PoolRepairStatus prt uuid (Just $ f pri)) g
     _ -> return g
@@ -784,6 +784,6 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
 setProfileRC :: LiftRC -> PhaseM LoopState l ()
 setProfileRC lift = do
   rg <- getLocalGraph
-  let mp = G.connectedTo1 Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported
+  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported
   phaseLog "spiel" $ "set command profile to" ++ show mp
   m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
