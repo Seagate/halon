@@ -103,6 +103,7 @@ failed = define "castor::drive::raid::failed" $ do
     add_success <- phaseHandle "add_success"
     failure <- phaseHandle "failure"
     dispatcher <- mkDispatcher
+    end <- phaseHandle "end"
     sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failure (return ())
 
     setPhase raid_update $ \(HAEvent eid (RaidUpdate{..}) _) -> do
@@ -132,6 +133,7 @@ failed = define "castor::drive::raid::failed" $ do
               phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
           go xs
 
+      phaseLog "eid" $ show eid
       todo eid
       go ruFailedComponents
       done eid
@@ -168,12 +170,14 @@ failed = define "castor::drive::raid::failed" $ do
           continue dispatcher
         else do
           phaseLog "error" "Cannot send drive add command to SSPL."
+          continue end
 
     directly add_success $ do
       Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
       phaseLog "info" "Successfully returned RAID array to operation."
       unmarkRemovedFromRAID (rinfo ^. riCompSDev)
       logInfo
+      continue end
 
     setPhaseIf reset_failure
       ( \(HAEvent eid (ResetFailure x) _) _ l ->
@@ -192,6 +196,7 @@ failed = define "castor::drive::raid::failed" $ do
         updateDriveManagerWithFailure (rinfo ^. riCompSDev)
           "HALON-FAILED" (Just "RAID_FAILURE")
         done eid
+        continue end
 
     directly failure $ do
       Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
@@ -201,6 +206,9 @@ failed = define "castor::drive::raid::failed" $ do
         <> "}")
       updateDriveManagerWithFailure (rinfo ^. riCompSDev)
         "HALON-FAILED" (Just "RAID_FAILURE")
+      continue end
+
+    directly end stop
 
     startFork raid_update (args raid_update)
   where
