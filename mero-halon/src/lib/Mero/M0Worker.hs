@@ -14,6 +14,7 @@ module Mero.M0Worker
     , sendM0Task
     ) where
 
+import Mero.Engine
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception (AsyncException(ThreadKilled))
@@ -37,7 +38,9 @@ instance Exception StopWorker
 newM0Worker :: IO M0Worker
 newM0Worker = do
     c <- newChan
-    sendM0Task $ M0Worker c <$> forkM0OS (worker c)
+    bracket_ initializeOnce
+             finalizeOnce
+      $ sendM0Task $ M0Worker c <$> forkM0OS (initializeOnce >> worker c)
   where
     worker c = (forever $ join $ readChan c) `catches`
                 [ Handler $ \StopWorker -> return ()
@@ -47,8 +50,10 @@ newM0Worker = do
 -- | Terminates a worker. Waits for all queued tasks to be executed.
 terminateM0Worker :: M0Worker -> IO ()
 terminateM0Worker M0Worker {..} = do
-    writeChan m0WorkerChan $ throwM StopWorker
-    joinM0OS m0WorkerThread
+    liftGlobalM0 $ do
+      writeChan m0WorkerChan $ throwM StopWorker
+      joinM0OS m0WorkerThread
+    finalizeOnce
 
 -- | Queues a new task for the worker.
 queueM0Worker :: M0Worker -> IO () -> IO ()
@@ -67,7 +72,6 @@ runOnM0Worker w task = do
   where
     throw :: MonadThrow m => SomeException -> m a
     throw = throwM
-
 
 -- | Runs the given action in the global mero worker and lifts the
 -- operation into the desired monad.

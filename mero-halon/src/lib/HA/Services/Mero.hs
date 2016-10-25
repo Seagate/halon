@@ -315,7 +315,8 @@ remotableDecl [ [d|
       rmFid      = mcRM      conf
       haFid      = mcHA      conf
       haAddr = RPC.rpcAddress $ mcHAAddress conf
-      withEp = Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
+      withEp = Mero.Notification.withMero
+             . Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
 
       -- Kernel
       startKernel = liftIO $ do
@@ -323,9 +324,7 @@ remotableDecl [ [d|
           [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
           ]
         SystemD.startService "mero-kernel"
-      -- XXX: halon uses mero kernel module so it's not possible to
-      -- unload that.
-      stopKernel = return () -- liftIO $ SystemD.stopService "mero-kernel"
+      stopKernel = liftIO $ SystemD.stopService "mero-kernel"
 
       -- mainloop
       go c cc = forever $

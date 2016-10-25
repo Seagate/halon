@@ -203,6 +203,8 @@ Library
                        HA.RecoveryCoordinator.Mero.Events
                        HA.Services.Mero.RC
       Other-Modules:
+                      Mero.Notification.Filter
+                      Mero.Engine
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid

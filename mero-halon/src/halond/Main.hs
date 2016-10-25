@@ -29,9 +29,6 @@ import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
 
-#ifdef USE_MERO
-import Mero
-#endif
 import Control.Monad (when)
 import Data.Function (on)
 import Data.Version (parseVersion, versionBranch)
@@ -72,9 +69,6 @@ main = do
     Version -> versionString >>= putStrLn
     Help -> putStrLn helpString
     Run -> do
-#ifdef USE_MERO
-      withM0Deferred (return ()) (return ()) $ mdo
-#endif
         -- TODO: Implement a mechanism to propagate env vars in distributed tests.
         -- Perhaps an env var like
         -- DC_PROPAGATE_ENV="HALON_TRACING DISTRIBUTED_PROCESS_TRACE_FILE"
