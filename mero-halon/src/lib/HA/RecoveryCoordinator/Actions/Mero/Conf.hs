@@ -306,7 +306,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   might be multiple profiles and this function will need
 --   to change.
 getProfile :: PhaseM LoopState l (Maybe M0.Profile)
-getProfile = 
+getProfile =
     G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Fetch the Mero filesystem in the system. Currently, we
@@ -442,19 +442,15 @@ lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
 getChildren :: forall a b l. G.Relation M0.IsParentOf a b
             => a -> PhaseM LoopState l [b]
 getChildren obj = do
-    r <- G.connectedTo obj M0.IsParentOf <$> getLocalGraph
-    case r :: G.QuantifyTo M0.IsParentOf a b of
-      G.QAtMostOne m  -> return $ maybeToList m
-      G.QUnbounded xs -> return xs
+  r <- G.connectedTo obj M0.IsParentOf <$> getLocalGraph
+  return $ G.asUnbounded r
 
 -- | Get parents of the conf objects.
 getParents :: forall a b l. G.Relation M0.IsParentOf a b
            => b -> PhaseM LoopState l [a]
 getParents obj = do
-    r <- G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
-    case r :: G.QuantifyFrom M0.IsParentOf a b of
-      G.QAtMostOne m  -> return $ maybeToList m
-      G.QUnbounded xs -> return xs
+  r <- G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
+  return $ G.asUnbounded r
 
 -- | Set object in a new state.
 setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a

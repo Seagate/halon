@@ -21,6 +21,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
@@ -73,6 +74,7 @@ module HA.ResourceGraph
     , __remoteTable
     , getGraphResources
     , getResourcesOfType
+    , asUnbounded
     -- * GC control
     , addRootNode
     , getGCThreshold
@@ -265,6 +267,10 @@ isOut = not . isIn
 inverse :: Rel -> Rel
 inverse (OutRel a b c) = InRel a b c
 inverse (InRel a b c) = OutRel a b c
+
+class AsUnbounded x c where asUnbounded :: x -> [c]
+instance AsUnbounded [c] c where asUnbounded = id
+instance AsUnbounded (Maybe c) c where asUnbounded = maybeToList
 
 -- | A change log for graph updates.
 --
