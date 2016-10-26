@@ -34,6 +34,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+
 module HA.ResourceGraph
     ( -- * Types
       Resource(..)

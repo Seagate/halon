@@ -8,6 +8,8 @@
 {-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -Werror #-}
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+
 module HA.Service
   (
     -- * Types

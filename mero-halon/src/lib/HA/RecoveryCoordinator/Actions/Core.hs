@@ -379,7 +379,7 @@ defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
 --   available for other rules.
 --   Note that if the message passes the guard, `todo` will already have been
 --   called.
-setPhaseIfConsume :: (Serializable a, Serializable b)
+setPhaseIfConsume :: Serializable a
                   => Jump PhaseHandle
                   -> (HAEvent a -> LoopState -> l -> Process (Maybe b))
                   -> (b -> PhaseM LoopState l ())

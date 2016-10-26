@@ -172,7 +172,7 @@ mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
   (\pool -> f (M0.fid pool))
 
 -- | Helper for implementation call to generic spiel operation.
-mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable b, Typeable k, KnownSymbol k)
+mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable k, KnownSymbol k)
   => Proxy# k                                               -- ^ Rule name
   -> (String -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Error result converter.
   -> (c      -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Success result onverter.

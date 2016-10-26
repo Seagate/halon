@@ -123,7 +123,7 @@ stateSet :: HasConfObjectState a
 stateSet = AnyStateSet
 
 -- | Try to extract value from 'set' request.
-unStateSet :: forall a . (Typeable a, HasConfObjectState a, Typeable (StateCarrier a))
+unStateSet :: forall a . (HasConfObjectState a)
            => AnyStateSet -> Maybe (a, StateCarrier a)
 unStateSet (AnyStateSet a c) = (,) <$> cast a <*> cast c
 

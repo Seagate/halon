@@ -30,7 +30,7 @@ import           HA.Services.Mero.RC.Events
 import           HA.Services.Mero.RC.Resources
 
 -- Halon
-import           HA.ResourceGraph (Graph, Resource, Relation)
+import           HA.ResourceGraph (Graph, Relation)
 import qualified HA.ResourceGraph    as G
 import qualified HA.Resources        as R
 import qualified HA.Resources.Castor as R
@@ -65,9 +65,7 @@ import Data.Proxy (Proxy(..))
 import Prelude hiding ((.), id)
 
 -- | Regisger new mero channel inside RG.
-registerChannel :: ( Resource (TypedChannel a)
-                   , Relation MeroChannel R.Node (TypedChannel a)
-                   )
+registerChannel :: (Relation MeroChannel R.Node (TypedChannel a))
                 => R.Node
                 -> TypedChannel a
                 -> PhaseM LoopState l ()
@@ -78,8 +76,7 @@ registerChannel sp chan =
 
 -- | Unregister mero channel inside RG.
 unregisterChannel :: forall a l proxy .
-   ( Resource (TypedChannel a)
-   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
+   ( G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
    , Relation MeroChannel R.Node (TypedChannel a)
    ) => R.Node -> proxy a -> PhaseM LoopState l ()
 unregisterChannel node _ = modifyGraph $ \rg ->
@@ -87,8 +84,7 @@ unregisterChannel node _ = modifyGraph $ \rg ->
   in foldr (G.disconnect node MeroChannel) rg res
 
 -- | Find mero channel.
-meroChannel :: ( Resource (TypedChannel a)
-               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
+meroChannel :: ( G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
                , Relation MeroChannel R.Node (TypedChannel a)
                )
             => Graph

@@ -136,9 +136,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
                   (static M0.someHasConfObjectStateDict)
                   (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState b)))
         Nothing -> (Nothing, [])
-    applyCascadeRule :: ( M0.HasConfObjectState a
-                        , M0.HasConfObjectState b
-                        )
+    applyCascadeRule :: ( M0.HasConfObjectState b)
                      => StateCascadeRule a b
                      -> (a, M0.StateCarrier a, M0.StateCarrier a)   -- state change
                      -> (Maybe (G.Graph -> G.Graph),[(b, M0.StateCarrier b, M0.StateCarrier b)]) -- new updated states
@@ -248,7 +246,7 @@ applyStateChangesCreateFS ass =
 --
 -- TODO: Do we need to handle UUID here?
 setPhaseNotified :: forall b l g.
-                    (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                    (M0.HasConfObjectState b)
                  => Jump PhaseHandle
                  -> (l -> Maybe (b, M0.StateCarrier b))
                  -> ((b, M0.StateCarrier b) -> PhaseM g l ())
@@ -322,7 +320,7 @@ setPhaseAllNotifiedBy handle extract act =
 
 -- | As 'setPhaseInternalNotificationWithState', accepting all object states.
 setPhaseInternalNotification :: forall b l g.
-                                (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                (M0.HasConfObjectState b)
                                 => Jump PhaseHandle
                                 -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
                                 -> RuleM g l ()
@@ -333,7 +331,7 @@ setPhaseInternalNotification handle act =
 -- states satisfying the predicate from the internal state change
 -- notification.
 setPhaseInternalNotificationWithState :: forall b l g.
-                                      (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+                                      (M0.HasConfObjectState b)
                                       => Jump PhaseHandle
                                       -> (M0.StateCarrier b -> M0.StateCarrier b -> Bool)
                                       -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
@@ -355,7 +353,7 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
 
 -- | Notify mero about the given object and wait for the arrival on
 -- notification, handling failure.
-mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+mkPhaseNotify :: (M0.HasConfObjectState b)
               => Int -- ^ timeout
               -> (l -> Maybe (b, M0.StateCarrier b)) -- ^ state getter
               -> PhaseM LoopState l () -- ^ on failure

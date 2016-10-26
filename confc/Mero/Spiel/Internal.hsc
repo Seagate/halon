@@ -34,7 +34,9 @@ import Foreign.Ptr
 #include "spiel/spiel.h"
 #include "rpc/rpc_machine.h"
 
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 -- | m0_reqh
 data {-# CTYPE "rpc/rpc_machine.h" "struct m0_reqh" #-} ReqHV

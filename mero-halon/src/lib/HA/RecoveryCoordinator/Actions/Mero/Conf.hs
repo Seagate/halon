@@ -77,9 +77,8 @@ import Control.Distributed.Process (liftIO)
 import Data.Foldable (foldl')
 import qualified Data.HashSet as S
 import Data.List (scanl')
-import Data.Maybe (listToMaybe, maybeToList)
+import Data.Maybe (listToMaybe)
 import Data.Proxy
-import Data.Typeable (Typeable)
 import qualified Data.Set as Set
 import Data.UUID.V4 (nextRandom)
 
@@ -90,7 +89,7 @@ import Text.Regex.TDFA ((=~))
 import Prelude hiding (id)
 
 -- | Lookup a configuration object by its Mero FID.
-lookupConfObjByFid :: (G.Resource a, M0.ConfObj a, Typeable a)
+lookupConfObjByFid :: (G.Resource a, M0.ConfObj a)
                    => Fid
                    -> PhaseM LoopState l (Maybe a)
 lookupConfObjByFid f =

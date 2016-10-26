@@ -98,8 +98,7 @@ unregister node info =
     msg = Service.serviceInfoMsg info
 
 -- | Get encoded 'ServiceInfo' for service located on 'Node'.
-lookupInfoMsg :: Configuration a
-              => Node  -- ^ Node of interest.
+lookupInfoMsg :: Node  -- ^ Node of interest.
               -> Service a -- ^ Service of interest.
               -> PhaseM LoopState l (Maybe ServiceInfoMsg)
 lookupInfoMsg node svc =
@@ -145,8 +144,7 @@ stop node svc = liftProcess $ do
 -- | Asynchronously request status of the halon service.
 -- Status reply is processed in background thread.
 --
-requestStatusAsync :: Configuration a
-                   => Node -- ^ Node where service is running.
+requestStatusAsync :: Node -- ^ Node where service is running.
                    -> Service a -- ^ Service of interest.
                    -> (ServiceStatusResponseMsg -> Process ()) -- ^ What to do with status
                    -> Process () -- ^ How to cleanup enviroment after work is done. We could

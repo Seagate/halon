@@ -75,7 +75,9 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #include "be/ha.h"
 #include "stob/io.h"
 
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 -- | ha_msg_metadata
 data HAMsgMeta = HAMsgMeta
@@ -311,7 +313,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       rc <- with procFid $ \procPtr ->
               with profFid $ \profPtr ->
                 with haFid $ \haPtr ->
-                  with rmFid $ \rmPtr -> 
+                  with rmFid $ \rmPtr ->
                     ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where

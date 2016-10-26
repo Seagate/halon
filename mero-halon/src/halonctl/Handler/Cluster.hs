@@ -519,7 +519,7 @@ clusterReset eqnids (ResetOptions hard unstick) = if unstick
     where
       wait = void (expect :: Process ProcessMonitorNotification)
 
-clusterCommand :: (Serializable a, Serializable b, Show b)
+clusterCommand :: (Serializable a, Serializable b)
                => [NodeId]
                -> (SendPort b -> a)
                -> (b -> Process ())

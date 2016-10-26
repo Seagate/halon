@@ -508,7 +508,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
         phaseLog "warning" $ "Cannot send poweron message to "
                           ++ (show nid)
                           ++ " for disk with s/n "
-                          ++ (show dpcSerial)
+                          ++ (show serial)
         continue power_removed_duration
 
   checkAndHandleDriveReady <-

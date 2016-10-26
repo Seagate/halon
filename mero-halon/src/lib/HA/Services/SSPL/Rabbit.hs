@@ -298,7 +298,7 @@ rabbitMQProxy conf = run
                 loop queues' subscribers exchanges'
             , match $ \(MQPublish (T.decodeUtf8 -> exch) (T.decodeUtf8 -> key) (LBS.fromStrict -> msg)) -> do
                 exchanges' <- exchangesIfMissing exchanges exch
-                liftIO $ publishMsg chan exch key newMsg{msgBody = msg}
+                _ <- liftIO $ publishMsg chan exch key newMsg{msgBody = msg}
                 loop queues subscribers exchanges'
             , matchChan receivePort $ \(key, msg) -> do
                 let msg' = LBS.toStrict msg

@@ -1,4 +1,4 @@
-resolver: lts-5.17
+resolver: lts-7.5
 packages:
 - cep/cep
 - confc
@@ -36,7 +36,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/options-schema.git
-    commit: 9dbe49046b52b90eff5952e33e99583f1b30d17e
+    commit: 9eaf45b3105358ef3c0b2a6169b68225f8f481d6
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/tasty-files.git
@@ -46,16 +46,16 @@ packages:
     git: https://github.com/nc6/gitrev.git
     commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
   extra-dep: true
+- location:
+    git: https://github.com/nc6/aeson-schema.git
+    commit: 55fb402a14080741b69ff97077ce3b1e94d03610
+  extra-dep: true
 
 extra-deps:
-- directory-1.2.5.0
 - distributed-process-tests-0.4.3.2
 - genders-0.1.0.1
 - rematch-0.2.0.0
-- clock-0.7.1
 - ghc-datasize-0.1.2
-- aeson-schema-0.4.1.1
-- aeson-0.11.2.0
 
 docker:
   enable: true
