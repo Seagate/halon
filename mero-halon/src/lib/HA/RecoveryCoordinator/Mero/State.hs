@@ -109,9 +109,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
                   (static M0.someHasConfObjectStateDict)
                   (M0.hasStateDict :: Static (Dict (M0.HasConfObjectState b)))
         Nothing -> (Nothing, [])
-    applyCascadeRule :: ( M0.HasConfObjectState a
-                        , M0.HasConfObjectState b
-                        )
+    applyCascadeRule :: ( M0.HasConfObjectState b)
                      => StateCascadeRule a b
                      -> (a, M0.StateCarrier a, M0.StateCarrier a)   -- state change
                      -> (Maybe (G.Graph -> G.Graph),[(b, M0.StateCarrier b, M0.StateCarrier b)]) -- new updated states

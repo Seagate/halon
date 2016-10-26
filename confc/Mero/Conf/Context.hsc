@@ -53,7 +53,9 @@ import qualified Language.C.Types as C
 #include "lib/bitmap.h"
 #include "lib/types.h"
 
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 -- @bitmap.h m0_bitmap@
 data Bitmap = Bitmap Int [Word64]

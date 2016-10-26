@@ -56,7 +56,9 @@ import System.IO.Unsafe ( unsafePerformIO )
 #include "spiel/spiel.h"
 #include "sns/cm/cm.h"
 
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 -- | @schema.h m0_cfg_storage_device_interface_type@
 data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_interface_type" #-}

@@ -6,6 +6,8 @@
 -- "ioservice" may identify the IO service running on a node.
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+
 module HA.Service
   (
     -- * Types

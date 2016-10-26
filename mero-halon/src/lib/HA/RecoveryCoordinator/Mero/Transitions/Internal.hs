@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Transitions.Internal
@@ -16,7 +17,9 @@ module HA.RecoveryCoordinator.Mero.Transitions.Internal
 
 import Data.Typeable
 import GHC.Generics
+#if __GLASGOW_HASKELL__ < 800
 import GHC.SrcLoc
+#endif
 import GHC.Stack
 import HA.Resources.Mero.Note
 import Text.Printf
@@ -69,5 +72,5 @@ transitionErr cs st = InvalidTransition $ \obj ->
     -- Find last call-site: this should have been the direct use of
     -- transition itself.
     locInfo = case reverse $ getCallStack cs of
-      (_, loc) : _ -> "(" ++ showSrcLoc loc ++ ")"
+      (_, loc) : _ -> "(" ++ prettySrcLoc loc ++ ")"
       _ -> "(no loc)"

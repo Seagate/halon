@@ -10,9 +10,9 @@ module Options.Applicative.Extras
   where
 
 import Prelude hiding ((<*>))
+import Data.Monoid ((<>))
 import Options.Applicative
     ( (<*>)
-    , (<>)
     , Parser
     , ParserInfo
     , fullDesc

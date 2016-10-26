@@ -14,6 +14,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+
 module HA.Replicator.Log
   ( RLogGroup
   , storageDir

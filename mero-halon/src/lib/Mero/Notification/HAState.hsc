@@ -86,7 +86,9 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #include "stob/io.h"
 #include "stob/ioq_error.h"
 
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 -- | ha_msg_metadata
 data HAMsgMeta = HAMsgMeta

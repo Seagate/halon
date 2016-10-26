@@ -45,8 +45,8 @@ deriveSafeCopy :: SC.Version a -> Name -> Name -> Q [Dec]
 deriveSafeCopy v k d = do
   scInstance <- SC.deriveSafeCopy v k d
   (c, n) <- reify d >>= \case
-    TyConI (DataD _ _ tyvs _ _) -> return $ mkInfo tyvs
-    TyConI (NewtypeD _ _ tyvs _ _) -> return $ mkInfo tyvs
+    TyConI (DataD _ _ tyvs _ _ _) -> return $ mkInfo tyvs
+    TyConI (NewtypeD _ _ tyvs _ _ _) -> return $ mkInfo tyvs
     i -> fail $ "HA.SafeCopy: Can't derive Binary for " ++ show i
   -- TODO: we should be able to do better on decode/encode front
 

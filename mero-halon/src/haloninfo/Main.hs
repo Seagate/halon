@@ -2,6 +2,7 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+import Data.Monoid ((<>))
 import Options.Applicative
 import HA.Services.SSPL.IEM (dumpCSV)
 

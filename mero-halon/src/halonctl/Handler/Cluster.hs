@@ -23,6 +23,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Foldable
 import Data.Maybe (mapMaybe)
+import Data.Monoid ((<>))
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
@@ -117,7 +118,7 @@ data DriveCommand
 
 parseDriveCommand :: Parser ClusterOptions
 parseDriveCommand = CastorDriveCommand <$> asum
-     [ Opt.subparser (command "update-presence" 
+     [ Opt.subparser (command "update-presence"
         $ Opt.withDesc parseDrivePresence "Update information about drive presence")
      , Opt.subparser (command "update-status"
         $ Opt.withDesc parseDriveStatus "Update drive status")
@@ -852,4 +853,3 @@ runDriveCommand nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled 
       exitFailure
     StorageDevicePresenceUpdated -> liftIO $ do
       putStrLn $ "Command executed."
-

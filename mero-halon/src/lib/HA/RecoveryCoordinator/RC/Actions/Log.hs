@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE Rank2Types #-}
@@ -39,7 +40,9 @@ import qualified Data.Map.Strict as Map
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
+#if __GLASGOW_HASKELL__ < 800
 import GHC.SrcLoc
+#endif
 import GHC.Stack
 
 import Network.CEP hiding (Local)

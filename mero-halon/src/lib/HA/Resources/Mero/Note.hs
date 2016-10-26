@@ -403,7 +403,7 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     , mkTypePair (Proxy :: Proxy M0.DiskV)
     ]
   where
-    mkTypePair :: forall a. (Typeable a, M0.ConfObj a, HasConfObjectState a)
+    mkTypePair :: forall a. (HasConfObjectState a)
                => Proxy a -> (Word64, SomeConfObjDict)
     mkTypePair a = (M0.fidType a, SomeConfObjDict (Proxy :: Proxy a))
 

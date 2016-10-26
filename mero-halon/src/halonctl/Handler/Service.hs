@@ -53,6 +53,7 @@ import Data.Aeson.Encode.Pretty
 import Data.Binary
   ( Binary )
 import qualified Data.ByteString.Lazy.Char8 as B8
+import Data.Monoid ((<>))
 import Data.Typeable
   ( Typeable )
 import GHC.Generics
@@ -61,7 +62,6 @@ import GHC.Generics
 import Options.Applicative
     ( (<$>)
     , (<*>)
-    , (<>)
     )
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O

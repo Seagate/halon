@@ -19,9 +19,10 @@ where
 import Prelude hiding ((<$>))
 import Control.Distributed.Process
 
+import Data.Monoid ((<>))
 import Data.Typeable ( Typeable )
 import GHC.Generics ( Generic )
-import Options.Applicative ((<$>) , (<>))
+import Options.Applicative ((<$>))
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 

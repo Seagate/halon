@@ -12,6 +12,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
+
 module HA.Replicator.Mock
   ( RLocalGroup
   , Replica

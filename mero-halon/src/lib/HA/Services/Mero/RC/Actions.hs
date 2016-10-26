@@ -62,10 +62,8 @@ import Data.Word (Word64)
 import Data.Proxy (Proxy(..))
 import Prelude hiding ((.), id)
 
--- | Register new mero channel inside RG.
-registerChannel :: ( Resource (TypedChannel a)
-                   , Relation MeroChannel R.Node (TypedChannel a)
-                   )
+-- | Regisger new mero channel inside RG.
+registerChannel :: (Relation MeroChannel R.Node (TypedChannel a))
                 => R.Node
                 -> TypedChannel a
                 -> PhaseM RC l ()

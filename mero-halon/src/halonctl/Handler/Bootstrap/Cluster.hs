@@ -127,15 +127,15 @@ bootstrap Config{..} = do
           parseSrvs = sequenceA . map parseSrv . concatMap _hc_h_services
 
           parseSrv str = case parseHelper Service.parseService str of
-            Left e -> _Failure # ["Failure to parse service \"" ++ str ++ "\": " ++ show e]
+            Left e -> _Failure # ["Failure to parse service \"" ++ str ++ "\": " ++ printParseError e]
             Right conf -> _Success # (str, conf)
 
       -- Create validated config
       let evalidatedConfig :: AccValidation [String] ValidatedConfig
           evalidatedConfig = ValidatedConfig
-           <$> (first (\e -> ["Error when reading tracking station config:  " ++ show e])
+           <$> (first (\e -> ["Error when reading tracking station config:  " ++ printParseError e])
                   validateTrackingStationCfg ^. from _Either)
-           <*> (first (\e -> ["Error when reading satellite config: " ++ show e])
+           <*> (first (\e -> ["Error when reading satellite config: " ++ printParseError e])
                   validateSatelliteCfg  ^. from _Either)
            <*>  ehosts
 
@@ -279,3 +279,12 @@ parseHelper :: Opt.Parser a -> String -> Either Opt.ParseError a
 parseHelper schm text = fst $
     Opt.runP (Opt.runParserFully Opt.SkipOpts schm t) Opt.defaultPrefs
   where t = words text
+
+
+-- | Print a parser error.
+printParseError :: Opt.ParseError -> String
+printParseError (Opt.ErrorMsg x) = "error: " ++ x
+printParseError (Opt.InfoMsg x) = "error: " ++ x
+printParseError Opt.ShowHelpText = "Invalid usage"
+printParseError Opt.UnknownError = "Unknown error"
+printParseError (Opt.MissingError _ _) = "Missing error"

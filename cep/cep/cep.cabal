@@ -39,7 +39,7 @@ library
   build-depends:       base >=4.6 && <5,
                        aeson,
                        distributed-process-scheduler,
-                       binary==0.7.*,
+                       binary>=0.7,
                        bytestring,
                        mtl,
                        multimap==1.2.*,

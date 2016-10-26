@@ -196,7 +196,7 @@ withNI addr processFid profileFid haFid rmFid f =
     liftProcess (initializeInternal addr processFid profileFid haFid rmFid)
       >>= (`withMVarProcess` f)
   where
-    trySome :: MonadCatch m => m a -> m (Either SomeException a)
+    trySome :: m a -> m (Either SomeException a)
     trySome = Catch.try
     withMVarProcess :: (MVar EndpointRef, EndpointRef, NIRef)
                     -> (NIRef -> m a) -> m a
