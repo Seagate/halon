@@ -31,6 +31,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -160,7 +161,7 @@ $(singletons [d|
 
 -- | Determines how many values of a type can be yielded according to
 -- the cardinality.
-type family Quantify (c :: Cardinality) :: (* -> *) where
+type family Quantify (c :: Cardinality) = (r :: * -> *) | r -> c where
   Quantify 'AtMostOne = Maybe
   Quantify 'Unbounded = []
 
@@ -270,9 +271,13 @@ inverse :: Rel -> Rel
 inverse (OutRel a b c) = InRel a b c
 inverse (InRel a b c) = OutRel a b c
 
-class AsUnbounded x c where asUnbounded :: x -> [c]
-instance AsUnbounded [c] c where asUnbounded = id
-instance AsUnbounded (Maybe c) c where asUnbounded = maybeToList
+-- | Treat a relationship as unbounded, regardless of whether it is or not.
+asUnbounded :: forall card c. (SingI card)
+            => Quantify card c
+            -> [c]
+asUnbounded = case (sing :: Sing card) of
+  SAtMostOne -> maybeToList
+  SUnbounded -> id
 
 -- | A change log for graph updates.
 --
