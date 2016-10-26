@@ -333,7 +333,7 @@ tests transport _ = do
                          $ g1
           do
             -- Should get both NodeA nodes back
-            let res = connectedFromList HasC (NodeC 1) g2 :: [NodeA]
+            let res = asUnbounded $ connectedFrom HasC (NodeC 1) g2 :: [NodeA]
             assertEqual "res is [NodeA 1, NodeA 2]"
               [NodeA 1, NodeA 2] (sort res)
           do
@@ -343,7 +343,7 @@ tests transport _ = do
           g3 <- syncWait $ connect (NodeA 1) HasC (NodeC 2) g2
           do
             -- Should have replaced the NodeC due to cardinality
-            let res = connectedToList (NodeA 1) HasC g3 :: [NodeC]
+            let res = asUnbounded $ connectedTo (NodeA 1) HasC g3 :: [NodeC]
             assertEqual "res is [NodeC 2]" [NodeC 2] res
        , Merge.tests
        ]

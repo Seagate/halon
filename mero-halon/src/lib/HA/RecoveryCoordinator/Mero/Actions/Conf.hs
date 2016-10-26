@@ -133,12 +133,14 @@ lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
 -- | Get all children of the conf object.
 getChildren :: forall a b l. G.Relation M0.IsParentOf a b
             => a -> PhaseM RC l [b]
-getChildren obj = G.connectedToList obj M0.IsParentOf <$> getLocalGraph
+getChildren obj = G.asUnbounded
+                . G.connectedTo obj M0.IsParentOf <$> getLocalGraph
 
 -- | Get parents of the conf objects.
 getParents :: forall a b l. G.Relation M0.IsParentOf a b
            => b -> PhaseM RC l [a]
-getParents obj = G.connectedFromList M0.IsParentOf obj <$> getLocalGraph
+getParents obj = G.asUnbounded
+               . G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
 
 -- | Test if a service is the principal RM service
 isPrincipalRM :: M0.Service

@@ -270,29 +270,31 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
 
     -- Find maximum number of allowed failures and number of current failures.
     mk :: Maybe (Int, Int)
-    mk = let pvers = nub
+    mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
+             connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
+             pvers = nub
                [ pver
-               | disk  <- G.connectedToList sdev M0.IsOnHardware  rg :: [M0.Disk]
-               , cntrl <- G.connectedFromList M0.IsParentOf disk  rg :: [M0.Controller]
-               , encl  <- G.connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
-               , rack  <- G.connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
+               | disk  <- connectedToList sdev M0.IsOnHardware  rg :: [M0.Disk]
+               , cntrl <- connectedFromList M0.IsParentOf disk  rg :: [M0.Controller]
+               , encl  <- connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
+               , rack  <- connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
                , rackv <- G.connectedTo  rack M0.IsRealOf         rg :: [M0.RackV]
-               , pver  <- G.connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
-               , pool  <- G.connectedFromList M0.IsRealOf   pver  rg :: [M0.Pool]
+               , pver  <- connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
+               , pool  <- connectedFromList M0.IsRealOf   pver  rg :: [M0.Pool]
                -- exclude metadata pools
                , M0.fid pool `notElem` mdFids
                ]
              mdFids = [ M0.f_mdpool_fid fs
-                      | p <- G.connectedToList Res.Cluster Has rg :: [M0.Profile]
+                      | p <- connectedToList Res.Cluster Has rg :: [M0.Profile]
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
-             failedDisks = [ d | prof :: M0.Profile <- G.connectedToList Res.Cluster Has rg
+             failedDisks = [ d | prof :: M0.Profile <- connectedToList Res.Cluster Has rg
                                , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
                                , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                                , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
                                , ctrl :: M0.Controller <- G.connectedTo enc M0.IsParentOf rg
                                , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                               , d :: M0.SDev <- G.connectedFromList M0.IsOnHardware disk rg
+                               , d :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
                                , failingState d (M0.getState d rg)
                                ]
          in case mapMaybe getK pvers of
@@ -318,7 +320,7 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
         notify $ DriveInserted uuid node sdev_loc sdev is_powered
       -- Same drive but it was removed.
       Right () -> do -- this is a bad case, as it means that we have missed notifcatio about drive
-                     -- removal 
+                     -- removal
         StorageDevice.ejectFrom sdev sdev_loc
       -- removing device
       Left StorageDevice.AlreadyInstalled | not is_installed -> do
@@ -375,4 +377,3 @@ updateStorageDeviceStatus uuid node disk slot status reason = do
        notify $ DriveOK uuid node slot disk
        return True
      _ -> return False
-

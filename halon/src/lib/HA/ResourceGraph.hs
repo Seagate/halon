@@ -32,6 +32,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -69,10 +70,9 @@ module HA.ResourceGraph
     , memberEdgeBack
     , edgesFromSrc
     , edgesToDst
+    , asUnbounded
     , connectedFrom
-    , connectedFromList
     , connectedTo
-    , connectedToList
     , anyConnectedFrom
     , anyConnectedTo
     , isConnected
@@ -165,7 +165,7 @@ $(singletons [d|
 
 -- | Determines how many values of a type can be yielded according to
 -- the cardinality.
-type family Quantify (c :: Cardinality) :: (* -> *) where
+type family Quantify (c :: Cardinality) = (r :: * -> *) | r -> c where
   Quantify 'AtMostOne = Maybe
   Quantify 'Unbounded = []
 
@@ -276,6 +276,14 @@ isOut = not . isIn
 inverse :: Rel -> Rel
 inverse (OutRel a b c) = InRel a b c
 inverse (InRel a b c) = OutRel a b c
+
+-- | Treat a relationship as unbounded, regardless of whether it is or not.
+asUnbounded :: forall card c. (SingI card)
+            => Quantify card c
+            -> [c]
+asUnbounded = case (sing :: Sing card) of
+  SAtMostOne -> maybeToList
+  SUnbounded -> id
 
 -- | A change log for graph updates.
 --
@@ -613,25 +621,6 @@ connectedTo a r g =
     -- Get rid of unused warnings
     _ = undefined :: (SCardinality c, Proxy AtMostOneSym0, Proxy UnboundedSym0)
 
--- | List of all nodes connected through a given relation with a provided source
---   Compared to 'connectedTo', this function returns a list regardless of the
---   nature of the relationship.
-connectedToList :: forall a r b. Relation r a b
-            => a -> r -> Graph -> [b]
-connectedToList a r g = mapMaybe (\(Res x) -> cast x :: Maybe b)
-                      $ anyConnectedTo a r g
-
--- TODO Use this as a replacement for 'connectedToList' and 'connectedFromList'
--- when we move to GHC8, using
--- `type family Quantify (c :: Cardinality) = (r :: * -> *) | r -> c`
--- | Treat a relationship as unbounded, regardless of whether it is or not.
--- asUnbounded :: forall card c. (SingI card)
---             => Quantify card c
---             -> [c]
--- asUnbounded = case (sing :: Sing card) of
---   SAtMostOne -> maybeToList
---   SUnbounded -> id
-
 -- | Fetch nodes connected through a given relation with a provided
 --   destination resource.
 connectedFrom :: forall a r b . Relation r a b
@@ -641,15 +630,6 @@ connectedFrom r b g =
      in case sing :: Sing (CardinalityFrom r a b) of
           SAtMostOne -> listToMaybe rs
           SUnbounded -> rs
-
--- | List of all nodes connected through a given relation with a provided
---   destination resource.
---   Compared to 'connectedFrom', this function returns a list regardless of the
---   nature of the relationship.
-connectedFromList :: forall a r b . Relation r a b
-                  => r -> b -> Graph -> [a]
-connectedFromList r b g = mapMaybe (\(Res x) -> cast x :: Maybe a)
-                        $ anyConnectedFrom r b g
 
 -- | List of all nodes connected through a given relation with a provided source
 -- resource.
