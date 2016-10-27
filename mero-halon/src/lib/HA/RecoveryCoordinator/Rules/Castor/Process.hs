@@ -100,7 +100,7 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
         let Just (ProcessRestartRequest p) = getField . rget fldReq $ l
             Just n = getField . rget fldNode $ l
             mnode = M0.m0nodeToNode n $ lsGraph ls
-            resultFids = either id fst <$> results
+            resultFids = either fst fst <$> results
         return $ if maybe False (== Node nid) mnode && M0.fid p `elem` resultFids
                  then Just (eid, results) else Nothing
 
@@ -140,13 +140,25 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
     Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
     case filter (\(fid', _) -> fid' == M0.fid p) <$> partitionEithers results of
       (okFids, []) -> do
+        -- Record the PID for each started process, although don't yet
+        -- mark them as ONLINE - this will be handled when Mero sends its
+        -- notification of ONLINE.
+        for_ okFids $ \(fid, mpid) -> do
+          phaseLog "info" $ "Process restart successfully initiated by systemd."
+          phaseLog "fid" $ show fid
+          phaseLog "pid" $ show mpid
+          
+          (mres :: Maybe M0.Process) <- M0.lookupConfObjByFid fid
+                                      <$> getLocalGraph
+          forM_ ((,) <$> mres <*> mpid) $ \(res, pid) ->
+              modifyGraph $ G.connectUniqueFrom res Has (M0.PID pid)
+
         -- We don't have to do much here: mero should send ONLINE for
         -- services belonging to the process, if all services for the
         -- process are up then process is brought up
         -- (ruleServiceNotificationHandler). Further, if the process is up (as
         -- per mero) and all the processes on the node are up then
         -- node is up (ruleProcessOnline).
-        phaseLog "info" $ "Managed to initiate restart following processes: " ++ show okFids
         continue finish
 
       -- TODO: it's only an implementation detail that this (pfid,
@@ -331,9 +343,9 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
   phaseLog "info" $ printf "Mero proceses started on %s" (show node)
   rg <- getLocalGraph
   let
-    resultProcs :: [Either M0.Process (M0.Process, String)]
+    resultProcs :: [Either (M0.Process, Maybe M0.PID) (M0.Process, String)]
     resultProcs = mapMaybe (\case
-      Left x -> Left <$> M0.lookupConfObjByFid x rg
+      Left (x,mpid) -> Left . (,M0.PID <$> mpid) <$> M0.lookupConfObjByFid x rg
       Right (x,s) -> Right . (,s) <$> M0.lookupConfObjByFid x rg)
       results
   unless (null $ rights resultProcs) $ do
@@ -341,8 +353,16 @@ ruleProcessControlStart = defineSimpleTask "handle-process-start" $ \(ProcessCon
       <$> rights resultProcs
   for_ (rights results) $ \(x,s) ->
     phaseLog "error" $ printf "failed to start service %s : %s" (show x) s
-  for_ (nub $ lefts results) $ \x ->
-    phaseLog "info" $ printf "Process started: %s" (show x)
+  for_ (nub $ lefts results) $ \(fid, mpid) -> do
+    phaseLog "info" $ printf "Process started: %s (PID %s)" (show fid) (show mpid)
+    -- Record the PID for each started process, although don't yet
+    -- mark them as ONLINE - this will be handled when Mero sends its
+    -- notification of ONLINE.
+    (mres :: Maybe M0.Process) <- M0.lookupConfObjByFid fid
+                                <$> getLocalGraph
+    for_ ((,) <$> mres <*> mpid) $ \(res, pid) ->
+        modifyGraph $ G.connectUniqueFrom res Has (M0.PID pid)
+
 
 jobStop :: Job StopProcessesRequest StopProcessesResult
 jobStop = Job "castor::process::stop"
