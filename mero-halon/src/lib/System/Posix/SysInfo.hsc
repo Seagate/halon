@@ -21,19 +21,22 @@ module System.Posix.SysInfo
 
 #include <unistd.h>
 
-import Control.Distributed.Process
-import Control.Distributed.Process.Closure (remotable)
 import HA.EventQueue.Producer (promulgateWait)
 import HA.Resources (Node)
 import HA.Resources.Mero (HostHardwareInfo(..))
 
+import Control.Distributed.Process
+import Control.Distributed.Process.Closure (remotable)
 import Control.Monad (unless, (<=<))
+
 import Data.Binary (Binary)
+import Data.Either (isRight)
 import Data.Typeable (Typeable)
+
 import GHC.Generics
-import System.SystemD.API
+
 import System.Process
-import System.Exit
+import System.SystemD.API
 
 
 #ifdef _SC_NPROCESSORS_ONLN
@@ -83,7 +86,7 @@ getUserSystemInfo nid = do
 getLNetID :: IO String
 getLNetID = do
   rc <- startService "lnet"
-  unless (rc == ExitSuccess) $ error "failed start lnet module"
+  unless (isRight rc) $ error "failed start lnet module"
   (nid:rest) <- lines <$> readProcess "lctl" ["list_nids"] ""
   unless (null rest) $ putStrLn "lctl reports many interfaces, but only fist will be used"
   return nid

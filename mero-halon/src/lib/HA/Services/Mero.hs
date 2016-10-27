@@ -173,8 +173,8 @@ configureProcess mc run conf needsMkfs = do
   then do
     ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
     return $ case ec of
-      ExitSuccess -> Left procFid
-      ExitFailure x -> Right (procFid, "Unit failed to start with exit code " ++ show x)
+      Right _ -> Left procFid
+      Left x -> Right (procFid, "Unit failed to start with exit code " ++ show x)
   else return $ Left procFid
   where
     maybeWriteConfXC (ProcessConfigLocal _ _ bs) = do
@@ -186,28 +186,25 @@ configureProcess mc run conf needsMkfs = do
 -- | Start mero process.
 startProcess :: ProcessRunType   -- ^ Type of the process.
              -> Fid              -- ^ Process Fid.
-             -> IO (Either Fid (Fid, String))
+             -> IO (Either (Fid, Maybe Int) (Fid, String))
 startProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
     putStrLn $ "m0d: startProcess: " ++ show fid ++ " with type(s) " ++ show run
     ec <- SystemD.startService $ unitString run fid
     return $ case ec of
-      ExitSuccess -> Left fid
-      ExitFailure x ->
-        Right (fid, "Unit failed to start with exit code " ++ show x)
+      Right mpid -> Left (fid, mpid)
+      Left x -> Right (fid, "Unit failed to start with exit code " ++ show x)
 
 -- | Restart mero process.
 restartProcess :: ProcessRunType     -- ^ Type of the process.
                -> Fid                -- ^ Process Fid.
-               -> IO (Either Fid (Fid,String))
+               -> IO (Either (Fid, Maybe Int) (Fid,String))
 restartProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
   let unit = unitString run fid
   putStrLn $ "m0d: restartProcess: " ++ unit ++ " with type(s) " ++ show run
   ec <- SystemD.restartService unit
-  case ec of
-    ExitSuccess -> return $ Left fid
-    ExitFailure x -> do
-      putStrLn $ "m0d: restartProcess failed."
-      return $ Right (fid, "Unit failed to restart with exit code " ++ show x)
+  return $ case ec of
+    Right mpid -> Left (fid, mpid)
+    Left x -> Right (fid, "Unit failed to restart with exit code " ++ show x)
 
 -- | Stop running mero service.
 stopProcess :: ProcessRunType        -- ^ Type of the process.
@@ -246,7 +243,7 @@ getProcFidAndEndpoint (ProcessConfigRemote x y) = (x, y)
 
 -- | General failure handler for the process start/stop/restart actions.
 generalProcFailureHandler :: Fid -> Catch.SomeException
-                          -> IO (Either Fid (Fid, String))
+                          -> IO (Either a (Fid, String))
 generalProcFailureHandler fid e = return $ Right (fid, show e)
 
 -- | Write out the conf.xc file for a confd server.
@@ -292,7 +289,7 @@ remotableDecl [ [d|
     Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
       traceM0d "Kernel module loaded."
       case rc of
-        ExitSuccess -> withEp $ \ep -> do
+        Right _ -> withEp $ \ep -> do
           self <- getSelfPid
           traceM0d "DEBUG: Pre-withEp"
           _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
@@ -303,7 +300,7 @@ remotableDecl [ [d|
           sendMeroChannel c cc
           traceM0d "Starting service m0d on mero client"
           go c cc
-        ExitFailure i -> do
+        Left i -> do
           self <- getSelfPid
           traceM0d $ "Kernel module did not load correctly: " ++ show i
           void . promulgate . M0.MeroKernelFailed self $
