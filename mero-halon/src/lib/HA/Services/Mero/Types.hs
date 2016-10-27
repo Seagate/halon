@@ -148,7 +148,7 @@ instance Hashable ProcessControlMsg
 -- | Result of a process control invocation. Either it succeeded, or
 --   it failed with a message.
 data ProcessControlResultMsg =
-    ProcessControlResultMsg NodeId [Either Fid (Fid, String)]
+    ProcessControlResultMsg NodeId [Either (Fid, Maybe Int) (Fid, String)]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
@@ -160,7 +160,7 @@ instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
 
 data ProcessControlResultRestartMsg =
-      ProcessControlResultRestartMsg NodeId [Either Fid (Fid,String)]
+    ProcessControlResultRestartMsg NodeId [Either (Fid, Maybe Int) (Fid,String)]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultRestartMsg
 instance Hashable ProcessControlResultRestartMsg

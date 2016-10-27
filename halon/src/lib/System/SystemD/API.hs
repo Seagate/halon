@@ -4,31 +4,79 @@
 module System.SystemD.API where
 
 import Control.Exception
+
+import Data.List (intercalate)
+import qualified Data.Map.Strict as Map
+
 import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
 import System.Process
 
+import Text.Parsec
+
 -- | Helper for service runners
-runCtl :: [String] -> IO ExitCode
-runCtl args = do
-  readProcessWithExitCode "systemctl" args "" >>= \(c, _, _) -> return c
+runCtl :: [String] -> IO (ExitCode, String, String)
+runCtl args = readProcessWithExitCode "systemctl" args ""
 
 doService :: String -> String -> IO ExitCode
-doService a n = runCtl [a, n]
+doService a n = runCtl [a, n] >>= \(c, _, _) -> return c
 
--- | Start the service with the given name
-startService :: String -> IO ExitCode
-startService = doService "start"
+propsParser :: Parsec String () (Map.Map String String)
+propsParser = do
+    ps <- many $ do
+      p <- readProperty
+      _ <- optional $ char '\n'
+      return p
+    eof
+    return $ Map.fromList ps
+  where
+    readProperty = do
+      pname <- many (noneOf "=\n")
+      _ <- char '='
+      pval <- many (noneOf "=\n")
+      return (pname, pval)
+
+-- | Read properties of running services
+readProperties :: String -> [String] -> IO (Map.Map String String)
+readProperties srv props = do
+    (ec, out, _) <- runCtl $ ["show", srv] ++ propArgs
+    case ec of
+      ExitSuccess -> case parse propsParser "" out of
+        Left _ -> return Map.empty
+        Right xs -> return xs
+      ExitFailure _ -> return Map.empty
+  where
+    propArgs = case props of
+      [] -> []
+      xs -> ["-p", intercalate "," xs]
+
+-- | Start the service with the given name. Returns the
+--   exit code on a failure, or the PID of the started service
+--   on a correct start.
+startService :: String -> IO (Either Int (Maybe Int))
+startService srv = do
+  ec <- doService "start" srv
+  case ec of
+    ExitFailure i -> return $ Left i
+    ExitSuccess -> do
+      props <- readProperties srv ["MainPID"]
+      return $ Right (read <$> Map.lookup "MainPID" props)
 
 -- | Stop the service with the given name
 stopService :: String -> IO ExitCode
 stopService = doService "stop"
 
 -- | Restart the service with the given name
-restartService :: String -> IO ExitCode
-restartService = doService "restart"
+restartService :: String -> IO (Either Int (Maybe Int))
+restartService srv = do
+  ec <- doService "restart" srv
+  case ec of
+    ExitFailure i -> return $ Left i
+    ExitSuccess -> do
+      props <- readProperties srv ["MainPID"]
+      return $ Right (read <$> Map.lookup "MainPID" props)
 
 -- | Load in the conf in format that @systemd-tmpfiles@ expectes
 createConf :: [String] -- ^ Configuration strings

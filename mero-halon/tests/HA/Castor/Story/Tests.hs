@@ -966,7 +966,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
           liftIO $ assertEqual "One process on node" 1 $ length pcs
           -- Reply with successful stoppage
           let [(_, fid)] = pcs
-          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid [Left fid]
+          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid [Left (fid, Nothing)]
           -- Also send ONLINE for the process
           _ <- promulgateEQ [nid] ( HAMsgMeta fid fid fid 0
                                   , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED

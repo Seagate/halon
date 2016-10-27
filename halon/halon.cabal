@@ -110,7 +110,8 @@ Library
                    netwire,
                    template-haskell,
                    hostname,
-                   uuid
+                   uuid,
+                   parsec
 
   if flag(rpc)
     Build-Depends: rpclite,
