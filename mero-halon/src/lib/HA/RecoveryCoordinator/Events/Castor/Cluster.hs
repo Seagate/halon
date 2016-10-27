@@ -66,7 +66,7 @@ instance Binary ClusterStartRequest
 
 data ClusterStartResult
       = ClusterStartOk
-      | ClusterStartTimeout
+      | ClusterStartTimeout [(M0.Node, [(M0.Process, M0.ProcessState)])]
       | ClusterStartFailure String [StartProcessesOnNodeResult] [StartClientsOnNodeResult]
       deriving (Eq, Show, Generic, Typeable)
 instance Binary ClusterStartResult
@@ -187,7 +187,6 @@ newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
 
 data StartClientsOnNodeResult
        = ClientsStartOk M0.Node
-       | ClientsStartTimeout M0.Node
        | ClientsStartFailure M0.Node String
        deriving (Eq, Show, Generic)
 instance Binary StartClientsOnNodeResult
@@ -206,8 +205,8 @@ instance Binary M0KernelResult
 -- | Result of @StartProcessesOnNodeRequest@
 data StartProcessesOnNodeResult
       = NodeProcessesStarted M0.Node
-      | NodeProcessesStartTimeout M0.Node
-      | NodeProcessesStartFailure M0.Node
+      | NodeProcessesStartTimeout M0.Node [(M0.Process, M0.ProcessState)]
+      | NodeProcessesStartFailure M0.Node [(M0.Process, M0.ProcessState)]
   deriving (Eq, Show, Generic)
 
 instance Binary StartProcessesOnNodeResult

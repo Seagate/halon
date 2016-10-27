@@ -56,15 +56,15 @@ import qualified HA.Resources.Mero.Note as M0
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Core
-import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Hardware
       ( findHostStorageDevices, findStorageDeviceIdentifiers )
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
      ( notifyOnClusterTransition )
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Actions.Mero.Node
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
 import           HA.RecoveryCoordinator.Events.Mero
-import           HA.RecoveryCoordinator.Rules.Mero.Conf
-     ( applyStateChanges )
+import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.Services.Mero.RC (meroChannel)
 import           Mero.ConfC (ServiceType(..))
@@ -274,18 +274,18 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                 , p host node rg
                 ]
 
-    let appendServerFailure s =
+    let appendServerFailure s = do
            modify Local $ rlens fldRep . rfield %~
              (\x -> Just $ case x of
                  Just (ClusterStartFailure n xs ys) -> ClusterStartFailure n (s:xs) ys
-                 Just ClusterStartTimeout -> ClusterStartFailure "server start failure" [s] []
+                 Just ClusterStartTimeout{} -> ClusterStartFailure "server start failure" [s] []
                  _ -> ClusterStartFailure "server start failure" [s] [])
 
     let appendClientFailure s =
            modify Local $ rlens fldRep . rfield %~
              (\x -> Just $ case x of
                  Just (ClusterStartFailure n xs ys) -> ClusterStartFailure n xs (s:ys)
-                 Just ClusterStartTimeout -> ClusterStartFailure "client start failure" [] [s]
+                 Just ClusterStartTimeout{} -> ClusterStartFailure "client start failure" [] [s]
                  _ -> ClusterStartFailure "client start failure" [] [s])
 
     let fail_job st = do
@@ -339,11 +339,11 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
        (node, result) <- case s of
          NodeProcessesStarted node ->
            return (node, "success")
-         s'@(NodeProcessesStartTimeout node) -> do
+         s'@(NodeProcessesStartTimeout node _) -> do
            modify Local $ rlens fldNext . rfield .~ Just finalize
            appendServerFailure s'
            return (node, "timeout")
-         s'@(NodeProcessesStartFailure node) -> do
+         s'@(NodeProcessesStartFailure node _) -> do
            modify Local $ rlens fldNext . rfield .~ Just finalize
            appendServerFailure s'
            return (node, "failure")
@@ -378,9 +378,6 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
        (node,result) <- case s of
          ClientsStartOk node ->
            return (node, "success")
-         ClientsStartTimeout node -> do
-           appendClientFailure s
-           return (node, "timeout")
          ClientsStartFailure node _ -> do
            appendClientFailure s
            return (node, "failure")
@@ -395,7 +392,13 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
        else switch [wait_client_jobs, timeout cluster_start_timeout job_timeout]
 
     directly job_timeout $ do
-       modify Local $ rlens fldRep . rfield .~ Just ClusterStartTimeout
+       rg <- getLocalGraph
+       let status = [ (n, ps) | h :: R.Host <- G.connectedTo R.Cluster R.Has rg
+                              , n <- G.connectedTo h R.Runs rg
+                              , let ps = getUnstartedProcesses n rg
+                              , not $ null ps ]
+
+       modify Local $ rlens fldRep . rfield .~ Just (ClusterStartTimeout status)
        continue finalize
 
     return route

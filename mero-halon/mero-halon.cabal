@@ -206,6 +206,7 @@ Library
                       Mero.Notification.Filter
                       Mero.Engine
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
+                      HA.RecoveryCoordinator.Actions.Mero.Node
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair

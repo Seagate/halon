@@ -121,6 +121,7 @@ import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Actions.Mero.Node
 import           HA.RecoveryCoordinator.Actions.Service (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
@@ -593,7 +594,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
                  Right $ ((rlens fldProcessConfig) %~ fieldMap (fmap (filter (/= fid)))) l
                ProcessConfigureFailed _fid -> do
                  Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-                 modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartTimeout m0node)
+                 nodeFailedWith NodeProcessesStartTimeout m0node
                  return $ Left bootstrap_timeout
           )
           (\l -> case (getField . rget fldProcessConfig) (l `asTypeOf` args) of
@@ -604,7 +605,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
 
     directly bootstrap_timeout $ do
       Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-      modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartTimeout m0node)
+      nodeFailedWith NodeProcessesStartTimeout m0node
       continue finish
 
     setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
@@ -622,7 +623,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
             | node == m0node -> return $ Just m0node
          _  -> return Nothing
        ) $ \ m0node -> do
-      modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
+      nodeFailedWith NodeProcessesStartFailure m0node
       continue finish
 
     await_configure_0 <- mkConfigurationAwait "configure::0" boot_level_0
@@ -647,7 +648,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
               continue await_configure_0
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
-          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
+          nodeFailedWith NodeProcessesStartFailure m0node
           continue finish
 
     directly boot_level_0 $ do
@@ -666,7 +667,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           switch [boot_level_1_conf, timeout startProcTimeout bootstrap_timeout]
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
-          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
+          nodeFailedWith NodeProcessesStartFailure m0node
           continue finish
 
     await_configure_1 <- mkConfigurationAwait "configure::1" boot_level_1
@@ -726,6 +727,10 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
        <+> fldProcessConfig =: Nothing
        <+> RNil
 
+    nodeFailedWith state m0node = do
+      rg <- getLocalGraph
+      let ps = getUnstartedProcesses m0node rg
+      modify Local $ rlens fldRep .~ (Field . Just $ state m0node ps)
 
 processStartClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeResult
 processStartClientsOnNode = Job "castor::node::client::start"

@@ -320,9 +320,9 @@ ruleReassembleRaid =
       setPhaseIf mero_services_started onNode $ \nr -> do
         phaseLog "debug" $ show nr
         case nr of
-          NodeProcessesStarted _ -> continue mark_mero_healthy
-          NodeProcessesStartTimeout _ -> continue nodeup_timeout
-          NodeProcessesStartFailure _ -> do
+          NodeProcessesStarted{} -> continue mark_mero_healthy
+          NodeProcessesStartTimeout{} -> continue nodeup_timeout
+          NodeProcessesStartFailure{} -> do
             showLocality
             phaseLog "error" $ "Cannot start kernel, although it was never "
                             ++ "stopped."
@@ -413,6 +413,6 @@ ruleReassembleRaid =
         Just (_, m0node) | nodeOf x == m0node -> return $ Just x
           where
             nodeOf (NodeProcessesStarted n) = n
-            nodeOf (NodeProcessesStartTimeout n) = n
-            nodeOf (NodeProcessesStartFailure n) = n
+            nodeOf (NodeProcessesStartTimeout n _) = n
+            nodeOf (NodeProcessesStartFailure n _) = n
         _ -> return Nothing

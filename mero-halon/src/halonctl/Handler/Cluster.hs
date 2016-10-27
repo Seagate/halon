@@ -23,6 +23,7 @@ import qualified Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Foldable
+import Data.Maybe (mapMaybe)
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
@@ -43,7 +44,7 @@ import HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 import Mero.Spiel (FSStats(..))
 import Network.CEP
-import System.Exit (exitFailure)
+import System.Exit (exitFailure, exitSuccess)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 #endif
@@ -440,7 +441,13 @@ clusterStartCommand eqnids False = do
   _ <- promulgateEQ eqnids ClusterStartRequest
   Published msg _ <- expect :: Process (Published ClusterStartResult)
   unsubscribeOnFrom eqnids (Proxy :: Proxy ClusterStartResult)
-  liftIO $ print msg
+  liftIO $ do
+    putStr $ prettyClusterStartResult msg
+    case msg of
+      ClusterStartOk        -> exitSuccess
+      ClusterStartTimeout{} -> exitFailure
+      ClusterStartFailure{} -> exitFailure
+
 clusterStartCommand eqnids True = do
   -- FIXME implement async also
   _ <- promulgateEQ eqnids ClusterStartRequest
@@ -531,6 +538,33 @@ clusterCommand eqnids mk output = do
   return ()
   where
     wait = void (expect :: Process ProcessMonitorNotification)
+
+-- | Nicely format 'ClusterStartResult' into something the user can
+-- easily understand.
+prettyClusterStartResult :: ClusterStartResult -> String
+prettyClusterStartResult = \case
+  ClusterStartOk -> "Cluster started successfully.\n"
+  ClusterStartTimeout ns -> unlines $
+    "Cluster failed to start on time. Still waiting for following processes:"
+    : map (\n -> formatNode n " (Timeout)") ns
+  ClusterStartFailure s spn scn -> unlines $
+    ("Cluster failed with “" ++ s ++ "” due to:")
+    : mapMaybe formatSPNR spn
+    ++ mapMaybe formatSCNR scn
+  where
+    formatSPNR :: StartProcessesOnNodeResult -> Maybe String
+    formatSPNR (NodeProcessesStartTimeout n ps) = Just $ formatNode (n, ps) " (Timeout)"
+    formatSPNR (NodeProcessesStartFailure n ps) = Just $ formatNode (n, ps) " (Failure)"
+    formatSPNR NodeProcessesStarted{}           = Nothing
+
+    formatSCNR :: StartClientsOnNodeResult -> Maybe String
+    formatSCNR (ClientsStartFailure n s) = Just $ formatNode (n, []) (": " ++ s)
+    formatSCNR ClientsStartOk{}          = Nothing
+
+    formatProcess :: (M0.Process, M0.ProcessState) -> String
+    formatProcess (p, s) = "\t\t" ++ showFid p ++ ": " ++ show s
+
+    formatNode (n, ps) m = unlines $ ("\t" ++ showFid n ++ m) : map formatProcess ps
 
 prettyReport :: Bool -> ReportClusterState -> IO ()
 prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
