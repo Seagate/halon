@@ -56,7 +56,7 @@ import Control.Lens
 
 import Data.Constraint (Dict)
 import Data.Foldable (forM_)
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
@@ -249,22 +249,23 @@ applyStateChangesCreateFS ass =
 setPhaseNotified :: forall b l g.
                     (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
                  => Jump PhaseHandle
-                 -> (l -> Maybe (b, M0.StateCarrier b))
+                 -> (l -> Maybe (b, M0.StateCarrier b -> Bool))
                  -> ((b, M0.StateCarrier b) -> PhaseM g l ())
                  -> RuleM g l ()
 setPhaseNotified handle extract act =
   setPhaseIf handle changeGuard act
   where
-    extractStateSet (AnyStateChange a _ n _) = AnyStateSet a n
-
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (b, M0.StateCarrier b))
-    changeGuard (HAEvent _ msg _) _ (extract -> Just (obj, change)) =
+    changeGuard (HAEvent _ msg _) _ (extract -> Just (obj, p)) =
       (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
-        if stateSet obj change `elem` map extractStateSet iosc
-        then return $ Just (obj, change)
-        else return Nothing
+        return $ listToMaybe . mapMaybe (getObjP obj p) $ iosc
     changeGuard _ _ _ = return Nothing
+
+    getObjP obj p x = case x of
+      AnyStateChange (a::z) _ n _ -> case eqT :: Maybe (z :~: b) of
+        Just Refl | a == obj && p n -> Just (a,n)
+        _ -> Nothing
 
 -- | Similar to 'setPhaseNotified' but works on a set of notifications
 -- rather than a singular one.
@@ -364,7 +365,9 @@ mkPhaseNotify t getter onFailure onSuccess = do
   notify_done <- phaseHandle "Notification done"
   notify_failed <- phaseHandle "Notification timed out"
 
-  setPhaseNotified notify_done getter $ \(o, oSt) -> onSuccess o oSt >>= switch
+  let getterP l = fmap (fmap (==)) (getter l)
+
+  setPhaseNotified notify_done getterP $ \(o, oSt) -> onSuccess o oSt >>= switch
   directly notify_failed onFailure
 
   return $ \obj objSt -> do

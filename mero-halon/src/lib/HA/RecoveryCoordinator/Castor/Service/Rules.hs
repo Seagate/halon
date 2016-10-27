@@ -58,8 +58,8 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
    let startState :: ClusterTransitionLocal
        startState = Nothing
 
-       viewSrv :: ClusterTransitionLocal -> Maybe (M0.Service, M0.ServiceState)
-       viewSrv = maybe Nothing (\(_,srvi,_) -> srvi)
+       viewSrv :: ClusterTransitionLocal -> Maybe (M0.Service, M0.ServiceState -> Bool)
+       viewSrv = maybe Nothing (\(_,srvi,_) -> fmap (fmap (==)) srvi)
 
        -- Check that the service has the given tag (predicate) and
        -- check that it's not in the given state in RG already.

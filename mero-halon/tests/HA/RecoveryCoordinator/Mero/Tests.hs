@@ -367,7 +367,7 @@ testConfObjectStateQuery host transport pg =
         liftProcess $ usend caller ()
         continue wait_failure
 
-      setPhaseNotified wait_failure (\(_, _, m0sdev, st) -> Just (m0sdev, st)) $ \(d, st) -> do
+      setPhaseNotified wait_failure (\(_, _, m0sdev, st) -> Just (m0sdev, (== st))) $ \(d, st) -> do
         (uuid, caller, _, _) <- get Local
         liftProcess . usend caller $ WaitFailedSDevReply d st
         messageProcessed uuid

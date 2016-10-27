@@ -82,6 +82,9 @@ jobProcessRestart = Job "process-restarted"
 ruleProcessRestart :: Definitions LoopState ()
 ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
   restart_result <- phaseHandle "restart_result"
+  process_online <- phaseHandle "process_online"
+  process_failed <- phaseHandle "process_failed"
+  retry_restart <- phaseHandle "retry_restart"
   restart_timeout <- phaseHandle "restart_timeout"
 
   run_notification <- mkPhaseNotify 20
@@ -147,19 +150,14 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
           phaseLog "info" $ "Process restart successfully initiated by systemd."
           phaseLog "fid" $ show fid
           phaseLog "pid" $ show mpid
-          
+
           (mres :: Maybe M0.Process) <- M0.lookupConfObjByFid fid
                                       <$> getLocalGraph
           forM_ ((,) <$> mres <*> mpid) $ \(res, pid) ->
               modifyGraph $ G.connectUniqueFrom res Has (M0.PID pid)
 
-        -- We don't have to do much here: mero should send ONLINE for
-        -- services belonging to the process, if all services for the
-        -- process are up then process is brought up
-        -- (ruleServiceNotificationHandler). Further, if the process is up (as
-        -- per mero) and all the processes on the node are up then
-        -- node is up (ruleProcessOnline).
-        continue finish
+        done eid'
+        switch [process_online, process_failed, timeout 180 restart_timeout]
 
       -- TODO: it's only an implementation detail that this (pfid,
       -- msg) happens to be ‘the right one’ because we check that
@@ -171,8 +169,31 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
       (_, failures@((pfid, msg) : _)) -> do
         phaseLog "warn" $ "Following processes failed to restart: " ++ show failures
         setFailure pfid msg
-    done eid'
+        done eid'
+        continue finish
+
+  -- Wait for the process to come online - sent out by `ruleProcessOnline`
+  setPhaseNotified process_online (procState (== M0.PSOnline)) $ \_ ->
     continue finish
+
+  -- If process fails during starting, check the reset count, wait 5s, and
+  -- try again. Currently the only way we can tell that the process fails
+  -- is for SSPL to inform us that it died.
+  setPhaseNotified process_failed (procState psFailed) $ \(p, _) -> do
+    restartCount <- gets Local (^. rlens fldRestartCount . rfield)
+    modify Local $ rlens fldRestartCount . rfield +~ 1
+    if restartCount < restartMaxAttempts
+    then do
+      continue $ timeout 5 retry_restart
+    else do
+      phaseLog "warn" $ "Restart for " ++ show p ++ " failed too many times."
+      setFailure (M0.fid p) "Did not start correctly."
+      continue finish
+
+  directly retry_restart $ do
+    Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
+    phs <- run_notification p M0.PSStarting
+    switch phs
 
   directly restart_timeout $ do
     Just (ProcessRestartRequest p) <- getField . rget fldReq <$> get Local
@@ -185,16 +206,27 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
     setFailure pfid msg = modify Local $ rlens fldRep .~ Field (Just $ ProcessRecoveryFailure (pfid, msg))
     setNotNeeded pfid = modify Local $ rlens fldRep . rfield .~ (Just $ ProcessRecoveryNotNeeded pfid)
 
+    psFailed (M0.PSFailed _) = True
+    psFailed _ = False
+
+    procState state l = case getField . rget fldReq $ l of
+      Just (ProcessRestartRequest p) -> Just (p, state)
+      Nothing -> Nothing
+
+    restartMaxAttempts = 5
+
     fldReq = Proxy :: Proxy '("request", Maybe ProcessRestartRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe ProcessRecoveryResult)
     fldNode = Proxy :: Proxy '("node", Maybe M0.Node)
     fldRestartCh = Proxy :: Proxy '("restart-ch", Maybe (TypedChannel ProcessControlMsg))
+    fldRestartCount = Proxy :: Proxy '("restart-count", Int)
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
        <+> fldRep           =: Nothing
        <+> fldNode          =: Nothing
        <+> fldRestartCh     =: Nothing
+       <+> fldRestartCount  =: 0
 
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions LoopState ()
