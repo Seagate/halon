@@ -119,6 +119,10 @@ ruleProcessRestart = mkJobRule jobProcessRestart args $ \finish -> do
                   Nothing -> do
                     phaseLog "warn" $ "Couldn't begin restart for " ++ show p
                     return $ Just [finish]
+                  Just _
+                    | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
+                    phaseLog "warn" $ "Process restart rule doesn't restart halon process."
+                    return Nothing
                   Just ch -> do
                     modify Local $ rlens fldRestartCh .~ Field (Just ch)
                     phs <- run_notification p M0.PSStarting
