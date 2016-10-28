@@ -282,7 +282,7 @@ ruleProcessOnline = define "castor::process::online" $ do
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
 
-  startFork rule_init Nothing
+  start rule_init Nothing
   where
     onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
