@@ -31,6 +31,7 @@ module HA.Service.Internal
   , ServiceExit(..)
   , ServiceFailed(..)
   , ServiceUncaughtException(..)
+  , ServiceStopNotRunning(..)
   , HA.Service.Internal.__remoteTable
   ) where
 
@@ -44,7 +45,6 @@ import Control.Monad.Reader ( asks )
 import Data.Aeson
 import Data.Binary as Binary
 import qualified Data.ByteString.Lazy as BS
-import Data.Foldable (for_)
 import Data.Function (on)
 import Data.Hashable (Hashable, hashWithSalt)
 import Data.SafeCopy
@@ -218,6 +218,12 @@ data ServiceUncaughtException = ServiceUncaughtException Node ServiceInfoMsg Str
   deriving (Typeable, Generic)
 instance Binary ServiceUncaughtException
 
+-- | A notification of service stop failure due to service is not
+-- running at all.
+data ServiceStopNotRunning = ServiceStopNotRunning Node String
+  deriving (Typeable, Generic)
+instance Binary ServiceStopNotRunning
+
 --------------------------------------------------------------------------------
 -- Actions
 --------------------------------------------------------------------------------
@@ -270,12 +276,15 @@ remoteStartService (caller, msg) = do
 remoteStopService :: (ProcessId, String) -> Process ()
 remoteStopService (caller, label) = do
   mpid <- whereis label
-  for_ mpid $ \pid -> do
-    mref <- monitor pid
-    exit pid Shutdown
-    receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
-                          (const $ return ())]
-  usend caller ()
+  case mpid of
+    Just pid -> do
+      mref <- monitor pid
+      exit pid Shutdown
+      receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
+                            (const $ return ())]
+      usend caller True
+    Nothing -> do
+      usend caller False
 
 $(mkDicts
    [ ''ServiceInfoMsg]

@@ -29,9 +29,11 @@ import           HA.Service
   , ServiceFailed(..)
   , ServiceUncaughtException(..)
   , ServiceCouldNotStart(..)
+  , ServiceStopNotRunning(..)
   , ServiceInfo(..)
   , ServiceInfoMsg
   , Service(..)
+  , serviceLabel
   )
 
 import HA.RecoveryCoordinator.Events.Service
@@ -77,6 +79,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
    wait_fail   <- phaseHandle "wait_stop"
    wait_exit   <- phaseHandle "wait_exit"
    wait_exc    <- phaseHandle "wait_exception"
+   wait_not_running <- phaseHandle "wait_not_running"
 
    let -- This job is using old method to notify all interested proceses
        -- so we are just reusing this method, without porting all the code
@@ -121,7 +124,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
      for_ minfo $ \cfg -> do
        Service.markStopping node cfg
        Service.stop node svc
-       putLocalR fldNext [wait_exit,wait_fail,wait_exc]
+       putLocalR fldNext [wait_exit,wait_fail,wait_exc, wait_not_running]
        loop
      continue do_register
 
@@ -136,7 +139,13 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
      service_died node info
    setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
      service_died node info
-
+   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+     service_died node info
+   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl) _) -> do
+     Just msg <- fromLocal fldReq
+     ServiceStartRequest _ node svc _ _ <- decodeMsg msg
+     unless (tgtnode == node && serviceLabel svc == lbl) loop
+     continue do_register
 
    directly do_register $ do
      Just msg <- fromLocal fldReq
@@ -231,6 +240,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
    wait_exit   <- phaseHandle "wait_reply"
    wait_fail   <- phaseHandle "wait_fail"
    wait_exc    <- phaseHandle "wait_exception"
+   wait_not_running <- phaseHandle "wait_not_running"
 
    let route msg = do
          (ServiceStopRequest node svc) <- decodeMsg msg
@@ -244,7 +254,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
              return $ Just [do_stop]
            Nothing -> return $ Just [do_stop_only]
 
-   let loop = switch [wait_cancel, wait_exit, wait_fail, wait_exc]
+   let loop = switch [wait_cancel, wait_exit, wait_fail, wait_exc, wait_not_running]
 
    directly do_stop_only $ do
       Just msg <- fromLocal fldReq
@@ -280,6 +290,15 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
      service_died node info
    setPhase wait_exc  $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
      service_died node info
+   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl) _) -> do
+     Just msg <- fromLocal fldReq
+     ServiceStopRequest node svc <- decodeMsg msg
+     unless (tgtnode == node && serviceLabel svc == lbl) loop
+     mcfg <- node & Service.lookupInfoMsg $ svc
+     for_ mcfg $ \cfg -> do
+       node & Service.unregisterIfStopping $ cfg
+       putLocal fldRep $ ServiceStopRequestOk
+     continue finish
 
    setPhase wait_cancel $ \(HAEvent _ msg _) -> do
      ServiceStartRequest _ startingNode startingSvc _ _ <- decodeMsg msg
@@ -366,7 +385,7 @@ ruleServiceFailed = defineSimpleTask "rc::service::failed" $
 -- | If service have failed - try if it's the one that is registered
 -- and if so - restart it.
 ruleServiceUncaughtException :: Definitions LoopState ()
-ruleServiceUncaughtException = defineSimpleTask "rc::service::failed" $
+ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaugh-exception" $
   \(ServiceUncaughtException node info reason pid) -> do
     ServiceInfo svc config <- decodeMsg info
     phaseLog "error" $ "service failed because of exception"

@@ -45,6 +45,7 @@ module HA.Service
   , ServiceExit(..)
   , ServiceUncaughtException(..)
   , ServiceCouldNotStart(..)
+  , ServiceStopNotRunning(..)
   , ExitReason(..)
    -- * CH Paraphenalia
   , HA.Service.Internal.__remoteTable
@@ -138,7 +139,7 @@ stopRemoteService :: forall a . Configuration a
                   => Node   -- ^ Node to stop service on
                   -> Service a
                   -> Process ()
-stopRemoteService (Node nid) svc = do
+stopRemoteService node@(Node nid) svc = do
   self <- getSelfPid
   mref <- monitorNode nid
   let label = serviceLabel svc
@@ -146,7 +147,10 @@ stopRemoteService (Node nid) svc = do
   receiveWait
     [ matchIf (\(NodeMonitorNotification ref _ _) -> ref == mref)
         $ \_ -> return ()
-    , match $ \() -> return ()
+    , match $ \b ->
+       if b
+       then return ()
+       else promulgateWait (ServiceStopNotRunning node label)
     ]
 
 -- XXX: use ADT instead?
