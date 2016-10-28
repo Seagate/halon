@@ -439,34 +439,53 @@ loadInitialDataMod f = let
     _ <- expect :: Process (Published (HAEvent InitialData))
     return ()
 
+mkSDevFailedMsg :: M0.SDev -> HAMsg StobIoqError
+mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
+  where
+    stob_ioq_error = StobIoqError
+      { _sie_conf_sdev = M0.d_fid sdev
+      , _sie_stob_id = StobId (Fid 0x0000000000000000 0x01) (Fid 0x0000000000000000 0x02)
+      , _sie_fd = 42
+      , _sie_opcode = SIO_INVALID
+      , _sie_rc = 1
+      , _sie_offset = 43
+      , _sie_size = 44
+      , _sie_bshift = 45
+      }
+    msg_meta = HAMsgMeta
+      { _hm_fid = M0.d_fid sdev
+      , _hm_source_process = Fid 0x7200000000000000 0x99
+      , _hm_source_service = Fid 0x7300000000000000 0x99
+      , _hm_time = 0
+      }
+
+
 -- | Fail a drive (via Mero notification)
 failDrive :: ReceivePort NotificationMessage -> ThatWhichWeCallADisk -> Process ()
 failDrive _ (ADisk _ Nothing _ _ _) = error "Cannot fail a non-Mero disk."
-failDrive recv (ADisk _ (Just sdev) serial _ _) = let
-    fail_evt = Set [Note (M0.d_fid sdev) M0_NC_FAILED]
-    tserial = pack serial
-  in do
-    debug "failDrive"
-    nid <- getSelfNode
-    -- We a drive failure note to the RC.
-    _ <- promulgateEQ [nid] fail_evt
-    -- Mero should be notified that the drive should be transient.
-    Set msg <- nextNotificationFor (M0.fid sdev) recv
-    debug $ show msg
-    liftIO $ do
-      assertEqual "Response to failed drive should have entries for disk and sdev"
-        2 (length msg)
-      let [Note _ st1, Note _ st2] = msg
-      assertEqual "Initial response to failed drive should be setting TRANSIENT"
-        (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
-    debug "failDrive: Transient state set"
-    -- The RC should issue a 'ResetAttempt' and should be handled.
-    _ <- expect :: Process (Published (HAEvent ResetAttempt))
-    -- We should see `ResetAttempt` from SSPL
-    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-            $ nodeCmdString (DriveReset tserial)
-    liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
-    debug "failDrive: OK"
+failDrive recv (ADisk _ (Just sdev) serial _ _) = do
+  let tserial = pack serial
+  debug "failDrive"
+  nid <- getSelfNode
+  -- We a drive failure note to the RC.
+  _ <- promulgateEQ [nid] (mkSDevFailedMsg sdev)
+  -- Mero should be notified that the drive should be transient.
+  Set msg <- nextNotificationFor (M0.fid sdev) recv
+  debug $ show msg
+  liftIO $ do
+    assertEqual "Response to failed drive should have entries for disk and sdev"
+      2 (length msg)
+    let [Note _ st1, Note _ st2] = msg
+    assertEqual "Initial response to failed drive should be setting TRANSIENT"
+      (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
+  debug "failDrive: Transient state set"
+  -- The RC should issue a 'ResetAttempt' and should be handled.
+  _ <- expect :: Process (Published (HAEvent ResetAttempt))
+  -- We should see `ResetAttempt` from SSPL
+  let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+          $ nodeCmdString (DriveReset tserial)
+  liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
+  debug "failDrive: OK"
 
 resetComplete :: ProcessId -> StoreChan
               -> ThatWhichWeCallADisk
@@ -556,7 +575,7 @@ testHitResetLimit transport pg = run transport pg interceptor [] test where
 
     forM_ (aDiskMero sdev) $ \m0sdev -> do
       -- Fail the drive one more time
-      let fail_evt = Set [Note (M0.d_fid m0sdev) M0_NC_FAILED]
+      let fail_evt = mkSDevFailedMsg m0sdev
       nid <- getSelfNode
       void $ promulgateEQ [nid] fail_evt
       -- Mero should be notified that the drive should be failed.

@@ -27,7 +27,8 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
 import Mero.Notification.HAState
-  ( HAMsgMeta(..)
+  ( HAMsg(..)
+  , HAMsgMeta(..)
   , ServiceEvent(..)
   , ServiceEventType(..)
   )
@@ -63,7 +64,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
        -- Check that the service has the given tag (predicate) and
        -- check that it's not in the given state in RG already.
-       serviceTagged p typ (HAEvent eid (m@HAMsgMeta{}, ServiceEvent se st) _) ls _ = do
+       serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m) _) ls _ = do
          let rg = lsGraph ls
              isStateChanged s = M0.getState s (lsGraph ls) /= typ
          return $ case M0.lookupConfObjByFid (_hm_fid m) rg of

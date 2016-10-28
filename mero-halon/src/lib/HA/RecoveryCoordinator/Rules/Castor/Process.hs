@@ -284,7 +284,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   start rule_init Nothing
   where
-    onlineProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
+    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m) _) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
@@ -365,8 +365,8 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       M0.PSOffline -> True
       _ -> False
 
-    stoppedProc (HAEvent eid (m@HAMsgMeta{}, ProcessEvent t pt pid) _) ls _ = do
-      let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
+    stoppedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta) _) ls _ = do
+      let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)

@@ -138,7 +138,7 @@ import           HA.RecoveryCoordinator.Events.Service as Service
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 
 import           Mero.ConfC (Fid, ServiceType(CST_HA))
-import           Mero.Notification.HAState (BEIoErr, HAMsgMeta(..))
+import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
 
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -277,7 +277,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
 --   appropriate IEM.
 eventBEError :: Definitions LoopState ()
 eventBEError = defineSimpleTask "castor::node::event::be-error"
-  $ \(meta, beioerr :: BEIoErr) -> do
+  $ \(HAMsg (beioerr :: BEIoErr) meta) -> do
     lookupConfObjByFid (_hm_source_process meta) >>= \case
       Nothing -> do
         phaseLog "warning" $ "Unknown source process."

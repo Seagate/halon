@@ -56,8 +56,9 @@ import           Data.List (sortBy, sort)
 import           HA.Encode
 import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
 import           HA.RecoveryCoordinator.Events.Cluster (InitialDataLoaded)
+import           HA.RecoveryCoordinator.Events.Mero (stateSet)
 import           HA.RecoveryCoordinator.Events.Service
-import           HA.RecoveryCoordinator.Rules.Mero.Conf (setPhaseNotified)
+import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, setPhaseNotified)
 import           HA.Services.Mero
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -310,11 +311,11 @@ testConfObjectStateQuery host transport pg =
       nid <- getSelfNode
       self <- getSelfPid
 
-      say $ "tests node: " ++ show nid
+      testSay $ "tests node: " ++ show nid
       withTrackingStation pg [waitFailedSDev] $ \(TestArgs _ mm rc) -> do
         subscribe rc (Proxy :: Proxy InitialDataLoaded)
         nodeUp ([nid], 1000000)
-        say "Loading graph."
+        testSay "Loading graph."
         void $ promulgateEQ [nid] $
           Helper.InitialData.initialData host "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
         Just _ <- expectTimeout 20000000 :: Process (Maybe (Published InitialDataLoaded))
@@ -335,18 +336,13 @@ testConfObjectStateQuery host transport pg =
             okayFids = okSDevFids ++ otherFids
 
         self' <- getSelfPid
+        testSay "Set to failed one of the objects"
         void . promulgateEQ [nid] $ WaitFailedSDev self' failSDev (getState failSDev graph)
-        Just () <- expectTimeout 10000000
-
-        say "Set to failed one of the objects"
-        void $ promulgateEQ [nid] (Set [Note failFid M0_NC_FAILED])
-
         Just rep@(WaitFailedSDevReply _ _) <-
           expectTimeout 20000000 :: Process (Maybe WaitFailedSDevReply)
+        testSay $ "Got reply of " ++ show rep
 
-        say $ "Got reply of " ++ show rep
-
-        say "Send Get message to the RC"
+        testSay "Send Get message to the RC"
         void $ promulgateEQ [nid] (Get self (failFid : okayFids))
         GetReply notes <- expect
         let resultFids = fmap no_id notes
@@ -357,14 +353,17 @@ testConfObjectStateQuery host transport pg =
                    (sortBy (compare `on` no_id) expected)
                    (sortBy (compare `on` no_id) notes)
   where
+    testSay msg = say $ "test => " ++ msg
+
     waitFailedSDev :: Definitions LoopState ()
     waitFailedSDev = define "testConfObjectStateQuery::wait-failed-sdev" $ do
       init_state <- phaseHandle "init_state"
       wait_failure <- phaseHandle "wait_failure"
 
       setPhase init_state $ \(HAEvent uuid (WaitFailedSDev caller m0sdev st) _) -> do
-        put Local (uuid, caller, m0sdev, M0.sdsFailTransient st)
-        liftProcess $ usend caller ()
+        let state = M0.sdsFailTransient st
+        put Local (uuid, caller, m0sdev, state)
+        applyStateChanges [ stateSet m0sdev state ]
         continue wait_failure
 
       setPhaseNotified wait_failure (\(_, _, m0sdev, st) -> Just (m0sdev, (== st))) $ \(d, st) -> do

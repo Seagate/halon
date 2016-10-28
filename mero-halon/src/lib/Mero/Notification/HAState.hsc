@@ -29,6 +29,7 @@ module Mero.Notification.HAState
   , entrypointReply
   , entrypointNoReply
   , pingProcess
+  , HAMsg(..)
   , HAMsgMeta(..)
   , failureVectorReply
   , HAStateException(..)
@@ -38,6 +39,9 @@ module Mero.Notification.HAState
   , ServiceEvent(..)
   , ServiceEventType(..)
   , BEIoErr(..)
+  , StobId(..)
+  , StobIoOpcode(..)
+  , StobIoqError(..)
   ) where
 
 import HA.Resources.Mero.Note
@@ -57,6 +61,7 @@ import Data.Hashable          ( Hashable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
                               , newIORef
                               )
+import Data.Int
 import Data.Word              ( Word8, Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
@@ -74,8 +79,16 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #include "ha/msg.h"
 #include "be/ha.h"
 #include "stob/io.h"
+#include "stob/ioq_error.h"
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
+
+data HAMsg a = HAMsg { _ha_msg_data :: a, _ha_msg_meta :: HAMsgMeta }
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary a => Binary (HAMsg a)
+instance Hashable a => Hashable (HAMsg a)
+instance ToJSON a => ToJSON (HAMsg a)
 
 -- | ha_msg_metadata
 data HAMsgMeta = HAMsgMeta
@@ -165,6 +178,9 @@ instance ToJSON StobIoOpcode
 data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
   BEIoErr = BEIoErr {
     _ber_errcode :: Int
+    -- ^ 'Int' type here is mero bug, change when mero updates this struct
+    --
+    -- <https://seagate.slack.com/archives/mero-halon/p1477646927007353>
   , _ber_location :: BELocation
   , _ber_io_opcode :: StobIoOpcode
   } deriving (Eq, Show, Ord, Typeable, Generic)
@@ -172,6 +188,31 @@ data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
 instance Binary BEIoErr
 instance Hashable BEIoErr
 instance ToJSON BEIoErr
+
+data {-# CTYPE "stob/stob.h" "struct m0_stob_id" #-}
+  StobId = StobId { _si_domain_fid :: Fid
+                  , _si_fid :: Fid }
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary StobId
+instance Hashable StobId
+instance ToJSON StobId
+
+data {-# CTYPE "stob/ioq_error.h" "struct m0_be_ioq_error" #-}
+  StobIoqError = StobIoqError
+    { _sie_conf_sdev :: Fid
+    , _sie_stob_id :: StobId
+    , _sie_fd :: Int64
+    , _sie_opcode :: StobIoOpcode
+    , _sie_rc :: Int64
+    , _sie_offset :: Word64
+    , _sie_size :: Word64
+    , _sie_bshift :: Word32
+    } deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary StobIoqError
+instance Hashable StobIoqError
+instance ToJSON StobIoqError
 
 -- | Notes telling the state of a given configuration object
 data Note = Note
@@ -219,6 +260,8 @@ initHAState :: RPCAddress
                -- be called by passing the given link.
             -> (HALink -> HAMsgMeta -> ProcessEvent -> IO ())
                -- ^ Called when process event notification is received
+            -> (HAMsgMeta -> StobIoqError -> IO ())
+               -- ^ Called when @m0_stob_ioq_error@ is received
             -> (HAMsgMeta -> ServiceEvent -> IO ())
                -- ^ Called when service event notification is received
             -> (HAMsgMeta -> BEIoErr -> IO ())
@@ -250,7 +293,7 @@ initHAState :: RPCAddress
               -- ^ Process keepalive reply
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
-            ha_state_get ha_process_event_set
+            ha_state_get ha_process_event_set ha_stob_ioq_error
             ha_service_event_set
             ha_be_error
             ha_state_set
@@ -264,6 +307,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
       wget <- wrapGetCB
       wpset <- wrapSetProcessCB
+      wstob <- wrapStobIoqErrorCB
       wsset <- wrapSetServiceCB
       wbeerror <- wrapBEErrorCB
       wset <- wrapSetCB
@@ -278,6 +322,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       wkeepaliverep <- wrapKeepAliveRepCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
+      #{poke ha_state_callbacks_t, ha_stob_ioq_error} pcbs wstob
       #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
       #{poke ha_state_callbacks_t, ha_be_error} pcbs wbeerror
       #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
@@ -295,6 +340,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
+        . (SomeFunPtr wstob:)
         . (SomeFunPtr wsset:)
         . (SomeFunPtr wbeerror:)
         . (SomeFunPtr wset:)
@@ -311,7 +357,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       rc <- with procFid $ \procPtr ->
               with profFid $ \profPtr ->
                 with haFid $ \haPtr ->
-                  with rmFid $ \rmPtr -> 
+                  with rmFid $ \rmPtr ->
                     ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where
@@ -328,6 +374,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
            ha_process_event_set (HALink hl) m pr)
       $ \e -> do hPutStrLn stderr $
                      "initHAState.wrapSetProcessCB: " ++ show (e :: SomeException)
+
+    wrapStobIoqErrorCB = cwrapStobIoqErrorCB $ \m' stob' -> catch
+      (freeing m' >>= \m -> peek stob' >>= ha_stob_ioq_error m)
+      $ \e -> hPutStrLn stderr $
+                "initHAState.wrapStobIoqErrorCB: " ++ show (e :: SomeException)
 
     wrapSetServiceCB = cwrapServiceSetCB $ \m' se -> catch
       (freeing m' >>= \m -> peek se >>= ha_service_event_set m)
@@ -407,6 +458,10 @@ foreign import ccall "wrapper" cwrapGetCB ::
 foreign import ccall "wrapper" cwrapProcessSetCB ::
                 (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
   -> IO (FunPtr (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
+
+foreign import ccall "wrapper" cwrapStobIoqErrorCB ::
+                (Ptr HAMsgMeta -> Ptr StobIoqError -> IO ())
+  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr StobIoqError -> IO ()))
 
 foreign import ccall "wrapper" cwrapServiceSetCB ::
                 (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ())
@@ -638,6 +693,43 @@ instance Storable BEIoErr where
       #{poke struct m0_be_io_err, ber_errcode} p err
       #{poke struct m0_be_io_err, ber_location} p (enumToW8 loc)
       #{poke struct m0_be_io_err, ber_io_opcode} p (enumToW8 op)
+
+instance Storable StobId where
+  sizeOf _ = #{size struct m0_stob_id}
+  alignment _ = #{alignment struct m0_stob_id}
+
+  peek p = liftM2 StobId
+    (#{peek struct m0_stob_id, si_domain_fid} p)
+    (#{peek struct m0_stob_id, si_fid} p)
+
+  poke p (StobId sdfid sfid) = do
+    #{poke struct m0_stob_id, si_domain_fid} p sdfid
+    #{poke struct m0_stob_id, si_fid} p sfid
+
+instance Storable StobIoqError where
+  sizeOf _ = #{size struct m0_stob_ioq_error}
+  alignment _ = #{alignment struct m0_stob_ioq_error}
+
+  peek p = do
+    sdev <- (#{peek struct m0_stob_ioq_error, sie_conf_sdev} p)
+    stob_id <- (#{peek struct m0_stob_ioq_error, sie_stob_id} p)
+    fd <- (#{peek struct m0_stob_ioq_error, sie_fd} p)
+    opcode <- w8ToEnum <$> (#{peek struct m0_stob_ioq_error, sie_opcode} p)
+    rc <- (#{peek struct m0_stob_ioq_error, sie_rc} p)
+    offset <- (#{peek struct m0_stob_ioq_error, sie_offset} p)
+    size <- (#{peek struct m0_stob_ioq_error, sie_size} p)
+    bshift <- (#{peek struct m0_stob_ioq_error, sie_bshift} p)
+    return $ StobIoqError sdev stob_id fd opcode rc offset size bshift
+
+  poke p (StobIoqError sdev stob_id fd opcode rc offset size bshift) = do
+    #{poke struct m0_stob_ioq_error, sie_conf_sdev} p sdev
+    #{poke struct m0_stob_ioq_error, sie_stob_id} p stob_id
+    #{poke struct m0_stob_ioq_error, sie_fd} p fd
+    #{poke struct m0_stob_ioq_error, sie_opcode} p (enumToW8 opcode)
+    #{poke struct m0_stob_ioq_error, sie_rc} p rc
+    #{poke struct m0_stob_ioq_error, sie_offset} p offset
+    #{poke struct m0_stob_ioq_error, sie_size} p size
+    #{poke struct m0_stob_ioq_error, sie_bshift} p bshift
 
 instance Storable HAMsgMeta where
   sizeOf _ = #{size ha_msg_metadata_t}

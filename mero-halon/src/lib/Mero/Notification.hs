@@ -304,6 +304,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
              er <- Catch.try $ initHAState addr processFid profileFid haFid rmFid
                             ha_state_get
                             (ha_process_event_set niRef)
+                            ha_stob_ioq_error
                             ha_service_event_set
                             ha_be_error
                             (ha_state_set niRef)
@@ -356,13 +357,16 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
             swap . Map.updateLookupWithKey (const $ const Nothing) hlink
           return $ swap $ Map.updateLookupWithKey (const $ const Nothing) hlink links
         for_ mv $ traverse_ onDelivered . Map.elems
-      void $ CH.forkProcess lnode $ promulgateWait (meta, pe)
+      void . CH.forkProcess lnode . promulgateWait $ HAMsg pe meta
+
+    ha_stob_ioq_error :: HAMsgMeta -> StobIoqError -> IO ()
+    ha_stob_ioq_error m sie = void . CH.forkProcess lnode . promulgateWait $ HAMsg sie m
 
     ha_service_event_set :: HAMsgMeta -> ServiceEvent -> IO ()
-    ha_service_event_set m e = void . CH.forkProcess lnode $ promulgateWait (m, e)
+    ha_service_event_set m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
     ha_be_error :: HAMsgMeta -> BEIoErr -> IO ()
-    ha_be_error m e = void . CH.forkProcess lnode $ promulgateWait (m, e)
+    ha_be_error m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
     ha_state_set :: NIRef -> NVec -> IO ()
     ha_state_set _ nvec = atomically $ writeTChan notificationChannel nvec

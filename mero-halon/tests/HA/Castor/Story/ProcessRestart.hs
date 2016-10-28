@@ -88,8 +88,8 @@ mkFailedNotification p =
 -- | Make a process event notification that 'ruleProcessOnline' expects.
 mkProcessStartedNotification :: M0.Process
                              -> M0.PID
-                             -> (HAMsgMeta, ProcessEvent)
-mkProcessStartedNotification p (M0.PID pid) = (meta, event)
+                             -> HAMsg ProcessEvent
+mkProcessStartedNotification p (M0.PID pid) = HAMsg event meta
   where
     nullFid = Fid 0 0
     meta = HAMsgMeta { _hm_fid = M0.fid p
@@ -195,7 +195,7 @@ testProcessCrash t pg = doRestart t pg M0.PSOnline $ \p srvs recv -> do
   promulgateWait (nid, mkFailedNotification p)
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "SSPL handler sets process to failed"
-           (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_TRANSIENT) srvs) (sort nt)
+           (sort $ mkMsg p M0_NC_FAILED : map (`mkMsg` M0_NC_FAILED) srvs) (sort nt)
 
 -- |
 -- * Process in starting state
