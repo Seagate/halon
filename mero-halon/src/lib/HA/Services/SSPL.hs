@@ -25,6 +25,7 @@ module HA.Services.SSPL
   , HA.Services.SSPL.LL.Resources.__remoteTable
   , HA.Services.SSPL.__remoteTableDecl
   , sendNodeCmd
+  , sendNodeCmdChan
   , header
   , sendInterestingEvent
     -- * Unused but defined

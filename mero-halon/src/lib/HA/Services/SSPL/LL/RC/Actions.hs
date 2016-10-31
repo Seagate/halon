@@ -6,7 +6,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 module HA.Services.SSPL.LL.RC.Actions
-  ( getCommandChannel
+  ( CommandChan
+  , findActiveSSPLChannel
+  , getCommandChannel
   , getIEMChannel
   , getAllIEMChannels
   , getAllCommandChannels
@@ -21,7 +23,9 @@ import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Dispatch
 import HA.Services.SSPL.LL.Resources
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
 
 import SSPL.Bindings
 
@@ -29,6 +33,7 @@ import Control.Lens
 import Control.Monad (when)
 
 import Data.Map (Map)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.List (delete)
 import qualified Data.Map as Map
 import Data.Proxy (Proxy(..))
@@ -39,7 +44,9 @@ import Data.Vinyl
 
 import Network.CEP
 
-newtype SSPLCmdChannels = SSPLCmdChannels (Map R.Node (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
+type CommandChan = Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
+
+newtype SSPLCmdChannels = SSPLCmdChannels (Map R.Node CommandChan)
   deriving (Typeable)
 
 newtype SSPLIEMChannels = SSPLIEMChannels (Map R.Node (Channel InterestingEventMessage))
@@ -47,13 +54,25 @@ newtype SSPLIEMChannels = SSPLIEMChannels (Map R.Node (Channel InterestingEventM
 
 -- | Load command channel for the given node.
 getCommandChannel :: R.Node
-                  -> PhaseM LoopState l (Maybe (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
+                  -> PhaseM LoopState l (Maybe CommandChan)
 getCommandChannel node = ((\(SSPLCmdChannels mp) -> Map.lookup node mp) =<<) <$> getStorageRC
 
 -- | Load IEM channel for the given node.
 getIEMChannel :: R.Node
               -> PhaseM LoopState l (Maybe (Channel InterestingEventMessage))
 getIEMChannel node = ((\(SSPLIEMChannels mp) -> Map.lookup node mp) =<<) <$> getStorageRC
+
+-- | Find an active SSPL channel in the cluster.
+findActiveSSPLChannel :: PhaseM LoopState l (Maybe CommandChan)
+findActiveSSPLChannel = do
+  rg <- getLocalGraph
+  let nodes = [ node
+              | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
+              , node <- G.connectedTo host R.Runs rg :: [R.Node]
+              , not (G.isConnected host R.Has R.HA_TRANSIENT rg)
+              ]
+  chans <- catMaybes <$> mapM getCommandChannel nodes
+  return $ listToMaybe chans
 
 -- | Load all IEM channels for broadcast events.
 getAllIEMChannels :: PhaseM LoopState l [Channel InterestingEventMessage]

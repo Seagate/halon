@@ -60,8 +60,12 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero.RC (rules)
-import           HA.Services.SSPL (sendInterestingEvent, sendNodeCmd)
+import           HA.Services.SSPL
+  ( sendInterestingEvent
+  , sendNodeCmdChan
+  )
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
+import           HA.Services.SSPL.LL.RC.Actions (findActiveSSPLChannel)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
 #endif
 import           Data.Foldable (for_)
@@ -363,9 +367,13 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
                                   <> " 'reason': \"Lost connection to RC\" }")
                         in sendInterestingEvent msg
           | isServer -> do
-              ns <- nodesOnHost host
-              for_ ns $ \(Node nid) ->
-                sendNodeCmd nid Nothing (IPMICmd IPMI_CYCLE (T.pack hst))
+              mchan <- findActiveSSPLChannel
+              case mchan of
+                Just chan ->
+                  sendNodeCmdChan chan Nothing (IPMICmd IPMI_CYCLE (T.pack hst))
+                Nothing ->
+                  phaseLog "warn" $ "Cannot find SSPL channel to send power "
+                                  ++ "cycle command."
           | otherwise ->
               phaseLog "warn" $ show host ++ " not labeled as server or client"
 #endif

@@ -140,7 +140,6 @@ sendLedUpdate status host sn = do
     _ -> do phaseLog "error" "Cannot find sspl service on the node!"
             return False
 
-
 -- | Send command to nodecontroller. Reply will be received as a
 -- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
 -- any random value otherwise.
@@ -157,13 +156,12 @@ sendNodeCmd nid muuid req = do
     _ -> do phaseLog "warning" "Cannot find command channel!"
             return False
 
-sendNodeCmdChan :: Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
+sendNodeCmdChan :: CommandChan
                 -> Maybe UUID
                 -> NodeCmd
                 -> PhaseM LoopState l ()
 sendNodeCmdChan (Channel chan) muuid req =
   liftProcess $ sendChan chan (muuid, makeNodeMsg req)
-
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
