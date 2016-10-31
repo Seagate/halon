@@ -28,7 +28,6 @@
 module HA.RecoveryCoordinator.Castor.Drive.Rules
   ( -- & All rules
     rules
-  , externalNotificationHandlers
     -- * Internal rules (exported for test use)
   , ruleDriveFailed
   , ruleDriveInserted
@@ -59,8 +58,6 @@ import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
-import Mero.Notification hiding (notifyMero)
-import Mero.Notification.HAState (HAMsg(..), StobIoqError(..))
 
 import Control.Distributed.Process hiding (catch)
 import Control.Lens
@@ -82,8 +79,7 @@ import Text.Printf (printf)
 -- used at the toplevel castor module.
 rules :: Definitions LoopState ()
 rules = sequence_
-  [ ruleStobIoqError
-  , ruleDriveFailed
+  [ ruleDriveFailed
   , ruleDriveInserted
   , ruleDriveRemoved
   , ruleDrivePoweredOff
@@ -95,6 +91,7 @@ rules = sequence_
   , Repair.checkRepairOnServiceUp
   , Repair.ruleRepairStart
   , Repair.ruleRebalanceStart
+  , Repair.ruleStobIoqError
   , Repair.ruleSNSOperationAbort
   , Repair.ruleSNSOperationQuiesce
   , Repair.ruleSNSOperationContinue
@@ -106,10 +103,6 @@ rules = sequence_
   , Raid.rules
   , Smart.rules
   ]
-
--- | All external notifications related to disks.
-externalNotificationHandlers :: [Set -> PhaseM LoopState l ()]
-externalNotificationHandlers = []
 
 driveRemovalTimeout :: Int
 driveRemovalTimeout = 60
@@ -665,15 +658,3 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
       done uuid
 
   startFork m0_drive_failed Nothing
-
--- | Log 'StobIoqError' and abort repair if it's on-going.
-ruleStobIoqError :: Definitions LoopState ()
-ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
-  phaseLog "meta" $ show meta
-  phaseLog "stob" $ show stob
-  rg <- getLocalGraph
-  case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
-    Nothing -> phaseLog "warn" $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
-    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
-      Nothing -> phaseLog "info" $ "No repair on-going on " ++ showFid pool
-      Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs

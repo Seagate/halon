@@ -17,9 +17,6 @@ module HA.RecoveryCoordinator.Rules.Mero.Conf
     -- * Re-export for convenience
   , AnyStateSet
   , stateSet
-    -- * Temporary functions
-  , ExternalNotificationHandlers(..)
-  , InternalNotificationHandlers(..)
     -- * Rule helpers
   , mkPhaseNotify
   , setPhaseNotified
@@ -67,20 +64,6 @@ import Data.Word
 import Data.UUID (UUID)
 
 import Network.CEP
-
--- | Type wrapper for external notification handlers, to be used for
--- keeping handlers in Storage.
-data ExternalNotificationHandlers = ExternalNotificationHandlers
-     { getExternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
-
--- | Type wrapper for internal notification handlers, to be used for
--- keeping handlers in Storage. This handlers is the point of change
--- because in future they will work on 'AnyStateChange' instead of a set.
---
--- Internal handlers works on a set of changes that actually happened
--- and stored in RG.
-data InternalNotificationHandlers = InternalNotificationHandlers
-     { getInternalNotificationHandlers :: forall l . [Set -> PhaseM  LoopState l ()] }
 
 -- | A set of deferred state changes. Consists of a graph
 --   update function, a `Set` event for Mero, and an

@@ -26,6 +26,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , querySpielHourly
   , checkRepairOnClusterStart
   , checkRepairOnServiceUp
+  , ruleStobIoqError
   , ruleSNSOperationAbort
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
@@ -86,7 +87,7 @@ import           HA.Resources.Mero
   hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
 import           Mero.Notification hiding (notifyMero)
-import           Mero.Notification.HAState (Note(..))
+import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
@@ -847,6 +848,18 @@ ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-e
          Just prs  -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
     _ -> return ()
 
+-- | Log 'StobIoqError' and abort repair if it's on-going.
+ruleStobIoqError :: Definitions LoopState ()
+ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
+  phaseLog "meta" $ show meta
+  phaseLog "stob" $ show stob
+  rg <- getLocalGraph
+  case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
+    Nothing -> phaseLog "warn" $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
+    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
+      Nothing -> phaseLog "info" $ "No repair on-going on " ++ showFid pool
+      Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+
 --------------------------------------------------------------------------------
 -- Actions                                                                    --
 --------------------------------------------------------------------------------
@@ -931,10 +944,6 @@ completeRepair pool prt muid = do
                 -- TODO: schedule next repair.
                 unsetPoolRepairStatus pool
         traverse_ messageProcessed muid
-
---------------------------------------------------------------------------------
--- Main handler                                                               --
---------------------------------------------------------------------------------
 
 -- | Dispatch appropriate repair/rebalance action as a result of the
 -- notifications beign received.
