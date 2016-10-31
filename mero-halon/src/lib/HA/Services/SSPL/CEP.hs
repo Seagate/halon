@@ -477,8 +477,7 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
                                  ++ " but we got a failure notification for "
                                  ++ show currentPid
             (_, Nothing) -> do
-              phaseLog "info" "Failed notification for currently unknown PID"
-              markFailed p True
+              phaseLog "warning" "Pid of the process is not known - ignoring."
     _ -> return ()
 #endif
 
