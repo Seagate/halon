@@ -285,10 +285,10 @@ start t s c eqnids nid = do
       stat <- expectTimeout t
       liftIO . putStrLn $ case stat of
         Just AlreadyRunning -> "Service already running."
-        Just AttemptingToStart -> "Trying to start " ++ (show $ serviceName s)
+        Just AttemptingToStart -> "Trying to start " ++ serviceName s
         Just NodeUnknown -> "Cannot start service on unknown node " ++ show nid
         Just x -> "error: " ++ show x
-        Nothing -> "No contact from RC after " ++ show t ++ " milliseconds."
+        Nothing -> "No service status reply after " ++ show t ++ " microseconds."
 
 -- | Reconfigure a service
 reconf :: Configuration a
@@ -306,10 +306,10 @@ reconf t s c eqnids nid = promulgateEQ eqnids msg
       _ <- expect :: Process ProcessMonitorNotification
       stat <- expectTimeout t
       liftIO . putStrLn $ case stat of
-        Just AttemptingToRestart -> "Trying to restart " ++ (show $ serviceName s)
+        Just AttemptingToRestart -> "Trying to restart " ++ serviceName s
         Just NodeUnknown -> "Cannot restart service on unknown node " ++ show nid
         Just x -> "error: " ++ show x
-        Nothing -> "No contact from RC after " ++ show t ++ " milliseconds."
+        Nothing -> "No service status reply after " ++ show t ++ " microseconds."
 
 -- | Stop a given service on a single node.
 stop :: Configuration a

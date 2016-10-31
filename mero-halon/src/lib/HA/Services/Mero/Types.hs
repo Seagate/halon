@@ -235,8 +235,8 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
           <> metavar "FID"
           <> summary "halon process Fid"
     hf = option (maybe (fail "incorrect fid") return . strToFid)
-          $  long "rm"
-          <> short 'h'
+          $  long "halon"
+          <> short 'a'
           <> metavar "FID"
           <> summary "ha service Fid"
     rm = option (maybe (fail "incorrect fid") return . strToFid)
