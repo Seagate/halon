@@ -142,7 +142,7 @@ handleResetExternal (Set ns) = do
                                    then M0.sdsFailTransient st
                                    else M0.SDSFailed
 
-                      sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
+                      sdevTransition <- checkDiskFailureWithinTolerance m0sdev status <$> getLocalGraph
                       -- We handle this status inside external rule, because we need to
                       -- update drive manager if and only if failure is set because of
                       -- mero notifications, not because drive removal or other event.
