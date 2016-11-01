@@ -34,13 +34,12 @@ import System.IO
 data M0Thread = M0Thread
    { _m0ThreadId :: ThreadId
    , _m0ThreadPtr :: Ptr M0Thread
-   , _m0ThreadJoined :: MVar Bool
    }
 
 instance Show M0Thread where
-  show (M0Thread a b c) = "M0Thread "++show a++" "++show b++" <lock>"
+  show (M0Thread a b) = "M0Thread "++show a++" "++show b
 
-globalFinalizers :: IORef [(Maybe ThreadId, IO ())]
+globalFinalizers :: IORef [IO ()]
 globalFinalizers = unsafePerformIO $ newIORef []
 {-# NOINLINE globalFinalizers #-}
 
@@ -59,9 +58,7 @@ forkM0OS action | rtsSupportsBoundThreads = do
     when (rc /= 0) $
       fail "forkM0OS: Cannot create m0_thread."
     tid <- takeMVar mv
-    vv  <- newMVar False
-    let mt = M0Thread tid ptr vv
-    modifyIORef globalFinalizers ((Just tid, killThread tid >> joinM0OS mt):)
+    let mt = M0Thread tid ptr
     return mt
 forkM0OS _ = fail $ "forkM0OS: RTS doesn't support multiple OS threads "
                     ++"(use ghc -threaded when linking)"
@@ -71,14 +68,9 @@ forkM0OS _ = fail $ "forkM0OS: RTS doesn't support multiple OS threads "
 -- This call can happen only in an m0_thread.
 joinM0OS :: M0Thread -> IO ()
 joinM0OS m0t = do
-    modifyMVar_ (_m0ThreadJoined m0t) $ \case
-      True -> return True
-      False -> do
-        rc <- forkM0OS_joinThread (_m0ThreadPtr m0t)
-        when (rc /= 0) $
-          fail $ "joinM0OS: Cannot join m0_thread " ++ show m0t ++ ": " ++ show rc
-        modifyIORef globalFinalizers $ filter (( /= (Just $ _m0ThreadId m0t)) . fst)
-        return True
+  rc <- forkM0OS_joinThread (_m0ThreadPtr m0t)
+  when (rc /= 0) $
+    fail $ "joinM0OS: Cannot join m0_thread " ++ show m0t ++ ": " ++ show rc
 
 -- | Yields the 'ThreadId' associated with an m0_thread.
 m0ThreadId :: M0Thread -> ThreadId
@@ -94,10 +86,10 @@ foreign import ccall forkM0OS_joinThread :: Ptr M0Thread -> IO CInt
 finalizeM0 :: IO ()
 finalizeM0 = do
   list <- atomicModifyIORef globalFinalizers (\x -> ([], x))
-  forM_ list $ \(_, a) -> a
+  sequence_ list
 
 -- | Adds an action that will be called just before 'Mero.m0_fini' is called.
 -- Adding finalizers after calling to m0_fini may lead to a mero failure,
 -- user encouraged to use this call only from m0 thread.
 addM0Finalizer :: IO () -> IO ()
-addM0Finalizer f = atomicModifyIORef globalFinalizers (\x -> ((Nothing, f):x, ()))
+addM0Finalizer f = atomicModifyIORef globalFinalizers (\x -> (f:x, ()))
