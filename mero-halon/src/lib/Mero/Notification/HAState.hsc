@@ -3,8 +3,9 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
-{-# OPTIONS_GHC -Wall -Werror #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -16,14 +17,17 @@
 -- interface into own module or into confc package.
 module Mero.Notification.HAState
   ( Note(..)
+  , HAStateCallbacks(..)
   , NVec
   , HALink
+  , HAMsgPtr
   , ReqId(..)
   , initHAState
   , finiHAState
   , getRPCMachine
   , notify
   , disconnect
+  , delivered
   , entrypointReply
   , entrypointNoReply
   , pingProcess
@@ -62,7 +66,7 @@ import Data.Int
 import Data.Word              ( Word8, Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
-import Foreign.Marshal.Alloc  ( allocaBytesAligned, free , alloca)
+import Foreign.Marshal.Alloc  ( allocaBytesAligned, alloca)
 import Foreign.Marshal.Array  ( peekArray, withArrayLen, withArrayLen0, pokeArray )
 import Foreign.Marshal.Utils  ( with, withMany )
 import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
@@ -88,6 +92,8 @@ data HAMsg a = HAMsg { _ha_msg_data :: a, _ha_msg_meta :: HAMsgMeta }
 instance Binary a => Binary (HAMsg a)
 instance Hashable a => Hashable (HAMsg a)
 instance ToJSON a => ToJSON (HAMsg a)
+
+newtype {-# CTYPE "ha/msg.h" "const struct m0_ha_msg" #-} HAMsgPtr = HAMsgPtr (Ptr HAMsgPtr)
 
 -- | ha_msg_metadata
 data HAMsgMeta = HAMsgMeta
@@ -250,6 +256,33 @@ data SomeFunPtr = forall a. SomeFunPtr (FunPtr a)
 cbRefs :: IORef [SomeFunPtr]
 cbRefs = unsafePerformIO $ newIORef []
 
+-- | List of callbacks beign used by notification interface
+data HAStateCallbacks = HSC 
+  { hscStateGet :: HALink -> Word64 -> NVec -> IO ()
+    -- ^ Called when a request to get the state of some objects is
+    -- received.
+    --
+    -- When the requested state is available, 'notify' must
+    -- be called by passing the given link.
+  , hscProcessEvent :: HALink -> HAMsgMeta -> ProcessEvent -> IO ()
+    -- ^ Called when process event notification is received
+  , hscStobIoqError :: HAMsgMeta -> StobIoqError -> IO ()
+    -- ^ Called when @m0_stob_ioq_error@ is received
+  , hscServiceEvent :: HAMsgMeta -> ServiceEvent -> IO ()
+    -- ^ Called when service event notification is received
+  , hscBeError :: HAMsgMeta -> BEIoErr -> IO ()
+    -- ^ Called when error is thrown from metadata BE.
+  , hscStateSet :: NVec -> IO ()
+    -- ^ Called when a request to update the state of some objects is
+    -- received.
+  , hscFailureVector :: HALink -> Cookie -> Fid -> IO ()
+    -- ^ Failure vector request.
+  , hscKeepalive :: HALink -> IO ()
+    -- ^ Process keepalive reply
+  , hscRPCEvent :: HAMsgMeta -> RpcEvent -> IO ()
+  }
+
+
 -- | Starts the hastate interface.
 --
 -- Registers callbacks to handle arriving requests.
@@ -261,23 +294,7 @@ initHAState :: RPCAddress
             -> Fid -- ^ Profile Fid
             -> Fid -- ^ HA Service Fid
             -> Fid -- ^ RM Service Fid
-            -> (HALink -> Word64 -> NVec -> IO ())
-               -- ^ Called when a request to get the state of some objects is
-               -- received.
-               --
-               -- When the requested state is available, 'notify' must
-               -- be called by passing the given link.
-            -> (HALink -> HAMsgMeta -> ProcessEvent -> IO ())
-               -- ^ Called when process event notification is received
-            -> (HAMsgMeta -> StobIoqError -> IO ())
-               -- ^ Called when @m0_stob_ioq_error@ is received
-            -> (HAMsgMeta -> ServiceEvent -> IO ())
-               -- ^ Called when service event notification is received
-            -> (HAMsgMeta -> BEIoErr -> IO ())
-               -- ^ Called when error is thrown from metadata BE.
-            -> (NVec -> IO ())
-               -- ^ Called when a request to update the state of some objects is
-               -- received.
+            -> HAStateCallbacks
             -> (ReqId -> Fid -> Fid -> IO ())
                -- ^ Called when a request to read current confd and rm endpoints
                -- is received.
@@ -296,32 +313,15 @@ initHAState :: RPCAddress
                -- ^ Message on the given link was delivered.
             -> (HALink -> Word64 -> IO ())
                -- ^ Message on the given link will never be delivered.
-            -> (HALink -> Cookie -> Fid -> IO ())
-              -- ^ Failure vector request.
-            -> (HALink -> IO ())
-              -- ^ Process keepalive reply
-            -> (HAMsgMeta -> RpcEvent -> IO ())
-              -- ^ RPC event
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
-            ha_state_get ha_process_event_set ha_stob_ioq_error
-            ha_service_event_set
-            ha_be_error
-            ha_state_set
-            ha_state_entry
+initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
+            ha_state_entrypoint_cb
             ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
-            ha_state_is_delivered ha_state_is_cancelled
-            ha_state_failure p_keepalive_rep ha_rpc_event =
+            ha_state_is_delivered ha_state_is_cancelled =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
-      wget <- wrapGetCB
-      wpset <- wrapSetProcessCB
-      wstob <- wrapStobIoqErrorCB
-      wsset <- wrapSetServiceCB
-      wbeerror <- wrapBEErrorCB
-      wset <- wrapSetCB
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
       wreused    <- wrapReconnectedCB
@@ -329,15 +329,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       wdisconnected <- wrapDisconnectedCB
       wisdelivered <- wrapIsDeliveredCB
       wiscancelled <- wrapIsCancelledCB
-      wfailure <- wrapFailureCB
-      wkeepaliverep <- wrapKeepAliveRepCB
-      wrpcevent <- wrapRpcEventCB
-      #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
-      #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
-      #{poke ha_state_callbacks_t, ha_stob_ioq_error} pcbs wstob
-      #{poke ha_state_callbacks_t, ha_service_event_set} pcbs wsset
-      #{poke ha_state_callbacks_t, ha_be_error} pcbs wbeerror
-      #{poke ha_state_callbacks_t, ha_state_set} pcbs wset
+      wmsgcallback <- wrapGenericCallback
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
       #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wconnected
@@ -347,26 +339,16 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
          wdisconnected
       #{poke ha_state_callbacks_t, ha_state_is_delivered} pcbs wisdelivered
       #{poke ha_state_callbacks_t, ha_state_is_cancelled} pcbs wiscancelled
-      #{poke ha_state_callbacks_t, ha_state_failure_vec} pcbs wfailure
-      #{poke ha_state_callbacks_t, ha_process_keepalive_reply} pcbs wkeepaliverep
-      #{poke ha_state_callbacks_t, ha_msg_rpc} pcbs wrpcevent
+      #{poke ha_state_callbacks_t, ha_message_callback} pcbs wmsgcallback
       modifyIORef cbRefs
-        ( (SomeFunPtr wget:)
-        . (SomeFunPtr wpset:)
-        . (SomeFunPtr wstob:)
-        . (SomeFunPtr wsset:)
-        . (SomeFunPtr wbeerror:)
-        . (SomeFunPtr wset:)
-        . (SomeFunPtr wentry:)
+        ( (SomeFunPtr wentry:)
         . (SomeFunPtr wconnected:)
         . (SomeFunPtr wreused:)
         . (SomeFunPtr wdisconnecting:)
         . (SomeFunPtr wdisconnected:)
         . (SomeFunPtr wisdelivered:)
         . (SomeFunPtr wiscancelled:)
-        . (SomeFunPtr wfailure:)
-        . (SomeFunPtr wkeepaliverep:)
-        . (SomeFunPtr wrpcevent:)
+        . (SomeFunPtr wmsgcallback:)
         )
       rc <- with procFid $ \procPtr ->
               with profFid $ \profPtr ->
@@ -375,45 +357,69 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
                     ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where
-    freeing p = peek p >>= \p' -> free p >> return p'
 
-    wrapGetCB = cwrapGetCB $ \hl w note -> catch
-        (peekNote note >>= ha_state_get (HALink hl) w)
-        $ \e -> hPutStrLn stderr $
-                  "initHAState.wrapGetCB: " ++ show (e :: SomeException)
-
-    wrapSetProcessCB = cwrapProcessSetCB $ \hl m' pe -> catch
-      (do  m <- freeing m'
-           pr <- peek pe
-           ha_process_event_set (HALink hl) m pr)
-      $ \e -> do hPutStrLn stderr $
-                     "initHAState.wrapSetProcessCB: " ++ show (e :: SomeException)
-
-    wrapStobIoqErrorCB = cwrapStobIoqErrorCB $ \m' stob' -> catch
-      (freeing m' >>= \m -> peek stob' >>= ha_stob_ioq_error m)
-      $ \e -> hPutStrLn stderr $
-                "initHAState.wrapStobIoqErrorCB: " ++ show (e :: SomeException)
-
-    wrapSetServiceCB = cwrapServiceSetCB $ \m' se -> catch
-      (freeing m' >>= \m -> peek se >>= ha_service_event_set m)
-      $ \e -> hPutStrLn stderr $
-                "initHAState.wrapSetServiceCB: " ++ show (e :: SomeException)
-
-    wrapBEErrorCB = cwrapBEErrorCB $ \m' se -> catch
-      (freeing m' >>= \m -> peek se >>= ha_be_error m)
-      $ \e -> hPutStrLn stderr $
-                "initHAState.wrapBEErrorCB: " ++ show (e :: SomeException)
-
-    wrapSetCB = cwrapSetCB $ \note -> catch
-        (peekNote note >>= ha_state_set)
-        $ \e -> do hPutStrLn stderr $
-                     "initHAState.wrapSetCB: " ++ show (e :: SomeException)
+    msgCallback :: HALink -> HAMsgPtr -> IO ()
+    msgCallback hl p@(HAMsgPtr msg) = do
+      meta <- HAMsgMeta
+                 <$> (#{peek struct m0_ha_msg, hm_fid} msg)
+                 <*> (#{peek struct m0_ha_msg, hm_source_process} msg)
+                 <*> (#{peek struct m0_ha_msg, hm_source_service} msg)
+                 <*> (#{peek struct m0_ha_msg, hm_time} msg)
+      let payload = #{ptr struct m0_ha_msg, hm_data} msg :: Ptr ()
+      mtype <- #{peek struct m0_ha_msg_data, hed_type} payload :: IO Word64
+      case mtype of
+        #{const M0_HA_MSG_STOB_IOQ} -> do
+             ioq <- #{peek struct m0_ha_msg_data, u.hed_stob_ioq} payload
+             hscStobIoqError hsc meta ioq
+             delivered hl p
+        #{const M0_HA_MSG_NVEC} -> do
+             let pl = #{ptr struct m0_ha_msg_data, u.hed_nvec} payload :: Ptr NVec
+             vtype <- #{peek struct m0_ha_msg_nvec, hmnv_type} pl :: IO Word64
+             xid   <- #{peek struct m0_ha_msg_nvec, hmnv_id_of_get} pl :: IO Word64
+             nts   <- peekNote pl
+             if vtype > 0
+             then hscStateGet hsc hl xid nts
+             else hscStateSet hsc nts
+             delivered hl p
+        #{const M0_HA_MSG_FAILURE_VEC_REQ} -> do
+             let pl = #{ptr struct m0_ha_msg_data, u.hed_fvec_req} payload :: Ptr ()
+             pool   <- #{peek struct m0_ha_msg_failure_vec_req, mfq_pool} pl
+             cookie <- #{peek struct m0_ha_msg_failure_vec_req, mfq_cookie} pl
+             hscFailureVector hsc hl cookie pool
+             delivered hl p
+        #{const M0_HA_MSG_KEEPALIVE_REP} -> do
+             hscKeepalive hsc hl
+             delivered hl p
+        #{const M0_HA_MSG_EVENT_PROCESS} -> do
+             pevent <- #{peek struct m0_ha_msg_data, u.hed_event_process} payload
+             hscProcessEvent hsc hl meta pevent
+             delivered hl p
+        #{const M0_HA_MSG_EVENT_SERVICE} -> do
+             sevent <- #{peek struct m0_ha_msg_data, u.hed_event_service} payload
+             hscServiceEvent hsc meta sevent
+             delivered hl p
+        #{const M0_HA_MSG_EVENT_RPC} -> do
+             revent <- #{peek struct m0_ha_msg_data, u.hed_event_rpc} payload
+             hscRPCEvent hsc meta revent
+             delivered hl p
+        #{const M0_HA_MSG_BE_IO_ERR} -> do
+             sevent <- #{peek struct m0_ha_msg_data, u.hed_be_io_err} payload
+             hscBeError hsc meta sevent
+             delivered hl p
+        _ | otherwise -> do
+             ha_msg_debug_print p "unsupported message"
+             delivered hl p
+    
+    wrapGenericCallback = cwrapGenericCB $ \hl msg -> catch
+       (msgCallback (HALink hl) (HAMsgPtr msg))
+       $ \e -> hPutStrLn stderr $ 
+                  "initHAState.wrapGenericCallback: " ++ show (e :: SomeException)
 
     wrapEntryCB = cwrapEntryCB $ \reqId processPtr profilePtr -> catch (do
         processFid <- peek processPtr
         profileFid <- peek profilePtr
         w128       <- peek reqId
-        ha_state_entry (ReqId w128) processFid profileFid)
+        ha_state_entrypoint_cb (ReqId w128) processFid profileFid)
         $ \e -> hPutStrLn stderr $
                   "initHAState.wrapEntryCB: " ++ show (e :: SomeException)
     wrapConnectedCB = cwrapConnectedCB $ \wptr hl -> do
@@ -442,22 +448,6 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
         catch (ha_state_is_cancelled (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
-    wrapFailureCB = cwrapFailureCB $ \hl pcookie pfid ->
-        catch (do fid <- peek pfid
-                  cookie <- peek pcookie
-                  ha_state_failure (HALink hl) cookie fid) $ \e ->
-          hPutStrLn stderr $
-            "initHAState.wrapFailureCB: " ++ show (e :: SomeException)
-
-    wrapKeepAliveRepCB = cwrapKeepAliveRepCB $ \hl ->
-        catch (p_keepalive_rep $ HALink hl) $ \e ->
-          hPutStrLn stderr $
-            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
-
-    wrapRpcEventCB = cwrapRpcEventCB $ \m' se -> catch
-      (freeing m' >>= \m -> peek se >>= ha_rpc_event m)
-      $ \e -> hPutStrLn stderr $
-                "initHAState.wrapRpcEventCB: " ++ show (e :: SomeException)
 
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
@@ -469,29 +459,6 @@ data HAStateCallbacksV
 
 foreign import capi ha_state_init ::
     CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
-
-foreign import ccall "wrapper" cwrapGetCB ::
-    (Ptr HALink -> Word64 -> Ptr NVec -> IO ())
-    -> IO (FunPtr (Ptr HALink -> Word64 -> Ptr NVec -> IO ()))
-
-foreign import ccall "wrapper" cwrapProcessSetCB ::
-                (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ())
-  -> IO (FunPtr (Ptr HALink -> Ptr HAMsgMeta -> Ptr ProcessEvent -> IO ()))
-
-foreign import ccall "wrapper" cwrapStobIoqErrorCB ::
-                (Ptr HAMsgMeta -> Ptr StobIoqError -> IO ())
-  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr StobIoqError -> IO ()))
-
-foreign import ccall "wrapper" cwrapServiceSetCB ::
-                (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ())
-  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr ServiceEvent -> IO ()))
-
-foreign import ccall "wrapper" cwrapBEErrorCB ::
-                (Ptr HAMsgMeta -> Ptr BEIoErr -> IO ())
-  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr BEIoErr -> IO ()))
-
-foreign import ccall "wrapper" cwrapSetCB :: (Ptr NVec -> IO ())
-                                          -> IO (FunPtr (Ptr NVec -> IO ()))
 
 foreign import ccall "wrapper" cwrapEntryCB ::
                   (Ptr Word128 -> Ptr Fid -> Ptr Fid -> IO ())
@@ -508,16 +475,9 @@ foreign import ccall "wrapper" cwrapConnectedCB ::
 foreign import ccall "wrapper" cwrapIsDeliveredCB ::
     (Ptr HALink -> Word64 -> IO ()) -> IO (FunPtr (Ptr HALink -> Word64 -> IO ()))
 
-foreign import ccall "wrapper" cwrapFailureCB ::
-                  (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ())
-    -> IO (FunPtr (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ()))
-
-foreign import ccall "wrapper" cwrapKeepAliveRepCB ::
-    (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO()))
-
-foreign import ccall "wrapper" cwrapRpcEventCB ::
-                (Ptr HAMsgMeta -> Ptr RpcEvent -> IO ())
-  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr RpcEvent -> IO ()))
+foreign import ccall "wrapper" cwrapGenericCB ::
+                  (Ptr HALink -> Ptr HAMsgPtr -> IO ())
+    -> IO (FunPtr (Ptr HALink -> Ptr HAMsgPtr -> IO ()))
 
 instance Storable Note where
   sizeOf _ = #{size struct m0_ha_note}
@@ -634,6 +594,16 @@ getRPCMachine :: IO (Maybe RPCMachine)
 getRPCMachine = do p <- ha_state_rpc_machine
                    return $ if nullPtr == p then Nothing
                               else Just $ RPCMachine p
+
+delivered :: HALink -> HAMsgPtr -> IO ()
+delivered (HALink hl) (HAMsgPtr msg) = ha_state_delivered hl msg
+
+foreign import capi "hastate.h ha_state_delivered" ha_state_delivered :: Ptr HALink -> Ptr HAMsgPtr -> IO ()
+
+ha_msg_debug_print :: HAMsgPtr -> String -> IO ()
+ha_msg_debug_print (HAMsgPtr msg) s = withCString s $ m0_ha_msg_debug_print msg
+
+foreign import capi "ha/msg.h m0_ha_msg_debug_print" m0_ha_msg_debug_print :: Ptr HAMsgPtr -> CString -> IO ()
 
 -- * Boilerplate instances
 

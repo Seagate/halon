@@ -8,7 +8,6 @@
 
 #define M0_TRACE_SUBSYSTEM M0_TRACE_SUBSYS_HA
 #include "lib/trace.h"
-#include <stdlib.h>       /* malloc */
 #include "lib/memory.h"
 #include "hastate.h"
 #include "m0init.h"       /* m0init_hi */
@@ -30,65 +29,12 @@ void entrypoint_request_cb( struct m0_halon_interface         *hi
     ha_state_cbs.ha_state_entrypoint(req_id, process_fid, profile_fid);
 }
 
-// Pull out metadata from the m0_ha_msg struct. The user should free
-// the memory allocated for the struct.
-ha_msg_metadata_t *get_metadata(const struct m0_ha_msg *msg) {
-  ha_msg_metadata_t *m = (ha_msg_metadata_t *) malloc(sizeof(ha_msg_metadata_t));
-  m->ha_hm_fid = msg->hm_fid;
-  m->ha_hm_source_process = msg->hm_source_process;
-  m->ha_hm_source_service = msg->hm_source_service;
-  m->ha_hm_time = msg->hm_time;
-  return m;
-}
-
 void msg_received_cb ( struct m0_halon_interface *hi
                      , struct m0_ha_link         *hl
                      , const struct m0_ha_msg    *msg
                      , uint64_t                   tag
                      ) {
-
-    switch (msg->hm_data.hed_type) {
-      case M0_HA_MSG_STOB_IOQ:
-        ha_state_cbs.ha_stob_ioq_error( get_metadata(msg)
-                                      , &msg->hm_data.u.hed_stob_ioq);
-        break;
-      case M0_HA_MSG_NVEC:
-        if (msg->hm_data.u.hed_nvec.hmnv_type)
-          ha_state_cbs.ha_state_get( hl
-                                   , msg->hm_data.u.hed_nvec.hmnv_id_of_get
-                                   , &msg->hm_data.u.hed_nvec);
-        else
-          ha_state_cbs.ha_state_set(&msg->hm_data.u.hed_nvec);
-        break;
-      case M0_HA_MSG_EVENT_PROCESS:
-        ha_state_cbs.ha_process_event_set( hl
-                                         , get_metadata(msg)
-                                         , &msg->hm_data.u.hed_event_process);
-        break;
-      case M0_HA_MSG_EVENT_SERVICE:
-        ha_state_cbs.ha_service_event_set ( get_metadata(msg)
-                                          , &msg->hm_data.u.hed_event_service);
-        break;
-      case M0_HA_MSG_BE_IO_ERR:
-        ha_state_cbs.ha_be_error( get_metadata(msg)
-                                , &msg->hm_data.u.hed_be_io_err);
-        break;
-      case M0_HA_MSG_FAILURE_VEC_REQ:
-        ha_state_cbs.ha_state_failure_vec( hl
-                                         , &msg->hm_data.u.hed_fvec_req.mfq_cookie
-                                         , &msg->hm_data.u.hed_fvec_req.mfq_pool);
-        break;
-      case M0_HA_MSG_KEEPALIVE_REP:
-        ha_state_cbs.ha_process_keepalive_reply ( hl );
-        break;
-      case M0_HA_MSG_EVENT_RPC:
-        ha_state_cbs.ha_msg_rpc( get_metadata(msg)
-                               , &msg->hm_data.u.hed_event_rpc);
-        break;
-      default:
-        M0_LOG(M0_ALWAYS, "Unknown msg type: %"PRIu64, msg->hm_data.hed_type);
-    }
-    m0_halon_interface_delivered(m0init_hi, hl, msg);
+    ha_state_cbs.ha_message_callback(hl, msg);
 }
 
 void msg_is_delivered_cb ( struct m0_halon_interface *hi
@@ -230,6 +176,12 @@ void ha_entrypoint_reply( const struct m0_uint128     *req_id
       ( m0init_hi, req_id, rc, confd_fid_size, confd_fid_data
       , confd_eps_data, confd_quorum, rm_fid, rm_eps
       );
+}
+
+
+void ha_state_delivered( struct m0_ha_link          *hl
+                       , const struct m0_ha_msg    *msg) {
+    m0_halon_interface_delivered(m0init_hi, hl, msg);
 }
 
 struct m0_rpc_machine * ha_state_rpc_machine() {

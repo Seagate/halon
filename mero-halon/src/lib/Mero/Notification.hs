@@ -68,14 +68,14 @@ import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..),GetFailureVector(
 import Control.Arrow ((***))
 import Control.Lens
 import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
 import Control.Monad (void, when)
 import Control.Monad.Trans (MonadIO)
 import Control.Monad.Catch (MonadCatch, SomeException)
 import Control.Monad.Reader (ask)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TChan (writeTChan)
+import Control.Monad.Fix (fix)
 import qualified Control.Monad.Catch as Catch
 import Data.Foldable (for_, traverse_)
 import Data.Binary (Binary(..))
@@ -131,7 +131,7 @@ data EndpointRef = EndpointRef
     -- terminated.
     --
     -- The second MVar will be filled when the ha_interface is terminated.
-  , _erFinalizationBarriers :: Maybe (MVar (), MVar ())
+  , _erFinalizationBarriers :: Maybe (TMVar (), MVar ())
     -- ^ Marker if HA state should be stopped.
   , _erWorker :: Maybe M0Worker
     -- ^ Dedicated worker for the spiel operations.
@@ -239,7 +239,7 @@ initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar glo
                  notificationWorker notificationChannel (void . promulgate . Set)
         link pid
         proc <- ask
-        fbarrier <- liftIO $ newEmptyMVar
+        fbarrier <- liftIO $ newEmptyTMVarIO
         fdone <- liftIO $ newEmptyMVar
         (barrier, niRef) <- liftGlobalM0 $
            initializeHAStateCallbacks (processNode proc)
@@ -279,7 +279,20 @@ data NIRef = NIRef
   , _ni_requests  :: IORef (Map ReqId  Fid)
   , _ni_info      :: IORef (Map HALink Fid)
   , _ni_last_seen :: IORef (Map HALink TimeSpec)
+  , _ni_worker    :: TChan (IO ())
   }
+
+-- | Notify mero using notification interface thread.
+-- Action is executed asynchronously.
+notifyNi :: NIRef -> HALink -> Word64 -> NVec -> Process ()
+notifyNi ref hl w v = liftIO
+  $ atomically $ writeTChan (_ni_worker ref) $ void $ notify hl w v
+
+-- | Run generic action on notification interface. Use with great care
+-- as this code may heavily impact performance, as notificaion interface
+-- thread will be blocked while action is executed.
+actionOnNi :: NIRef -> IO () -> IO ()
+actionOnNi ref = atomically . writeTChan (_ni_worker ref)
 
 -- | Initializes the hastate interface in the node where it will be
 -- used. Call it before @m0_init@ and before 'initialize'.
@@ -289,25 +302,33 @@ initializeHAStateCallbacks :: LocalNode
                            -> Fid -- ^ Profile Fid.
                            -> Fid -- ^ HA Service Fid.
                            -> Fid -- ^ RM Service Fid.
-                           -> MVar () -- ^ The caller should fill this MVar when
+                           -> TMVar () -- ^ The caller should fill this TMVar when
                                       -- it wants the ha_interface terminated.
                            -> MVar () -- ^ This MVar will be filled when the ha_interface
                                       -- is terminated.
                            -> IO (MVar (Either SomeException M0Worker), NIRef)
 initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier fdone = do
+    taskPool <- newTChanIO
     niRef <- NIRef <$> newMVar  Map.empty
                    <*> newIORef Map.empty
                    <*> newIORef Map.empty
                    <*> newIORef Map.empty
+                   <*> pure taskPool
+    let hsc = HSC
+         { hscStateGet = ha_state_get niRef
+         , hscProcessEvent  = ha_process_event_set niRef
+         , hscStobIoqError  = ha_stob_ioq_error
+         , hscServiceEvent  = ha_service_event_set
+         , hscBeError       = ha_be_error
+         , hscStateSet      = ha_state_set
+         , hscFailureVector = ha_request_failure_vector niRef
+         , hscKeepalive     = ha_keepalive_reply niRef
+         , hscRPCEvent      = ha_rpc_event
+         }
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
              er <- Catch.try $ initHAState addr processFid profileFid haFid rmFid
-                            ha_state_get
-                            (ha_process_event_set niRef)
-                            ha_stob_ioq_error
-                            ha_service_event_set
-                            ha_be_error
-                            (ha_state_set niRef)
+                            hsc
                             (ha_entrypoint niRef)
                             (ha_connected niRef)
                             (ha_reused niRef)
@@ -315,36 +336,32 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                             (ha_disconnected niRef)
                             (ha_delivered niRef)
                             (ha_cancelled niRef)
-                            (ha_request_failure_vector niRef)
-                            (ha_keepalive_reply niRef)
-                            ha_rpc_event
              case er of
                Right{} -> do
                  worker <- newM0Worker
                  putMVar barrier (Right worker)
                  addM0Finalizer $ finalizeInternal globalEndpointRef
-                 takeMVar fbarrier
+                 fix $ \loop -> do
+                   et <- atomically $ (Left  <$> takeTMVar fbarrier)
+                             `orElse` (Right <$> readTChan taskPool)
+                   for_ et $ \t -> t >> loop
                  terminateM0Worker worker
                  finiHAState
                  putMVar fdone ()
                Left e -> putMVar barrier (Left e)
     return (barrier, niRef)
   where
-    ha_state_get :: HALink -> Word64 -> NVec -> IO ()
-    ha_state_get hl idx nvec = void $ CH.forkProcess lnode $ do
-      liftIO $ traceEventIO "START ha_state_get"
+    ha_state_get :: NIRef -> HALink -> Word64 -> NVec -> IO ()
+    ha_state_get ni hl idx nvec = void $ CH.forkProcess lnode $ do
       self <- getSelfPid
       let fids = map no_id nvec
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
-               Just nvec' ->
-                 liftGlobalM0 $ void $ notify hl idx nvec'
+               Just nvec' -> notifyNi ni hl idx nvec'
                Nothing   -> do
                  _ <- promulgate (Get self fids)
                  GetReply nvec' <- expect
-                 _ <- liftGlobalM0 $ notify hl idx nvec'
-                 return ()
-      liftIO $ traceEventIO "STOP ha_state_get"
+                 notifyNi ni hl idx nvec'
 
     ha_process_event_set :: NIRef -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
     ha_process_event_set ni hlink meta pe = do
@@ -358,7 +375,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
             swap . Map.updateLookupWithKey (const $ const Nothing) hlink
           return $ swap $ Map.updateLookupWithKey (const $ const Nothing) hlink links
         for_ mv $ traverse_ onDelivered . Map.elems
-      void . CH.forkProcess lnode . promulgateWait $ HAMsg pe meta
+      void . CH.forkProcess lnode $ do
+        promulgateWait $ HAMsg pe meta
 
     ha_stob_ioq_error :: HAMsgMeta -> StobIoqError -> IO ()
     ha_stob_ioq_error m sie = void . CH.forkProcess lnode . promulgateWait $ HAMsg sie m
@@ -369,8 +387,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     ha_be_error :: HAMsgMeta -> BEIoErr -> IO ()
     ha_be_error m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
-    ha_state_set :: NIRef -> NVec -> IO ()
-    ha_state_set _ nvec = atomically $ writeTChan notificationChannel nvec
+    ha_state_set :: NVec -> IO ()
+    ha_state_set nvec = atomically $ writeTChan notificationChannel nvec
 
     ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
     ha_entrypoint ni reqId procFid _profFid = void $ CH.forkProcess lnode $ do
@@ -380,13 +398,14 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
       self <- getSelfPid
       liftIO ( (fmap (getSpielAddress True)) <$> readIORef globalResourceGraphCache)
         >>= \case
-               Just (Just ep) -> return $ Just ep
+               Just (Just ep) -> do
+                 return $ Just ep
                Just Nothing   -> do
                  say "ha_entrypoint: No spiel address. Is RM service defined?"
                  return Nothing
                Nothing        -> do
                  say "ha_entrypoint: request address from RC."
-                 void $ promulgate $ GetSpielAddress self
+                 promulgateWait $ GetSpielAddress self
                  expect
         >>= \case
                  Just ep -> do
@@ -429,9 +448,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
         (send, recv) <- newChan
         promulgateWait (GetFailureVector pool send)
         mr <- receiveChan recv
-        liftIO . liftGlobalM0 . failureVectorReply hl cookie pool
-               $ fromMaybe [] mr
-        liftIO $ traceEventIO "START ha_request_failure_vector"
+        liftIO $ actionOnNi ni $ failureVectorReply hl cookie pool $ fromMaybe [] mr
+        liftIO $ traceEventIO "STOP ha_request_failure_vector"
 
     ha_disconnecting :: NIRef -> HALink -> IO ()
     ha_disconnecting ni hl = do
@@ -513,7 +531,7 @@ finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = do
   ref <- swapMVar m emptyEndpointRef
   for_ (_erFinalizationBarriers ref) $ \(fbarrier, fdone) -> do
-    putMVar fbarrier ()
+    atomically $ putTMVar fbarrier ()
     takeMVar fdone
 
 -- | Finalize the Notification subsystem. We make an assumption that
@@ -559,8 +577,7 @@ notifyMero ref fids (Set nvec) onOk onFail = liftIO $ do
 -- entrypoint request multiple times): we just send it to most
 -- recently known 'ReqId' for the link.
 runPing :: NIRef -> IO ()
-runPing ni = do
-  sendM0Task $ do
+runPing ni = actionOnNi ni $ do
     links <- Map.keys <$> readMVar (_ni_links ni)
     for_ links $ pingProcess (Word128 4 2)
 

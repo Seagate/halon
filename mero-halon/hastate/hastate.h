@@ -28,61 +28,6 @@ typedef struct ha_msg_metadata {
 typedef struct ha_state_callbacks {
 
   /**
-   * Called when a request to get the state of some objects is received.
-   * This is expected to happen when mero calls m0_ha_state_get(...).
-   *
-   * When the requested state is available, ha_state_notify must be called
-   * on the given link by passing the same note parameter and 0.
-   * */
-  void (*ha_state_get)(struct m0_ha_link *hl, uint64_t idx, const struct m0_ha_msg_nvec *note);
-
-
-  /**
-   * Called when m0_conf_ha_process event is received.
-   *
-   * * hl   - corresponding ha_link
-   * * meta - metadata associated with connection
-   * * proc - process event
-   *
-   * */
-  void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
-
-
-  /**
-   * Called when m0_stob_ioq_error is received.
-   *
-   * * hl   - corresponding ha_link
-   * * meta - metadata associated with connection
-   * * ioq_error - m0_stob_ioq_error
-   *
-   * */
-  void (*ha_stob_ioq_error)(ha_msg_metadata_t *meta, const struct m0_stob_ioq_error *ioq_erorr);
-
-
-  /**
-  * Called when m0_conf_ha_service event is received.
-  *
-  * * meta - metadata associated with connection
-  * * ss - service event
-  *
-  * */
-  void (*ha_service_event_set)(ha_msg_metadata_t *meta, const struct m0_conf_ha_service *ss);
-
-  /**
-  * Called when m0_be_io_err event is received.
-  *
-  * * meta - metadata associated with connection
-  * * bee - Error from BE
-  * */
-  void (*ha_be_error)(ha_msg_metadata_t *meta, const struct m0_be_io_err *bee);
-
-  /**
-   * Called when a request to update the state of some objects is received.
-   * This is expected to happen when mero calls m0_ha_state_set(...).
-   */
-  void (*ha_state_set)(const struct m0_ha_msg_nvec *note);
-
-  /**
    * Called when a request to read confd and rm service state is received.
    *
    *  * req_id - id of the request, this Id should be used in order to link
@@ -142,24 +87,9 @@ typedef struct ha_state_callbacks {
   void (*ha_state_is_cancelled)(struct m0_ha_link *hl, uint64_t tag);
 
   /**
-   * Request failure vector from halon
-   *
-   *   * hl     - incommit link.
-   *   * cookie - cookie used for identifying request.
-   *   * fid    - fid of the interesting pool object.
+   * Generic message callback, is run when new message is delivered by ha interface.
    */
-  void (*ha_state_failure_vec)(struct m0_ha_link *hl, const struct m0_cookie *cookie, const struct m0_fid* fid);
-
-  /**
-   * Keepalive reply came to halon's keepalive request.
-   */
-  void (*ha_process_keepalive_reply)(struct m0_ha_link *hl);
-
-  /**
-   * Mero sent a m0_ha_msg_rpc message
-   */
-  void (*ha_msg_rpc)(ha_msg_metadata_t *meta, const struct m0_ha_msg_rpc *rpc);
-
+  void (*ha_message_callback)(struct m0_ha_link *hl, const struct m0_ha_msg *msg);
 } ha_state_callbacks_t;
 
 /**
@@ -211,6 +141,10 @@ void ha_entrypoint_reply( const struct m0_uint128     *req_id
                         , const struct m0_fid         *rm_fid
                         , const char *                 rm_eps
                         );
+
+/// Marks messages as delivered.
+void ha_state_delivered( struct m0_ha_link         *hl
+                       , const struct m0_ha_msg    *msg);
 
 /// Yield the rpc machine created by ha_state_init().
 struct m0_rpc_machine * ha_state_rpc_machine();
