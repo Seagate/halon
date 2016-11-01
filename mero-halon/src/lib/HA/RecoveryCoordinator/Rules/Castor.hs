@@ -27,7 +27,6 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 #ifdef USE_MERO
-import Control.Category
 import Control.Monad
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
@@ -40,7 +39,6 @@ import qualified HA.RecoveryCoordinator.Castor.Service as Service
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
-import HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.Resources.Mero as M0
 import HA.RecoveryCoordinator.Events.Mero
 import Mero.Notification hiding (notifyMero)
@@ -63,8 +61,6 @@ castorRules :: Definitions LoopState ()
 castorRules = sequence_
   [ ruleInitialDataLoad
 #ifdef USE_MERO
-  , setStateChangeHandlers
-  , ruleMeroNoteSet
   , ruleGetEntryPoint
   , Filesystem.rules
   , Process.rules
@@ -72,6 +68,8 @@ castorRules = sequence_
   , Expander.rules
   , Node.rules
   , Service.rules
+  , Repair.querySpiel
+  , Repair.querySpielHourly
 #endif
   ]
 
@@ -125,31 +123,6 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
   messageProcessed eid
 
 #ifdef USE_MERO
-setStateChangeHandlers :: Definitions LoopState ()
-setStateChangeHandlers = do
-    define "castor::internal-state-change-controller::set" $ do
-      setThem <- phaseHandle "set"
-      finish <- phaseHandle "finish"
-      directly setThem $ do
-        putStorageRC $ ExternalNotificationHandlers stateChangeHandlersE
-        continue finish
-
-      directly finish stop
-
-      start setThem ()
-  where
-    stateChangeHandlersE = concat
-      [ Drive.externalNotificationHandlers ]
-
-ruleMeroNoteSet :: Definitions LoopState ()
-ruleMeroNoteSet = do
-  defineSimpleTask "castor::mero-note-set" $ \(Set ns) -> do
-    phaseLog "info" $ "Received " ++ show (Set ns)
-    mhandlers <- getStorageRC
-    traverse_ (traverse_ ($ Set ns) . getExternalNotificationHandlers) mhandlers
-  Repair.querySpiel
-  Repair.querySpielHourly
-
 -- | Timeout between entrypoint retry.
 entryPointTimeout :: Int
 entryPointTimeout = 1 -- 1s

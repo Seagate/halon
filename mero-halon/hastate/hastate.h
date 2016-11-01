@@ -14,6 +14,7 @@
 #include "ha/note.h"
 #include "ha/link.h"
 #include "ha/halon/interface.h"
+#include "stob/ioq_error.h"
 
 // m0_ha_msg without the data or private fields
 typedef struct ha_msg_metadata {
@@ -45,6 +46,18 @@ typedef struct ha_state_callbacks {
    *
    * */
   void (*ha_process_event_set)(struct m0_ha_link *hl, ha_msg_metadata_t *meta, const struct m0_conf_ha_process *proc);
+
+
+  /**
+   * Called when m0_stob_ioq_error is received.
+   *
+   * * hl   - corresponding ha_link
+   * * meta - metadata associated with connection
+   * * ioq_error - m0_stob_ioq_error
+   *
+   * */
+  void (*ha_stob_ioq_error)(ha_msg_metadata_t *meta, const struct m0_stob_ioq_error *ioq_erorr);
+
 
   /**
   * Called when m0_conf_ha_service event is received.

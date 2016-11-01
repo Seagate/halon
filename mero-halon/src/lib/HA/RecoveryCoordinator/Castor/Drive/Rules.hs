@@ -28,7 +28,6 @@
 module HA.RecoveryCoordinator.Castor.Drive.Rules
   ( -- & All rules
     rules
-  , externalNotificationHandlers
     -- * Internal rules (exported for test use)
   , ruleDriveFailed
   , ruleDriveInserted
@@ -59,7 +58,6 @@ import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Events.Mero
-import Mero.Notification hiding (notifyMero)
 
 import Control.Distributed.Process hiding (catch)
 import Control.Lens
@@ -93,21 +91,17 @@ rules = sequence_
   , Repair.checkRepairOnServiceUp
   , Repair.ruleRepairStart
   , Repair.ruleRebalanceStart
+  , Repair.ruleStobIoqError
   , Repair.ruleSNSOperationAbort
   , Repair.ruleSNSOperationQuiesce
   , Repair.ruleSNSOperationContinue
   , Repair.ruleOnSnsOperationQuiesceFailure
   , Repair.ruleHandleRepair
+  , Repair.ruleHandleRepairNVec
   , Reset.ruleResetAttempt
+  , Reset.ruleResetInit
   , Raid.rules
   , Smart.rules
-  ]
-
--- | All external notifications related to disks.
-externalNotificationHandlers :: [Set -> PhaseM LoopState l ()]
-externalNotificationHandlers =
-  [ Repair.handleRepairExternal
-  , Reset.handleResetExternal
   ]
 
 driveRemovalTimeout :: Int

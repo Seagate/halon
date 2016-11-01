@@ -9,8 +9,8 @@
 --
 -- Module containing some reset bits that multiple rules may want access to
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
-  ( handleResetExternal
-  , ruleResetAttempt
+  ( ruleResetAttempt
+  , ruleResetInit
   ) where
 
 import HA.EventQueue.Types
@@ -18,11 +18,6 @@ import HA.EventQueue.Types
   , UUID
   )
 import HA.RecoveryCoordinator.Actions.Core
-  ( LoopState
-  , getLocalGraph
-  , messageProcessed
-  , promulgateRC
-  )
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
@@ -48,7 +43,7 @@ import HA.Services.SSPL.LL.Resources
   )
 
 import Mero.Notification (Set(..))
-import Mero.Notification.HAState (Note(..))
+import Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 
 import Control.Distributed.Process
   ( Process )
@@ -59,14 +54,12 @@ import Control.Monad
   , unless
   , join
   )
-import Control.Monad.IO.Class
-
 import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Proxy (Proxy(..))
+import Data.Maybe (mapMaybe)
 import Data.Text (Text, pack)
 import Data.Vinyl
-import Debug.Trace (traceEventIO)
 
 import Network.CEP
 
@@ -95,81 +88,101 @@ driveResetTimeout = 5*60
 smartTestTimeout :: Int
 smartTestTimeout = 16*60
 
--- | Drive state change handler for 'reset' functionality.
---
---   Called whenever a drive changes state. This function is
---   responsible for potentially starting a reset attempt on
---   one or more drives.
-handleResetExternal :: Set -> PhaseM LoopState l ()
-handleResetExternal (Set ns) = do
-  liftIO $ traceEventIO "START mero-halon:external-handler:reset"
-  for_ ns $ \(Note mfid tpe) ->
-    case tpe of
-      _ | tpe == M0_NC_TRANSIENT || tpe == M0_NC_FAILED -> do
-        sdevm <- lookupConfObjByFid mfid
-        for_ sdevm $ \m0sdev -> do
-          msdev <- lookupStorageDevice m0sdev
-          case msdev of
-            Just sdev -> do
-              -- Drive reset rule may be triggered if drive is removed, we
-              -- can't do anything sane here, so skipping this rule.
-              mstatus <- driveStatus sdev
-              isDrivePowered <- isStorageDevicePowered sdev
-              isDriveRemoved <- isStorageDriveRemoved sdev
-              phaseLog "info" $ "Handle reset"
-              phaseLog "storage-device" $ show sdev
-              phaseLog "storage-device.status" $ show mstatus
-              phaseLog "storage-device.powered" $ show isDrivePowered
-              phaseLog "storage-device.removed" $ show isDriveRemoved
-              case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
-                _ | isDriveRemoved ->
-                  phaseLog "info" "Drive is physically removed, skipping reset."
-                _ | not isDrivePowered ->
-                  phaseLog "info" "Drive is not powered, skipping reset."
-                Just "EMPTY" ->
-                  phaseLog "info" "Expander reset in progress, skipping reset."
-                _ -> do
-                  st <- getState m0sdev <$> getLocalGraph
+-- | Wait for disk messages indicating that we should perhaps start
+-- disk reset. This can either be 'M0_NC_TRANSIENT' for an 'M0.SDev'
+-- sent through @m0_ha_state_set@ ('Set') or 'StobIoqError'.
+ruleResetInit :: Definitions LoopState ()
+ruleResetInit = define "rule-reset-init" $ do
+  dispatch_wait <- phaseHandle "dispatch_wait"
+  disks_transient <- phaseHandle "wait_disks_transient"
+  disk_ioq_error <- phaseHandle "disk_ioq_error"
 
-                  unless (st == M0.SDSFailed) $ do
-                    ongoing <- hasOngoingReset sdev
-                    if ongoing
-                    then phaseLog "debug" $ "Reset ongoing on a drive - ignoring message"
-                    else do
-                      ratt <- getDiskResetAttempts sdev
-                      resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
-                      let status = if ratt <= resetAttemptThreshold
-                                   then M0.sdsFailTransient st
-                                   else M0.SDSFailed
+  directly dispatch_wait $ do
+    switch [disks_transient, disk_ioq_error]
 
-                      sdevTransition <- checkDiskFailureWithinTolerance m0sdev status <$> getLocalGraph
-                      -- We handle this status inside external rule, because we need to
-                      -- update drive manager if and only if failure is set because of
-                      -- mero notifications, not because drive removal or other event.
-                      when (ratt > resetAttemptThreshold) $ do
-                        phaseLog "warning" "drive have failed to reset too many times => making as failed."
-                        when (isRight sdevTransition) $
-                          updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+  setPhaseIf disks_transient nvecTransients $ \(eid, m0sdevs) -> do
+    todo eid
+    tryStartReset m0sdevs
+    done eid
 
-                      -- Notify rest of system if stat actually changed
-                      when (st /= status) $ do
-                        either
-                          (\failedTransition -> do
-                            iemFailureOverTolerance m0sdev
-                            applyStateChangesCreateFS [ failedTransition ])
-                          (\okTransition -> applyStateChangesCreateFS [ okTransition ])
-                          sdevTransition
+  setPhaseIf disk_ioq_error ioqDisk $ \(eid, m0sdev) -> do
+    todo eid
+    tryStartReset [m0sdev]
+    done eid
 
-                        promulgateRC $ ResetAttempt sdev
+  startFork dispatch_wait ()
+  where
+    ioqDisk (HAEvent eid (HAMsg stob _) _) ls _ = return $
+      (eid,) <$> M0.lookupConfObjByFid (_sie_conf_sdev stob) (lsGraph ls)
 
-            _ -> do
-              phaseLog "warning" $ "Cannot find all entities attached to M0"
-                                ++ " storage device: "
-                                ++ show m0sdev
-                                ++ ": "
-                                ++ show msdev
-      _ -> return () -- Should we do anything here?
-  liftIO $ traceEventIO "STOP mero-halon:external-handler:reset"
+    mkTransientDisk rg (Note fid' M0_NC_TRANSIENT) = M0.lookupConfObjByFid fid' rg
+    mkTransientDisk _ _ = Nothing
+
+    nvecTransients (HAEvent eid (Set nvec) _) ls _ =
+      return $ case mapMaybe (mkTransientDisk (lsGraph ls)) nvec of
+        xs@(_ : _) -> Just (eid, xs)
+        _ -> Nothing
+
+-- | Try to start reset (through 'ResetAttempt') on the given 'M0.SDev's.
+tryStartReset :: [M0.SDev] -> PhaseM LoopState l ()
+tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
+  msdev <- lookupStorageDevice m0sdev
+  case msdev of
+    Just sdev -> do
+      -- Drive reset rule may be triggered if drive is removed, we
+      -- can't do anything sane here, so skipping this rule.
+      mstatus <- driveStatus sdev
+      isDrivePowered <- isStorageDevicePowered sdev
+      isDriveRemoved <- isStorageDriveRemoved sdev
+      phaseLog "info" $ "Handle reset"
+      phaseLog "storage-device" $ show sdev
+      phaseLog "storage-device.status" $ show mstatus
+      phaseLog "storage-device.powered" $ show isDrivePowered
+      phaseLog "storage-device.removed" $ show isDriveRemoved
+      case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
+        _ | isDriveRemoved ->
+          phaseLog "info" "Drive is physically removed, skipping reset."
+        _ | not isDrivePowered ->
+          phaseLog "info" "Drive is not powered, skipping reset."
+        Just "EMPTY" ->
+          phaseLog "info" "Expander reset in progress, skipping reset."
+        _ -> do
+          st <- getState m0sdev <$> getLocalGraph
+
+          unless (st == M0.SDSFailed) $ do
+            ongoing <- hasOngoingReset sdev
+            if ongoing
+            then phaseLog "debug" $ "Reset ongoing on a drive - ignoring message"
+            else do
+              ratt <- getDiskResetAttempts sdev
+              resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
+              let status = if ratt <= resetAttemptThreshold
+                           then M0.sdsFailTransient st
+                           else M0.SDSFailed
+
+              sdevTransition <- checkDiskFailureWithinTolerance m0sdev status <$> getLocalGraph
+              when (ratt > resetAttemptThreshold) $ do
+                phaseLog "warning" "drive have failed to reset too many times => making as failed."
+                when (isRight sdevTransition) $
+                  updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
+
+              -- Notify rest of system if stat actually changed
+              when (st /= status) $ do
+                either
+                  (\failedTransition -> do
+                    iemFailureOverTolerance m0sdev
+                    applyStateChangesCreateFS [ failedTransition ])
+                  (\okTransition -> applyStateChangesCreateFS [ okTransition ])
+                  sdevTransition
+
+                promulgateRC $ ResetAttempt sdev
+
+    _ -> do
+      phaseLog "warning" $ "Cannot find all entities attached to M0"
+                        ++ " storage device: "
+                        ++ show m0sdev
+                        ++ ": "
+                        ++ show msdev
 
 jobResetAttempt :: Job ResetAttempt ResetAttemptResult
 jobResetAttempt = Job "reset-attempt"

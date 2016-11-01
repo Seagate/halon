@@ -19,19 +19,20 @@
 --
 -- TODO: Only abort repair on notification failure if it's IOS that failed
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
-  ( handleRepairExternal
-  , ruleRebalanceStart
+  ( ruleRebalanceStart
   , ruleRepairStart
   , noteToSDev
   , querySpiel
   , querySpielHourly
   , checkRepairOnClusterStart
   , checkRepairOnServiceUp
+  , ruleStobIoqError
   , ruleSNSOperationAbort
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
   , ruleOnSnsOperationQuiesceFailure
   , ruleHandleRepair
+  , ruleHandleRepairNVec
   ) where
 
 import           Control.Applicative
@@ -86,11 +87,10 @@ import           HA.Resources.Mero
   hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
 import           Mero.Notification hiding (notifyMero)
-import           Mero.Notification.HAState (Note(..))
+import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
-import           Debug.Trace (traceEventIO)
 import           Prelude
 
 --------------------------------------------------------------------------------
@@ -848,6 +848,18 @@ ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-e
          Just prs  -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
     _ -> return ()
 
+-- | Log 'StobIoqError' and abort repair if it's on-going.
+ruleStobIoqError :: Definitions LoopState ()
+ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
+  phaseLog "meta" $ show meta
+  phaseLog "stob" $ show stob
+  rg <- getLocalGraph
+  case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
+    Nothing -> phaseLog "warn" $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
+    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
+      Nothing -> phaseLog "info" $ "No repair on-going on " ++ showFid pool
+      Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+
 --------------------------------------------------------------------------------
 -- Actions                                                                    --
 --------------------------------------------------------------------------------
@@ -933,10 +945,6 @@ completeRepair pool prt muid = do
                 unsetPoolRepairStatus pool
         traverse_ messageProcessed muid
 
---------------------------------------------------------------------------------
--- Main handler                                                               --
---------------------------------------------------------------------------------
-
 -- | Dispatch appropriate repair/rebalance action as a result of the
 -- notifications beign received.
 --
@@ -945,11 +953,9 @@ completeRepair pool prt muid = do
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool.
-handleRepairExternal :: Set -> PhaseM LoopState l ()
-handleRepairExternal noteSet = do
-   liftIO $ traceEventIO "START mero-halon:external-handlers:repair-rebalance"
+ruleHandleRepairNVec :: Definitions LoopState ()
+ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \noteSet -> do
    getPoolInfo noteSet >>= traverse_ run
-   liftIO $ traceEventIO "STOP mero-halon:external-handlers:repair-rebalance"
    where
      run (PoolInfo pool st m) = do
        phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
@@ -1100,6 +1106,11 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
 
 -- We got some pool state info but we don't care about what it is as
 -- it seems some devices belonging to the pool failed, abort repair.
+-- It should not hurt to keep around and process any M0_NC_FAILED that
+-- mero still happens to send here: if it gets here before
+-- m0_stob_ioq_error, we can start abort already and we know that we
+-- shouldn't quiesce or something else. Abort is a job so requesting
+-- it again when m0_stob_ioq_error arrives does not hurt us.
 processPoolInfo pool _ m
   | fa <- getSDevs m M0_NC_FAILED
   , not (S.null fa) = getPoolRepairStatus pool >>= \case

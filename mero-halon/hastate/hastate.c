@@ -48,6 +48,10 @@ void msg_received_cb ( struct m0_halon_interface *hi
                      ) {
 
     switch (msg->hm_data.hed_type) {
+      case M0_HA_MSG_STOB_IOQ:
+        ha_state_cbs.ha_stob_ioq_error( get_metadata(msg)
+                                      , &msg->hm_data.u.hed_stob_ioq);
+        break;
       case M0_HA_MSG_NVEC:
         if (msg->hm_data.u.hed_nvec.hmnv_type)
           ha_state_cbs.ha_state_get( hl
