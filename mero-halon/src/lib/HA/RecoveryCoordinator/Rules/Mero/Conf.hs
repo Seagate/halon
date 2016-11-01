@@ -481,9 +481,9 @@ serviceCascadeDiskRule = StateCascadeRule
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   (\s o  ->
      let break' M0.SDSFailed  = M0.SDSFailed
-         break' (M0.SDSTransient x) = M0.SDSTransient x
-         break' x = M0.SDSTransient x
-         unbreak (M0.SDSTransient x) = x
+         break' (M0.SDSInhibited x) = M0.SDSInhibited x
+         break' x = M0.SDSInhibited x
+         unbreak (M0.SDSInhibited x) = x
          unbreak x = x
      in case s of
           M0.SSUnknown  -> o

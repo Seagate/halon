@@ -163,7 +163,9 @@ mkCheckAndHandleDriveReady getter smartLens next = do
             applyStateChanges [ stateSet m0sdev . sdsRecoverTransient $ oldState ]
             next m0sdev
           SDSRebalancing -> next m0sdev
-
+          SDSInhibited _ -> do
+            -- Higher level failure - nothing we can do
+            next m0sdev
 
       onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
         return $ case (,) <$> ( getter l )

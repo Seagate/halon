@@ -359,6 +359,7 @@ data SDevState =
   | SDSRepairing
   | SDSRepaired
   | SDSRebalancing
+  | SDSInhibited SDevState -- Failure is inhibited by a higher level failure.
   | SDSTransient SDevState -- Transient failure, and state before said
                            -- transient failure.
   deriving (Eq, Show, Typeable, Generic, Read)
@@ -376,6 +377,7 @@ prettySDevState SDSFailed = "Failed"
 prettySDevState SDSRepairing = "Repairing"
 prettySDevState SDSRepaired = "Repaired"
 prettySDevState SDSRebalancing = "Rebalancing"
+prettySDevState (SDSInhibited x) = "Inhibited (" ++ prettySDevState x ++ ")"
 prettySDevState (SDSTransient x) = "Transient failure (" ++ prettySDevState x ++ ")"
 
 -- | Transiently fail a drive in an existing state. Most of the time
@@ -386,12 +388,14 @@ sdsFailTransient SDSFailed = SDSFailed
 sdsFailTransient SDSRepairing = SDSRepairing
 sdsFailTransient SDSRepaired = SDSRepaired
 sdsFailTransient s@(SDSTransient _) = s
+sdsFailTransient (SDSInhibited x) = SDSInhibited $ sdsFailTransient x
 sdsFailTransient x = SDSTransient x
 
 -- | Update state following recovery from a transient failure. In general
 --   this should restore the previous state.
 sdsRecoverTransient :: SDevState -> SDevState
 sdsRecoverTransient (SDSTransient x) = x
+sdsRecoverTransient (SDSInhibited x) = SDSInhibited $ sdsRecoverTransient x
 sdsRecoverTransient y = y
 
 -- | Permanently fail an SDev. Most of the time this will switch
