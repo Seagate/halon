@@ -13,7 +13,6 @@ module Mero
   ( m0_init
   , m0_fini
   , withM0
-  , withM0Deferred
   , sendM0Task
   , sendM0Task_
   , M0InitException(..)
@@ -124,40 +123,6 @@ sendM0Task_ :: IO () -> IO ()
 sendM0Task_ f = do
   box <- newEmptyMVar
   writeChan globalM0Chan . Just $ Task (try f) box
-
--- | Spawns a deferred worker thread in parrallel to main. New deferred
--- thread will be initialized as m0 thread only when first task will
--- arrive.
-withM0Deferred :: IO () -- ^ Environment initialization.
-               -> IO () -- ^ Environment finalization
-               -> IO a -> IO a
-withM0Deferred envInit envFini f = do
-    cont <- newIORef True
-    end  <- newEmptyMVar
-    bracket_ (initialize cont end >> sendM0Task_ envInit)
-             (sendM0Task_ envFini >> finalize cont end)
-             f
-  where
-    initialize cont end = forkOS $ do
-        let initloop = do
-              shouldContinue <- readIORef cont
-              when shouldContinue $ do
-                mt <- readChan globalM0Chan
-                forM_ mt $ \t@(Task _ b) -> do
-                  rc <- m0_init_wrapper
-                  if (rc == 0)
-                    then (myThreadId >>= replaceGlobalWorker >> mainloop t) `finally` m0_fini
-                    else do putMVar b (Left (SomeException (M0InitException rc)))
-                            initloop
-            mainloop (Task cmd b) = do
-                cmd >>= putMVar b
-                readChan globalM0Chan >>= traverse_ mainloop
-        initloop
-        putMVar end ()
-    finalize cont end = do
-        writeIORef cont False
-        writeChan globalM0Chan Nothing
-        takeMVar end
 
 foreign import ccall m0_init_wrapper :: IO CInt
 
