@@ -317,6 +317,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                             (ha_cancelled niRef)
                             (ha_request_failure_vector niRef)
                             (ha_keepalive_reply niRef)
+                            ha_rpc_event
              case er of
                Right{} -> do
                  worker <- newM0Worker
@@ -465,6 +466,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     ha_keepalive_reply ni hlink = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
+
+    ha_rpc_event :: HAMsgMeta -> RpcEvent -> IO ()
+    ha_rpc_event m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
 -- | Find processes with "dead" links and fail them. Do not disconnect
 -- the links manually: mero will invoke a callback we set in

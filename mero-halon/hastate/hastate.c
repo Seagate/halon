@@ -81,6 +81,10 @@ void msg_received_cb ( struct m0_halon_interface *hi
       case M0_HA_MSG_KEEPALIVE_REP:
         ha_state_cbs.ha_process_keepalive_reply ( hl );
         break;
+      case M0_HA_MSG_EVENT_RPC:
+        ha_state_cbs.ha_msg_rpc( get_metadata(msg)
+                               , &msg->hm_data.u.hed_event_rpc);
+        break;
       default:
         M0_LOG(M0_ALWAYS, "Unknown msg type: %"PRIu64, msg->hm_data.hed_type);
     }

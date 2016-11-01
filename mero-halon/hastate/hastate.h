@@ -155,6 +155,11 @@ typedef struct ha_state_callbacks {
    */
   void (*ha_process_keepalive_reply)(struct m0_ha_link *hl);
 
+  /**
+   * Mero sent a m0_ha_msg_rpc message
+   */
+  void (*ha_msg_rpc)(ha_msg_metadata_t *meta, const struct m0_ha_msg_rpc *rpc);
+
 } ha_state_callbacks_t;
 
 /**

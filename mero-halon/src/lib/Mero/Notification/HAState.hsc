@@ -14,8 +14,6 @@
 --
 -- TODO: Move various message types sent through new notification
 -- interface into own module or into confc package.
---
--- TODO: send @data HAMsg a = HAMsg HAMsgMeta a@ for nicer receiving and access
 module Mero.Notification.HAState
   ( Note(..)
   , NVec
@@ -42,6 +40,7 @@ module Mero.Notification.HAState
   , StobId(..)
   , StobIoOpcode(..)
   , StobIoqError(..)
+  , RpcEvent(..)
   ) where
 
 import HA.Resources.Mero.Note
@@ -58,9 +57,7 @@ import Data.Binary            ( Binary )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
 import Data.Hashable          ( Hashable )
-import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef
-                              , newIORef
-                              )
+import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef , newIORef )
 import Data.Int
 import Data.Word              ( Word8, Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
@@ -75,9 +72,11 @@ import System.IO              ( hPutStrLn, stderr )
 import System.IO.Unsafe       ( unsafePerformIO )
 
 #include "hastate.h"
+
+#include "be/ha.h"
 #include "conf/obj.h"
 #include "ha/msg.h"
-#include "be/ha.h"
+#include "rpc/ha.h"
 #include "stob/io.h"
 #include "stob/ioq_error.h"
 
@@ -214,6 +213,16 @@ instance Binary StobIoqError
 instance Hashable StobIoqError
 instance ToJSON StobIoqError
 
+data {-# CTYPE "rpc/ha.h" "struct m0_ha_msg_rpc" #-}
+  RpcEvent = RpcEvent
+    { _hmr_attempts :: Word64
+    , _hmr_state :: ConfObjectState
+    } deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary RpcEvent
+instance Hashable RpcEvent
+instance ToJSON RpcEvent
+
 -- | Notes telling the state of a given configuration object
 data Note = Note
     { no_id :: Fid
@@ -291,6 +300,8 @@ initHAState :: RPCAddress
               -- ^ Failure vector request.
             -> (HALink -> IO ())
               -- ^ Process keepalive reply
+            -> (HAMsgMeta -> RpcEvent -> IO ())
+              -- ^ RPC event
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
             ha_state_get ha_process_event_set ha_stob_ioq_error
@@ -301,7 +312,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
             ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
             ha_state_is_delivered ha_state_is_cancelled
-            ha_state_failure p_keepalive_rep =
+            ha_state_failure p_keepalive_rep ha_rpc_event =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -320,6 +331,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       wiscancelled <- wrapIsCancelledCB
       wfailure <- wrapFailureCB
       wkeepaliverep <- wrapKeepAliveRepCB
+      wrpcevent <- wrapRpcEventCB
       #{poke ha_state_callbacks_t, ha_state_get} pcbs wget
       #{poke ha_state_callbacks_t, ha_process_event_set} pcbs wpset
       #{poke ha_state_callbacks_t, ha_stob_ioq_error} pcbs wstob
@@ -337,6 +349,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
       #{poke ha_state_callbacks_t, ha_state_is_cancelled} pcbs wiscancelled
       #{poke ha_state_callbacks_t, ha_state_failure_vec} pcbs wfailure
       #{poke ha_state_callbacks_t, ha_process_keepalive_reply} pcbs wkeepaliverep
+      #{poke ha_state_callbacks_t, ha_msg_rpc} pcbs wrpcevent
       modifyIORef cbRefs
         ( (SomeFunPtr wget:)
         . (SomeFunPtr wpset:)
@@ -353,6 +366,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
         . (SomeFunPtr wiscancelled:)
         . (SomeFunPtr wfailure:)
         . (SomeFunPtr wkeepaliverep:)
+        . (SomeFunPtr wrpcevent:)
         )
       rc <- with procFid $ \procPtr ->
               with profFid $ \profPtr ->
@@ -435,10 +449,15 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid
           hPutStrLn stderr $
             "initHAState.wrapFailureCB: " ++ show (e :: SomeException)
 
-    wrapKeepAliveRepCB = cwrapKeepAliveRepCb $ \hl ->
+    wrapKeepAliveRepCB = cwrapKeepAliveRepCB $ \hl ->
         catch (p_keepalive_rep $ HALink hl) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+
+    wrapRpcEventCB = cwrapRpcEventCB $ \m' se -> catch
+      (freeing m' >>= \m -> peek se >>= ha_rpc_event m)
+      $ \e -> hPutStrLn stderr $
+                "initHAState.wrapRpcEventCB: " ++ show (e :: SomeException)
 
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
@@ -493,13 +512,15 @@ foreign import ccall "wrapper" cwrapFailureCB ::
                   (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ())
     -> IO (FunPtr (Ptr HALink -> Ptr Cookie -> Ptr Fid -> IO ()))
 
-foreign import ccall "wrapper" cwrapKeepAliveRepCb ::
+foreign import ccall "wrapper" cwrapKeepAliveRepCB ::
     (Ptr HALink -> IO ()) -> IO (FunPtr (Ptr HALink -> IO()))
 
+foreign import ccall "wrapper" cwrapRpcEventCB ::
+                (Ptr HAMsgMeta -> Ptr RpcEvent -> IO ())
+  -> IO (FunPtr (Ptr HAMsgMeta -> Ptr RpcEvent -> IO ()))
+
 instance Storable Note where
-
   sizeOf _ = #{size struct m0_ha_note}
-
   alignment _ = #{alignment struct m0_ha_note}
 
   peek p = liftM2 Note
@@ -771,6 +792,18 @@ instance Storable ServiceEvent where
   poke p (ServiceEvent ev et) = do
       #{poke struct m0_conf_ha_service, chs_event} p (enumToW64 ev)
       #{poke struct m0_conf_ha_service, chs_type} p (enumToW64 et)
+
+instance Storable RpcEvent where
+  sizeOf _ = #{size struct m0_ha_msg_rpc}
+  alignment _ = #{alignment struct m0_ha_msg_rpc}
+
+  peek p = liftM2 RpcEvent
+    (#{peek struct m0_ha_msg_rpc, hmr_attempts} p)
+    (w64ToEnum <$> (#{peek struct m0_ha_msg_rpc, hmr_state} p))
+
+  poke p (RpcEvent attempts st) = do
+    #{poke struct m0_ha_msg_rpc, hmr_attempts} p attempts
+    #{poke struct m0_ha_msg_rpc, hmr_state} p (enumToW64 st)
 
 enumToW8 :: Enum a => a -> Word8
 enumToW8 = fromIntegral . fromEnum

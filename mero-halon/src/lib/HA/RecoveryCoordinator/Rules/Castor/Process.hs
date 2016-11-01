@@ -53,6 +53,7 @@ rules = sequence_ [
   , ruleProcessControlStart
   , ruleFailedNotificationFailsProcess
   , ruleProcessKeepaliveReply
+  , ruleRpcEvent
   ]
 
 -- | Catch 'InternalObjectStateChange's flying by and dispatch
@@ -558,3 +559,9 @@ ruleFailedNotificationFailsProcess =
   where
     isProcFailed (M0.PSFailed _) = True
     isProcFailed _ = False
+
+-- | Listen for 'RpcEvent's. Currently just log the event.
+ruleRpcEvent :: Definitions LoopState ()
+ruleRpcEvent = defineSimpleTask "rpc-event" $ \(HAMsg (rpc :: RpcEvent) meta) -> do
+  phaseLog "rpc-event" $ show rpc
+  phaseLog "meta" $ show meta
