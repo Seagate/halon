@@ -13,6 +13,7 @@ rpclite/rpclite/rpclite_fop_ff.*
 rpclite/rpclite/test?
 rpclite/rpclite/test
 rpclite/rpclite/test-epoch
+confc/tests/unit-tests.c
 mero-halon/src/lib/Version/Read.c
 m0trace.*
 core
