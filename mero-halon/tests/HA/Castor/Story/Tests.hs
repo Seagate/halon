@@ -987,11 +987,11 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
           let [(_, fid)] = pcs
           _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid [Left (fid, Nothing)]
           -- Also send ONLINE for the process
-          _ <- promulgateEQ [nid] ( HAMsgMeta fid fid fid 0
-                                  , ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
-                                                 TAG_M0_CONF_HA_PROCESS_M0D
-                                                 123
-                                  )
+          let pe = ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
+                                TAG_M0_CONF_HA_PROCESS_M0D
+                                123
+              meta = HAMsgMeta fid fid fid 0
+          _ <- promulgateEQ [nid] $ HAMsg pe meta
           return ()
         s ->  liftIO $ assertFailure $ "Expected (re)start request, but received " ++ show s
 

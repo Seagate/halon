@@ -39,9 +39,9 @@ import Control.Concurrent.MVar
 import Control.Exception
 import Data.Proxy
 
-#ifdef USE_MERO
-import Mero
-#endif
+-- #ifdef USE_MERO
+-- import Mero
+-- #endif
 
 #ifdef USE_RPC
 import qualified Network.Transport.RPC as RPC
@@ -177,7 +177,7 @@ runTests tests' = do
 main :: IO ()
 main = prepare $ runTests tests where
 #ifdef USE_MERO
-  prepare = withTmpDirectory . withM0
+  prepare = withTmpDirectory
 #else
   prepare = id
 #endif
