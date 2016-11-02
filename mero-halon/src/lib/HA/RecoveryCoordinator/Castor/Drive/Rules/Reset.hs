@@ -195,6 +195,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
       smartResponse <- phaseHandle "smart-response"
       failure       <- phaseHandle "failure"
       drive_removed <- phaseHandle "drive-removed"
+      finalize      <- phaseHandle "finalize"
 
       let home (ResetAttempt sdev) = do
             nodes <- getSDevNode sdev
@@ -202,7 +203,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
             case (nodes, paths) of
               (node : _, serial : _) -> do
                 modify Local $ rlens fldNode . rfield .~ Just node
-                modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptFailure $ ResetFailure sdev)
+                modify Local $ rlens fldRep . rfield .~ Just (ResetFailure sdev)
                 modify Local $ rlens fldDeviceInfo . rfield .~
                   (Just $ DeviceInfo sdev (pack serial))
 
@@ -210,20 +211,20 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
                   True -> do
                     phaseLog "info" $ "Cancelling drive reset as drive is removed."
                     phaseLog "sdev" $ show sdev
-                    return $ Just [finish]
+                    return $ Just [finalize]
                   False -> do
                     markOnGoingReset sdev
                     return $ Just [drive_removed, reset]
               ([], _) -> do
                  -- XXX: send IEM message
                  phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
-                 return $ Just [finish]
+                 return $ Just [finalize]
               (_, []) -> do
                 -- XXX: send IEM message
                 phaseLog "warning" $ "Cannot perform reset attempt for drive "
                                   ++ show sdev
                                   ++ " as it has no device serial number associated."
-                return $ Just [finish]
+                return $ Just [finalize]
 
       (disk_detached, detachDisk) <- mkDetachDisk
         (\l -> fmap join $ traverse
@@ -281,17 +282,17 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
           (lookupStorageDeviceSDev . _diSDev)
           (l ^. rlens fldDeviceInfo . rfield))
         (\_ _ -> do phaseLog "error" "failed to attach disk"
-                    continue finish)
+                    continue failure)
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
                applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
                Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
-               modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
+               modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
              x ->
                phaseLog "info" $ "Cannot bring drive Online from state "
                                ++ show x
-           continue finish)
+           continue finalize)
 
       setPhaseIf smartResponse onSameSdev $ \status -> do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
@@ -299,13 +300,15 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
         phaseLog "smart.response" $ show status
         case status of
           SRSSuccess -> do
-            promulgateRC $ ResetSuccess sdev
             sd <- lookupStorageDeviceSDev sdev
             forM_ sd $ \m0sdev -> do
               attachDisk m0sdev
               continue disk_attached
-            modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
-            continue finish
+            -- We want this case to deal with non-mero drives: if we
+            -- don't go into attach above due to no M0.SDev, we still
+            -- want to conclude reset was OK.
+            modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
+            continue finalize
           _ -> do
             phaseLog "info" "Unsuccessful SMART test."
             continue failure
@@ -313,7 +316,6 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
       directly failure $ do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
         phaseLog "info" $ "Drive reset failure for " ++ show sdev
-        promulgateRC $ ResetFailure sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
@@ -331,13 +333,16 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
             x -> do
               phaseLog "info" $ "Cannot bring drive Failed from state "
                               ++ show x
-        continue finish
+        continue finalize
 
       setPhaseIf drive_removed onDriveRemoved $ \sdev -> do
         phaseLog "info" "Cancelling drive reset as drive removed."
-        -- Claim all things are complete
+        modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
+        continue finalize
+
+      directly finalize $ do
+        Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
         markResetComplete sdev
-        modify Local $ rlens fldRep . rfield .~ Just (ResetAttemptSuccess $ ResetSuccess sdev)
         continue finish
 
       return home

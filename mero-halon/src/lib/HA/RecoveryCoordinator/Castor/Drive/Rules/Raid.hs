@@ -32,8 +32,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( RaidUpdate(..)
   , ResetAttempt(..)
-  , ResetFailure(..)
-  , ResetSuccess(..)
+  , ResetAttemptResult(..)
   , DriveReady(..)
   )
 import HA.Resources (Node(..))
@@ -151,12 +150,11 @@ failed = define "castor::drive::raid::failed" $ do
 
     setPhaseIf reset_success
       -- TODO: relies on drive reset rule
-      ( \(HAEvent eid (ResetSuccess x) _) _ l ->
-        case (l ^. rlens fldRaidInfo . rfield) of
-          Just y | (y ^. riCompSDev) == x -> return $ Just eid
+      ( \msg _ l ->
+        case (msg, l ^. rlens fldRaidInfo . rfield) of
+          (ResetSuccess x, Just y) | (y ^. riCompSDev) == x -> return $ Just ()
           _ -> return Nothing
-      ) $ \eid -> do
-        todo eid
+      ) $ \() -> do
         logInfo
         Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
         Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
@@ -164,7 +162,6 @@ failed = define "castor::drive::raid::failed" $ do
         msgUUID <- liftIO $ nextRandom
         sent <- sendNodeCmd nid Nothing (NodeRaidCmd (rinfo ^. riRaidDevice)
                                         (RaidAdd (rinfo ^. riCompPath)))
-        done eid
         if sent
         then do
           modify Local $ rlens fldCommandAck . rfield .~ [msgUUID]
@@ -184,12 +181,11 @@ failed = define "castor::drive::raid::failed" $ do
       continue end
 
     setPhaseIf reset_failure
-      ( \(HAEvent eid (ResetFailure x) _) _ l ->
-        case (l ^. rlens fldRaidInfo . rfield) of
-          Just y | (y ^. riCompSDev) == x -> return $ Just eid
+      ( \msg _ l ->
+        case (msg, l ^. rlens fldRaidInfo . rfield) of
+          (ResetFailure x, Just y) | (y ^. riCompSDev) == x -> return $ Just ()
           _ -> return Nothing
-      ) $ \eid -> do
-        todo eid
+      ) $ \() -> do
         logInfo
         Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
         -- Send SSPL message requiring the drive to be replaced.
@@ -198,7 +194,6 @@ failed = define "castor::drive::raid::failed" $ do
           <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
           <> "}")
         failStorageDevice (rinfo ^. riCompSDev)
-        done eid
         continue end
 
     directly failure $ do

@@ -572,24 +572,22 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
 
   setPhaseIf reset_success
     -- TODO: relies on drive reset rule; TODO: nicer local state
-    ( \(HAEvent eid (ResetSuccess x) _) _ l -> case l of
-        Just (_,_,y,_,_) | x == y -> return $ Just eid
+    ( \msg _ l -> case (msg, l) of
+        (ResetSuccess x, Just (_,_,y,_,_)) | x == y -> return $ Just ()
         _ -> return Nothing
-    ) $ \eid -> do
+    ) $ \() -> do
       Just (nid, _, _, device, path) <- get Local
       -- Add drive back into array
       void $ sendNodeCmd nid Nothing (NodeRaidCmd device (RaidAdd path))
-      messageProcessed eid
       -- At this point we are done
       continue end
 
   setPhaseIf reset_failure
-    ( \(HAEvent eid (ResetFailure x) _) _ l -> case l of
-        Just (_,_,y,_,_) | x == y -> return $ Just eid
+    ( \msg _ l -> case (msg, l) of
+        (ResetFailure x, Just (_,_,y,_,_)) | x == y -> return $ Just ()
         _ -> return Nothing
-    ) $ \eid -> do
+    ) $ \() -> do
       -- TODO: log an IEM (SEM?) here that things are wrong
-      messageProcessed eid
       continue end
 
   directly end stop
