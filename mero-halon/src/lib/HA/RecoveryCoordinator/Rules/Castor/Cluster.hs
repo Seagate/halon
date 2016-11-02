@@ -89,6 +89,7 @@ import           Data.Traversable (forM)
 import           Data.Typeable
 import           Data.Vinyl hiding ((:~:))
 import qualified Data.Set as Set
+import           Text.Printf (printf)
 
 import           Prelude hiding ((.), id)
 
@@ -139,14 +140,17 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
   $ \msg -> do
     let findChanges = do -- XXX: move to the common place
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $ mapMaybe (\(AnyStateChange (a :: a) _old _new _) ->
+          return $ mapMaybe (\(AnyStateChange (a :: a) old new _) ->
                        case eqT :: Maybe (a Data.Typeable.:~: M0.Process) of
-                         Just Refl -> Just a
+                         Just Refl -> Just (a, old, new)
                          Nothing   -> Nothing) chs
-    procChanges :: [M0.Process] <- findChanges
+        formatProcess :: (M0.Process, M0.ProcessState, M0.ProcessState) -> String
+        formatProcess (p, o, n) = printf "%s: %s -> %s" (show $ M0.fid p) (show o) (show n)
+    procChanges <- findChanges
     unless (null procChanges) $ do
-      phaseLog "debug" $ "Process changes:" ++ show (map M0.fid procChanges)
+      phaseLog "debug" $ "Process changes: " ++ show (map formatProcess procChanges)
       notifyOnClusterTransition Nothing
+
 
 -- | This is a rule catches death of the Principal RM and elects new one.
 --
