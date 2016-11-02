@@ -45,6 +45,7 @@ data Config = Config
   , configRoles  :: Defaultable FilePath
   , configHalonRoles :: Defaultable FilePath
   , configDryRun :: Bool
+  , configVerbose :: Bool
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 schema :: Opt.Parser Config
@@ -68,7 +69,11 @@ schema = let
           $ Opt.long "dry-run"
          <> Opt.short 'n'
          <> Opt.help "Do not actually start cluster, just log actions"
-  in Config <$> initial <*> roles <*> halonRoles <*> dry
+    verbose = Opt.switch
+          $ Opt.long "verbose"
+         <> Opt.short 'v'
+         <> Opt.help "Verbose output"
+  in Config <$> initial <*> roles <*> halonRoles <*> dry <*> verbose
 
 data ValidatedConfig = ValidatedConfig
       { vcTsConfig :: (String, Station.Config)  -- ^ Tracking station config and it's representation
@@ -127,6 +132,13 @@ bootstrap Config{..} = do
           putStrLn "Failed to validate settings: "
           mapM_ putStrLn strs
         AccSuccess ValidatedConfig{..} -> do
+          verbose "Halon facts"
+          liftIO (readFile $ fromDefault configInitialData) >>= verbose
+          verbose "Mero roles"
+          liftIO (readFile $ fromDefault configRoles) >>= verbose
+          verbose "Halon roles"
+          liftIO (readFile $ fromDefault configHalonRoles) >>= verbose
+
           when dry $ do
             out "#!/bin/sh"
             out "set -xe"
@@ -162,6 +174,7 @@ bootstrap Config{..} = do
   where
     dry = configDryRun
     out = liftIO . putStrLn
+    verbose = liftIO . if configVerbose then putStrLn else const (return ())
     step_delay    = 10000000
 
     startService :: String -> (String, Service.ServiceCmdOptions) -> [String] -> Process ()
@@ -169,10 +182,9 @@ bootstrap Config{..} = do
       | dry = do
           out $ "halonctl -l $IP:0 -a " ++ host
              ++ " service " ++ srv
-      | otherwise = Service.service nodes conf
+      | otherwise = Service.service [conjureRemoteNodeId host] conf
       where
         srv = srvString ++ " -t " ++ intercalate " -t " stations
-        nodes = conjureRemoteNodeId <$> [host]
 
     -- Bootstrap all halon stations.
     bootstrapStation :: (String, Station.Config) -> [String] -> Process ()
@@ -180,6 +192,7 @@ bootstrap Config{..} = do
        out "# Starting stations"
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts ++ " bootstrap station" ++ str
     bootstrapStation (_, conf) hosts = do
+      verbose $ "Starting stations: " ++ show hosts
       Station.start nodes conf
       where
         nodes = conjureRemoteNodeId <$> hosts
@@ -191,6 +204,7 @@ bootstrap Config{..} = do
                                      ++ " bootstrap satellite -t "
                                      ++ intercalate " -t " stations
     bootstrapSatellites (_, cfg) st hosts = do
+      verbose $ "Starting satellites" ++ show hosts
       Satellite.startSatellitesAsync conf nodes >>= \case
         [] -> return ()
         failures -> liftIO $ do
@@ -205,6 +219,7 @@ bootstrap Config{..} = do
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
              ++ " cluster load -f " ++ fn ++ " -r " ++ roles
     loadInitialData satellites datum _ _ = do
+        verbose "Loading initial data"
         promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
         _ <- receiveTimeout step_delay []
         return ()
@@ -217,6 +232,7 @@ bootstrap Config{..} = do
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
              ++ " cluster start"
     startCluster stations = do
+        verbose "Requesting cluster start"
         promulgateEQ stnodes ClusterStartRequest >>= flip withMonitor wait
       where
         stnodes = conjureRemoteNodeId <$> stations
