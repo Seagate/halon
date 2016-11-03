@@ -338,7 +338,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
               Nothing -> do
                 phaseLog "error" "graph invariant violation: cluster have no attached state"
                 fail_job $ ClusterStartFailure "Unknown cluster state." [] []
-              Just _ -> if isClusterStopped rg
+              Just _ -> if (maybe False (==M0.ONLINE) $ G.connectedTo R.Cluster R.Has rg)
+                            || isClusterStopped rg
                         then start_job
                         else fail_job $ ClusterStartFailure "Cluster not fully stopped." [] []
 
