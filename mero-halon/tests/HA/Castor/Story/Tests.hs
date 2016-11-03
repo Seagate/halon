@@ -761,7 +761,6 @@ testMetadataDriveFailed transport pg = run transport pg interceptor [] test wher
       usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
 
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
-      subscribe rc (Proxy :: Proxy (HAEvent ResetFailure))
 
       usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
       nid <- getSelfNode

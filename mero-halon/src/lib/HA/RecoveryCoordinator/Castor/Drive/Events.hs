@@ -15,8 +15,6 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , ExpanderReset(..)
   , ResetAttempt(..)
   , ResetAttemptResult(..)
-  , ResetSuccess(..)
-  , ResetFailure(..)
     -- * Metadata drive events
   , RaidUpdate(..)
     -- * SMART test EventsΩ
@@ -42,22 +40,9 @@ data ResetAttempt = ResetAttempt StorageDevice
 
 instance Binary ResetAttempt
 
--- | Event sent when a ResetAttempt were successful.
-newtype ResetSuccess =
-    ResetSuccess StorageDevice
-    deriving (Eq, Show, Binary)
-
--- | Event sent when a ResetAttempt failed.
-newtype ResetFailure =
-    ResetFailure StorageDevice
-    deriving (Eq, Show, Binary)
-
 -- | Result for 'ResetAttempt'
---
--- TODO: Consider merging 'ResetFailure' and 'ResetSuccess' and
--- migrating the rules. Or renaming this.
-data ResetAttemptResult = ResetAttemptFailure ResetFailure
-                        | ResetAttemptSuccess ResetSuccess
+data ResetAttemptResult = ResetFailure StorageDevice
+                        | ResetSuccess StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ResetAttemptResult
