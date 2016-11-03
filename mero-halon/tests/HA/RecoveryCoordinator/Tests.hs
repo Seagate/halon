@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2013-2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -24,6 +22,7 @@ import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Monad (replicateM_)
 import           Data.Binary
 import           Data.Defaultable
+import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics
 import           HA.Encode
@@ -31,7 +30,7 @@ import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Actions.Core (LoopState)
+import           HA.RecoveryCoordinator.Actions.Core (defineSimpleTask, LoopState)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Events.Service
 import           HA.Replicator
@@ -39,11 +38,11 @@ import           HA.Resources
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
-import           Network.CEP (defineSimple, liftProcess, subscribe, Definitions, Published(..), Logs(..))
+import           Network.CEP (subscribe, Definitions, Logs(..))
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (testCase)
+import           Test.Tasty.HUnit (testCase, assertEqual)
 import           TestRunner
 
 tests :: (RGroup g, Typeable g) => Transport -> Proxy g -> [TestTree]
@@ -56,13 +55,6 @@ tests transport pg =
   , testCase "testServiceStopped" $ testServiceStopped transport pg
   ]
 
-newtype Step = Step () deriving (Binary)
-
-stepRule :: Definitions LoopState ()
-stepRule = defineSimple "step" $ \(HAEvent _ Step{} _) -> do
-  liftProcess $ say "step"
-  return ()
-
 -- | Test that the recovery co-ordinator can successfully restart a service
 --   upon notification of failure.
 --   This test does not verify the appropriate detection of service failure,
@@ -71,85 +63,88 @@ stepRule = defineSimple "step" $ \(HAEvent _ Step{} _) -> do
 testServiceRestarting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testServiceRestarting transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
-  self <- getSelfPid
-  registerInterceptor $ \case
-      str@"Starting service dummy"   -> usend self str
-      _ -> return ()
 
-  say $ "tests node: " ++ show nid
-  withTrackingStation pg emptyRules $ \(TestArgs _ _ _) -> do
+  sayTest $ "tests node: " ++ show nid
+  withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     nodeUp ([nid], 1000000)
+
+    subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
+
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
-    "Starting service dummy" :: String <- expect
-    say $ "dummy service started successfully."
-
-    say "Faking service death"
-    whereisRemoteAsync nid (serviceLabel Dummy.dummy)
-    WhereIsReply _ (Just pid) <- expect
+    pid <- serviceStarted Dummy.dummy
+    sayTest $ "Dummy service started successfully. Faking service death."
     exit pid Fail
-    "Starting service dummy" :: String <- expect
-    say $ "dummy service restarted successfully."
+    sayTest $ "Waiting for service to restart."
+    _ <- serviceStarted Dummy.dummy
+    sayTest $ "testServiceRestarting finished"
 
 -- | This test verifies that no service is killed when we send a `ServiceFailed`
 --   With a wrong `ProcessId`
+--
+-- TODO: This test seems like it might not be testing what it should
+-- be that well: if 'ServiceFailed' doesn't get processed before we
+-- ask for a service 'ProcessId', how could we know that we have
+-- succeeded at all?
 testServiceNotRestarting :: (Typeable g, RGroup g)
                          => Transport -> Proxy g -> IO ()
 testServiceNotRestarting transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
-  self <- getSelfPid
 
-  registerInterceptor $ \case
-      str@"Starting service dummy"   -> usend self str
-      _ -> return ()
-
-  say $ "tests node: " ++ show nid
-  withTrackingStation pg emptyRules $ \(TestArgs _ _ _) -> do
+  sayTest $ "tests node: " ++ show nid
+  withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     nodeUp ([nid], 1000000)
+    subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
+
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
-    "Starting service dummy" :: String <- expect
-    say $ "dummy service started successfully."
+    pid <- serviceStarted Dummy.dummy
+    sayTest $ "Dummy service started successfully."
 
-    -- Assert the service has been started
-    pid <- getServiceProcessPid (Node nid) Dummy.dummy
     _ <- promulgateEQ [nid] $
            ServiceFailed (Node nid)
                          (encodeP $ ServiceInfo Dummy.dummy (Dummy.DummyConf $ Configured "Test 1"))
                          (nullProcessId nid)
 
-    whereisRemoteAsync nid (serviceLabel Dummy.dummy)
-    WhereIsReply _ (Just pid2) <- expect
-    True <- return $ pid == pid2
-    say $ "dummy service hasn't been killed."
+    pid2 <- getServiceProcessPid (Node nid) Dummy.dummy
+    liftIO $ assertEqual "Same service keeps running" pid pid2
+    sayTest $ "testServiceNotRestarting finished"
+
+-- | USed in 'testEQTrimming'
+newtype Step = Step () deriving (Binary)
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
 testEQTrimming :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testEQTrimming transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
-  say $ "tests node: " ++ show nid
+  sayTest $ "tests node: " ++ show nid
   withTrackingStation pg [stepRule] $ \(TestArgs eq _ rc) -> do
     nodeUp ([nid], 1000000)
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     subscribe eq (Proxy :: Proxy TrimDone)
     replicateM_ 10 $ promulgateEQ [nid] $ Step ()
-    Published (TrimDone _) _ <- expect
+    TrimDone{} <- expectPublished Proxy
+
     _ <- promulgateEQ [nid] $  encodeP $
       ServiceStartRequest Start (Node nid)
         Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         []
-    Published (TrimDone _) _ <- expect
+
+    TrimDone{} <- expectPublished Proxy
     pid <- serviceStarted Dummy.dummy
     kill pid "test"
     replicateM_ 10 $ promulgateEQ [nid] $ Step ()
 
-    Published (TrimDone _) _ <- expect
-    say $ "Everything got trimmed"
+    TrimDone{} <- expectPublished Proxy
+    sayTest $ "Everything got trimmed"
+  where
+    stepRule :: Definitions LoopState ()
+    stepRule = defineSimpleTask "step" $ \Step{} -> return ()
 
 -- | Used by 'testEQTrimUnknown'
 data AbraCadabra = AbraCadabra deriving (Typeable, Generic)
@@ -160,12 +155,12 @@ testEQTrimUnknown :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testEQTrimUnknown transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
 
-  say $ "tests node: " ++ show nid
+  sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs eq _ _) -> do
     subscribe eq (Proxy :: Proxy TrimDone)
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] AbraCadabra
-    Published (TrimDone _) _ <- expect
+    TrimDone{} <- expectPublished Proxy
     return ()
 
 -- | Tests decision-log service by starting it and redirecting the logs to own
@@ -191,13 +186,8 @@ testDecisionLog transport pg = do
 testServiceStopped :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testServiceStopped transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
-  self <- getSelfPid
 
-  registerInterceptor $ \case
-      str@"Starting service dummy"   -> usend self str
-      _ -> return ()
-
-  say $ "tests node: " ++ show nid
+  sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     nodeUp ([nid], 1000000)
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
@@ -206,11 +196,11 @@ testServiceStopped transport pg = runDefaultTest transport $ do
         (Dummy.DummyConf $ Configured "Test 1") []
 
     pid <- serviceStarted Dummy.dummy
-    say $ "dummy service started successfully."
+    sayTest $ "dummy service started successfully."
 
     _ <- monitor pid
     _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node nid)
                                                            Dummy.dummy
 
     (_ :: ProcessMonitorNotification) <- expect
-    say $ "dummy service stopped."
+    sayTest $ "dummy service stopped."

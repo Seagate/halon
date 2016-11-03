@@ -25,7 +25,7 @@ import           TestRunner
 
 -- | Run the test with some common test parameters
 runDefaultTest :: Transport -> Process () -> IO ()
-runDefaultTest transport act =   runTest 1 20 15000000 transport testRemoteTable $ \_ -> act
+runDefaultTest transport act =   runTest 1 100 15000000 transport testRemoteTable $ \_ -> act
 
 testRemoteTable :: RemoteTable
 testRemoteTable = TestRunner.__remoteTableDecl $
@@ -71,3 +71,7 @@ emptyMailbox :: Serializable t => Proxy t -> Process ()
 emptyMailbox t@(Proxy :: Proxy t) = expectTimeout 0 >>= \case
   Nothing -> return ()
   Just (_ :: t) -> emptyMailbox t
+
+-- | Prepend 'say' with @test =>@ for easy log search.
+sayTest :: String -> Process ()
+sayTest m = say $ "test => " ++ m

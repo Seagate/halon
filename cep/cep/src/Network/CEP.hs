@@ -312,8 +312,10 @@ runItForever start_eng = do
           cruise debug_mode loop eng
         go inner (Just (SubMsg sub)) = do
           liftIO $ traceEventIO "START cruise:add-message"
+          say $ "submsg.debug => START cruise:add-message" ++ show sub
           (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
           liftIO $ traceEventIO "STOP cruise:add-message"
+          say $ "submsg.debug => STOP cruise:add-message" ++ show sub
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just (UnsubMsg sub)) = do
           liftIO $ traceEventIO "START cruise:add-message"

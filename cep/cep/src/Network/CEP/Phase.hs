@@ -49,6 +49,7 @@ data PhaseOut l where
 notifySubscribers :: Serializable a => Subscribers -> a -> Process ()
 notifySubscribers subs a = do
     self <- getSelfPid
+    say $ "cep.debug => Sending " ++ show (typeOf a) ++ " to " ++ show (M.lookup (fingerprint a) subs)
     for_ (M.lookup (fingerprint a) subs) $
       traverse_ (\pid -> usend pid (Published a self))
 

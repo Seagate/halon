@@ -96,6 +96,7 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
     let fp = decodeFingerprint bs
     phaseLog "info" $ "process.pid=" ++ show pid
     phaseLog "info" $ "fingerprint=" ++ show fp
+    liftProcess . say $ "debug => Subscribing: " ++ show (pid, fp)
     liftProcess $ do
       self <- getSelfPid
       _ <- monitor pid
@@ -123,6 +124,7 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
     let fp = decodeFingerprint bs
     phaseLog "info" $ "process.pid=" ++ show pid
     phaseLog "info" $ "fingerprint=" ++ show fp
+    liftProcess . say $ "debug => Unsubscribing: " ++ show (pid, fp)
     liftProcess $ do
       self <- getSelfPid
       rawUnsubscribeThem self fp pid

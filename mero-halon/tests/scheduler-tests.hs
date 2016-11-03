@@ -63,7 +63,7 @@ ut _host transport = do
       , testCase "testRejoinTimeout" $
           HA.Test.Disconnect.testRejoinTimeout
             transport (error "breakConnection not supplied in test")
-      , testCase "testRejoinRCDeath " $
+      , testCase "testRejoinRCDeath [disabled by HALON-528]" $ unless True $
           HA.Test.Disconnect.testRejoinRCDeath
             transport (error "breakConnection not supplied in test")
       , Mero.Notification.Tests.tests transport
