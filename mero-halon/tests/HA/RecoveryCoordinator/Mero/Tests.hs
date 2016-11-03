@@ -12,11 +12,6 @@
 -- mero or its components.
 module HA.RecoveryCoordinator.Mero.Tests
   ( testDriveAddition
-#ifdef USE_MERO
-  , testRCsyncToConfd
-  , testGoodConfValidates
-  , testBadConfDoesNotValidate
-#endif
   , tests
   , emptyRules__static
   ) where
@@ -50,24 +45,17 @@ import           TestRunner
 import           Helper.Environment
 #ifdef USE_MERO
 import           Control.Category ((>>>))
-import           Control.Distributed.Process.Node (runProcess)
 import           Data.Function (on)
 import           Data.List (sortBy, sort)
-import           HA.Encode
-import           HA.RecoveryCoordinator.Actions.Mero (syncToConfd, validateTransactionCache)
+import           HA.RecoveryCoordinator.Actions.Mero (validateTransactionCache)
 import           HA.RecoveryCoordinator.Events.Cluster (InitialDataLoaded)
 import           HA.RecoveryCoordinator.Events.Mero (stateSet)
-import           HA.RecoveryCoordinator.Events.Service
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, setPhaseNotified)
-import           HA.Services.Mero
-import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import qualified Helper.InitialData
 import           Mero.Notification
 import           Mero.Notification.HAState
-import           Mero.ConfC (Fid(..))
-import qualified Data.UUID as UUID
 #endif
 
 
@@ -98,17 +86,6 @@ data SpielSync = SpielSync
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary SpielSync
-#endif
-
-#ifdef USE_MERO
--- | Used in 'testRCsyncToConfd'.
-testSyncRules :: [Definitions LoopState ()]
-testSyncRules = return $ defineSimple "spiel-sync" $ \(HAEvent eid SpielSync _) -> do
-  result <- syncToConfd
-  case result of
-    Left e -> liftProcess $ say $ "Exceptions during sync: "++ show e
-    Right{} -> liftProcess $ say "Finished sync to confd"
-  messageProcessed eid
 #endif
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
@@ -252,46 +229,6 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
       }
 
 #ifdef USE_MERO
--- | Sends a message to the RC with Confd addition message and tests
--- that it gets added to the resource graph.
-testRCsyncToConfd :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testRCsyncToConfd transport pg = do
- withTestEnv $ do
-  nid <- getSelfNode
-  self <- getSelfPid
-
-  registerInterceptor $ \case
-    str' | "Finished sync to confd" `isInfixOf` str' -> usend self ("SyncOK" :: String)
-         | "Loaded initial data" `isInfixOf` str' -> usend self ("InitialLoad" :: String)
-         | otherwise -> return ()
-
-  withTrackingStation pg testSyncRules $ \_ -> do
-    nodeUp ([nid],1000000)
-
-    promulgateEQ [nid] Helper.InitialData.defaultInitialData
-      >>= flip withMonitor wait
-    "InitialLoad" :: String <- expect
-
-    let mockMeroConf = MeroConf (testListenName++"@tcp:12345:34:101")
-                                (Fid 0x7000000000000001 0x1)
-                                (Fid 0x7200000000000001 0x18)
-                                (Fid 0x7300000000000001 0x25)
-                                (Fid 0x7300000000000001 0x26)
-                                (_hv_keepalive_frequency defaultHalonVars)
-                                (_hv_keepalive_timeout defaultHalonVars)
-                                (MeroKernelConf UUID.nil)
-    _ <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start (Node nid) m0d mockMeroConf [self]
-    _ <- receiveTimeout 1000000 []
-
-    promulgateEQ [nid] SpielSync >>= flip withMonitor wait
-    "SyncOK" :: String <- expect
-    return ()
-  where
-    wait = void (expect :: Process ProcessMonitorNotification)
-    withTestEnv f = withTmpDirectory $ tryWithTimeoutIO transport testRemoteTable (3*60*1000000)
-                  $ \lnid ->
-      runProcess lnid f
-
 -- | Used by rule in 'testConfObjectStateQuery'
 data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
   deriving (Show, Eq, Generic, Typeable)

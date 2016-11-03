@@ -27,12 +27,10 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Data.Aeson
-import Data.Aeson.Types (parseEither)
 import qualified Data.ByteString.Lazy as BSL (empty)
-import qualified Data.ByteString.Lazy.Char8 as BSL (hPutStrLn, dropWhile)
-import Data.List
+import qualified Data.ByteString.Lazy.Char8 as BSL (hPutStrLn)
 import GHC.IO.Handle (hDuplicateTo, hDuplicate)
-import GHC.Stack
+-- import GHC.Stack
 import Language.Haskell.TH
 import System.Directory
 import System.Environment
@@ -114,11 +112,11 @@ main = withMeroRoot $ \mero_root -> do
             (`fmap` Data.Aeson.eitherDecode st) $
               \cs ->
                 let valid = all validProcState
-                      [ crpState proc
+                      [ crpState proc'
                       | (_, host) <- csrHosts cs
-                      , (_, proc) <- crnProcesses host
+                      , (_, proc') <- crnProcesses host
                         -- filter halon process from checks
-                      , all (/= CST_HA) $ map (s_type . fst) $ crpServices proc
+                      , all (/= CST_HA) $ map (s_type . fst) $ crpServices proc'
                       ]
                  in if valid then Right ()
                     else Left "Some process state is not valid."
