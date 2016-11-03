@@ -138,7 +138,14 @@ processSnsStatusReply ::
    -> PhaseM LoopState l () -- ^ action to run before doing anything else
    -> PhaseM LoopState l () -- ^ action to run if SNS is not running
    -> PhaseM LoopState l () -- ^ action to run if action is not complete
-   -> (PoolRepairInformation -> PhaseM LoopState l ()) -- ^ action to run if action is complete
+   -> (Either AbortSNSOperation PoolRepairInformation -> PhaseM LoopState l ())
+      -- ^ action to run if SNS repair is complete. SNS is considered
+      -- to be complete when
+      --
+      -- @length ('R.filterCompletedRepairs' snsStatus) == length <$> 'R.getIOServices'@
+      --
+      -- In case 'anyIOSFailed', SNS abort message is provided instead
+      -- of 'PoolRepairInformation'.
    -> M0.Pool
    -> [Spiel.SnsStatus]
    -> PhaseM LoopState l ()
@@ -157,8 +164,11 @@ processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete 
                                                 --  IOS we started with
         if sts == R.filterCompletedRepairs sts
              && length sts >= nios
-        then do completeRepair pool prt muuid
-                onComplete pri
+        then if R.anyIOSFailed sts
+             then onComplete . Left $ AbortSNSOperation pool ruuid
+             else do
+               completeRepair pool prt muuid
+               onComplete $ Right pri
         else onNonComplete
       onNotRunning
 
@@ -201,14 +211,18 @@ querySpiel = define "spiel::sns:query-status" $ do
             messageProcessed uuid)
         (return ())
         (return ())
-        (\pri -> do
-            timeNow <- liftIO getTime
-            let elapsed = timeNow - priTimeOfFirstCompletion pri
-                untilTimeout = M0.mkTimeSpec 300 - elapsed
-            switch [ query_status
-                   , abort_on_quiesce
-                   , abort_on_abort
-                   , timeout (timeSpecToSeconds untilTimeout) dispatch_hourly])
+        (\case
+            Left abortMsg -> do
+              promulgateRC abortMsg
+              continue abort_on_abort
+            Right pri -> do
+              timeNow <- liftIO getTime
+              let elapsed = timeNow - priTimeOfFirstCompletion pri
+                  untilTimeout = M0.mkTimeSpec 300 - elapsed
+              switch [ query_status
+                     , abort_on_quiesce
+                     , abort_on_abort
+                     , timeout (timeSpecToSeconds untilTimeout) dispatch_hourly])
   let process_failure pool str = do
         Just (uuid, _, _, _) <- get Local
         messageProcessed uuid
@@ -275,7 +289,12 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
         (return ())
         (continue finish)
         (switch loop)
-        (\_ -> continue finish)
+        (\case
+            Left abortMsg -> do
+              promulgateRC abortMsg
+              continue abort_on_abort
+            Right _ -> continue finish
+        )
   let process_failure _pool _str = continue finish
 
   let route (SpielQueryHourly pool prt ruid) = do
@@ -958,7 +977,6 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
    where
      run (PoolInfo pool st m) = do
        phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
-       setObjectStatus pool st
        mprs <- getPoolRepairStatus pool
        forM_ mprs $ \prs@(PoolRepairStatus prt _ mpri) ->
          forM_ mpri $ \pri -> do

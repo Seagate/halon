@@ -33,17 +33,18 @@ repairingNotificationMsg M0.Failure = M0.M0_NC_REPAIR
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.
 filterCompletedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
-filterCompletedRepairs = filter p
-  where
-    p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_IDLE _) = True
-    p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_FAILED _) = True
-    p _ = False
+filterCompletedRepairs = filter (iosReady . Spiel._sss_state)
 
+-- | Find any 'iosPaused' statuses.
 filterPausedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
-filterPausedRepairs = filter p
+filterPausedRepairs = filter (iosPaused . Spiel._sss_state)
+
+-- | Check if any 'Spiel.SnsStatus' came back as 'Spiel.M0_SNS_CM_STATUS_FAILED'.
+anyIOSFailed :: [Spiel.SnsStatus] -> Bool
+anyIOSFailed = any (p . Spiel._sss_state)
   where
-    p (Spiel.SnsStatus _ Spiel.M0_SNS_CM_STATUS_PAUSED _) = True
-    p _ = False
+    p Spiel.M0_SNS_CM_STATUS_FAILED = True
+    p _                             = False
 
 -- | Find the processes associated with IOS services that have the
 -- given endpoint(s).
@@ -65,10 +66,7 @@ iosReady Spiel.M0_SNS_CM_STATUS_FAILED = True
 iosReady _                             = False
 
 
--- | Check if IOS paused SNS operation.
---
---  * [IDLE] - SNS is not doing any job
---  * [FAILED] - SNS failed previous job but cleared up and ready
+-- | Check if IOS 'Spiel.M0_SNS_CM_STATUS_PAUSED' SNS operation.
 iosPaused :: Spiel.SnsCmStatus -> Bool
 iosPaused Spiel.M0_SNS_CM_STATUS_PAUSED = True
 iosPaused _                             = False
