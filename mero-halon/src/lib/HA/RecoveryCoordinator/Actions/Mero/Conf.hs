@@ -14,8 +14,6 @@ module HA.RecoveryCoordinator.Actions.Mero.Conf
     initialiseConfInRG
   , loadMeroServers
   , createMDPoolPVer
-    -- * Queries
-  , setObjectStatus
     -- ** Get all objects of type
   , getProfile
   , getFilesystem
@@ -448,14 +446,6 @@ getChildren obj = do
 getParents :: G.Relation M0.IsParentOf a b => b -> PhaseM LoopState l [a]
 getParents obj = do
   G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
-
--- | Set object in a new state.
-setObjectStatus :: (G.Relation Is a M0.ConfObjectState) => a
-                -> M0.ConfObjectState
-                -> PhaseM LoopState l ()
-setObjectStatus obj state = do
-  phaseLog "rg" $ "Setting " ++ show obj ++ " to state " ++ show state
-  modifyGraph $ G.connectUniqueFrom obj Is state
 
 -- | Test if a service is the principal RM service
 isPrincipalRM :: M0.Service
