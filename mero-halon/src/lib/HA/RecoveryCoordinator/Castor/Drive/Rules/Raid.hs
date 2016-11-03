@@ -158,8 +158,9 @@ failed = define "castor::drive::raid::failed" $ do
         Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
         -- Add drive back into array
         msgUUID <- liftIO $ nextRandom
-        sent <- sendNodeCmd nid Nothing (NodeRaidCmd (rinfo ^. riRaidDevice)
-                                        (RaidAdd (rinfo ^. riCompPath)))
+        sent <- sendNodeCmd nid (Just msgUUID)
+                                (NodeRaidCmd (rinfo ^. riRaidDevice)
+                                (RaidAdd (rinfo ^. riCompPath)))
         done eid
         if sent
         then do
@@ -252,7 +253,8 @@ replacement = define "castor::drive::raid::replaced" $ do
               modify Local $ rlens fldRaidInfo . rfield .~
                 (Just $ RaidInfo (T.pack rd) sdev (T.pack path))
               cmdUUID <- liftIO $ nextRandom
-              sent <- sendNodeCmd nid Nothing (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
+              sent <- sendNodeCmd nid (Just cmdUUID)
+                       (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
               if sent
               then do
                 modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]
