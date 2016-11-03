@@ -1112,7 +1112,7 @@ mkLabel bl@(M0.BootLevel l)
 -- Currently just fails the node the process is on.
 ruleFailNodeIfProcessCantRestart :: Definitions LoopState ()
 ruleFailNodeIfProcessCantRestart =
-  defineSimpleTask "castor::node::process-restart-failure" $ \case
+  defineSimple "castor::node::process-restart-failure" $ \case
     ProcessRecoveryFailure (pfid, r) -> do
       phaseLog "info" $ "Process recovery failure for " ++ show pfid ++ ": " ++ r
       rg <- getLocalGraph
