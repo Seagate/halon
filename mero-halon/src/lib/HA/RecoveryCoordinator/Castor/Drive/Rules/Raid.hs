@@ -167,7 +167,7 @@ failed = define "castor::drive::raid::failed" $ do
           modify Local $ rlens fldCommandAck . rfield .~ [msgUUID]
           waitFor sspl_notify_done
           onSuccess add_success
-          onTimeout 30 failure
+          onTimeout 120 failure
           continue dispatcher
         else do
           phaseLog "error" "Cannot send drive add command to SSPL."
@@ -264,7 +264,7 @@ replacement = define "castor::drive::raid::replaced" $ do
                 modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]
                 waitFor sspl_notify_done
                 onSuccess success
-                onTimeout 30 failure
+                onTimeout 120 failure
                 continue dispatcher
               else do
                 phaseLog "error" "Cannot send drive add command to SSPL."
