@@ -163,7 +163,6 @@ failed = define "castor::drive::raid::failed" $ do
         sent <- sendNodeCmd nid (Just msgUUID)
                                 (NodeRaidCmd (rinfo ^. riRaidDevice)
                                 (RaidAdd (rinfo ^. riCompPath)))
-        done eid
         if sent
         then do
           modify Local $ rlens fldCommandAck . rfield .~ [msgUUID]
