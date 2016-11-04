@@ -131,18 +131,19 @@ instance Hashable ProcessRunType
 --   A process may either fetch its configuration from local conf.xc file,
 --   or it may connect to a confd server.
 data ProcessConfig =
-    ProcessConfigLocal Fid String ByteString -- ^ Process fid, endpoint, conf.xc
-  | ProcessConfigRemote Fid String -- ^ Process fid, endpoint
+    ProcessConfigLocal M0.Process ByteString
+    -- ^ Process fid, endpoint, conf.xc
+  | ProcessConfigRemote M0.Process
+  -- ^ Process fid, endpoint
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessConfig
 instance Hashable ProcessConfig
 
 -- | Control system level m0d processes.
 data ProcessControlMsg =
-    StartProcesses [(ProcessRunType, Fid)]
+    StartProcess ProcessRunType M0.Process
   | StopProcesses [(ProcessRunType, Fid)]
-  | RestartProcesses [(ProcessRunType, Fid)]
-  | ConfigureProcesses [(ProcessRunType, ProcessConfig, Bool)]
+  | ConfigureProcess ProcessRunType ProcessConfig Bool
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
@@ -150,25 +151,19 @@ instance Hashable ProcessControlMsg
 -- | Result of a process control invocation. Either it succeeded, or
 --   it failed with a message.
 data ProcessControlResultMsg =
-    ProcessControlResultMsg NodeId [Either (Fid, Maybe Int) (Fid, String)]
+    ProcessControlResultMsg NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
 
 data ProcessControlResultStopMsg =
-      ProcessControlResultStopMsg NodeId [Either Fid (Fid,String)]
+      ProcessControlResultStopMsg NodeId [Either (Fid,String) Fid]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
 
-data ProcessControlResultRestartMsg =
-    ProcessControlResultRestartMsg NodeId [Either (Fid, Maybe Int) (Fid,String)]
-  deriving (Eq, Generic, Show, Typeable)
-instance Binary ProcessControlResultRestartMsg
-instance Hashable ProcessControlResultRestartMsg
-
 data ProcessControlResultConfigureMsg =
-      ProcessControlResultConfigureMsg NodeId [Either Fid (Fid,String)]
+      ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultConfigureMsg
 instance Hashable ProcessControlResultConfigureMsg

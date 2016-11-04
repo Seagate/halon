@@ -922,7 +922,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       liftIO $ assertEqual "One process on node" 1 $ length pcs
       -- Reply with successful stoppage
       let [(_, fid)] = pcs
-      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Left fid]
+      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Right fid]
 
     debug "Mero process stop result sent"
     -- We will not see 'OFFLINE' since the process on this node is offline
@@ -965,24 +965,21 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
       debug "configure process"
       mconf <- receiveChan recc
       case mconf of
-        ConfigureProcesses pcs' -> do
-          liftIO $ assertEqual "One process on node" 1 $ length pcs'
-          let [(_,pc,_)] = pcs'
-              fid = case pc of
-                      ProcessConfigLocal x _ _ -> x
-                      ProcessConfigRemote x _ -> x
-          _ <- promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid [Left fid]
+        ConfigureProcess _ pc _ -> do
+          let p = case pc of
+                ProcessConfigLocal p' _ -> p'
+                ProcessConfigRemote p' -> p'
+          _ <- promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid (Right p)
           return ()
         s -> liftIO $ assertFailure $ "Expected configure request, but received " ++ show s
 
       debug "start process"
       mstart <- receiveChan recc
       case mstart of
-        RestartProcesses pcs -> do
-          liftIO $ assertEqual "One process on node" 1 $ length pcs
+        StartProcess _ p -> do
           -- Reply with successful stoppage
-          let [(_, fid)] = pcs
-          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid [Left (fid, Nothing)]
+          let fid = M0.fid p
+          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid (Right (p, Just 123))
           -- Also send ONLINE for the process
           let pe = ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
                                 TAG_M0_CONF_HA_PROCESS_M0D

@@ -63,20 +63,18 @@ import           HA.RecoveryCoordinator.Actions.Castor.Cluster
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Node
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
+import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import           HA.RecoveryCoordinator.Job.Actions
-import           HA.Services.Mero.RC (meroChannel)
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 import           Control.Applicative
 import           Control.Category
 import           Control.Distributed.Process hiding (catch, try)
-import           Control.Exception (SomeException)
 import           Control.Lens
 import           Control.Monad (join, unless, when)
-import           Control.Monad.Catch (try)
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
@@ -419,13 +417,11 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
     fldNodes = Proxy
     fldNext :: Proxy '("next", Maybe (Jump PhaseHandle))
     fldNext = Proxy
-    -- Notifications to wait for
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
        <+> fldNodes =: Set.empty
        <+> fldNext  =: Nothing
-       <+> RNil
 
 -- | Request cluster to teardown.
 --   Immediately set cluster disposition to OFFLINE.
@@ -525,31 +521,18 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
     else phaseLog "warning" $ show fid ++ " is not a client process."
 
 -- | Start already existing (in confd) mero client.
--- 1. Checks if client exists in database
--- 2. Tries to start a client by calling `startMeroProcesses`
+--
+-- 1. Checks if client process exists in database
+-- 2. Tries to start the client process through 'ruleProcessStart'.
 requestStartMeroClient :: Definitions LoopState ()
-requestStartMeroClient = defineSimpleTask "castor::cluser::client::request::start" $ \(StartMeroClientRequest fid) -> do
-  phaseLog "info" $ "Start mero client " ++ show fid ++ " requested."
-  mproc <- lookupConfObjByFid fid
-  forM_ mproc $ \proc -> do
-    rg <- getLocalGraph
-    if G.isConnected proc R.Has M0.PLM0t1fs rg
-    then do
-      let chans = [ch | Just m0node <- [G.connectedFrom M0.IsParentOf proc rg]
-                      , node   <- m0nodeToNode m0node rg
-                      , Just ch <- return $ meroChannel rg node
-                      ]
-      case listToMaybe chans of
-        Just chan -> do
-           phaseLog "info" $ "Starting client"
-           -- TODO switch to 'StartProcessesRequest' (HALON-373)
-           eresult <- try $ configureMeroProcesses chan [proc] M0.PLM0t1fs False
-           case eresult of
-             Left e -> do phaseLog "error" "Exception during client start."
-                          phaseLog "text" $ show (e :: SomeException)
-             Right _ -> startMeroProcesses chan [proc] M0.PLM0t1fs
-        Nothing -> phaseLog "warning" $ "can't find mero channel."
-    else phaseLog "warning" $ show fid ++ " is not a client process."
+requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::start" $
+  \(StartMeroClientRequest fid) -> do
+    phaseLog "info" $ "Start mero client " ++ show fid ++ " requested."
+    lookupConfObjByFid fid >>= \case
+      Nothing -> phaseLog "warn" $ "Could not find process with fid " ++ show fid
+      Just p -> G.isConnected p R.Has M0.PLM0t1fs <$> getLocalGraph >>= \case
+        True -> promulgateRC $ ProcessStartRequest p
+        False -> phaseLog "warn" $ M0.showFid p ++ " is not a client process"
 
 -- | Caller 'ProcessId' signals that it's interested in cluster
 -- stopping ('MonitorClusterStop') and wants to receive information

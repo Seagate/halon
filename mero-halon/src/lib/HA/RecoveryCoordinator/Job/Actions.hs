@@ -96,7 +96,7 @@ mkJobRule (Job name)
                     insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
           else do
               phaseLog "request" $ show input
-              modify Local $ rlens fldRequest .~ (Field $ Just input)
+              modify Local $ rlens fldRequest . rfield .~ Just input
               check_input input >>= \case
                 Nothing -> do
                   phaseLog "action" "Ignoring message due to rule filter."

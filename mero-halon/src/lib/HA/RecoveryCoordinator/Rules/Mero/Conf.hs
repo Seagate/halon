@@ -347,12 +347,12 @@ mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.
               -> RuleM LoopState l (b -> M0.StateCarrier b -> PhaseM LoopState l [Jump PhaseHandle])
 mkPhaseNotify t getter onFailure onSuccess = do
   notify_done <- phaseHandle "Notification done"
-  notify_failed <- phaseHandle "Notification timed out"
+  notify_timed_out <- phaseHandle "Notification timed out"
 
   let getterP l = fmap (fmap (==)) (getter l)
 
   setPhaseNotified notify_done getterP $ \(o, oSt) -> onSuccess o oSt >>= switch
-  directly notify_failed onFailure
+  directly notify_timed_out onFailure
 
   return $ \obj objSt -> do
     rg <- getLocalGraph
@@ -362,7 +362,7 @@ mkPhaseNotify t getter onFailure onSuccess = do
       onSuccess obj objSt
     else do
       applyStateChanges [stateSet obj objSt]
-      return [notify_done, timeout t notify_failed]
+      return [notify_done, timeout t notify_timed_out]
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where

@@ -20,9 +20,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , isClusterStopped
   , startMeroService
   , startNodeProcesses
-  , configureNodeProcesses
-  , configureMeroProcesses
-  , restartNodeProcesses
+  , configureMeroProcess
   , stopNodeProcesses
   , getAllProcesses
   , getLabeledProcesses
@@ -30,7 +28,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getProcessBootLevel
   , getNodeProcesses
   , m0t1fsBootLevel
-  , startMeroProcesses
   , retriggerMeroNodeBootstrap
   )
 where
@@ -39,11 +36,9 @@ import HA.RecoveryCoordinator.Actions.Core
 import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
 import HA.RecoveryCoordinator.Actions.Mero.Core
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
-import HA.RecoveryCoordinator.Events.Mero
 import HA.RecoveryCoordinator.Events.Service
 import HA.RecoveryCoordinator.Events.Castor.Cluster
 import HA.RecoveryCoordinator.Events.Castor.Process
-import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))
@@ -63,11 +58,11 @@ import Mero.Notification.HAState (Note(..))
 import Control.Category
 import Control.Distributed.Process
 import Control.Lens ((<&>))
-import Control.Monad (unless, when)
+import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import Data.Proxy
-import Data.List (partition, sort, foldl')
+import Data.List (sort, foldl')
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
@@ -308,157 +303,41 @@ isClusterStopped rg = null $
     psDown _ = False
 
 -- | Start all Mero processes labelled with the specified process label on
---   a given node. Returns all the processes which are being started.
+-- a given node. Returns all the processes which are being started.
 startNodeProcesses :: Castor.Host
-                   -> TypedChannel ProcessControlMsg
                    -> M0.ProcessLabel
                    -> PhaseM LoopState a [M0.Process]
-startNodeProcesses host chan label = do
+startNodeProcesses host label = do
     rg <- getLocalGraph
-    let allProcs =  [ p
-                    | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                    , p <- G.connectedTo m0node M0.IsParentOf rg
-                    , G.isConnected p Has label rg
-                    ]
-    let (onlineProcs, procs) = partition (\p -> M0.getState p rg == M0.PSOnline) allProcs
-    unless (null onlineProcs) $ do
-      -- If RC has restarted the bootstrap rule, some processes may have
-      -- already been online: we don't want to try and start those
-      -- processes again (so we filter them here) and we want the
-      -- bootstrap to proceed (so we notify ONLINE about those processes
-      -- here: this will cause internal notification about process state
-      -- to go out which will be picked up by adjustClusterState which
-      -- should release the barrier even if all the processes are
-      -- already started)
-      applyStateChanges $ map (\p -> stateSet p M0.PSOnline) onlineProcs
+    let procs =  [ p
+                 | m0node <- G.connectedTo host Runs rg :: [M0.Node]
+                 , p <- G.connectedTo m0node M0.IsParentOf rg
+                 , G.isConnected p Has label rg
+                 ]
+
     unless (null procs) $ do
-      phaseLog "action" $ "Starting mero process on node."
-      phaseLog "info"   $ "process.label = " ++ show label
-      phaseLog "info"   $ "process.host  = " ++ show host
-      startMeroProcesses chan procs label
+      phaseLog "info" "Starting processes on mero node."
+      phaseLog "processes" $ show (M0.fid <$> procs)
+      phaseLog "process.label" $ show label
+      phaseLog "process.host" $ show host
+      for_ procs $ promulgateRC . ProcessStartRequest
     return procs
 
--- | Configure all Mero processes labelled with the specified process label on
---   a given node. Returns all the processes which are being configured.
-configureNodeProcesses :: Castor.Host
-                       -> TypedChannel ProcessControlMsg
-                       -> M0.ProcessLabel
-                       -> Bool
-                       -> PhaseM LoopState a [M0.Process]
-configureNodeProcesses host chan label mkfs = do
-    rg <- getLocalGraph
-    -- We do not want to reconfigure already running processes, if one needs
-    -- to reconfigure that process should be stopped first.
-    let allProcs =  [ p
-                    | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                    , p <- G.connectedTo m0node M0.IsParentOf rg
-                    , G.isConnected p Has label rg
-                    , M0.getState p rg /= M0.PSOnline
-                    ]
-    unless (null allProcs) $ do
-      phaseLog "begin" "Configure node processes"
-      phaseLog "label" $ show label
-      phaseLog "host"  $ show host
-      configureMeroProcesses chan allProcs label mkfs
-      phaseLog "end"  "Configure node processes"
-    return allProcs
-
--- | Send requesrt to all configure all mero processes.
--- Process configuration consists of creating config file anc calling mkfs if
--- necessary.
-configureMeroProcesses :: TypedChannel ProcessControlMsg
-                       -> [M0.Process]
-                       -> M0.ProcessLabel
-                       -> Bool
-                       -> PhaseM LoopState a ()
-configureMeroProcesses _ [] _ _ = return ()
-configureMeroProcesses (TypedChannel chan) procs label mkfs = do
-    rg <- getLocalGraph
-    phaseLog "processes" $ show (M0.fid <$> procs)
-    let (confds, others) = partition (\proc -> runsMgs proc rg) procs
-    msg_confds <- if null confds
-                  then return []
-                  else do config <- syncToBS
-                          return $ (\p -> (p, ProcessConfigLocal (M0.fid p) (M0.r_endpoint p) config)) <$> confds
-    let msg_others = (\p -> (p,ProcessConfigRemote (M0.fid p) (M0.r_endpoint p))) <$> others
-    let msg = ConfigureProcesses $
-         (\(p,conf) -> (toType label, conf, mkfs && not (G.isConnected p Is M0.ProcessBootstrapped rg)))
-         <$> (msg_confds ++ msg_others)
-    for_ procs $ \p -> modifyGraph
-      $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStarting g)
-                       (M0.setState p M0.PSStarting rg')
-                       (G.connectedTo p M0.IsParentOf rg')
-    registerSyncGraph $ sendChan chan msg
-  where
-    runsMgs proc rg =
-      not . null $ [ () | M0.Service{ M0.s_type = CST_MGS }
-                          <- G.connectedTo proc M0.IsParentOf rg ]
-    toType M0.PLM0t1fs = M0T1FS
-    toType _           = M0D
-
--- | Start given mero processes. If processes are in inhibited state,
--- we instead restart them: they could still be online but we're
--- recovering after a node failure but not a node reboot. Asking
--- systemd to start the process will just result in systemd exiting
--- and process never doing anything.
---
--- TODO: We could potentially use a more gentle method by querying
--- process status.
-startMeroProcesses :: TypedChannel ProcessControlMsg -- ^ halon:m0d channel.
-                   -> [M0.Process]
-                   -> M0.ProcessLabel
-                   -> PhaseM LoopState a ()
-startMeroProcesses _ [] _ = return ()
-startMeroProcesses (TypedChannel chan) procs label = do
-   rg <- getLocalGraph
-   let (restartProcs, startProcs) = partition (shouldRestart rg) procs
-       msgStart = StartProcesses $ ((\proc -> (toType label, M0.fid proc)) <$> startProcs)
-   for_ procs $ \p -> modifyGraph
-     $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStarting g)
-                      (M0.setState p M0.PSStarting rg')
-                      (G.connectedTo p M0.IsParentOf rg')
-   when (not $ null startProcs) $ do
-     phaseLog "info" $ "Starting mero processes: "  ++ show (fmap M0.fid startProcs)
-     registerSyncGraph $ do
-       liftProcess $ sendChan chan msgStart
-   when (not $ null restartProcs) $ do
-     phaseLog "info" $ "Requesting mero processes restart due to inhibited/starting for "
-                    ++ show (fmap M0.fid restartProcs)
-     -- We don't just send to the channel straight away: we want all
-     -- the nice things inside process restart rule like messing with
-     -- process state, timeout and processing restart result message.
-     -- Trigger that rule instead of directly dispatching to the
-     -- channel here. The alternative would be to split up
-     -- 'ruleProcessRestart' and move timeout into the process restart
-     -- function in mero service.
-     for_ restartProcs $ promulgateRC . ProcessRestartRequest
-   where
-     toType M0.PLM0t1fs = M0T1FS
-     toType _           = M0D
-
-     -- Sometimes we shouldn't run start systemd command but a restart
-     -- instead. For example when the process is inhibited or has been
-     -- requested to start.
-     --
-     -- TODO: Probably shouldn't have a case for Starting but it's
-     -- just in case before reconnect patches land
-     shouldRestart :: G.Graph -> M0.Process -> Bool
-     shouldRestart rg p = case M0.getState p rg of
-       M0.PSInhibited _ -> True
-       M0.PSStarting    -> True
-       _                -> False
-
-restartNodeProcesses :: TypedChannel ProcessControlMsg
-                     -> [M0.Process]
+-- | Send a request to configure the given mero process. Constructs
+-- the appropriate 'ProcessConfig' (which depends on whether the
+-- process in @confd@ or not) and sends it to @halon:m0d@.
+configureMeroProcess :: TypedChannel ProcessControlMsg
+                     -> M0.Process
+                     -> ProcessRunType
+                     -> Bool
                      -> PhaseM LoopState a ()
-restartNodeProcesses (TypedChannel chan) ps = do
-   rg <- getLocalGraph
-   let msg = RestartProcesses $ map (go rg) ps
-   liftProcess $ sendChan chan msg
-   where
-     go rg p = case G.connectedTo p Has rg of
-        [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
-        _             -> (M0D, M0.fid p)
+configureMeroProcess (TypedChannel chan) p runType mkfs = do
+    rg <- getLocalGraph
+    conf <- if any (\s -> M0.s_type s == CST_MGS)
+                 $ G.connectedTo p M0.IsParentOf rg
+            then ProcessConfigLocal p <$> syncToBS
+            else return $ ProcessConfigRemote p
+    liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
 
 stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]

@@ -31,6 +31,12 @@ defaultHalonVars = HalonVars
   , _hv_keepalive_frequency = 30
   , _hv_keepalive_timeout = 115
   , _hv_drive_reset_max_retries = 3
+  , _hv_process_configure_timeout = 300
+  , _hv_process_start_cmd_timeout = 300
+  , _hv_process_start_timeout = 180
+  , _hv_process_max_start_attempts = 5
+  , _hv_process_restart_retry_interval = 5
+  , _hv_mero_kernel_start_timeout = 300
   }
 
 -- | Get 'HalonVars' from RG
