@@ -30,6 +30,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , ruleSNSOperationAbort
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
+  , ruleSNSOperationRestart
   , ruleOnSnsOperationQuiesceFailure
   , ruleHandleRepair
   , ruleHandleRepairNVec
@@ -863,7 +864,7 @@ jobSNSOperationRestart = Job "castor::sns::restart"
 --   'RestartSNSOperationSuccess' - if operation was restarted
 --   'RestartSNSOperationFailed' - if operation could not be restarted
 --   'RestartSNSOperationSkip' - if no operation was running
-
+--   This rule itself just invokes 'abort' and subsequently 'start' rules.
 ruleSNSOperationRestart :: Definitions LoopState ()
 ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
   abort_req <- phaseHandle "abort_req"
@@ -875,17 +876,46 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
     Just (RestartSNSOperationRequest pool uuid) <- getField . rget fldReq <$> get Local
     mprs <- getPoolRepairStatus pool
     case mprs of
-      Just prs -> do
+      Just _ -> do
         promulgateRC $ AbortSNSOperation pool uuid
         switch [start_req, timeout 30 request_timeout]
       Nothing -> do
-        phaseLog "info" "Skipping "
+        phaseLog "info" "Skipping repair as pool repair status is not set."
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSkip pool)
+        continue finish
 
   setPhase start_req $ \absns -> do
-    Just (RestartSNSOperationRequest pool uuid) <- getField . rget fldReq <$> get Local
+    Just (RestartSNSOperationRequest pool _) <- getField . rget fldReq <$> get Local
     case absns of
       AbortSNSOperationOk pool' | pool == pool' -> do
+        promulgateRC $ PoolRepairRequest pool
+        switch [result, timeout 30 request_timeout]
+      AbortSNSOperationFailure pool' err | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationFailed pool err)
+        continue finish
+      AbortSNSOperationSkip pool' | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSkip pool)
+        continue finish
+      _ -> switch [start_req, timeout 30 request_timeout]
 
+  setPhase result $ \prsr -> do
+    Just (RestartSNSOperationRequest pool _) <- getField . rget fldReq <$> get Local
+    case prsr of
+      PoolRepairStarted pool' | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSuccess pool)
+        continue finish
+      PoolRepairFailedToStart pool' err | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationFailed pool err)
+        continue finish
+      _ -> switch [result, timeout 30 request_timeout]
+
+  directly request_timeout $ do
+    let err = "Timeout waiting for other rule."
+    Just (RestartSNSOperationRequest pool _) <- getField . rget fldReq <$> get Local
+    modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationFailed pool err)
+    continue finish
+
+  return $ \_ -> return $ Just [abort_req]
   where
     fldReq = Proxy :: Proxy '("request", Maybe RestartSNSOperationRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe RestartSNSOperationResult)
@@ -893,7 +923,6 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
     args =  fldUUID =: Nothing
         <+> fldRep =: Nothing
         <+> fldReq =: Nothing
-
 
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
 ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
