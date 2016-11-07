@@ -855,6 +855,46 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
         <+> fldUUID =: Nothing
         <+> RNil
 
+jobSNSOperationRestart :: Job RestartSNSOperationRequest RestartSNSOperationResult
+jobSNSOperationRestart = Job "castor::sns::restart"
+
+-- | Abort an ongoing SNS operation and restart it. Returns one of the
+--   following:
+--   'RestartSNSOperationSuccess' - if operation was restarted
+--   'RestartSNSOperationFailed' - if operation could not be restarted
+--   'RestartSNSOperationSkip' - if no operation was running
+
+ruleSNSOperationRestart :: Definitions LoopState ()
+ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
+  abort_req <- phaseHandle "abort_req"
+  start_req <- phaseHandle "start_req"
+  request_timeout <- phaseHandle "request_timeout"
+  result <- phaseHandle "result"
+
+  directly abort_req $ do
+    Just (RestartSNSOperationRequest pool uuid) <- getField . rget fldReq <$> get Local
+    mprs <- getPoolRepairStatus pool
+    case mprs of
+      Just prs -> do
+        promulgateRC $ AbortSNSOperation pool uuid
+        switch [start_req, timeout 30 request_timeout]
+      Nothing -> do
+        phaseLog "info" "Skipping "
+
+  setPhase start_req $ \absns -> do
+    Just (RestartSNSOperationRequest pool uuid) <- getField . rget fldReq <$> get Local
+    case absns of
+      AbortSNSOperationOk pool' | pool == pool' -> do
+
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe RestartSNSOperationRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe RestartSNSOperationResult)
+
+    args =  fldUUID =: Nothing
+        <+> fldRep =: Nothing
+        <+> fldReq =: Nothing
+
+
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
 ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
 ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
@@ -1049,12 +1089,12 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
               $ promulgateRC (PoolRebalanceRequest pool)
 
         getPoolRepairStatus pool >>= \case
-          Just (M0.PoolRepairStatus prt _ _)
+          Just (M0.PoolRepairStatus prt uuid _)
             -- Repair happening, device failed, restart repair
             | fa' <- getSDevs diskMap M0_NC_FAILED
             , not (S.null fa') -> do
               phaseLog "info" $ "Repair happening, device failed, restart repair"
-              maybeBeginRepair
+              promulgateRC $ RestartSNSOperationRequest pool uuid
             -- Repair happening, some devices are transient
             | tr' <- getSDevs diskMap M0_NC_TRANSIENT
             , not (S.null tr') -> do
