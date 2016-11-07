@@ -63,30 +63,33 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
        -- Check that the service has the given tag (predicate) and
        -- check that it's not in the given state in RG already.
-       serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m) _) ls _ = do
+       serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m) _) ls =
          let rg = lsGraph ls
              isStateChanged s = M0.getState s (lsGraph ls) /= typ
-         return $ case M0.lookupConfObjByFid (_hm_fid m) rg of
+         in case M0.lookupConfObjByFid (_hm_fid m) rg of
            Just (s :: M0.Service) | p se && isStateChanged s -> Just (eid, s, typ, st)
            _ -> Nothing
 
        isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
        isServiceStopped = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STOPPED) M0.SSOffline
 
-       startOrStop msg ls g = isServiceOnline msg ls g >>= \case
-         Nothing -> isServiceStopped msg ls g
-         Just x -> return $ Just x
+       startOrStop msg@(HAEvent eid _ _) ls _ = return . Just . maybe (Left eid) Right $
+         case isServiceOnline msg ls of
+           Nothing -> isServiceStopped msg ls
+           Just x -> Just x
 
-   setPhaseIf start_rule startOrStop $ \(eid, service, st, typ) -> do
-     todo eid
-     phaseLog "begin" "Service transition"
-     phaseLog "info" $ "transaction.id = " ++ show eid
-     phaseLog "info" $ "service.fid    = " ++ show (M0.fid service)
-     phaseLog "info" $ "service.state  = " ++ show st
-     phaseLog "info" $ "service.type   = " ++ show typ -- XXX: remove
-     put Local $ Just (eid, Just (service, st), Nothing)
-     applyStateChanges [stateSet service st]
-     switch [service_notified, timeout 30 timed_out]
+   setPhaseIf start_rule startOrStop $ \case
+     Left eid -> todo eid >> done eid -- XXX: just remove this guy?
+     Right (eid, service, st, typ) -> do
+       todo eid
+       phaseLog "begin" "Service transition"
+       phaseLog "info" $ "transaction.id = " ++ show eid
+       phaseLog "info" $ "service.fid    = " ++ show (M0.fid service)
+       phaseLog "info" $ "service.state  = " ++ show st
+       phaseLog "info" $ "service.type   = " ++ show typ -- XXX: remove
+       put Local $ Just (eid, Just (service, st), Nothing)
+       applyStateChanges [stateSet service st]
+       switch [service_notified, timeout 30 timed_out]
 
    setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
      rg <- getLocalGraph
