@@ -117,7 +117,7 @@ mkIgnitionArgs ns rc =
 
 disconnectHalonVars :: HalonVars
 disconnectHalonVars = defaultHalonVars { _hv_recovery_expiry_seconds = 5
-                                       , _hv_recovery_max_retries = 2 }
+                                       , _hv_recovery_max_retries = 3 }
 
 -- | Tests that tracking station failures allow the cluster to proceed.
 --
@@ -315,9 +315,9 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
       _ <- promulgateEQ [localNodeId m1] KillRC
       -- RC restarts but the node is still down
-      _ <- expectPublished (Proxy :: Proxy NodeTransient)
+      -- _ <- expectPublished (Proxy :: Proxy NodeTransient)
       -- recovery restarts
-      _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
+      -- _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make sure it did come back up
