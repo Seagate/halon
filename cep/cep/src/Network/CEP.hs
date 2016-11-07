@@ -289,14 +289,23 @@ runItForever start_eng = do
       forwardLeftOvers debug_mode (succ loop) nxt_eng xs
 
     cruise debug_mode !loop eng
-      | stepForward engineIsRunning eng =
-        go eng =<< receiveTimeout 0 [ match (return . SubMsg)
+      | stepForward engineIsRunning eng = do
+        -- Consume all technical messages in prior to other.
+        mtech <-   receiveTimeout 0 [ match (return . SubMsg)
                                     , match (return . TimeoutMsg)
                                     , match (return . Debug)
                                     , match (return . UnsubMsg)
-                                    , match (return . SomeSMsg)
-                                    , matchAny (return . SomeMsg)
                                     ]
+        case mtech of
+          Nothing -> 
+            go eng =<< receiveTimeout 0 [ match (return . SubMsg)
+                                        , match (return . TimeoutMsg)
+                                        , match (return . Debug)
+                                        , match (return . UnsubMsg)
+                                        , match (return . SomeSMsg)
+                                        , matchAny (return . SomeMsg)
+                                        ]
+          Just m  -> go eng (Just m)
       | otherwise =
         go eng . Just =<< receiveWait [ match (return . SubMsg)
                                       , match (return . TimeoutMsg)
@@ -334,7 +343,7 @@ runItForever start_eng = do
             let act = requestAction m
             when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
             return nxt_eng
-          go nxt_eng Nothing
+          cruise debug_mode loop nxt_eng
         go inner Nothing = do
           nxt_eng <- bracket_ (liftIO $ traceEventIO "START cruise:process-step")
                    (liftIO $ traceEventIO "STOP cruise:process-step")

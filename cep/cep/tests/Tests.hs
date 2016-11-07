@@ -99,26 +99,29 @@ globalUpdated = do
 globalIsGlobal :: Process ()
 globalIsGlobal = do
     self <- getSelfPid
-    pid  <- spawnLocal $ execute (1 :: Int) $ do
-      define "rule" $ do
-        ph1 <- phaseHandle "state-1"
-        ph2 <- phaseHandle "state-2"
-        ph3 <- phaseHandle "state-3"
+    pid  <- spawnLocal $ do
+      link self
+      execute (1 :: Int) $ do
+        define "rule" $ do
+          ph1 <- phaseHandle "state-1"
+          ph2 <- phaseHandle "state-2"
+          ph3 <- phaseHandle "state-3"
 
-        setPhase ph1 $ \(Foo{}) -> do
-          fork NoBuffer $ continue ph2
-          fork NoBuffer $ continue ph2
-          stop
+          setPhase ph1 $ \(Foo{}) -> do
+            fork CopyBuffer $ continue ph2
+            fork CopyBuffer $ continue ph2
+            stop
 
-        setPhase ph2 $ \(Donut _) -> do
-          modify Global (+1)
-          continue ph3
+          setPhase ph2 $ \(Donut _) -> do
+            modify Global (+1)
+            continue ph3
 
-        setPhase ph3 $ \(Donut _) -> do
-          i <- get Global
-          liftProcess $ usend self (Res i)
-        start ph1 ()
+          setPhase ph3 $ \(Donut _) -> do
+            i <- get Global
+            liftProcess $ usend self (Res i)
+          start ph1 ()
 
+    link pid
     usend pid (Foo 1)
     usend pid donut
     usend pid donut
@@ -843,7 +846,7 @@ loopWorks = do
     return ()
 
 testSequenceRules :: (String -> IO ()) -> Process ()
-testSequenceRules step = do
+testSequenceRules _step = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute () $ do
       define "rule" $ do
@@ -855,7 +858,6 @@ testSequenceRules step = do
         setPhase ph2 $ \(Foo i) -> do
           liftProcess $ usend self $ "ph2-" ++ show i
         start ph1 ()
-    liftIO $ step "normal order"
     usend pid donut
     assertEqual "phase1" "ph1" =<< expect
     usend pid (Foo 1)
@@ -864,7 +866,6 @@ testSequenceRules step = do
     assertEqual "phase1" "ph1" =<< expect
     usend pid (Foo 2)
     assertEqual "phase2" "ph2-2" =<< expect
-    liftIO $ step "mixed order"
     usend pid donut
     assertEqual "rule starts" "ph1" =<< expect
     usend pid donut
@@ -1279,9 +1280,8 @@ stableMessageWorks = do
     link pid
     let a = Baz 3
     usend pid $ persistMessage UUID.nil a
+    assertEqual "Handle firt message" "foo" =<< expect
     usend pid $ persistMessage UUID.nil B
-
-    assertEqual "Handle second message" "foo" =<< expect
     assertEqual "Second message was not processed" "default" =<< expect
 
 testsLogging :: (Process () -> IO ()) -> TestTree
