@@ -1040,7 +1040,9 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
           Just (M0.PoolRepairStatus prt _ _)
             -- Repair happening, device failed, restart repair
             | fa' <- getSDevs diskMap M0_NC_FAILED
-            , not (S.null fa') -> maybeBeginRepair
+            , not (S.null fa') -> do
+              phaseLog "info" $ "Repair happening, device failed, restart repair"
+              maybeBeginRepair
             -- Repair happening, some devices are transient
             | tr' <- getSDevs diskMap M0_NC_TRANSIENT
             , not (S.null tr') -> do
@@ -1059,7 +1061,9 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
                 else phaseLog "repair" $ "Still some drives transient: " ++ show sts
             | otherwise -> phaseLog "repair" $
                 "Repair on-going but don't know what to do with " ++ show diskMap
-          Nothing -> maybeBeginRepair
+          Nothing -> do
+            phaseLog "info" "No ongoing repair found, maybe begin repair."
+            maybeBeginRepair
 
 -- | When the cluster has completed starting up, it's possible that
 --   we have devices that failed during the startup process.
