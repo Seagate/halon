@@ -40,6 +40,7 @@ import Control.Distributed.Process hiding (try, catch)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static ( unstatic )
+import Control.Monad (void)
 import Control.Monad.Catch ( SomeException, try, catch, throwM )
 import Control.Monad.Reader ( asks )
 
@@ -265,7 +266,13 @@ remoteStartService (caller, msg) = do
     onExit name pid Fail = do
       let node = processNodeId pid
       say $ "[Service:" ++ name  ++ "] service failed."
-      promulgateWait $ ServiceFailed (Node node) msg pid
+      self <- getSelfPid
+      void . spawnLocal $ do
+        mref <- monitor self
+        receiveWait [ matchIf (\(ProcessMonitorNotification m _ _ ) -> m == mref)
+                              (const $ return ()) ]
+        promulgateWait $ ServiceFailed (Node node) msg pid
+
     unhandled :: ProcessId -> String -> SomeException -> Process ()
     unhandled pid name e = do
       let node = processNodeId pid
