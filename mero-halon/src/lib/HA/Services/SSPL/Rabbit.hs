@@ -1,15 +1,14 @@
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.Services.SSPL.Rabbit
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Please import this qualified.
-
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ViewPatterns #-}
-
+-- Service interacting with @rabbitmq@. Please import this qualified.
 module HA.Services.SSPL.Rabbit where
 
 import Prelude hiding ((<$>), (<*>))
@@ -109,6 +108,7 @@ deriveSafeCopy 0 'base ''BindConf
 -- Schemata                                                                   --
 --------------------------------------------------------------------------------
 
+-- | Schema for rabbitmq connection settings.
 connectionSchema :: Schema ConnectionConf
 connectionSchema = let
     hn = defaultable "127.0.0.1" . strOption
@@ -212,8 +212,9 @@ receiveAck chan exchange queue routingKey handle = go `catch` (liftIO . logExcep
 ignoreException :: IO () -> IO ()
 ignoreException io = try io >>= \case
   Right _ -> return ()
-  Left e -> logException e
+  Left e  -> logException e
 
+-- | Output 'SomeException' with SSPL-HL service header.
 logException :: SomeException -> IO ()
 logException e = case E.fromException e of
   -- Don't make noise on just normal ThreadKilled: very annoying in

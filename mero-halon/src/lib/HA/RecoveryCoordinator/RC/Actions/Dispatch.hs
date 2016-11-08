@@ -1,14 +1,15 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.RC.Actions.Dispatch
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Generic phase dispatcher. This can be used to control the flow
 -- of execution in a multi-phase rule without introducing
 -- multiple similar phases.
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators #-}
 module HA.RecoveryCoordinator.RC.Actions.Dispatch where
 
 import           Control.Lens
@@ -22,10 +23,16 @@ type FldDispatch = '("dispatch", Dispatch)
 fldDispatch :: Proxy FldDispatch
 fldDispatch = Proxy
 
+-- | Dispatcher state, stores information about which phases remain to
+-- be dispatched as well as what to do when we're finished or timeout.
 data Dispatch = Dispatch {
     _waitPhases :: [Jump PhaseHandle]
+    -- ^ Phases we're going to wait for on next dispatcher run.
   , _successPhase :: Jump PhaseHandle
+    -- ^ If we're finished (no more '_waitPhases'), phase to run instead.
   , _timeoutPhase :: Maybe (Int, Jump PhaseHandle)
+    -- ^ If we're waiting for '_waitPhases' too long, jump to this phase
+    -- after after specified timeout instead.
 }
 makeLenses ''Dispatch
 

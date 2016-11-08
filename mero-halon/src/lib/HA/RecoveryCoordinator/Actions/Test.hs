@@ -1,8 +1,9 @@
 -- |
+-- Module    : HA.RecoveryCoordinator.Actions.Test
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
+-- Helper used for testing.
 module HA.RecoveryCoordinator.Actions.Test
   ( getNoisyPingCount ) where
 
@@ -14,6 +15,8 @@ import qualified HA.ResourceGraph as G
 
 import Network.CEP
 
+-- | Query 'NoisyPingCount' and increment its value in RG. Returns old
+-- value.
 getNoisyPingCount :: PhaseM RC l Int
 getNoisyPingCount = do
     phaseLog "rg-query" "Querying noisy ping count."

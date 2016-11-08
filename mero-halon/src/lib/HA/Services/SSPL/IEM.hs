@@ -1,14 +1,18 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DefaultSignatures   #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
+-- Module    : HA.Services.SSPL.IEM
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
 -- Module for generation log events in Telemetry message format.
 --
 -- For full specificaiton refer to <http://goo.gl/uM0J24>.
@@ -31,35 +35,33 @@ module HA.Services.SSPL.IEM
   -- ** Mero
   , logMeroRepairStart
   , logMeroRepairFinish
-  , logMeroRepairQuisise
+  , logMeroRepairQuiesce
   , logMeroRepairContinue
   , logMeroRepairAbort
   , logMeroRebalanceStart
   , logMeroRebalanceFinish
-  , logMeroRebalanceQuisise
+  , logMeroRebalanceQuiesce
   , logMeroRebalanceContinue
   , logMeroRebalanceAbort
   , logMeroClientFailed
   , logMeroBEError
   ) where
 
-import HA.Aeson (ToJSON)
 import qualified HA.Aeson as JSON
-import Data.Binary
-import Data.Hashable
-import Data.ByteString (ByteString)
-import Data.List (intercalate)
-import Data.Text (Text)
+import           Data.Binary
+import           Data.ByteString (ByteString)
+import           Data.Hashable
+import           Data.List (intercalate)
+import           Data.Monoid
+import           Data.Proxy
+import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
-import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Text.Lazy as TL
-import Data.Monoid
-import Data.Proxy
-import Data.Typeable
-
-import GHC.TypeLits
-import GHC.Generics
+import qualified Data.Text.Lazy.Encoding as TL
+import           Data.Typeable
+import           GHC.Generics
+import           GHC.TypeLits
 
 
 -- | Encoded interesting event message.
@@ -107,20 +109,22 @@ logLevelToText LOG_NOTICE = "LOG_NOTICE"
 logLevelToText LOG_INFO   = "LOG_INFO"
 logLevelToText LOG_DEBUG  = "LOG_DEBUG"
 
--- | Convert IEM to text representation.
+-- | Convert 'IEM' to 'Text' representation.
 iemToText :: IEM -> Text
 iemToText iem = Text.concat
   ["IEC: ", iemEventCode iem , " : ", iemEventText iem , " : ", iemObject iem]
 
+-- | Convert an 'IEM' to 'ByteString'.
 iemToBytes :: IEM -> ByteString
 iemToBytes = Text.encodeUtf8  . iemToText
 
+-- | IEM ID assigned to halon.
 halonId :: Text
 halonId = "038"
 
 class ToMetadata a where
   toMetadata :: a -> Text
-  default toMetadata :: ToJSON a => a -> Text
+  default toMetadata :: JSON.ToJSON a => a -> Text
   toMetadata = TL.toStrict . TL.decodeUtf8 . JSON.encode
 
 instance ToMetadata () where toMetadata _ = "{}"
@@ -154,6 +158,7 @@ instance forall z s c m a as . (KnownSymbol s, KnownSymbol z, KnownSymbol c, Kno
      shortMessage  = symbolVal (Proxy :: Proxy m)
      messageId     = symbolVal (Proxy :: Proxy c)
 
+-- | Output all interesting event messages halon can emit.
 dumpCSV :: String
 dumpCSV =
   "#Application name, Application id, Subsystem name, Subsystem id, Event description, Event id\n"
@@ -173,12 +178,12 @@ type SSPLUnknownMessage    = Log SSPL  "042" "UNKNOWN MESSAGE"   Text
 type Mero  = '("Halon Mero Subsystem", "003")
 type MeroRepairStart       = Log Mero  "010" "Repair start" ()
 type MeroRepairFinish      = Log Mero  "011" "Repair finish"     ()
-type MeroRepairQuisise     = Log Mero  "012" "Repair quisise"    ()
+type MeroRepairQuiesce     = Log Mero  "012" "Repair quiesce"    ()
 type MeroRepairContinue    = Log Mero  "013" "Repair continue"   ()
 type MeroRepairAbort       = Log Mero  "014" "Repair abort"      ()
 type MeroRebalanceStart    = Log Mero  "020" "Rebalance start"      ()
 type MeroRebalanceFinish   = Log Mero  "021" "Rebalance finish"     ()
-type MeroRebalanceQuisise  = Log Mero  "022" "Rebalance quisise"    ()
+type MeroRebalanceQuiesce  = Log Mero  "022" "Rebalance quiesce"    ()
 type MeroRebalanceContinue = Log Mero  "023" "Rebalance continue"   ()
 type MeroRebalanceAbort    = Log Mero  "024" "Rebalance abort"      ()
 type MeroClientFailed      = Log Mero  "025" "Mero client failed" Text
@@ -191,46 +196,79 @@ type IECList =
    , SSPLUnknownMessage
    , MeroRepairStart
    , MeroRepairFinish
-   , MeroRepairQuisise
+   , MeroRepairQuiesce
    , MeroRepairContinue
    , MeroRepairAbort
    , MeroRebalanceStart
    , MeroRebalanceFinish
-   , MeroRebalanceQuisise
+   , MeroRebalanceQuiesce
    , MeroRebalanceContinue
    , MeroRebalanceAbort
    , MeroClientFailed
    , MeroBEError
    ]
 
+-- | Used to create 'IEM's about halon disk status.
 logHalonDiskStatus       :: Generator HalonDiskStatus
+
+-- | Used to create 'IEM's about raid array failures.
 logRaidArrayFailure      :: Generator RaidArrayFailure
+
+-- | Used to create 'IEM's about disk failures occuring over failure
+-- tolerance threshold.
 logFailureOverK          :: Generator FailureOverK
+
+-- | Used to create 'IEM's about receiving unknown SSPL messages.
 logSSPLUnknownMessage    :: Generator SSPLUnknownMessage
+
+-- | Used to create 'IEM's about SNS repair start.
 logMeroRepairStart       :: Generator MeroRepairStart
+
+-- | Used to create 'IEM's about SNS repair finish.
 logMeroRepairFinish      :: Generator MeroRepairFinish
-logMeroRepairQuisise     :: Generator MeroRepairQuisise
+
+-- | Used to create 'IEM's about SNS repair quiesce.
+logMeroRepairQuiesce     :: Generator MeroRepairQuiesce
+
+-- | Used to create 'IEM's about SNS repair resuming.
 logMeroRepairContinue    :: Generator MeroRepairContinue
+
+-- | Used to create 'IEM's about SNS repair abort.
 logMeroRepairAbort       :: Generator MeroRepairAbort
+
+-- | Used to create 'IEM's about SNS rebalance start.
 logMeroRebalanceStart    :: Generator MeroRebalanceStart
+
+-- | Used to create 'IEM's about SNS rebalance finish.
 logMeroRebalanceFinish   :: Generator MeroRebalanceFinish
-logMeroRebalanceQuisise  :: Generator MeroRebalanceQuisise
+
+-- | Used to create 'IEM's about SNS rebalance quiesce.
+logMeroRebalanceQuiesce  :: Generator MeroRebalanceQuiesce
+
+-- | Used to create 'IEM's about SNS rebalance resuming.
 logMeroRebalanceContinue :: Generator MeroRebalanceContinue
+
+-- | Used to create 'IEM's about SNS rebalance abort.
 logMeroRebalanceAbort    :: Generator MeroRebalanceAbort
+
+-- | Used to create 'IEM's about a mero client failing.
 logMeroClientFailed      :: Generator MeroClientFailed
+
+-- | Used to create 'IEM's about metadata backend errors.
 logMeroBEError           :: Generator MeroBEError
+
 (logHalonDiskStatus
  ,(logRaidArrayFailure
  ,(logFailureOverK
  ,(logSSPLUnknownMessage
  ,(logMeroRepairStart
  ,(logMeroRepairFinish
- ,(logMeroRepairQuisise
+ ,(logMeroRepairQuiesce
  ,(logMeroRepairContinue
  ,(logMeroRepairAbort
  ,(logMeroRebalanceStart
  ,(logMeroRebalanceFinish
- ,(logMeroRebalanceQuisise
+ ,(logMeroRebalanceQuiesce
  ,(logMeroRebalanceContinue
  ,(logMeroRebalanceAbort
  ,(logMeroClientFailed

@@ -1,9 +1,9 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- An interface to manage an m0_thread that consumes a queue of tasks.
---
+-- An interface to manage an @m0_thread@ that consumes a queue of
+-- tasks.
 module Mero.M0Worker
     ( M0Worker
     , newM0Worker
@@ -14,24 +14,26 @@ module Mero.M0Worker
     , sendM0Task
     ) where
 
-import Mero.Engine
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Exception (AsyncException(ThreadKilled))
-import Control.Monad.Catch
 import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Mero.Concurrent
-
 import Mero
+import Mero.Concurrent
+import Mero.Engine
 
+-- | Encapsulate 'M0Thread' along with its communication 'Chan'.
 data M0Worker = M0Worker
     { m0WorkerChan   :: Chan (IO ())
+    -- ^ Communication channel
     , m0WorkerThread :: M0Thread
+    -- ^ Thread on which the tasks are actually ran.
     }
 
+-- | Exception thrown to the 'M0Worker' through 'terminateM0Worker'.
 data StopWorker = StopWorker deriving (Eq,Show)
-
 instance Exception StopWorker
 
 -- | Creates a new worker.
@@ -55,13 +57,13 @@ terminateM0Worker M0Worker {..} = do
       joinM0OS m0WorkerThread
     finalizeOnce
 
--- | Queues a new task for the worker.
+-- | Queues a new task for the worker. Catches
 queueM0Worker :: M0Worker -> IO () -> IO ()
-queueM0Worker (M0Worker {..}) task = do
-    writeChan m0WorkerChan $
-      catch task (\e -> putStrLn $ "M0Worker: " ++ show (e :: SomeException))
+queueM0Worker (M0Worker {..}) task = writeChan m0WorkerChan $
+ catch task (\e -> putStrLn $ "M0Worker: " ++ show (e :: SomeException))
 
--- | Runs a task in a worker.
+-- | Runs a task in a worker. Re-throws 'SomeException' from
+-- 'queueM0Worker', if any.
 runOnM0Worker :: (MonadIO m, MonadThrow m) => M0Worker -> IO a -> m a
 runOnM0Worker M0Worker{..} task = do
     result <- liftIO $ do

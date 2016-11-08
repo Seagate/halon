@@ -3,10 +3,11 @@
 -- Copyright:  (C) 2015-2016 Seagate Technology Limited.
 {-# LANGUAGE TemplateHaskell #-}
 module HA.Logger
-  ( mkHalonTracer
+  ( -- * Public API
+    mkHalonTracer
   , silenceLogger
   , verboseLogger
-    -- * D-p internal things
+    -- * D-p internals
   , __remoteTable
   , silenceLogger__static
   , silenceLogger__sdict
@@ -65,16 +66,17 @@ verboseLogger subsystem = liftIO $ withMVar loggers $ \m ->
 --
 -- Examples:
 --
--- @@
+-- @
 -- logger :: String -> Process ()
 -- logger = mkHalonTracer "EQ.producer"
--- @@
+-- @
 --
 -- Now we could run program with:
 --
--- @@
+-- @
 -- HALON_TRACING="EQ.producer smth-else" ./program-name
--- @@
+-- @
+--
 -- and get logging enabled, it's possible to use @*@ in
 -- @HALON_TRACING@ variable, then all subsystems will be enabled
 mkHalonTracer :: String

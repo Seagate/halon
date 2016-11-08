@@ -1,7 +1,10 @@
 -- |
+-- Module    : HA.Services.Mero
 -- Copyright : (C) 2013 Xyratex Technology Limited.
+--                 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
-
+--
+-- TODO: Fix copyright header
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -26,60 +29,49 @@ module HA.Services.Mero
     , Mero.Notification.getM0Worker
     ) where
 
-import HA.Debug
-import HA.Logger
-import HA.EventQueue.Producer (promulgate, promulgateWait)
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure ( remotableDecl, mkStatic
+                                                     , mkStaticClosure )
+import qualified Control.Distributed.Process.Internal.Types as DI
+import           Control.Distributed.Static (staticApply)
+import           Control.Exception (SomeException, IOException)
+import           Control.Monad (forever, unless, void, when)
+import qualified Control.Monad.Catch as Catch
+import           Control.Monad.Trans.Reader
+import           HA.EventQueue.Producer (promulgate, promulgateWait)
+import           HA.Debug
+import           HA.Logger
 import qualified HA.RecoveryCoordinator.Mero.Events as M0
 import qualified HA.Resources.Mero as M0
-import HA.Service
-import HA.Services.Mero.RC.Events
-import HA.Services.Mero.Types
-
+import           HA.Service
+import           HA.Services.Mero.Types
+import           HA.Services.Mero.RC.Events (CheckCleanup(..))
+import           Mero.ConfC (Fid, fidToStr)
 import qualified Mero.Notification
-import Mero.Notification (NIRef)
-import Mero.ConfC (Fid, fidToStr)
-
+import           Mero.Notification (NIRef)
 import qualified Network.RPC.RPCLite as RPC
-
-import Control.Monad (unless, when)
-import Control.Monad.Trans.Reader
-import Control.Exception (SomeException, IOException)
-import qualified Control.Distributed.Process.Internal.Types as DI
-import Control.Distributed.Process.Closure
-  ( remotableDecl
-  , mkStatic
-  , mkStaticClosure
-  )
-import Control.Distributed.Static
-  ( staticApply )
-import Control.Distributed.Process hiding (catch)
-import Control.Monad.Catch (catch)
-import Control.Monad (forever, void)
-import qualified Control.Monad.Catch as Catch
-
-import qualified Data.ByteString as BS
-import qualified Data.Bimap as BM
-import Data.Char (toUpper)
-import Data.Maybe (maybeToList)
-import Data.Binary
-import Data.Typeable
-import GHC.Generics
-import qualified Data.UUID as UUID
-
-import System.Exit
-import System.FilePath
-import System.Directory
 import qualified System.SystemD.API as SystemD
+
+import           Data.Binary
+import qualified Data.Bimap as BM
+import qualified Data.ByteString as BS
+import           Data.Char (toUpper)
+import           Data.Maybe (maybeToList)
+import           Data.Typeable
+import qualified Data.UUID as UUID
+import           GHC.Generics
+import           System.Directory
+import           System.Exit
+import           System.FilePath
 import qualified System.Timeout as ST
 
+-- | Tracer for @halon:m0d@ with value @"halon:m0d"@. See 'mkHalonTracer'.
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
-
 
 -- | Request information about service
 data ServiceStateRequest = ServiceStateRequest
   deriving (Show, Typeable, Generic)
-
 instance Binary ServiceStateRequest
 
 -- | Store information about communication channel in resource graph.
@@ -109,7 +101,7 @@ statusProcess niRef pid rp = do
       Mero.Notification.notifyMero niRef ps set
             (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
             (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
-   `catch` \(e :: SomeException) -> do
+   `Catch.catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
 
@@ -186,14 +178,15 @@ controlProcess mc pid rp = do
 -- Mero Process control
 --------------------------------------------------------------------------------
 
+-- | Default path for @conf.xc@: @"/var/mero/confd/conf.xc"@.
 confXCPath :: FilePath
 confXCPath = "/var/mero/confd/conf.xc"
 
--- | Create configuration for service and run mkfs.
+-- | Create configuration for service and run mkfs if requested.
 configureProcess :: MeroConf        -- ^ Mero configuration.
-                 -> ProcessRunType  -- ^ Type of the process.
+                 -> ProcessRunType  -- ^ Run type of the process.
                  -> ProcessConfig   -- ^ Process configuration.
-                 -> Bool            -- ^ Is mkfs needed.
+                 -> Bool            -- ^ Is mkfs needed?
                  -> IO (Either (M0.Process, String) M0.Process)
 configureProcess mc run conf needsMkfs = do
   let procFid = M0.fid p
@@ -224,8 +217,8 @@ configureProcess mc run conf needsMkfs = do
 -- reading logs) and prevents the scenario where for some reason the
 -- service is still/already up and 'SystemD.startService' does nothing
 -- meaningful.
-startProcess :: ProcessRunType   -- ^ Type of the process.
-             -> M0.Process              -- ^ Process Fid.
+startProcess :: ProcessRunType -- ^ Run type of the process.
+             -> M0.Process     -- ^ Process itself.
              -> IO (Either (M0.Process, String) (M0.Process, Maybe Int))
 startProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
   putStrLn $ "m0d: startProcess: " ++ fidToStr (M0.fid p) ++ " with type(s) " ++ show run
@@ -233,7 +226,10 @@ startProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
     Right mpid -> Right (p, mpid)
     Left x -> Left (p, "Unit failed to restart with exit code " ++ show x)
 
--- | Stop running mero service.
+-- | Stop mero process.
+--
+-- The @systemctl@ stop command is given 60 seconds to run after which
+-- point we assume and report failure for action.
 stopProcess :: ProcessRunType        -- ^ Type of the process.
             -> M0.Process            -- ^ 'M0.Process' to stop.
             -> IO (Either (M0.Process, String) M0.Process)
@@ -255,7 +251,8 @@ stopProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
     ptimeoutSec = 60
     ptimeout = ptimeoutSec * 1000000
 
--- | Generate unit file name.
+-- | Convert a process run type and 'Fid' to the corresponding systemd
+-- service string.
 unitString :: ProcessRunType       -- ^ Type of the process.
            -> M0.Process           -- ^ Process.
            -> String
@@ -268,16 +265,21 @@ generalProcFailureHandler :: a -> Catch.SomeException
                           -> IO (Either (a, String) b)
 generalProcFailureHandler obj e = return $ Left (obj, show e)
 
--- | Write out the conf.xc file for a confd server.
-writeConfXC :: BS.ByteString -- ^ Contents of conf.xc file
+-- | Write out the @conf.xc@ file for a confd server. See also
+-- 'confXCPath'. Creates parent directories if missing.
+writeConfXC :: BS.ByteString -- ^ Contents of @conf.xc@ file
             -> IO ()
 writeConfXC conf = do
   createDirectoryIfMissing True $ takeDirectory confXCPath
   BS.writeFile confXCPath conf
 
--- | Write out Systemd sysconfig file appropriate to process. Returns the
---   unit name of the corresponding unit to start.
+-- | Write out systemd sysconfig file appropriate to process. Returns
+-- the unit name of the corresponding unit to start. Part of process
+-- configuration procedure.
 writeSysconfig :: MeroConf
+               -- ^ Configuration of @halon:m0d@ service, necessary
+               -- for the information required by soon-to-be-started
+               -- process.
                -> ProcessRunType
                -> Fid -- ^ Process fid
                -> String -- ^ Endpoint address

@@ -2,20 +2,20 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- All events intended to the RC should be sent to the Event Queue using the
--- "HA.EventQueue.Producer" API. The Event Queue is a replicated
--- mailbox that is resilient to failure of any minority of replicas. Events
--- posted to the Event Queue are forwarded to consumers (typically the RC) and
--- only removed when the consumers have explicitly acknowledged to have handled
--- them.
+-- All events intended to be delivered the Recovery Coordinator should be
+-- sent to the Event Queue using the "HA.EventQueue.Producer" API. The Event
+-- Queue is a replicated mailbox that is resilient to failure of any minority
+-- of replicas. Events posted to the Event Queue are forwarded to consumers
+-- (typically the Recovery Coordinator) and only removed when the consumer
+-- have explicitly acknowledged to have handled them.
 --
--- Upon receiving an event, the RC must take recovery measures and notify to
--- the Event Queue with a 'Trim' message that the recovery for a given event
+-- Upon receiving an event, the Recovery Coordinator must take recovery
+-- measures and notify the Event Queue with a 'Trim' message that the recovery for a given event
 -- or sequence of events is done. Upon receiving such notification, the Event
 -- Queue component can delete the event from the replicated mailbox.
 --
 -- If a recovery procedure is interrupted due to a failure in the tracking
--- station or in the RC, the Event Queue can send the unhandled events to
+-- station or in the RC, the Event Queue will send all unhandled events to
 -- another instance of the RC. This is why it is important that all operations
 -- of the recovery coordinator be idempotent.
 --
@@ -37,7 +37,6 @@ module HA.EventQueue
   , startEventQueue
   , emptyEventQueue
   ) where
-
 
 import HA.Debug
 import HA.EventQueue.Types
@@ -445,6 +444,7 @@ sendReply :: ProcessId -> Bool -> Process ()
 sendReply sender reply = do here <- getSelfNode
                             usend sender (here, reply)
 
+-- | Internal event meaning that event was removed from Event Queue.
 data TrimDone = TrimDone UUID deriving (Typeable, Generic)
 
 instance Binary TrimDone

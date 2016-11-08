@@ -2,17 +2,6 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- All @*call*Timeout@ functions guarantee:
--- - The function executes synchronously.
--- - The function waits at least @timeout@ microseconds for a reply, but it may
---   not return promptly after the timeout expires.
--- - The function spawns at most one temporary process.
---
--- None of these functions guarantee multiple calls made by the same caller will
--- not interfere with each other. Additionally, using these functions may cause
--- late or duplicate messages to be sent to the caller and accumulate in its
--- mailbox. The caller must be prepared to handle these issues. One solution is
--- to wrap each use of these functions with 'callLocal'.
 --
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
@@ -52,7 +41,18 @@ callTrace = mkHalonTracer "call"
 
 -- | Send @(self, msg)@ to @pid@ and wait for a reply.
 -- Returns @Just reply@, or @Nothing@ if no reply arrives within at least
--- @t@ microseconds.
+-- @t@ microseconds. 'callTimeout' provides following guarantees:
+--
+--   * The function executes synchronously.
+--   * The function waits at least @timeout@ microseconds for a reply, but it may
+--     not return promptly after the timeout expires.
+--   * The function spawns at most one temporary process.
+--
+-- This function does not guarantee that multiple calls that are made by the same
+-- caller will not interfere with each other. Additionally, using this functions may
+-- cause late or duplicate messages to be sent to the caller and accumulate in its
+-- mailbox. The caller must be prepared to handle these issues. One solution is
+-- to wrap each use of these functions with 'callLocal'.
 callTimeout :: (Serializable a, Serializable b) =>
      Int                -- ^ Timeout, in microseconds
   -> ProcessId          -- ^ Target process

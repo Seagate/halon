@@ -1,8 +1,12 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Actions.Storage
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
-
-{-# LANGUAGE ScopedTypeVariables #-}
+--
+-- Store any 'Typeable' value in 'Storage' for later retrieval.
+--
+-- TODO: Use "Data.Dynamic" which does the same thing instead of manually coercing?
 module HA.RecoveryCoordinator.RC.Internal.Storage
   ( Storage
   , empty
@@ -13,11 +17,12 @@ module HA.RecoveryCoordinator.RC.Internal.Storage
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Typeable
+import           Data.Typeable
+import           GHC.Exts
+import           Unsafe.Coerce
 
-import GHC.Exts
-import Unsafe.Coerce
-
+-- | 'TypeRep' indexed 'Map' storing ('put') any 'Typeable' value
+-- through help of 'unsafeCoerce'.
 newtype Storage = Storage (Map TypeRep Any)
 
 -- | Create empty storage.
@@ -25,8 +30,8 @@ empty :: Storage
 empty = Storage Map.empty
 
 -- | Put a value inside storage.
-put :: forall a . Typeable a => a -> Storage -> Storage
-put x (Storage k) = Storage $ Map.insert (typeRep (Proxy :: Proxy a)) (unsafeCoerce x) k
+put :: Typeable a => a -> Storage -> Storage
+put x (Storage k) = Storage $ Map.insert (typeOf x) (unsafeCoerce x) k
 
 -- | Get a value out of storage.
 get :: forall a . Typeable a => Storage -> Maybe a

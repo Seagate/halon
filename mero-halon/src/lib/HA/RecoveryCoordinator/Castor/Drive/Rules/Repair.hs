@@ -734,6 +734,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
 jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
 jobSNSAbort = Job "castor::node::sns::abort"
 
+-- | Abort the specified SNS operation. Uses 'jobSNSAbort'.
 ruleSNSOperationAbort :: Definitions RC ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
   entry <- phaseHandle "entry"
@@ -823,12 +824,12 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
         <+> fldRepairUUID =: Nothing
-        <+> RNil
 
-
+-- | 'Job' used by 'ruleSNSOperationQuiesce'.
 jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
 jobSNSQuiesce = Job "castor::sns::quiesce"
 
+-- | Quiesce the specified SNS operation. Uses 'jobSNSQuiesce'.
 ruleSNSOperationQuiesce :: Definitions RC ()
 ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -> do
   entry <- phaseHandle "execute operation"
@@ -893,7 +894,6 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -
         <+> fldRep  =: Nothing
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
-        <+> RNil
 
 jobSNSOperationRestart :: Job RestartSNSOperationRequest RestartSNSOperationResult
 jobSNSOperationRestart = Job "castor::sns::restart"

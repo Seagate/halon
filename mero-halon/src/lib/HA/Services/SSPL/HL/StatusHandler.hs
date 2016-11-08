@@ -1,24 +1,20 @@
 -- |
+-- Module    : HA.Services.SSPL.HL.StatusHandler
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+-- Handler for 'CommandResponseMessage's.
 module HA.Services.SSPL.HL.StatusHandler where
 
+import Control.Distributed.Process
 import HA.EventQueue.Producer (promulgate)
 import SSPL.Bindings
 
-import Control.Distributed.Process
-  ( Process
-  , ProcessId
-  , SendPort
-  , expect
-  , getSelfPid
-  , sendChan
-  , spawnLocal
-  )
 import Control.Monad (forever)
 import Data.Foldable (forM_)
 
+-- | Spawn a process waiting for 'CommandRequestMessage's and
+-- forwarding their content to RC.
 start :: SendPort CommandResponseMessage
       -> Process ProcessId
 start sp = spawnLocal $ forever $ do

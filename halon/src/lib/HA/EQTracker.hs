@@ -6,22 +6,21 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- Should import qualified.
---
--- EventQueueTracker intended to to track the location of (a subset of) EventQueue
--- nodes. This simplifies expediting messages to the Recovery Co-ordinator, since each
--- individual service need not track the location of the EventQueue nodes.
+-- EventQueueTracker intended to to track the location of (a subset of) nodes
+-- that runs event queue. EQ tracker simplifies sending messages to the Recovery Coordinator,
+-- since each individual service need not track the location of the event queue nodes
+-- and their leader..
 --
 -- Note that the EQTracker does not act as a proxy for the EventQueue, it just
 -- serves as a registry.
 module HA.EQTracker
-  ( ReplicaLocation(..)
+  ( startEQTracker
+  , ReplicaLocation(..)
   , ReplicaRequest(..)
   , ReplicaReply(..)
   , PreferReplica(..)
   , UpdateEQNodes(..)
   , UpdateEQNodesAck(..)
-  , startEQTracker
   , name
   , updateEQNodes
   , updateEQNodes__static
@@ -60,7 +59,9 @@ instance Binary UpdateEQNodesAck
 -- full list of known replicas. None of these are guaranteed to exist.
 data ReplicaLocation = ReplicaLocation
   { eqsPreferredReplica :: Maybe NodeId
+  -- ^ Current leader of the event queue group.
   , eqsReplicas :: [NodeId]
+  -- ^ List of replicas.
   } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary ReplicaLocation
@@ -77,6 +78,7 @@ instance Hashable PreferReplica
 newtype ReplicaRequest = ReplicaRequest ProcessId
   deriving (Eq, Show, Typeable, Binary, Hashable)
 
+-- | Reply to the 'ReplicaRequest'
 newtype ReplicaReply = ReplicaReply ReplicaLocation
   deriving (Eq, Show, Typeable, Binary, Hashable)
 

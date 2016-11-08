@@ -18,29 +18,28 @@ module HA.RecoveryCoordinator.Job.Actions
    , fldListenerId
    ) where
 
-import HA.SafeCopy (SafeCopy)
-import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Job.Internal
-import HA.EventQueue.Types
-import HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-
-import Control.Distributed.Process.Serializable
-import Control.Lens
-import Control.Monad (unless, join)
-import Control.Monad.IO.Class (liftIO)
-
-import Data.Foldable (for_)
-import Data.Traversable (for)
-import Data.Typeable (Typeable)
-import Data.Proxy
-import Data.Vinyl
+import           Control.Distributed.Process.Serializable
+import           Control.Lens
+import           Control.Monad (unless, join)
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Foldable (for_)
+import           Data.Proxy
+import           Data.Traversable (for)
+import           Data.Typeable (Typeable)
 import qualified Data.UUID.V4 as UUID
+import           Data.Vinyl
+import           HA.EventQueue.Types
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import           HA.RecoveryCoordinator.RC.Actions.Core
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Job.Internal
+import           HA.SafeCopy
+import           Network.CEP
 
-import Network.CEP
-
+-- | Alias for 'ListenerId' field type.
 type FldListenerId = '("listenerId", Maybe ListenerId)
 
+-- | Field used to store the ID of job listener.
 fldListenerId :: Proxy FldListenerId
 fldListenerId = Proxy
 
@@ -166,6 +165,8 @@ mkJobRule (Job name)
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
 
+-- | Start a job using the given request. Returns a listener ID that
+-- can be kept by the caller.
 startJob :: (Typeable r, SafeCopy r) => r -> PhaseM RC l ListenerId
 startJob request = do
   l <- ListenerId <$> liftIO UUID.nextRandom

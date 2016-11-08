@@ -1,89 +1,88 @@
+{-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeOperators             #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.CEP
 -- Copyright : (C) 2013-2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
-
-{-# LANGUAGE CPP                       #-}
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE GADTs                     #-}
-
 module HA.RecoveryCoordinator.CEP where
-
-import Prelude hiding ((.), id)
-import Control.Category
-import Control.Lens
-import Control.Monad (void, when)
-import Data.Binary (Binary)
-import Data.Typeable (Typeable)
-import Data.Proxy
-import Data.Vinyl hiding ((:~:))
-import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
-import           Network.CEP
-import qualified Network.CEP.Log as Log
-import           Network.HostName
-
+import qualified HA.EQTracker as EQT
 import           HA.EventQueue.Types
 import           HA.NodeUp
-import           HA.Service
-import           HA.Services.Dummy
-import           HA.Services.Ping
-import qualified HA.EQTracker as EQT
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
+import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Castor.Rules
-import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.RecoveryCoordinator.RC.Rules.Debug as Debug (rules)
-import           HA.RecoveryCoordinator.Job.Actions
+import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
+import qualified HA.Resources.Castor as M0
 import           HA.Resources.HalonVars
 import           HA.SafeCopy
+import           HA.Service
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
-import qualified HA.Resources.Castor as M0
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
-#ifdef USE_MERO
-import           Data.Monoid  -- XXX: remote ifdef if possible
-import qualified Data.Text as T
-import           HA.RecoveryCoordinator.Mero.Events
-import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
-import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
-import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
-import           HA.Resources.Mero (nodeToM0Node)
-import           HA.Services.Mero.RC (rules)
-import           HA.Services.SSPL
-  ( sendInterestingEvent
-  , sendNodeCmdChan
-  )
-import           HA.Services.SSPL.IEM (logMeroClientFailed)
-import           HA.Services.SSPL.LL.RC.Actions (findActiveSSPLChannel)
-import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
-#endif
-import           Data.Foldable (for_)
-import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
+import           HA.Services.Dummy
+import           HA.Services.Frontier.CEP (frontierRules)
+import           HA.Services.Ping
 import           HA.Services.SSPL (sspl)
 import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
-import           HA.Services.Frontier.CEP (frontierRules)
+import           Network.CEP
 
+#ifdef USE_MERO
+import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
+import           HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
+import           HA.RecoveryCoordinator.Mero.Transitions
+import           HA.Resources.Mero (nodeToM0Node)
+import           HA.Services.Mero.RC (rules)
+import           HA.Services.SSPL (sendInterestingEvent, sendNodeCmdChan)
+import           HA.Services.SSPL.IEM (logMeroClientFailed)
+import           HA.Services.SSPL.LL.RC.Actions (findActiveSSPLChannel)
+import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
+
+import           Data.Monoid -- XXX: remote ifdef if possible
+import qualified Data.Text as T
+#endif
+
+import           Control.Category
+import           Control.Lens
+import           Control.Monad (void, when)
+import           Data.Binary (Binary)
+import           Data.Foldable (for_)
+import           Data.Proxy
+import           Data.Typeable (Typeable)
+import           Data.Vinyl hiding ((:~:))
+import           GHC.Generics
+import           Network.HostName
+import qualified Network.CEP.Log as Log
+import           Prelude hiding ((.), id)
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
 
+-- | 'enableDebugMode' when @HALON_DEBUG_RC@ environmental variable
+-- variable is set at the start of the program.
 enableRCDebug :: Definitions RC ()
 enableRCDebug = unsafePerformIO $ do
-     mt <- lookupEnv "HALON_DEBUG_RC"
-     return $ maybe (return ()) (const enableDebugMode) mt
+  mt <- lookupEnv "HALON_DEBUG_RC"
+  return $ maybe (return ()) (const enableDebugMode) mt
 
+-- | Rules ran when RC starts, for initalization.
 rcInitRule :: IgnitionArguments -> RuleM RC (Maybe ProcessId) (Started RC (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
@@ -109,6 +108,7 @@ rcInitRule argv = do
 
     start boot Nothing
 
+-- | Collection of all rules that RC should start as part of its normal work.
 rcRules :: IgnitionArguments -> [Definitions RC ()] -> Definitions RC ()
 rcRules argv additionalRules = do
 
@@ -204,15 +204,18 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
     args = fldUUID =: Nothing
        <+> fldReq     =: Nothing
        <+> fldRep     =: Nothing
-       <+> RNil
 
--- | TODO: Port tests to subscription and remove use of 'sayRC'
+-- | Print a noisy ('say') message when RC receives 'DummyEvent'. Used
+-- in testing.
+--
+-- TODO: Port tests to subscription and remove use of 'sayRC'
 ruleDummyEvent :: Definitions RC () -- XXX: move to rules file
 ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
   i <- getNoisyPingCount
   liftProcess $ sayRC $ "received DummyEvent " ++ str
   liftProcess $ sayRC $ "Noisy ping count: " ++ show i
 
+-- | Request an explicit graph sync with 'SyncPing'.
 ruleSyncPing :: Definitions RC () -- XXX: move to rules file
 ruleSyncPing = defineSimple "sync-ping" $
       \(HAEvent uuid (SyncPing str)) -> do
@@ -226,6 +229,7 @@ newtype RecoverNodeFinished = RecoverNodeFinished Node
 
 instance Binary RecoverNodeFinished
 
+-- | 'Job' used in 'ruleRecoverNode'.
 recoverJob :: Job RecoverNode RecoverNodeFinished
 recoverJob = Job "recover-job"
 
@@ -357,7 +361,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
         <+> fldNode    =: Nothing
         <+> fldHost    =: Nothing
         <+> fldRetries =: Nothing
-        <+> RNil
 
 #ifdef USE_MERO
     -- Reboots the node if possible (if it's a server node) or logs an
@@ -387,6 +390,10 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
 newtype RequestRCPid = RequestRCPid ProcessId
   deriving (Show, Eq, Generic, Typeable)
 
+-- | Answer to 'RequestRCPid'
+--
+-- TODO: Can remove in favour of "HA.RecoveryCoordinator.RC"
+-- functions.
 newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
   deriving (Show, Eq, Generic, Typeable)
 instance Binary RequestRCPidAnswer

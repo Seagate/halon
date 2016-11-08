@@ -1,4 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
+-- |
+-- Module    : HA.RecoveryCoordinator.Castor.Drive.Internal
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Internal drive actions.
 module HA.RecoveryCoordinator.Castor.Drive.Internal
   ( -- * Resource Graph Primitives
     -- ** Disk Failure Vector
