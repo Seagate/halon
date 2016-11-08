@@ -696,6 +696,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
 jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
 jobSNSAbort = Job "castor::node::sns::abort"
 
+-- | Abort the specified SNS operation. Uses 'jobSNSAbort'.
 ruleSNSOperationAbort :: Definitions LoopState ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   entry <- phaseHandle "entry"
@@ -782,12 +783,12 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
         <+> fldRepairUUID =: Nothing
-        <+> RNil
 
-
+-- | 'Job' used by 'ruleSNSOperationQuiesce'.
 jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
 jobSNSQuiesce = Job "castor::sns::quiesce"
 
+-- | Quiesce the specified SNS operation. Uses 'jobSNSQuiesce'.
 ruleSNSOperationQuiesce :: Definitions LoopState ()
 ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
   entry <- phaseHandle "execute operation"
@@ -853,9 +854,8 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
         <+> fldRep  =: Nothing
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
-        <+> RNil
 
--- | If Quiesce operation on pool failed - we need to abort SNS operation.
+-- | Abort SNS operation if we tried to quiesce it and failed.
 ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
 ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
    case result of

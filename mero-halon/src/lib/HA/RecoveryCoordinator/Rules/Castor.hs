@@ -10,53 +10,45 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Rules.Castor
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Rules specific to Castor install of Mero.
+module HA.RecoveryCoordinator.Rules.Castor (castorRules) where
 
-module HA.RecoveryCoordinator.Rules.Castor where
-
-import Control.Distributed.Process hiding (catch)
-
-import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.Resources
-import HA.Resources.Castor
-import qualified HA.Resources.Castor.Initial as CI
+import           Control.Distributed.Process
+import           HA.EventQueue.Types
+import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Hardware
 import qualified HA.ResourceGraph as G
+import           HA.Resources
+import           HA.Resources.Castor
+import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.HalonVars
+import           Network.CEP
+
 #ifdef USE_MERO
-import Control.Monad
-import Control.Monad.Catch
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Events.Cluster
-import HA.RecoveryCoordinator.Actions.Mero.Failure
-import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Actions.Mero.Failure
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
+import           HA.RecoveryCoordinator.Events.Cluster
+import           HA.RecoveryCoordinator.Events.Mero
 import qualified HA.RecoveryCoordinator.Rules.Castor.Expander as Expander
 import qualified HA.RecoveryCoordinator.Rules.Castor.Node as Node
-import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
+import qualified HA.RecoveryCoordinator.Rules.Castor.Process as Process
 import qualified HA.Resources.Mero as M0
-import HA.RecoveryCoordinator.Events.Mero
-import Mero.Notification hiding (notifyMero)
+
+import qualified Control.Monad.Catch as Catch
 #endif
-import Data.Foldable
-import Data.Maybe
 
-import Network.CEP
-import Prelude hiding (id, (.))
+import           Data.Foldable
+import           Data.Maybe
 
-lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
-lookupStorageDevicePathsInGraph sd g =
-    mapMaybe extractPath ids
-  where
-    ids = G.connectedTo sd Has g
-    extractPath (DIPath x) = Just x
-    extractPath _ = Nothing
-
+-- | Collection of Castor rules.
 castorRules :: Definitions LoopState ()
 castorRules = sequence_
   [ ruleInitialDataLoad
@@ -74,7 +66,8 @@ castorRules = sequence_
   ]
 
 -- | Load initial data from facts file into the system.
---   TODO We could only use 'syncGraphBlocking' in the preloaded case.
+--
+-- TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions LoopState ()
 ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   rg  <- getLocalGraph
@@ -115,7 +108,7 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
                 Right (Just e) -> do
                  phaseLog "error" $ "Error in inital data: " ++ show e
                  modifyLocalGraph $ const $ return  rg)
-          `catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException))
+          `Catch.catch` (\e -> phaseLog "error" $ "Failure during initial data load: " ++ show (e::Catch.SomeException))
 #else
       liftProcess $ say "Loaded initial data"
 #endif
@@ -123,10 +116,6 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
   messageProcessed eid
 
 #ifdef USE_MERO
--- | Timeout between entrypoint retry.
-entryPointTimeout :: Int
-entryPointTimeout = 1 -- 1s
-
 -- | Load information that is required to complete transaction from
 -- resource graph.
 ruleGetEntryPoint :: Definitions LoopState ()
@@ -143,7 +132,8 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
         -- We process message here because in case of RC death,
         -- there will be timeout on the userside anyways.
         messageProcessed uuid
-        continue (timeout entryPointTimeout loop)
+        t <- _hv_entrypoint_retry_timeout <$> getHalonVars
+        continue $ timeout t loop
       Just{} -> do
         logEP ep
         liftProcess $ usend pid ep
@@ -154,7 +144,8 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
-        continue (timeout entryPointTimeout loop)
+        t <- _hv_entrypoint_retry_timeout <$> getHalonVars
+        continue $ timeout t loop
       Just{} -> do
         logEP ep
         liftProcess $ usend pid ep

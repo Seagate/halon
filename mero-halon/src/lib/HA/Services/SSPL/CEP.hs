@@ -1,67 +1,57 @@
--- Copyright : (C) 2015 Seagate Technology Limited.
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE ViewPatterns      #-}
+-- |
+-- Module    : HA.Services.SSPL.CEP.
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE ViewPatterns        #-}
+-- @halon:sspl@ service rules
 module HA.Services.SSPL.CEP where
 
-import HA.Services.SSPL.LL.RC.Actions
-
-import HA.EventQueue.Types (HAEvent(..))
-import HA.Service hiding (configDict)
-import HA.Services.SSPL.IEM
-import HA.Services.SSPL.LL.Resources
-import HA.RecoveryCoordinator.Mero
-
-import HA.RecoveryCoordinator.Castor.Drive.Events
+import           Control.Applicative
+import           Control.Distributed.Process
+import           HA.EventQueue.Types (HAEvent(..))
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
-import HA.ResourceGraph hiding (null)
-import HA.Resources (Node(..), Has(..), Cluster(..))
-import HA.Resources.Castor
+import           HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.Mero
+import           HA.ResourceGraph hiding (null)
+import           HA.Resources (Node(..), Has(..), Cluster(..))
+import           HA.Resources.Castor
+import           HA.Service hiding (configDict)
+import           HA.Services.SSPL.IEM
+import           HA.Services.SSPL.LL.RC.Actions
+import           HA.Services.SSPL.LL.Resources
+import           Network.CEP
+import           SSPL.Bindings
+
 #ifdef USE_MERO
-import HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
-import HA.Resources.Mero.Note
+import           HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
+import           HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
-import Mero.ConfC (strToFid)
-import Mero.Notification
-import Text.Read (readMaybe)
+import           Mero.ConfC (strToFid)
+
+import           Text.Read (readMaybe)
 #endif
 
-import SSPL.Bindings
-
-import Control.Applicative
-import Control.Distributed.Process
-  ( NodeId
-  , sendChan
-  , say
-  , processNodeId
-  , nsendRemote
-  )
-import Control.Lens ((<&>))
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
-
+import           Control.Lens ((<&>))
+import           Control.Monad
+import           Control.Monad.Trans
+import           Control.Monad.Trans.Maybe
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
-import Data.Monoid ((<>))
+import           Data.Binary (Binary)
+import           Data.Foldable (for_)
+import           Data.Maybe (catMaybes, listToMaybe, fromMaybe)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import Data.UUID.V4 (nextRandom)
-import Data.UUID (UUID)
-import Data.Binary (Binary)
-import Data.Foldable (for_)
-import Data.Traversable (for)
-import Data.Typeable (Typeable)
-
-import Network.CEP
-import GHC.Generics
-
-import Prelude hiding (mapM_)
+import           Data.Traversable (for)
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
+import           GHC.Generics
 
 --------------------------------------------------------------------------------
 -- Primitives

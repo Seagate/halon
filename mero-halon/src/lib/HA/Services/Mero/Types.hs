@@ -5,40 +5,37 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 -- |
--- Copyright: (C) 2015 Tweag I/O Limited
---
+-- Module    : HA.Services.Mero.Types
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
 module HA.Services.Mero.Types
   ( module HA.Services.Mero.Types
   , KeepaliveTimedOut(..)
   ) where
 
-import HA.Resources.HalonVars
-import HA.Resources.Mero as M0
-import HA.ResourceGraph
-import HA.Service.TH
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure
+import           HA.ResourceGraph
 import qualified HA.Resources as R
+import           HA.Resources.HalonVars
+import           HA.Resources.Mero as M0
+import           HA.Service.TH
+import           Mero.ConfC (Fid, strToFid)
+import           Mero.Notification (Set)
 
-import Mero.ConfC (Fid, strToFid)
-import Mero.Notification (Set)
-
-import Control.Distributed.Process
-import Control.Distributed.Process.Closure
-
-import Data.Aeson hiding (encode, decode)
-import Data.Binary (Binary, encode, decode)
-import Data.ByteString (ByteString)
-import Data.Hashable (Hashable)
-import Data.Monoid ((<>))
-import Data.SafeCopy
-import Data.Serialize (Serialize(..))
-import Data.Typeable (Typeable)
-import Data.UUID as UUID
-import Data.Word (Word64)
-
-import GHC.Generics (Generic)
-
-import Options.Schema
-import Options.Schema.Builder
+import           Data.Aeson hiding (encode, decode)
+import           Data.Binary (Binary, encode, decode)
+import           Data.ByteString (ByteString)
+import           Data.Hashable (Hashable)
+import           Data.Monoid ((<>))
+import           Data.SafeCopy
+import           Data.Serialize (Serialize(..))
+import           Data.Typeable (Typeable)
+import           Data.UUID as UUID
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           Options.Schema
+import           Options.Schema.Builder
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
@@ -81,6 +78,7 @@ instance ToJSON MeroConf where
            , "kernel_config"    .= kernel
            ]
 
+-- | 'SendPort' with 'SafeCopy' instance.
 newtype TypedChannel a = TypedChannel (SendPort a)
     deriving (Eq, Show, Typeable, Binary, Hashable)
 
@@ -88,6 +86,8 @@ instance (Binary a, Typeable a) => SafeCopy (TypedChannel a) where
   getCopy = contain $ TypedChannel . decode <$> get
   putCopy  (TypedChannel p) = contain $ put $ encode p
 
+-- | Relation index connecting channels used by @halon:m0d@ service
+-- and the corresponding 'R.Node'.
 data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 
 deriveSafeCopy 0 'base ''MeroChannel
@@ -106,12 +106,16 @@ data NotificationFailure = NotificationFailure Word64 Fid
 instance Hashable NotificationFailure
 instance Binary   NotificationFailure
 
+-- | A 'Set' of outgoing notifications from @halon:m0d@ to mero
+-- processes along with epoch information.
 data NotificationMessage = NotificationMessage
-       { notificationEpoch   :: Word64    -- Current epoch
-       , notificationMessage :: Set       -- Notification set
-       , notificationRecipients :: [Fid]  -- Endpoints
-       }
-     deriving (Typeable, Generic, Show)
+  { notificationEpoch   :: Word64
+  -- ^ Current epoch
+  , notificationMessage :: Set
+  -- ^ Notification 'Set'
+  , notificationRecipients :: [Fid]
+  -- ^ 'Fid's of the recepient mero processes.
+  } deriving (Typeable, Generic, Show)
 instance Binary NotificationMessage
 instance Hashable NotificationMessage
 
@@ -127,14 +131,16 @@ data ProcessRunType =
 instance Binary ProcessRunType
 instance Hashable ProcessRunType
 
--- | m0d Process configuration type.
---   A process may either fetch its configuration from local conf.xc file,
---   or it may connect to a confd server.
+-- | m0d process configuration type.
+--
+-- A process may either fetch its configuration from local conf.xc
+-- file, or it may connect to a confd server.
 data ProcessConfig =
-    ProcessConfigLocal M0.Process ByteString
-    -- ^ Process fid, endpoint, conf.xc
+  ProcessConfigLocal M0.Process ByteString
+  -- ^ Process should store and use local configuration. Provide
+  -- @conf.xc@ content.
   | ProcessConfigRemote M0.Process
-  -- ^ Process fid, endpoint
+  -- ^ Process will will fetch configuration from remote location.
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessConfig
 instance Hashable ProcessConfig
@@ -156,63 +162,91 @@ data ProcessControlResultMsg =
 instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
 
+-- | Results of @systemctl stop@ operations.
 data ProcessControlResultStopMsg =
       ProcessControlResultStopMsg NodeId [Either (Fid,String) Fid]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
 
+-- | Results of @mero-mkfs@ @systemctl@ invocations.
 data ProcessControlResultConfigureMsg =
       ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultConfigureMsg
 instance Hashable ProcessControlResultConfigureMsg
 
--- | We haven't heard back from a process for a while about keepalive so we're
-data KeepaliveTimedOut = KeepaliveTimedOut [(Fid, M0.TimeSpec)]
+-- | The process hasn't replied to keepalive request for a too long.
+-- Carry this information to RC.
+data KeepaliveTimedOut =
+  KeepaliveTimedOut [(Fid, M0.TimeSpec)]
+  -- ^ List of processes that we have not replied to keepalive fast
+  -- enough when we last checked along with the time we have lasts
+  -- heard from them.
+  --
+  -- TODO: Use NonEmpty
   deriving (Eq, Generic, Show, Typeable)
 instance Binary KeepaliveTimedOut
 instance Hashable KeepaliveTimedOut
 
+-- | Information about the @halon:m0d@ process as along with
+-- communication channels used by the service.
 data DeclareMeroChannel =
     DeclareMeroChannel
     { dmcPid     :: !ProcessId
+    -- ^ @halon:m0d@ 'ProcessId'
     , dmcChannel :: !(TypedChannel NotificationMessage)
+    -- ^ Notification message channel
     , dmcCtrlChannel :: !(TypedChannel ProcessControlMsg)
+    -- ^ Channel used to request various process control actions on
+    -- the hosting node.
     }
     deriving (Generic, Typeable)
-
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
 
-data MeroChannelDeclared =
-    MeroChannelDeclared
-    { mcdPid     :: !ProcessId
-    , mcdChannel :: !(TypedChannel NotificationMessage)
-    , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
-    }
-    deriving (Generic, Typeable)
+-- | 'DeclareMeroChannel' has been acted upon and registered in the
+-- RG. 'MeroChannelDeclared' is used to inform the rest of the system
+-- that the service is ready to be communicated with.
+data MeroChannelDeclared = MeroChannelDeclared
+  { mcdPid     :: !ProcessId
+  -- ^ @halon:m0d@ 'ProcessId'
+  , mcdChannel :: !(TypedChannel NotificationMessage)
+  -- ^ Notification message channel
+  , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
+  -- ^ Channel used to request various process control actions on
+  -- the hosting node.
+  } deriving (Generic, Typeable)
 
 instance Binary MeroChannelDeclared
 instance Hashable MeroChannelDeclared
 
 
+-- | Explicit 'NotificationMessage' channel dictionary used for
+-- 'Binary' instance.
 resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
 resourceDictMeroChannel = Dict
 
+-- | Explicit 'ProcessControlMsg' channel dictionary used for 'Binary'
+-- instance.
 resourceDictControlChannel :: Dict (Resource (TypedChannel ProcessControlMsg))
 resourceDictControlChannel = Dict
 
+-- | Explicit 'NotificationMessage' channel relation dictionary used for
+-- 'Binary' instance.
 relationDictMeroChanelServiceProcessChannel :: Dict (
     Relation MeroChannel R.Node (TypedChannel NotificationMessage)
   )
 relationDictMeroChanelServiceProcessChannel = Dict
 
+-- | Explicit 'ProcessControlMsg' channel relation dictionary used for
+-- 'Binary' instance.
 relationDictMeroChanelServiceProcessControlChannel :: Dict (
     Relation MeroChannel R.Node (TypedChannel ProcessControlMsg)
   )
 relationDictMeroChanelServiceProcessControlChannel = Dict
 
+-- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf
 meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
   where
@@ -255,6 +289,7 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
           <> value (_hv_keepalive_timeout defaultHalonVars)
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
 
+-- | 'Schema' for kernel configuration used by @halon:m0d@ service.
 kernelSchema :: Schema MeroKernelConf
 kernelSchema = MeroKernelConf <$> uuid
   where

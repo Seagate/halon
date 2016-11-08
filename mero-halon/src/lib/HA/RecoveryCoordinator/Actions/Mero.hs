@@ -4,9 +4,11 @@
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE TupleSections              #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Actions.Mero
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+-- Mero actions.
 module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
   , module HA.RecoveryCoordinator.Actions.Mero.Core
@@ -32,45 +34,38 @@ module HA.RecoveryCoordinator.Actions.Mero
   )
 where
 
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
-import HA.RecoveryCoordinator.Actions.Mero.Core
-import HA.RecoveryCoordinator.Actions.Mero.Spiel
-import HA.RecoveryCoordinator.Events.Service
-import HA.RecoveryCoordinator.Events.Castor.Cluster
-import HA.RecoveryCoordinator.Events.Castor.Process
-
-import HA.Resources.Castor (Is(..))
-import HA.Resources (Has(..))
+import           Control.Category ((>>>))
+import           Control.Distributed.Process
+import           HA.Encode
+import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
+import           HA.RecoveryCoordinator.Actions.Mero.Core
+import           HA.RecoveryCoordinator.Actions.Mero.Spiel
+import           HA.RecoveryCoordinator.Events.Castor.Cluster
+import           HA.RecoveryCoordinator.Events.Castor.Process
+import           HA.RecoveryCoordinator.Events.Service
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Has(..))
 import qualified HA.Resources as Res
+import           HA.Resources.Castor (Is(..))
+import qualified HA.Resources.Castor as Castor
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.Mero.Note as M0
-import qualified HA.ResourceGraph as G
-import HA.Encode
-import HA.Service
-import HA.Services.Mero
+import           HA.Service
+import           HA.Services.Mero
+import           Mero.ConfC
+import           Mero.Notification.HAState (Note(..))
+import           Network.CEP
+import           System.Posix.SysInfo
 
-import Mero.ConfC
-import Mero.Notification.HAState (Note(..))
-
-import Control.Category
-import Control.Distributed.Process
-import Control.Lens ((<&>))
-import Control.Monad (unless)
-
-import Data.Foldable (for_)
-import Data.Proxy
-import Data.List (sort, foldl')
-import Data.Maybe (isJust, listToMaybe, mapMaybe)
-import Data.UUID.V4 (nextRandom)
-
-import Network.CEP
-
-import System.Posix.SysInfo
-
-import Prelude hiding ((.), id)
+import           Control.Lens ((<&>))
+import           Control.Monad (unless)
+import           Data.Foldable (for_)
+import           Data.List (sort, foldl')
+import           Data.Maybe (isJust, listToMaybe, mapMaybe)
+import           Data.Proxy
+import           Data.UUID.V4 (nextRandom)
 
 -- | At what boot level do we start M0t1fs processes?
 m0t1fsBootLevel :: M0.BootLevel
@@ -86,13 +81,13 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
     Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
     Nothing -> return Nothing
 
--- | RMS service address.
+-- | Default RM service address: @":12345:41:301"@.
 rmsAddress :: String
 rmsAddress = ":12345:41:301"
 
 -- | Create the necessary configuration in the resource graph to support
---   loading the Mero kernel. Currently this consists of creating a unique node
---   UUID and storing the LNet nid.
+-- loading the Mero kernel. Currently this consists of creating a unique node
+-- UUID and storing the LNet nid.
 createMeroKernelConfig :: Castor.Host
                        -> String -- ^ LNet interface address
                        -> PhaseM LoopState a ()
@@ -210,8 +205,8 @@ calculateRunLevel = do
     guard (M0.BootLevel _) = return False
 
 -- | Calculate the current stop level of the cluster. A stop level of x
---   indicates that it is valid to stop processes on that level. A stop level
---   of (-1) indicates that we may stop the halon:m0d service.
+-- indicates that it is valid to stop processes on that level. A stop level
+-- of (-1) indicates that we may stop the halon:m0d service.
 calculateStopLevel :: PhaseM LoopState l M0.BootLevel
 calculateStopLevel = do
     vals <- traverse guard lvls
@@ -282,8 +277,9 @@ getClusterStatus rg = let
 
 
 -- | Is the cluster completely stopped?
---   Cluster is completely stopped when all processes on non-failed nodes
---   are offline, failed or unknown.
+--
+-- Cluster is completely stopped when all processes on non-failed nodes
+-- are offline, failed or unknown.
 isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
@@ -339,6 +335,10 @@ configureMeroProcess (TypedChannel chan) p runType mkfs = do
             else return $ ProcessConfigRemote p
     liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
 
+-- | Stop the given processes.
+--
+-- TODO: Should get the HALON-373 treatment, nicer rule and remove/fix
+-- this awful function.
 stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]
                   -> PhaseM LoopState a ()
@@ -356,6 +356,8 @@ stopNodeProcesses (TypedChannel chan) ps = do
         [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
         _             -> (M0D, M0.fid p)
 
+-- | Get all 'M0.Process'es with the given label that also pass the
+-- predicate.
 getLabeledProcesses :: M0.ProcessLabel
                     -> (M0.Process -> G.Graph -> Bool)
                     -> G.Graph
@@ -370,6 +372,8 @@ getLabeledProcesses label predicate rg =
   , predicate proc rg
   ]
 
+-- | Get all processes on the given 'Res.Node' with the given
+-- 'M0.ProcessLabel'
 getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
 getLabeledNodeProcesses node label rg =
    [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
@@ -380,14 +384,18 @@ getLabeledNodeProcesses node label rg =
    ]
 
 -- | Fetch the boot level for the given 'Process'. This is determined as
---   follows:
---   - If the process has the 'PLM0t1fs' label, then the returned boot level is
+-- follows:
+--
+--   * If the process has the 'PLM0t1fs' label, then the returned boot level is
 --     'm0t1fsBootLevel'
---   - If the process has an explicit 'PLBootLevel x' label, then the returned
+--
+--   * If the process has an explicit 'PLBootLevel x' label, then the returned
 --     boot level is x.
---   - Otherwise, return 'Nothing'
---   If a process has multiple boot levels, then this function will return
---   the lowest (although this should not occur.)
+--
+--   * Otherwise, return 'Nothing'
+--
+-- If a process has multiple boot levels, then this function will return
+-- the lowest (although this should not occur.)
 getProcessBootLevel :: M0.Process -> G.Graph -> Maybe M0.BootLevel
 getProcessBootLevel proc rg = let
     pl = G.connectedTo proc Has rg
@@ -400,6 +408,7 @@ getProcessBootLevel proc rg = let
     (_, x:_) -> Just x
     _ -> Nothing
 
+-- | Get all 'M0.Process'es on the given 'Res.Node'.
 getNodeProcesses :: Res.Node -> G.Graph -> [M0.Process]
 getNodeProcesses node rg =
   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
@@ -417,6 +426,8 @@ getAllProcesses rg =
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   ]
 
+-- | Dispatch a request to start @halon:m0d@ on the given
+-- 'Castor.Host'.
 startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
 startMeroService host node = do
   phaseLog "action" $ "Trying to start mero service on "
@@ -481,7 +492,7 @@ retriggerMeroNodeBootstrap n = do
 -- | Send notifications about new mero nodes and new mero servers for
 -- the given set of 'Castor.Host's.
 --
--- Use during startup by 'requestClusterStart'.
+-- Used during startup by 'requestClusterStart'.
 announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
                        -> PhaseM LoopState a ()

@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE ViewPatterns          #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -184,9 +185,11 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
                         ++ ": "
                         ++ show msdev
 
+-- | 'Job' used for 'ruleResetAttempt'.
 jobResetAttempt :: Job ResetAttempt ResetAttemptResult
 jobResetAttempt = Job "reset-attempt"
 
+-- | Try to reset a disk.
 ruleResetAttempt :: Definitions LoopState ()
 ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
       reset         <- phaseHandle "reset"

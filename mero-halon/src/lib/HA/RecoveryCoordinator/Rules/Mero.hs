@@ -1,35 +1,26 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE RecordWildCards            #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Rules.Mero
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Rules and primitives specific to Mero
-
 module HA.RecoveryCoordinator.Rules.Mero where
 
-import HA.EventQueue.Types
-
-import HA.ResourceGraph as G
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Events.Mero
-import HA.RecoveryCoordinator.Events.Service
+import           Control.Distributed.Process (usend, sendChan)
+import           HA.EventQueue.Types
+import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Events.Service
 import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
-import HA.Resources.Mero.Note
+import           HA.ResourceGraph as G
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources        as R
-import HA.Services.Mero
-import Mero.Notification (Get(..), GetReply(..))
-import Mero.Notification.HAState (Note(..))
-
-import Control.Distributed.Process (usend, sendChan)
-
-import Network.CEP
-
-import Prelude hiding (id)
-
+import           HA.Resources.Mero.Note
+import           HA.Services.Mero
+import           Mero.Notification (Get(..), GetReply(..))
+import           Mero.Notification.HAState (Note(..))
+import           Network.CEP
 
 meroRules :: Definitions LoopState ()
 meroRules = do

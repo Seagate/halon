@@ -214,6 +214,8 @@ data HalonVars = HalonVars
   , _hv_mero_kernel_start_timeout :: Int
   -- ^ How many seconds to wait for halon:m0d (and @mero-kernel@) to
   -- come up and declare channels.
+  , _hv_entrypoint_retry_timeout :: Int
+  -- ^ How many seconds to wait before retrying acquarying entrypoint.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Binary HalonVars

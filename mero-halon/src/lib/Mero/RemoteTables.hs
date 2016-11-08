@@ -1,6 +1,10 @@
 -- |
+-- Module    : Mero.RemoteTables
 -- Copyright : (C) 2013 Xyratex Technology Limited.
+--                 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
+--
+-- Collection of 'RemoteTable's used for mero functionality.
 {-# LANGUAGE CPP #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
@@ -23,6 +27,7 @@ import HA.RecoveryCoordinator.Definitions ( __remoteTable )
 
 import Control.Distributed.Process (RemoteTable)
 
+-- | Remote tables used for mero.
 meroRemoteTable :: RemoteTable -> RemoteTable
 meroRemoteTable next =
    HA.Resources.Castor.__remoteTable $

@@ -1,4 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
+-- |
+-- Module    : HA.RecoveryCoordinator.Actions.Castor
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Castor actions.
 module HA.RecoveryCoordinator.Actions.Castor
   ( -- * Resource Graph Primitives
     -- ** Disk Failure Vector

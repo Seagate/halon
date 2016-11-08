@@ -4,7 +4,8 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.Resources.Castor.Initial
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Initial resource load for Castor cluster.
@@ -49,6 +50,7 @@ import qualified Data.Text.Lazy as T (toStrict)
 import           Data.SafeCopy
 import qualified Data.Yaml as Y
 
+-- | Type of network 'Interface'.
 data Network = Data | Management | Local
   deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -58,6 +60,7 @@ instance Hashable Network
 instance A.FromJSON Network
 instance A.ToJSON Network
 
+-- | Network interface on the 'Host'.
 data Interface = Interface {
     if_macAddress :: String
   , if_network :: Network
@@ -70,14 +73,20 @@ instance Hashable Interface
 instance A.FromJSON Interface
 instance A.ToJSON Interface
 
+-- | Halon-specific settings for the 'Host'.
 data HalonSettings = HalonSettings
   { _hs_address :: String
+  -- ^ Address on which Halon should listen on, including port. e.g.
+  -- @10.0.2.15:9000@.
   , _hs_roles :: [RoleSpec]
+  -- ^ List of halon roles for this host. Valid values are determined
+  -- by the halon roles files passed to 'parseInitialData'.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary HalonSettings
 instance Hashable HalonSettings
 
+-- | JSON parser options for 'HalonSettings'.
 halonSettingsOptions :: A.Options
 halonSettingsOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hs_" :: String)) }
@@ -88,12 +97,20 @@ instance A.FromJSON HalonSettings where
 instance A.ToJSON HalonSettings where
   toJSON = A.genericToJSON halonSettingsOptions
 
-data Host = Host {
-    h_fqdn :: String
+-- | Information about a mero host.
+data Host = Host
+  { h_fqdn :: String
+  -- ^ Fully-qualified domain name.
   , h_interfaces :: [Interface]
-  , h_memsize :: Word32 -- ^ Memory in MB
-  , h_cpucount :: Word32 -- ^ Number of CPUs
+  -- ^ Network interfaces
+  , h_memsize :: Word32
+  -- ^ Memory in MB
+  , h_cpucount :: Word32
+  -- ^ Number of CPUs
   , h_halon :: Maybe HalonSettings
+  -- ^ Halon settings, if any. Note that if unset, the node is ignored
+  -- during @hctl bootstrap cluster@ command. This does not imply that
+  -- the host is not loaded as part of the initial data.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary Host
@@ -101,10 +118,15 @@ instance Hashable Host
 instance A.FromJSON Host
 instance A.ToJSON Host
 
-data BMC = BMC {
-    bmc_addr :: String
+-- | Information about @BMC@ interface, used to commands to the
+-- hardware.
+data BMC = BMC
+  { bmc_addr :: String
+  -- ^ Address of the interface.
   , bmc_user :: String
+  -- ^ Username
   , bmc_pass :: String
+  -- ^ Password
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary BMC
@@ -112,11 +134,16 @@ instance Hashable BMC
 instance A.FromJSON BMC
 instance A.ToJSON BMC
 
-data Enclosure = Enclosure {
-    enc_idx :: Int
+-- | Information about enclosures.
+data Enclosure = Enclosure
+  { enc_idx :: Int
+  -- ^ Enclosure index
   , enc_id :: String
+  -- ^ Enclosure name
   , enc_bmc :: [BMC]
+  -- ^ List of 'BMC' interfaces.
   , enc_hosts :: [Host]
+  -- ^ List of 'Host's in the enclosure.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary Enclosure
@@ -124,10 +151,13 @@ instance Hashable Enclosure
 instance A.FromJSON Enclosure
 instance A.ToJSON Enclosure
 
-data Rack = Rack {
-    rack_idx :: Int
+-- | Rack information
+data Rack = Rack
+  { rack_idx :: Int
+  -- ^ Rack index
   , rack_enclosures :: [Enclosure]
-} deriving (Eq, Data, Generic, Show, Typeable)
+  -- ^ List of 'Enclosure's in the index.
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary Rack
 instance Hashable Rack
@@ -136,6 +166,9 @@ instance A.ToJSON Rack
 
 #ifdef USE_MERO
 
+-- | Failure set schemes. Define how failure sets are determined.
+--
+-- TODO: Link to some doc here.
 data FailureSetScheme =
     Preloaded Word32 Word32 Word32
   | Dynamic
@@ -149,15 +182,25 @@ instance A.ToJSON FailureSetScheme
 
 -- | Halon config for a host
 data HalonRole = HalonRole
-  { _hc_name :: String -- ^ Role name
+  { _hc_name :: RoleName
+  -- ^ Role name
   , _hc_h_bootstrap_station :: Bool
+  -- ^ Does this role make the host a tracking station?
   , _hc_h_services :: [String]
-    -- ^ List of strings starting appropriate services
+  -- ^ Commands starting the services for this role. For example, a
+  -- role for the CMU that requires @halon:SSPL@ and @halon:SSPL-HL@
+  -- could define its services as follows:
+  --
+  -- @
+  -- - "sspl-hl start -u sspluser -p sspl4ever"
+  -- - "sspl start -u sspluser -p sspl4ever"
+  -- @
   } deriving (Show, Eq, Data, Ord, Generic, Typeable)
 
 instance Binary HalonRole
 instance Hashable HalonRole
 
+-- | Options for the 'HalonRole' JSON parser.
 halonConfigOptions :: A.Options
 halonConfigOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hc_" :: String)) }
@@ -168,6 +211,7 @@ instance A.FromJSON HalonRole where
 instance A.ToJSON HalonRole where
   toJSON = A.genericToJSON halonConfigOptions
 
+-- | Facts about the cluster.
 data M0Globals = M0Globals {
     m0_data_units :: Word32 -- ^ As in genders
   , m0_parity_units :: Word32  -- ^ As in genders
@@ -194,9 +238,10 @@ instance Hashable M0Globals
 instance A.FromJSON M0Globals
 instance A.ToJSON M0Globals
 
+-- | Devices attached to a 'M0Host'
 data M0Device = M0Device {
-    m0d_wwn :: String
-  , m0d_serial :: String
+    m0d_wwn :: String -- ^ World Wide Name of the device
+  , m0d_serial :: String -- ^ Serial number of the device
   , m0d_bsize :: Word32 -- ^ Block size
   , m0d_size :: Word64 -- ^ Size of disk (in MB)
   , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
@@ -208,12 +253,15 @@ instance A.FromJSON M0Device
 instance A.ToJSON M0Device
 
 -- | Represents an aggregation of three Mero concepts, which we don't
---   necessarily need for the castor implementation - nodes, controllers, and
---   processes.
-data M0Host = M0Host {
-    m0h_fqdn :: String -- ^ FQDN of host this server is running on
+-- necessarily need for the castor implementation - nodes,
+-- controllers, and processes.
+data M0Host = M0Host
+  { m0h_fqdn :: String
+  -- ^ Fully qualified domain name of host this server is running on
   , m0h_processes :: [M0Process]
+  -- ^ Processes that should run on the host.
   , m0h_devices :: [M0Device]
+  -- ^ Information about devices attached to the host.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Binary M0Host
@@ -221,15 +269,18 @@ instance Hashable M0Host
 instance A.FromJSON M0Host
 instance A.ToJSON M0Host
 
-data M0Process = M0Process {
-    m0p_endpoint :: String
+-- | Information about mero process on the host
+data M0Process = M0Process
+  { m0p_endpoint :: String
+  -- ^ Endpoint the process should listen on
   , m0p_mem_as :: Word64
   , m0p_mem_rss :: Word64
   , m0p_mem_stack :: Word64
   , m0p_mem_memlock :: Word64
   , m0p_cores :: [Word64]
-    -- ^ Treated as a bitmap of length (no_cpu) indicating which CPUs to use
+  -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use
   , m0p_services :: [M0Service]
+  -- ^ List of services this process should run.
   , m0p_boot_level :: Word64
 } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -238,9 +289,11 @@ instance Hashable M0Process
 instance A.FromJSON M0Process
 instance A.ToJSON M0Process
 
+-- | Information about a service
 data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , m0s_endpoints :: [String]
+  -- ^ Listen endpoints for the service itself.
   , m0s_params :: ServiceParams
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN
 } deriving (Eq, Data, Generic, Show, Typeable)
@@ -252,6 +305,8 @@ instance A.ToJSON M0Service
 
 #endif
 
+-- | Parsed initial data that halon buids its initial knowledge base
+-- about the cluster from.
 data InitialData = InitialData {
     id_racks :: [Rack]
 #ifdef USE_MERO
@@ -268,14 +323,22 @@ instance A.ToJSON InitialData
 -- | Handy synonym for role names
 type RoleName = String
 
--- | Used as list of roles in halon_facts: the user can optionally
--- give a map overriding the environment in which the template file is
--- expanded.
+-- | Specification for mero roles. Mero roles are user-defined (or
+-- provider defined). This determines which role to look-up and reify
+-- as well as any overrides to the environment.
 data RoleSpec = RoleSpec
   { _rolespec_name :: RoleName
+  -- ^ Role name. Valid values depend on the mero roles passed to
+  -- 'parseInitialData'.
   , _rolespec_overrides :: Maybe Y.Object
+  -- ^ Any user-provided environment for this role. If present, this
+  -- environment is unified (with precedence) with default environment
+  -- (rest of the facts) in call to 'EDE.render': this allows the user
+  -- to override values from the rest of the facts in case we want to
+  -- tweak an existing role.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
+-- | Options for 'RoleSpec' JSON parser.
 rolespecJSONOptions :: A.Options
 rolespecJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_rolespec_" :: String))
@@ -301,12 +364,14 @@ instance Binary RoleSpec where
 
 #ifdef USE_MERO
 
--- | A single parsed role, ready to be used for building 'InitialData'
+-- | A single parsed mero role, ready to be used for building
+-- 'InitialData'.
 data Role = Role
   { _role_name :: RoleName
   , _role_content :: [M0Process]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
+-- | Options for the 'Role' JSON parser.
 roleJSONOptions :: A.Options
 roleJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
@@ -318,7 +383,7 @@ instance A.ToJSON Role where
   toJSON = A.genericToJSON roleJSONOptions
 
 -- | Parse a halon_facts file into a structure indicating roles for
--- each given host
+-- each given host.
 data InitialWithRoles = InitialWithRoles
   { _rolesinit_id_racks :: [Rack]
   , _rolesinit_id_m0_servers :: [(UnexpandedHost, Y.Object)]
@@ -367,6 +432,7 @@ data UnexpandedHost = UnexpandedHost
   , _uhost_m0h_devices :: [M0Device]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
+-- | Options for 'UnexpandedHost' JSON parser.
 unexpandedHostJSONOptions :: A.Options
 unexpandedHostJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_uhost_" :: String)) }
@@ -418,6 +484,7 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
 mkExc :: String -> Either Y.ParseException a
 mkExc = Left . Y.AesonException . ("resolveRoles: " ++)
 
+-- | Expand a role from the given template and env.
 mkRole :: A.FromJSON a
        => EDE.Template -- ^ Role template
        -> Y.Object -- ^ Surrounding env

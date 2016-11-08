@@ -1,57 +1,48 @@
+{-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeOperators             #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.CEP
 -- Copyright : (C) 2013-2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
-
-{-# LANGUAGE CPP                       #-}
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE GADTs                     #-}
-
 module HA.RecoveryCoordinator.CEP where
-
-import Prelude hiding ((.), id)
-import Control.Category
-import Control.Lens
-import Control.Monad (void, when)
-import Data.Binary (Binary)
-import Data.Typeable (Typeable)
-import Data.Proxy
-import Data.Vinyl hiding ((:~:))
-import GHC.Generics
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
-import           Network.CEP
-import           Network.HostName
-
+import qualified HA.EQTracker as EQT
 import           HA.EventQueue.Types
 import           HA.NodeUp
-import           HA.Service
-import           HA.Services.Dummy
-import           HA.Services.Ping
-import qualified HA.EQTracker as EQT
-import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Events.Cluster
-import           HA.RecoveryCoordinator.Rules.Castor
-import qualified HA.RecoveryCoordinator.Rules.Service
-import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
 import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.RC.Actions (addNodeToCluster)
+import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
+import           HA.RecoveryCoordinator.Rules.Castor
+import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
+import qualified HA.RecoveryCoordinator.Rules.Service
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
-import           HA.Resources.HalonVars
-import           HA.Services.DecisionLog (decisionLog, printLogs)
 import qualified HA.Resources.Castor as M0
-import           HA.RecoveryCoordinator.RC.Actions (addNodeToCluster)
+import           HA.Resources.HalonVars
+import           HA.Service
+import           HA.Services.DecisionLog (decisionLog, printLogs)
+import           HA.Services.Dummy
+import           HA.Services.Frontier.CEP (frontierRules)
+import           HA.Services.Ping
+import           HA.Services.SSPL (sspl)
+import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
+import           HA.Services.SSPL.HL.CEP (ssplHLRules)
+import           Network.CEP
+
 #ifdef USE_MERO
-import           Data.Monoid  -- XXX: remote ifdef if possible
-import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
@@ -59,29 +50,37 @@ import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Rules.Mero (meroRules)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero.RC (rules)
-import           HA.Services.SSPL
-  ( sendInterestingEvent
-  , sendNodeCmdChan
-  )
+import           HA.Services.SSPL (sendInterestingEvent, sendNodeCmdChan)
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
 import           HA.Services.SSPL.LL.RC.Actions (findActiveSSPLChannel)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
-#endif
-import           Data.Foldable (for_)
-import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
-import           HA.Services.SSPL (sspl)
-import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
-import           HA.Services.SSPL.HL.CEP (ssplHLRules)
-import           HA.Services.Frontier.CEP (frontierRules)
 
+import           Data.Monoid -- XXX: remote ifdef if possible
+import qualified Data.Text as T
+#endif
+
+import           Control.Category
+import           Control.Lens
+import           Control.Monad (void, when)
+import           Data.Binary (Binary)
+import           Data.Foldable (for_)
+import           Data.Proxy
+import           Data.Typeable (Typeable)
+import           Data.Vinyl hiding ((:~:))
+import           GHC.Generics
+import           Network.HostName
+import           Prelude hiding ((.), id)
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
 
+-- | 'enableDebugMode' when @HALON_DEBUG_RC@ environmental variable
+-- variable is set at the start of the program.
 enableRCDebug :: Definitions LoopState ()
 enableRCDebug = unsafePerformIO $ do
-     mt <- lookupEnv "HALON_DEBUG_RC"
-     return $ maybe (return ()) (const enableDebugMode) mt
+  mt <- lookupEnv "HALON_DEBUG_RC"
+  return $ maybe (return ()) (const enableDebugMode) mt
 
+-- | Rules ran when RC starts, for initalization.
 rcInitRule :: IgnitionArguments -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
@@ -106,6 +105,7 @@ rcInitRule argv = do
 
     start boot Nothing
 
+-- | Collection of all rules that RC should start as part of its normal work.
 rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
 rcRules argv additionalRules = do
 
@@ -201,15 +201,18 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
     args = fldUUID =: Nothing
        <+> fldReq     =: Nothing
        <+> fldRep     =: Nothing
-       <+> RNil
 
--- | TODO: Port tests to subscription and remove use of 'sayRC'
+-- | Print a noisy ('say') message when RC receives 'DummyEvent'. Used
+-- in testing.
+--
+-- TODO: Port tests to subscription and remove use of 'sayRC'
 ruleDummyEvent :: Definitions LoopState () -- XXX: move to rules file
 ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
   i <- getNoisyPingCount
   liftProcess $ sayRC $ "received DummyEvent " ++ str
   liftProcess $ sayRC $ "Noisy ping count: " ++ show i
 
+-- | Request an explicit graph sync with 'SyncPing'.
 ruleSyncPing :: Definitions LoopState () -- XXX: move to rules file
 ruleSyncPing = defineSimple "sync-ping" $
       \(HAEvent uuid (SyncPing str) _) -> do
@@ -223,6 +226,7 @@ newtype RecoverNodeFinished = RecoverNodeFinished Node
 
 instance Binary RecoverNodeFinished
 
+-- | 'Job' used in 'ruleRecoverNode'.
 recoverJob :: Job RecoverNode RecoverNodeFinished
 recoverJob = Job "recover-job"
 
@@ -351,7 +355,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
         <+> fldNode    =: Nothing
         <+> fldHost    =: Nothing
         <+> fldRetries =: Nothing
-        <+> RNil
 
 #ifdef USE_MERO
     -- Reboots the node if possible (if it's a server node) or logs an
@@ -380,6 +383,10 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId
   deriving (Show, Eq, Generic, Typeable)
+-- | Answer to 'RequestRCPid'
+--
+-- TODO: Can remove in favour of "HA.RecoveryCoordinator.RC"
+-- functions.
 newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
   deriving (Show, Eq, Generic, Typeable)
 
@@ -391,8 +398,8 @@ rulePidRequest :: Specification LoopState ()
 rulePidRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCPid caller) -> do
   liftProcess $ getSelfPid >>= usend caller . RequestRCPidAnswer
 
--- | Send 'Logs' to decision-log services. If no service
---   is found across all nodes, just defaults to 'printLogs'.
+-- | Send 'Logs' to decision-log services. If no service is found
+-- across all nodes, just defaults to 'printLogs'.
 sendLogs :: Logs -> LoopState -> Process ()
 sendLogs logs ls = do
   case nodes of
