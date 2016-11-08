@@ -71,3 +71,7 @@ emptyMailbox :: Serializable t => Proxy t -> Process ()
 emptyMailbox t@(Proxy :: Proxy t) = expectTimeout 0 >>= \case
   Nothing -> return ()
   Just (_ :: t) -> emptyMailbox t
+
+-- | Prepend 'say' with @test =>@ for easy log search.
+sayTest :: String -> Process ()
+sayTest m = say $ "test => " ++ m
