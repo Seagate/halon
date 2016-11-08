@@ -203,7 +203,6 @@ Library
                        HA.RecoveryCoordinator.Mero.Events
                        HA.Services.Mero.RC
       Other-Modules:
-                      Mero.Notification.Filter
                       Mero.Engine
                       HA.RecoveryCoordinator.Actions.Mero.Spiel
                       HA.RecoveryCoordinator.Actions.Mero.Node
@@ -668,7 +667,6 @@ Test-Suite scheduler-tests
     CPP-Options:    -DUSE_MERO
     Build-Depends:  confc,
                     rpclite
-    Other-modules:  Mero.Notification.Tests
 
 benchmark halonpings
   Type:             exitcode-stdio-1.0

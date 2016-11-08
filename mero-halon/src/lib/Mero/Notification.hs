@@ -32,10 +32,6 @@ module Mero.Notification
     , runPing
     , pruneLinks
     -- * Worker
-    , notificationWorker
-    , sentInterval
-    , pendingInterval
-    , cancelledInterval
     , getM0Worker
     ) where
 
@@ -48,7 +44,6 @@ import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..))
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
-import Mero.Notification.Filter
 import Mero.Engine
 import Mero.M0Worker
 import HA.EventQueue.Producer (promulgate, promulgateWait)
@@ -231,13 +226,8 @@ initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar glo
   EndpointRef { _erNIRef = Nothing } -> do
     say "initializeInternal: making new endpoint"
     say $ "listening at " ++ show addr
-    self <- getSelfPid
     Catch.onException
       (do
-        pid <- spawnLocal $ do
-                 link self
-                 notificationWorker notificationChannel (void . promulgate . Set)
-        link pid
         proc <- ask
         fbarrier <- liftIO $ newEmptyTMVarIO
         fdone <- liftIO $ newEmptyMVar
@@ -388,7 +378,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     ha_be_error m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
     ha_state_set :: NVec -> IO ()
-    ha_state_set nvec = atomically $ writeTChan notificationChannel nvec
+    ha_state_set nvec = void . CH.forkProcess lnode . promulgateWait $ Set nvec
 
     ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
     ha_entrypoint ni reqId procFid _profFid = void $ CH.forkProcess lnode $ do

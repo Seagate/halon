@@ -28,7 +28,6 @@ import System.IO
 
 #ifdef USE_MERO
 import Mero
-import qualified Mero.Notification.Tests
 import Test.Framework (withTmpDirectory)
 #endif
 
@@ -66,7 +65,6 @@ ut _host transport = do
       , testCase "testRejoinRCDeath " $
           HA.Test.Disconnect.testRejoinRCDeath
             transport (error "breakConnection not supplied in test")
-      , Mero.Notification.Tests.tests transport
 #endif
       ]
 
