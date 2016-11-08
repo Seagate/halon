@@ -405,23 +405,32 @@ notify msg = do
   publish msg
 
 -- | Handle incomming events in a loop.
-mkLoop :: Serializable a => String            -- ^ Rule name suffix.
-       -> Int                                 -- ^ Timeout (in seconds).
-       -> Jump PhaseHandle                    -- ^ Rule to jump to in case of timeout.
+mkLoop :: Serializable a
+       => String
+       -- ^ Rule name suffix.
+       -> PhaseM LoopState l [Jump PhaseHandle]
+       -- ^ Extra phases to 'switch' to along with message handler.
+       -- For example, you can pass in @['timeout' t timeout_phase]@
+       -- to fire @timeout_phase@ if @t@ seconds or more have passed
+       -- since the last interesting message was received.
        -> (a -> l -> PhaseM LoopState l (Either (Jump PhaseHandle) l))
        -- ^ State update function.
-       -> (l -> Maybe [Jump PhaseHandle])     -- ^ Check if loop is finished.
+       -> PhaseM LoopState l (Maybe [Jump PhaseHandle])
+       -- ^ Check if loop is finished.
        -> RuleM LoopState l (Jump PhaseHandle)
-mkLoop name tm tmRule update check = do
+mkLoop name extraPhases update check = do
   loop <- phaseHandle $ "_loop:entry:" ++ name
   inner <- phaseHandle $ "_loop:inner:" ++ name
-  directly loop $ switch [inner, timeout tm tmRule]
+  directly loop $ do
+    phs <- extraPhases
+    switch $ inner : phs
   setPhase inner $ \x -> do
     l <- get Local
     ex <- update x l
     case ex of
       Right l' -> do put Local l'
-                     maybe (continue loop) switch (check l')
+                     mph <- check
+                     maybe (continue loop) switch mph
       Left e -> continue e
   return loop
 

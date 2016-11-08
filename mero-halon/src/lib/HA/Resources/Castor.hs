@@ -185,10 +185,35 @@ data HalonVars = HalonVars
   -- ^ How often should the keepalive check trigger in the mero
   -- process keepalive rule. Seconds.
   , _hv_keepalive_timeout :: Int
-  -- ^ How long to allow for a process to go on without a keepalive
-  -- reply coming back. Seconds.
+  -- ^ How many seconds to allow for a process to go on without a keepalive
+  -- reply coming back.
   , _hv_drive_reset_max_retries :: Int
   -- ^ How many times we want to retry disk reset procedure before giving up.
+  , _hv_process_configure_timeout :: Int
+  -- ^ How many seconds until process configuration is considered to
+  -- be timed out. This includes time spent waiting on @mero-mkfs@.
+  , _hv_process_start_cmd_timeout :: Int
+  -- ^ How many seconds to wait for a process start command to return.
+  -- Note that this is not the same as the time we should wait for a
+  -- process to successfully start, for that see
+  -- '_hv_process_start_timeout'. For configuration timeout
+  -- (@mero-mkfs@ &c.) see '_hv_process_configure_timeout'.
+  , _hv_process_start_timeout :: Int
+  -- ^ How many seconds to wait for the process to start after the
+  -- process start command has completed. For the timeout pertaining
+  -- to the timeout of the start command itself, see
+  -- '_hv_process_start_cmd_timeout'.
+  , _hv_process_max_start_attempts :: Int
+  -- ^ How many times to try and start the same process if it fails to
+  -- start. Note that if systemctl exits with an unexpected error
+  -- code, process start is failed straight away.
+  , _hv_process_restart_retry_interval :: Int
+  -- ^ How many seconds to wait before we try to start a process again
+  -- in case it has failed to start and we haven't met
+  -- '_hv_process_max_start_attempts'.
+  , _hv_mero_kernel_start_timeout :: Int
+  -- ^ How many seconds to wait for halon:m0d (and @mero-kernel@) to
+  -- come up and declare channels.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Binary HalonVars
