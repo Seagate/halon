@@ -17,29 +17,28 @@ module HA.RecoveryCoordinator.Job.Actions
    , fldListenerId
    ) where
 
-import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Job.Internal
+import           Control.Distributed.Process.Serializable
+import           Control.Lens
+import           Control.Monad (unless, join)
+import           Control.Monad.IO.Class (liftIO)
+import           HA.EventQueue.Types
+import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Job.Internal
+import           Network.CEP
 
-import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Core
-
-import Control.Distributed.Process.Serializable
-import Control.Lens
-import Control.Monad (unless, join)
-import Control.Monad.IO.Class (liftIO)
-
-import Data.Binary (Binary)
-import Data.Foldable (for_)
-import Data.Traversable (for)
-import Data.Typeable (Typeable)
-import Data.Proxy
-import Data.Vinyl
+import           Data.Binary (Binary)
+import           Data.Foldable (for_)
+import           Data.Proxy
+import           Data.Traversable (for)
+import           Data.Typeable (Typeable)
 import qualified Data.UUID.V4 as UUID
+import           Data.Vinyl
 
-import Network.CEP
-
+-- | Alias for 'ListenerId' field type.
 type FldListenerId = '("listenerId", Maybe ListenerId)
 
+-- | Field used to store the ID of job listener.
 fldListenerId :: Proxy FldListenerId
 fldListenerId = Proxy
 
@@ -139,6 +138,8 @@ mkJobRule (Job name)
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
 
+-- | Start a job using the given request. Returns a listener ID that
+-- can be kept by the caller.
 startJob :: (Typeable r, Binary r) => r -> PhaseM LoopState l ListenerId
 startJob request = do
   l <- ListenerId <$> liftIO UUID.nextRandom

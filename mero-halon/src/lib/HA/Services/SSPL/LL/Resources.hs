@@ -1,59 +1,48 @@
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.Services.SSPL.LL.Resources
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies #-}
-
+-- Resources used by @halon:sspl-ll@ service.
 module HA.Services.SSPL.LL.Resources where
 
-import Control.Distributed.Process (NodeId)
-
-import HA.SafeCopy.OrphanInstances()
-import HA.Service.TH
-import HA.Services.SSPL.IEM
+import           Control.Distributed.Process (ProcessId, SendPort)
+import           Control.Distributed.Process (NodeId)
+import           Control.Distributed.Process.Closure
+import           HA.ResourceGraph
+import           HA.SafeCopy.OrphanInstances ()
+import           HA.Service.TH
+import           HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
-import HA.ResourceGraph
-
-import Prelude
-
-import SSPL.Bindings
+import           Options.Schema (Schema)
+import           Options.Schema.Builder hiding (name, desc)
+import           SSPL.Bindings
   ( ActuatorRequestMessageActuator_request_type (..)
   , ActuatorRequestMessageActuator_request_typeService_controller (..)
   , ActuatorRequestMessageActuator_request_typeNode_controller (..)
   , ActuatorRequestMessageActuator_request_typeLogging (..)
   )
 
-import Control.Distributed.Process
-  ( ProcessId
-  , SendPort
-  )
-import Control.Distributed.Process.Closure
-
-import Data.Aeson hiding (encode, decode)
-import Data.Binary (Binary, encode, decode)
-import Data.Defaultable
-import Data.Hashable (Hashable)
-import Data.Monoid ((<>))
-import Data.Time
+import           Data.Aeson hiding (encode, decode)
+import           Data.Binary (Binary, encode, decode)
+import           Data.Defaultable
+import           Data.Hashable (Hashable)
+import           Data.Monoid ((<>))
+import           Data.SafeCopy
+import           Data.Serialize hiding (encode, decode)
 import qualified Data.Text as T
-import Data.SafeCopy
-import Data.Serialize hiding (encode, decode)
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
-
-import GHC.Generics (Generic)
-
-import Options.Schema (Schema)
-import Options.Schema.Builder hiding (name, desc)
-
-import System.IO.Unsafe (unsafePerformIO)
-import System.Process (readProcess)
+import           Data.Time
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
+import           GHC.Generics (Generic)
+import           System.IO.Unsafe (unsafePerformIO)
+import           System.Process (readProcess)
 
 --------------------------------------------------------------------------------
 -- SSPL Control messages                                                      --
@@ -64,36 +53,42 @@ import System.Process (readProcess)
 newtype InterestingEventMessage = InterestingEventMessage IEM
   deriving (Binary, Hashable, Typeable)
 
+-- | Possible operations to run on a service.
 data ServiceOp = SERVICE_START | SERVICE_STOP | SERVICE_RESTART | SERVICE_STATUS
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ServiceOp
 instance Hashable ServiceOp
 
+-- | Convert 'ServiceOp' to an operation systemd understands.
 serviceOpString :: ServiceOp -> T.Text
 serviceOpString SERVICE_START = "start"
 serviceOpString SERVICE_STOP = "stop"
 serviceOpString SERVICE_RESTART = "restart"
 serviceOpString SERVICE_STATUS = "status"
 
+-- | systemd command: serivce name and operation to execute.
 data SystemdCmd = SystemdCmd T.Text ServiceOp
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary SystemdCmd
 instance Hashable SystemdCmd
 
+-- | IPMI operations.
 data IPMIOp = IPMI_ON | IPMI_OFF | IPMI_CYCLE | IPMI_STATUS
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary IPMIOp
 instance Hashable IPMIOp
 
+-- | Convert 'IPMIOp' to a string IPMI system can understand.
 ipmiOpString :: IPMIOp -> T.Text
 ipmiOpString IPMI_ON = "on"
 ipmiOpString IPMI_OFF = "off"
 ipmiOpString IPMI_CYCLE = "cycle"
 ipmiOpString IPMI_STATUS = "status"
 
+-- | Parse IPMI operation from upstream into 'IPMIOp'.
 parseIPMIOp :: T.Text -> Maybe IPMIOp
 parseIPMIOp t = case (T.toLower t) of
   "on"     -> Just IPMI_ON
@@ -116,6 +111,7 @@ data RaidCmd =
 instance Binary RaidCmd
 instance Hashable RaidCmd
 
+-- | Convert raid command into format system can understand.
 raidCmdToText :: T.Text -> RaidCmd -> T.Text
 raidCmdToText dev (RaidFail x) = T.intercalate " " ["fail", dev, x]
 raidCmdToText dev (RaidRemove x) = T.intercalate " " ["remove", dev, x]
@@ -125,6 +121,7 @@ raidCmdToText dev RaidRun = T.intercalate " " ["run", dev]
 raidCmdToText dev RaidDetail = T.intercalate " " ["detail", dev]
 raidCmdToText dev RaidStop = T.intercalate " " ["stop", dev]
 
+-- | A command to execute on a node.
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
   | DriveReset T.Text     -- ^ Reset drive
@@ -142,6 +139,7 @@ data NodeCmd
 instance Binary NodeCmd
 instance Hashable NodeCmd
 
+-- | Possible states for LEDs.
 data LedControlState
       = FaultOn
       | FaultOff

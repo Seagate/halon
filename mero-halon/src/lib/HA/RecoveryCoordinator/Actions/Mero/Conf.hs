@@ -359,6 +359,9 @@ lookupDiskSDev :: M0.Disk -> PhaseM LoopState l (Maybe M0.SDev)
 lookupDiskSDev disk =
     G.connectedFrom M0.IsOnHardware disk <$> getLocalGraph
 
+-- | Find a pool the given 'M0.SDev' belongs to.
+--
+-- Fails if multiple pools are found. Metadata pool are ignored.
 getSDevPool :: M0.SDev -> PhaseM LoopState l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
