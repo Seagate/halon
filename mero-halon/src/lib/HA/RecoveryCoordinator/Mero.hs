@@ -37,8 +37,7 @@ import qualified HA.Resources.Castor as M0
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process
-
-import Control.Wire hiding (when)
+import Control.Category
 
 import Data.Binary (Binary)
 import Data.Dynamic

@@ -31,7 +31,6 @@ module Network.CEP
     , directly
     , setPhase
     , setPhaseIf
-    , setPhaseWire
     , setPhaseSequenceIf
     , setPhaseSequence
     , phaseHandle
@@ -93,7 +92,6 @@ module Network.CEP
 
     -- * Misc
     , Some(..)
-    , occursWithin
     -- * Re-export
     , module Network.CEP.Execution
     ) where
@@ -107,12 +105,9 @@ import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
 import           Control.Monad.Catch (bracket_)
-import           Control.Wire (mkPure)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
-import Data.Typeable (typeRep)
-import           FRP.Netwire (dtime)
 
 import Network.CEP.Buffer
 import Network.CEP.Engine
@@ -122,6 +117,7 @@ import Network.CEP.Types
 import Network.CEP.Utils
 import Data.PersistMessage
 
+import System.Clock
 import Debug.Trace (traceEventIO)
 
 -- | Fills type tracking map with every type of messages needed by the engine
@@ -218,7 +214,6 @@ execute s defs = runItForever $ cepEngine s defs
 -- | Set of messages accepted by the 'runItForever' driver.
 data AcceptedMsg
     = SubMsg Subscribe
-    | TimeoutMsg Timeout
     | Debug RuntimeInfoRequest
     | UnsubMsg Unsubscribe
     | SomeMsg Message
@@ -228,7 +223,8 @@ data AcceptedMsg
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
   let debug_mode = stepForward debugModeSetting start_eng
-  bootstrap debug_mode [] (1 :: Integer) start_eng
+  p <- liftIO $ getTime Monotonic
+  bootstrap debug_mode [] (1 :: Integer) . snd =<< stepForward (timeoutMsg p) start_eng
   where
     bootstrap debug_mode ms 1 eng = do
       (ri, nxt_eng) <- stepForward tick eng
@@ -238,13 +234,14 @@ runItForever start_eng = do
         then do
           when debug_mode $ liftIO $ do
             putStrLn "<~~~~~~~~~~ INIT RULE FINISHED ~~~~~~~~~~>"
-          cruise debug_mode 2 nxt_eng
+
+          p <- liftIO $ getTime Monotonic
+          cruise debug_mode 2 . snd =<< stepForward (timeoutMsg p) nxt_eng
         else bootstrap debug_mode ms 2 nxt_eng
     bootstrap debug_mode ms loop eng = do
       msg <- receiveWait
                [ match (return . SubMsg)
                , match (return . UnsubMsg)
-               , match (return . TimeoutMsg)
                , match (return . SomeSMsg)
                , matchAny (return . SomeMsg)
                ]
@@ -258,7 +255,6 @@ runItForever start_eng = do
         other -> do
           let m :: Request 'Write (Process (RunInfo, Engine))
               m = case other of
-                    TimeoutMsg t -> timeoutMsg t
                     SomeMsg x    -> rawIncoming x
                     SomeSMsg x   -> rawPersisted x
                     _            -> error "impossible: runItForever"
@@ -280,41 +276,44 @@ runItForever start_eng = do
                   let lefts = reverse (m:ms) in
                   forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
                 else bootstrap debug_mode (m:ms) (succ loop) nxt_eng
-    forwardLeftOvers debug_mode loop eng [] =
-      cruise debug_mode loop eng
+    forwardLeftOvers debug_mode loop eng [] = do
+      p <- liftIO $ getTime Monotonic
+      cruise debug_mode loop . snd =<< stepForward (timeoutMsg p) eng
     forwardLeftOvers debug_mode loop eng (x:xs) = do
       (ri, nxt_eng) <- stepForward x eng
       let act = requestAction x
       when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
       forwardLeftOvers debug_mode (succ loop) nxt_eng xs
 
+    -- Normal execution of the engine
     cruise debug_mode !loop eng
       | stepForward engineIsRunning eng = do
-        -- Consume all technical messages in prior to other.
-        mtech <-   receiveTimeout 0 [ match (return . SubMsg)
-                                    , match (return . TimeoutMsg)
-                                    , match (return . Debug)
-                                    , match (return . UnsubMsg)
-                                    ]
+        p <- liftIO $ getTime Monotonic
+        eng' <- snd <$> stepForward (timeoutMsg p) eng
+        -- if we have any runnable rule we first want to check new incoming
+        -- messages (and prioritize technical ones), then run machine.
+        mtech <- receiveTimeout 0 tech
         case mtech of
-          Nothing -> 
-            go eng =<< receiveTimeout 0 [ match (return . SubMsg)
-                                        , match (return . TimeoutMsg)
-                                        , match (return . Debug)
-                                        , match (return . UnsubMsg)
-                                        , match (return . SomeSMsg)
-                                        , matchAny (return . SomeMsg)
-                                        ]
-          Just m  -> go eng (Just m)
-      | otherwise =
-        go eng . Just =<< receiveWait [ match (return . SubMsg)
-                                      , match (return . TimeoutMsg)
-                                      , match (return . Debug)
-                                      , match (return . UnsubMsg)
-                                      , match (return . SomeSMsg)
-                                      , matchAny (return . SomeMsg)
-                                      ]
+          Nothing -> go eng' =<< receiveTimeout 0 all_events
+          Just m  -> go eng' (Just m)
+      | otherwise = do
+        -- If machine is not running we just wait for next event if exists.
+        case stepForward engineNextEvent eng of
+          Nothing -> go eng . Just =<< receiveWait all_events
+          Just t  -> do
+            p <- liftIO $ getTime Monotonic
+            let tm = (\(TimeSpec s ns) -> (s*10^(9::Int) + ns) `div` 1000 ) $ p `diffTimeSpec` t
+            mmsg <- receiveTimeout (fromIntegral tm) all_events
+            case mmsg of
+              Nothing -> do eng' <- snd <$> stepForward (timeoutMsg p) eng
+                            cruise debug_mode loop eng'
+              _       -> go eng mmsg
       where
+        tech = [ match (return . SubMsg)
+               , match (return . Debug)
+               , match (return . UnsubMsg)
+               ]
+        all_events = tech ++ [match (return . SomeSMsg), matchAny (return . SomeMsg)]
         go _inner (Just (Debug (RuntimeInfoRequest pid mem))) = do
           let info = stepForward (getRuntimeInfo mem) eng
           usend pid info
@@ -335,7 +334,6 @@ runItForever start_eng = do
                    $ do
             let m :: Request 'Write (Process (RunInfo, Engine))
                 m = case other of
-                      TimeoutMsg t -> timeoutMsg t
                       SomeSMsg x   -> rawPersisted x
                       SomeMsg x    -> rawIncoming x
                       _            -> error "impossible: runItForever"
@@ -534,16 +532,3 @@ unsubscribeThem pid _ them = rawUnsubscribeThem pid (fingerprint (undefined :: a
 rawUnsubscribeThem :: ProcessId -> Fingerprint -> ProcessId -> Process ()
 rawUnsubscribeThem pid key them = usend pid (Unsubscribe fgBs them) where
   fgBs = encodeFingerprint key
-
--- | @occursWithin n t@ Lets through an event every time it occurs @n@ times
---   within @t@ seconds.
-occursWithin :: Int -> Int -> CEPWire a a
-occursWithin cnt frame = go 0 frame_spec
-  where
-    frame_spec = toSecs frame
-    go nb t = mkPure $ \ds a ->
-        let nb' = nb + 1
-            t'  = t - dtime ds in
-        if nb' == cnt && t' > 0
-        then (Right a, go 0 frame_spec)
-        else (Left (), go nb' t')

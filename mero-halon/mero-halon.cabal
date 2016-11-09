@@ -152,7 +152,6 @@ Library
                    replicated-log,
                    unordered-containers,
                    cep,
-                   netwire,
                    uuid,
                    random,
                    safecopy,

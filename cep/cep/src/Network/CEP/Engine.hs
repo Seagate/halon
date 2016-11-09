@@ -35,6 +35,7 @@ import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
 import           Data.Traversable (mapAccumL)
 import           Data.UUID (UUID)
+import qualified Data.HashPSQ as PSQ
 import           Data.ByteString.Lazy (ByteString)
 import           Debug.Trace (traceEventIO)
 import           Control.Lens
@@ -44,6 +45,7 @@ import GHC.Generics
 import GHC.DataSize (recursiveSize)
 #endif
 import System.IO.Unsafe (unsafePerformIO)
+import System.Clock
 
 import Data.PersistMessage
 import Network.CEP.Buffer
@@ -93,12 +95,13 @@ data Action a where
     Unpersist      :: PersistMessage  -> Action RunInfo
     NewSub         :: Subscribe -> Action ()
     Unsub          :: Unsubscribe -> Action ()
-    TimeoutArrived :: Timeout -> Action RunInfo
+    TimeoutArrived :: TimeSpec -> Action ()
 
 data EngineSetting a where
     EngineDebugMode      :: EngineSetting Bool
     EngineInitRulePassed :: EngineSetting Bool
     EngineIsRunning      :: EngineSetting Bool
+    EngineNextEvent      :: EngineSetting (Maybe TimeSpec)
 
 data RuntimeInfoQuery a where
     RuntimeInfoTotal :: RuntimeInfoQuery RuntimeInfo
@@ -132,6 +135,9 @@ debugModeSetting = Query $ GetSetting EngineDebugMode
 engineIsRunning :: Request 'Read Bool
 engineIsRunning = Query $ GetSetting EngineIsRunning
 
+engineNextEvent :: Request 'Read (Maybe TimeSpec)
+engineNextEvent = Query $ GetSetting EngineNextEvent
+
 getRuntimeInfo :: Bool -- ^ Include memory info?
                -> Request 'Read RuntimeInfo
 getRuntimeInfo mem = Query $ GetRuntimeInfo mem RuntimeInfoTotal
@@ -151,7 +157,7 @@ rawIncoming = Run . Incoming
 rawPersisted :: PersistMessage -> Request 'Write (Process (RunInfo, Engine))
 rawPersisted = Run . Unpersist
 
-timeoutMsg :: Timeout -> Request 'Write (Process (RunInfo, Engine))
+timeoutMsg :: TimeSpec -> Request 'Write (Process ((), Engine))
 timeoutMsg = Run . TimeoutArrived
 
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
@@ -215,6 +221,10 @@ data Machine s =
     , _machMaxThreadId :: !SMId
       -- ^ Maximum SMId
     , _machSFingerprint :: !(M.Map StablePrint Fingerprint)
+      -- ^ List of the stable fingeprints
+    , _machTimestamp :: TimeSpec
+      -- ^ Machine current timestamp
+    , _machEvents :: PSQ.HashPSQ RuleKey TimeSpec RuleKey
     }
 
 makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
@@ -222,8 +232,9 @@ makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
               ''Machine
 
 engineState :: Lens' (Machine s) (EngineState s)
-engineState f m = (\(EngineState t' s') -> m{_machMaxThreadId=t',_machState=s'})
-               <$> f (EngineState (_machMaxThreadId m) (_machState m))
+engineState f m =
+      (\(EngineState t' x z s') -> m{_machMaxThreadId=t',_machState=s',_machTimestamp=x, _machEvents=z})
+  <$> f (EngineState (_machMaxThreadId m) (_machTimestamp m) (_machEvents m) (_machState m))
 
 -- | Creates CEP engine state with default properties.
 emptyMachine :: s -> Machine s
@@ -246,6 +257,8 @@ emptyMachine s =
     , _machDefaultHandler = Nothing
     , _machMaxThreadId    = 0
     , _machSFingerprint   = M.empty
+    , _machTimestamp      = 0 --  bad
+    , _machEvents         = PSQ.empty
     }
 
 newEngine :: Machine s -> Engine
@@ -303,8 +316,8 @@ defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (Incoming _)) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
-defaultHandler st next (Run (TimeoutArrived _)) =
-    return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler st next (Run (TimeoutArrived t)) =
+    return ((), Engine $ next st{_machTimestamp=t})
 defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
   case M.lookup sfp (_machSFingerprint st) of
     Nothing -> do for_ (_machDefaultHandler st) $ \handler ->
@@ -316,6 +329,7 @@ defaultHandler st _ (Query (GetSetting s)) =
       EngineDebugMode      -> _machDebugMode st
       EngineInitRulePassed -> _machInitRulePassed st
       EngineIsRunning      -> not (null (_machRunningSM st))
+      EngineNextEvent      -> (\(_,x,_) -> x) <$> PSQ.findMin (_machEvents st)
 defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
     let running = _machRunningSM st
         suspended = _machSuspendedSM st
@@ -356,9 +370,6 @@ cepInitRule :: InitRule g -> Machine g -> Request m a -> a
 cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
     case i of
       Tick -> go NoMessage _machTotalProcMsgs
-      TimeoutArrived (Timeout k)
-        | k == initRuleKey -> go NoMessage _machTotalProcMsgs
-        | otherwise        -> defaultHandler st (cepInitRule ir) req
       Incoming m@((`M.lookup` typs) . messageFingerprint -> Just tpe) ->
           let msg       = GotMessage tpe m
               msg_count = _machTotalProcMsgs + 1 in
@@ -368,7 +379,6 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
   where
     go (GotMessage ty m) msg_count = do
       let stack' = runSM (_ruleStack rd) (SMMessage ty m)
-          -- XXX: update runinfo
           rinfo = RunInfo 0 (RulesBeenTriggered [])
       return (rinfo, Engine $ cepInitRule (InitRule rd{_ruleStack=stack'} typs)
                                           st{ _machTotalProcMsgs = msg_count })
@@ -379,10 +389,11 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       -- We do not allow fork inside init rule, this may be ok or not
       -- depending on a usecase, but allowing fork will make implementation
       -- much harder and do not worth it, unless we have a concrete example.
-      ([(SMResult _ out infos mlogs, nxt_stk)], (EngineState mti g)) <-
-          State.runStateT (runSM stk exe) (EngineState _machMaxThreadId _machState)
+      ([(SMResult _ out infos mlogs, nxt_stk)], (EngineState mti _ e g)) <-
+          State.runStateT (runSM stk exe)
+                          (EngineState _machMaxThreadId _machTimestamp _machEvents _machState)
       let new_rd = rd { _ruleStack = nxt_stk }
-          nxt_st = st { _machState = g }
+          nxt_st = st { _machState = g, _machEvents = e }
           rinfo = RuleInfo InitRuleName [(out, infos)]
           info  = RunInfo msg_count (RulesBeenTriggered [rinfo])
       for_ _machLogger $ \f -> for_ mlogs $ \l -> f l g
@@ -404,15 +415,20 @@ cepCruise !st req@(Run t) =
         (infos, nxt_st) <- State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
-      TimeoutArrived (Timeout key) ->
-          let xs     = filter (\(SMData _ k _) -> key == k) $ _machSuspendedSM st
-              nxt_su = filter (\(SMData _ k _) -> key /= k) $ _machSuspendedSM st
-              prev   = _machRunningSM st
-              nxt_st = st { _machRunningSM   = prev ++ xs
-                          , _machSuspendedSM = nxt_su }
-              res    = RulesBeenTriggered []
-              info   = RunInfo (_machTotalProcMsgs st) res in
-          return (info, Engine $ cepCruise nxt_st)
+      TimeoutArrived ts ->
+        let loop nst = case PSQ.findMin (_machEvents nst) of
+              Nothing -> return ((), Engine $ cepCruise nst{_machEvents=PSQ.deleteMin (_machEvents nst)})
+              Just (key,t',_)
+                | ts < t' ->  return ((), Engine $ cepCruise nst)
+                | otherwise ->
+                   let xs = filter (\(SMData _ k _) -> key == k) $ _machSuspendedSM nst
+                       nxt_su = filter (\(SMData _ k _) -> key /= k) $ _machSuspendedSM nst
+                       prev   = _machRunningSM nst
+                       nxt_st = st { _machRunningSM   = prev ++ xs
+                                   , _machSuspendedSM = nxt_su
+                                   , _machEvents = PSQ.deleteMin (_machEvents nst)}
+                   in return ((), Engine $ cepCruise nxt_st)
+        in do loop st{_machTimestamp = ts}
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st

@@ -32,8 +32,6 @@ packages:
     git: https://github.com/tweag/network-transport-tcp.git
     commit: dd1369e8ed3af660e46fdaad913e04f8dd34d2cc
   extra-dep: true
-- location: vendor/netwire
-  extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/options-schema.git
     commit: 9dbe49046b52b90eff5952e33e99583f1b30d17e

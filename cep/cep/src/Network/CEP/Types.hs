@@ -19,46 +19,38 @@ import GHC.Generics
 import           Control.Distributed.Process hiding (catch)
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
+import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Exception (throwIO)
 import           Control.Monad.Catch
-import           Control.Wire hiding ((.), loop)
 import           Data.Binary hiding (get, put)
 import qualified Data.Sequence as S
 import           Data.Int
 import qualified Data.Map as M
 import           Data.Set (Set)
+import           Data.Monoid ((<>))
 import           Data.UUID (UUID)
 import           Data.PersistMessage
+import qualified Data.HashPSQ as PSQ
+import           Data.Hashable
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import           System.Clock
 import           Control.Lens.TH
 
 import Network.CEP.Buffer
 
-newtype Time = Time TimeSpec deriving (Eq, Ord, Num, Show)
+data Time = Absolute !TimeSpec
+          | Relative !Int
+          deriving (Eq, Ord, Show)
 
 instance Monoid Time where
-    mempty = Time 0
+    mempty = Relative 0
+    mappend (Relative a) (Relative b) = Relative $ a + b
+    mappend (Relative a) (Absolute b) = Absolute $ b + toSecs a
+    mappend (Absolute a) (Relative b) = Absolute $ a + toSecs b
+    mappend (Absolute a) (Absolute b) = Absolute $ max a b
 
-    mappend (Time a) (Time b) = Time (a + b)
-
-instance Real Time where
-    toRational (Time i) = toRational $ timeSpecAsNanoSecs i
-
-diffTime :: Time -> Time -> Time
-diffTime (Time a) (Time b) = Time (diffTimeSpec a b)
-
-systemClockSession :: Session Process (Timed Time ())
-systemClockSession = go <*> pure ()
-  where
-    go =  Session $ do
-      t0 <- liftIO $ getTime Monotonic
-      return (Timed mempty, loop $ Time t0)
-
-    loop (Time t') = Session $ do
-      t <- liftIO $ getTime Monotonic
-      let !dt = diffTimeSpec t t'
-      return (Timed $ Time dt, loop $ Time t)
+toSecs :: Int -> TimeSpec
+toSecs i = TimeSpec (fromIntegral i) 0
 
 -- | That message is sent when a 'Process' asks for a subscription.
 data Subscribe =
@@ -81,13 +73,6 @@ instance Binary Unsubscribe
 
 newtype SMId = SMId { getSMId :: Int64 } deriving (Eq, Show, Ord, Num)
 
-data EngineState g = EngineState
-   { _engineStateMaxId :: {-# UNPACK #-} !SMId
-   , _engineStateGlobal :: !g
-   }
-
-makeLenses ''EngineState
-
 -- | Used as a key for referencing a rule at upmost level of the CEP engine.
 --   The point is to allow the user to refer to rules by their name while
 --   being able to know which rule has been defined the first. That give us
@@ -96,18 +81,25 @@ data RuleKey =
     RuleKey
     { _ruleKeyId   :: !Int
     , _ruleKeyName :: !String
-    } deriving (Show, Generic)
+    } deriving (Eq, Show, Generic)
 
 instance Binary RuleKey
-
-instance Eq RuleKey where
-    RuleKey k1 _ == RuleKey k2 _ = k1 == k2
+instance Hashable RuleKey
 
 instance Ord RuleKey where
     compare (RuleKey k1 _) (RuleKey k2 _) = compare k1 k2
 
 initRuleKey :: RuleKey
 initRuleKey = RuleKey 0 "init"
+
+data EngineState g = EngineState
+   { _engineStateMaxId :: {-# UNPACK #-} !SMId
+   , _engineTimestamp   :: {-# UNPACK #-} !TimeSpec
+   , _engineEvents      :: PSQ.HashPSQ RuleKey TimeSpec RuleKey
+   , _engineStateGlobal :: !g
+   }
+
+makeLenses ''EngineState
 
 newSubscribeRequest :: forall proxy a. Serializable a
                     => ProcessId
@@ -136,13 +128,13 @@ type Subscribers = M.Map Fingerprint (Set ProcessId)
 type SMLogs = S.Seq (String, String, String)
 
 -- | Keeps track of time in order to use time varying combinators (FRP).
-type TimeSession = Session Process (Timed Time ())
+-- type TimeSession = Session Process (Timed Time ())
 
 -- | Common Netwire 'Wire' type used accross CEP space. It's use for type
 --   dependent state machine.
-type CEPWire a b = Wire (Timed Time ()) () Process a b
+-- type CEPWire a b = Wire (Timed Time ()) () Process a b
 
-type SimpleCEPWire a b = Wire (Timed Time ()) () Identity a b
+-- type SimpleCEPWire a b = Wire (Timed Time ()) () Identity a b
 
 -- | Rule dependent, labeled state machine. 'Phase's are defined withing a rule.
 --   'Phase's are able to handle a global state `g` shared with all rules and a
@@ -169,23 +161,19 @@ newtype Timeout = Timeout RuleKey deriving Binary
 data Jump a
     = NormalJump a
       -- ^ Accesses a resource directly.
-    | ReactiveJump TimeSession (SimpleCEPWire () ()) a
-      -- ^ Accesses a resource only when its 'SimpleWire' advises to do it. A
-      --   a 'SimpleWire' is used in order to express a wider set of time
-      --   restricted predicate.
+    | OnTimeJump Time a
+      -- ^ Jump after some time happened.
+    deriving Show
 
 instance Eq a => Eq (Jump a) where
   (NormalJump x) == (NormalJump y) = x == y
-  (ReactiveJump _ _ x) == (ReactiveJump _ _ y) = x == y
+  -- (ReactiveJump _ _ x) == (ReactiveJump _ _ y) = x == y
   _ == _ = False
-
-instance Show a => Show (Jump a) where
-  show (NormalJump x) = show x
-  show (ReactiveJump _ _ x) = "timeout " ++ show x
 
 instance Functor Jump where
     fmap f (NormalJump a)       = NormalJump $ f a
-    fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
+    fmap f (OnTimeJump t a)     = OnTimeJump t $ f a
+    -- fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
 
 -- | Just like 'MonadIO', 'MonadProcess' should satisfy the following
 -- laws:
@@ -211,67 +199,69 @@ instance MonadCatch (ProgramT (PhaseInstr g l) Process) where
 normalJump :: a -> Jump a
 normalJump = NormalJump
 
+getSnapshotTime :: State.StateT (EngineState g) Process TimeSpec
+getSnapshotTime = State.gets _engineTimestamp
+
+addEvent :: RuleKey -> Time -> State.StateT (EngineState g) Process Time
+addEvent key t = do
+  t' <- case t of
+          Absolute k -> return k
+          Relative r -> (+) <$> liftIO (getTime Monotonic) <*> pure (toSecs r)
+  State.modify $ \e ->
+    e{_engineEvents=snd $ PSQ.alter (\mx -> case mx of
+         Nothing -> ((), Just (t', key))
+         Just (o,_) -> ((), Just (min t' o, key))) key (_engineEvents e)}
+  return (Absolute t')
+
 -- | Jumps to a resource after a certain amount of time.
 timeout :: Int -> Jump PhaseHandle -> Jump PhaseHandle
-timeout dt (NormalJump a) =
-    ReactiveJump systemClockSession (after $ toSecs dt) a
-timeout dt (ReactiveJump c w a) =
-    ReactiveJump c (w <> after (toSecs dt)) a
-
-toSecs :: Int -> Time
-toSecs i = Time $ TimeSpec (fromIntegral i) 0
+timeout dt (NormalJump a)   = OnTimeJump (mempty <> Relative dt) a
+timeout dt (OnTimeJump d a) = OnTimeJump (d <> Relative dt) a
 
 jumpPhaseName :: Jump (Phase g l) -> String
 jumpPhaseName (NormalJump p)       = _phName p
-jumpPhaseName (ReactiveJump _ _ p) = _phName p
+jumpPhaseName (OnTimeJump _ p)     = _phName p
 
 jumpPhaseCall :: Jump (Phase g l) -> PhaseCall g l
 jumpPhaseCall (NormalJump p)       = _phCall p
-jumpPhaseCall (ReactiveJump _ _ p) = _phCall p
+jumpPhaseCall (OnTimeJump _ p)     = _phCall p
 
 jumpPhaseHandle :: Jump PhaseHandle -> String
 jumpPhaseHandle (NormalJump h)       = _phHandle h
-jumpPhaseHandle (ReactiveJump _ _ h) = _phHandle h
+jumpPhaseHandle (OnTimeJump _ h)     = _phHandle h
+
 
 -- | Update the time of a 'Jump'. If it's ready, gets its value.
-jumpApplyTime :: Jump a -> Process (Either (Jump a) a)
+jumpApplyTime :: Jump a -> State.StateT (EngineState g) Process (Either (Jump a) a)
 jumpApplyTime (NormalJump h)       = return $ Right h
-jumpApplyTime (ReactiveJump c w h) = do
-    (t, nxt_c) <- stepSession c
-    let (res, nxt) = runIdentity $ stepWire w t (Right ())
-    case res of
-      Left _ -> return $ Left $ ReactiveJump nxt_c nxt h
-      _      -> return $ Right h
+jumpApplyTime (OnTimeJump p h)     = do
+   ct <- getSnapshotTime
+   case p of
+     Absolute wt | ct < wt -> return $ Left $ OnTimeJump p h
+                 | otherwise -> return $ Right h
+     -- no reason why we could appear here, but do the best we could.
+     Relative{} -> return $ Left $ OnTimeJump (Absolute ct <> p) h
 
 -- | Applies a 'Jump' tatic to another one without caring about its internal
 --   value.
 jumpBaseOn :: Jump a -> Jump b -> Jump b
-jumpBaseOn (ReactiveJump c w _) jmp =
-    case jmp of
-      ReactiveJump _ v b -> ReactiveJump c (w <> v) b
-      NormalJump b       -> ReactiveJump c w b
+jumpBaseOn (OnTimeJump p _) jmp =
+     case jmp of
+       OnTimeJump r b -> OnTimeJump (p <> r) b
+       NormalJump b   -> OnTimeJump p b
 jumpBaseOn _ jmp = jmp
 
 -- | Creates a process that will emit a 'Timeout' message once a 'SimpleWire'
 --   will emit a value.
-jumpEmitTimeout :: RuleKey -> Jump a -> Process (Jump a)
+jumpEmitTimeout :: RuleKey -> Jump a -> State.StateT (EngineState g) Process (Jump a)
 jumpEmitTimeout key jmp = do
     res <- jumpApplyTime jmp
     case res of
       Left nxt_jmp ->
-        case nxt_jmp of
-          ReactiveJump s_sess w _ -> do
-            self <- getSelfPid
-            let action c_sess cur_w = do
-                  (c_t, nxt_sess) <- stepSession c_sess
-                  let (c_res, nxt_w) = runIdentity $ stepWire cur_w c_t (Right ())
-                  case c_res of
-                    Left _ -> do
-                      (_ :: Maybe ()) <- receiveTimeout 1000 []
-                      action nxt_sess nxt_w
-                    Right _ -> usend self (Timeout key)
-            _ <- spawnLocal $ action s_sess w
-            return nxt_jmp
+        case nxt_jmp of 
+          (OnTimeJump r b) -> do
+              r' <- addEvent key r
+              return $ OnTimeJump r' b
           _ -> return nxt_jmp
       Right a -> return (NormalJump a)
 
@@ -335,7 +325,7 @@ data PhaseStep a b =
 -- 'PhaseSeq': Uses 'PhaseStep' state machine in order to produce a
 -- @b@ message.
 data PhaseType g l a b where
-    PhaseWire  :: CEPWire a b -> PhaseType g l a b
+    -- PhaseWire  :: CEPWire a b -> PhaseType g l a b
     PhaseMatch :: (a -> g -> l ->  Process (Maybe b)) -> PhaseType g l a b
     PhaseNone  :: PhaseType g l a a
     PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType g l a b
@@ -398,15 +388,6 @@ setPhaseIf :: (Serializable a, Serializable b)
            -> (b -> PhaseM g l ())
            -> RuleM g l ()
 setPhaseIf h p action = singleton $ SetPhase h (ContCall (PhaseMatch p) action)
-
--- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would require the
---   Netwire state machine to yield a value in order to start.
-setPhaseWire :: (Serializable a, Serializable b)
-             => Jump PhaseHandle
-             -> CEPWire a b
-             -> (b -> PhaseM g l ())
-             -> RuleM g l ()
-setPhaseWire h w action = singleton $ SetPhase h (ContCall (PhaseWire w) action)
 
 -- | Internal use only. Waits for 2 type of messages to come sequentially and
 --   apply them to a predicate. If the predicate is statisfied, we yield those

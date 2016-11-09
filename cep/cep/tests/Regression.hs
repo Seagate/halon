@@ -43,7 +43,6 @@ testFork = do
   where
 
     rules sup = do
-      enableDebugMode
       define "insert" $ do
         handler <- phaseHandle "load"
         work    <- phaseHandle "work"

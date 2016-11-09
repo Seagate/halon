@@ -23,7 +23,6 @@ ${CBLRPM} srpms ${HALONSRC}/vendor/options-schema || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/tasty-files || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/network-transport-tcp || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/network-transport-inmemory || exit 6
-${CBLRPM} srpms ${HALONSRC}/vendor/netwire || exit 6
 ${CBLRPM} srpms ${HALONSRC}/vendor/distributed-process || exit 6
 ${CBLRPM} srpms ${HALONSRC}/network-transport-controlled || exit 6
 ${CBLRPM} srpms ${HALONSRC}/distributed-process-trans || exit 6

@@ -22,6 +22,7 @@ import           Control.Monad.Identity (runIdentity)
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
+import           Control.Lens
 import qualified Data.Map.Strict as M
 
 import Network.CEP.Buffer
@@ -60,9 +61,9 @@ newSM key startPhase rn ps initialBuffer initialL =
       let Just (a :: e) = runIdentity $ unwrapMessage msg in
       SM (bootstrap (bufferInsert a b))
     bootstrap b i@(SMExecute _ _) = do
-        ph <- lift $ jumpEmitTimeout key startPhase
-        EngineState (SMId idx) g <- State.get
-        State.put $ EngineState (SMId (idx+1)) g
+        ph <- jumpEmitTimeout key startPhase
+        EngineState (SMId idx) t g p <- State.get
+        State.put $ EngineState (SMId (idx+1)) t g p
         interpretInput (SMId idx) initialL b [ph] i
 
     interpretInput :: SMId
@@ -95,7 +96,7 @@ newSM key startPhase rn ps initialBuffer initialL =
       ph -> return [(SMResult smId SMSuspended (info []) Nothing
                     , SM $ interpretInput smId l b ph)]
     executeStack logs subs smId l b f info (jmp:phs) = do
-        res <- lift $ jumpApplyTime jmp
+        res <- jumpApplyTime jmp
         case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
@@ -120,7 +121,7 @@ newSM key startPhase rn ps initialBuffer initialL =
                                                (info [SuccessExe pname b buffer])
                                                (mkLogs rn rlogs)
                                     , xs)
-                fin_phs <- lift $ traverse (jumpEmitTimeout key) phs'
+                fin_phs <- traverse (jumpEmitTimeout key) phs'
                 return [(result, SM $ interpretInput idm l' buffer fin_phs)]
               SM_Suspend _ -> executeStack logs subs smId l b
                                 (f.(normalJump ph:))

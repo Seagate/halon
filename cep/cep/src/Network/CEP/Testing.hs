@@ -16,6 +16,7 @@ import Network.CEP.Types
 import Control.Distributed.Process
 
 import Data.Maybe (catMaybes)
+import qualified Data.HashPSQ as PSQ
 import qualified Data.Map as MM
 import qualified Control.Monad.State.Strict as State
 
@@ -25,8 +26,8 @@ runPhase :: forall g l. g       -- ^ Global state.
          -> PhaseM g l ()       -- ^ Phase to exec
          -> Process (g, [(Buffer, l)])      -- ^ Updated global and local state
 runPhase g l b p = do
-    (xs, (EngineState _ g')) <- State.runStateT (runPhaseM "testing" MM.empty Nothing 0 l Nothing b p)
-                                    (EngineState 1 g)
+    (xs, (EngineState _ _ _ g')) <- State.runStateT (runPhaseM "testing" MM.empty Nothing 0 l Nothing b p)
+                                    (EngineState 1 0 PSQ.empty g)
     return (g', catMaybes $ fmap extract (snd <$> xs))
   where
     extract (b', po) = case po of

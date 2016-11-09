@@ -147,7 +147,6 @@ localUpdated = do
           liftProcess $ usend self (Res i)
 
         start ph1 (1 :: Int)
-
     usend pid donut
     usend pid donut
     Res (i :: Int) <- expect
@@ -977,7 +976,7 @@ testsTimeout launch = testGroup "Timeout properties"
   [ testCase "Simple Timeout should work" $ launch testSimpleTimeout
   , testCase "All timeout should work" $ launch testAllTimeout
   , testCase "Continue timeout should work" $ launch testContinueTimeout
-  , testCase "Init rule timeout should work" $ launch testInitTimeout
+  -- , testCase "Init rule timeout should work" $ launch testInitTimeout
   , testCase "Start timeout should work" $ launch testStartTimeout
   , testCase "SetPhase timeout should work" $ launch testSetPhaseTimeout
   , testCase "All timeout reverse should work" $ launch testAllReverseTimeout
@@ -1009,7 +1008,7 @@ testSimpleTimeout = do
             ph1 <- phaseHandle "ph1"
             ph2 <- phaseHandle "ph2"
 
-            directly ph0 $ switch [ph1, timeout 3 ph2]
+            directly ph0 $ switch [ph1, timeout 1 ph2]
 
             setPhase ph1 $ \(Donut _) -> return ()
 
@@ -1063,9 +1062,11 @@ testContinueTimeout = do
     usend pid donut
     () <- expect
     end <- liftIO $ getTime Monotonic
-    let test = diffTimeSpec end begin >= TimeSpec 2 0
-    assertEqual "Should take at least 2 seconds" True test
+    let diff = diffTimeSpec end begin
+        test = diff >= TimeSpec 2 0
+    assertEqual ("Should take at least 2 seconds ("++ show diff++")") True test
 
+{-
 testInitTimeout :: Process ()
 testInitTimeout = do
     self <- getSelfPid
@@ -1083,6 +1084,7 @@ testInitTimeout = do
     pid <- spawnLocal $ execute () specs
     usend pid donut
     expect
+-}
 
 testStartTimeout :: Process ()
 testStartTimeout = do

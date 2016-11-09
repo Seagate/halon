@@ -42,13 +42,14 @@ library
                        mtl,
                        multimap==1.2.*,
                        containers==0.5.*,
-                       netwire,
                        operational,
                        text,
                        transformers,
                        exceptions,
                        lens,
-                       uuid
+                       uuid,
+                       psqueues,
+                       hashable
   default-language:    Haskell2010
   ghc-options:         -Wall
 
@@ -78,7 +79,6 @@ Test-Suite unit-tests
                  cep,
                  binary,
                  containers,
-                 netwire,
                  random,
                  tasty,
                  tasty-hunit,
@@ -107,7 +107,6 @@ Test-Suite unit-tests-scheduler
                  cep,
                  binary,
                  containers,
-                 netwire,
                  random,
                  tasty,
                  tasty-hunit,

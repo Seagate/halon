@@ -70,7 +70,6 @@ extractMsg :: (Serializable a, Serializable b)
            -> State.StateT g Process (Maybe (Extraction b))
 extractMsg typ l buf =
     case typ of
-      PhaseWire _  -> error "phaseWire: not implemented yet"
       PhaseMatch p -> extractMatchMsg p l buf
       PhaseNone    -> return $! extractNormalMsg (Proxy :: Proxy a) buf
       PhaseSeq _ s -> return $! extractSeqMsg s buf
