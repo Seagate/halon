@@ -30,7 +30,7 @@ import           Data.Set (Set)
 import           Data.Monoid ((<>))
 import           Data.UUID (UUID)
 import           Data.PersistMessage
-import qualified Data.HashPSQ as PSQ
+import qualified Data.IntPSQ as PSQ
 import           Data.Hashable
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import           System.Clock
@@ -95,7 +95,7 @@ initRuleKey = RuleKey 0 "init"
 data EngineState g = EngineState
    { _engineStateMaxId :: {-# UNPACK #-} !SMId
    , _engineTimestamp   :: {-# UNPACK #-} !TimeSpec
-   , _engineEvents      :: PSQ.HashPSQ RuleKey TimeSpec RuleKey
+   , _engineEvents      :: !(PSQ.IntPSQ TimeSpec RuleKey)
    , _engineStateGlobal :: !g
    }
 
@@ -210,7 +210,7 @@ addEvent key t = do
   State.modify $ \e ->
     e{_engineEvents=snd $ PSQ.alter (\mx -> case mx of
          Nothing -> ((), Just (t', key))
-         Just (o,_) -> ((), Just (min t' o, key))) key (_engineEvents e)}
+         Just (o,_) -> ((), Just (min t' o, key))) (_ruleKeyId key) (_engineEvents e)}
   return (Absolute t')
 
 -- | Jumps to a resource after a certain amount of time.

@@ -16,7 +16,7 @@ import Network.CEP.Types
 import Control.Distributed.Process
 
 import Data.Maybe (catMaybes)
-import qualified Data.HashPSQ as PSQ
+import qualified Data.IntPSQ as PSQ
 import qualified Data.Map as MM
 import qualified Control.Monad.State.Strict as State
 

@@ -35,7 +35,7 @@ import qualified Data.Sequence       as S
 import qualified Data.Set            as Set
 import           Data.Traversable (mapAccumL)
 import           Data.UUID (UUID)
-import qualified Data.HashPSQ as PSQ
+import qualified Data.IntPSQ as PSQ
 import           Data.ByteString.Lazy (ByteString)
 import           Debug.Trace (traceEventIO)
 import           Control.Lens
@@ -222,9 +222,9 @@ data Machine s =
       -- ^ Maximum SMId
     , _machSFingerprint :: !(M.Map StablePrint Fingerprint)
       -- ^ List of the stable fingeprints
-    , _machTimestamp :: TimeSpec
+    , _machTimestamp :: !TimeSpec
       -- ^ Machine current timestamp
-    , _machEvents :: PSQ.HashPSQ RuleKey TimeSpec RuleKey
+    , _machEvents :: !(PSQ.IntPSQ TimeSpec RuleKey)
     }
 
 makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
@@ -418,7 +418,7 @@ cepCruise !st req@(Run t) =
       TimeoutArrived ts ->
         let loop nst = case PSQ.findMin (_machEvents nst) of
               Nothing -> return ((), Engine $ cepCruise nst{_machEvents=PSQ.deleteMin (_machEvents nst)})
-              Just (key,t',_)
+              Just (_,t',key)
                 | ts < t' ->  return ((), Engine $ cepCruise nst)
                 | otherwise ->
                    let xs = filter (\(SMData _ k _) -> key == k) $ _machSuspendedSM nst
