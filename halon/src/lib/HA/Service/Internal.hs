@@ -36,6 +36,7 @@ module HA.Service.Internal
   , HA.Service.Internal.__remoteTable
   ) where
 
+import HA.Debug
 import Control.Distributed.Process hiding (try, catch)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
@@ -252,6 +253,7 @@ remoteStartService (caller, msg) = do
       say $ "[Service:" ++ name ++ "] starting at " ++ show pid
       say $ "[Service:" ++ name ++ "] config " ++ show conf
       prc <- unClosure (serviceProcess svc)
+      labelProcess $ "ha:service:" ++ name
       ((prc conf >> (do
             say $ "[Service:" ++ name  ++ "] exited without setting that it's safe."
             promulgateWait $ ServiceFailed (Node (processNodeId pid)) msg pid))

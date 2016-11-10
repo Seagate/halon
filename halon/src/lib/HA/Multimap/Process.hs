@@ -15,6 +15,7 @@
 module HA.Multimap.Process
     ( startMultimap, __remoteTable ) where
 
+import HA.Debug
 import HA.Logger (mkHalonTracer)
 import HA.Multimap ( StoreUpdate(..), StoreChan(..), MetaInfo(..) )
 import HA.Multimap.Implementation
@@ -58,7 +59,7 @@ updateStore su (mi, mm) = (newMI, foldl' (flip applyUpdate) mm su)
 
 -- | Sends the multimap in chunks to the given process.
 readStore :: ProcessId -> (MetaInfo, Multimap) -> Process ()
-readStore caller (mi, mmap) = void $ spawnLocal $ do
+readStore caller (mi, mmap) = void $ spawnLocalName "ha:multimap:reader" $ do
     link caller
     getSelfPid >>= usend caller
     -- For some reason, 'encode' from binary does not care to conflate the
@@ -96,7 +97,7 @@ startMultimap :: RGroup g => g (MetaInfo, Multimap)
                           -> Process (ProcessId, StoreChan)
 startMultimap rg f = mdo
     mmchan <- liftIO $ StoreChan mmpid <$> newTChanIO <*> newTChanIO
-    mmpid <- spawnLocal $ f $ multimap mmchan rg
+    mmpid <- spawnLocalName "ha:multimap" $ f $ multimap mmchan rg
     return (mmpid, mmchan)
 
 -- | Starts a loop which listens for incoming rpc calls
@@ -157,7 +158,7 @@ multimap (StoreChan _ rchan wchan) rg =
           (sp, rp) <- newChan
           mvRes <- liftIO newEmptyMVar
           readDone <- liftIO newEmptyMVar
-          worker <- spawnLocal $ do
+          worker <- spawnLocalName "ha:multimap:worker" $ do
             fix $ \loop ->
               getSelfPid >>= getStateWith rg . $(mkClosure 'readStore)
               >>= \b -> if b then return () else loop

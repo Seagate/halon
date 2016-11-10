@@ -32,6 +32,7 @@ module HA.EQTracker
   , __remoteTable
   ) where
 
+import HA.Debug
 import HA.Logger (mkHalonTracer)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
@@ -143,6 +144,6 @@ handleEQResponse eqs rnid =
 
 startEQTracker :: [NodeId] -> Process ProcessId
 startEQTracker eqs = do
-    eqt <- spawnLocal $ eqTrackerProcess eqs
+    eqt <- spawnLocalName "ha::eq" $ eqTrackerProcess eqs
     register name eqt
     return eqt
