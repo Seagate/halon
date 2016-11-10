@@ -63,10 +63,10 @@ queueM0Worker (M0Worker {..}) task = do
 
 -- | Runs a task in a worker.
 runOnM0Worker :: (MonadIO m, MonadThrow m) => M0Worker -> IO a -> m a
-runOnM0Worker w task = do
+runOnM0Worker M0Worker{..} task = do
     result <- liftIO $ do
       mv <- newEmptyMVar
-      queueM0Worker w $ try task >>= putMVar mv
+      writeChan m0WorkerChan $ try task >>= putMVar mv
       takeMVar mv
     either throw return result
   where
