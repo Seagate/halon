@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -120,7 +121,7 @@ instance Typeable a => SafeCopy (Service a) where
     Serialize.put (Binary.encode d)
 
 instance Show (Service a) where
-    show s = "Service " ++ (show $ serviceName s)
+    show s = "Service " ++ serviceName s
 
 instance (Typeable a) => Binary (Service a)
 

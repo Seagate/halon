@@ -1,6 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE TypeFamilies #-}
-
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -ddump-splices #-}
+{-# OPTIONS_GHC -ddump-to-file #-}
 
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -47,6 +49,8 @@ import GHC.Generics (Generic)
 
 import HA.ResourceGraph
 import HA.Resources
+
+import HA.Service.TH (deriveProcessEncode)
 
 -- | A request to start a service on a given node.
 data ServiceStartRequest =
@@ -155,6 +159,9 @@ data ServiceStatusRequest =
 newtype ServiceStatusRequestMsg = ServiceStatusRequestMsg BS.ByteString
   deriving (Typeable, Binary)
 
+$(deriveProcessEncode ''ServiceStatusRequest ''ServiceStatusRequestMsg 'ServiceStatusRequestMsg)
+
+{-
 instance ProcessEncode ServiceStatusRequest where
     type BinRep ServiceStatusRequest = ServiceStatusRequestMsg
 
@@ -178,7 +185,7 @@ instance ProcessEncode ServiceStatusRequest where
                    lis                <- get
                    return $ ServiceStatusRequest node svc lis
               Left err -> error $ "decode ServiceStatusRequest: " ++ err
-
+-}
 data ServiceStatusResponse =
     SrvStatNotRunning
   | SrvStatStillRunning ProcessId
