@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 EnvironmentFile=/etc/sysconfig/halond
-ExecStart=/usr/bin/halond -l $HALOND_LISTEN +RTS -s -A64m -RTS
+ExecStart=/usr/bin/halond -l $HALOND_LISTEN +RTS -s -A64m -I0 -RTS
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -INT $MAINPID
 TimeoutStopSec=1m 3s
