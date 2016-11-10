@@ -91,8 +91,13 @@ eventQueueLabel = "HA.EventQueue"
 minimumPollingDelay :: Int
 minimumPollingDelay = 1000000
 
+-- | Trace event queue log, enabled only.
 eqTrace :: String -> Process ()
 eqTrace = mkHalonTracer "EQ"
+
+-- | Log meaningful EQ events.
+eqSay :: String -> Process ()
+eqSay msg = say $ "[EQ] " ++ msg
 
 -- | Type used to order messages coming to EQ. Even though
 -- 'M.Map' used to store the messages and therefore the EQ can
@@ -345,7 +350,7 @@ eqRules rg pool groupMonitor = do
         -- When there is no RGroup monitor, assume we can't modify the
         -- replicated state.
         Nothing  -> liftProcess $ do
-          eqTrace $ "No quorum " ++ show (mid, sender)
+          eqSay $ "[Warning] No quorum " ++ show (mid, sender)
           sendReply sender False
         -- Try to modify the replicated state.
         Just rgMonitor -> do
@@ -361,7 +366,7 @@ eqRules rg pool groupMonitor = do
                 eqTrace $ "Recording event failed " ++ show (mid, sender)
                 sendReply sender False
               Nothing -> do
-                eqTrace $ "Recording event failed " ++ show (mid, sender) ++ " - no quorum"
+                eqSay $ "[ERROR] Recording event failed " ++ show (mid, sender) ++ " - no quorum"
                 sendReply sender False
 
     -- Debug information
