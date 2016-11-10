@@ -36,7 +36,8 @@ import Data.Monoid ((<>))
 
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
-
+import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 
 data DebugOptions =
@@ -89,8 +90,9 @@ eqStats nids (EQStatsOptions t c m) = do
       putStrLn "Message IDs in queue:"
       for_ eqs_uuids $ \uuid ->
         putStrLn $ "\t" ++ show uuid
-    display EQStatRespCannotBeFetched =
-      putStrLn "Cannot fetch EQ stats."
+    display EQStatRespCannotBeFetched = do
+      hPutStrLn stderr "Cannot fetch EQ stats."
+      exitFailure
 
 parseEQStatsOptions :: O.Parser EQStatsOptions
 parseEQStatsOptions = EQStatsOptions
@@ -168,7 +170,9 @@ cepStats nids (CEPStatsOptions t m) = do
              else for_ mp $ \p -> do
                usend p (RuntimeInfoRequest self m)
                expect >>= displayCepReply
-        , match $ \() -> liftIO $ putStrLn "RuntimeInfo cannot be fetched."
+        , match $ \() -> liftIO $ do
+            hPutStrLn stderr "RuntimeInfo cannot be fetched."
+            exitFailure
         ]
   where
     labelRecoveryCoordinator = "mero-halon.RC"
@@ -255,7 +259,9 @@ nodeStats nids (NodeStatsOptions _) = do
                          nodeStatsMonitors
                          nodeStatsLinks
                          nodeStatsProcesses
-    display (Left r) = liftIO $ putStrLn $ "Died: " ++ show r
+    display (Left r) = liftIO $ do
+      hPutStrLn stderr $ "Died: " ++ show r
+      exitFailure
 
 parseNodeStatsOptions :: O.Parser NodeStatsOptions
 parseNodeStatsOptions = NodeStatsOptions
