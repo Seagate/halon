@@ -12,7 +12,7 @@ module Control.Distributed.Process.Pool.Bounded
     , submitTask
     ) where
 
-import Control.Distributed.Process hiding (catch, finally, mask_, try)
+import Control.Distributed.Process hiding (catch, finally, try, onException)
 
 import Control.Monad (join)
 import Control.Monad.Catch
@@ -81,7 +81,7 @@ submitTask (ProcessPool {..}) t =
       if psCount < ppBound then
         -- Increase the process count if there is capacity.
         ( PoolState (succ psCount) psQueue
-        , Just ((t >> continue) `finally` terminate)
+        , Just ((t `onException` terminate) >> continue)
         )
       else
         -- Queue the task if the process bound has been reached.
@@ -91,9 +91,9 @@ submitTask (ProcessPool {..}) t =
     continue = join $ liftIO $ atomicModifyIORef' ppRef $ \ps@(PoolState {..}) ->
       case viewl psQueue of
         -- Terminate if there are no more tasks in the queue.
-        EmptyL -> (ps, return ())
+        EmptyL -> (ps, terminate)
         -- Continue with a task from the queue if available.
-        next :< s -> (ps { psQueue = s}, next >> continue)
+        next :< s -> (ps { psQueue = s}, (next `onException` terminate) >> continue)
 
     -- Decrement the process count when a process terminates.
     terminate :: Process ()

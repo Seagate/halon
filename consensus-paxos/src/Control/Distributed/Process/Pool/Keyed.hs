@@ -71,9 +71,7 @@ submitTask (ProcessPool mapRef) k task = do
       case Map.lookup k m of
         -- There is no worker for this key, create one.
         Nothing -> ( Map.insert k Nothing m
-                   , Just $ flip onException terminateWorker $ do
-                       task
-                       continue
+                   , Just $ (task `onException` terminateWorker) >> continue
                    )
         -- Queue an action for the existing worker.
         Just mp -> ( Map.insert k (Just $ maybe task (>> task) mp) m
@@ -84,7 +82,7 @@ submitTask (ProcessPool mapRef) k task = do
       join $ liftIO $ atomicModifyIORef mapRef $ \m ->
         case Map.lookup k m of
           -- Execute the next batch of queued actions.
-          Just (Just p)  -> (Map.insert k Nothing m, p >> continue)
+          Just (Just p)  -> (Map.insert k Nothing m, (p `onException` terminateWorker) >> continue)
           -- There are no more queued actions. Terminate the worker.
           Just Nothing   -> (Map.delete k m, return ())
           -- The worker key was removed already (?)
