@@ -37,7 +37,6 @@ import           Data.Traversable (mapAccumL)
 import           Data.UUID (UUID)
 import qualified Data.IntPSQ as PSQ
 import           Data.ByteString.Lazy (ByteString)
-import           Debug.Trace (traceEventIO)
 import           Control.Lens
 
 import GHC.Generics
@@ -52,6 +51,8 @@ import Network.CEP.Buffer
 import Network.CEP.Execution
 import Network.CEP.SM
 import Network.CEP.Types
+
+import Debug.Trace
 
 data Input
     = NoMessage
@@ -95,7 +96,9 @@ data Action a where
     Unpersist      :: PersistMessage  -> Action RunInfo
     NewSub         :: Subscribe -> Action ()
     Unsub          :: Unsubscribe -> Action ()
-    TimeoutArrived :: TimeSpec -> Action ()
+    TimeoutArrived :: TimeSpec -> Action Int
+    -- Wake up all threads that reached timeout, return
+    -- number of threads awaken.
 
 data EngineSetting a where
     EngineDebugMode      :: EngineSetting Bool
@@ -157,7 +160,7 @@ rawIncoming = Run . Incoming
 rawPersisted :: PersistMessage -> Request 'Write (Process (RunInfo, Engine))
 rawPersisted = Run . Unpersist
 
-timeoutMsg :: TimeSpec -> Request 'Write (Process ((), Engine))
+timeoutMsg :: TimeSpec -> Request 'Write (Process (Int, Engine))
 timeoutMsg = Run . TimeoutArrived
 
 requestAction :: Request 'Write (Process (a, Engine)) -> Action a
@@ -314,16 +317,18 @@ defaultHandler st next (Run (Unsub sub)) =
     return ((), Engine $ next $ cepUnsubRequest st sub)
 defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
-defaultHandler st next (Run (Incoming _)) =
+defaultHandler st next (Run (Incoming _)) = do
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (TimeoutArrived t)) =
-    return ((), Engine $ next st{_machTimestamp=t})
+    return (0, Engine $ next st{_machTimestamp=t})
 defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
   case M.lookup sfp (_machSFingerprint st) of
     Nothing -> do for_ (_machDefaultHandler st) $ \handler ->
                     handler uuid sfp payload (_machState st)
                   return (RunInfo 0 MsgIgnored, Engine $ next st)
-    Just fp -> next st (rawIncoming (EncodedMessage fp payload))
+    Just fp -> do
+      liftIO $ traceMarkerIO $ "cep: smessage: " ++ show sfp ++ " -> " ++ show fp
+      next st (rawIncoming (EncodedMessage fp payload))
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st
@@ -416,10 +421,10 @@ cepCruise !st req@(Run t) =
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->
-        let loop nst = case PSQ.findMin (_machEvents nst) of
-              Nothing -> return ((), Engine $ cepCruise nst{_machEvents=PSQ.deleteMin (_machEvents nst)})
+        let loop !c nst = case PSQ.findMin (_machEvents nst) of
+              Nothing -> return (c, Engine $ cepCruise nst{_machEvents=PSQ.deleteMin (_machEvents nst)})
               Just (_,t',key)
-                | ts < t' ->  return ((), Engine $ cepCruise nst)
+                | ts < t' ->  return (c, Engine $ cepCruise nst)
                 | otherwise ->
                    let xs = filter (\(SMData _ k _) -> key == k) $ _machSuspendedSM nst
                        nxt_su = filter (\(SMData _ k _) -> key /= k) $ _machSuspendedSM nst
@@ -427,8 +432,8 @@ cepCruise !st req@(Run t) =
                        nxt_st = st { _machRunningSM   = prev ++ xs
                                    , _machSuspendedSM = nxt_su
                                    , _machEvents = PSQ.deleteMin (_machEvents nst)}
-                   in return ((), Engine $ cepCruise nxt_st)
-        in do loop st{_machTimestamp = ts}
+                   in loop (c+1) nxt_st
+        in loop 0 st{_machTimestamp = ts}
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
             keyInfos = MM.lookup fpt $ _machTypeMap st
@@ -449,6 +454,7 @@ cepCruise !st req@(Run t) =
               $ if upd+length running == 0
                   then MsgIgnored
                   else RulesBeenTriggered []
+        liftIO $ traceMarkerIO $ "cep: message: " ++ show fpt
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })

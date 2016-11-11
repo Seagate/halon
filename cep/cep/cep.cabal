@@ -66,7 +66,7 @@ Test-Suite unit-tests
   Other-Modules:       CEP.Settings.Tests
                        Tests
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -eventlog
 
   if flag(maintainer)
     Ghc-Options: -Werror
@@ -95,7 +95,7 @@ Test-Suite unit-tests-scheduler
   Other-Modules:       CEP.Settings.Tests
                        Tests
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -eventlog
 
   if flag(maintainer)
     Ghc-Options: -Werror
