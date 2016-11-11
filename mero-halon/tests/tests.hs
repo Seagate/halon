@@ -77,7 +77,7 @@ ut _host transport _breakConnection = do
   return $ testGroup "tests with mock replicator"
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "mero" $
-          HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+          HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , MERO_TEST(testGroup, "InternalStateChanges", internalSCTests transport
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg
@@ -110,7 +110,7 @@ it _host transport breakConnection = do
         HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
       , testGroup "mero" $
-          HA.RecoveryCoordinator.Mero.Tests.tests _host transport pg
+          HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , MERO_TEST(testGroup, "InternalStateChanges", internalSCTests transport
                  , [testCase "Ignore me" $ return ()])
       , MERO_TEST(testGroup,"Castor",HA.Castor.Tests.tests _host transport pg

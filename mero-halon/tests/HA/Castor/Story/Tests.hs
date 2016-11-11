@@ -15,21 +15,13 @@ import HA.EventQueue.Types
 import HA.NodeUp (nodeUp)
 import HA.RecoveryCoordinator.Actions.Castor.Cluster (notifyOnClusterTransition)
 import HA.RecoveryCoordinator.Actions.Mero.Conf (encToM0Enc)
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
-   ( findRealObjsInPVer
-   , findFailableObjs
-   )
 import HA.RecoveryCoordinator.Events.Service
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
 import HA.RecoveryCoordinator.Castor.Drive
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import qualified HA.ResourceGraph as G
 import HA.Resources
-import HA.Resources.Castor.Initial
-  ( InitialData(..)
-  , M0Globals(..)
-  , FailureSetScheme(Dynamic)
-  )
+import HA.Resources.Castor.Initial (InitialData(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
@@ -67,7 +59,6 @@ import Data.Foldable (find)
 import Data.Function (fix)
 import Data.Hashable (Hashable)
 import Data.Proxy
-import qualified Data.Set as S
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
@@ -660,51 +651,6 @@ testDriveRemovedBySSPL transport pg = run transport pg interceptor [] test where
       let getCorrectNote (Set ns) = filter (\(Note fid' _) -> M0.fid m0disk == fid') ns
       [Note _ st] <- getCorrectNote <$> nextNotificationFor (M0.fid m0disk) recv
       liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
-
-#ifdef USE_MERO
--- | Test that we generate an appropriate pool version in response to
---   failure of a drive, when using 'Dynamic' strategy.
-testDynamicPVer :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testDynamicPVer transport pg = run transport pg interceptor [] test where
-  interceptor _ _ = return ()
-  checkPVerExistence rg fids yes = let
-      msg = if yes
-            then "Pool version should exist"
-            else "Pool version should not exist"
-      check = if yes then elem else \a -> not . elem a
-      [fs] = [ x | Just (p :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-                 , x <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
-                 ]
-      pv1 = G.getResourcesOfType rg :: [M0.PVer]
-      pvFids = fmap (findRealObjsInPVer rg) pv1
-      allFids = findFailableObjs rg fs
-      pverFids = allFids `S.difference` fids
-    in
-      assertMsg msg $ check pverFids pvFids
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-    loadInitialDataMod $ \x -> x {
-        id_m0_globals = (id_m0_globals x) { m0_failure_set_gen = Dynamic }
-      }
-
-    rg <- G.getGraph mm
-    sdev@(ADisk _ (Just m0sdev) _ _ _) <- findSDev rg
-    failDrive recv sdev
-    -- Should now have a pool version corresponding to single failed drive
-    rg1 <- G.getGraph mm
-    let Just (disk :: M0.Disk) = G.connectedTo m0sdev M0.IsOnHardware rg1
-    checkPVerExistence rg (S.singleton (M0.fid disk)) False
-    checkPVerExistence rg1 (S.singleton (M0.fid disk)) True
-
-    sdev2@(ADisk _ (Just m0sdev2) _ _ _)  <- find2SDev rg
-    failDrive recv sdev2
-    -- Should now have a pool version corresponding to two failed drives
-    rg2 <- G.getGraph mm
-    let Just (disk2 :: M0.Disk) = G.connectedTo m0sdev2 M0.IsOnHardware rg2
-    checkPVerExistence rg1 (S.fromList . fmap M0.fid $ [disk, disk2]) False
-    checkPVerExistence rg2 (S.fromList . fmap M0.fid $ [disk, disk2]) True
-
-#endif
 
 -- | Test that a failed drive powers off successfully
 testDrivePoweredDown :: (Typeable g, RGroup g)

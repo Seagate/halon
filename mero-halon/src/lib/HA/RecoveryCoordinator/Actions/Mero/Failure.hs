@@ -1,32 +1,26 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Actions.Mero.Failure
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-{-# LANGUAGE LambdaCase #-}
 module HA.RecoveryCoordinator.Actions.Mero.Failure
   ( Failures(..)
   , PoolVersion(..)
-  , Strategy(..)
   , UpdateType(..)
   , createPoolVersions
-  , getCurrentStrategy
+  , getCurrentGraphUpdateType
   ) where
 
-import HA.RecoveryCoordinator.Actions.Mero.Core
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic (dynamicStrategy)
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple  (simpleStrategy)
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic (formulaicStrategy)
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
-import qualified HA.Resources.Castor.Initial as CI
-
 import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.Actions.Mero.Core
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic (formulaicUpdate)
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
+import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple  (simpleUpdate)
+import HA.Resources.Castor.Initial
 import Network.CEP
 
 -- | Load current strategy from resource graph.
-getCurrentStrategy :: PhaseM LoopState l (Maybe Strategy)
-getCurrentStrategy = fmap (mkStrategy . CI.m0_failure_set_gen) <$> getM0Globals
+getCurrentGraphUpdateType :: Monad m => PhaseM LoopState l (Maybe (UpdateType m))
+getCurrentGraphUpdateType = fmap (mkUpdateType . m0_failure_set_gen) <$> getM0Globals
    where
-     mkStrategy CI.Dynamic = dynamicStrategy
-     mkStrategy (CI.Preloaded df cf cfe) = simpleStrategy df cf cfe
-     mkStrategy (CI.Formulaic fs) = formulaicStrategy fs
-
+     mkUpdateType (Preloaded df cf cfe) = simpleUpdate df cf cfe
+     mkUpdateType (Formulaic fs) = formulaicUpdate fs

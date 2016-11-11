@@ -1,11 +1,10 @@
--- |
--- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
---
 {-# LANGUAGE Rank2Types #-}
+-- |
+-- Module    : HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
 module HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
-  ( Strategy(..)
-  , Failures(..)
+  ( Failures(..)
   , PoolVersion(..)
   , UpdateType(..)
   , failuresToArray
@@ -61,31 +60,15 @@ data PoolVersion = PoolVersion !(Set Fid) !Failures !PDClustAttr
 failuresToArray :: Failures -> [Word32]
 failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
-
 -- | Description of how halon run update of the graph.
 data UpdateType m
   = Monolithic (G.Graph -> m G.Graph)
     -- ^ Transaction can be done into single atomic step.
-  | Iterative  (G.Graph -> Maybe ((G.Graph -> m G.Graph) -> m G.Graph))
+  | Iterative (G.Graph -> Maybe ((G.Graph -> m G.Graph) -> m G.Graph))
     -- ^ Transaction should be done iteratively. Function may return
     -- a graph synchronization function. If caller should provide a graph
     -- Returns all updates in chunks so caller can synchronize and stream
     -- graph updates in chunks of reasonable size.
-
-
--- | Strategy for generating pool versions. There may be multiple
---   implementations corresponding to different strategies.
-data Strategy = Strategy {
-
-    -- | Initial set of pool versions created at the start of the system,
-    --   or when the cluster configuration changes.
-    onInit :: forall m . Monad m => UpdateType m
-
-    -- | Action to take on failure
-  , onFailure :: G.Graph
-              -> Maybe (G.Graph) -- ^ Returns `Nothing` if the graph is
-                                 --   unmodified, else the updated graph.)
-}
 
 createPoolVersionsInPool :: M0.Filesystem
                          -> M0.Pool

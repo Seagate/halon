@@ -17,55 +17,58 @@ module HA.RecoveryCoordinator.Mero.Tests
   ) where
 
 import           Control.Distributed.Process
-import           Data.List (isInfixOf, isPrefixOf, tails)
-import           Control.Monad (when, void)
-import           Data.Binary (Binary)
-import qualified Data.Text as T
+import           Control.Monad (void)
+import           Data.List (isInfixOf)
 import           Data.Typeable
-import           GHC.Generics
 import           HA.EventQueue.Producer (promulgateEQ)
-import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK(..))
 import           HA.RecoveryCoordinator.Helpers
-import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
-import qualified HA.Resources.Castor.Initial as CI
-import           HA.Services.SSPL.CEP
 import           Helper.SSPL
-import           Network.CEP
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (assertBool, assertEqual, testCase)
+import           Test.Tasty.HUnit (assertBool, testCase)
 import           TestRunner
-import           Helper.Environment
 #ifdef USE_MERO
 import           Control.Category ((>>>))
+import           Control.Monad (when)
+import           Data.Binary (Binary)
 import           Data.Function (on)
-import           Data.List (sortBy, sort)
+import           Data.List (isPrefixOf, sortBy, sort)
+import           Data.List (tails)
+import qualified Data.Text as T
+import           GHC.Generics
+import           HA.EventQueue.Types (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Mero (validateTransactionCache)
-import           HA.RecoveryCoordinator.Events.Cluster (InitialDataLoaded)
+import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK)
+import           HA.RecoveryCoordinator.Events.Cluster
 import           HA.RecoveryCoordinator.Events.Mero (stateSet)
+import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, setPhaseNotified)
+import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Services.SSPL.CEP
+import           Helper.Environment
 import qualified Helper.InitialData
 import           Mero.Notification
 import           Mero.Notification.HAState
+import           Network.CEP
+import           Test.Tasty.HUnit (assertEqual)
 #endif
 
 
-tests ::  (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
-tests host transport pg =
+tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
+tests transport pg =
   [ testCase "testDriveAddition" $ testDriveAddition transport pg
-  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate host transport pg
 #ifdef USE_MERO
+  , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
   , testCase "testConfObjectStateQuery" $
-      testConfObjectStateQuery host transport pg
+      testConfObjectStateQuery transport pg
   , testCase "good-conf-validates [disabled by TODO]" $
       when False (testGoodConfValidates transport pg)
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
@@ -121,39 +124,39 @@ testDriveAddition transport pg = runDefaultTest transport $ do
     wait = void (expect :: Process ProcessMonitorNotification)
     mockEvent = mkResponseDriveManager "enc1" "serial1" 1
 
+#ifdef USE_MERO
 -- | Used by 'testDriveManagerUpdate'
-data RunDriveManagerFailure = RunDriveManagerFailure
+data RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary RunDriveManagerFailure
 
 -- | Update receiving a drive failure from SSPL,
 testDriveManagerUpdate :: (Typeable g, RGroup g)
-                       => String -> Transport -> Proxy g -> IO ()
-testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
+                       => Transport -> Proxy g -> IO ()
+testDriveManagerUpdate transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
-    str | "Node succesfully joined the cluster" `isInfixOf` str ->
-            usend self  ("NodeUp" :: String)
-        | "Loaded initial data" `isInfixOf` str ->
-            usend self  ("InitialData" :: String)
-        | "lcType = \"HDS\"}" `isInfixOf` str ->
+    str | "lcType = \"HDS\"}" `isInfixOf` str ->
             when (any (interestingSN `isPrefixOf`) (tails str)) $
               usend self ("OK" :: String)
         | otherwise -> return ()
-  withTrackingStation pg testRules $ \(TestArgs _ mm rc) -> do
+  withTrackingStation pg [testRule] $ \(TestArgs _ mm rc) -> do
     subscribe rc (Proxy :: Proxy DriveOK)
+    subscribe rc (Proxy :: Proxy NewNodeConnected)
+    subscribe rc (Proxy :: Proxy InitialDataLoaded)
     nodeUp ([nid], 1000000)
-    "NodeUp" :: String <- expect
-    say "Loading initial data"
+
+    _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
+
     promulgateEQ [nid] initialData >>= flip withMonitor wait
-    "InitialData" :: String <- expect
+    _ <- expectPublished (Proxy :: Proxy InitialDataLoaded)
 
     say "Sending online message"
     promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
 
-    _ <- expect :: Process (Published DriveOK)
+    _ <- expectPublished (Proxy :: Proxy DriveOK)
 
     say "Checking drive status sanity"
     graph <- G.getGraph mm
@@ -165,70 +168,21 @@ testDriveManagerUpdate host transport pg = runDefaultTest transport $ do
     assert $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
 
     say "Sending RunDriveManagerFailure"
-    promulgateEQ [nid] RunDriveManagerFailure >>= flip withMonitor wait
+    promulgateEQ [nid] (RunDriveManagerFailure drive) >>= flip withMonitor wait
     liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
   where
-    testRules :: [Definitions LoopState ()]
-    testRules = [
-        defineSimple "dmwf-trigger" $ \(HAEvent eid RunDriveManagerFailure _) -> do
-          -- Find what should be the only SD in the enclosure and trigger
-          -- repair on it
-          graph <- getLocalGraph
-          let [sd] = G.connectedTo (Enclosure enc) Has graph
-          updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
-          messageProcessed eid
-        -- Required because normal `DriveOK` handling is only enabled with
-        -- USE_MERO
-      , defineSimple "driveok-hack" $ \(DriveOK _ _ _ _) -> return ()
-      ]
+    testRule :: Definitions LoopState ()
+    testRule = defineSimpleTask "dmwf-trigger" $ \(RunDriveManagerFailure sd) -> do
+      updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
 
     wait = void (expect :: Process ProcessMonitorNotification)
-    enc :: String
-    enc = "enclosure1"
-    interestingSN :: String
-    interestingSN = "Z8407MGP"
+    initialData = Helper.InitialData.initialData systemHostname "192.0.2" 1 12 Helper.InitialData.defaultGlobals
+    enc : _ = [ CI.enc_id enc' | r <- CI.id_racks initialData
+                               , enc' <- CI.rack_enclosures r ]
+    interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers initialData
+                                          , d <- CI.m0h_devices s ]
     respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
-    initialData = CI.InitialData {
-      CI.id_racks = [
-        CI.Rack {
-          CI.rack_idx = 1
-        , CI.rack_enclosures = [
-            CI.Enclosure {
-              CI.enc_idx = 1
-            , CI.enc_id = enc
-            , CI.enc_bmc = [CI.BMC "192.0.2.1" "admin" "admin"]
-            , CI.enc_hosts = [
-                CI.Host {
-                  CI.h_fqdn = systemHostname
-                , CI.h_memsize = 4096
-                , CI.h_cpucount = 8
-                , CI.h_interfaces = [
-                    CI.Interface {
-                      CI.if_macAddress = "10-00-00-00-00"
-                    , CI.if_network = CI.Data
-                    , CI.if_ipAddrs = [ host ]
-                    }
-                  ]
-                , CI.h_halon = Just $ CI.HalonSettings {
-                    CI._hs_address = "192.0.2.1:9000"
-                  , CI._hs_roles = []
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      ]
-#ifdef USE_MERO
-      , CI.id_m0_servers =
-          fmap (\s -> s{CI.m0h_devices = []})
-               (CI.id_m0_servers $ Helper.InitialData.initialData systemHostname "192.0.2" 1 12 Helper.InitialData.defaultGlobals)
-      , CI.id_m0_globals = Helper.InitialData.defaultGlobals
-                            { CI.m0_failure_set_gen  = CI.Dynamic }
-#endif
-      }
 
-#ifdef USE_MERO
 -- | Used by rule in 'testConfObjectStateQuery'
 data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
   deriving (Show, Eq, Generic, Typeable)
@@ -242,8 +196,8 @@ instance Binary WaitFailedSDevReply
 -- | Test that the recovery coordinator answers queries of configuration object
 -- states.
 testConfObjectStateQuery :: (Typeable g, RGroup g)
-                         => String -> Transport -> Proxy g -> IO ()
-testConfObjectStateQuery host transport pg =
+                         => Transport -> Proxy g -> IO ()
+testConfObjectStateQuery transport pg =
     runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
       nid <- getSelfNode
       self <- getSelfPid
@@ -254,7 +208,7 @@ testConfObjectStateQuery host transport pg =
         nodeUp ([nid], 1000000)
         testSay "Loading graph."
         void $ promulgateEQ [nid] $
-          Helper.InitialData.initialData host "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
+          Helper.InitialData.initialData systemHostname "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
         Just _ <- expectTimeout 20000000 :: Process (Maybe (Published InitialDataLoaded))
 
         graph <- G.getGraph mm

@@ -121,8 +121,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
       $ fsSize (failureSets2 !! 1) == 1
   where
     iData = initialData systemHostname "192.0.2" 1 8
-            $ defaultGlobals { CI.m0_data_units = 4
-                             , CI.m0_failure_set_gen = CI.Dynamic }
+            $ defaultGlobals { CI.m0_data_units = 4 }
 
 testFailureSets2 :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
@@ -162,8 +161,7 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
       $ fsSize (failureSets110 !! 1) == 1
   where
-    iData = initialData systemHostname "192.0.2" 4 4
-            $ defaultGlobals { CI.m0_failure_set_gen = CI.Dynamic }
+    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 testFailureSetsFormulaic :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
@@ -174,8 +172,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
-      Just strategy <- getCurrentStrategy
-      let Monolithic update = onInit strategy
+      Just (Monolithic update) <- getCurrentGraphUpdateType
       modifyLocalGraph update
 
     let g = lsGraph ls'
@@ -214,7 +211,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
       rg <- getLocalGraph
-      let Iterative update = onInit (simpleStrategy 0 1 0)
+      let Iterative update = simpleUpdate 0 1 0
       let Just updateGraph = update rg
       rg' <- updateGraph return
       putLocalGraph rg'

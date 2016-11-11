@@ -171,8 +171,8 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
                 either
                   (\failedTransition -> do
                     iemFailureOverTolerance m0sdev
-                    applyStateChangesCreateFS [ failedTransition ])
-                  (\okTransition -> applyStateChangesCreateFS [ okTransition ])
+                    applyStateChanges [ failedTransition ])
+                  (\okTransition -> applyStateChanges [ okTransition ])
                   sdevTransition
 
                 promulgateRC $ ResetAttempt sdev
@@ -286,7 +286,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
-               applyStateChangesCreateFS [ stateSet m0sdev M0.SDSOnline ]
+               applyStateChanges [ stateSet m0sdev M0.SDSOnline ]
                Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
                modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
              x ->
@@ -327,8 +327,8 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
             M0.SDSTransient _ -> do
               either (\failedTransition -> do
                          iemFailureOverTolerance m0sdev
-                         applyStateChangesCreateFS [ failedTransition ])
-                     (\okTransition -> applyStateChangesCreateFS [ okTransition ])
+                         applyStateChanges [ failedTransition ])
+                     (\okTransition -> applyStateChanges [ okTransition ])
                      sdevTransition
             x -> do
               phaseLog "info" $ "Cannot bring drive Failed from state "

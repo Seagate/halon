@@ -13,7 +13,6 @@
 module HA.RecoveryCoordinator.Rules.Mero.Conf
   ( DeferredStateChanges(..)
   , applyStateChanges
-  , applyStateChangesCreateFS
   , applyStateChangesSyncConfd
     -- * Re-export for convenience
   , AnyStateSet
@@ -31,7 +30,6 @@ import HA.Encode (decodeP, encodeP)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Failure
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.Resources.Mero as M0
@@ -53,7 +51,6 @@ import Control.Monad.Fix (fix)
 import Control.Lens
 
 import Data.Constraint (Dict)
-import Data.Foldable (forM_)
 import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
@@ -205,21 +202,6 @@ applyStateChangesSyncConfd ass =
     genericApplyStateChanges ass act
   where
     act = syncAction Nothing M0.SyncToConfdServersInRG
-
--- | Apply state changes and create any dynamic failure sets if needed.
---   This also syncs to confd.
-applyStateChangesCreateFS :: [AnyStateSet]
-                          -> PhaseM LoopState l ()
-applyStateChangesCreateFS ass =
-    genericApplyStateChanges ass act
-  where
-    act = do
-      sgraph <- getLocalGraph
-      mstrategy <- getCurrentStrategy
-      forM_ mstrategy $ \strategy ->
-        forM_ (onFailure strategy sgraph) $ \graph' -> do
-          putLocalGraph graph'
-          syncAction Nothing M0.SyncToConfdServersInRG
 
 -- | @'setPhaseNotified' handle change extract act@
 --
