@@ -45,6 +45,7 @@ import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
 import Mero.Spiel (FSStats(..))
 import Network.CEP
 import System.Exit (exitFailure, exitSuccess)
+import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 #endif
@@ -402,8 +403,9 @@ dumpConfd eqnids (DumpOptions fn) = do
   self <- getSelfPid
   promulgateEQ eqnids (SyncDumpToBS self) >>= flip withMonitor wait
   expect >>= \case
-    SyncDumpToBSReply (Left err) ->
+    SyncDumpToBSReply (Left err) -> do
       say $ "Dumping conf to " ++ fn ++ " failed with " ++ err
+      liftIO exitFailure
     SyncDumpToBSReply (Right bs) -> do
       liftIO $ BS.writeFile fn bs
       say $ "Dumped conf in RG to this file " ++ fn
@@ -419,7 +421,9 @@ client eqnids (ClientStopOption fn) = do
     Just fid -> do
       promulgateEQ eqnids (StopMeroClientRequest fid) >>= flip withMonitor wait
       say "Command was delivered to EQ."
-    Nothing -> say "Incorrect Fid format."
+    Nothing -> do
+      say "Incorrect Fid format."
+      liftIO exitFailure
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 client eqnids (ClientStartOption fn) = do
@@ -428,7 +432,9 @@ client eqnids (ClientStartOption fn) = do
     Just fid -> do
       promulgateEQ eqnids (StartMeroClientRequest fid) >>= flip withMonitor wait
       say "Command was delivered to EQ."
-    Nothing -> say "Incorrect Fid format."
+    Nothing -> do
+      say "Incorrect Fid format."
+      liftIO exitFailure
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
@@ -519,7 +525,10 @@ clusterReset eqnids (ResetOptions hard unstick) = if unstick
              Just p -> do
                liftIO $ putStrLn "Killing recovery coordinator."
                kill p "User requested `cluster reset --unstick`"
-        , match $ \() -> liftIO $ putStrLn "Cannot determine the location of the RC."
+               liftIO exitSuccess
+        , match $ \() -> liftIO $ do
+            hPutStrLn stderr "Cannot determine the location of the RC."
+            exitFailure
         ]
   else do
       promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
@@ -534,8 +543,11 @@ clusterCommand :: (Serializable a, Serializable b, Show b)
 clusterCommand eqnids mk output = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
-  _ <- receiveTimeout 10000000 [ matchChan rchan output ]
-  return ()
+  receiveTimeout 10000000 [ matchChan rchan output ] >>= liftIO . \case
+    Nothing -> do
+      hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
+      exitFailure
+    Just () -> exitSuccess
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
@@ -617,7 +629,9 @@ clusterHVarsUpdate eqnids (VarsSet{..}) = do
   _ <- promulgateEQ eqnids (GetHalonVars schan) >>= flip withMonitor wait
   mc <- receiveTimeout 10000000 [ matchChan rchan return ]
   case mc of
-    Nothing -> liftIO $ putStrLn "failed to contant EQ in 10s."
+    Nothing -> liftIO $ do
+      hPutStrLn stderr "Failed to contact EQ in 10s."
+      exitFailure
     Just  c ->
       let hv = foldr ($) c
                  [ maybe id (\s -> \x -> x{Castor._hv_recovery_expiry_seconds = s}) recoveryExpirySeconds
