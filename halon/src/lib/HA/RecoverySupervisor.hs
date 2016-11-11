@@ -13,6 +13,7 @@
 
 module HA.RecoverySupervisor ( recoverySupervisor) where
 
+import HA.Debug
 import HA.Logger
 import HA.Replicator ( RGroup, getLeaderReplica, monitorLocalLeader )
 
@@ -32,6 +33,7 @@ recoverySupervisor :: RGroup g
                                  -- coordinator.
                    -> Process ()
 recoverySupervisor rg rcP = do
+    labelProcess "ha::rs"
     rsTrace "Starting"
     void $ waitToBecomeLeader
     rsTrace "Terminated"

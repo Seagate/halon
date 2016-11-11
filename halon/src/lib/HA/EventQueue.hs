@@ -37,6 +37,7 @@ module HA.EventQueue
   ) where
 
 
+import HA.Debug
 import HA.EventQueue.Types
 import HA.Logger
 import HA.Replicator ( RGroup
@@ -72,6 +73,7 @@ import Data.Word (Word64)
 import GHC.Generics
 import System.Clock
 
+import Debug.Trace
 
 -- | Since there is at most one Event Queue per tracking station node,
 -- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
@@ -212,11 +214,11 @@ requestTimeout = 2 * 1000 * 1000
 --
 startEventQueue :: RGroup g => g EventQueue -> Process ProcessId
 startEventQueue rg = do
-    eq <- spawnLocal $ do
+    eq <- spawnLocalName "ha:eq" $ do
       pool <- liftIO $ newProcessPool 50
       self <- getSelfPid
       -- Spawn the initial monitor proxy. See Note [RGroup monitor].
-      rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+      rgMonitor <- spawnLocalName "ha:eq:rg_mon" $ link self >> rGroupMonitor rg
       eqTrace $ "Started " ++ show rgMonitor
       void $ monitor rgMonitor
       ref <- liftIO $ newTMVarIO rgMonitor
@@ -236,7 +238,7 @@ eqRules rg pool groupMonitor = do
     -- noticing new events, this process will forward them to the RC.
     defineSimple "rc-spawned" $ \rc -> liftProcess $ do
       -- Poll the replicated state for the RC.
-      poller <- spawnLocal $ handle
+      poller <- spawnLocalName "ha:eq:poller" $ handle
         (\e -> eqTrace $ "Poller died: " ++ show (e :: SomeException)) $ do
         link rc
         flip fix (0 :: Word64) $ \loop sn -> do
@@ -323,11 +325,11 @@ eqRules rg pool groupMonitor = do
           eqTrace $ "RGroup monitor died: " ++ show p
           self <- getSelfPid
           -- Wait until the rgroup is responsive again.
-          void $ spawnLocal $ do
+          void $ spawnLocalName "ha:eq:await" $ do
             retryRGroup rg requestTimeout $ fmap bToM $
               getStateWith rg $(mkStaticClosure 'dummyRead)
             -- Respawn the rgroup monitor and notify the EQ.
-            rgMonitor <- spawnLocal $ link self >> rGroupMonitor rg
+            rgMonitor <- spawnLocalName "ha:eq:rg_mon" $ link self >> rGroupMonitor rg
             liftIO $ atomically $ putTMVar groupMonitor rgMonitor
             usend self $ RGroupMonitor rgMonitor
             when schedulerIsEnabled $ do
@@ -355,6 +357,7 @@ eqRules rg pool groupMonitor = do
         -- Try to modify the replicated state.
         Just rgMonitor -> do
           (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
+            liftIO $ traceEventIO "START eq::record::event"
             eqTrace $ "Recording event " ++ show (mid, rgMonitor)
             res <- withMonitoring (monitor rgMonitor) $
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
@@ -368,6 +371,7 @@ eqRules rg pool groupMonitor = do
               Nothing -> do
                 eqSay $ "[ERROR] Recording event failed " ++ show (mid, sender) ++ " - no quorum"
                 sendReply sender False
+            liftIO $ traceEventIO "STOP eq::record::event"
 
     -- Debug information
     defineSimple "dump-stats" $ \(EQStatReq pid) -> let
@@ -376,7 +380,7 @@ eqRules rg pool groupMonitor = do
           , eqs_uuids = uuids
           , eqs_pool_stats = ps
           }
-      in liftProcess . void . spawnLocal $ do
+      in liftProcess . void . spawnLocalName "ha:eq:dump_stats" $ do -- XXX: use task pool?
         (sp, rp) <- newChan
         b <- getStateWith rg $ $(mkClosure 'eqReadStats) sp
         ps <- liftIO $ poolStats pool
@@ -392,7 +396,7 @@ eqRules rg pool groupMonitor = do
     -- Spawns a worker process.
     spawnWorker work = liftProcess $ do
       self <- getSelfPid
-      workerPid <- mask_ $ spawnLocal $ link self >> work
+      workerPid <- mask_ $ spawnLocalName "ha:eq:worker" $ link self >> work
       void $ monitor workerPid
       return workerPid
 

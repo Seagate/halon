@@ -28,6 +28,7 @@ module HA.Storage
   , StorageError(..)
   ) where
 
+import HA.Debug
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 
@@ -93,6 +94,7 @@ delete = nsend name . Delete . BS.pack
 -- | Start a storage process
 runStorage :: Process ProcessId
 runStorage = do
+    labelProcess "ha:storage"
     pid <- spawnLocal mainloop
     prepare pid
     return pid

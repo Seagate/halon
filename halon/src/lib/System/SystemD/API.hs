@@ -16,12 +16,16 @@ import System.Process
 
 import Text.Parsec
 
+import Debug.Trace
+
 -- | Helper for service runners
 runCtl :: [String] -> IO (ExitCode, String, String)
 runCtl args = readProcessWithExitCode "systemctl" args ""
 
 doService :: String -> String -> IO ExitCode
-doService a n = runCtl [a, n] >>= \(c, _, _) -> return c
+doService a n = do
+  traceMarkerIO $ "systemctl " ++ a ++ " " ++ n
+  runCtl [a, n] >>= \(c, _, _) -> return c
 
 propsParser :: Parsec String () (Map.Map String String)
 propsParser = do
