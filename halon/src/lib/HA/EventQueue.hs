@@ -249,6 +249,7 @@ eqRules rg pool groupMonitor = do
             if b then Just <$> receiveChan rp else return Nothing
           when (null ms) $ eqTrace "Poller: No messages"
           forM_ (ms :: [PersistMessage]) $ \sm -> do
+            liftIO $ traceMarkerIO $ "sending to RC: " ++ show (persistMessageId sm) 
             eqTrace $ "Sending to RC: " ++ show (persistMessageId sm)
             usend rc sm
           tf <- liftIO $ getTime Monotonic

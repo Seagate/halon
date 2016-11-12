@@ -453,7 +453,7 @@ startForks rules state = do
       directly wrapper_init $ Network.CEP.Types.switch (rules ++ [wrapper_clear])
 
       directly wrapper_clear $ do
-        fork NoBuffer $ Network.CEP.Types.switch (timeout 60 wrapper_clear:rules)
+        fork NoBuffer $ Network.CEP.Types.switch (rules++[timeout 60 wrapper_clear])
         continue wrapper_end
 
       directly wrapper_end stop

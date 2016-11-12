@@ -15,6 +15,7 @@ import qualified CEP.Settings.Tests (tests)
 
 import Control.Distributed.Process.Scheduler
 import qualified Tests as Tests
+import qualified Regression as Regression
 
 import Control.Monad
 import System.IO
@@ -38,7 +39,7 @@ ut = do
            `onException` do
              hPutStrLn stderr $ "Failing with seed: " ++ show (s + i)
     return $ testGroup "CEP - Unit tests - scheduler" $
-               CEP.Settings.Tests.tests launch:Tests.tests launch
+               Regression.tests launch : CEP.Settings.Tests.tests launch:Tests.tests launch
 
 main :: IO ()
 main = do

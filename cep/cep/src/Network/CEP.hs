@@ -104,7 +104,6 @@ import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
-import           Control.Monad.Catch (bracket_)
 import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
@@ -118,7 +117,7 @@ import Network.CEP.Utils
 import Data.PersistMessage
 
 import System.Clock
-import Debug.Trace (traceEventIO)
+import Debug.Trace (traceMarkerIO)
 
 -- | Fills type tracking map with every type of messages needed by the engine
 --   rules.
@@ -297,16 +296,22 @@ runItForever start_eng = do
           Nothing -> go eng' =<< receiveTimeout 0 all_events
           Just m  -> go eng' (Just m)
       | otherwise = do
-        -- If machine is not running we just wait for next event if exists.
-        case stepForward engineNextEvent eng of
-          Nothing -> go eng . Just =<< receiveWait all_events
+        p <- liftIO $ getTime Monotonic
+        (c, eng') <- stepForward (timeoutMsg p) eng
+        if c > 0
+        then cruise debug_mode loop eng' -- we have runnables.
+        else case stepForward engineNextEvent eng of
+          Nothing -> do
+            liftIO $ traceMarkerIO "cep loop: blocked until next event"
+            go eng . Just =<< receiveWait all_events
           Just t  -> do
-            p <- liftIO $ getTime Monotonic
-            let tm = (\(TimeSpec s ns) -> (s*10^(9::Int) + ns) `div` 1000 ) $ p `diffTimeSpec` t
+            p' <- liftIO $ getTime Monotonic
+            let tm = (\(TimeSpec s ns) -> (s*10^(9::Int) + ns) `div` 1000 ) $ p' `diffTimeSpec` t
+            liftIO $ traceMarkerIO $ "cep loop: blocked for " ++ show tm ++ "ms"
             mmsg <- receiveTimeout (fromIntegral tm) all_events
             case mmsg of
-              Nothing -> do eng' <- snd <$> stepForward (timeoutMsg p) eng
-                            cruise debug_mode loop eng'
+              Nothing -> do eng'' <- snd <$> stepForward (timeoutMsg p') eng
+                            cruise debug_mode loop eng''
               _       -> go eng mmsg
       where
         tech = [ match (return . SubMsg)
@@ -315,41 +320,34 @@ runItForever start_eng = do
                ]
         all_events = tech ++ [match (return . SomeSMsg), matchAny (return . SomeMsg)]
         go _inner (Just (Debug (RuntimeInfoRequest pid mem))) = do
+          liftIO $ traceMarkerIO "cep loop: runtime info request"
           let info = stepForward (getRuntimeInfo mem) eng
           usend pid info
           cruise debug_mode loop eng
         go inner (Just (SubMsg sub)) = do
-          liftIO $ traceEventIO "START cruise:add-message"
+          liftIO $ traceMarkerIO "cep loop: subscribe request"
           (_, nxt_eng) <- stepForward (rawSubRequest sub) inner
-          liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just (UnsubMsg sub)) = do
-          liftIO $ traceEventIO "START cruise:add-message"
+          liftIO $ traceMarkerIO "cep loop: unsubscribe request"
           (_, nxt_eng) <- stepForward (rawUnsubRequest sub) inner
-          liftIO $ traceEventIO "STOP cruise:add-message"
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
-          nxt_eng <- bracket_ (liftIO $ traceEventIO "START cruise:process-step-msg")
-                   (liftIO $ traceEventIO "STOP cruise:process-step-msg")
-                   $ do
-            let m :: Request 'Write (Process (RunInfo, Engine))
-                m = case other of
-                      SomeSMsg x   -> rawPersisted x
-                      SomeMsg x    -> rawIncoming x
-                      _            -> error "impossible: runItForever"
-            (ri, nxt_eng) <- stepForward m inner
-            let act = requestAction m
-            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            return nxt_eng
+          liftIO $ traceMarkerIO "cep loop: incomming message"
+          let m :: Request 'Write (Process (RunInfo, Engine))
+              m = case other of
+                    SomeSMsg x   -> rawPersisted x
+                    SomeMsg x    -> rawIncoming x
+                    _            -> error "impossible: runItForever" --XXX
+          (ri, nxt_eng) <- stepForward m inner
+          let act = requestAction m
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           cruise debug_mode loop nxt_eng
         go inner Nothing = do
-          nxt_eng <- bracket_ (liftIO $ traceEventIO "START cruise:process-step")
-                   (liftIO $ traceEventIO "STOP cruise:process-step")
-                   $ do
-            (ri, nxt_eng) <- stepForward tick inner
-            let act = requestAction tick
-            when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
-            return nxt_eng
+          liftIO $ traceMarkerIO "cep loop: tick"
+          (ri, nxt_eng) <- stepForward tick inner
+          let act = requestAction tick
+          when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           cruise debug_mode (succ loop) nxt_eng
 
 dumpDebuggingInfo :: Action RunInfo -> Integer -> RunInfo -> IO ()
