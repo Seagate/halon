@@ -232,15 +232,18 @@ jumpPhaseHandle (OnTimeJump _ h)     = _phHandle h
 
 
 -- | Update the time of a 'Jump'. If it's ready, gets its value.
-jumpApplyTime :: Jump a -> State.StateT (EngineState g) Process (Either (Jump a) a)
-jumpApplyTime (NormalJump h)       = return $ Right h
-jumpApplyTime (OnTimeJump p h)     = do
+jumpApplyTime :: RuleKey -> Jump a -> State.StateT (EngineState g) Process (Either (Jump a) a)
+jumpApplyTime _   (NormalJump h)   = return $ Right h
+jumpApplyTime key (OnTimeJump p h) = do
    ct <- getSnapshotTime
    case p of
-     Absolute wt | ct < wt -> return $ Left $ OnTimeJump p h
+     Absolute wt | ct < wt   -> do p' <- addEvent key p
+                                   return $ Left $ OnTimeJump p' h
                  | otherwise -> return $ Right h
      -- no reason why we could appear here, but do the best we could.
-     Relative{} -> return $ Left $ OnTimeJump (Absolute ct <> p) h
+     Relative{} -> do
+      p' <- addEvent key p
+      return $ Left $ OnTimeJump (Absolute ct <> p') h
 
 -- | Applies a 'Jump' tatic to another one without caring about its internal
 --   value.
@@ -255,7 +258,7 @@ jumpBaseOn _ jmp = jmp
 --   will emit a value.
 jumpEmitTimeout :: RuleKey -> Jump a -> State.StateT (EngineState g) Process (Jump a)
 jumpEmitTimeout key jmp = do
-    res <- jumpApplyTime jmp
+    res <- jumpApplyTime key jmp
     case res of
       Left nxt_jmp ->
         case nxt_jmp of 
