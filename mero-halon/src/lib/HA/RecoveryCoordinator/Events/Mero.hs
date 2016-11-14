@@ -85,8 +85,11 @@ data NewMeroClientProcessed = NewMeroClientProcessed Host
 
 instance Binary NewMeroClientProcessed
 
-data GetSpielAddress = GetSpielAddress ProcessId
-       deriving (Eq, Show, Typeable, Generic)
+data GetSpielAddress = GetSpielAddress
+       { entrypointProcessFid :: Fid
+       , entrypointProfileFid :: Fid
+       , entrypointRequester  :: ProcessId
+       } deriving (Eq, Show, Typeable, Generic)
 instance Binary GetSpielAddress
 
 -- | Universally quantified state 'set' request.

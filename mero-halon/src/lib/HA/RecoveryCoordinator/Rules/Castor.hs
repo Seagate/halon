@@ -133,9 +133,10 @@ ruleGetEntryPoint :: Definitions LoopState ()
 ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
-  setPhase main $ \(HAEvent uuid (GetSpielAddress pid) _) -> do
+  setPhase main $ \(HAEvent uuid (GetSpielAddress fid profile pid) _) -> do
     phaseLog "info" $ "Spiel Address requested."
-    phaseLog "info" $ "requested.pid = " ++ show pid
+    phaseLog "info" $ "requester.fid = " ++ show fid
+    phaseLog "info" $ "requester.profile = " ++ show profile
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do

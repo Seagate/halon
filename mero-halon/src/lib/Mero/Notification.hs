@@ -381,10 +381,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     ha_state_set nvec = void . CH.forkProcess lnode . promulgateWait $ Set nvec
 
     ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
-    ha_entrypoint ni reqId procFid _profFid = void $ CH.forkProcess lnode $ do
+    ha_entrypoint ni reqId procFid profFid = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_entrypoint"
       liftIO $ atomicModifyIORef' (_ni_requests ni) $ \x -> (Map.insert reqId procFid x, ())
-      say "ha_entrypoint: try to read values from cache."
       self <- getSelfPid
       liftIO ( (fmap (getSpielAddress True)) <$> readIORef globalResourceGraphCache)
         >>= \case
@@ -395,7 +394,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                  return Nothing
                Nothing        -> do
                  say "ha_entrypoint: request address from RC."
-                 promulgateWait $ GetSpielAddress self
+                 promulgateWait $ GetSpielAddress procFid profFid self
                  expect
         >>= \case
                  Just ep -> do
