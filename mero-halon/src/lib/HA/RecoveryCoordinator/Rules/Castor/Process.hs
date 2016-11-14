@@ -72,6 +72,7 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
 
   startFork rule_init ()
   where
+    isProcFailed (M0.PSFailed _) (M0.PSFailed _) = False
     isProcFailed _ (M0.PSFailed _) = True
     isProcFailed _ _ = False
 
