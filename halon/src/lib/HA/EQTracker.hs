@@ -1,3 +1,7 @@
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -10,25 +14,19 @@
 --
 -- Note that the EQTracker does not act as a proxy for the EventQueue, it just
 -- serves as a registry.
-
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
-
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.EQTracker
   ( ReplicaLocation(..)
   , ReplicaRequest(..)
   , ReplicaReply(..)
   , PreferReplica(..)
-  , ServiceMessage(..)
+  , UpdateEQNodes(..)
+  , UpdateEQNodesAck(..)
   , startEQTracker
   , name
   , updateEQNodes
   , updateEQNodes__static
   , updateEQNodes__sdict
+  , updateEQNodes__tdict
   , __remoteTable
   ) where
 
@@ -45,13 +43,18 @@ import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
 
-data ServiceMessage =
-    -- | Update the nids of the EQs, for example, in the event of the
-    -- RC restarting on a different node.
-    UpdateEQNodes [NodeId]
+-- | Update the nids of the EQs, for example, in the event of the
+-- RC restarting on a different node.
+--
+-- @'UpdateEQNodes' caller eqnodes@
+data UpdateEQNodes = UpdateEQNodes ProcessId [NodeId]
   deriving (Eq, Show, Generic, Typeable)
+instance Binary UpdateEQNodes
 
-instance Binary ServiceMessage
+-- | Reply to 'UpdateEQNodes', sent to the caller.
+data UpdateEQNodesAck = UpdateEQNodesAck
+  deriving (Eq, Show, Generic, Typeable)
+instance Binary UpdateEQNodesAck
 
 -- | Loop state for the tracker. We store a preferred replica as well as the
 -- full list of known replicas. None of these are guaranteed to exist.
@@ -77,6 +80,7 @@ newtype ReplicaRequest = ReplicaRequest ProcessId
 newtype ReplicaReply = ReplicaReply ReplicaLocation
   deriving (Eq, Show, Typeable, Binary, Hashable)
 
+-- | Process label: @"HA.EQTracker"@
 name :: String
 name = "HA.EQTracker"
 
@@ -93,9 +97,9 @@ updateEQNodes ns = do
     Nothing -> receiveTimeout 100000 [] >> updateEQNodes ns
     Just pid -> do
       self <- getSelfPid
-      usend pid (self, UpdateEQNodes ns)
+      usend pid $ UpdateEQNodes self ns
       result <- expectTimeout 1000000
-      unless (result == Just True) $ updateEQNodes ns
+      unless (result == Just UpdateEQNodesAck) $ updateEQNodes ns
 
 remotable [ 'updateEQNodes ]
 
@@ -104,14 +108,13 @@ remotable [ 'updateEQNodes ]
 -- This process is not intended to fail, in because if this process
 -- fails then there is no way to reliably send messages to the EQ.
 eqTrackerProcess :: [NodeId] -> Process ()
-eqTrackerProcess nodes = do
-      go $ ReplicaLocation Nothing nodes
+eqTrackerProcess nodes = go $ ReplicaLocation Nothing nodes
     where
       go eqs = do
         receiveWait
-          [ match $ \(caller, UpdateEQNodes eqnids) -> do
+          [ match $ \(UpdateEQNodes caller eqnids) -> do
               say $ "Got UpdateEQNodes: " ++ show eqnids
-              usend caller True
+              usend caller UpdateEQNodesAck
               let !preferred = do r <- eqsPreferredReplica eqs
                                   if elem r eqnids then return r
                                     else Nothing
@@ -131,7 +134,7 @@ eqTrackerProcess nodes = do
               return eqs
           ] >>= go
 
--- The EQ response may suggest to contact another replica. This function
+-- | The EQ response may suggest to contact another replica. This function
 -- handles the EQTracker state update.
 --
 -- @handleEQResponse naState responsiveNid@
@@ -142,6 +145,7 @@ handleEQResponse eqs rnid =
         , eqsReplicas = [rnid] `union` eqsReplicas eqs
         }
 
+-- | Spawn 'eqTrackerProcess' with the given replicas.
 startEQTracker :: [NodeId] -> Process ProcessId
 startEQTracker eqs = do
     eqt <- spawnLocalName "ha::eq" $ eqTrackerProcess eqs
