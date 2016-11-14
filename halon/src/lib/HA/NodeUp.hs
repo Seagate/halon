@@ -93,9 +93,9 @@ nodeUp (eqs, _delay) = do
       -- The list of requested eq nodes is not empty so we can safely
       -- update it and then use promulgate.
       eqs' -> withEQPid $ \retry ps -> do
-        usend ps (self, EQT.UpdateEQNodes eqs')
+        usend ps $ EQT.UpdateEQNodes self eqs'
         expectTimeout 1000000 >>= \case
-          Just True -> return eqs'
+          Just EQT.UpdateEQNodesAck -> return eqs'
           _ -> retry
 
     say $ "Sending NodeUp message to " ++ show eqNodes ++ " me -> " ++ (show $ processNodeId self)
