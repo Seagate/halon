@@ -187,7 +187,6 @@ Library
                        HA.RecoveryCoordinator.Actions.Castor.Cluster
                        HA.RecoveryCoordinator.Actions.Mero.Failure
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
-                       HA.RecoveryCoordinator.Actions.Mero.Failure.Dynamic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic
                        HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
                        HA.RecoveryCoordinator.Actions.Mero.Core
@@ -366,31 +365,6 @@ Executable halond
   else
       Build-Depends: network >= 2.4,
                      network-transport-tcp >= 0.3.1
-
-Executable genders2yaml
-  Hs-Source-Dirs:     src/genders2yaml
-  Main-Is:            Main.hs
-
-  Ghc-Options: -threaded -Wall -Werror
-
-  if flag(debug)
-   ghc-options:     -eventlog -debug -with-rtsopts=-l-au -rtsopts
-  default-language:  Haskell2010
-  if !flag(mero)
-    Buildable:        False
-  else
-    Build-Depends:    aeson,
-                      base >= 4.8,
-                      binary,
-                      bytestring,
-                      confc,
-                      directory >= 1.2.5,
-                      filepath,
-                      genders,
-                      mero-halon,
-                      unordered-containers,
-                      vector,
-                      yaml
 
 Test-Suite distributed-tests
   Type:             exitcode-stdio-1.0

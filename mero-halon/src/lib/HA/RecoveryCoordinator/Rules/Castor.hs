@@ -88,8 +88,7 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
           loadMeroServers filesystem id_m0_servers
           createMDPoolPVer filesystem
           graph <- getLocalGraph
-          Just strategy <- getCurrentStrategy
-          let updateType = onInit strategy
+          Just updateType <- getCurrentGraphUpdateType
           case updateType of
             Iterative update -> do
               phaseLog "warning" "iterative graph population - can't test sanity prior to update."

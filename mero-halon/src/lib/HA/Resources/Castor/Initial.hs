@@ -138,7 +138,6 @@ instance A.ToJSON Rack
 
 data FailureSetScheme =
     Preloaded Word32 Word32 Word32
-  | Dynamic
   | Formulaic [[Word32]]
   deriving (Eq, Data, Generic, Show, Typeable)
 

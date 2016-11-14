@@ -30,42 +30,40 @@ import           Data.Word
 
 -- | Simple failure set generation strategy. In this case, we pre-generate
 --   failure sets for the given number of failures.
-simpleStrategy :: Word32 -- ^ No. of disk failures to tolerate
+simpleUpdate :: Monad m
+               => Word32 -- ^ No. of disk failures to tolerate
                -> Word32 -- ^ No. of controller failures to tolerate
                -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
-               -> Strategy
-simpleStrategy df cf cfe = Strategy {
-    onInit = Iterative $ \rg ->
-      let mchunks = do
-            prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
-            fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
-                    G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-            globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
-            let fsets = generateFailureSets df cf cfe rg globs
-                attrs = PDClustAttr {
-                          _pa_N = CI.m0_data_units globs
-                        , _pa_K = CI.m0_parity_units globs
-                        , _pa_P = 0
-                        , _pa_unit_size = 4096
-                        , _pa_seed = Word128 101 102
-                        }
-                -- update chunks
-            return (flip unfoldr fsets $ \xs ->
-                    case xs of
-                      [] -> Nothing
-                      _  -> Just $ splitAt 5 xs
-                    , fs, attrs)
-      in case mchunks of
-           Nothing -> Nothing
-           Just (chunks,fs, attrs) -> Just $ \sync ->
-             let go g [] = return g
-                 go g (c:cs) =
-                    let pvs = fmap (\(fs', fids) -> PoolVersion fids fs' attrs) c
-                    in do g' <- sync $ createPoolVersions fs pvs True g
-                          go g' cs
-             in go rg chunks
-  , onFailure = const Nothing
-}
+               -> UpdateType m
+simpleUpdate df cf cfe = Iterative $ \rg ->
+  let mchunks = do
+        prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
+        fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
+                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+        globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+        let fsets = generateFailureSets df cf cfe rg globs
+            attrs = PDClustAttr {
+                      _pa_N = CI.m0_data_units globs
+                    , _pa_K = CI.m0_parity_units globs
+                    , _pa_P = 0
+                    , _pa_unit_size = 4096
+                    , _pa_seed = Word128 101 102
+                    }
+            -- update chunks
+        return (flip unfoldr fsets $ \xs ->
+                case xs of
+                  [] -> Nothing
+                  _  -> Just $ splitAt 5 xs
+                , fs, attrs)
+  in case mchunks of
+       Nothing -> Nothing
+       Just (chunks,fs, attrs) -> Just $ \sync ->
+         let go g [] = return g
+             go g (c:cs) =
+                let pvs = fmap (\(fs', fids) -> PoolVersion fids fs' attrs) c
+                in do g' <- sync $ createPoolVersions fs pvs True g
+                      go g' cs
+         in go rg chunks
 
 generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
