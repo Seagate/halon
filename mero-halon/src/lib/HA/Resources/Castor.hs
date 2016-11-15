@@ -53,7 +53,7 @@ deriveSafeCopy 0 'base ''Enclosure
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, FromJSON, ToJSON)
+  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, FromJSON, ToJSON, Ord)
 deriveSafeCopy 0 'base ''Host
 
 -- | Generic 'host attribute'.

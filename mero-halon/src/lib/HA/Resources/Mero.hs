@@ -238,7 +238,7 @@ data NodeState
   | NSFailedUnrecoverable -- ^ Node is failed
   | NSFailed              -- ^ Node is failed, possibly can be recovered.
   | NSOnline              -- ^ Node is online.
-  deriving (Eq, Show, Typeable, Generic, Read)
+  deriving (Eq, Show, Typeable, Generic, Read, Ord)
 
 instance Binary NodeState
 instance Hashable NodeState
@@ -322,7 +322,7 @@ data ServiceState =
   | SSStopping
   | SSInhibited ServiceState -- ^ Service state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic, Read)
+  deriving (Eq, Show, Typeable, Generic, Read, Ord)
 instance Binary ServiceState
 instance Hashable ServiceState
 instance ToJSON ServiceState
@@ -365,7 +365,7 @@ data SDevState =
   | SDSInhibited SDevState -- Failure is inhibited by a higher level failure.
   | SDSTransient SDevState -- Transient failure, and state before said
                            -- transient failure.
-  deriving (Eq, Show, Typeable, Generic, Read)
+  deriving (Eq, Show, Typeable, Generic, Read, Ord)
 
 instance Binary SDevState
 instance Hashable SDevState
@@ -589,7 +589,7 @@ data PoolRepairInformation = PoolRepairInformation
   , priTimeOfFirstCompletion :: TimeSpec
   , priTimeLastHourlyRan :: TimeSpec
   , priStateUpdates      :: [(SDev, Int)]
-  } deriving (Eq, Show, Generic, Typeable)
+  } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
@@ -609,7 +609,7 @@ data PoolRepairStatus = PoolRepairStatus
   { prsType :: PoolRepairType
   , prsRepairUUID :: UUID
   , prsPri :: Maybe PoolRepairInformation
-  } deriving (Eq, Show, Generic, Typeable)
+  } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
@@ -668,7 +668,7 @@ data ProcessState =
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic, Read)
+  deriving (Eq, Show, Typeable, Generic, Read, Ord)
 instance Binary ProcessState
 instance Hashable ProcessState
 instance ToJSON ProcessState

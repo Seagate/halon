@@ -78,7 +78,7 @@ import           Control.Monad (join, unless, when)
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
-
+import           Data.List (sort)
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
                             , isJust, isNothing
                             )
@@ -196,28 +196,28 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) =<< getPool
       let status = getClusterStatus rg
           stats = filesystem >>= \fs -> G.connectedTo fs R.Has rg
-      hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do
-            let nodes = G.connectedTo host R.Runs rg :: [M0.Node]
+      hosts <- forM (sort $ G.connectedTo R.Cluster R.Has rg) $ \host -> do
+            let nodes = sort $ G.connectedTo host R.Runs rg :: [M0.Node]
             let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
                        let st = M0.getState process rg
-                       services <- getChildren process
+                       services <- sort <$> getChildren process
                        let services' = map (\srv -> (srv, M0.getState srv rg)) services
                        return (process, ReportClusterProcess st services')
             let go ( hdev :: R.StorageDevice
                     , ids :: [R.DeviceIdentifier]
                     , msdev :: Maybe M0.SDev)
                   = (\sdev -> (sdev, M0.getState sdev rg, hdev, ids)) <$> msdev
-            devs <- fmap (mapMaybe go)
+            devs <- fmap (sort . mapMaybe go)
                   . traverse (\x -> (x,,) <$> findStorageDeviceIdentifiers x
                                           <*> lookupStorageDeviceSDev x)
                     =<< findHostStorageDevices host
-            return (host, ReportClusterHost (listToMaybe nodes) node_st (join prs) devs)
+            return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs) devs)
       liftProcess $ sendChan ch $ ReportClusterState
         { csrStatus = status
-        , csrSNS    = repairs
+        , csrSNS    = sort repairs
         , csrInfo   = (liftA2 (,) profile filesystem)
         , csrStats  = stats
         , csrHosts  = hosts

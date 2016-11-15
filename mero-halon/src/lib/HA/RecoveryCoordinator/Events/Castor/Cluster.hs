@@ -143,7 +143,7 @@ data ReportClusterHost = ReportClusterHost
                           , Castor.StorageDevice
                           , [Castor.DeviceIdentifier]
                           )]
-      } deriving (Eq, Show, Typeable, Generic)
+      } deriving (Eq, Show, Typeable, Generic, Ord)
 
 instance Binary ReportClusterHost
 instance ToJSON ReportClusterHost
@@ -152,7 +152,7 @@ instance FromJSON ReportClusterHost
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
       , crpServices :: [(M0.Service, M0.ServiceState)]
-      } deriving (Eq, Show, Typeable, Generic)
+      } deriving (Eq, Show, Typeable, Generic, Ord)
 
 instance Binary ReportClusterProcess
 instance ToJSON ReportClusterProcess
