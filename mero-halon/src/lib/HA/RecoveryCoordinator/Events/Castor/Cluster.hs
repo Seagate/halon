@@ -124,7 +124,7 @@ newtype ClusterResetRequest = ClusterResetRequest Bool
 
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
-      , csrSNS        :: [(M0.Pool, M0.PoolRepairInformation)]
+      , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
       , csrInfo       :: Maybe (M0.Profile, M0.Filesystem)
       , csrStats      :: Maybe M0.FilesystemStats
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]

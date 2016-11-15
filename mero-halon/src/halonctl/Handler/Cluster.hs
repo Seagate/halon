@@ -594,11 +594,14 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
         putStrLn $ "      Total segments: " ++ show (_fss_total_seg . M0._fs_stats $ stats)
         putStrLn $ "      Free segments: " ++ show (_fss_free_seg . M0._fs_stats $ stats)
       unless (null sns) $ do
-         putStrLn $ "    sns repairs:"
+         putStrLn $ "    sns operations:"
          forM_ sns $ \(M0.Pool pool_fid, s) -> do
-           putStrLn $ "      " ++ fidToStr pool_fid ++ ":"
-           forM_ (M0.priStateUpdates s) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
-             putStrLn $ "        " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
+           putStrLn $ "      pool:" ++ fidToStr pool_fid ++ " => " ++ show (M0.prsType s)
+           putStrLn $ "      uuid:" ++ show (M0.prsRepairUUID s)
+           forM_ (M0.prsPri s) $ \i -> do
+             putStrLn $ "      time of start: " ++ show (M0.priTimeOfFirstCompletion i) --XXX: bad naming?
+             forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
+               putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "Hosts:"
       forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps sdevs) -> do
          putStrLn $ "  " ++ qfdn ++ showNodeFid m0fid ++ " ["++ M0.prettyNodeState st ++ "]"

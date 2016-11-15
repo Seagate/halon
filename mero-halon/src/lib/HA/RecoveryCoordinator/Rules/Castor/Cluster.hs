@@ -193,7 +193,7 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
       rg <- getLocalGraph
       profile <- getProfile
       filesystem <- getFilesystem
-      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairInformation p) =<< getPool
+      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) =<< getPool
       let status = getClusterStatus rg
           stats = filesystem >>= \fs -> G.connectedTo fs R.Has rg
       hosts <- forM (G.connectedTo R.Cluster R.Has rg) $ \host -> do

@@ -55,6 +55,7 @@ import qualified "distributed-process-scheduler" System.Clock as C
 
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
+import qualified Data.UUID as UUID
 import HA.SafeCopy.OrphanInstances()
 import qualified HA.ResourceGraph as G
 --------------------------------------------------------------------------------
@@ -579,6 +580,8 @@ data PoolRepairType = Failure | Rebalance
 deriveSafeCopy 0 'base ''PoolRepairType
 instance Binary PoolRepairType
 instance Hashable PoolRepairType
+instance ToJSON PoolRepairType
+instance FromJSON PoolRepairType
 
 -- | Information attached to 'PoolRepairStatus'.
 data PoolRepairInformation = PoolRepairInformation
@@ -610,6 +613,19 @@ data PoolRepairStatus = PoolRepairStatus
 
 instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
+instance ToJSON PoolRepairStatus where
+  toJSON (PoolRepairStatus t u p) = object
+    [ "type" .= t
+    , "uuid" .= UUID.toText u
+    , "info" .= p
+    ]
+instance FromJSON PoolRepairStatus where
+  parseJSON = withObject "PoolRepairStatus" $ \v ->
+    PoolRepairStatus <$> v .: "type"
+                     <*> (maybe (fail "can't parse uuid") return . UUID.fromText =<< (v .: "uuid"))
+                     <*> v .: "info"
+
+-- instance FromJSON PoolRepairStatus
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
 -- | Vector of failed devices. We keep the order of failures because
