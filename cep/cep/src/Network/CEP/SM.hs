@@ -97,7 +97,7 @@ newSM key startPhase rn ps initialBuffer initialL =
       ph -> return [(SMResult smId' SMSuspended (info []) Nothing
                     , SM $ interpretInput smId' l b ph)]
     executeStack logs subs smId' l b f info (jmp:phs) = do
-        res <- jumpApplyTime jmp
+        res <- jumpApplyTime key jmp
         case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in

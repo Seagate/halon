@@ -2,7 +2,7 @@
 module Regression (tests) where
 
 import Control.Distributed.Process
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, forever)
 
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
@@ -19,7 +19,7 @@ tests :: (Process () -> IO ()) -> TestTree
 tests launch = testGroup "regression"
   [ testCase "fork-remove-messages" $ launch testFork
   , testCase "fork-prompt" $ launch testForkPrompt
-  , localOption (mkTimeout 70000000) $ testCase "forks-works" $ launch testForks
+  , testCase "fork-timeout" $ launch testForkTimeout
   ]
 
 testFork :: Process ()
@@ -101,41 +101,31 @@ testForkPrompt = do
         directly finish $ stop
         startFork handler ()
 
-testForks :: Process ()
-testForks = do
+testForkTimeout :: Process ()
+testForkTimeout = do
     self <- getSelfPid
     pid  <- spawnLocal $ execute () (rules self)
-    _ <- receiveTimeout 65000000 []
-    usend pid ()
-
+    usend pid (4::Int)
+    usend pid (2::Int)
     assertEqual "foo"
-      [ "load"
-      ] =<< replicateM 1 expect
+      [ "work2", "work4"] =<< replicateM 2 expect
   where
 
     rules sup = do
       define "insert" $ do
         handler <- phaseHandle "load"
         work    <- phaseHandle "work"
-        bogus   <- phaseHandle "bogus"
         finish  <- phaseHandle "finish"
 
-        setPhase handler $ \() -> do
-          liftProcess $ do usend sup "load"
-                           liftIO $ traceMarkerIO "cep:load"
-                           say "load"
-          fork CopyNewerBuffer $ switch [ work, timeout 10 finish]
+        setPhase handler $ \(i::Int) -> do
+          put Local $ Just i
+          fork CopyNewerBuffer $ switch [timeout i work]
+          continue handler
 
-        setPhase work $ \(i :: Int) -> do
-          liftProcess $ do usend sup ("work" ++ show i)
-                           say ("work" ++ show i)
-                           liftIO $ traceMarkerIO "cep:work"
+        directly work $ do
+          Just i <- get Local 
+          liftProcess $ usend sup $ "work"++show i
           continue finish
 
-        setPhase bogus $ \(i :: Double) -> do
-           liftProcess $ do usend sup ("bogus" ++ show i)
-                            say ("bogus" ++ show i)
-           continue finish
-
         directly finish $ stop
-        startForks [bogus, handler] ()
+        start handler Nothing
