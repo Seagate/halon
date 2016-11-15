@@ -253,7 +253,7 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
 -- Emits:        'NodeKernelFailed'
 -- State-Changes: 'M0.Node' Failed
 eventKernelFailed :: Definitions LoopState ()
-eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid _) -> do
+eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid msg) -> do
   g <- getLocalGraph
   let node = R.Node $ processNodeId pid
       m0nodes = nodeToM0Node node g
@@ -264,7 +264,8 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
         , any (\s -> M0.s_type s == CST_HA)
            $ G.connectedTo p M0.IsParentOf g
         ]
-  applyStateChanges $ (`stateSet` M0.PSFailed "mero-kernel failed to start") <$> haprocesses
+  let failMsg = "mero-kernel failed to start: " ++ msg
+  applyStateChanges $ (`stateSet` M0.PSFailed failMsg) <$> haprocesses
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
 

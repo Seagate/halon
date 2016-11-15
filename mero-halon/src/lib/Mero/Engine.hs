@@ -12,11 +12,12 @@ module Mero.Engine
 
 import Mero
 
-import Control.Distributed.Process hiding (bracket_)
-import Control.Concurrent (forkOS)
+import Control.Concurrent (forkOS, myThreadId)
 import Control.Concurrent.MVar
-import Control.Monad.Catch (bracket_)
+import Control.Distributed.Process hiding (bracket_, catch)
+import Control.Exception (throwTo)
 import Control.Monad (when)
+import Control.Monad.Catch (bracket_, catch)
 import Data.Functor (void)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -53,15 +54,18 @@ m0subsystemClosed = unsafePerformIO $ newEmptyMVar
 initializeOnce :: IO ()
 initializeOnce =
   modifyMVar_ m0subsystemReferenceCounter $ \i -> do
-    when (i==0) $ do
+    when (i == 0) $ do
       started <- newEmptyMVar
+      callerId <- myThreadId
       void $ forkOS $ do
-        withM0 $ do
+        rethrowingTo callerId . withM0 $ do
           putMVar started ()
           takeMVar m0subsystemClose
         putMVar m0subsystemClosed ()
       takeMVar started
     return (i+1)
+   where
+     rethrowingTo tid f = catch f $ \e -> throwTo tid (e :: IOError)
 
 -- | Finalize mero subsystem if it's unused.
 --
@@ -74,6 +78,6 @@ finalizeOnce = modifyMVar_ m0subsystemReferenceCounter $ \i -> do
     takeMVar m0subsystemClosed
   return (i-1)
 
--- | Run code with mero environment beign enabled.
+-- | Run code with mero environment being enabled.
 withMero :: Process () -> Process ()
 withMero = bracket_ (liftIO initializeOnce) (liftIO finalizeOnce)

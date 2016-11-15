@@ -283,9 +283,9 @@ remotableDecl [ [d|
     traceM0d "starting."
     Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
       traceM0d "Kernel module loaded."
+      self <- getSelfPid
       case rc of
-        Right _ -> withEp $ \ep -> do
-          self <- getSelfPid
+        Right _ -> flip Catch.catch (epHandler self) . withEp $ \ep -> do
           traceM0d "DEBUG: Pre-withEp"
           _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
                                              (mcKeepaliveTimeout conf) ep self
@@ -296,7 +296,6 @@ remotableDecl [ [d|
           traceM0d "Starting service m0d on mero client"
           go c cc
         Left i -> do
-          self <- getSelfPid
           traceM0d $ "Kernel module did not load correctly: " ++ show i
           void . promulgate . M0.MeroKernelFailed self $
             "mero-kernel service failed to start: " ++ show i
@@ -309,6 +308,12 @@ remotableDecl [ [d|
       haAddr = RPC.rpcAddress $ mcHAAddress conf
       withEp = Mero.Notification.withMero
              . Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
+
+      epHandler :: ProcessId -> Catch.SomeException -> Process ()
+      epHandler self e = do
+        void . promulgate . M0.MeroKernelFailed self $
+          "endpoint exception in halon:m0d: " ++ show e
+        Control.Distributed.Process.die Fail
 
       -- Kernel
       startKernel = liftIO $ do

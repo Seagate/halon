@@ -67,7 +67,14 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
 
   setPhaseInternalNotificationWithState rule_init isProcFailed $ \(eid, procs) -> do
     todo eid
-    for_ procs $ promulgateRC . ProcessStartRequest . fst
+    -- Filter CST_HA processes out: if halon:m0d fails, process fails
+    -- too (eventKernelFailed)
+    rg <- getLocalGraph
+    let procs' = [ p | (p, _) <- procs
+                     , let srvs = G.connectedTo p M0.IsParentOf rg
+                     , not $ any (\s -> M0.s_type s == CST_HA) srvs ]
+
+    for_ procs' $ promulgateRC . ProcessStartRequest
     done eid
 
   startFork rule_init ()
