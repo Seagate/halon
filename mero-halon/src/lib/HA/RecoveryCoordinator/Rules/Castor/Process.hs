@@ -72,6 +72,11 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
 
   startFork rule_init ()
   where
+    -- Don't restart after we leave inhibited, for example after node
+    -- recovery: other mechanisms should recover the processes
+    -- explicitly
+    isProcFailed (M0.PSInhibited _) (M0.PSFailed _) = False
+    -- Don't restart if we change reason for failure
     isProcFailed (M0.PSFailed _) (M0.PSFailed _) = False
     isProcFailed _ (M0.PSFailed _) = True
     isProcFailed _ _ = False
