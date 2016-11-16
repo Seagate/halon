@@ -118,6 +118,41 @@ instance Binary NotifyFailureEndpoints
 instance Hashable NotifyFailureEndpoints
 
 --------------------------------------------------------------------------------
+-- Printing objects in a nicer way                                            --
+--------------------------------------------------------------------------------
+
+class ShowFidObj a where
+  showFid :: a -> String
+  default showFid :: (Generic a, GShowType (Rep a), M0.ConfObj a) => a -> String
+  showFid = genShowFid
+
+genShowFid :: (M0.ConfObj a, Generic a, GShowType (Rep a)) => a -> String
+genShowFid x = showType (Generics.from x) ++ "{" ++ fidToStr (M0.fid x) ++ "}" where
+
+class GShowType a where showType :: a b -> String
+
+instance (Generics.Datatype d) => GShowType (M1 D d a) where
+  showType x = Generics.datatypeName x
+
+instance ShowFidObj M0.Root
+instance ShowFidObj M0.Profile
+instance ShowFidObj M0.Filesystem
+instance ShowFidObj M0.Pool
+instance ShowFidObj M0.PVer
+instance ShowFidObj M0.Enclosure
+instance ShowFidObj M0.Controller
+instance ShowFidObj M0.Rack
+instance ShowFidObj M0.Node
+instance ShowFidObj M0.Process
+instance ShowFidObj M0.Service
+instance ShowFidObj M0.Disk
+instance ShowFidObj M0.SDev
+instance ShowFidObj M0.EnclosureV
+instance ShowFidObj M0.ControllerV
+instance ShowFidObj M0.RackV
+instance ShowFidObj M0.DiskV
+
+--------------------------------------------------------------------------------
 -- Specific object state                                                      --
 --------------------------------------------------------------------------------
 
@@ -136,7 +171,16 @@ getConfObjState :: HasConfObjectState a => a -> G.Graph -> ConfObjectState
 getConfObjState x rg = toConfObjState x $ getState x rg
 
 -- | Class to determine configuration object state from the resource graph.
-class (G.Resource a, Binary a, M0.ConfObj a, Binary (StateCarrier a), Eq (StateCarrier a), Typeable (StateCarrier a), Read (StateCarrier a))
+class ( G.Resource a
+      , Binary a
+      , M0.ConfObj a
+      , ShowFidObj a
+      , Binary (StateCarrier a)
+      , Eq (StateCarrier a)
+      , Typeable (StateCarrier a)
+      , Show (StateCarrier a)
+      , Read (StateCarrier a)
+      )
   => HasConfObjectState a where
     type StateCarrier a :: *
     type StateCarrier a = ConfObjectState
@@ -371,33 +415,6 @@ lookupConfObjectStates :: [Fid] -> G.Graph -> [(Fid, ConfObjectState)]
 lookupConfObjectStates fids g = catMaybes
     . fmap (traverse id)
     $ zip fids (lookupConfObjectState g <$> fids)
-
-
-class ShowFidObj a where
-  showFid :: a -> String
-  default showFid :: (Generic a, GShowType (Rep a), M0.ConfObj a) => a -> String
-  showFid = genShowFid
-
-genShowFid :: (M0.ConfObj a, Generic a, GShowType (Rep a)) => a -> String
-genShowFid x = showType (Generics.from x) ++ "{" ++ fidToStr (M0.fid x) ++ "}" where
-
-class GShowType a where showType :: a b -> String
-
-instance (Generics.Datatype d) => GShowType (M1 D d a) where
-  showType x = Generics.datatypeName x
-
-instance ShowFidObj M0.Filesystem
-instance ShowFidObj M0.Pool
-instance ShowFidObj M0.PVer
-instance ShowFidObj M0.Enclosure
-instance ShowFidObj M0.Controller
-instance ShowFidObj M0.Rack
-instance ShowFidObj M0.Node
-instance ShowFidObj M0.Process
-instance ShowFidObj M0.Service
-instance ShowFidObj M0.Disk
-instance ShowFidObj M0.SDev
-
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

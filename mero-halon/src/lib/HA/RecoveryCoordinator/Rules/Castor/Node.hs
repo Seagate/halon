@@ -153,13 +153,12 @@ import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
-import           Control.Monad (void, guard, join, when)
+import           Control.Monad (void, guard, join)
 import           Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
-import           Data.List (nub)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
@@ -185,8 +184,6 @@ rules = sequence_
   , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
   , ruleFailNodeIfProcessCantRestart
-  , ruleAllProcessesFailed
-  , ruleAllProcessesOnline
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
@@ -1000,49 +997,3 @@ ruleFailNodeIfProcessCantRestart =
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
       applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
     _ -> return ()
-
--- | Create a rule that transitions node if all processes on the
--- node meet the given predicates.
-ruleAllProcessChangesNode :: String -- ^ Rule name
-                          -> (M0.ProcessState -> Bool)
-                          -- ^ Process predicate
-                          -> M0.NodeState
-                          -- ^ New state of node if all
-                          -- the processes meet the predicate
-                          -> Definitions LoopState ()
-ruleAllProcessChangesNode rName pGuard nodeNewState = define rName $ do
-  rule_init <- phaseHandle "rule_init"
-  setPhaseInternalNotificationWithState rule_init (\_ -> pGuard) $ \(eid, map fst -> (procs :: [M0.Process])) -> do
-    todo eid
-    rg <- getLocalGraph
-    for_ (nub $ concatMap (`getNode` rg) procs) $ \(ctrl, ps) -> do
-      when (all (\p -> pGuard (M0.getState p rg) || isHalonProcess p rg) ps) $ do
-        applyStateChanges [stateSet ctrl nodeNewState]
-    done eid
-
-  startFork rule_init ()
-  where
-    isHalonProcess p rg =
-      any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
-
-    getNode p rg =
-      [ (n, (G.connectedTo n M0.IsParentOf rg :: [M0.Process]))
-      | Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p rg]
-      , M0.getState n rg /= nodeNewState
-      ]
-
-
--- | If every process on node fails, fail the node too
-ruleAllProcessesFailed :: Definitions LoopState ()
-ruleAllProcessesFailed =
-  ruleAllProcessChangesNode "castor::node::allProcessesFailed"
-                                  isProcFailed M0.NSFailed
-  where
-    isProcFailed (M0.PSFailed _) = True
-    isProcFailed _ = False
-
--- | If every process on node comes online, set node online
-ruleAllProcessesOnline :: Definitions LoopState ()
-ruleAllProcessesOnline =
-  ruleAllProcessChangesNode "castor::node::allProcessesOnline"
-                                  (== M0.PSOnline) M0.NSOnline

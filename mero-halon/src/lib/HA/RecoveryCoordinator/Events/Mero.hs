@@ -23,6 +23,8 @@ module HA.RecoveryCoordinator.Events.Mero
    , GetFailureVector(..)
    , QuiesceSNSOperation(..)
    , QuiesceSNSOperationResult(..)
+   , RestartSNSOperationRequest(..)
+   , RestartSNSOperationResult(..)
    -- * State changes
    , AnyStateSet(..)
    , AnyStateChange(..)
@@ -181,8 +183,7 @@ instance Binary MeroKernelFailed
 newtype NodeKernelFailed = NodeKernelFailed M0.Node
   deriving (Eq, Show, Typeable, Generic, Binary)
 
--- | Request abort on the given pool. If 'UUID' is provided, only
--- abort if the pool repair status has the Poolgiven 'UUID'
+-- | Request abort on the given pool.
 data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
 
@@ -207,6 +208,20 @@ data QuiesceSNSOperationResult
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Binary QuiesceSNSOperationResult
+
+-- | Request restart of the SNS operation on the given pool.
+data RestartSNSOperationRequest = RestartSNSOperationRequest M0.Pool UUID
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary RestartSNSOperationRequest
+
+data RestartSNSOperationResult =
+    RestartSNSOperationSuccess M0.Pool
+  | RestartSNSOperationFailed M0.Pool String
+  | RestartSNSOperationSkip M0.Pool
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance Binary RestartSNSOperationResult
 
 data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)

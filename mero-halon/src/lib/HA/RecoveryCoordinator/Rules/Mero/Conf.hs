@@ -186,6 +186,15 @@ genericApplyDeferredStateChanges :: DeferredStateChanges
 genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   diff <- mkStateDiff f (encodeP i) []
   notifyMeroAsync diff s
+  let (InternalObjectStateChange iosc) = i
+  forM_ iosc $ \(AnyStateChange a o n _) -> do
+    phaseLog "state-update" $ unwords
+      [ M0.showFid a
+      , "transitioned to"
+      , show n
+      , "from"
+      , show o
+      ]
   action
 
 

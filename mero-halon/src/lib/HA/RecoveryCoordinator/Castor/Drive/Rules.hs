@@ -37,7 +37,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
   ) where
 
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
-import HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart  as Smart
 import HA.RecoveryCoordinator.Castor.Drive.Events
@@ -87,17 +87,7 @@ rules = sequence_
   , ruleDriveBlip
   , ruleDriveOK
   , rulePowerDownDriveOnFailure
-  , Repair.checkRepairOnClusterStart
-  , Repair.checkRepairOnServiceUp
-  , Repair.ruleRepairStart
-  , Repair.ruleRebalanceStart
-  , Repair.ruleStobIoqError
-  , Repair.ruleSNSOperationAbort
-  , Repair.ruleSNSOperationQuiesce
-  , Repair.ruleSNSOperationContinue
-  , Repair.ruleOnSnsOperationQuiesceFailure
-  , Repair.ruleHandleRepair
-  , Repair.ruleHandleRepairNVec
+  , Repair.rules
   , Reset.ruleResetAttempt
   , Reset.ruleResetInit
   , Raid.rules
