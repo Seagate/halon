@@ -10,12 +10,9 @@
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE LambdaCase                #-}
 module Mero
-  ( m0_init
-  , m0_fini
-  , withM0
+  ( withM0
   , sendM0Task
   , sendM0Task_
-  , M0InitException(..)
   , M0WorkerIsNotStarted(..)
   , addM0Finalizer
   ) where
@@ -76,11 +73,7 @@ withM0 = bracket_ m0_init m0_fini . bracket runworker stopworker . const
       writeChan globalM0Chan Nothing
       joinM0OS mid
 
-newtype M0InitException = M0InitException CInt deriving (Show, Typeable)
-
-instance Exception M0InitException
-
--- | Exception means that 'withM0' or 'withM0Deferred' were not called, so
+-- | Exception means that 'withM0' or was not called, so
 -- there is no worker that could start mero or process query.
 data M0WorkerIsNotStarted = M0WorkerIsNotStarted deriving (Show, Typeable)
 
@@ -109,8 +102,9 @@ replaceGlobalWorker tid = do
 
 data Task = forall a . Task (IO (Either SomeException a)) (MVar (Either SomeException a))
 
--- | Send task to M0 worker, may throw 'M0InitException' if mero worker
--- failed to initialize mero. This call blocks until the task is completed.
+-- | Send task to M0 worker, may throw an exception if mero worker
+-- failed to initialize mero. This call blocks until the task is
+-- completed.
 sendM0Task :: IO a -> IO a
 sendM0Task f = do
     box <- newEmptyMVar
