@@ -105,6 +105,9 @@ jobProcessStart = Job "process-start"
 -- * Is halon:m0d up and running on the node?
 -- * What is the result of the job?
 --
+-- This job always returns: it's not necessary for the caller to have
+-- a timeout.
+--
 -- TODO: We need better invariant checking: for example we want to
 -- verify process doesn't enter unexpected state, that node remains
 -- online, that cluster remains online. Basically we have little

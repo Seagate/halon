@@ -442,7 +442,6 @@ clusterStartCommand :: [NodeId]
                     -> Bool
                     -> Process ()
 clusterStartCommand eqnids False = do
-  -- FIXME implement async also
   subscribeOnTo eqnids (Proxy :: Proxy ClusterStartResult)
   _ <- promulgateEQ eqnids ClusterStartRequest
   Published msg _ <- expect :: Process (Published ClusterStartResult)
@@ -453,9 +452,7 @@ clusterStartCommand eqnids False = do
       ClusterStartOk        -> exitSuccess
       ClusterStartTimeout{} -> exitFailure
       ClusterStartFailure{} -> exitFailure
-
 clusterStartCommand eqnids True = do
-  -- FIXME implement async also
   _ <- promulgateEQ eqnids ClusterStartRequest
   liftIO $ putStrLn "Cluster start request sent."
 

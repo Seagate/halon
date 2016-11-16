@@ -51,6 +51,7 @@ import           HA.EventQueue.Types
 import           HA.Encode
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
+import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -67,6 +68,7 @@ import           HA.RecoveryCoordinator.Events.Castor.Process
 import           HA.RecoveryCoordinator.Events.Mero
 import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
 import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
@@ -224,10 +226,6 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
         }
       messageProcessed eid
 
--- | Timeout for cluster start rule
-cluster_start_timeout :: Int
-cluster_start_timeout = 10*60 -- 10m
-
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
 jobClusterStart = Job "castor::cluster::start"
 
@@ -265,11 +263,11 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
 --   - 'processStartClientsOnNode'   - start all m0t1fs mounts on node
 --
 ruleClusterStart :: Definitions LoopState ()
-ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
+ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
     wait_server_jobs  <- phaseHandle "wait_server_jobs"
     start_client_jobs <- phaseHandle "start_client_jobs"
     wait_client_jobs  <- phaseHandle "wait_client_jobs"
-    job_timeout       <- phaseHandle "job_timeout"
+    client_jobs_timeout <- phaseHandle "client_jobs_timeout"
 
     let getMeroHostsNodes p = do
          rg <- getLocalGraph
@@ -295,8 +293,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
 
     let fail_job st = do
           modify Local $ rlens fldRep . rfield .~ Just st
-          return $ Just [finalize]
-        start_job = do
+          return $ Just [finish]
+
+    let start_job = do
           rg <- getLocalGraph
           -- Randomly select principal RM, it may be switched if another
           -- RM will appear online before this one.
@@ -321,12 +320,18 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
             $ \(host::R.Host) (node::M0.Node) rg' -> G.isConnected host R.Has R.HA_M0SERVER rg'
                             && M0.getState node rg' /= M0.NSFailed
                             && M0.getState node rg' /= M0.NSFailedUnrecoverable
-          for_ servers $ \s -> do
+          jobs <- forM servers $ \s -> do
             phaseLog "debug" $ "starting server processes on node=" ++ M0.showFid s
-            promulgateRC $ StartProcessesOnNodeRequest s
-          modify Local $ rlens fldNodes . rfield .~ Set.fromList servers
-          modify Local $ rlens fldNext  . rfield .~ Just start_client_jobs
-          return $ Just [wait_server_jobs, timeout cluster_start_timeout job_timeout]
+            startJob $ StartProcessesOnNodeRequest s
+          modify Local $ rlens fldJobs . rfield .~ Set.fromList jobs
+
+          case jobs of
+            [] -> do
+              phaseLog "warn" $ "No server nodes to start, skipping to clients."
+              return $ Just [start_client_jobs]
+            _ -> do
+              modify Local $ rlens fldNext . rfield .~ Just start_client_jobs
+              return $ Just [wait_server_jobs]
 
     let route ClusterStartRequest{} = getFilesystem >>= \case
           Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." [] []
@@ -341,27 +346,26 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                         then start_job
                         else fail_job $ ClusterStartFailure "Cluster not fully stopped." [] []
 
-    setPhase wait_server_jobs $ \s -> do
+    setPhaseIf wait_server_jobs ourJob $ \(JobFinished l s) -> do
        (node, result) <- case s of
          NodeProcessesStarted node ->
            return (node, "success")
          s'@(NodeProcessesStartTimeout node _) -> do
-           modify Local $ rlens fldNext . rfield .~ Just finalize
+           modify Local $ rlens fldNext . rfield .~ Just finish
            appendServerFailure s'
            return (node, "timeout")
          s'@(NodeProcessesStartFailure node _) -> do
-           modify Local $ rlens fldNext . rfield .~ Just finalize
+           modify Local $ rlens fldNext . rfield .~ Just finish
            appendServerFailure s'
            return (node, "failure")
-       servers <- getField . rget fldNodes <$> get Local
        phaseLog "job finished" $ "node=" ++ M0.showFid node
        phaseLog "job finished" $ "result=" ++ result
-       let servers' = Set.delete node servers
-       modify Local $ rlens fldNodes . rfield .~ servers'
-       if Set.null servers'
+       modify Local $ rlens fldJobs . rfield %~ (`Set.difference` Set.fromList l)
+       remainingJobs <- getField . rget fldJobs <$> get Local
+       if Set.null remainingJobs
        then do Just next <- getField . rget fldNext <$> get Local
-               switch [next, timeout cluster_start_timeout job_timeout]
-       else switch [wait_server_jobs, timeout cluster_start_timeout job_timeout]
+               continue next
+       else continue wait_server_jobs
 
     directly start_client_jobs $ do
        clients <- fmap (map snd) $ getMeroHostsNodes
@@ -371,16 +375,18 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                             && M0.getState node rg /= M0.NSFailedUnrecoverable
        case clients of
          [] -> do modify Local $ rlens fldRep . rfield .~ Just ClusterStartOk
-                  continue finalize
+                  continue finish
          _  -> do
-            for_ clients $ \s -> do
+            jobs <- forM clients $ \s -> do
                phaseLog "debug" $ "starting client processes on node=" ++ M0.showFid s
-               promulgateRC $ StartClientsOnNodeRequest s
-            modify Local $ rlens fldNodes . rfield .~ Set.fromList clients
-            continue wait_client_jobs
+               startJob $ StartClientsOnNodeRequest s
+            ct <- liftIO M0.getTime
+            client_timeout <- _hv_clients_start_timeout <$> getHalonVars
+            modify Local $ rlens fldJobs . rfield .~ Set.fromList jobs
+            modify Local $ rlens fldClientsWaitStart . rfield .~ Just ct
+            switch [wait_client_jobs, timeout client_timeout client_jobs_timeout]
 
-    setPhase wait_client_jobs $ \s -> do
-       clients <- getField . rget fldNodes <$> get Local
+    setPhaseIf wait_client_jobs ourJob $ \(JobFinished l s) -> do
        (node,result) <- case s of
          ClientsStartOk node ->
            return (node, "success")
@@ -389,15 +395,26 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
            return (node, "failure")
        phaseLog "job finished" $ "node=" ++ M0.showFid node
        phaseLog "job finished" $ "result=" ++ result
-       let clients' = Set.delete node clients
-       modify Local $ rlens fldNodes . rfield .~ clients'
-       if Set.null clients'
+       modify Local $ rlens fldJobs . rfield %~ (`Set.difference` Set.fromList l)
+       remainingJobs <- getField . rget fldJobs <$> get Local
+       if Set.null remainingJobs
        then do
          modify Local $ rlens fldRep . rfield .~ Just ClusterStartOk
-         continue finalize
-       else switch [wait_client_jobs, timeout cluster_start_timeout job_timeout]
+         continue finish
+       else do
+         -- We still have some messages, calculate how much longer to
+         -- wait for them.
+         Just st <- getField . rget fldClientsWaitStart <$> get Local
+         client_timeout <- _hv_clients_start_timeout <$> getHalonVars
+         elapsed <- liftIO $ M0.secondsSince st
+         let remaining_timeout = max 0 (client_timeout - elapsed)
+         switch [wait_client_jobs, timeout remaining_timeout client_jobs_timeout]
 
-    directly job_timeout $ do
+    -- TODO: This timeout sucks. We have this whole "append failures"
+    -- mechanism and here we throw it all away and replace it with
+    -- information without context.
+    directly client_jobs_timeout $ do
+       phaseLog "warn" $ "Client bootstrap timed out, gathering info."
        rg <- getLocalGraph
        let status = [ (n, ps) | h :: R.Host <- G.connectedTo R.Cluster R.Has rg
                               , n <- G.connectedTo h R.Runs rg
@@ -405,7 +422,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
                               , not $ null ps ]
 
        modify Local $ rlens fldRep . rfield .~ Just (ClusterStartTimeout status)
-       continue finalize
+       continue finish
 
     return route
   where
@@ -413,15 +430,22 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finalize -> do
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe ClusterStartResult)
     fldRep = Proxy
-    fldNodes :: Proxy '("nodes", Set.Set M0.Node)
-    fldNodes = Proxy
+    fldJobs :: Proxy '("nodes", Set.Set ListenerId)
+    fldJobs = Proxy
     fldNext :: Proxy '("next", Maybe (Jump PhaseHandle))
     fldNext = Proxy
+    fldClientsWaitStart = Proxy :: Proxy '("clients-wait-start", Maybe M0.TimeSpec)
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
-       <+> fldNodes =: Set.empty
+       <+> fldJobs =: Set.empty
        <+> fldNext  =: Nothing
+       <+> fldClientsWaitStart =: Nothing
+
+    ourJob msg@(JobFinished l _) _ ls =
+      if Set.null $ Set.fromList l `Set.intersection` getField (rget fldJobs ls)
+      then return Nothing
+      else return $ Just msg
 
 -- | Request cluster to teardown.
 --   Immediately set cluster disposition to OFFLINE.

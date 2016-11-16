@@ -544,6 +544,9 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 -- * Clients start after boot level 1 is finished and cluster enters
 -- the 'M0.MeroClusterRunning' state. Currently this means
 -- 'M0.PLM0t1fs' processes.
+--
+-- This job always returns: it's not necessary for the caller to have
+-- a timeout.
 ruleStartProcessesOnNode :: Definitions LoopState ()
 ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish -> do
     kernel_up         <- phaseHandle "kernel_up"
@@ -553,9 +556,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     kernel_timeout    <- phaseHandle "kernel_timeout"
 
     let route (StartProcessesOnNodeRequest m0node) = do
-          phaseLog "debug" $ show m0node
-          modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStarted m0node)
-          runMaybeT $ do
+          r <- runMaybeT $ do
             node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
             MaybeT $ do
               rg <- getLocalGraph
@@ -575,6 +576,14 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
                           t <- _hv_mero_kernel_start_timeout <$> getHalonVars
                           return $ Just [kernel_up, kernel_failed, timeout t kernel_timeout]
                         Just _ -> return $ Just [boot_level_0]
+          case r of
+            -- Always explicitly fail this job so callers don't have to
+            -- set and wait for a timeout on their end.
+            Nothing -> do
+              phaseLog "warn" $ "Node not ready for start."
+              nodeFailedWith NodeProcessesStartFailure m0node
+              return $ Just [finish]
+            Just phs -> return $ Just phs
 
     -- Wait for notifications for processes on the current boot level.
     -- 'ruleProcessStart' always returns which allows us to fail as
@@ -633,6 +642,8 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
 
     setPhaseIf boot_level_1 (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
       Just host <- getField . rget fldHost <$> get Local
+      Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+      modify Local $ rlens fldRep .~ Field (Just $ NodeProcessesStarted m0node)
       startNodeProcesses host (M0.PLBootLevel (M0.BootLevel 1)) >>= \case
         [] -> do
           notifyOnClusterTransition Nothing
