@@ -10,7 +10,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE CPP #-}
 
 module HA.Services.Dummy
   ( dummy
@@ -20,17 +19,12 @@ module HA.Services.Dummy
   , HA.Services.Dummy.__remoteTable
   , HA.Services.Dummy.__remoteTableDecl
   , dummy__static
-  , dummyProcess__tdict
-  , dummyProcess__sdict
   ) where
 
 import HA.SafeCopy.OrphanInstances()
 import HA.Service
 import HA.Service.TH
 
-#if ! MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#endif
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
@@ -48,6 +42,7 @@ import GHC.Generics (Generic)
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
+import Prelude
 
 newtype DummyConf = DummyConf {
   helloWorld :: Defaultable String
@@ -63,6 +58,8 @@ dummySchema = let
                 <> metavar "GREETING"
   in DummyConf <$> hw
 
+type instance ServiceState DummyConf = ()
+
 $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
 deriveSafeCopy 0 'base ''DummyConf
@@ -73,21 +70,19 @@ data DummyEvent = DummyEvent String
 
 instance Binary DummyEvent
 
--- | Block forever.
-never :: Process ()
-never = receiveWait []
-
 remotableDecl [ [d|
   dummy :: Service DummyConf
   dummy = Service "dummy"
-            $(mkStaticClosure 'dummyProcess)
+            $(mkStaticClosure 'dummyFunctions)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictDummyConf))
 
-  dummyProcess :: DummyConf -> Process ()
-  dummyProcess (DummyConf hw) = do
+  dummyFunctions :: ServiceFunctions DummyConf
+  dummyFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+    bootstrap _ = do
       say $ "Starting service dummy"
-      say . fromDefault $ hw
-      never
-
+      return (Right ())
+    mainloop _ _ = return []
+    teardown _ _ = return ()
+    confirm  _ _ = return ()
   |] ]

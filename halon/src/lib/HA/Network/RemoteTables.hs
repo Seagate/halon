@@ -13,7 +13,6 @@ import HA.Services.Empty ( __remoteTable )
 import HA.Services.Noisy ( __remoteTable, __remoteTableDecl )
 import HA.Services.Ping ( __remoteTable, __remoteTableDecl )
 import HA.Service ( __remoteTable )
-import HA.Services.OCF ( __remoteTableDecl )
 import HA.Startup ( __remoteTable, __remoteTableDecl )
 import HA.EventQueue ( __remoteTable )
 import HA.EQTracker ( __remoteTable )
@@ -44,7 +43,6 @@ haRemoteTable next =
    HA.Services.Ping.__remoteTable $
    HA.Services.Ping.__remoteTableDecl $
    HA.Service.__remoteTable $
-   HA.Services.OCF.__remoteTableDecl $
    HA.Startup.__remoteTable $
    HA.Startup.__remoteTableDecl $
    HA.EventQueue.__remoteTable $

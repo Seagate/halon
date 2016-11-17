@@ -14,13 +14,10 @@ module HA.Services.Frontier
     , frontierService
     , HA.Services.Frontier.__remoteTable
     , HA.Services.Frontier.__remoteTableDecl
-    , frontierService__sdict
-    , frontierService__tdict
     , frontier__static
     ) where
 
-import           Prelude hiding ((<$>))
-import           Control.Applicative ((<$>))
+import           HA.Debug
 import qualified Data.ByteString      as B
 import           Data.Monoid ((<>))
 import           Data.SafeCopy
@@ -49,6 +46,8 @@ import HA.Services.Frontier.Command
 data FrontierConf =
     FrontierConf { _fcPort :: Int }
     deriving (Eq, Generic, Show, Typeable)
+
+type instance ServiceState FrontierConf = ProcessId
 
 instance Hashable FrontierConf
 instance ToJSON FrontierConf
@@ -113,16 +112,30 @@ hReadCommand h = do
       Just cmd -> return cmd
       _        -> hReadCommand h
 
+frontierService :: FrontierConf -> Process ()
+frontierService (FrontierConf port) =
+  bracket (createServerSocket port)
+          (liftIO . sClose)
+          tcpServerLoop
+
 remotableDecl [ [d|
-    frontierService :: FrontierConf -> Process ()
-    frontierService (FrontierConf port) =
-      bracket (createServerSocket port)
-              (liftIO . sClose)
-              tcpServerLoop
+
+    frontierFunctions :: ServiceFunctions FrontierConf
+    frontierFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+      bootstrap conf = do
+        self <- getSelfPid
+        pid <- spawnLocalName "service::frontier::process" $ do
+          link self
+          () <- expect
+          frontierService conf
+        return (Right pid)
+      mainloop _ _ = return []
+      teardown _ _ = return ()
+      confirm  _ pid = usend pid ()
 
     frontier :: Service FrontierConf
     frontier = Service "frontier"
-               $(mkStaticClosure 'frontierService)
+               $(mkStaticClosure 'frontierFunctions)
                ($(mkStatic 'someConfigDict)
                  `staticApply` $(mkStatic 'configDictFrontierConf))
     |] ]

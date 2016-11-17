@@ -18,8 +18,6 @@ module HA.Services.Ping
   , HA.Services.Ping.__remoteTable
   , HA.Services.Ping.__remoteTableDecl
   , ping__static
-  , pingProcess__sdict
-  , pingProcess__tdict
   ) where
 
 import HA.EventQueue.Producer
@@ -31,7 +29,6 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
-import Control.Monad
 
 import Data.Aeson
 import Data.Binary (Binary)
@@ -57,6 +54,8 @@ newtype SyncPing = SyncPing String
 pingSchema :: Schema PingConf
 pingSchema = pure PingConf
 
+type instance ServiceState PingConf = ()
+
 $(generateDicts ''PingConf)
 $(deriveService ''PingConf 'pingSchema [])
 deriveSafeCopy 0 'base ''PingConf
@@ -64,15 +63,24 @@ deriveSafeCopy 0 'base ''PingConf
 remotableDecl [ [d|
   ping :: Service PingConf
   ping = Service "ping"
-            $(mkStaticClosure 'pingProcess)
+            $(mkStaticClosure 'pingFunctions)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictPingConf))
 
-  pingProcess :: PingConf -> Process ()
-  pingProcess PingConf = do
-      say $ "Starting service ping"
-      forever $ receiveWait
-        [ match $ promulgateWait . DummyEvent
-        , match $ \p -> promulgateWait (p :: SyncPing)
-        ]
+  pingFunctions :: ServiceFunctions PingConf
+  pingFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+
+    bootstrap PingConf = do
+      return (Right ())
+    mainloop _ _ = return
+      [ match $ \x -> do
+          promulgateWait (DummyEvent x)
+          return (Continue, ())
+      , match $ \p -> do
+          promulgateWait (p::SyncPing)
+          return (Continue, ())
+      ]
+    teardown _ _ = return ()
+    confirm  _ _ = return ()
+
   |] ]

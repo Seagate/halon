@@ -22,12 +22,11 @@ module HA.Services.Mero
     , m0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
-    , m0dProcess__sdict
-    , m0dProcess__tdict
     , m0d__static
     , Mero.Notification.getM0Worker
     ) where
 
+import HA.Debug
 import HA.Logger
 import HA.EventQueue.Producer (promulgate, promulgateWait)
 import qualified HA.RecoveryCoordinator.Events.Mero as M0
@@ -43,7 +42,7 @@ import qualified Network.RPC.RPCLite as RPC
 
 import Control.Monad (unless)
 import Control.Monad.Trans.Reader
-import Control.Exception (SomeException)
+import Control.Exception (SomeException, IOException)
 import qualified Control.Distributed.Process.Internal.Types as DI
 import Control.Distributed.Process.Closure
   ( remotableDecl
@@ -270,63 +269,100 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
       M0T1FS -> ("m0t1fs", "m0t1fs@")
       M0D -> ("m0d", "m0d@")
 
-remotableDecl [ [d|
+newtype Started = Started (SendPort NotificationMessage,SendPort ProcessControlMsg)
+  deriving (Eq, Show, Binary)
 
+m0dProcess :: ProcessId -> MeroConf -> Process ()
+m0dProcess parent conf = do
+  traceM0d "starting."
+  Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
+    traceM0d "Kernel module loaded."
+    case rc of
+      Right _ -> flip Catch.catch epHandler . withEp $ \ep -> do
+        self <- getSelfPid
+        traceM0d "DEBUG: Pre-withEp"
+        _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
+                                           (mcKeepaliveTimeout conf) ep self
+        c <- spawnChannelLocal (statusProcess ep self)
+        traceM0d "DEBUG: Pre-withEp"
+        cc <- spawnChannelLocal (controlProcess conf self)
+        usend parent (Started (c,cc))
+        sendMeroChannel c cc
+        traceM0d "Starting service m0d on mero client"
+        go c cc
+      Left i -> do
+        traceM0d $ "Kernel module did not load correctly: " ++ show i
+        void . promulgate . M0.MeroKernelFailed parent $
+          "mero-kernel service failed to start: " ++ show i
+        Control.Distributed.Process.die Shutdown
+  where
+    profileFid = mcProfile conf
+    processFid = mcProcess conf
+    rmFid      = mcRM      conf
+    haFid      = mcHA      conf
+    haAddr = RPC.rpcAddress $ mcHAAddress conf
+    withEp = Mero.Notification.withMero
+           . Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
+
+    epHandler :: IOException -> Process ()
+    epHandler e = do
+      let msg = "endpoint exception in halon:m0d: " ++ show e
+      say $ "[service:m0d] " ++ msg
+      void . promulgate . M0.MeroKernelFailed parent $ msg
+
+    -- Kernel
+    startKernel = liftIO $ do
+      _ <- SystemD.sysctlFile "mero-kernel"
+        [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
+        ]
+      SystemD.startService "mero-kernel"
+    stopKernel = liftIO $ SystemD.stopService "mero-kernel"
+
+    -- mainloop
+    go c cc = forever $
+      receiveWait
+        [ match $ \ServiceStateRequest -> sendMeroChannel c cc
+        ]
+
+remotableDecl [ [d|
   m0d :: Service MeroConf
   m0d = Service "m0d"
-          $(mkStaticClosure 'm0dProcess)
+          $(mkStaticClosure 'm0dFunctions)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictMeroConf))
 
-  m0dProcess :: MeroConf -> Process ()
-  m0dProcess conf = do
-    traceM0d "starting."
-    Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
-      traceM0d "Kernel module loaded."
+  m0dFunctions :: ServiceFunctions MeroConf
+  m0dFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+    bootstrap conf = do
       self <- getSelfPid
-      case rc of
-        Right _ -> flip Catch.catch (epHandler self) . withEp $ \ep -> do
-          traceM0d "DEBUG: Pre-withEp"
-          _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
-                                             (mcKeepaliveTimeout conf) ep self
-          c <- spawnChannelLocal (statusProcess ep self)
-          traceM0d "DEBUG: Pre-withEp"
-          cc <- spawnChannelLocal (controlProcess conf self)
-          sendMeroChannel c cc
-          traceM0d "Starting service m0d on mero client"
-          go c cc
-        Left i -> do
-          traceM0d $ "Kernel module did not load correctly: " ++ show i
-          void . promulgate . M0.MeroKernelFailed self $
-            "mero-kernel service failed to start: " ++ show i
-          Control.Distributed.Process.die Shutdown
-    where
-      profileFid = mcProfile conf
-      processFid = mcProcess conf
-      rmFid      = mcRM      conf
-      haFid      = mcHA      conf
-      haAddr = RPC.rpcAddress $ mcHAAddress conf
-      withEp = Mero.Notification.withMero
-             . Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
-
-      epHandler :: ProcessId -> Catch.SomeException -> Process ()
-      epHandler self e = do
-        void . promulgate . M0.MeroKernelFailed self $
-          "endpoint exception in halon:m0d: " ++ show e
-        Control.Distributed.Process.die Fail
-
-      -- Kernel
-      startKernel = liftIO $ do
-        SystemD.sysctlFile "mero-kernel"
-          [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
-          ]
-        SystemD.startService "mero-kernel"
-      stopKernel = liftIO $ SystemD.stopService "mero-kernel"
-
-      -- mainloop
-      go c cc = forever $
-        receiveWait
-          [ match $ \ServiceStateRequest -> do
-             sendMeroChannel c cc
-          ]
+      pid <- spawnLocalName "service::m0d::process" $ do
+        link self
+        m0dProcess self conf
+      monitor pid
+      receiveWait
+        [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
+                $ \_ -> do
+          void . promulgate . M0.MeroKernelFailed self $ "process exited."
+          return (Left "failure during start")
+        , match $ \(Started (c,cc)) -> do
+          return (Right (pid,c,cc))
+        ]
+    mainloop _ s@(pid,c,cc) = do
+      self <- getSelfPid
+      return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
+                   $ \_ -> do
+                 void . promulgate . M0.MeroKernelFailed self $ "process exited."
+                 return (Failure, s)
+             , match $ \ServiceStateRequest -> do
+                 sendMeroChannel c cc
+                 return (Continue, s)
+             ]
+    teardown _ (pid,_,_) = do
+      mref <- monitor pid
+      exit pid "teardown" 
+      receiveWait 
+        [ matchIf (\(ProcessMonitorNotification m _ _) -> mref == m)
+                  $ \_ -> return ()
+        ]
+    confirm  _ _ = return ()
     |] ]

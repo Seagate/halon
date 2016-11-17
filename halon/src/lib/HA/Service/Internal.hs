@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -16,6 +17,9 @@ module HA.Service.Internal
   , ExitReason(..)
   , Supports(..)
   , Service(..)
+  , ServiceState
+  , ServiceFunctions(..)
+  , NextStep(..)
   , serviceLabel
   , ServiceInfo(..)
   , ServiceInfoMsg
@@ -37,17 +41,19 @@ module HA.Service.Internal
   ) where
 
 import HA.Debug
-import Control.Distributed.Process hiding (try, catch)
+import Control.Distributed.Process hiding (try, catch, mask, onException)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import Control.Distributed.Static ( unstatic )
-import Control.Monad (void)
-import Control.Monad.Catch ( SomeException, try, catch, throwM )
+import Control.Monad.Catch ( try, mask, onException )
+import Control.Monad.Fix (fix)
 import Control.Monad.Reader ( asks )
+
 
 import Data.Aeson
 import Data.Binary as Binary
 import qualified Data.ByteString.Lazy as BS
+import Data.Functor (void)
 import Data.Function (on)
 import Data.Hashable (Hashable, hashWithSalt)
 import Data.SafeCopy
@@ -102,14 +108,19 @@ data SomeConfigurationDict = forall a. SomeConfigurationDict (Dict (Configuratio
 someConfigDict :: Dict (Configuration a) -> SomeConfigurationDict
 someConfigDict = SomeConfigurationDict
 
+-- | Internal state of the service. This state is kept while service is running,
+-- and can be queried by other parties.
+type family ServiceState a :: *
+
 -- | Service handle datatype. It's used to keep information about service and to
 -- requests to the graph.
 data Service a = Service
     { serviceName    :: String -- ^ Name of service.
-    , serviceProcess :: Closure (a -> Process ())  -- ^ Process implementing service.
+    , serviceProcess :: Closure (ServiceFunctions a)
     , configDict :: Static (SomeConfigurationDict) -- ^ Configuration dictionary to use during encoding.
     }
   deriving (Typeable, Generic)
+
 instance Typeable a => SafeCopy (Service a) where
   getCopy = contain $
     Service <$> safeGet
@@ -134,9 +145,29 @@ instance Ord (Service a) where
 instance Hashable (Service a) where
   hashWithSalt s = (*3) . hashWithSalt s . serviceName
 
+data ServiceFunctions a = ServiceFunctions
+  { _serviceBootstrap :: a -> Process (Either String (ServiceState a))
+  -- ^ Service bootstrap function. It's run just after service is registered,
+  --   but before it's considered started. Bootstrap should care about
+  --   resource finalization in case of service failure.
+  , _serviceMainloop  :: a -> ServiceState a -> Process [Match (NextStep, ServiceState a)]
+  -- ^ Mainloop of the service. All handlers in match should be quite fast
+  --   in order to not block process execution for a long time, so it can
+  --   reply to the common messages.
+  , _serviceTeardown :: a -> ServiceState a -> Process ()
+  -- ^ Teardown service and clear all it's resources. This function is run
+  --   if service considered as closing, either normally or abnormally.
+  , _serviceStarted :: a -> ServiceState a -> Process ()
+  -- ^ Additional notification when service is started and announced to RC.
+  }
+
 -- | Label used to register a service.
 serviceLabel :: Service a -> String
 serviceLabel svc = "service." ++ serviceName svc
+
+data NextStep = Continue
+              | Teardown
+              | Failure 
 
 -- | A relation connecting the cluster to the services it supports.
 data Supports = Supports
@@ -227,60 +258,97 @@ data ServiceStopNotRunning = ServiceStopNotRunning Node String
   deriving (Typeable, Generic)
 instance Binary ServiceStopNotRunning
 
---------------------------------------------------------------------------------
--- Actions
---------------------------------------------------------------------------------
+data Result b = AlreadyRunning ProcessId
+              | ServiceStarted (Either String b)
 
--- | Starts and registers a service in the current node.
--- Sends @ProcessId@ of the running service to the caller.
+-- | Run process service.
 remoteStartService :: (ProcessId, ServiceInfoMsg) -> Process ()
 remoteStartService (caller, msg) = do
     ServiceInfo svc conf <- decodeP msg
-    let label = serviceLabel svc
-        name  = serviceName svc
-    self <- getSelfPid
-    -- Register the service if it is not already registered.
-    let whereisOrRegister = do
-          regRes <- try $ register label self
-          case regRes of
-            Right () -> return self
-            Left (ProcessRegistrationException _ _) ->  do
-                whereis label >>= maybe whereisOrRegister return
-    pid <- whereisOrRegister
-    usend caller pid
-    if pid == self
-    then do
-      say $ "[Service:" ++ name ++ "] starting at " ++ show pid
-      say $ "[Service:" ++ name ++ "] config " ++ show conf
-      prc <- unClosure (serviceProcess svc)
-      labelProcess $ "ha:service:" ++ name
-      ((prc conf >> (do
-            say $ "[Service:" ++ name  ++ "] exited without setting that it's safe."
-            promulgateWait $ ServiceFailed (Node (processNodeId pid)) msg pid))
-         `catchExit` onExit name)
-         `catch` unhandled pid name
-    else say $ "[Service:" ++ name ++ "] already running at " ++ show pid
+    mask $ go svc conf (serviceName svc)
   where
-    onExit name pid Shutdown = do
-      let node = processNodeId pid
-      say $ "[Service:" ++ name  ++ "] user required service stop."
-      promulgateWait $ ServiceExit (Node node) msg pid
-    onExit name pid Fail = do
-      let node = processNodeId pid
-      say $ "[Service:" ++ name  ++ "] service failed."
+    go :: Configuration a => Service a -> a -> String -> (forall b . Process b -> Process b) -> Process ()
+    go svc conf name release = do
       self <- getSelfPid
-      void . spawnLocal $ do
-        mref <- monitor self
-        receiveWait [ matchIf (\(ProcessMonitorNotification m _ _ ) -> m == mref)
-                              (const $ return ()) ]
-        promulgateWait $ ServiceFailed (Node node) msg pid
+      serviceLog $ "starting at " ++ show self
+      serviceLog $ "config " ++ show conf
+      -- Bootstrap service
+      let runBootstrap bootstrap =
+           let label = serviceLabel svc
+               whereisOrRegister = do
+                 regRes <- try $ register label self
+                 case regRes of
+                   Right () -> return self
+                   Left (ProcessRegistrationException _ _) ->
+                     whereis label >>= maybe whereisOrRegister return
+           in do pid <- whereisOrRegister
+                 usend caller pid -- backwards compatibility.
+                 if pid == self
+                 then ServiceStarted <$> bootstrap conf
+                 else return $ AlreadyRunning pid
+      (est, mainloop, teardown, confirmStarted)
+         <- (do (ServiceFunctions bootstrap mainloop teardown confirm) <- unClosure (serviceProcess svc)
+                (,,,) <$> (release $ runBootstrap bootstrap)
+                      <*> pure mainloop
+                      <*> pure teardown
+                      <*> pure confirm)
+             `onException` (do
+                let node = processNodeId self
+                serviceLog $ "uncaught exception"
+                promulgateWait $ ServiceUncaughtException (Node node) msg
+                                   ("uncaught exception during startup") self)
+      case est of
+        AlreadyRunning pid -> serviceLog $ "already running at " ++ show pid
+        ServiceStarted (Left e) -> do
+          let node = processNodeId self
+          serviceLog $ "exception during start: " ++ e
+          promulgateWait $ ServiceFailed (Node node) msg self
+        ServiceStarted (Right r) -> do
+          let notify :: forall a . (Binary a, Typeable a)
+                     => (Node -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
+              notify f = promulgateWait $ f (Node (processNodeId self)) msg self
+          confirmStarted conf r
+          fix (\loop !b -> do
+              next <- runMainloop mainloop conf b
+              case next of
+                (Continue, b') -> loop b'
+                (Teardown, b') -> do
+                  serviceLog  $ "user required service stop."
+                  runTeardown teardown (notify ServiceExit) b'
+                (Failure,  b') -> do
+                  serviceLog $ "service failed."
+                  runTeardown teardown (notify ServiceFailed) b') r
+      where
+        serviceLog s = say $ "[Service:" ++ name ++ "] " ++ s
 
-    unhandled :: ProcessId -> String -> SomeException -> Process ()
-    unhandled pid name e = do
-      let node = processNodeId pid
-      say $ "[Service:" ++ name  ++ "] died because of exception: " ++ show e
-      promulgateWait $ ServiceUncaughtException (Node node) msg (show e) pid
-      throwM e -- rethrow exception, unfortunatelly it will be synchronous now.
+        runMainloop mainloop a b = do
+          userEvents <- mainloop a b
+          release $ (receiveWait $
+            [ {- -- match $ \(ServiceStatus pid) -> do
+              --  usend pid (Running a b)
+              --  return $ Continue b
+              -- match $ \(GracefulExit pid) -> return $ Teardown b -}
+            ] ++ userEvents ++
+            [matchAny $ \s -> do
+               serviceLog $ "unhandled mesage" ++ show s
+               return (Continue, b)
+            ]) `catchExit` (onExit b)
+        
+        runTeardown teardown notify b = do
+          self <- getSelfPid
+          teardown conf b
+          void $ spawnLocalName "temporary" $ do
+            mref <- monitor self
+            receiveWait [ matchIf (\(ProcessMonitorNotification m _ _ ) -> m == mref)
+                                  (const $ return ()) ]
+            notify
+
+        onExit b _ Shutdown = return (Teardown, b)
+        onExit b _ Fail = return (Failure, b)
+
+--------------------------------------------------------------------------------
+-- Actions
+--------------------------------------------------------------------------------
 
 -- | Stop service.
 remoteStopService :: (ProcessId, String) -> Process ()
@@ -295,6 +363,7 @@ remoteStopService (caller, label) = do
       usend caller True
     Nothing -> do
       usend caller False
+
 
 $(mkDicts
    [ ''ServiceInfoMsg]

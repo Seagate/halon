@@ -14,6 +14,7 @@ module HA.Services.SSPLHL where
 
 import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
+import HA.Debug
 import HA.Logger
 import HA.Service
 import HA.Service.TH
@@ -42,6 +43,7 @@ import Control.Distributed.Process
   , spawnLocal
   , link
   , unmonitor
+  , expect
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
@@ -107,6 +109,8 @@ data SSPLHLConf = SSPLHLConf {
   , scCommandConf :: Rabbit.BindConf
   , scResponseConf :: Rabbit.BindConf
 } deriving (Eq, Generic, Show, Typeable)
+
+type instance ServiceState SSPLHLConf = ProcessId
 
 instance Binary SSPLHLConf
 instance Hashable SSPLHLConf
@@ -230,13 +234,25 @@ remotableDecl [ [d|
           )
 
     in do
-      say $ "[sspl-hl] Starting service"
       lock <- liftIO newEmptyMVar
       connectRetry lock
 
+  ssplFunctions :: ServiceFunctions SSPLHLConf
+  ssplFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+    bootstrap conf = do
+      self <- getSelfPid
+      pid <- spawnLocalName "service::sspl-hl::process" $ do
+        link self
+        () <- expect
+        ssplProcess conf
+      return (Right pid)
+    mainloop _ _ = return []
+    teardown _ _ = return ()
+    confirm  _ pid = usend pid ()
+
   sspl :: Service SSPLHLConf
   sspl = Service "sspl-hl"
-          $(mkStaticClosure 'ssplProcess)
+          $(mkStaticClosure 'ssplFunctions)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLHLConf))
 

@@ -65,6 +65,7 @@ testServiceRestarting transport pg = runDefaultTest transport $ do
 
   sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
+    sayTest "started"
     nodeUp ([nid], 1000000)
 
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))

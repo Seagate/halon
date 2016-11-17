@@ -15,6 +15,7 @@ module HA.Services.Mero.Types
 import HA.Resources.HalonVars
 import HA.Resources.Mero as M0
 import HA.ResourceGraph
+import qualified HA.Service
 import HA.Service.TH
 import qualified HA.Resources as R
 
@@ -65,6 +66,7 @@ data MeroConf = MeroConf
        , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
        }
    deriving (Eq, Generic, Show, Typeable)
+
 instance Binary MeroConf
 instance Hashable MeroConf
 deriveSafeCopy 0 'base ''MeroConf
@@ -289,3 +291,6 @@ instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
     type CardinalityTo MeroChannel R.Node (TypedChannel ProcessControlMsg)
       = 'Unbounded
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
+
+type instance HA.Service.ServiceState MeroConf =
+  (ProcessId, SendPort NotificationMessage, SendPort ProcessControlMsg)

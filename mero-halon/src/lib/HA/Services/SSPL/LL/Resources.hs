@@ -15,6 +15,7 @@ module HA.Services.SSPL.LL.Resources where
 import Control.Distributed.Process (NodeId)
 
 import HA.SafeCopy.OrphanInstances()
+import qualified HA.Service
 import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
@@ -473,6 +474,8 @@ data SSPLConf = SSPLConf {
   , scSensorConf :: SensorConf
   , scActuatorConf :: ActuatorConf
 } deriving (Eq, Generic, Show, Typeable)
+
+type instance HA.Service.ServiceState SSPLConf = ProcessId
 
 instance Binary SSPLConf
 instance Hashable SSPLConf

@@ -13,7 +13,7 @@ import Control.Distributed.Commands.Process
   , spawnNode
   , spawnNode_
   , copyLog
-  , expectLog
+  -- , expectLog
   , __remoteTable
   , handleGetNodeId
   , handleGetInput
@@ -107,8 +107,10 @@ test = testCase "Snapshot3" $
                      ++ " -n " ++ show noisy_messages ++ " 2>&1"
                        )
 
-      expectLog [nid0] (isInfixOf "Starting service noisy")
+      -- expectLog [nid0] (isInfixOf "[Service:noisy] starting at")
+      say "Checking log size..."
       logSizes <- replicateM 3 $ expectLogInt [nid1] "Log size when trimming: "
+      say "Checking waiting for messages ..."
       noisyCounts <- replicateM (noisy_messages `div` 2) $
           expectLogInt [nid1] "Recovery Coordinator: Noisy ping count: "
 

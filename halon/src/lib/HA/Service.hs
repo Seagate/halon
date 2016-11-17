@@ -6,8 +6,6 @@
 -- "ioservice" may identify the IO service running on a node.
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
-
-{-# OPTIONS_GHC -Werror #-}
 module HA.Service
   (
     -- * Types
@@ -15,6 +13,9 @@ module HA.Service
     -- ** Service type
     -- XXX: documentation about service in general
   , Service(..)
+  , ServiceState
+  , ServiceFunctions(..)
+  , NextStep(..)
   , schema
   , sDict
   , spDict

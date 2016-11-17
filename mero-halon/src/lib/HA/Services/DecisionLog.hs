@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -6,14 +7,11 @@ module HA.Services.DecisionLog
     ( DecisionLogConf(..)
     , EntriesLogged(..)
     , decisionLog
-    , decisionLogService
     , fileOutput
     , processOutput
     , standardOutput
     , HA.Services.DecisionLog.Types.__remoteTable
     , __remoteTableDecl
-    , decisionLogService__sdict
-    , decisionLogService__tdict
     , decisionLog__static
     , printLogs
     ) where
@@ -21,24 +19,26 @@ module HA.Services.DecisionLog
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
-import Network.CEP
 
 import HA.Service
-import HA.Services.DecisionLog.CEP
 import HA.Services.DecisionLog.Types
 
-makeDecisionLogProcess ::  Definitions () () -> Process ()
-makeDecisionLogProcess rules = execute () rules
+type instance ServiceState DecisionLogConf = WriteLogs
 
 remotableDecl [ [d|
-    decisionLogService :: DecisionLogConf -> Process ()
-    decisionLogService (DecisionLogConf out) = do
-        let wl = newWriteLogs out
-        makeDecisionLogProcess $ decisionLogRules wl
+
+    decisionLogFunctions :: ServiceFunctions DecisionLogConf
+    decisionLogFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+      bootstrap (DecisionLogConf out) =
+         return (Right (newWriteLogs out))
+      mainloop _ wl =
+        return [match $ \logs -> writeLogs wl logs >> return (Continue, wl) ]
+      teardown _ _ = return ()
+      confirm  _ _ = return () 
 
     decisionLog :: Service DecisionLogConf
     decisionLog = Service "decision-log"
-                  $(mkStaticClosure 'decisionLogService)
+                  $(mkStaticClosure 'decisionLogFunctions)
                   ($(mkStatic 'someConfigDict)
                     `staticApply` $(mkStatic 'configDictDecisionLogConf))
     |] ]

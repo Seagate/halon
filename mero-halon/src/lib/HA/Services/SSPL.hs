@@ -29,12 +29,11 @@ module HA.Services.SSPL
   , header
   , sendInterestingEvent
     -- * Unused but defined
-  , ssplProcess__sdict
-  , ssplProcess__tdict
   , sspl__static
   ) where
 
 import HA.EventQueue.Producer (promulgate, promulgateWait)
+import HA.Debug
 import HA.Logger (mkHalonTracer)
 import HA.Service
 import HA.Services.SSPL.CEP
@@ -54,6 +53,7 @@ import Control.Distributed.Process
   , getSelfNode
   , expect
   , match
+  , matchIf
   , monitor
   , SendPort
   , ReceivePort
@@ -269,72 +269,94 @@ monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan 
 trySome :: MonadCatch m => m a -> m (Either SomeException a)
 trySome = try
 
+
+ssplProcess :: SSPLConf -> Process ()
+ssplProcess (SSPLConf{..}) = let
+
+  connectRetry lock = do
+    me <- getSelfPid
+    pid <- spawnLocal $ connectSSPL lock me
+    decl <- expect :: Process DeclareChannels
+    mref <- monitor pid
+    fix $ \loop -> do
+      receiveWait [
+          match $ \(ProcessMonitorNotification _ _ r) -> do
+            saySSPL $ "Process died:" ++ show r
+            _ <- receiveTimeout 2000000 []
+            connectRetry lock
+        , match $ \ResetSSPLService -> do
+            saySSPL "restarting RabbitMQ and sspl-ll."
+            liftIO $ do
+              void $ SystemD.restartService "rabbitmq-server.service"
+              void $ SystemD.restartService "sspl-ll.service"
+              _ <- tryTakeMVar lock
+              putMVar lock ()
+            loop
+        , match $ \RequestChannels -> do
+            promulgateWait decl
+            loop
+        , match $ \() -> do
+            saySSPL $ "tearing server down"
+            unmonitor mref >> (liftIO $ putMVar lock ())
+        ]
+  connectSSPL lock pid = do
+    node <- getSelfNode
+    -- In case if it's not possible to connect to rabbitmq service
+    -- just exits.
+    let failure = do saySSPL "Failed to connect to RabbitMQ"
+                     usend pid ()
+                     promulgateWait $ SSPLConnectFailure node
+    let retry 0 action = action `onException` failure
+        retry n action = do
+          ex <- trySome action
+          case ex of
+            Right x -> return x
+            Left _ -> do
+              _ <- receiveTimeout 1000000 []
+              retry (n-1 :: Int) action
+    conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
+    chan <- liftIO $ openChannel conn
+    (sendPort, receivePort) <- newChan
+    startSensors chan sendPort scSensorConf
+    decl <- startActuators chan scActuatorConf pid sendPort
+    usend pid decl
+    rc <- spawnLocal $ link pid >> monitorProcess receivePort
+    link pid
+    () <- liftIO $ takeMVar lock
+    kill rc "restart"
+    liftIO $ closeConnection conn
+    saySSPL "Connection closed."
+  in do
+    say $ "Starting service sspl"
+    lock <- liftIO newEmptyMVar
+    connectRetry lock
+
 remotableDecl [ [d|
 
   sspl :: Service SSPLConf
   sspl = Service "sspl"
-          $(mkStaticClosure 'ssplProcess)
+          $(mkStaticClosure 'ssplFunctions)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLConf))
 
-  ssplProcess :: SSPLConf -> Process ()
-  ssplProcess (SSPLConf{..}) = let
-
-    connectRetry lock = do
-      me <- getSelfPid
-      pid <- spawnLocal $ connectSSPL lock me
-      decl <- expect :: Process DeclareChannels
-      mref <- monitor pid
-      fix $ \loop -> do
-        receiveWait [
-            match $ \(ProcessMonitorNotification _ _ r) -> do
-              saySSPL $ "Process died:" ++ show r
-              _ <- receiveTimeout 2000000 []
-              connectRetry lock
-          , match $ \ResetSSPLService -> do
-              saySSPL "restarting RabbitMQ and sspl-ll."
-              liftIO $ do
-                void $ SystemD.restartService "rabbitmq-server.service"
-                void $ SystemD.restartService "sspl-ll.service"
-                _ <- tryTakeMVar lock
-                putMVar lock ()
-              loop
-          , match $ \RequestChannels -> do
-              promulgateWait decl
-              loop
-          , match $ \() -> do
-              saySSPL $ "tearing server down"
-              unmonitor mref >> (liftIO $ putMVar lock ())
-          ]
-    connectSSPL lock pid = do
-      node <- getSelfNode
-      -- In case if it's not possible to connect to rabbitmq service
-      -- just exits.
-      let failure = do saySSPL "Failed to connect to RabbitMQ"
-                       usend pid ()
-                       promulgateWait $ SSPLConnectFailure node
-      let retry 0 action = action `onException` failure
-          retry n action = do
-            ex <- trySome action
-            case ex of
-              Right x -> return x
-              Left _ -> do
-                _ <- receiveTimeout 1000000 []
-                retry (n-1 :: Int) action
-      conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
-      chan <- liftIO $ openChannel conn
-      (sendPort, receivePort) <- newChan
-      startSensors chan sendPort scSensorConf
-      decl <- startActuators chan scActuatorConf pid sendPort
-      usend pid decl
-      rc <- spawnLocal $ link pid >> monitorProcess receivePort
-      link pid
-      () <- liftIO $ takeMVar lock
-      kill rc "restart"
-      liftIO $ closeConnection conn
-      saySSPL "Connection closed."
-    in do
-      say $ "Starting service sspl"
-      lock <- liftIO newEmptyMVar
-      connectRetry lock
+  ssplFunctions :: ServiceFunctions SSPLConf
+  ssplFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+    bootstrap conf = do
+      self <- getSelfPid
+      pid <- spawnLocalName "service::sspl::process" $ do
+        link self
+        () <- expect
+        ssplProcess conf
+      return (Right pid)
+    mainloop _ pid = return
+      [ matchIf (\(ProcessMonitorNotification _ p _) -> p == pid) $ \_ ->
+          return (Teardown, pid)
+      , match $ \x@(ProcessMonitorNotification _ _ _) -> do
+          usend pid x >> return (Continue, pid)
+      , match $ \x@ResetSSPLService -> usend pid x >> return (Continue, pid)
+      , match $ \x@RequestChannels -> usend pid x >> return (Continue, pid)
+      , match $ \() -> usend pid () >> return (Continue, pid)
+      ]
+    teardown _ _ = return ()
+    confirm  _ pid = usend pid ()
   |] ]
