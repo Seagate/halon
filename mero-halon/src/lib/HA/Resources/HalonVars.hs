@@ -37,6 +37,7 @@ defaultHalonVars = HalonVars
   , _hv_process_max_start_attempts = 5
   , _hv_process_restart_retry_interval = 5
   , _hv_mero_kernel_start_timeout = 300
+  , _hv_clients_start_timeout = 600
   }
 
 -- | Get 'HalonVars' from RG

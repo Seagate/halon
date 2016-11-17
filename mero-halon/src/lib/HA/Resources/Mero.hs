@@ -522,6 +522,8 @@ deriveSafeCopy 0 'base ''DiskV
 -- instances.
 --
 -- Normally you should use 'mkTimeSpec' to create these.
+--
+-- TODO: Move this somewhere else
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
   deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
 
@@ -565,6 +567,12 @@ instance Binary TimeSpec where
 -- | Get current time using a 'C.Monotonic' 'C.Clock'.
 getTime :: IO TimeSpec
 getTime = TimeSpec <$> C.getTime C.Monotonic
+
+-- | Get number of seconds that have elapsed since the given 'TimeSpec'.
+secondsSince :: TimeSpec -> IO Int
+secondsSince oldSpec = do
+  ct <- getTime
+  return . timeSpecToSeconds $ ct - oldSpec
 
 -- | Classifies 'PoolRepairInformation'. By the time we get
 -- information back from mero about the status of the pool, we no

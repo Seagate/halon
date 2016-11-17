@@ -51,6 +51,7 @@ import Control.Monad.Fix (fix)
 import Control.Lens
 
 import Data.Constraint (Dict)
+import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
@@ -187,7 +188,7 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   diff <- mkStateDiff f (encodeP i) []
   notifyMeroAsync diff s
   let (InternalObjectStateChange iosc) = i
-  forM_ iosc $ \(AnyStateChange a o n _) -> do
+  for_ iosc $ \(AnyStateChange a o n _) -> do
     phaseLog "state-update" $ unwords
       [ M0.showFid a
       , "transitioned to"
