@@ -181,7 +181,7 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 -------------------------------------------------------------------------------
 -- Requests handling
 -------------------------------------------------------------------------------
--- $requests.
+-- $requests
 -- User can control whole cluster state using following requests.
 -- Each request trigger a long procedure of moving cluster into desired state
 -- if those transition is possible.
@@ -190,8 +190,8 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 --
 -- Nilpotent request.
 requestClusterStatus :: Definitions LoopState ()
-requestClusterStatus = defineSimple "castor::cluster::request::status"
-  $ \(HAEvent eid  (ClusterStatusRequest ch) _) -> do
+requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
+  $ \(ClusterStatusRequest ch) -> do
       rg <- getLocalGraph
       profile <- getProfile
       filesystem <- getFilesystem
@@ -224,7 +224,6 @@ requestClusterStatus = defineSimple "castor::cluster::request::status"
         , csrStats  = stats
         , csrHosts  = hosts
         }
-      messageProcessed eid
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
 jobClusterStart = Job "castor::cluster::start"

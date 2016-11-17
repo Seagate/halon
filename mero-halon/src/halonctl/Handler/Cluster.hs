@@ -129,7 +129,7 @@ cluster nids' opt = do
       say "Synchonizing cluster to confd."
       syncToConfd nids
     cluster' nids (Dump s) = dumpConfd nids s
-    cluster' nids (Status (StatusOptions m d)) = clusterCommand nids ClusterStatusRequest (liftIO . output m d)
+    cluster' nids (Status (StatusOptions m d t)) = clusterCommand nids (Just t) ClusterStatusRequest (liftIO . output m d)
       where output True _ = jsonReport
             output False e = prettyReport e
     cluster' nids (Start (StartOptions async))  = do
@@ -142,11 +142,11 @@ cluster nids' opt = do
     cluster' _    (MkfsDone (MkfsDoneOptions False)) = do
       liftIO $ putStrLn "Please check that cluster fits all requirements first."
     cluster' nids (MkfsDone (MkfsDoneOptions True)) = do
-      clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
-    cluster' nids (VarsCmd VarsGet) = clusterCommand nids GetHalonVars (liftIO . print)
+      clusterCommand nids Nothing MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
+    cluster' nids (VarsCmd VarsGet) = clusterCommand nids Nothing GetHalonVars (liftIO . print)
     cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
     cluster' nids (StateUpdate (StateUpdateOptions s))
-      = clusterCommand nids (ForceObjectStateUpdateRequest s) (liftIO . print)
+      = clusterCommand nids Nothing (ForceObjectStateUpdateRequest s) (liftIO . print)
 #endif
 
 data LoadOptions = LoadOptions
@@ -216,10 +216,11 @@ data SyncOptions = SyncOptions
 newtype DumpOptions = DumpOptions FilePath
   deriving (Eq, Show)
 
-data StatusOptions = StatusOptions {
-    _statusOptJSON :: Bool
+data StatusOptions = StatusOptions
+  { _statusOptJSON :: Bool
   , _statusOptDevices :: Bool
-} deriving (Eq, Show)
+  , _statusTimeout :: Int
+  } deriving (Eq, Show)
 data StartOptions  = StartOptions Bool deriving (Eq, Show)
 data StopOptions   = StopOptions
   { _so_silent :: Bool
@@ -323,6 +324,12 @@ parseStatusOptions = StatusOptions
         ( Opt.long "show-devices"
        <> Opt.short 'd'
        <> Opt.help "Also show failed devices and their status. Devices are always shown in the JSON format.")
+  <*> Opt.option Opt.auto
+        ( Opt.metavar "TIMEOUT(s)"
+       <> Opt.long "timeout"
+       <> Opt.help "How long to wait for status, in seconds"
+       <> Opt.value 10
+       <> Opt.showDefault )
 
 parseResetOptions :: Opt.Parser ResetOptions
 parseResetOptions = ResetOptions
@@ -460,7 +467,7 @@ clusterStopCommand :: [NodeId] -> StopOptions -> Process ()
 clusterStopCommand nids (StopOptions silent async stopTimeout) = do
   say' "Stopping cluster."
   self <- getSelfPid
-  clusterCommand nids ClusterStopRequest (say' . show)
+  clusterCommand nids Nothing ClusterStopRequest (say' . show)
   promulgateEQ nids (MonitorClusterStop self) >>= flip withMonitor wait
   case async of
     True -> return ()
@@ -534,13 +541,15 @@ clusterReset eqnids (ResetOptions hard unstick) = if unstick
 
 clusterCommand :: (Serializable a, Serializable b, Show b)
                => [NodeId]
+               -> Maybe Int -- ^ Custom timeout in seconds, default 10s
                -> (SendPort b -> a)
                -> (b -> Process ())
                -> Process ()
-clusterCommand eqnids mk output = do
+clusterCommand eqnids mt mk output = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
-  receiveTimeout 10000000 [ matchChan rchan output ] >>= liftIO . \case
+  let t = maybe 10000000 (* 1000000) mt
+  receiveTimeout t [ matchChan rchan output ] >>= liftIO . \case
     Nothing -> do
       hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
       exitFailure
