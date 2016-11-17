@@ -31,7 +31,7 @@ import Network.CEP
 import Prelude hiding (id)
 
 
-meroRules :: Definitions LoopState ()
+meroRules :: Definitions RC ()
 meroRules = do
   defineSimple "Sync-to-confd" $ \(HAEvent eid afterSync _) -> do
     syncAction (Just eid) afterSync

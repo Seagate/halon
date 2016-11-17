@@ -33,7 +33,7 @@ makeLenses ''Dispatch
 
 -- | Set the phase to transition to when all waiting phases have been
 --   completed.
-onSuccess :: forall a l. (FldDispatch ∈ l)
+onSuccess :: forall a l. (Application a, FldDispatch ∈ l)
           => Jump PhaseHandle
           -> PhaseM a (FieldRec l) ()
 onSuccess next =
@@ -41,7 +41,7 @@ onSuccess next =
 
 -- | Set the phase to transition to on timeout, as well as how long to
 --   wait for.
-onTimeout :: forall a l. (FldDispatch ∈ l)
+onTimeout :: forall a l. (Application a, FldDispatch ∈ l)
           => Int -- ^ Time to wait (seconds)
           -> Jump PhaseHandle -- ^ Phase to proceed to on timeout
           -> PhaseM a (FieldRec l) ()
@@ -50,20 +50,20 @@ onTimeout wait phase =
                 .~ (Just (wait, phase))
 
 -- | Add a phase to wait for
-waitFor :: forall a l. (FldDispatch ∈ l)
+waitFor :: forall a l. (Application a, FldDispatch ∈ l)
          => Jump PhaseHandle
          -> PhaseM a (FieldRec l) ()
 waitFor p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
   (p :)
 
 -- | Announce that this phase has finished waiting and remove from dispatch.
-waitDone :: forall a l. (FldDispatch ∈ l)
+waitDone :: forall a l. (Application a, FldDispatch ∈ l)
          => Jump PhaseHandle
          -> PhaseM a (FieldRec l) ()
 waitDone p = modify Local $ rlens fldDispatch . rfield . waitPhases %~
   (delete p)
 
-mkDispatcher :: forall a l. (FldDispatch ∈ l)
+mkDispatcher :: forall a l. (Application a, FldDispatch ∈ l)
              => RuleM a (FieldRec l) (Jump PhaseHandle)
 mkDispatcher = do
   dispatcher <- phaseHandle "dispatcher::dispatcher"

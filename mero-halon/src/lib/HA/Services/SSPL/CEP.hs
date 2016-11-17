@@ -68,7 +68,7 @@ import Prelude hiding (mapM_)
 --------------------------------------------------------------------------------
 
 sendInterestingEvent :: InterestingEventMessage
-                     -> PhaseM LoopState l ()
+                     -> PhaseM RC l ()
 sendInterestingEvent msg = do
   phaseLog "action" "Sending InterestingEventMessage."
   chanm <- listToMaybe <$> getAllIEMChannels
@@ -79,7 +79,7 @@ sendInterestingEvent msg = do
 -- | Send command for system on remove node.
 sendSystemdCmd :: NodeId
                -> SystemdCmd
-               -> PhaseM LoopState l ()
+               -> PhaseM RC l ()
 sendSystemdCmd nid req = do
   phaseLog "action" $ "Sending Systemd request" ++ show req
   chanm <- getCommandChannel (Node nid)
@@ -89,7 +89,7 @@ sendSystemdCmd nid req = do
 
 sendSystemdCmdChan :: Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
                    -> SystemdCmd
-                   -> PhaseM LoopState l ()
+                   -> PhaseM RC l ()
 sendSystemdCmdChan (Channel chan) req =
   liftProcess $ sendChan chan (Nothing, makeSystemdMsg req)
 
@@ -99,7 +99,7 @@ sendSystemdCmdChan (Channel chan) req =
 -- SSPL and sent related IEM message.
 sendLoggingCmd :: Host
                -> LoggerCmd
-               -> PhaseM LoopState l ()
+               -> PhaseM RC l ()
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
   rg <- getLocalGraph
@@ -123,7 +123,7 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
                     | DriveOk                -- ^ Drive is ok
                     deriving (Show)
 
-sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM LoopState l Bool
+sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM RC l Bool
 sendLedUpdate status host sn = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
@@ -148,7 +148,7 @@ sendLedUpdate status host sn = do
 sendNodeCmd :: NodeId
             -> Maybe UUID
             -> NodeCmd
-            -> PhaseM LoopState l Bool
+            -> PhaseM RC l Bool
 sendNodeCmd nid muuid req = do
   phaseLog "action" $ "Sending node actuator request: " ++ show req
   chanm <- getCommandChannel (Node nid)
@@ -161,7 +161,7 @@ sendNodeCmd nid muuid req = do
 sendNodeCmdChan :: CommandChan
                 -> Maybe UUID
                 -> NodeCmd
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 sendNodeCmdChan (Channel chan) muuid req =
   liftProcess $ sendChan chan (muuid, makeNodeMsg req)
 
@@ -169,7 +169,7 @@ sendNodeCmdChan (Channel chan) muuid req =
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
 
-ssplRules :: Service SSPLConf -> Definitions LoopState ()
+ssplRules :: Service SSPLConf -> Definitions RC ()
 ssplRules sspl = sequence_
   [ ruleDeclareChannels
   , ruleMonitorDriveManager
@@ -185,7 +185,7 @@ ssplRules sspl = sequence_
 #endif
   ]
 
-initialRule :: Service SSPLConf -> PhaseM LoopState l () -- XXX: remove first argument
+initialRule :: Service SSPLConf -> PhaseM RC l () -- XXX: remove first argument
 initialRule sspl = do
    rg <- getLocalGraph
    let nodes = [ n | host <- connectedTo Cluster Has rg :: [Host]
@@ -195,7 +195,7 @@ initialRule sspl = do
    liftProcess $ for_ nodes $ \(Node nid) -> -- XXX: wait for reply ?!
      nsendRemote nid (serviceLabel sspl) RequestChannels
 
-ruleDeclareChannels :: Definitions LoopState ()
+ruleDeclareChannels :: Definitions RC ()
 ruleDeclareChannels = defineSimpleTask "declare-channels" $
       \(DeclareChannels pid (ActuatorChannels iem systemd)) -> do
           let node = Node (processNodeId pid)
@@ -212,7 +212,7 @@ instance Binary RuleDriveManagerDisk
 --
 -- TODO: remove RuleDriveManagerDisk and use 'continue' instead
 -- TODO: todo/done for good measure
-ruleMonitorDriveManager :: Definitions LoopState ()
+ruleMonitorDriveManager :: Definitions RC ()
 ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
    pinit  <- phaseHandle "init"
    pcommit <- phaseHandle "after commit to graph"
@@ -331,7 +331,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
    start pinit Nothing
 
 -- | Handle information messages about drive changes from HPI system.
-ruleMonitorStatusHpi :: Definitions LoopState ()
+ruleMonitorStatusHpi :: Definitions RC ()
 ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid (nid, srphi) _) -> do
       let wwn = DIWWN . T.unpack
                       . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
@@ -435,7 +435,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
 
 #ifdef USE_MERO
 -- | Handle SSPL message about a service failure.
-ruleMonitorServiceFailed :: Definitions LoopState ()
+ruleMonitorServiceFailed :: Definitions RC ()
 ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: NodeId, watchdogmsg) -> do
 
   let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
@@ -486,7 +486,7 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
 --   Raid messages from mdstat have a slightly unusual structure - we receive
 --   the letter 'U' if the drive is part of the array and working, and
 --   an underscore (_) if not.
-ruleMonitorRaidData :: Definitions LoopState ()
+ruleMonitorRaidData :: Definitions RC ()
 ruleMonitorRaidData = define "monitor-raid-data" $ do
 
   raid_msg <- phaseHandle "raid_msg"
@@ -596,14 +596,14 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
 
   startFork raid_msg Nothing
 
-ruleMonitorExpanderReset :: Definitions LoopState ()
+ruleMonitorExpanderReset :: Definitions RC ()
 ruleMonitorExpanderReset = defineSimpleTask "monitor-expander-reset" $ \(nid, ExpanderResetInternal) -> do
   menc <- runMaybeT $ do
     host <- MaybeT $ findNodeHost (Node nid)
     MaybeT $ findHostEnclosure host
   forM_ menc $ promulgateRC . ExpanderReset
 
-ruleThreadController :: Definitions LoopState ()
+ruleThreadController :: Definitions RC ()
 ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc) _) -> let
     module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc
     thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
@@ -646,7 +646,7 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
 
   -- Dummy rule for handling SSPL HL commands
 
-ruleHlNodeCmd :: Service SSPLConf -> Definitions LoopState ()
+ruleHlNodeCmd :: Service SSPLConf -> Definitions RC ()
 ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
     return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
@@ -679,7 +679,7 @@ ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _
 updateDriveManagerWithFailure :: StorageDevice
                               -> String
                               -> Maybe String
-                              -> PhaseM LoopState l ()
+                              -> PhaseM RC l ()
 updateDriveManagerWithFailure disk st reason = do
   updateDriveStatus disk st (fromMaybe "NONE" reason)
   dis <- findStorageDeviceIdentifiers disk
@@ -700,7 +700,7 @@ updateDriveManagerWithFailure disk st reason = do
           []    -> phaseLog "error" $ "Unable to find host for " ++ show e
           h : _ -> f (h::Host)
 
-ruleSSPLTimeout :: Service SSPLConf -> Definitions LoopState ()
+ruleSSPLTimeout :: Service SSPLConf -> Definitions RC ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
       \(HAEvent uuid (SSPLServiceTimeout nid) _) -> do
           mcfg <- Service.lookupInfoMsg (Node nid) sspl
@@ -709,7 +709,7 @@ ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
             liftProcess $ nsendRemote nid (serviceLabel sspl) ResetSSPLService
           messageProcessed uuid
 
-ruleSSPLConnectFailure :: Definitions LoopState ()
+ruleSSPLConnectFailure :: Definitions RC ()
 ruleSSPLConnectFailure = defineSimple "sspl-service-connect-failure" $
       \(HAEvent uuid (SSPLConnectFailure nid) _) -> do
           phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid

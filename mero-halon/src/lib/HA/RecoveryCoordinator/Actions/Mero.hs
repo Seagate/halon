@@ -79,7 +79,7 @@ m0t1fsBootLevel = M0.BootLevel 2
 -- TODO Generalise this
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
 -- and its 'M0.ConfObjectState'.
-noteToSDev :: Note -> PhaseM LoopState l (Maybe (M0.ConfObjectState, M0.SDev))
+noteToSDev :: Note -> PhaseM RC l (Maybe (M0.ConfObjectState, M0.SDev))
 noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
   Just sdev -> return $ Just (stType, sdev)
   Nothing -> Conf.lookupConfObjByFid mfid >>= \case
@@ -95,7 +95,7 @@ rmsAddress = ":12345:41:301"
 --   UUID and storing the LNet nid.
 createMeroKernelConfig :: Castor.Host
                        -> String -- ^ LNet interface address
-                       -> PhaseM LoopState a ()
+                       -> PhaseM RC a ()
 createMeroKernelConfig host lnid = modifyLocalGraph $ \rg -> do
   uuid <- liftIO nextRandom
   return  $ G.newResource uuid
@@ -111,7 +111,7 @@ createMeroKernelConfig host lnid = modifyLocalGraph $ \rg -> do
 createMeroClientConfig :: M0.Filesystem
                         -> Castor.Host
                         -> HostHardwareInfo
-                        -> PhaseM LoopState a ()
+                        -> PhaseM RC a ()
 createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
   createMeroKernelConfig host nid
   modifyLocalGraph $ \rg -> do
@@ -170,7 +170,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
     return rg'
 
 -- | Calculate the current run level of the cluster.
-calculateRunLevel :: PhaseM LoopState l M0.BootLevel
+calculateRunLevel :: PhaseM RC l M0.BootLevel
 calculateRunLevel = do
     vals <- traverse guard lvls
     return . fst . findLast $ zip lvls vals
@@ -212,7 +212,7 @@ calculateRunLevel = do
 -- | Calculate the current stop level of the cluster. A stop level of x
 --   indicates that it is valid to stop processes on that level. A stop level
 --   of (-1) indicates that we may stop the halon:m0d service.
-calculateStopLevel :: PhaseM LoopState l M0.BootLevel
+calculateStopLevel :: PhaseM RC l M0.BootLevel
 calculateStopLevel = do
     vals <- traverse guard lvls
     return . fst . findLast $ zip lvls vals
@@ -306,7 +306,7 @@ isClusterStopped rg = null $
 -- a given node. Returns all the processes which are being started.
 startNodeProcesses :: Castor.Host
                    -> M0.ProcessLabel
-                   -> PhaseM LoopState a [M0.Process]
+                   -> PhaseM RC a [M0.Process]
 startNodeProcesses host label = do
     rg <- getLocalGraph
     let procs =  [ p
@@ -330,7 +330,7 @@ configureMeroProcess :: TypedChannel ProcessControlMsg
                      -> M0.Process
                      -> ProcessRunType
                      -> Bool
-                     -> PhaseM LoopState a ()
+                     -> PhaseM RC a ()
 configureMeroProcess (TypedChannel chan) p runType mkfs = do
     rg <- getLocalGraph
     conf <- if any (\s -> M0.s_type s == CST_MGS)
@@ -341,7 +341,7 @@ configureMeroProcess (TypedChannel chan) p runType mkfs = do
 
 stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]
-                  -> PhaseM LoopState a ()
+                  -> PhaseM RC a ()
 stopNodeProcesses (TypedChannel chan) ps = do
    rg <- getLocalGraph
    let msg = StopProcesses $ map (go rg) ps
@@ -417,7 +417,7 @@ getAllProcesses rg =
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   ]
 
-startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
+startMeroService :: Castor.Host -> Res.Node -> PhaseM RC a ()
 startMeroService host node = do
   phaseLog "action" $ "Trying to start mero service on "
                     ++ show (host, node)
@@ -464,7 +464,7 @@ startMeroService host node = do
 -- @node-up@ rule. @halon:m0d@ is excluded from that as that
 -- particular service is going to be restarted as part of the node
 -- bootstrap.
-retriggerMeroNodeBootstrap :: M0.Node -> PhaseM LoopState a ()
+retriggerMeroNodeBootstrap :: M0.Node -> PhaseM RC a ()
 retriggerMeroNodeBootstrap n = do
   rg <- getLocalGraph
   case G.connectedTo Res.Cluster Has rg of
@@ -484,7 +484,7 @@ retriggerMeroNodeBootstrap n = do
 -- Use during startup by 'requestClusterStart'.
 announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
-                       -> PhaseM LoopState a ()
+                       -> PhaseM RC a ()
 announceTheseMeroHosts hosts p = do
   rg' <- getLocalGraph
   let clientHosts =

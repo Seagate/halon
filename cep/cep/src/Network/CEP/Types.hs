@@ -6,6 +6,7 @@
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -23,7 +24,6 @@ import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Exception (throwIO)
 import           Control.Monad.Catch
 import           Data.Binary hiding (get, put)
-import qualified Data.Sequence as S
 import           Data.Int
 import qualified Data.Map as M
 import           Data.Set (Set)
@@ -37,6 +37,12 @@ import           System.Clock
 import           Control.Lens.TH
 
 import Network.CEP.Buffer
+import qualified Network.CEP.Log as Log
+
+-- | Application type over which the CEP engine is parametrised.
+class Application x where
+  type GlobalState x :: *
+  type LogType x :: *
 
 data Time = Absolute !TimeSpec
           | Relative !Int
@@ -125,7 +131,12 @@ instance Binary a => Binary (Published a)
 --   'ProcessId'. Several subscribers can be associated to a type of message.
 type Subscribers = M.Map Fingerprint (Set ProcessId)
 
-type SMLogs = S.Seq (String, String, String)
+-- | Logging information passed to SM level.
+data SMLogger app l where
+  SMLogger :: Application app => {
+    sml_logger :: Log.Event (LogType app) -> GlobalState app -> Process ()
+  , sml_state_logger :: Maybe (l -> Log.Environment)
+  } -> SMLogger app l
 
 -- | Keeps track of time in order to use time varying combinators (FRP).
 -- type TimeSession = Session Process (Timed Time ())
@@ -136,14 +147,15 @@ type SMLogs = S.Seq (String, String, String)
 
 -- type SimpleCEPWire a b = Wire (Timed Time ()) () Identity a b
 
--- | Rule dependent, labeled state machine. 'Phase's are defined withing a rule.
---   'Phase's are able to handle a global state `g` shared with all rules and a
---   local state `l` only available at a rule level.
-data Phase g l =
+-- | Rule dependent, labeled state machine. 'Phase's are defined within a rule.
+--   Phases within an 'Application' of type 'app' are able to handle a global
+--   state `GlobalState app` shared with all rules and a local state `l` only
+--   available at a rule level.
+data Phase app l =
     Phase
     { _phName :: !String
       -- ^ 'Phase' name.
-    , _phCall :: !(PhaseCall g l)
+    , _phCall :: !(PhaseCall app l)
       -- ^ 'Phase' state machine.
     }
 
@@ -187,13 +199,13 @@ class MonadProcess m where
 instance MonadProcess Process where
   liftProcess = Prelude.id
 
-instance MonadProcess (ProgramT (PhaseInstr g l) Process) where
+instance MonadProcess (ProgramT (PhaseInstr app l) Process) where
   liftProcess = singleton . Lift
 
-instance MonadThrow (ProgramT (PhaseInstr g l) Process) where
+instance MonadThrow (ProgramT (PhaseInstr app l) Process) where
   throwM = liftProcess . liftIO . throwIO
 
-instance MonadCatch (ProgramT (PhaseInstr g l) Process) where
+instance MonadCatch (ProgramT (PhaseInstr app l) Process) where
   catch f h = singleton $ Catch f h
 
 normalJump :: a -> Jump a
@@ -218,18 +230,17 @@ timeout :: Int -> Jump PhaseHandle -> Jump PhaseHandle
 timeout dt (NormalJump a)   = OnTimeJump (mempty <> Relative dt) a
 timeout dt (OnTimeJump d a) = OnTimeJump (d <> Relative dt) a
 
-jumpPhaseName :: Jump (Phase g l) -> String
+jumpPhaseName :: Jump (Phase app l) -> String
 jumpPhaseName (NormalJump p)       = _phName p
 jumpPhaseName (OnTimeJump _ p)     = _phName p
 
-jumpPhaseCall :: Jump (Phase g l) -> PhaseCall g l
+jumpPhaseCall :: Jump (Phase app l) -> PhaseCall app l
 jumpPhaseCall (NormalJump p)       = _phCall p
 jumpPhaseCall (OnTimeJump _ p)     = _phCall p
 
 jumpPhaseHandle :: Jump PhaseHandle -> String
 jumpPhaseHandle (NormalJump h)       = _phHandle h
 jumpPhaseHandle (OnTimeJump _ h)     = _phHandle h
-
 
 -- | Update the time of a 'Jump'. If it's ready, gets its value.
 jumpApplyTime :: RuleKey -> Jump a -> State.StateT (EngineState g) Process (Either (Jump a) a)
@@ -261,7 +272,7 @@ jumpEmitTimeout key jmp = do
     res <- jumpApplyTime key jmp
     case res of
       Left nxt_jmp ->
-        case nxt_jmp of 
+        case nxt_jmp of
           (OnTimeJump r b) -> do
               r' <- addEvent key r
               return $ OnTimeJump r' b
@@ -277,7 +288,7 @@ type Definitions s a = Specification s a
 
 -- | Type level trick in order to make sure that the last rule state machine
 --   instruction is a 'start' call.
-data Started g l = StartingPhase l (Jump (Phase g l))
+data Started app l = StartingPhase l (Jump (Phase app l))
 
 -- | Holds type information used for later type message deserialization.
 data TypeInfo =
@@ -327,21 +338,26 @@ data PhaseStep a b =
 --
 -- 'PhaseSeq': Uses 'PhaseStep' state machine in order to produce a
 -- @b@ message.
-data PhaseType g l a b where
+data PhaseType app l a b where
     -- PhaseWire  :: CEPWire a b -> PhaseType g l a b
-    PhaseMatch :: (a -> g -> l ->  Process (Maybe b)) -> PhaseType g l a b
-    PhaseNone  :: PhaseType g l a a
-    PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType g l a b
+    PhaseMatch :: Application app
+               => (a -> (GlobalState app) -> l ->  Process (Maybe b)) -> PhaseType app l a b
+    PhaseNone  :: PhaseType app l a a
+    PhaseSeq   :: Seq -> PhaseStep a b -> PhaseType app l a b
 
 -- | 'Phase' state machine type. Either it's a 'ContCall', it needs a message
 --   in order to proceed. If it's a 'DirectCall', it can be started right away
-data PhaseCall g l
-    = DirectCall (PhaseM g l ())
+data PhaseCall app l
+    = DirectCall (PhaseM app l ())
     | forall a b. (Serializable a, Serializable b) =>
-      ContCall (PhaseType g l a b) (b -> PhaseM g l ())
+      ContCall (PhaseType app l a b) (b -> PhaseM app l ())
 
 -- | Testifies a 'wants' has been made before interacting with a 'Buffer'
 data Token a = Token
+
+-- | Possible settings which may be applied at the rule level.
+data RuleSetting app l where
+  LocalStateLogger :: (l -> Log.Environment) -> RuleSetting app l
 
 -- | Rule state machine.
 --
@@ -353,51 +369,59 @@ data Token a = Token
 -- 'SetPhase': Assignes a 'Phase' state machine to the handle.
 --
 -- 'Wants': Indicates that rule is interested in a particular message.
-data RuleInstr g l a where
-    Start     :: Jump PhaseHandle -> l -> RuleInstr g l (Started g l)
-    NewHandle :: String -> RuleInstr g l (Jump PhaseHandle)
-    SetPhase  :: Jump PhaseHandle -> (PhaseCall g l) -> RuleInstr g l ()
-    Wants :: Serializable a => Proxy a -> RuleInstr g l (Token a)
+--
+-- 'SetRuleSetting': Sets a rule-level configuration option.
+data RuleInstr app l a where
+    Start     :: Jump PhaseHandle -> l -> RuleInstr app l (Started app l)
+    NewHandle :: String -> RuleInstr app l (Jump PhaseHandle)
+    SetPhase  :: Jump PhaseHandle -> (PhaseCall app l) -> RuleInstr app l ()
+    Wants :: Serializable a => Proxy a -> RuleInstr app l (Token a)
+    SetRuleSetting :: RuleSetting app l -> RuleInstr app l ()
 
-type RuleM g l a = Program (RuleInstr g l) a
+type RuleM app l a = Program (RuleInstr app l) a
 
 -- | Defines a phase handle.
-phaseHandle :: String -> RuleM g l (Jump PhaseHandle)
+phaseHandle :: String -> RuleM app l (Jump PhaseHandle)
 phaseHandle n = singleton $ NewHandle n
 
 -- | Indicates we might be interested by a particular message.
-wants :: Serializable a => Proxy a -> RuleM g l (Token a)
+wants :: Serializable a => Proxy a -> RuleM app l (Token a)
 wants p = singleton $ Wants p
+
+-- | Set the logger for logging of local state.
+setLocalStateLogger :: (l -> Log.Environment) -> RuleM app l ()
+setLocalStateLogger logger =
+  singleton $ SetRuleSetting $ LocalStateLogger logger
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would be directly
 --   executed when triggered.
-directly :: Jump PhaseHandle -> PhaseM g l () -> RuleM g l ()
+directly :: Jump PhaseHandle -> PhaseM app l () -> RuleM app l ()
 directly h action = singleton $ SetPhase h (DirectCall action)
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would await for
 --   a specific message before starting.
 setPhase :: Serializable a
          => Jump PhaseHandle
-         -> (a -> PhaseM g l ())
-         -> RuleM g l ()
+         -> (a -> PhaseM app l ())
+         -> RuleM app l ()
 setPhase h action = singleton $ SetPhase h (ContCall PhaseNone action)
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would await for
 --   a specific message before starting. The expected messsage should
 --   satisfies the given predicate.
-setPhaseIf :: (Serializable a, Serializable b)
+setPhaseIf :: (Application app, Serializable a, Serializable b)
            => Jump PhaseHandle
-           -> (a -> g -> l -> Process (Maybe b))
-           -> (b -> PhaseM g l ())
-           -> RuleM g l ()
+           -> (a -> GlobalState app -> l -> Process (Maybe b))
+           -> (b -> PhaseM app l ())
+           -> RuleM app l ()
 setPhaseIf h p action = singleton $ SetPhase h (ContCall (PhaseMatch p) action)
 
 -- | Internal use only. Waits for 2 type of messages to come sequentially and
 --   apply them to a predicate. If the predicate is statisfied, we yield those
 --   value in a tuple, otherwise we switch to the 'Error' state.
-__phaseSeq2 :: forall g l a b. (Serializable a, Serializable b)
+__phaseSeq2 :: forall app l a b. (Serializable a, Serializable b)
             => (a -> b -> Bool)
-            -> PhaseType g l a (a, b)
+            -> PhaseType app l a (a, b)
 __phaseSeq2 p = PhaseSeq sq action
   where
     sq = Cons (Proxy :: Proxy a) (Cons (Proxy :: Proxy b) Nil)
@@ -412,8 +436,8 @@ __phaseSeq2 p = PhaseSeq sq action
 setPhaseSequenceIf :: (Serializable a, Serializable b)
                 => Jump PhaseHandle
                 -> (a -> b -> Bool)
-                -> (a -> b -> PhaseM g l ())
-                -> RuleM g l ()
+                -> (a -> b -> PhaseM app l ())
+                -> RuleM app l ()
 setPhaseSequenceIf h p t =
     singleton $ SetPhase h (ContCall (__phaseSeq2 p) action)
   where
@@ -423,27 +447,27 @@ setPhaseSequenceIf h p t =
 --   message to come sequentially.
 setPhaseSequence :: (Serializable a, Serializable b)
                  => Jump PhaseHandle
-                 -> (a -> b -> PhaseM g l ())
-                 -> RuleM g l ()
+                 -> (a -> b -> PhaseM app l ())
+                 -> RuleM app l ()
 setPhaseSequence h t =
     setPhaseSequenceIf h (\_ _ -> True) t
 
 -- | Informs CEP engine that rule will start with a particular phase given an
 --   initial local state value.
-start :: Jump PhaseHandle -> l -> RuleM g l (Started g l)
+start :: Jump PhaseHandle -> l -> RuleM app l (Started app l)
 start h l = singleton $ Start h l
 
 -- | Like 'start' but with a local state set to unit.
-start_ :: Jump PhaseHandle -> RuleM g () (Started g ())
+start_ :: Jump PhaseHandle -> RuleM app () (Started app ())
 start_ h = start h ()
 
 -- | Start a rule with an implicit fork.
-startFork :: Jump PhaseHandle -> l -> RuleM g l (Started g l)
+startFork :: Jump PhaseHandle -> l -> RuleM app l (Started app l)
 startFork rule = startForks [rule]
 
 -- | Start a rule with an implicit fork. Rule may started from
 -- different phases.
-startForks :: [Jump PhaseHandle] -> l -> RuleM g l (Started g l)
+startForks :: [Jump PhaseHandle] -> l -> RuleM app l (Started app l)
 startForks rules state = do
     winit <- initWrapper
     start winit state
@@ -463,7 +487,7 @@ startForks rules state = do
 
       return wrapper_init
 
-type PhaseM g l a = ProgramT (PhaseInstr g l) Process a
+type PhaseM app l a = ProgramT (PhaseInstr app l) Process a
 
 -- | Type helper that either references the global or local state of a 'Phase'
 --   state machine.
@@ -510,39 +534,41 @@ data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
 -- 'Index'. The 'Buffer' is altered.
 --
 -- 'Catch': Exception handler.
-data PhaseInstr g l a where
-    Continue :: Jump PhaseHandle -> PhaseInstr g l a
-    Get :: Scope g l a -> PhaseInstr g l a
-    Put :: Scope g l a -> a -> PhaseInstr g l ()
-    Stop :: PhaseInstr g l a
-    Fork :: ForkType -> PhaseM g l () -> PhaseInstr g l ()
-    Lift :: Process a -> PhaseInstr g l a
-    Suspend :: PhaseInstr g l ()
-    Publish :: Serializable e => e -> PhaseInstr g l ()
-    PhaseLog :: String -> String -> PhaseInstr g l ()
-    Switch :: [Jump PhaseHandle] -> PhaseInstr g l ()
-    Peek :: Serializable a => Index -> PhaseInstr g l (Index, a)
-    Shift :: Serializable a => Index -> PhaseInstr g l (Index, a)
-    Catch :: Exception e => (PhaseM g l a) -> (e -> PhaseM g l a) -> PhaseInstr g l a
+data PhaseInstr app l a where
+    Continue :: Jump PhaseHandle -> PhaseInstr app l a
+    Get :: Application app => Scope (GlobalState app) l a -> PhaseInstr app l a
+    Put :: Application app => Scope (GlobalState app) l a -> a -> PhaseInstr app l ()
+    Stop :: PhaseInstr app l a
+    Fork :: ForkType -> PhaseM app l () -> PhaseInstr app l ()
+    Lift :: Process a -> PhaseInstr app l a
+    Suspend :: PhaseInstr app l ()
+    Publish :: Serializable e => e -> PhaseInstr app l ()
+    PhaseLog :: String -> String -> PhaseInstr app l ()
+    Switch :: [Jump PhaseHandle] -> PhaseInstr app l ()
+    Peek :: Serializable a => Index -> PhaseInstr app l (Index, a)
+    Shift :: Serializable a => Index -> PhaseInstr app l (Index, a)
+    Catch :: Exception e => (PhaseM app l a) -> (e -> PhaseM app l a) -> PhaseInstr app l a
 
 -- | Gets scoped state from memory.
-get :: Scope g l a -> PhaseM g l a
+get :: Application app => Scope (GlobalState app) l a -> PhaseM app l a
 get s = singleton $ Get s
 
 -- | Gets specific component of scoped state from memory.
-gets :: Scope g l a -> (a -> b) -> PhaseM g l b
+gets :: Application app
+     => Scope (GlobalState app) l a -> (a -> b) -> PhaseM app l b
 gets s f = f <$> get s
 
 -- | Updates scoped state in memory.
-put :: Scope g l a -> a -> PhaseM g l ()
+put :: Application app => Scope (GlobalState app) l a -> a -> PhaseM app l ()
 put s a = singleton $ Put s a
 
 -- | Maps and old scoped state in memory.
-modify :: Scope g l a -> (a -> a) -> PhaseM g l ()
+modify :: Application app
+       => Scope (GlobalState app) l a -> (a -> a) -> PhaseM app l ()
 modify s k = put s . k =<< get s
 
 -- | Jumps to 'Phase' referenced by given 'PhaseHandle'
-continue :: Jump PhaseHandle -> PhaseM g l a
+continue :: Jump PhaseHandle -> PhaseM app l a
 continue p = singleton $ Continue p
 
 -- | Stops the state machine. Depending the current state machine context:
@@ -551,12 +577,12 @@ continue p = singleton $ Continue p
 --
 --   - Switch context: State machine tries the next alternative 'Phase' without
 --     adding back the current state machine to the list of alternatives.
-stop :: PhaseM g l a
+stop :: PhaseM app l a
 stop = singleton $ Stop
 
 -- | Stops the state machine. Has different behavior depending on the context
 --   of the state machine.
-fork :: ForkType -> PhaseM g l () -> PhaseM g l ()
+fork :: ForkType -> PhaseM app l () -> PhaseM app l ()
 fork typ a = singleton $ Fork typ a
 
 -- | Parks the current state machine. Has different behavior depending on state
@@ -564,44 +590,33 @@ fork typ a = singleton $ Fork typ a
 --   - Normal context: State machine is parked.
 --   - Switch context: State machine tries the next alternative 'Phase' but
 --     adding back the current state machine to the list of alternatives.
-suspend :: PhaseM g l ()
+suspend :: PhaseM app l ()
 suspend = singleton Suspend
 
 -- | Pushes message to subscribers.
-publish :: Serializable e => e -> PhaseM g l ()
+publish :: Serializable e => e -> PhaseM app l ()
 publish e = singleton $ Publish e
 
 -- | Simple log. First parameter is the context and the last one is the log.
-phaseLog :: String -> String -> PhaseM g l ()
+phaseLog :: String -> String -> PhaseM app l ()
 phaseLog ctx line = singleton $ PhaseLog ctx line
 
 -- | Changes state machine context. Given the list of 'PhaseHandle', switch to
 --   the first 'Phase' that's successfully executed.
-switch :: [Jump PhaseHandle] -> PhaseM g l ()
+switch :: [Jump PhaseHandle] -> PhaseM app l ()
 switch xs = singleton $ Switch xs
 
 -- | Peeks a message from the 'Buffer' given a minimun 'Index'. The 'Buffer' is
 --   not altered. If the message is not available, 'Phase' state machine is
 --   suspended.
-peek :: Serializable a => Token a -> Index -> PhaseM g l (Index, a)
+peek :: Serializable a => Token a -> Index -> PhaseM app l (Index, a)
 peek _ idx = singleton $ Peek idx
 
 -- | Consumes a message from the 'Buffer' given a minimun 'Index'. The 'Buffer'
 --   is altered. If the message is not available, 'Phase' state machine is
 --   suspended.
-shift :: Serializable a => Token a -> Index -> PhaseM g l (Index, a)
+shift :: Serializable a => Token a -> Index -> PhaseM app l (Index, a)
 shift _ idx = singleton $ Shift idx
-
--- | Gathers all the logs produced during 'Phase' state machine run.
-data Logs =
-    Logs
-    { logsRuleName :: !String
-      -- ^ Rule name associated with those logs.
-    , logsPhaseEntries :: ![(String, String, String)]
-      -- ^ Each entry is compound of 'Phase' name, a context and a log value.
-    } deriving (Eq, Show, Typeable, Generic)
-
-instance Binary Logs
 
 -- | Settings that change CEP engine execution.
 --
@@ -615,11 +630,13 @@ instance Binary Logs
 --
 -- 'DefaultHandler': Sets the default handler for 'Message's.
 data Setting s a where
-    Logger :: Setting s (Logs -> s -> Process ())
-    RuleFinalizer :: Setting s (s -> Process s)
+    Logger :: Application app => Setting app (Log.Event (LogType app) -> GlobalState app -> Process ())
+    RuleFinalizer :: (Application app, g ~ GlobalState app) => Setting app (g -> Process g)
     PhaseBuffer :: Setting s Buffer
     DebugMode :: Setting s Bool
-    DefaultHandler :: Setting s (UUID -> StablePrint -> Lazy.ByteString -> s -> Process ())
+    DefaultHandler :: Application app
+                   => Setting app (UUID -> StablePrint -> Lazy.ByteString
+                                        -> GlobalState app -> Process ())
 
 -- | Definition state machine.
 --
@@ -629,49 +646,52 @@ data Setting s a where
 --
 -- 'Init': Set a rule to execute before proceeding regular CEP engine
 -- execution.
-data Declare g a where
-    DefineRule :: String -> RuleM g l (Started g l) -> Declare g ()
-    SetSetting :: Setting g a -> a -> Declare g ()
-    Init :: RuleM g l (Started g l) -> Declare g ()
+data Declare app a where
+    DefineRule :: String -> RuleM app l (Started app l) -> Declare app ()
+    SetSetting :: Setting app a -> a -> Declare app ()
+    Init :: RuleM app l (Started app l) -> Declare app ()
 
 -- | Defines a new rule.
-define :: String -> RuleM g l (Started g l) -> Specification g ()
+define :: String -> RuleM app l (Started app l) -> Specification app ()
 define name action = singleton $ DefineRule name action
 
 -- | Set a rule to execute before proceeding regular CEP engine execution. That
 --   rule must successfully terminate (Doesn't have 'Phase' state machines
 --   waiting on the stack).
-initRule :: RuleM g l (Started g l) -> Specification g ()
+initRule :: RuleM app l (Started app l) -> Specification app ()
 initRule r = singleton $ Init r
 
 -- | Like 'defineSimpleIf' but with a default predicate that lets
 --   anything goes throught.
-defineSimple :: Serializable a
+defineSimple :: (Application app, Serializable a)
              => String
-             -> (forall l. a -> PhaseM g l ())
-             -> Specification g ()
+             -> (forall l. a -> PhaseM app l ())
+             -> Specification app ()
 defineSimple n k = defineSimpleIf n (\e _ -> return $ Just e) k
 
 -- | Shorthand to define a simple rule with a single phase. It defines
 --   'PhaseHandle' named @phase-1@, calls 'setPhaseIf' with that handle
 --   and then call 'start' with a '()' local state initial value.
-defineSimpleIf :: (Serializable a, Serializable b)
+defineSimpleIf :: (Application app, Serializable a, Serializable b)
                => String
-               -> (a -> g -> Process (Maybe b))
-               -> (forall l. b -> PhaseM g l ())
-               -> Specification g ()
+               -> (a -> (GlobalState app) -> Process (Maybe b))
+               -> (forall l. b -> PhaseM app l ())
+               -> Specification app ()
 defineSimpleIf n p k = define n $ do
     h <- phaseHandle $ n++"-phase"
     setPhaseIf h (\e g _ -> p e g) k
     start h ()
 
 -- | Enables logging by using the given callback. The global state can be read.
-setLogger :: (Logs -> s -> Process ()) -> Specification s ()
+setLogger :: Application app
+          => (Log.Event (LogType app) -> GlobalState app -> Process ())
+          -> Specification app ()
 setLogger k = singleton $ SetSetting Logger k
 
 -- | Sets a rule finalizer. A rule finalizer is called after a rule has been
 --   executed. A rule finalizer is able to change CEP engine global state.
-setRuleFinalizer :: (s -> Process s) -> Specification s ()
+setRuleFinalizer :: (Application app , g ~ GlobalState app)
+                 => (g -> Process g) -> Specification app ()
 setRuleFinalizer k = singleton $ SetSetting RuleFinalizer k
 
 -- | Sets the default message 'Buffer'.
@@ -686,7 +706,10 @@ enableDebugMode = singleton $ SetSetting DebugMode True
 -- rules.
 --
 -- Unconsumed raw messages are silently discarded.
-setDefaultHandler :: (UUID -> StablePrint -> Lazy.ByteString -> s -> Process ()) -> Specification s ()
+setDefaultHandler :: Application app
+                  => (UUID -> StablePrint -> Lazy.ByteString -> GlobalState app
+                           -> Process ())
+                  -> Specification app ()
 setDefaultHandler = singleton . SetSetting DefaultHandler
 
 -- | Request runtime information

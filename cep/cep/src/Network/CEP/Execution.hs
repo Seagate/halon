@@ -24,7 +24,6 @@ data SMResult = SMResult
         { smId          :: !SMId              -- ^ State machine ID
         , smResultState :: !SMState           -- ^ State machine state after a step.
         , smResultInfo  :: [ExecutionInfo]    -- ^ Information about phases that were run.
-        , smResultLogs  :: Maybe Logs         -- ^ Logs produced on a step.
         } deriving Show
 
 data RuleName = InitRuleName | RuleName String deriving Show

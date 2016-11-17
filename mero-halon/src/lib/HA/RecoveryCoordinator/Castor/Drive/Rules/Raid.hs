@@ -83,7 +83,8 @@ fldRaidInfo :: Proxy '("raidInfo", Maybe RaidInfo)
 fldRaidInfo = Proxy
 
 -- | Log info about the state of this operation
-logInfo :: forall a l. ( '("node", Maybe Node) ∈ l
+logInfo :: forall a l. ( Application a
+                       , '("node", Maybe Node) ∈ l
                        , '("raidInfo", Maybe RaidInfo) ∈ l
                        )
         => PhaseM a (FieldRec l) ()
@@ -97,7 +98,7 @@ logInfo = do
     phaseLog "raid.consituent.path" $ show (rinfo ^. riCompPath)
 
 -- | RAID device failure rule.
-failed :: Definitions LoopState ()
+failed :: Definitions RC ()
 failed = define "castor::drive::raid::failed" $ do
     raid_update <- phaseHandle "raid_update"
     remove_done <- phaseHandle "remove_done"
@@ -229,7 +230,7 @@ failed = define "castor::drive::raid::failed" $ do
 --   This is triggered on drive being declared ready for use to the system.
 --   We verify that the drive is in fact a metadata drive and, if so, attempt
 --   to add it into the RAID array.
-replacement :: Definitions LoopState ()
+replacement :: Definitions RC ()
 replacement = define "castor::drive::raid::replaced" $ do
 
     drive_replaced <- phaseHandle "drive_replaced"
@@ -311,7 +312,7 @@ replacement = define "castor::drive::raid::replaced" $ do
           <+> fldDispatch =: Dispatch [] st Nothing
 
 -- | All rules exported by this module.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ failed
   , replacement

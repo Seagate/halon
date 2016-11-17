@@ -177,7 +177,7 @@ import           Text.Printf
 
 -- | All rules related to node.
 -- Expected to be used in RecoveryCoordinator code.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleNodeNew
   , ruleStartProcessesOnNode
@@ -226,7 +226,7 @@ fldBootLevel = Proxy
 --
 -- Listens: 'Event.NewNodeConnected'
 -- Emits:   'StartProcessNodeNew'
-eventNewHalonNode :: Definitions LoopState ()
+eventNewHalonNode :: Definitions RC ()
 eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNodeConnected node) -> do
   promulgateRC $! StartProcessNodeNew node
 
@@ -236,7 +236,7 @@ eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNo
 -- Listens:         'MeroChannelDeclared'
 -- Emits:           'KernelStarted'
 -- State-Changes:   'M0.Node' online
-eventKernelStarted :: Definitions LoopState ()
+eventKernelStarted :: Definitions RC ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
   g <- getLocalGraph
   let nodes = nodeToM0Node (R.Node $ processNodeId sp) g
@@ -249,7 +249,7 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
 -- Listens:      'MeroKernelFailed'
 -- Emits:        'NodeKernelFailed'
 -- State-Changes: 'M0.Node' Failed
-eventKernelFailed :: Definitions LoopState ()
+eventKernelFailed :: Definitions RC ()
 eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid msg) -> do
   g <- getLocalGraph
   let node = R.Node $ processNodeId pid
@@ -270,7 +270,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
 --   like a RAID failure, but there's nothing we can do about it. It indicates
 --   an unrecoverable failure; we need to mark the node as failed and send an
 --   appropriate IEM.
-eventBEError :: Definitions LoopState ()
+eventBEError :: Definitions RC ()
 eventBEError = defineSimpleTask "castor::node::event::be-error"
   $ \(HAMsg (beioerr :: BEIoErr) meta) -> do
     lookupConfObjByFid (_hm_source_process meta) >>= \case
@@ -309,7 +309,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
 -- service and halon:m0d process there.
 --
 -- Listens:   'StartHalonM0dRequest'
-requestStartHalonM0d :: Definitions LoopState ()
+requestStartHalonM0d :: Definitions RC ()
 requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d" $
   \(StartHalonM0dRequest m0node) -> do
     rg <- getLocalGraph
@@ -339,7 +339,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
 --
 -- XXX: actually mero-kernel can't be stopped at the moment as halon can't
 -- unload mero modules.
-requestStopHalonM0d :: Definitions LoopState ()
+requestStopHalonM0d :: Definitions RC ()
 requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
   \(StopHalonM0dRequest m0node) -> do
      rg <- getLocalGraph
@@ -371,7 +371,7 @@ processNodeNew = Job "castor::node::process::new"
 newtype StartProcessNodeNew  = StartProcessNodeNew R.Node
   deriving (Eq, Show, Generic, Binary, Ord)
 
-ruleNodeNew :: Definitions LoopState ()
+ruleNodeNew :: Definitions RC ()
 ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
   confd_running   <- phaseHandle "confd-running"
   config_created  <- phaseHandle "client-config-created"
@@ -449,7 +449,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
 mkQueryHostInfo :: forall l. (FldHostHardwareInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
               => Jump PhaseHandle -- ^ Phase handle to jump to on completion
               -> Jump PhaseHandle -- ^ Phase handle to jump to on failure.
-              -> RuleM LoopState (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
+              -> RuleM RC (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
 mkQueryHostInfo andThen orFail = do
     query_info <- phaseHandle "queryHostInfo::query_info"
     info_returned <- phaseHandle "queryHostInfo::info_returned"
@@ -547,7 +547,7 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 --
 -- This job always returns: it's not necessary for the caller to have
 -- a timeout.
-ruleStartProcessesOnNode :: Definitions LoopState ()
+ruleStartProcessesOnNode :: Definitions RC ()
 ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish -> do
     kernel_up         <- phaseHandle "kernel_up"
     kernel_failed     <- phaseHandle "kernel_failed"
@@ -673,7 +673,7 @@ processStartClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeRes
 processStartClientsOnNode = Job "castor::node::client::start"
 
 -- | Start all clients on the given node.
-ruleStartClientsOnNode :: Definitions LoopState ()
+ruleStartClientsOnNode :: Definitions RC ()
 ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> do
     check_kernel_up <- phaseHandle "check-kernel-up"
     kernel_up <- phaseHandle "kernel-up"
@@ -857,7 +857,7 @@ processStopProcessesOnNode = Job "castor::node::stop-processes"
 --        see it, they know cluster progressed onto the given level
 --        and they can start teardown of that level.
 --
-ruleStopProcessesOnNode :: Definitions LoopState ()
+ruleStopProcessesOnNode :: Definitions RC ()
 ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish -> do
    teardown   <- phaseHandle "teardown"
    teardown_exec <- phaseHandle "teardown-exec"
@@ -999,7 +999,7 @@ mkLabel bl@(M0.BootLevel l)
 -- reason.
 --
 -- Currently just fails the node the process is on.
-ruleFailNodeIfProcessCantRestart :: Definitions LoopState ()
+ruleFailNodeIfProcessCantRestart :: Definitions RC ()
 ruleFailNodeIfProcessCantRestart =
   defineSimple "castor::node::process-start-failure" $ \case
     ProcessStartFailed p r -> do

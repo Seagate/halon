@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 -- |
@@ -15,28 +16,24 @@ import           Prelude hiding ((<$>))
 import qualified Data.ByteString      as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<$>))
-import           Data.Monoid ((<>))
 import           Data.Typeable
 import           GHC.Generics
 import           System.IO
 
 import Control.Distributed.Process hiding (bracket)
 import Control.Monad.Catch (bracket)
-import Control.Monad (when)
 import Data.Aeson
 import Data.Binary (Binary)
-import Data.Function (on)
-import Data.List (groupBy)
 import Data.Text (Text)
 import Data.Defaultable
 import Data.Hashable
-import Data.Maybe (catMaybes)
+import Data.Monoid ((<>))
 import Data.SafeCopy
 import Data.Time (getCurrentTime)
 import Options.Schema
 import Options.Schema.Builder
-import Network.CEP hiding (get, put)
-import Text.PrettyPrint.Leijen hiding ((<>), (<$>))
+import qualified Network.CEP.Log as CL
+import Text.PrettyPrint.Leijen hiding ((<>),(<$>))
 
 import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
@@ -110,32 +107,29 @@ data EntriesLogged =
 
 instance Binary EntriesLogged
 
-newtype WriteLogs = WriteLogs (Logs -> Process ())
+newtype WriteLogs = WriteLogs (CL.Event () -> Process ())
 
-ppLogs :: Logs -> Doc
-ppLogs logs = vsep [ text $ logsRuleName logs
-                   , indent 2 $ ppEntries entries
-                   ]
+-- | Pretty-print a log entry
+ppLogs :: CL.Event () -> Doc
+ppLogs evt =
+    ppLoc (CL.evt_loc evt) <+> ppEvt (CL.evt_log evt)
   where
-    entries = logsPhaseEntries logs
-
-ppEntries :: [(String, String, String)] -> Doc
-ppEntries xs = indent 2 (vsep $ fmap ppShortEntry shortEntries)
-  where
-    shortEntries :: [(String, [(String, String)])]
-    shortEntries = catMaybes $ map (joinGroup . map collapseEntry) groups
-
-    joinGroup [] = Nothing
-    joinGroup gr@((pn, _) : _) = Just (pn, map snd gr)
-
-    collapseEntry (pn, ctx, str) = (pn, (ctx, str))
-
-    groups = groupBy ((==) `on` (\(pn, _, _) -> pn)) xs
-
-ppShortEntry :: (String, [(String, String)]) -> Doc
-ppShortEntry (pname, vals) = vsep $ text pname : map ppV vals
-  where
-    ppV (ctx, str) = indent 2 (text ctx <+> hcat [equals, rangle] <+> text str)
+    ppLoc CL.Location{..} = encloseSep lbrace rbrace colon
+      $ text <$> [loc_rule_name, show loc_sm_id, loc_phase_name]
+    ppJump (CL.NormalJump s) = text s
+    ppJump (CL.TimeoutJump t s) =
+      text "timeout" <+> parens (text $ show t) <+> text s
+    ppEvt (CL.PhaseLog CL.PhaseLogInfo{..}) =
+      text pl_key <+> hcat [equals, rangle] <+> text pl_value
+    ppEvt CL.PhaseEntry = text "ENTER_PHASE"
+    ppEvt CL.Stop = text "STOP"
+    ppEvt CL.Suspend = text "SUSPEND"
+    ppEvt (CL.Continue CL.ContinueInfo{..}) =
+      text "CONTINUE" <+> ppJump c_continue_phase
+    ppEvt (CL.Switch CL.SwitchInfo{..}) =
+      text "SWITCH" <+> ( encloseSep lbracket rbracket comma
+                        $ ppJump <$> s_switch_phases)
+    ppEvt _ = empty
 
 openLogFile :: FilePath -> Process Handle
 openLogFile path = liftIO $ do
@@ -146,8 +140,8 @@ openLogFile path = liftIO $ do
 cleanupHandle :: Handle -> Process ()
 cleanupHandle h = liftIO $ hClose h
 
-handleLogs :: DecisionLogOutput -> Logs -> Process ()
-handleLogs dlo logs = when (not . null $ logsPhaseEntries logs) $ case dlo of
+handleLogs :: DecisionLogOutput -> CL.Event () -> Process ()
+handleLogs dlo logs = case dlo of
     ProcessOutput pid -> usend pid logs
     StandardOutput -> liftIO $ do
       putDoc $ ppLogs logs
@@ -165,8 +159,8 @@ handleLogs dlo logs = when (not . null $ logsPhaseEntries logs) $ case dlo of
 newWriteLogs :: DecisionLogOutput -> WriteLogs
 newWriteLogs tpe = WriteLogs $ handleLogs tpe
 
-writeLogs :: WriteLogs -> Logs -> Process ()
+writeLogs :: WriteLogs -> CL.Event () -> Process ()
 writeLogs (WriteLogs k) logs = k logs
 
-printLogs :: Logs -> Process ()
+printLogs :: CL.Event () -> Process ()
 printLogs = handleLogs DPLogger

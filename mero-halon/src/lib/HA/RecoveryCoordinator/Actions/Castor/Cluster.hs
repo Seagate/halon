@@ -48,7 +48,7 @@ barrierPass rightState (Event.ClusterStateChange _ state') _ _ =
 -- current cluster status and status of the processes on the current
 -- cluster boot level.
 notifyOnClusterTransition :: Maybe UUID -- ^ Message to declare processed
-                          -> PhaseM LoopState l ()
+                          -> PhaseM RC l ()
 notifyOnClusterTransition meid = do
   oldState <- getLocalGraph <&> getClusterStatus
   newRunLevel <- calculateRunLevel

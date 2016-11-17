@@ -91,7 +91,7 @@ smartTestTimeout = 16*60
 -- | Wait for disk messages indicating that we should perhaps start
 -- disk reset. This can either be 'M0_NC_TRANSIENT' for an 'M0.SDev'
 -- sent through @m0_ha_state_set@ ('Set') or 'StobIoqError'.
-ruleResetInit :: Definitions LoopState ()
+ruleResetInit :: Definitions RC ()
 ruleResetInit = define "rule-reset-init" $ do
   dispatch_wait <- phaseHandle "dispatch_wait"
   disks_transient <- phaseHandle "wait_disks_transient"
@@ -124,7 +124,7 @@ ruleResetInit = define "rule-reset-init" $ do
         _ -> Nothing
 
 -- | Try to start reset (through 'ResetAttempt') on the given 'M0.SDev's.
-tryStartReset :: [M0.SDev] -> PhaseM LoopState l ()
+tryStartReset :: [M0.SDev] -> PhaseM RC l ()
 tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
   msdev <- lookupStorageDevice m0sdev
   case msdev of
@@ -187,7 +187,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
 jobResetAttempt :: Job ResetAttempt ResetAttemptResult
 jobResetAttempt = Job "reset-attempt"
 
-ruleResetAttempt :: Definitions LoopState ()
+ruleResetAttempt :: Definitions RC ()
 ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
       reset         <- phaseHandle "reset"
       resetComplete <- phaseHandle "reset-complete"

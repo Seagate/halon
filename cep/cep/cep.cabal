@@ -23,6 +23,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Data.PersistMessage
                        Network.CEP
+                       Network.CEP.Log
                        Network.CEP.Testing
   other-modules:       Network.CEP.Buffer
                        Network.CEP.Engine

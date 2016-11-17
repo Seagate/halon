@@ -77,7 +77,7 @@ import Text.Printf (printf)
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
 -- used at the toplevel castor module.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleDriveFailed
   , ruleDriveInserted
@@ -107,8 +107,8 @@ driveRemovalTimeout = 60
 mkCheckAndHandleDriveReady ::
      (l -> Maybe StorageDevice) -- ^ accessor to curent storage device in a local state.
   -> Lens' l (Maybe ListenerId) -- ^ Simple lens to listener ID for SMART test
-  -> (M0.SDev -> PhaseM LoopState l ()) -- ^ Action to run when drive is handled.
-  -> RuleM LoopState l (Node -> StorageDevice -> PhaseM LoopState l [Jump PhaseHandle] -> PhaseM LoopState l [Jump PhaseHandle])
+  -> (M0.SDev -> PhaseM RC l ()) -- ^ Action to run when drive is handled.
+  -> RuleM RC l (Node -> StorageDevice -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
 mkCheckAndHandleDriveReady getter smartLens next = do
 
   smart_result <- phaseHandle "smart_result"
@@ -229,7 +229,7 @@ mkCheckAndHandleDriveReady getter smartLens next = do
 
 -- | Removing drive:
 -- We need to notify mero about drive state change and then send event to the logger.
-ruleDriveRemoved :: Definitions LoopState ()
+ruleDriveRemoved :: Definitions RC ()
 ruleDriveRemoved = define "drive-removed" $ do
   pinit   <- phaseHandle "init"
   finish   <- phaseHandle "finish"
@@ -301,7 +301,7 @@ driveInsertionTimeout = 10
 --    procedure and does that.
 --
 -- https://drive.google.com/open?id=0BxJP-hCBgo5OVDhjY3ItU1oxTms
-ruleDriveInserted :: Definitions LoopState ()
+ruleDriveInserted :: Definitions RC ()
 ruleDriveInserted = define "drive-inserted" $ do
   handler       <- phaseHandle "drive-inserted"
   removed       <- phaseHandle "removed"
@@ -426,7 +426,7 @@ ruleDriveInserted = define "drive-inserted" $ do
 --   See also:
 --   'ruleMonitorDriveManager' -- sends the 'DriveFailed' message.
 --   'handleRepairInternal' -- tries to start repair on disk
-ruleDriveFailed :: Definitions LoopState ()
+ruleDriveFailed :: Definitions RC ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
   forM_ sd $ \m0sdev -> do
@@ -435,7 +435,7 @@ ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> 
   messageProcessed uuid
 
 -- | When a drive is powered off
-ruleDrivePoweredOff :: Definitions LoopState ()
+ruleDrivePoweredOff :: Definitions RC ()
 ruleDrivePoweredOff = define "drive-powered-off" $ do
   power_removed <- phaseHandle "power_removed"
   power_returned <- phaseHandle "power_returned"
@@ -531,7 +531,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 -- | If a drive is powered on, and it wasn't failed due to Mero issues
 --   or SMART test failures (e.g. it had just been depowered), then mark
 --   it as replaced and start a rebalance.
-ruleDrivePoweredOn :: Definitions LoopState ()
+ruleDrivePoweredOn :: Definitions RC ()
 ruleDrivePoweredOn = define "drive-powered-on" $ do
 
   handle <- phaseHandle "Drive power change event received."
@@ -586,7 +586,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
 --   then those rules should be responsible for recovering to a non-transient
 --   state. In the case of an expander reset, the expander reset rule should
 --   handle escalating the failure.
-ruleDriveBlip :: Definitions LoopState ()
+ruleDriveBlip :: Definitions RC ()
 ruleDriveBlip = defineSimple "castor::disk::blip"
   $ \(DriveTransient eid _ _ disk) -> do
     rg <- getLocalGraph
@@ -601,7 +601,7 @@ ruleDriveBlip = defineSimple "castor::disk::blip"
 -- | Fires when a drive is marked as 'ready' for use. This is typically
 --   caused by a DriveManager message which indicates that the OS can now
 --   see and interract with the drive.
-ruleDriveOK :: Definitions LoopState ()
+ruleDriveOK :: Definitions RC ()
 ruleDriveOK = define "castor::disk::ready" $ do
   handle <- phaseHandle "Drive ready event received"
 
@@ -620,7 +620,7 @@ ruleDriveOK = define "castor::disk::ready" $ do
   start handle (Nothing, Nothing)
 
 -- | When a drive is marked as failed, power it down.
-rulePowerDownDriveOnFailure :: Definitions LoopState ()
+rulePowerDownDriveOnFailure :: Definitions RC ()
 rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
 
   m0_drive_failed <- phaseHandle "m0_drive_failed"

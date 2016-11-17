@@ -69,10 +69,10 @@ mkJobRule :: forall input output l s .
    , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
-   -> (Jump PhaseHandle -> RuleM LoopState s (input -> PhaseM LoopState s (Maybe [Jump PhaseHandle])))
+   -> (Jump PhaseHandle -> RuleM RC s (input -> PhaseM RC s (Maybe [Jump PhaseHandle])))
    -- ^ Rule body, takes final handle as paramter, returns an action  used to
    -- decide how to process rule
-   -> Definitions LoopState ()
+   -> Definitions RC ()
 mkJobRule (Job name)
               args
               body = define name $ do
@@ -139,7 +139,7 @@ mkJobRule (Job name)
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
 
-startJob :: (Typeable r, Binary r) => r -> PhaseM LoopState l ListenerId
+startJob :: (Typeable r, Binary r) => r -> PhaseM RC l ListenerId
 startJob request = do
   l <- ListenerId <$> liftIO UUID.nextRandom
   promulgateRC $ JobStartRequest l request

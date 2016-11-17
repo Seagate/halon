@@ -32,7 +32,7 @@ import Control.Distributed.Process (usend)
 import Text.Regex.TDFA ((=~))
 
 -- | Set of SSPL HL rules. Contain rules for status queries inside a graph.
-ssplHLRules :: Definitions LoopState ()
+ssplHLRules :: Definitions RC ()
 ssplHLRules = defineSimple "status-query" $
   \(HAEvent uuid (CommandRequestMessageStatusRequest mef et,msgId, pid) _) -> do
       rg <- getLocalGraph

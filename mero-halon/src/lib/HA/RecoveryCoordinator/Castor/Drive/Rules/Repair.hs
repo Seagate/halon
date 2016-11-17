@@ -121,7 +121,7 @@ instance B.Binary SpielQueryHourlyFinished
 -- | Handler for @M0_NC_ONLINE@ 'Pool' messages. Its main role is to
 -- load all metadata information and schedule request that will check
 -- if repair could be completed.
-queryStartHandling :: M0.Pool -> PhaseM LoopState l ()
+queryStartHandling :: M0.Pool -> PhaseM RC l ()
 queryStartHandling pool = do
   M0.PoolRepairStatus prt ruuid _ <- getPoolRepairStatus pool >>= \case
     Nothing -> do
@@ -137,11 +137,11 @@ queryStartHandling pool = do
   promulgateRC $ SpielQuery pool prt ruuid
 
 processSnsStatusReply ::
-      PhaseM LoopState l (Maybe UUID, PoolRepairType, UUID) -- ^ Get interesting info from env
-   -> PhaseM LoopState l () -- ^ action to run before doing anything else
-   -> PhaseM LoopState l () -- ^ action to run if SNS is not running
-   -> PhaseM LoopState l () -- ^ action to run if action is not complete
-   -> (Either AbortSNSOperation PoolRepairInformation -> PhaseM LoopState l ())
+      PhaseM RC l (Maybe UUID, PoolRepairType, UUID) -- ^ Get interesting info from env
+   -> PhaseM RC l () -- ^ action to run before doing anything else
+   -> PhaseM RC l () -- ^ action to run if SNS is not running
+   -> PhaseM RC l () -- ^ action to run if action is not complete
+   -> (Either AbortSNSOperation PoolRepairInformation -> PhaseM RC l ())
       -- ^ action to run if SNS repair is complete. SNS is considered
       -- to be complete when
       --
@@ -151,7 +151,7 @@ processSnsStatusReply ::
       -- of 'PoolRepairInformation'.
    -> M0.Pool
    -> [Spiel.SnsStatus]
-   -> PhaseM LoopState l ()
+   -> PhaseM RC l ()
 processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete pool sts = do
   (muuid, prt, ruuid) <- getUUIDs
   preProcess
@@ -200,7 +200,7 @@ processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete 
 -- rule.
 --
 -- TODO Can we remove these?
-querySpiel :: Definitions LoopState ()
+querySpiel :: Definitions RC ()
 querySpiel = define "spiel::sns:query-status" $ do
   query_status    <- phaseHandle "run status request"
   dispatch_hourly <- phaseHandle "dispatch hourly event"
@@ -277,7 +277,7 @@ jobHourlyStatus  = Job "castor::sns::hourly-status"
 --
 -- * it runs hourly
 -- * it runs until repairs complete
-querySpielHourly :: Definitions LoopState ()
+querySpielHourly :: Definitions RC ()
 querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
   run_query <- phaseHandle "run status query"
   abort_on_quiesce <- phaseHandle "abort due to SNS operation pause"
@@ -343,7 +343,7 @@ jobRebalanceStart = Job "castor::sns::rebalance::start"
 -- Emits 'PoolRebalanceStarted' if successful.
 --
 -- See 'ruleRepairStart' for some caveats.
-ruleRebalanceStart :: Definitions LoopState ()
+ruleRebalanceStart :: Definitions RC ()
 ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
@@ -495,7 +495,7 @@ jobRepairStart = Job "castor-repair-start"
 -- IOS becoming unavailable. For now we just check IOS status right
 -- before repairing but there is no guarantee we won't try to start
 -- repair on IOS that's down. HALON-403 should help.
-ruleRepairStart :: Definitions LoopState ()
+ruleRepairStart :: Definitions RC ()
 ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
@@ -657,7 +657,7 @@ jobContinueSNS = Job "castor::sns:continue"
 -- The requirements are:
 --   * All IOS should be running.
 --   * At least one IO service status should be M0_SNS_CM_STATUS_PAUSED.
-ruleSNSOperationContinue :: Definitions LoopState ()
+ruleSNSOperationContinue :: Definitions RC ()
 ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
 
   let process_failure pool s = do
@@ -729,7 +729,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
 jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
 jobSNSAbort = Job "castor::node::sns::abort"
 
-ruleSNSOperationAbort :: Definitions LoopState ()
+ruleSNSOperationAbort :: Definitions RC ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
   entry <- phaseHandle "entry"
   ok    <- phaseHandle "ok"
@@ -821,7 +821,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
 jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
 jobSNSQuiesce = Job "castor::sns::quiesce"
 
-ruleSNSOperationQuiesce :: Definitions LoopState ()
+ruleSNSOperationQuiesce :: Definitions RC ()
 ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
   entry <- phaseHandle "execute operation"
 
@@ -897,7 +897,7 @@ jobSNSOperationRestart = Job "castor::sns::restart"
 --   'RestartSNSOperationFailed' - if operation could not be restarted
 --   'RestartSNSOperationSkip' - if no operation was running
 --   This rule itself just invokes 'abort' and subsequently 'start' rules.
-ruleSNSOperationRestart :: Definitions LoopState ()
+ruleSNSOperationRestart :: Definitions RC ()
 ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
   abort_req <- phaseHandle "abort_req"
   start_req <- phaseHandle "start_req"
@@ -950,7 +950,7 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
         <+> fldReq =: Nothing
 
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
-ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
+ruleOnSnsOperationQuiesceFailure :: Definitions RC ()
 ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
    case result of
     (QuiesceSNSOperationFailure pool _) -> do
@@ -961,7 +961,7 @@ ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-e
     _ -> return ()
 
 -- | Log 'StobIoqError' and abort repair if it's on-going.
-ruleStobIoqError :: Definitions LoopState ()
+ruleStobIoqError :: Definitions RC ()
 ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
   phaseLog "meta" $ show meta
   phaseLog "stob" $ show stob
@@ -980,7 +980,7 @@ ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
 -- | Continue a previously-quiesced SNS operation.
 continueSNS :: M0.Pool  -- ^ Pool under SNS operation
             -> M0.PoolRepairType
-            -> PhaseM LoopState l ()
+            -> PhaseM RC l ()
 continueSNS pool prt = do
   -- We check what we have actualy registered in graph in order to
   -- understand what can we do. Theoretically it should not be needed
@@ -1000,7 +1000,7 @@ continueSNS pool prt = do
                              ++ show (prsType prs) ++ "is registered."
 
 -- | Quiesce the repair on the given pool if the repair is on-going.
-quiesceSNS :: M0.Pool -> PhaseM LoopState l ()
+quiesceSNS :: M0.Pool -> PhaseM RC l ()
 quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 
 -- | Complete the given pool repair by notifying mero about all the
@@ -1011,10 +1011,10 @@ quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 -- continue with the process.
 --
 -- Starts rebalance if we were repairing and have fully completed.
-completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM LoopState l ()
+completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM RC l ()
 completeRepair pool prt muid = do
   -- if no status is found for SDev, assume M0_NC_ONLINE
-  let getSDevState :: M0.SDev -> PhaseM LoopState l' ConfObjectState
+  let getSDevState :: M0.SDev -> PhaseM RC l' ConfObjectState
       getSDevState d = getConfObjState d <$> getLocalGraph
 
   iosvs <- length <$> R.getIOServices pool
@@ -1065,7 +1065,7 @@ completeRepair pool prt muid = do
 -- TODO: Currently we don't handle a case where we have pool
 -- information in the message set but also some disks which belong to
 -- a different pool.
-ruleHandleRepairNVec :: Definitions LoopState ()
+ruleHandleRepairNVec :: Definitions RC ()
 ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \noteSet -> do
    getPoolInfo noteSet >>= traverse_ run
    where
@@ -1097,7 +1097,7 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
 -- * Handle messages that only include information about devices and
 -- not pools.
 --
-ruleHandleRepair :: Definitions LoopState ()
+ruleHandleRepair :: Definitions RC ()
 ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
   getClusterStatus <$> getLocalGraph >>= \case
     Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) -> do
@@ -1174,7 +1174,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
 
 -- | When the cluster has completed starting up, it's possible that
 --   we have devices that failed during the startup process.
-checkRepairOnClusterStart :: Definitions LoopState ()
+checkRepairOnClusterStart :: Definitions RC ()
 checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBootLevel2 $ \() -> do
   pools <- getPool
   forM_ pools $ promulgateRC . PoolRepairRequest
@@ -1194,7 +1194,7 @@ processPoolInfo :: M0.Pool
                 -- ^ Status of the disks in the pool as received in a
                 -- notification. Note this may not be the full set of
                 -- disks belonging to the pool.
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 
 -- We are rebalancing and have received ONLINE for the pool and all
 -- the devices: rebalance is finished so simply fall back to query
@@ -1276,7 +1276,7 @@ data PoolInfo = PoolInfo M0.Pool ConfObjectState SDevStateMap deriving (Show)
 --
 -- TODO: this function do not support processing more than one set in one
 -- message.
-getPoolInfo :: Set -> PhaseM LoopState l (Maybe PoolInfo)
+getPoolInfo :: Set -> PhaseM RC l (Maybe PoolInfo)
 getPoolInfo (Set ns) =
   mapMaybeM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
     [(typ, pool)] -> do
@@ -1297,7 +1297,7 @@ newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 -- of decisions that could be done by the caller.
 processDevices :: (StateCarrier SDev -> StateCarrier SDev -> Bool) -- ^ Predicate
                 -> [AnyStateChange]
-                -> PhaseM LoopState l (Maybe DevicesOnly)
+                -> PhaseM RC l (Maybe DevicesOnly)
 processDevices p changes = do
     for msdevs $ \sdevs -> do
       pdevs <- for sdevs $ \x@(sdev,_) -> (,x) <$> getSDevPool sdev
@@ -1332,7 +1332,7 @@ allWithState sm@(SDevStateMap m) st =
 
 -- | Check if processes associated with IOS are up. If yes, try to
 -- restart repair/rebalance on the pools.
-checkRepairOnServiceUp :: Definitions LoopState ()
+checkRepairOnServiceUp :: Definitions RC ()
 checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
     init_rule <- phaseHandle "init_rule"
 
@@ -1366,7 +1366,7 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
                                         , CST_IOS <- [M0.s_type s] ]
 
 -- | All rules exported by this module.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ checkRepairOnClusterStart
   , checkRepairOnServiceUp

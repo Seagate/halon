@@ -70,7 +70,7 @@ registerChannel :: ( Resource (TypedChannel a)
                    )
                 => R.Node
                 -> TypedChannel a
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 registerChannel sp chan =
   modifyGraph $ G.newResource sp
             >>> G.newResource chan
@@ -81,7 +81,7 @@ unregisterChannel :: forall a l proxy .
    ( Resource (TypedChannel a)
    , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
    , Relation MeroChannel R.Node (TypedChannel a)
-   ) => R.Node -> proxy a -> PhaseM LoopState l ()
+   ) => R.Node -> proxy a -> PhaseM RC l ()
 unregisterChannel node _ = modifyGraph $ \rg ->
   let res = G.connectedTo node MeroChannel rg :: [TypedChannel a]
   in foldr (G.disconnect node MeroChannel) rg res
@@ -102,13 +102,13 @@ meroChannels :: R.Node -> Graph -> [TypedChannel NotificationMessage]
 meroChannels node rg = G.connectedTo node MeroChannel rg
 
 -- | Find mero channel registered on the given node.
-lookupMeroChannelByNode :: R.Node -> PhaseM LoopState l (Maybe (TypedChannel NotificationMessage))
+lookupMeroChannelByNode :: R.Node -> PhaseM RC l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do
    rg <- getLocalGraph
    return $ listToMaybe $ G.connectedTo node MeroChannel rg
 
 -- | Unregister all channels.
-unregisterMeroChannelsOn :: R.Node -> PhaseM LoopState l ()
+unregisterMeroChannelsOn :: R.Node -> PhaseM RC l ()
 unregisterMeroChannelsOn node = do
    phaseLog "info" $ "Unregistering mero channels on " ++ show node
    unregisterChannel node (Proxy :: Proxy NotificationMessage)
@@ -116,7 +116,7 @@ unregisterMeroChannelsOn node = do
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.
-getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [M0.Process])]
+getNotificationChannels :: PhaseM RC l [(SendPort NotificationMessage, [M0.Process])]
 getNotificationChannels = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
@@ -147,7 +147,7 @@ getNotificationChannels = do
 mkStateDiff :: (Graph -> Graph)             -- ^ Graph modification.
             -> InternalObjectStateChangeMsg -- ^ Binary form of the state updates.
             -> [OnCommit]                   -- ^ Actions to run when state will be announced.
-            -> PhaseM LoopState l StateDiff
+            -> PhaseM RC l StateDiff
 mkStateDiff f msg onCommit = do
   epoch <- updateEpoch
   let idx  = StateDiffIndex epoch
@@ -162,13 +162,13 @@ mkStateDiff f msg onCommit = do
 
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
-getStateDiffByEpoch :: Word64 -> PhaseM LoopState l (Maybe StateDiff)
+getStateDiffByEpoch :: Word64 -> PhaseM RC l (Maybe StateDiff)
 getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
   where
     epoch = StateDiffIndex idx
 
 -- | Mark that notification was delivered to process.
-markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM LoopState l ()
+markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationDelivered diff process = do
   isWaiting   <- G.isConnected diff WaitingFor process <$> getLocalGraph
   isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
@@ -180,7 +180,7 @@ markNotificationDelivered diff process = do
               >>> G.connect    diff DeliveredTo process
     when (isWaiting || isNotSent) $ tryCompleteStateDiff diff
 
-markNotificationFailed :: StateDiff -> M0.Process -> PhaseM LoopState l ()
+markNotificationFailed :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationFailed diff process = do
   isWaiting   <- G.isConnected diff WaitingFor process <$> getLocalGraph
   isFailed    <- G.isConnected diff DeliveryFailedTo process <$> getLocalGraph
@@ -195,7 +195,7 @@ markNotificationFailed diff process = do
 -- | Check if 'StateDiff' is already completed, i.e. there are no processes
 -- that we are waiting for. If it's completed, we disconnect 'StateDiff' from
 -- RG and announce it to halon.
-tryCompleteStateDiff :: StateDiff -> PhaseM LoopState l ()
+tryCompleteStateDiff :: StateDiff -> PhaseM RC l ()
 tryCompleteStateDiff diff = do
   rc <- getCurrentRC
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
@@ -212,7 +212,7 @@ tryCompleteStateDiff diff = do
 -- | Mark all notifications for processes on the given node as failed.
 --
 -- This code process node even in case if it was disconnected from cluster.
-failNotificationsOnNode :: R.Node -> PhaseM LoopState l ()
+failNotificationsOnNode :: R.Node -> PhaseM RC l ()
 failNotificationsOnNode node = do
   -- Find all processes on the current target node.
   ps <- (\rg ->
@@ -238,9 +238,9 @@ failNotificationsOnNode node = do
 -- | Populate a state diff with a list of mero services that halon should
 -- send notification to. Only 'Online' processes on online nodes will be
 -- notified. because other procesees should request state on their own.
-notifyMeroAsync :: StateDiff -> Mero.Notification.Set -> PhaseM LoopState l ()
+notifyMeroAsync :: StateDiff -> Mero.Notification.Set -> PhaseM RC l ()
 notifyMeroAsync diff s = do
-  chans <- getNotificationChannels :: PhaseM LoopState l [(SendPort NotificationMessage, [M0.Process])]
+  chans <- getNotificationChannels :: PhaseM RC l [(SendPort NotificationMessage, [M0.Process])]
   for_ chans $ \(chan, recipients) -> do
     modifyGraph $ execState $ for recipients $
       State.modify . G.connect diff ShouldDeliverTo

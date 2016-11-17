@@ -30,13 +30,13 @@ import Control.Monad.Trans.Writer
 import Control.Distributed.Process (sendChan)
 
 -- | Set of all rules.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
  [ ruleUpdateObjectState
  ]
 
 -- | Forcefully update objet state.
-ruleUpdateObjectState :: Definitions LoopState ()
+ruleUpdateObjectState :: Definitions RC ()
 ruleUpdateObjectState = defineSimpleTask "mero::maintenance::update-object-state" $
   \(ForceObjectStateUpdateRequest fs chan) -> do
      (results,updates) <- runWriterT $ for fs $ \(fid, state) -> (fid,) <$> do

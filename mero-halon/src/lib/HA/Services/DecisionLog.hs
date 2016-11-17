@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
 -- |
@@ -34,7 +35,7 @@ remotableDecl [ [d|
       mainloop _ wl =
         return [match $ \logs -> writeLogs wl logs >> return (Continue, wl) ]
       teardown _ _ = return ()
-      confirm  _ _ = return () 
+      confirm  _ _ = return ()
 
     decisionLog :: Service DecisionLogConf
     decisionLog = Service "decision-log"

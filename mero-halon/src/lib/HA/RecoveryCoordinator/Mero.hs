@@ -64,7 +64,7 @@ instance Binary HostDisconnected
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
-timeoutHost :: M0.Host -> PhaseM LoopState g ()
+timeoutHost :: M0.Host -> PhaseM RC g ()
 timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do
@@ -73,7 +73,7 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
     setHostAttr h M0.HA_DOWN
     publish $ HostDisconnected h
 
-ack :: ProcessId -> PhaseM LoopState l ()
+ack :: ProcessId -> PhaseM RC l ()
 ack pid = liftProcess $ usend pid ()
 
 initialize :: StoreChan -> Process G.Graph
@@ -113,7 +113,7 @@ labelRecoveryCoordinator = "mero-halon.RC"
 -- the transport.
 makeRecoveryCoordinator :: StoreChan -- ^ channel to the replicated multimap
                         -> ProcessId -- ^ pid of the EQ
-                        -> Definitions LoopState ()
+                        -> Definitions RC ()
                         -> Process ()
 makeRecoveryCoordinator mm eq rm = do
    init_st <- buildRCState mm eq

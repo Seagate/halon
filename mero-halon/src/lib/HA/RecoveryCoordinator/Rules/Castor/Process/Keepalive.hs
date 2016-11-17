@@ -22,7 +22,7 @@ import           HA.Services.Mero.Types
 import           Network.CEP
 
 -- | Process replies to keepalive requests sent to mero.
-ruleProcessKeepaliveReply :: Definitions LoopState ()
+ruleProcessKeepaliveReply :: Definitions RC ()
 ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \(KeepaliveTimedOut fids) -> do
   ps <- getProcs fids <$> getLocalGraph
   unless (Prelude.null ps) $ do

@@ -13,7 +13,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Events
 import           HA.RecoveryCoordinator.RC.Internal
 import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
-import           HA.Resources.RC
+import qualified HA.Resources.RC as R
 import qualified HA.Resources as R
 import qualified HA.ResourceGraph as G
 import           HA.Resources.HalonVars
@@ -43,7 +43,7 @@ import Data.Foldable (for_)
 import Prelude hiding ((.), id)
 
 -- | RC rules.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleNewSubscription
   , ruleRemoveSubscription
@@ -56,13 +56,13 @@ rules = sequence_
 
 -- | Describe how to update recovery coordinator, in case
 -- if new version is used now.
-updateRC :: RC -> RC -> PhaseM LoopState l ()
+updateRC :: R.RC -> R.RC -> PhaseM RC l ()
 updateRC _old _new = return ()
 
 
 -- | Store information about currently running RC in the Resource Graph
 -- ('G.Graph'). We store current RC, and update old one if needed.
-initialRule :: IgnitionArguments -> PhaseM LoopState l ()
+initialRule :: IgnitionArguments -> PhaseM RC l ()
 initialRule argv = do
   let l = liftProcess . say
   l "make RC"
@@ -72,8 +72,8 @@ initialRule argv = do
   -- subscribe all processes with persistent subscription.
   rg <- getLocalGraph
   l "subscribers"
-  for_ (G.connectedFrom SubscribedTo rc rg) $
-      \(Subscriber p bs) -> do
+  for_ (G.connectedFrom R.SubscribedTo rc rg) $
+      \(R.Subscriber p bs) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
@@ -90,7 +90,7 @@ initialRule argv = do
 
 -- | When new process is subscribed to some interesting events persistently,
 -- we store that in RG and add announce that to CEP engine manually.
-ruleNewSubscription :: Definitions LoopState ()
+ruleNewSubscription :: Definitions RC ()
 ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
   \(SubscribeToRequest pid bs) -> do
     let fp = decodeFingerprint bs
@@ -102,12 +102,12 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
       rawSubscribeThem self fp pid
     rc <- getCurrentRC
     modifyGraph $ \g -> do
-      let s  = Subscriber pid bs
-          p  = SubProcessId pid
+      let s  = R.Subscriber pid bs
+          p  = R.SubProcessId pid
       let g' = G.newResource s
            >>> G.newResource p
-           >>> G.connect p IsSubscriber s
-           >>> G.connect s SubscribedTo rc
+           >>> G.connect p R.IsSubscriber s
+           >>> G.connect s R.SubscribedTo rc
              $ g
       g'
     registerSyncGraphCallback $ \_ _ -> do
@@ -117,7 +117,7 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
 -- we store that in RG and add announce that to CEP engine manually.
 --
 -- XXX: unmonitor process
-ruleRemoveSubscription :: Definitions LoopState ()
+ruleRemoveSubscription :: Definitions RC ()
 ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
   \(UnsubscribeFromRequest pid bs) -> do
     let fp = decodeFingerprint bs
@@ -128,10 +128,10 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
       rawUnsubscribeThem self fp pid
     rc <- getCurrentRC
     modifyGraph $ \g -> do
-      let s  = Subscriber pid bs
-          p  = SubProcessId pid
-      let g' = G.disconnect p IsSubscriber s
-           >>> G.disconnect s SubscribedTo rc
+      let s  = R.Subscriber pid bs
+          p  = R.SubProcessId pid
+      let g' = G.disconnect p R.IsSubscriber s
+           >>> G.disconnect s R.SubscribedTo rc
              $ g
       g'
 
@@ -140,7 +140,7 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
 --
 -- Additional if it was pprocess that requested subscription, we need to remove that
 -- subscription from the graph.
-ruleProcessMonitorNotification :: Definitions LoopState ()
+ruleProcessMonitorNotification :: Definitions RC ()
 ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notification" $
   \(ProcessMonitorNotification mref pid _) -> do
       self <- liftProcess $ getSelfPid
@@ -150,19 +150,19 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
       -- Remove external subscribers
       modifyLocalGraph $ \g -> do
         let subs = do
-              sub <- G.connectedTo (SubProcessId pid) IsSubscriber g
-                         :: Maybe Subscriber
-              rc  <- G.connectedTo sub SubscribedTo g :: Maybe RC
+              sub <- G.connectedTo (R.SubProcessId pid) R.IsSubscriber g
+                         :: Maybe R.Subscriber
+              rc  <- G.connectedTo sub R.SubscribedTo g :: Maybe R.RC
               return (sub,rc)
         flip execStateT g $ do
-          for_ subs $ \(sub@(Subscriber _ bs), rc) -> do
+          for_ subs $ \(sub@(R.Subscriber _ bs), rc) -> do
             let fp = decodeFingerprint bs
-            State.modify $ G.disconnect sub SubscribedTo rc
-            State.modify $ G.disconnect (SubProcessId pid) IsSubscriber sub
+            State.modify $ G.disconnect sub R.SubscribedTo rc
+            State.modify $ G.disconnect (R.SubProcessId pid) R.IsSubscriber sub
             lift $ liftProcess $ rawUnsubscribeThem self fp pid
 
 -- | When node dies we run all interested subscribers.
-ruleNodeMonitorNotification :: Definitions LoopState ()
+ruleNodeMonitorNotification :: Definitions RC ()
 ruleNodeMonitorNotification = defineSimple "halon::rc::node-monitor-notification" $
   \(NodeMonitorNotification mref nid reason) -> do
      phaseLog "node" $ show nid
@@ -170,19 +170,19 @@ ruleNodeMonitorNotification = defineSimple "halon::rc::node-monitor-notification
      runMonitorCallback mref
 
 -- | When process did spawn we run all interested subscribers.
-ruleDidSpawn :: Definitions LoopState ()
+ruleDidSpawn :: Definitions RC ()
 ruleDidSpawn = defineSimple "halon::rc::did-spawn" $
   \(DidSpawn ref _) -> do
      phaseLog "ref" $ show ref
      runSpawnCallback ref
 
 -- | Set the given 'HalonVars' in RG.
-ruleSetHalonVars :: Definitions LoopState ()
+ruleSetHalonVars :: Definitions RC ()
 ruleSetHalonVars = defineSimpleTask "halon::rc::set-halon-vars" $ \(SetHalonVars hvs) -> do
   setHalonVars hvs
   notify $ HalonVarsUpdated hvs
 
 -- | Set the given 'HalonVars' in RG.
-ruleGetHalonVars :: Definitions LoopState ()
+ruleGetHalonVars :: Definitions RC ()
 ruleGetHalonVars = defineSimpleTask "halon::rc::get-halon-vars" $ \(GetHalonVars pid) -> do
   liftProcess . sendChan pid =<< getHalonVars

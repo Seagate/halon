@@ -57,7 +57,7 @@ instance Binary RuleHook
 doTest :: (Typeable g, RGroup g)
      => Transport
      -> Proxy g
-     -> [Definitions LoopState ()]
+     -> [Definitions RC ()]
      -> (ReceivePort NotificationMessage -> Process ())
      -> IO ()
 doTest t pg rules test' = H.run t pg interceptor rules test where
@@ -100,7 +100,7 @@ stateCascade t pg = doTest t pg [rule] test'
       H.debug $ "Expected: " ++ show ns
       liftIO $ assertEqual "Mero gets the expected note set" (sort ns) (sort ns')
 
-    rule :: Definitions LoopState ()
+    rule :: Definitions RC ()
     rule = define "stateCascadeTest" $ do
       init_rule <- phaseHandle "init_rule"
       notified <- phaseHandle "notified"
@@ -176,7 +176,7 @@ failvecCascade t pg = doTest t pg [rule] test'
                    all (\(Note _ s) -> s == M0_NC_FAILED) failvec
         Nothing -> liftIO $ assertFailure "no failvector received"
 
-    rule :: Definitions LoopState ()
+    rule :: Definitions RC ()
     rule = define "stateCascadeTest" $ do
       init_rule <- phaseHandle "init_rule"
       notified <- phaseHandle "notified"

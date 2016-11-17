@@ -54,16 +54,16 @@ newtype SSPLIEMChannels = SSPLIEMChannels (Map R.Node (Channel InterestingEventM
 
 -- | Load command channel for the given node.
 getCommandChannel :: R.Node
-                  -> PhaseM LoopState l (Maybe CommandChan)
+                  -> PhaseM RC l (Maybe CommandChan)
 getCommandChannel node = ((\(SSPLCmdChannels mp) -> Map.lookup node mp) =<<) <$> getStorageRC
 
 -- | Load IEM channel for the given node.
 getIEMChannel :: R.Node
-              -> PhaseM LoopState l (Maybe (Channel InterestingEventMessage))
+              -> PhaseM RC l (Maybe (Channel InterestingEventMessage))
 getIEMChannel node = ((\(SSPLIEMChannels mp) -> Map.lookup node mp) =<<) <$> getStorageRC
 
 -- | Find an active SSPL channel in the cluster.
-findActiveSSPLChannel :: PhaseM LoopState l (Maybe CommandChan)
+findActiveSSPLChannel :: PhaseM RC l (Maybe CommandChan)
 findActiveSSPLChannel = do
   rg <- getLocalGraph
   let nodes = [ node
@@ -75,7 +75,7 @@ findActiveSSPLChannel = do
   return $ listToMaybe chans
 
 -- | Load all IEM channels for broadcast events.
-getAllIEMChannels :: PhaseM LoopState l [Channel InterestingEventMessage]
+getAllIEMChannels :: PhaseM RC l [Channel InterestingEventMessage]
 getAllIEMChannels = do
   mp <- getStorageRC
   case mp of
@@ -83,7 +83,7 @@ getAllIEMChannels = do
     Just (SSPLIEMChannels m) -> return (Map.elems m)
 
 -- | Load all command channels.
-getAllCommandChannels :: PhaseM LoopState l [Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)]
+getAllCommandChannels :: PhaseM RC l [Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)]
 getAllCommandChannels = do
   mp <- getStorageRC
   case mp of
@@ -93,7 +93,7 @@ getAllCommandChannels = do
 -- | Store command channel, invalidating previous one.
 storeCommandChannel :: R.Node
                     -> Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
-                    -> PhaseM LoopState l ()
+                    -> PhaseM RC l ()
 storeCommandChannel node chan = do
   msp <- getStorageRC
   putStorageRC $ SSPLCmdChannels $ case msp of
@@ -103,7 +103,7 @@ storeCommandChannel node chan = do
 -- | Store iem channel, invalidating previous one.
 storeIEMChannel :: R.Node
                 -> Channel InterestingEventMessage
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 storeIEMChannel node chan = do
   msp <- getStorageRC
   putStorageRC $ SSPLIEMChannels $ case msp of
@@ -123,8 +123,8 @@ fldCommandAck = Proxy
 mkDispatchAwaitCommandAck :: forall l. (FldDispatch ∈ l, FldCommandAck ∈ l)
                           => Jump PhaseHandle -- ^ dispatcher
                           -> Jump PhaseHandle -- ^ failed phase
-                          -> PhaseM LoopState (FieldRec l) () -- ^ Logging action
-                          -> RuleM LoopState (FieldRec l) (Jump PhaseHandle)
+                          -> PhaseM RC (FieldRec l) () -- ^ Logging action
+                          -> RuleM RC (FieldRec l) (Jump PhaseHandle)
 mkDispatchAwaitCommandAck dispatcher failed logAction = do
     sspl_notify_done <- phaseHandle "dispatcher:await:sspl"
 

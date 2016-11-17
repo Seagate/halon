@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
 module HA.Castor.Tests ( tests ) where
 
 import Control.Distributed.Process
@@ -22,7 +23,8 @@ import qualified Data.Set as Set
 
 import Network.Transport (Transport)
 import Network.CEP
-  ( Buffer
+  ( Application(..)
+  , Buffer
   , PhaseM
   , emptyFifoBuffer
   )
@@ -293,22 +295,24 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
   where
     iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
-run :: forall g. g
-    -> PhaseM g Int ()
+run :: forall app g. (Application app, g ~ GlobalState app)
+    => g
+    -> PhaseM app Int ()
     -> Process (g, [(Buffer, Int)])
 run ls = runPhase ls (0 :: Int) emptyFifoBuffer
 
-runGet :: forall g a. g -> PhaseM g (Maybe a) a -> Process a
+runGet :: forall app g a. (Application app, g ~ GlobalState app)
+       => g -> PhaseM app (Maybe a) a -> Process a
 runGet = runPhaseGet
 
 goRack :: forall l. CI.Rack
-       -> PhaseM LoopState l ()
+       -> PhaseM RC l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
 goEnc :: forall l. Rack
       -> CI.Enclosure
-      -> PhaseM LoopState l ()
+      -> PhaseM RC l ()
 goEnc rack (CI.Enclosure{..}) = let
     enclosure = Enclosure enc_id
   in do
@@ -317,7 +321,7 @@ goEnc rack (CI.Enclosure{..}) = let
     mapM_ (goHost enclosure) enc_hosts
 goHost :: forall l. Enclosure
        -> CI.Host
-       -> PhaseM LoopState l ()
+       -> PhaseM RC l ()
 goHost enc (CI.Host{..}) = let
     host = Host h_fqdn
     mem = fromIntegral h_memsize

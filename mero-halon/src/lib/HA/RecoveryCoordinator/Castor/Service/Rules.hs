@@ -12,7 +12,8 @@ module HA.RecoveryCoordinator.Castor.Service.Rules
 
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Core
-  ( LoopState(..)
+  ( RC
+  , LoopState(..)
   , todo
   , done
   , getLocalGraph
@@ -48,7 +49,7 @@ type ClusterTransitionLocal =
 -- for logic that sets service states, decides what to do with the
 -- parent process based on the service states and on unblocking the
 -- cluster bootstrap barrier if bootstrap is happening.
-ruleNotificationHandler :: Definitions LoopState ()
+ruleNotificationHandler :: Definitions RC ()
 ruleNotificationHandler = define "castor::service::notification-handler" $ do
    start_rule <- phaseHandle "start"
    service_notified <- phaseHandle "service-notified"
@@ -134,6 +135,6 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
    startFork start_rule startState
 
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleNotificationHandler ]

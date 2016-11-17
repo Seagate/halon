@@ -74,7 +74,7 @@ iosPaused Spiel.M0_SNS_CM_STATUS_PAUSED = True
 iosPaused _                             = False
 
 -- | Check if all IOS are alive according to halon.
-allIOSOnline :: M0.Pool -> PhaseM LoopState l Bool
+allIOSOnline :: M0.Pool -> PhaseM RC l Bool
 allIOSOnline pool = do
   svs <- getIOServices pool
   rg <- getLocalGraph
@@ -87,7 +87,7 @@ allIOSOnline pool = do
 -- | Given a 'Pool', retrieve all associated IO services ('CST_IOS').
 --
 -- We use this helper both in repair module and spiel module so it lives here.
-getIOServices :: M0.Pool -> PhaseM LoopState l [M0.Service]
+getIOServices :: M0.Pool -> PhaseM RC l [M0.Service]
 getIOServices pool = getLocalGraph >>= \g -> return $ nub
   [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
         , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]

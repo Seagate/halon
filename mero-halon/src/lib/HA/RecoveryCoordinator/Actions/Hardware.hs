@@ -105,7 +105,7 @@ import Text.Regex.TDFA ((=~))
 
 -- | Register a new rack in the system.
 registerRack :: Rack
-             -> PhaseM LoopState l ()
+             -> PhaseM RC l ()
 registerRack rack = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering rack: "
               ++ show rack
@@ -117,7 +117,7 @@ registerRack rack = modifyLocalGraph $ \rg -> do
 
 registerEnclosure :: Rack
                   -> Enclosure
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 registerEnclosure rack enc = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ unwords
                   [ "Registering enclosure", show enc
@@ -129,7 +129,7 @@ registerEnclosure rack enc = modifyLocalGraph $ \rg -> do
 
 registerBMC :: Enclosure
             -> BMC
-            -> PhaseM LoopState l ()
+            -> PhaseM RC l ()
 registerBMC enc bmc = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ unwords
                   [ "Registering BMC", show bmc
@@ -143,7 +143,7 @@ registerBMC enc bmc = modifyLocalGraph $ \rg -> do
 
 -- | Find the IP address of the BMC corresponding to this host.
 findBMCAddress :: Host
-               -> PhaseM LoopState l (Maybe String)
+               -> PhaseM RC l (Maybe String)
 findBMCAddress host = do
     phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
     g <- getLocalGraph
@@ -159,19 +159,19 @@ findBMCAddress host = do
 
 -- | Find the host running the given node
 findNodeHost :: Node
-             -> PhaseM LoopState l (Maybe Host)
+             -> PhaseM RC l (Maybe Host)
 findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
 -- | Find the enclosure containing the given host.
 findHostEnclosure :: Host
-                  -> PhaseM LoopState l (Maybe Enclosure)
+                  -> PhaseM RC l (Maybe Enclosure)
 findHostEnclosure host =
     G.connectedFrom Has host <$> getLocalGraph
 
 -- | Find a list of all hosts in the system matching a given
 --   regular expression.
 findHosts :: String
-          -> PhaseM LoopState l [Host]
+          -> PhaseM RC l [Host]
 findHosts regex = do
   phaseLog "rg-query" $ "Looking for hosts matching regex " ++ regex
   g <- getLocalGraph
@@ -180,13 +180,13 @@ findHosts regex = do
 
 -- | Find all nodes running on the given host.
 nodesOnHost :: Host
-            -> PhaseM LoopState l [Node]
+            -> PhaseM RC l [Node]
 nodesOnHost host = do
   fmap (G.connectedTo host Runs) getLocalGraph
 
 -- | Register a new host in the system.
 registerHost :: Host
-             -> PhaseM LoopState l ()
+             -> PhaseM RC l ()
 registerHost host = registerOnCluster host $ "Registering host on cluster: " ++ show host
 
 -- | Register a new thing on 'Cluster' as long as it has a 'Has'
@@ -195,7 +195,7 @@ registerHost host = registerOnCluster host $ "Registering host on cluster: " ++ 
 registerOnCluster :: G.Relation Has Cluster a
                   => a -- ^ The thing to register
                   -> String -- ^ The message to log
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 registerOnCluster x m = modifyLocalGraph $ \rg ->
   if G.isConnected Cluster Has x rg
   then return rg
@@ -209,7 +209,7 @@ registerOnCluster x m = modifyLocalGraph $ \rg ->
 -- | Record that a host is running in an enclosure.
 locateHostInEnclosure :: Host
                       -> Enclosure
-                      -> PhaseM LoopState l ()
+                      -> PhaseM RC l ()
 locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Locating host "
               ++ show host
@@ -222,7 +222,7 @@ locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
 -- the 'Node' is already connected to the given 'Host'.
 locateNodeOnHost :: Node
                  -> Host
-                 -> PhaseM LoopState l ()
+                 -> PhaseM RC l ()
 locateNodeOnHost node host = modifyLocalGraph $ \rg ->
   if G.isConnected host Runs node rg
   then return rg
@@ -238,7 +238,7 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg ->
 -- | Test if a host has the specified attribute.
 hasHostAttr :: HostAttr
             -> Host
-            -> PhaseM LoopState l Bool
+            -> PhaseM RC l Bool
 hasHostAttr f h = do
   g <- getLocalGraph
   let result = G.isConnected h Has f g
@@ -252,7 +252,7 @@ hasHostAttr f h = do
 --   any existing attributes - that must be done manually.
 setHostAttr :: Host
             -> HostAttr
-            -> PhaseM LoopState l ()
+            -> PhaseM RC l ()
 setHostAttr h f = do
   phaseLog "rg" $ unwords [ "Setting attribute", show f
                 , "on host", show h ]
@@ -263,7 +263,7 @@ setHostAttr h f = do
 
 unsetHostAttr :: Host
               -> HostAttr
-              -> PhaseM LoopState l ()
+              -> PhaseM RC l ()
 unsetHostAttr h f = do
   phaseLog "rg" $ unwords [ "Unsetting attribute", show f
                           , "on host", show h ]
@@ -274,7 +274,7 @@ unsetHostAttr h f = do
 -- | Find hosts with attributes satisfying the user supplied predicate
 findHostsByAttributeFilter :: String -- ^ Message to log
                            -> ([HostAttr] -> Bool) -- ^ Filter predicate
-                           -> PhaseM LoopState l [Host]
+                           -> PhaseM RC l [Host]
 findHostsByAttributeFilter msg p = do
   phaseLog "rg-query" msg
   g <- getLocalGraph
@@ -284,7 +284,7 @@ findHostsByAttributeFilter msg p = do
 -- | A specialised version of 'findHostsByAttributeFilter' that returns all
 -- hosts labelled with at least the given attribute.
 findHostsByAttr :: HostAttr
-                -> PhaseM LoopState l [Host]
+                -> PhaseM RC l [Host]
 findHostsByAttr label =
     findHostsByAttributeFilter ( "Looking for hosts with attribute "
                                 ++ show label) p
@@ -293,7 +293,7 @@ findHostsByAttr label =
 
 -- | Find all attributes possessed by the given host.
 findHostAttrs :: Host
-              -> PhaseM LoopState l [HostAttr]
+              -> PhaseM RC l [HostAttr]
 findHostAttrs host = do
   phaseLog "rg-query" $ "Getting attributes for host " ++ show host
   G.connectedTo host Has <$> getLocalGraph
@@ -305,7 +305,7 @@ findHostAttrs host = do
 -- | Register an interface on a host.
 registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 registerInterface host int = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering interface on host " ++ show host
 
@@ -321,31 +321,31 @@ registerInterface host int = modifyLocalGraph $ \rg -> do
 
 -- | Find logical devices on a host
 findHostStorageDevices :: Host
-                       -> PhaseM LoopState l [StorageDevice]
+                       -> PhaseM RC l [StorageDevice]
 findHostStorageDevices host = do
   fmap (G.connectedTo host Has) getLocalGraph
 
 -- | Find physical devices in an enclosure
 findEnclosureStorageDevices :: Enclosure
-                            -> PhaseM LoopState l [StorageDevice]
+                            -> PhaseM RC l [StorageDevice]
 findEnclosureStorageDevices enc = do
   fmap (G.connectedTo enc Has) getLocalGraph
 
 -- | Find additional identifiers for a (physical) storage device.
 findStorageDeviceIdentifiers :: StorageDevice
-                             -> PhaseM LoopState l [DeviceIdentifier]
+                             -> PhaseM RC l [DeviceIdentifier]
 findStorageDeviceIdentifiers sd = do
   fmap (G.connectedTo sd Has) getLocalGraph
 
 -- | Test if a drive have a given identifier
 hasStorageDeviceIdentifier :: StorageDevice
                            -> DeviceIdentifier
-                           -> PhaseM LoopState l Bool
+                           -> PhaseM RC l Bool
 hasStorageDeviceIdentifier ld di = do
   ids <- findStorageDeviceIdentifiers ld
   return $ elem di ids
 
-isStorageDriveRemoved :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDriveRemoved :: StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
   return $ not . null $
@@ -354,7 +354,7 @@ isStorageDriveRemoved sd = do
 -- | Add an additional identifier to a logical storage device.
 identifyStorageDevice :: StorageDevice
                       -> [DeviceIdentifier]
-                      -> PhaseM LoopState l ()
+                      -> PhaseM RC l ()
 identifyStorageDevice ld dis = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Adding identifiers "
               ++ show dis
@@ -369,7 +369,7 @@ identifyStorageDevice ld dis = modifyLocalGraph $ \rg -> do
   return rg'
 
 -- | Lookup filesystem paths for storage devices (e.g. /dev/sda1)
-lookupStorageDevicePaths :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDevicePaths :: StorageDevice -> PhaseM RC l [String]
 lookupStorageDevicePaths sd =
     mapMaybe extractPath <$> findStorageDeviceIdentifiers sd
   where
@@ -377,7 +377,7 @@ lookupStorageDevicePaths sd =
     extractPath _ = Nothing
 
 -- | Lookup serial number of the storage device
-lookupStorageDeviceSerial :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDeviceSerial :: StorageDevice -> PhaseM RC l [String]
 lookupStorageDeviceSerial sd =
     mapMaybe extractSerial <$> findStorageDeviceIdentifiers sd
   where
@@ -385,7 +385,7 @@ lookupStorageDeviceSerial sd =
     extractSerial _ = Nothing
 
 -- | Lookup raid device associated with a storage device.
-lookupStorageDeviceRaidDevice :: StorageDevice -> PhaseM LoopState l [String]
+lookupStorageDeviceRaidDevice :: StorageDevice -> PhaseM RC l [String]
 lookupStorageDeviceRaidDevice sd =
     mapMaybe extract <$> findStorageDeviceIdentifiers sd
   where
@@ -395,7 +395,7 @@ lookupStorageDeviceRaidDevice sd =
 -- | Lookup a storage device in given enclosure at given position.
 lookupStorageDeviceInEnclosure :: Enclosure
                                -> DeviceIdentifier
-                               -> PhaseM LoopState l (Maybe StorageDevice)
+                               -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDeviceInEnclosure enc ident = do
     rg <- getLocalGraph
     return $ listToMaybe
@@ -405,14 +405,14 @@ lookupStorageDeviceInEnclosure enc ident = do
           ]
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
-lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM LoopState l [StorageDevice]
+lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM RC l [StorageDevice]
 lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 
 -- | Lookup 'StorageDevice' on a host if it was not found to a lookup
 -- on enclosure that host is on.
 lookupStorageDeviceOnHost :: Host
                           -> DeviceIdentifier
-                          -> PhaseM LoopState l (Maybe StorageDevice)
+                          -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDeviceOnHost host ident = do
     rg <- getLocalGraph
     let ml = listToMaybe
@@ -431,14 +431,14 @@ lookupStorageDeviceOnHost host ident = do
 -- to tell us the enclosure of the device but we may have that info
 -- already.
 lookupEnclosureOfStorageDevice :: StorageDevice
-                               -> PhaseM LoopState l (Maybe Enclosure)
+                               -> PhaseM RC l (Maybe Enclosure)
 lookupEnclosureOfStorageDevice sd =
     G.connectedFrom Has sd <$> getLocalGraph
 
 -- | Register a new drive in the system.
 locateStorageDeviceInEnclosure :: Enclosure
                                 -> StorageDevice
-                                -> PhaseM LoopState l ()
+                                -> PhaseM RC l ()
 locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
@@ -455,7 +455,7 @@ locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
 -- | Register a new drive in the system.
 locateStorageDeviceOnHost :: Host
                           -> StorageDevice
-                          -> PhaseM LoopState l ()
+                          -> PhaseM RC l ()
 locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
   let menc = G.connectedFrom Has host rg :: Maybe Enclosure
   phaseLog "rg" $ "Registering storage device: "
@@ -479,7 +479,7 @@ locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
 -- | Merge multiple storage devices into one.
 --   Returns the new (merged) device.
 mergeStorageDevices :: [StorageDevice]
-                    -> PhaseM LoopState l StorageDevice
+                    -> PhaseM RC l StorageDevice
 mergeStorageDevices sds = do
   phaseLog "rg" $ "Merging multiple storage devices: "
               ++ (show sds)
@@ -493,14 +493,14 @@ mergeStorageDevices sds = do
 
 -- | Get the status of a storage device.
 driveStatus :: StorageDevice
-            -> PhaseM LoopState l (Maybe StorageDeviceStatus)
+            -> PhaseM RC l (Maybe StorageDeviceStatus)
 driveStatus dev = G.connectedTo dev Is <$> getLocalGraph
 
 -- | Update the status of a storage device.
 updateDriveStatus :: StorageDevice
                   -> String -- ^ Status.
                   -> String -- ^ Reason.
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
   ds <- driveStatus dev
   let statusNode = StorageDeviceStatus status reason
@@ -512,7 +512,7 @@ updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
           $ rg
   return rg'
 
-updateStorageDeviceSDev :: StorageDevice -> PhaseM LoopState l ()
+updateStorageDeviceSDev :: StorageDevice -> PhaseM RC l ()
 updateStorageDeviceSDev sdev = do
   phaseLog "rg" $ "updating SDev that belongs to " ++ show sdev
   modifyGraph $ rgUpdateStorageDeviceSDev sdev
@@ -534,7 +534,7 @@ rgUpdateStorageDeviceSDev _ rg = rg
 #endif
 
 -- | Replace storage device node with its new version.
-actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l ()
+actualizeStorageDeviceReplacement :: StorageDevice -> PhaseM RC l ()
 actualizeStorageDeviceReplacement sdev = do
     phaseLog "rg" "Set disk candidate as an active disk"
     modifyLocalGraph $ \rg ->
@@ -551,7 +551,7 @@ actualizeStorageDeviceReplacement sdev = do
           return rg'
 
 -- | Attach new version of 'StorageDevice'
-attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM LoopState l StorageDevice
+attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM RC l StorageDevice
 attachStorageDeviceReplacement dev dis = do
   phaseLog "rg" $ "Inserting new device candidate to " ++ show dev
   uuid <- liftProcess . liftIO $ nextRandom
@@ -561,18 +561,18 @@ attachStorageDeviceReplacement dev dis = do
   return newDev
 
 -- | Find if storage device has replacement and return new drive if this is a case.
-lookupStorageDeviceReplacement :: StorageDevice -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDeviceReplacement :: StorageDevice -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDeviceReplacement sdev =
     G.connectedTo sdev ReplacedBy <$> getLocalGraph
 
 -- | Set an attribute on a storage device.
-setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
+setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 setStorageDeviceAttr sd attr  = do
     phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
     modifyGraph (G.newResource attr >>> G.connect sd Has attr)
 
 -- | Unset an attribute on a storage device.
-unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM LoopState l ()
+unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 unsetStorageDeviceAttr sd attr = do
     phaseLog "rg" $ "Unsetting disk attribute "
                   ++ show attr ++ " on " ++ show sd
@@ -581,7 +581,7 @@ unsetStorageDeviceAttr sd attr = do
 -- | Find attributes matching the given filter on a storage device.
 findStorageDeviceAttrs :: (StorageDeviceAttr -> Bool)
                        -> StorageDevice
-                       -> PhaseM LoopState l [StorageDeviceAttr]
+                       -> PhaseM RC l [StorageDeviceAttr]
 findStorageDeviceAttrs k sdev = do
     rg <- getLocalGraph
     return [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
@@ -589,7 +589,7 @@ findStorageDeviceAttrs k sdev = do
                   ]
 
 -- | Test whether a given device is currently undergoing a reset operation.
-hasOngoingReset :: StorageDevice -> PhaseM LoopState l Bool
+hasOngoingReset :: StorageDevice -> PhaseM RC l Bool
 hasOngoingReset =
     fmap (not . null) . findStorageDeviceAttrs go
   where
@@ -597,7 +597,7 @@ hasOngoingReset =
     go _              = False
 
 -- | Mark that a storage device is undergoing reset.
-markOnGoingReset :: StorageDevice -> PhaseM LoopState l ()
+markOnGoingReset :: StorageDevice -> PhaseM RC l ()
 markOnGoingReset sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
@@ -607,7 +607,7 @@ markOnGoingReset sdev = do
       _       -> return ()
 
 -- | Mark that a storage device has completed reset.
-markResetComplete :: StorageDevice -> PhaseM LoopState l ()
+markResetComplete :: StorageDevice -> PhaseM RC l ()
 markResetComplete sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
@@ -616,7 +616,7 @@ markResetComplete sdev = do
       Nothing  -> return ()
       Just old -> unsetStorageDeviceAttr sdev old
 
-incrDiskResetAttempts :: StorageDevice -> PhaseM LoopState l ()
+incrDiskResetAttempts :: StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
         _F _                        = False
@@ -627,7 +627,7 @@ incrDiskResetAttempts sdev = do
         setStorageDeviceAttr sdev (SDResetAttempts (i+1))
       _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
 
-isStorageDevicePowered :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDevicePowered :: StorageDevice -> PhaseM RC l Bool
 isStorageDevicePowered sdev = do
     ps <- (maybe True id . listToMaybe . mapMaybe unwrap)
           <$> findStorageDeviceAttrs (const True) sdev
@@ -638,7 +638,7 @@ isStorageDevicePowered sdev = do
     unwrap (SDPowered x) = Just x
     unwrap _                 = Nothing
 
-markStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
+markStorageDeviceRemoved :: StorageDevice -> PhaseM RC l ()
 markStorageDeviceRemoved sdev = do
     let _F SDRemovedAt = True
         _F _           = False
@@ -647,7 +647,7 @@ markStorageDeviceRemoved sdev = do
       Nothing -> setStorageDeviceAttr sdev SDRemovedAt
       _       -> return ()
 
-unmarkStorageDeviceRemoved :: StorageDevice -> PhaseM LoopState l ()
+unmarkStorageDeviceRemoved :: StorageDevice -> PhaseM RC l ()
 unmarkStorageDeviceRemoved sdev = do
     let _F SDRemovedAt = True
         _F _           = False
@@ -656,18 +656,18 @@ unmarkStorageDeviceRemoved sdev = do
       Nothing  -> return ()
       Just old -> unsetStorageDeviceAttr sdev old
 
-markDiskPowerOn :: StorageDevice -> PhaseM LoopState l ()
+markDiskPowerOn :: StorageDevice -> PhaseM RC l ()
 markDiskPowerOn sdev = do
   setStorageDeviceAttr sdev (SDPowered True)
   unsetStorageDeviceAttr sdev (SDPowered False)
 
 
-markDiskPowerOff :: StorageDevice -> PhaseM LoopState l ()
+markDiskPowerOff :: StorageDevice -> PhaseM RC l ()
 markDiskPowerOff sdev = do
   setStorageDeviceAttr sdev (SDPowered False)
   unsetStorageDeviceAttr sdev (SDPowered True)
 
-getDiskResetAttempts :: StorageDevice -> PhaseM LoopState l Int
+getDiskResetAttempts :: StorageDevice -> PhaseM RC l Int
 getDiskResetAttempts sdev = do
   let _F (SDResetAttempts _) = True
       _F _                   = False
@@ -676,7 +676,7 @@ getDiskResetAttempts sdev = do
     Just (SDResetAttempts i) -> return i
     _                        -> return 0
 
-getSDevNode :: StorageDevice -> PhaseM LoopState l [Node]
+getSDevNode :: StorageDevice -> PhaseM RC l [Node]
 getSDevNode sdev = do
   rg <- getLocalGraph
   let nds = [ node
@@ -686,7 +686,7 @@ getSDevNode sdev = do
             ]
   return nds
 
-getSDevHost :: StorageDevice -> PhaseM LoopState l [Host]
+getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
   return [ host
@@ -694,7 +694,7 @@ getSDevHost sdev = do
          , host <- G.connectedTo encl Has rg :: [Host]
          ]
 
-markStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()
+markStorageDeviceReplaced :: StorageDevice -> PhaseM RC l ()
 markStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
       _F _          = False
@@ -703,7 +703,7 @@ markStorageDeviceReplaced sdev = do
     Nothing -> setStorageDeviceAttr sdev SDReplaced
     _       -> return ()
 
-unmarkStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l ()
+unmarkStorageDeviceReplaced :: StorageDevice -> PhaseM RC l ()
 unmarkStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
       _F _          = False
@@ -712,7 +712,7 @@ unmarkStorageDeviceReplaced sdev = do
     Nothing  -> return ()
     Just old -> unsetStorageDeviceAttr sdev old
 
-isStorageDeviceReplaced :: StorageDevice -> PhaseM LoopState l Bool
+isStorageDeviceReplaced :: StorageDevice -> PhaseM RC l Bool
 isStorageDeviceReplaced sdev = do
     not . null <$> findStorageDeviceAttrs go sdev
   where

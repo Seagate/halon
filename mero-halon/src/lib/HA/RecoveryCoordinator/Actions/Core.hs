@@ -1,14 +1,17 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE TypeFamilies #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- XXX: write module level documentation
 module HA.RecoveryCoordinator.Actions.Core
-  ( -- * Manipulating LoopState
-    LoopState(..)
+  ( RC
+    -- * Manipulating LoopState
+  , LoopState(..)
   , getLocalGraph
   , putLocalGraph
   , modifyGraph
@@ -106,6 +109,13 @@ import           Data.Maybe (fromMaybe)
 
 import Network.CEP
 
+-- | 'Phantom' type used to define CEP 'Application'.
+data RC
+
+instance Application RC where
+  type GlobalState RC = LoopState
+  type LogType RC = ()
+
 data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
   , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
@@ -116,29 +126,29 @@ data LoopState = LoopState {
 }
 
 -- | Get value from non-peristent global storage.
-getStorageRC :: Typeable a => PhaseM LoopState l (Maybe a)
+getStorageRC :: Typeable a => PhaseM RC l (Maybe a)
 getStorageRC = Storage.get . lsStorage <$> get Global
 
 -- | Put value to non-persistent global storage. For entry is indexed by it's
 -- 'TypeRep' so it's possible to keep only one value of each type in storage.
-putStorageRC :: Typeable a => a -> PhaseM LoopState l ()
+putStorageRC :: Typeable a => a -> PhaseM RC l ()
 putStorageRC x = modify Global $ \g -> g{lsStorage = Storage.put x $ lsStorage g}
 
 -- | Delete value from non-peristent global storage.
-deleteStorageRC :: Typeable a => Proxy a -> PhaseM LoopState l ()
+deleteStorageRC :: Typeable a => Proxy a -> PhaseM RC l ()
 deleteStorageRC p = modify Global $ \g -> g{lsStorage = Storage.delete p $ lsStorage g}
 
-insertStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l ()
+insertStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l ()
 insertStorageSetRC x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
     Nothing -> g{lsStorage = Storage.put (Set.singleton x) $ lsStorage g}
     Just z  -> g{lsStorage = Storage.put (Set.insert x z)  $ lsStorage g}
 
-memberStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l Bool
+memberStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l Bool
 memberStorageSetRC x = do
    maybe False (Set.member x) . Storage.get . lsStorage <$> get Global
 
-deleteStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM LoopState l ()
+deleteStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l ()
 deleteStorageSetRC x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
     Nothing -> g
@@ -146,36 +156,36 @@ deleteStorageSetRC x = modify Global $ \g -> do
 
 -- | Helper that wraps. 'Data.Map.member' for map kept in Storage.
 memberStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
-                   => proxy v -> k -> PhaseM LoopState l Bool
+                   => proxy v -> k -> PhaseM RC l Bool
 memberStorageMapRC _ x =
   maybe False (\m -> Map.member x (m :: Map.Map k v))
     . Storage.get . lsStorage <$> get Global
 
 insertWithStorageMapRC :: (Typeable k, Typeable v, Ord k)
-                       => (v -> v -> v) -> k -> v -> PhaseM LoopState l ()
+                       => (v -> v -> v) -> k -> v -> PhaseM RC l ()
 insertWithStorageMapRC f k v = modify Global $ \g -> do
   let z = fromMaybe Map.empty $ Storage.get (lsStorage g)
   g{lsStorage = Storage.put (Map.insertWith f k v z) $ lsStorage g}
 
 deleteStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
-                   => proxy v -> k -> PhaseM LoopState l ()
+                   => proxy v -> k -> PhaseM RC l ()
 deleteStorageMapRC _ x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
     Nothing -> g
     Just (z::Map.Map k v) -> g{lsStorage = Storage.put (Map.delete x z)  $ lsStorage g}
 
 lookupStorageMapRC :: forall k v l . (Typeable k, Typeable v, Ord k)
-                   => k -> PhaseM LoopState l (Maybe v)
+                   => k -> PhaseM RC l (Maybe v)
 lookupStorageMapRC x =
   ((\m -> Map.lookup x (m :: Map.Map k v))
     <=< Storage.get . lsStorage) <$> get Global
 
 -- | Is a given resource existent in the RG?
-knownResource :: G.Resource a => a -> PhaseM LoopState l Bool
+knownResource :: G.Resource a => a -> PhaseM RC l Bool
 knownResource res = fmap (G.memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
-registerNode :: Node -> PhaseM LoopState l ()
+registerNode :: Node -> PhaseM RC l ()
 registerNode node = modifyLocalGraph $ \rg -> do
     phaseLog "rg" $ "Registering satellite node: " ++ show node
 
@@ -184,16 +194,16 @@ registerNode node = modifyLocalGraph $ \rg -> do
 
     return rg'
 
-getLocalGraph :: PhaseM LoopState l G.Graph
+getLocalGraph :: PhaseM RC l G.Graph
 getLocalGraph = fmap lsGraph $ get Global
 
-putLocalGraph :: G.Graph -> PhaseM LoopState l ()
+putLocalGraph :: G.Graph -> PhaseM RC l ()
 putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
 
-modifyGraph :: (G.Graph -> G.Graph) -> PhaseM LoopState l ()
+modifyGraph :: (G.Graph -> G.Graph) -> PhaseM RC l ()
 modifyGraph k = modifyLocalGraph $ return . k
 
-modifyLocalGraph :: (G.Graph -> PhaseM LoopState l G.Graph) -> PhaseM LoopState l ()
+modifyLocalGraph :: (G.Graph -> PhaseM RC l G.Graph) -> PhaseM RC l ()
 modifyLocalGraph k = do
     rg  <- getLocalGraph
     rg' <- k rg
@@ -203,13 +213,13 @@ modifyLocalGraph k = do
 -- synchronized callback will be called.
 -- Callback will block multimap process so only fast calls, that do
 -- not throw exceptions should be used there.
-registerSyncGraph :: Process () -> PhaseM LoopState l ()
+registerSyncGraph :: Process () -> PhaseM RC l ()
 registerSyncGraph callback = modifyLocalGraph $ \rg ->
   liftProcess $ G.sync rg callback
 
 -- | Sync the graph and block the caller until this is complete. This
 --   internally uses a wait for a hidden message type.
-syncGraphBlocking :: PhaseM LoopState l ()
+syncGraphBlocking :: PhaseM RC l ()
 syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
   (sp, rp) <- newChan
   G.sync rg (sendChan sp ()) <* receiveChan rp
@@ -217,7 +227,7 @@ syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
 -- | 'syncGraph' wrapper that will notify EQ about message beign processed.
 -- This wrapper could be used then graph synchronization is a last command
 -- before commiting a graph.
-registerSyncGraphProcessMsg :: UUID -> PhaseM LoopState l ()
+registerSyncGraphProcessMsg :: UUID -> PhaseM RC l ()
 registerSyncGraphProcessMsg uuid = do
   eqPid <- lsEQPid <$> get Global
   registerSyncGraph $ liftProcess (usend eqPid uuid)
@@ -225,14 +235,14 @@ registerSyncGraphProcessMsg uuid = do
 -- | 'syncGraph' helper that passes current process id to the callback.
 -- This method could be used when you want to send message to itself
 -- in a callback.
-registerSyncGraphProcess :: (ProcessId -> Process ()) -> PhaseM LoopState l ()
+registerSyncGraphProcess :: (ProcessId -> Process ()) -> PhaseM RC l ()
 registerSyncGraphProcess action = do
   self <- liftProcess $ getSelfPid
   registerSyncGraph $ liftProcess (action self)
 
 -- | 'syncGraph' helper that passes current process id and action to process
 -- messages.
-registerSyncGraphCallback :: (ProcessId -> (UUID -> Process ()) -> Process ()) -> PhaseM LoopState l ()
+registerSyncGraphCallback :: (ProcessId -> (UUID -> Process ()) -> Process ()) -> PhaseM RC l ()
 registerSyncGraphCallback action = do
   self  <- liftProcess getSelfPid
   eqPid <- lsEQPid <$> get Global
@@ -240,7 +250,7 @@ registerSyncGraphCallback action = do
 
 -- | Declare that we have finished handling a message to the EQ, meaning it can
 --   delete it.
-messageProcessed :: UUID -> PhaseM LoopState l ()
+messageProcessed :: UUID -> PhaseM RC l ()
 messageProcessed uuid = do
   eqPid <- lsEQPid <$> get Global
   liftProcess $ usend eqPid uuid
@@ -248,7 +258,7 @@ messageProcessed uuid = do
 -- | Create function that will process message and can be called from
 -- 'Process' context, is useful for marking message as processed from
 -- spawned threads.
-mkMessageProcessed :: PhaseM LoopState l (UUID -> Process ())
+mkMessageProcessed :: PhaseM RC l (UUID -> Process ())
 mkMessageProcessed = do
   eqPid <- lsEQPid <$> get Global
   return $ usend eqPid
@@ -267,7 +277,7 @@ unlessM cond act = cond >>= flip unless act
 -- However such messages are not persisted thus will not be resend upon RC failure.
 -- N.B. Because messages are send bypassing replicated storage they do not have 'HAEvent'
 -- wrapper around them so rules should catch pure types, not 'HAEvent'.
-selfMessage :: Serializable a => a -> PhaseM LoopState l ()
+selfMessage :: Serializable a => a -> PhaseM RC l ()
 selfMessage msg = liftProcess $ do
   pid <- getSelfPid
   usend pid msg
@@ -284,7 +294,7 @@ getSelfProcessId :: PhaseM g l ProcessId
 getSelfProcessId = liftProcess getSelfPid
 
 -- | Get the 'StoreChan' for the multimap replicating the graph.
-getMultimapChan :: PhaseM LoopState l StoreChan
+getMultimapChan :: PhaseM RC l StoreChan
 getMultimapChan = fmap lsMMChan $ get Global
 
 -- | Lifted wrapper over 'HA.Event.Queue.Producer.promulgate' call. 'promulgateRC'
@@ -298,7 +308,7 @@ getMultimapChan = fmap lsMMChan $ get Global
 --
 -- However, 'promulgateRC' introduces additional synchronization overhead in normal
 -- case, so on a fast-path 'unsafePromulgateRC' could be used.
-promulgateRC :: Serializable msg => msg -> PhaseM LoopState l ()
+promulgateRC :: Serializable msg => msg -> PhaseM RC l ()
 promulgateRC msg = liftProcess $ promulgateWait msg
 
 -- | Fast-path 'promulgateRC', this call is not blocking call, so there is no guarantees
@@ -311,7 +321,7 @@ promulgateRC msg = liftProcess $ promulgateWait msg
 -- callback could be set.
 --
 -- Promulgate call will be cancelled if RC thread that emitted call will die.
-unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM LoopState l ()
+unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM RC l ()
 unsafePromulgateRC msg callback = liftProcess $ do
    self <- getSelfPid
    void $ spawnLocal $ do
@@ -338,7 +348,7 @@ unsafePromulgateRC msg callback = liftProcess $ do
 -- |
 -- Mark message as in process. This will guarantee that another rule will not
 -- process this message before current rule will call 'done'.
-todo :: UUID -> PhaseM LoopState l ()
+todo :: UUID -> PhaseM RC l ()
 todo uuid = do
   st <- get Global
   put Global st{ lsRefCount = Map.insertWith add uuid 1 (lsRefCount st)}
@@ -351,7 +361,7 @@ todo uuid = do
 -- Mark message as being processed. After this call RC could acknowledge message.
 -- Mesage will be acknowledged only when there were same number of 'done's as
 -- were 'todo's, and some time gap was given.
-done :: UUID -> PhaseM LoopState l ()
+done :: UUID -> PhaseM RC l ()
 done uuid = do
   st <- get Global
   put Global st{ lsRefCount = Map.adjust (\x -> x - 1) uuid (lsRefCount st)}
@@ -369,8 +379,8 @@ isNotHandled evt@(HAEvent eid _ _) ls _
 -- processed on it's own.
 defineSimpleTask :: Serializable a
                  => String
-                 -> (forall l . a -> PhaseM LoopState l ())
-                 -> Specification LoopState ()
+                 -> (forall l . a -> PhaseM RC l ())
+                 -> Definitions RC ()
 defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
    todo uuid >> f a >> done uuid
 
@@ -382,8 +392,8 @@ defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
 setPhaseIfConsume :: (Serializable a, Serializable b)
                   => Jump PhaseHandle
                   -> (HAEvent a -> LoopState -> l -> Process (Maybe b))
-                  -> (b -> PhaseM LoopState l ())
-                  -> RuleM LoopState l ()
+                  -> (b -> PhaseM RC l ())
+                  -> RuleM RC l ()
 setPhaseIfConsume handle guard phase = setPhase handle $
   \msg@(HAEvent eid _ _) -> do
     todo eid
@@ -398,7 +408,7 @@ setPhaseIfConsume handle guard phase = setPhase handle $
 -- 'Published a'.
 notify :: (Serializable a, Show a)
        => a
-       -> PhaseM LoopState l ()
+       -> PhaseM RC l ()
 notify msg = do
   phaseLog "emit-event" $ show msg
   selfMessage msg
@@ -408,16 +418,16 @@ notify msg = do
 mkLoop :: Serializable a
        => String
        -- ^ Rule name suffix.
-       -> PhaseM LoopState l [Jump PhaseHandle]
+       -> PhaseM RC l [Jump PhaseHandle]
        -- ^ Extra phases to 'switch' to along with message handler.
        -- For example, you can pass in @['timeout' t timeout_phase]@
        -- to fire @timeout_phase@ if @t@ seconds or more have passed
        -- since the last interesting message was received.
-       -> (a -> l -> PhaseM LoopState l (Either (Jump PhaseHandle) l))
+       -> (a -> l -> PhaseM RC l (Either (Jump PhaseHandle) l))
        -- ^ State update function.
-       -> PhaseM LoopState l (Maybe [Jump PhaseHandle])
+       -> PhaseM RC l (Maybe [Jump PhaseHandle])
        -- ^ Check if loop is finished.
-       -> RuleM LoopState l (Jump PhaseHandle)
+       -> RuleM RC l (Jump PhaseHandle)
 mkLoop name extraPhases update check = do
   loop <- phaseHandle $ "_loop:entry:" ++ name
   inner <- phaseHandle $ "_loop:inner:" ++ name

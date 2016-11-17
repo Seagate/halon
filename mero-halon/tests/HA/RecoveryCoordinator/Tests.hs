@@ -29,7 +29,7 @@ import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Actions.Core (defineSimpleTask, LoopState)
+import           HA.RecoveryCoordinator.Actions.Core (defineSimpleTask, RC)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Events.Service
 import           HA.Replicator
@@ -37,7 +37,8 @@ import           HA.Resources
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
-import           Network.CEP (subscribe, Definitions, Logs(..))
+import           Network.CEP (subscribe, Definitions)
+import qualified Network.CEP.Log as Log
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
@@ -143,7 +144,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     TrimDone{} <- expectPublished Proxy
     sayTest $ "Everything got trimmed"
   where
-    stepRule :: Definitions LoopState ()
+    stepRule :: Definitions RC ()
     stepRule = defineSimpleTask "step" $ \Step{} -> return ()
 
 -- | Used by 'testEQTrimUnknown'
@@ -180,7 +181,7 @@ testDecisionLog transport pg = do
         _ <- serviceStarted DLog.decisionLog
         serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         _ <- serviceStarted Dummy.dummy
-        (_ :: Logs) <- expect
+        (_ :: Log.Event ()) <- expect
         return ()
 
 testServiceStopped :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()

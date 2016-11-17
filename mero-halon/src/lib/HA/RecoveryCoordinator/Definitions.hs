@@ -29,7 +29,7 @@ recoveryCoordinator :: [NodeId]
 recoveryCoordinator eqs eq mm =
     makeRecoveryCoordinator mm eq $ rcRules (IgnitionArguments eqs) []
 
-recoveryCoordinatorEx :: () -> [Definitions LoopState ()]
+recoveryCoordinatorEx :: () -> [Definitions RC ()]
                       -> [NodeId]
                       -> ProcessId
                       -> StoreChan

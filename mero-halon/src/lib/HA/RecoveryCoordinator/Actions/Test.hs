@@ -14,7 +14,7 @@ import qualified HA.ResourceGraph as G
 
 import Network.CEP
 
-getNoisyPingCount :: PhaseM LoopState l Int
+getNoisyPingCount :: PhaseM RC l Int
 getNoisyPingCount = do
     phaseLog "rg-query" "Querying noisy ping count."
     rg <- getLocalGraph

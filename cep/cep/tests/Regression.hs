@@ -1,8 +1,10 @@
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Regression (tests) where
 
 import Control.Distributed.Process
-import Control.Monad (replicateM, forever)
+import Control.Monad (replicateM)
 
 import Test.Tasty
 import Test.Tasty.HUnit (testCase)
@@ -11,6 +13,12 @@ import qualified Test.Tasty.HUnit as HU
 import Network.CEP
 
 import Debug.Trace
+
+data TestApp
+
+instance Application TestApp where
+  type GlobalState TestApp = ()
+  type LogType TestApp = ()
 
 assertEqual :: (Show a, Eq a) => String -> a -> a -> Process ()
 assertEqual s i r = liftIO $ HU.assertEqual s i r
@@ -46,6 +54,7 @@ testFork = do
       ] =<< replicateM 6 expect
   where
 
+    rules :: ProcessId -> Specification TestApp ()
     rules sup = do
       define "insert" $ do
         handler <- phaseHandle "load"
@@ -79,7 +88,7 @@ testForkPrompt = do
       , "work0"
       ] =<< replicateM 2 expect
   where
-
+    rules :: ProcessId -> Specification TestApp ()
     rules sup = do
       define "insert" $ do
         handler <- phaseHandle "load"
@@ -110,7 +119,7 @@ testForkTimeout = do
     assertEqual "foo"
       [ "work2", "work4"] =<< replicateM 2 expect
   where
-
+    rules :: ProcessId -> Specification TestApp ()
     rules sup = do
       define "insert" $ do
         handler <- phaseHandle "load"
@@ -123,7 +132,7 @@ testForkTimeout = do
           continue handler
 
         directly work $ do
-          Just i <- get Local 
+          Just i <- get Local
           liftProcess $ usend sup $ "work"++show i
           continue finish
 

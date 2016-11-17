@@ -171,7 +171,7 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
     promulgateEQ [nid] (RunDriveManagerFailure drive) >>= flip withMonitor wait
     liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
   where
-    testRule :: Definitions LoopState ()
+    testRule :: Definitions RC ()
     testRule = defineSimpleTask "dmwf-trigger" $ \(RunDriveManagerFailure sd) -> do
       updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
 
@@ -246,7 +246,7 @@ testConfObjectStateQuery transport pg =
   where
     testSay msg = say $ "test => " ++ msg
 
-    waitFailedSDev :: Definitions LoopState ()
+    waitFailedSDev :: Definitions RC ()
     waitFailedSDev = define "testConfObjectStateQuery::wait-failed-sdev" $ do
       init_state <- phaseHandle "init_state"
       wait_failure <- phaseHandle "wait_failure"
@@ -304,7 +304,7 @@ testConfValidates iData transport pg act =
       void . promulgateEQ [nid] $ ValidateCache self
       act
   where
-    validateCacheRules :: [Definitions LoopState ()]
+    validateCacheRules :: [Definitions RC ()]
     validateCacheRules = return $ defineSimple "validate-cache" $ \(HAEvent eid (ValidateCache sender) _) -> do
       liftProcess $ say "validating cache"
       Right res <- validateTransactionCache

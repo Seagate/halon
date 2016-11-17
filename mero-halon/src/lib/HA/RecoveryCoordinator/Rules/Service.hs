@@ -49,7 +49,7 @@ import Data.Serialize.Put (runPutLazy)
 import Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
 import Data.Foldable (for_)
 
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ serviceStart
   , serviceStop
@@ -69,7 +69,7 @@ serviceStartJob = Job "rc::service::start"
 -- node, or request to stop service will arrive.
 --
 -- In case if node is not yet known - process will exit.
-serviceStart :: Definitions LoopState ()
+serviceStart :: Definitions RC ()
 serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
    do_restart  <- phaseHandle "service restart attempt"
    do_register <- phaseHandle "register"
@@ -232,7 +232,7 @@ serviceStopJob = Job "rc::service::stop"
 
 -- | Request to stop service on a given node - this code updates
 -- RG and stops service.
-serviceStop :: Definitions LoopState ()
+serviceStop :: Definitions RC ()
 serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
    do_stop     <- phaseHandle "stopping service"
    do_stop_only <- phaseHandle "try to stop service without checking success"
@@ -330,7 +330,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
          <+> fldRep =: Nothing
 
 -- | Request service status.
-serviceStatus :: Definitions LoopState ()
+serviceStatus :: Definitions RC ()
 serviceStatus = defineSimple "rc::service::status" $ \(HAEvent uuid msg _) -> do
   ServiceStatusRequest node svc listeners <- decodeMsg msg
   minfo <- node & Service.lookupInfoMsg $ svc
@@ -344,7 +344,7 @@ serviceStatus = defineSimple "rc::service::status" $ \(HAEvent uuid msg _) -> do
         (\p -> traverse_ (`usend` p) listeners)
         (processMsg uuid)
 
-ruleServiceCouldNotStart :: Definitions LoopState ()
+ruleServiceCouldNotStart :: Definitions RC ()
 ruleServiceCouldNotStart = defineSimpleTask "rc::service::could-not-start" $
   \(ServiceCouldNotStart node info) -> do
     ServiceInfo svc config <- decodeMsg info
@@ -354,7 +354,7 @@ ruleServiceCouldNotStart = defineSimpleTask "rc::service::could-not-start" $
     void $ node & Service.unregisterIfStopping $ info
 
 -- | Log service exit.
-ruleServiceExit :: Definitions LoopState ()
+ruleServiceExit :: Definitions RC ()
 ruleServiceExit = defineSimpleTask "rc::service::exit" $
   \(ServiceExit node info pid) -> do
     ServiceInfo svc config <- decodeMsg info
@@ -367,7 +367,7 @@ ruleServiceExit = defineSimpleTask "rc::service::exit" $
 
 -- | If service have failed - try if it's the one that is registered
 -- and if so - restart it.
-ruleServiceFailed :: Definitions LoopState ()
+ruleServiceFailed :: Definitions RC ()
 ruleServiceFailed = defineSimpleTask "rc::service::failed" $
   \(ServiceFailed node info pid) -> do
     ServiceInfo svc config <- decodeMsg info
@@ -384,7 +384,7 @@ ruleServiceFailed = defineSimpleTask "rc::service::failed" $
 
 -- | If service have failed - try if it's the one that is registered
 -- and if so - restart it.
-ruleServiceUncaughtException :: Definitions LoopState ()
+ruleServiceUncaughtException :: Definitions RC ()
 ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaugh-exception" $
   \(ServiceUncaughtException node info reason pid) -> do
     ServiceInfo svc config <- decodeMsg info
@@ -397,7 +397,7 @@ ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaugh-exception"
     node & Service.unregister $ info
 
 -- | If service have started - continue execution.
-ruleServiceStarted :: Definitions LoopState ()
+ruleServiceStarted :: Definitions RC ()
 ruleServiceStarted = defineSimpleTask "rc::service::started" $
   \(ServiceStarted node info pid) -> do
     ServiceInfo svc config <- decodeMsg info

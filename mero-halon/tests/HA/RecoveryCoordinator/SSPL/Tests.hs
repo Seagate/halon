@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 module HA.RecoveryCoordinator.SSPL.Tests
   ( utTests
   ) where
@@ -92,7 +93,7 @@ dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_
 dmRequest status reason _serial num path = mkResponseDriveManager "enclosure1" "serial1" (fromIntegral num) status reason path
 
 mkHpiTest ::(Typeable g, RGroup g)
-          => (ProcessId -> Definitions LoopState b)
+          => (ProcessId -> Definitions RC b)
           -> (ProcessId -> Process ())
           -> Transport
           -> Proxy g
@@ -110,7 +111,7 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     let testRule = mkTestRule self
     say "run RC"
     rc <- spawnLocal $ execute ls' $ do
-            setLogger $ \l _ -> say (show l)
+            -- setLogger $ \l _ -> say (show l)
             _ <- testRule
             _ <- ssplRules sspl
             return ()
@@ -276,13 +277,13 @@ testDMRequest = mkHpiTest rules test
 
 
 goRack :: forall l. CI.Rack
-       -> PhaseM LoopState l ()
+       -> PhaseM RC l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
 goEnc :: forall l. Rack
       -> CI.Enclosure
-      -> PhaseM LoopState l ()
+      -> PhaseM RC l ()
 goEnc rack (CI.Enclosure{..}) = let
     enclosure = Enclosure enc_id
   in do
@@ -291,7 +292,7 @@ goEnc rack (CI.Enclosure{..}) = let
     mapM_ (goHost enclosure) enc_hosts
 goHost :: forall l. Enclosure
        -> CI.Host
-       -> PhaseM LoopState l ()
+       -> PhaseM RC l ()
 goHost enc (CI.Host{..}) = let
     host = Host h_fqdn
     mem = fromIntegral h_memsize
@@ -303,8 +304,9 @@ goHost enc (CI.Host{..}) = let
     mapM_ (setHostAttr host) attrs
     mapM_ (registerInterface host) h_interfaces
 
-run :: forall g. g
-    -> PhaseM g Int ()
+run :: forall app g. (Application app, g ~ GlobalState app)
+    => g
+    -> PhaseM app Int ()
     -> Process (g, [(Buffer, Int)])
 run ls = runPhase ls (0 :: Int) emptyFifoBuffer
 

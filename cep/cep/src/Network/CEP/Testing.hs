@@ -20,23 +20,25 @@ import qualified Data.IntPSQ as PSQ
 import qualified Data.Map as MM
 import qualified Control.Monad.State.Strict as State
 
-runPhase :: forall g l. g       -- ^ Global state.
+runPhase :: forall app g l. (Application app, g ~ GlobalState app)
+         => g       -- ^ Global state.
          -> l                   -- ^ Local state
          -> Buffer              -- ^ Buffer
-         -> PhaseM g l ()       -- ^ Phase to exec
+         -> PhaseM app l ()       -- ^ Phase to exec
          -> Process (g, [(Buffer, l)])      -- ^ Updated global and local state
 runPhase g l b p = do
-    (xs, (EngineState _ _ _ g')) <- State.runStateT (runPhaseM "testing" MM.empty Nothing 0 l Nothing b p)
+    (xs, (EngineState _ _ _ g')) <- State.runStateT (runPhaseM "testing" "testing" MM.empty Nothing 0 l Nothing b p)
                                     (EngineState 1 0 PSQ.empty g)
     return (g', catMaybes $ fmap extract (snd <$> xs))
   where
     extract (b', po) = case po of
-      SM_Complete l' _ _ -> Just (b',l')
+      SM_Complete l' _ -> Just (b',l')
       _ -> Nothing
 
 -- | Run a phase for its result, discarding any changes made to global state.
-runPhaseGet :: forall g a. g
-            -> PhaseM g (Maybe a) a
+runPhaseGet :: forall app g a. (Application app, g ~ GlobalState app)
+            => g
+            -> PhaseM app (Maybe a) a
             -> Process a
 runPhaseGet g p = do
     (_, xs) <- runPhase g Nothing emptyFifoBuffer augPhase

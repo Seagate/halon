@@ -16,7 +16,7 @@ import Control.Distributed.Process (usend)
 
 import Network.CEP
 
-rules :: IgnitionArguments -> Definitions LoopState ()
+rules :: IgnitionArguments -> Definitions RC ()
 rules argv = sequence_ [
     ruleNodeStatus argv
   , ruleDebugRC argv
@@ -24,7 +24,7 @@ rules argv = sequence_ [
 
 -- | Listen for 'NodeStatusRequest' and send back the
 -- 'NodeSTatusResponse' to the interested process.
-ruleNodeStatus :: IgnitionArguments -> Definitions LoopState ()
+ruleNodeStatus :: IgnitionArguments -> Definitions RC ()
 ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
       \(NodeStatusRequest n@(R.Node nid) lis) -> do
         rg <- getLocalGraph
@@ -36,7 +36,7 @@ ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
 
 -- | Listen for 'DebugRequest' and send back 'DebugResponse' to the
 -- requesting process.
-ruleDebugRC :: IgnitionArguments -> Definitions LoopState ()
+ruleDebugRC :: IgnitionArguments -> Definitions RC ()
 ruleDebugRC argv = defineSimpleTask "Debug::debug-rc" $
   \(DebugRequest pid) -> do
     phaseLog "info" "Sending debug statistics to client."

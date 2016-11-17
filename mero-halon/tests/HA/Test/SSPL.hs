@@ -85,7 +85,7 @@ data WhoAmI = WhoAmI deriving (Generic, Typeable)
 
 instance Binary WhoAmI
 
-testRules :: ProcessId ->  [Definitions LoopState ()]
+testRules :: ProcessId ->  [Definitions RC ()]
 testRules pid =
   [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t) _) ->
       void $ sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)

@@ -65,7 +65,7 @@ remotableDecl [ [d|
   mmDict :: SerializableDict (MetaInfo, Multimap)
   mmDict = SerializableDict
 
-  emptyRules :: [Definitions LoopState ()]
+  emptyRules :: [Definitions RC ()]
   emptyRules = []
 
   |]]
@@ -78,7 +78,7 @@ data TestArgs = TestArgs {
 
 runRCEx :: RGroup g
         => (ProcessId, [NodeId])
-        -> [Definitions LoopState ()]
+        -> [Definitions RC ()]
         -> g (MetaInfo, Multimap)
         -> Process (StoreChan, ProcessId) -- ^ MM, RC
 runRCEx (eq, eqNids) rules rGroup = do
@@ -99,7 +99,7 @@ runRCEx (eq, eqNids) rules rGroup = do
 --   handles to the recovery co-ordinator, multimap and event queue.
 withTrackingStation :: forall g. (Typeable g, RGroup g)
                     => Proxy g
-                    -> [Definitions LoopState ()]
+                    -> [Definitions RC ()]
                     -> (TestArgs -> Process ())  -- ^ Test contents.
                     -> Process ()
 withTrackingStation _ testRules action = do

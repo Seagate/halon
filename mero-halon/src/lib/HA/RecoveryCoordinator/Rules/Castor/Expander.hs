@@ -68,7 +68,7 @@ notificationTimeout = 180 -- seconds
 nodeUpTimeout :: Int
 nodeUpTimeout = 460 -- seconds
 
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleReassembleRaid ]
 
@@ -101,7 +101,7 @@ Tell SSPL to reassemble the RAID array
 Restart Mero services on the SSU
 Mark SSU as healthy.
 -}
-ruleReassembleRaid :: Definitions LoopState ()
+ruleReassembleRaid :: Definitions RC ()
 ruleReassembleRaid =
     define "castor::expander::reassembleRaid" $ do
       expander_reset_evt <- phaseHandle "expander_reset_evt"

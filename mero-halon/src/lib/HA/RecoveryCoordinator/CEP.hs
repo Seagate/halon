@@ -28,6 +28,7 @@ import GHC.Generics
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Network.CEP
+import qualified Network.CEP.Log as Log
 import           Network.HostName
 
 import           HA.EventQueue.Types
@@ -77,12 +78,12 @@ import           HA.Services.Frontier.CEP (frontierRules)
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
 
-enableRCDebug :: Definitions LoopState ()
+enableRCDebug :: Definitions RC ()
 enableRCDebug = unsafePerformIO $ do
      mt <- lookupEnv "HALON_DEBUG_RC"
      return $ maybe (return ()) (const enableDebugMode) mt
 
-rcInitRule :: IgnitionArguments -> RuleM LoopState (Maybe ProcessId) (Started LoopState (Maybe ProcessId))
+rcInitRule :: IgnitionArguments -> RuleM RC (Maybe ProcessId) (Started RC (Maybe ProcessId))
 rcInitRule argv = do
     boot        <- phaseHandle "boot"
 
@@ -106,7 +107,7 @@ rcInitRule argv = do
 
     start boot Nothing
 
-rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
+rcRules :: IgnitionArguments -> [Definitions RC ()] -> Definitions RC ()
 rcRules argv additionalRules = do
 
     -- XXX: we don't have any callback when buffer is full, so we will just
@@ -155,7 +156,7 @@ nodeUpJob = Job "node-up"
 -- This rule fires through 'nodeUpJob' and deals with adding the
 -- requesting 'Node' to the cluster. Brief description of each rule
 -- phase below.
-ruleNodeUp :: IgnitionArguments -> Definitions LoopState ()
+ruleNodeUp :: IgnitionArguments -> Definitions RC ()
 ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
   do_register <- phaseHandle "register node"
 
@@ -204,13 +205,13 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
        <+> RNil
 
 -- | TODO: Port tests to subscription and remove use of 'sayRC'
-ruleDummyEvent :: Definitions LoopState () -- XXX: move to rules file
+ruleDummyEvent :: Definitions RC () -- XXX: move to rules file
 ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
   i <- getNoisyPingCount
   liftProcess $ sayRC $ "received DummyEvent " ++ str
   liftProcess $ sayRC $ "Noisy ping count: " ++ show i
 
-ruleSyncPing :: Definitions LoopState () -- XXX: move to rules file
+ruleSyncPing :: Definitions RC () -- XXX: move to rules file
 ruleSyncPing = defineSimple "sync-ping" $
       \(HAEvent uuid (SyncPing str) _) -> do
         eqPid <- lsEQPid <$> get Global
@@ -235,7 +236,7 @@ recoverJob = Job "recover-job"
 -- nodes so if a service fails, we know we potentially have a
 -- problem and try to recover, so we send RecoverNode from service
 -- failure rule.
-ruleRecoverNode :: IgnitionArguments -> Definitions LoopState ()
+ruleRecoverNode :: IgnitionArguments -> Definitions RC ()
 ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
   try_recover <- phaseHandle "try_recover"
   node_up     <- phaseHandle "Node already up"
@@ -356,7 +357,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 #ifdef USE_MERO
     -- Reboots the node if possible (if it's a server node) or logs an
     -- IEM otherwise.
-    rebootOrLogHost :: Host -> PhaseM LoopState l ()
+    rebootOrLogHost :: Host -> PhaseM RC l ()
     rebootOrLogHost host@(Host hst) = do
       isServer <- hasHostAttr HA_M0SERVER host
       isClient <- hasHostAttr HA_M0CLIENT host
@@ -387,13 +388,13 @@ instance Binary RequestRCPid
 instance Binary RequestRCPidAnswer
 
 -- | Asks RC for its own 'ProcessId'.
-rulePidRequest :: Specification LoopState ()
+rulePidRequest :: Definitions RC ()
 rulePidRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCPid caller) -> do
   liftProcess $ getSelfPid >>= usend caller . RequestRCPidAnswer
 
 -- | Send 'Logs' to decision-log services. If no service
 --   is found across all nodes, just defaults to 'printLogs'.
-sendLogs :: Logs -> LoopState -> Process ()
+sendLogs :: Log.Event (LogType RC) -> LoopState -> Process ()
 sendLogs logs ls = do
   case nodes of
     [] -> printLogs logs

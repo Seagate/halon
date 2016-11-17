@@ -23,7 +23,7 @@ import Data.ByteString.Builder (toLazyByteString, lazyByteString)
 import qualified Data.ByteString.Lazy as BL
 
 -- | Merged frontiner rules. Indended to be used in RC.
-frontierRules :: Definitions LoopState ()
+frontierRules :: Definitions RC ()
 frontierRules = sequence_
   [ ruleDumpKeyValues
   , ruleDumpGraph
@@ -35,7 +35,7 @@ frontierRules = sequence_
 --
 -- This call marked as proccessed immediately and is not reprocessed if case
 -- of RC failure.
-ruleDumpKeyValues :: Definitions LoopState ()
+ruleDumpKeyValues :: Definitions RC ()
 ruleDumpKeyValues = defineSimple "frontiner-get-key-values" $
   \(HAEvent uuid (MultimapGetKeyValuePairs, pid) _) -> do
       chan <- lsMMChan <$> get Global
@@ -52,7 +52,7 @@ ruleDumpKeyValues = defineSimple "frontiner-get-key-values" $
 --
 -- This call marked as proccessed immediately and is not reprocessed if case
 -- of RC failure.
-ruleDumpGraph :: Definitions LoopState ()
+ruleDumpGraph :: Definitions RC ()
 ruleDumpGraph = defineSimple "frontier-dump-graph" $ 
   \(HAEvent uuid (ReadResourceGraph, pid) _) -> do
       rg   <- getLocalGraph

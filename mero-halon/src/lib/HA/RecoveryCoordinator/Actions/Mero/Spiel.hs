@@ -107,15 +107,15 @@ haAddress = ":12345:34:101"
 --
 -- The user is responsible for making sure that inner 'IO' actions run
 -- on the global m0 worker if needed.
-withSpielRC :: (LiftRC -> PhaseM LoopState l a)
-            -> PhaseM LoopState l (Either SomeException a)
+withSpielRC :: (LiftRC -> PhaseM RC l a)
+            -> PhaseM RC l (Either SomeException a)
 withSpielRC f = withResourceGraphCache $ try $ withM0RC f
 
 -- | Try to connect to spiel and run the 'IO' action in the 'SpielContext'.
 --
 -- All internal actions are run on m0 thread.
 withSpielIO :: IO ()
-            -> PhaseM LoopState l (Either SomeException ())
+            -> PhaseM RC l (Either SomeException ())
 withSpielIO = withResourceGraphCache . try . withM0RC . flip m0asynchronously_
 
 -- | Try to start rconf sesion and run 'IO' action in the 'SpielContext'.
@@ -146,7 +146,7 @@ mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
   -- ^ SNS action
   -> M0.Pool
   -- ^ Pool of interest
-  -> PhaseM LoopState l ()
+  -> PhaseM RC l ()
 mkGenericSNSOperation operation_name operation_reply operation_action pool = do
   phaseLog "spiel"    $ symbolVal' operation_name
   phaseLog "pool.fid" $ show (M0.fid pool)
@@ -166,7 +166,7 @@ mkGenericSNSOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
   => Proxy# k
   -> (Fid -> IO a)
   -> M0.Pool
-  -> PhaseM LoopState l ()
+  -> PhaseM RC l ()
 mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
   (\pool eresult -> GenericSNSOperationResult pool (first show eresult))
   (\pool -> f (M0.fid pool))
@@ -174,10 +174,10 @@ mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
 -- | Helper for implementation call to generic spiel operation.
 mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable b, Typeable k, KnownSymbol k)
   => Proxy# k                                               -- ^ Rule name
-  -> (String -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Error result converter.
-  -> (c      -> M0.Pool -> PhaseM LoopState l (Either a b)) -- ^ Success result onverter.
-  -> (M0.Pool -> (Either a b) -> PhaseM LoopState l ())     -- ^ Handler
-  -> RuleM LoopState l (Jump PhaseHandle)
+  -> (String -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Error result converter.
+  -> (c      -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Success result onverter.
+  -> (M0.Pool -> (Either a b) -> PhaseM RC l ())     -- ^ Handler
+  -> RuleM RC l (Jump PhaseHandle)
 mkGenericSNSReplyHandler n onError onSuccess action = do
   ph <- phaseHandle $ symbolVal' n ++ " reply"
   setPhase ph $ \(GenericSNSOperationResult pool er :: GenericSNSOperationResult k c) -> do
@@ -194,9 +194,9 @@ mkGenericSNSReplyHandler n onError onSuccess action = do
 -- | 'mkGenericSpielReplyHandler' specialized for the most common case.
 mkGenericSNSReplyHandlerSimple :: (Typeable b, Binary b, KnownSymbol k, Typeable k, Show b)
   => Proxy# k
-  -> (M0.Pool -> String  -> PhaseM LoopState l ()) -- ^ Error handler
-  -> (M0.Pool -> b -> PhaseM LoopState l ())       -- ^ Result handler
-  -> RuleM LoopState l (Jump PhaseHandle)
+  -> (M0.Pool -> String  -> PhaseM RC l ()) -- ^ Error handler
+  -> (M0.Pool -> b -> PhaseM RC l ())       -- ^ Result handler
+  -> RuleM RC l (Jump PhaseHandle)
 mkGenericSNSReplyHandlerSimple n onError onResult =
   mkGenericSNSReplyHandler n (const . return . Left) (const . return . Right)
     (\pool-> either (onError pool) (onResult pool))
@@ -208,9 +208,9 @@ mkGenericSNSReplyHandlerSimple n onError onResult =
 mkSimpleSNSOperation :: forall a l n . (KnownSymbol n, Typeable a, Typeable n, Binary a, Show a)
                      => Proxy n
                      -> (Fid -> IO a)
-                     -> (M0.Pool -> String -> PhaseM LoopState l ())
-                     -> (M0.Pool -> a -> PhaseM LoopState l ())
-                     -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+                     -> (M0.Pool -> String -> PhaseM RC l ())
+                     -> (M0.Pool -> a -> PhaseM RC l ())
+                     -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkSimpleSNSOperation _ action onFailure onResult = do
   phase <- handleReply onFailure onResult
   return ( phase
@@ -218,9 +218,9 @@ mkSimpleSNSOperation _ action onFailure onResult = do
   where
     p :: Proxy# n
     p = proxy#
-    handleReply :: (M0.Pool -> String -> PhaseM LoopState l ())
-                -> (M0.Pool -> a      -> PhaseM LoopState l ())
-                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply :: (M0.Pool -> String -> PhaseM RC l ())
+                -> (M0.Pool -> a      -> PhaseM RC l ())
+                -> RuleM RC l (Jump PhaseHandle)
     handleReply = mkGenericSNSReplyHandlerSimple p
 
 -- Tier 3
@@ -228,16 +228,16 @@ mkSimpleSNSOperation _ action onFailure onResult = do
 -- | Generate function that query status until operation will complete.
 mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
   => Proxy n
-  -> (    (M0.Pool -> String -> PhaseM LoopState l ())
-       -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
-       -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ()))
+  -> (    (M0.Pool -> String -> PhaseM RC l ())
+       -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+       -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ()))
   -> (Fid -> IO ())
   -> [SnsCmStatus]
   -> Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuccess = do
   next_request <- phaseHandle $ symbolVal name ++ "::next request"
   (status_received, statusRequest) <- mk onFailure $ \pool xs -> do
@@ -256,9 +256,9 @@ mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuc
   where
     p :: Proxy# n
     p = proxy#
-    handleReply :: (M0.Pool -> String -> PhaseM LoopState l ())
-                -> (M0.Pool -> ()     -> PhaseM LoopState l ())
-                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply :: (M0.Pool -> String -> PhaseM RC l ())
+                -> (M0.Pool -> ()     -> PhaseM RC l ())
+                -> RuleM RC l (Jump PhaseHandle)
     handleReply = mkGenericSNSReplyHandlerSimple p
 
 -------------------------------------------------------------------------------
@@ -267,8 +267,8 @@ mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuc
 
 -- | Start the repair operation on the given 'M0.Pool' asynchronously.
 mkRepairStartOperation ::
-  (M0.Pool -> Either String UUID -> PhaseM LoopState l ()) -- ^ Result handler.
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  (M0.Pool -> Either String UUID -> PhaseM RC l ()) -- ^ Result handler.
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairStartOperation handler = do
   operation_started <- mkRepairOperationStarted handler
   return ( operation_started
@@ -279,8 +279,8 @@ mkRepairStartOperation handler = do
     p = proxy#
     -- | Create a phase to handle pool repair operation start result.
     mkRepairOperationStarted ::
-           (M0.Pool -> Either String UUID -> PhaseM LoopState l ())
-        -> RuleM LoopState l (Jump PhaseHandle)
+           (M0.Pool -> Either String UUID -> PhaseM RC l ())
+        -> RuleM RC l (Jump PhaseHandle)
     mkRepairOperationStarted = mkGenericSNSReplyHandler p
       (const . return . Left)
       (\() pool -> do
@@ -290,8 +290,8 @@ mkRepairStartOperation handler = do
 
 -- | Start the rebalance operation on the given 'M0.Pool' asynchronously.
 mkRebalanceStartOperation ::
-  (M0.Pool -> Either String UUID -> PhaseM LoopState l ()) -- ^ Result handler.
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> [M0.Disk] -> PhaseM LoopState l ())
+  (M0.Pool -> Either String UUID -> PhaseM RC l ()) -- ^ Result handler.
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> [M0.Disk] -> PhaseM RC l ())
 mkRebalanceStartOperation handler = do
   operation_started <- handleReply handler
   return ( operation_started
@@ -310,8 +310,8 @@ mkRebalanceStartOperation handler = do
   where
     p :: Proxy# "Rebalance start"
     p = proxy#
-    handleReply :: (M0.Pool -> Either String UUID -> PhaseM LoopState l ())
-                -> RuleM LoopState l (Jump PhaseHandle)
+    handleReply :: (M0.Pool -> Either String UUID -> PhaseM RC l ())
+                -> RuleM RC l (Jump PhaseHandle)
     handleReply = mkGenericSNSReplyHandler p
       (const . return . Left)
       (\() pool -> do
@@ -322,34 +322,34 @@ mkRebalanceStartOperation handler = do
 
 -- | Create a phase to handle pool repair operation start result.
 mkRepairStatusRequestOperation ::
-     (M0.Pool -> String -> PhaseM LoopState l ())
-  -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+     (M0.Pool -> String -> PhaseM RC l ())
+  -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairStatusRequestOperation =
   mkSimpleSNSOperation  (Proxy :: Proxy "Repair status request") poolRepairStatus
 
 -- | Continue the rebalance operation.
 mkRepairContinueOperation ::
-     (M0.Pool -> String -> PhaseM LoopState l ())
-  -> (M0.Pool -> () -> PhaseM LoopState l ())
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+     (M0.Pool -> String -> PhaseM RC l ())
+  -> (M0.Pool -> () -> PhaseM RC l ())
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairContinueOperation =
   mkSimpleSNSOperation (Proxy :: Proxy "Repair continue") poolRepairContinue
 
 
 -- | Continue the rebalance operation.
 mkRebalanceContinueOperation ::
-     (M0.Pool -> String -> PhaseM LoopState l ())
-  -> (M0.Pool -> ()     -> PhaseM LoopState l ())
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+     (M0.Pool -> String -> PhaseM RC l ())
+  -> (M0.Pool -> ()     -> PhaseM RC l ())
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceContinueOperation = do
   mkSimpleSNSOperation (Proxy :: Proxy "Rebalance continue") poolRebalanceContinue
 
 -- | Create a phase to handle pool repair operation start result.
 mkRebalanceStatusRequestOperation ::
-     (M0.Pool -> String      -> PhaseM LoopState l ())
-  -> (M0.Pool -> [SnsStatus] -> PhaseM LoopState l ())
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+     (M0.Pool -> String      -> PhaseM RC l ())
+  -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceStatusRequestOperation = do
   mkSimpleSNSOperation (Proxy :: Proxy "Rebalance status request") poolRebalanceStatus
 
@@ -357,9 +357,9 @@ mkRebalanceStatusRequestOperation = do
 mkRepairQuiesceOperation ::
      Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairQuiesceOperation =
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Repair quiesce")
@@ -374,9 +374,9 @@ mkRepairQuiesceOperation =
 mkRepairAbortOperation ::
      Int
   -> (l -> M0.Pool)
-  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairAbortOperation =
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Repair abort")
@@ -390,9 +390,9 @@ mkRepairAbortOperation =
 mkRebalanceQuiesceOperation ::
      Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success.
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceQuiesceOperation = do
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Rebalance quiesce")
@@ -406,9 +406,9 @@ mkRebalanceQuiesceOperation = do
 mkRebalanceAbortOperation ::
      Int
   -> (l -> M0.Pool)
-  -> (M0.Pool -> String -> PhaseM LoopState l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM LoopState l ()) -- ^ Handler on success
-  -> RuleM LoopState l (Jump PhaseHandle, M0.Pool -> PhaseM LoopState l ())
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
+  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceAbortOperation = do
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Rebalance abort")
@@ -422,7 +422,7 @@ mkRebalanceAbortOperation = do
 -- Currently all Exceptions during this operation are caught, this is required in because
 -- there is no good exception handling in RC and uncaught exception will lead to RC failure.
 -- Also it's behaviour of RC in case of mero exceptions is not specified.
-syncAction :: Maybe UUID -> SyncToConfd -> PhaseM LoopState l ()
+syncAction :: Maybe UUID -> SyncToConfd -> PhaseM RC l ()
 syncAction meid sync =
    flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
        $ do
@@ -440,7 +440,7 @@ syncAction meid sync =
 
     handler :: (SomeException -> DP.Process ())
             -> SomeException
-            -> PhaseM LoopState l ()
+            -> PhaseM RC l ()
     handler act e = do
       phaseLog "error" $ "Exception during sync: " ++ show e
       liftProcess $ act e
@@ -449,7 +449,7 @@ syncAction meid sync =
 --
 --   Note that this uses a local worker, because it may be invoked before
 --   `ha_interface` is loaded and hence no Spiel context is available.
-syncToBS :: PhaseM LoopState l BS.ByteString
+syncToBS :: PhaseM RC l BS.ByteString
 syncToBS = loadConfData >>= \case
   Just tx -> do
     M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
@@ -462,7 +462,7 @@ syncToBS = loadConfData >>= \case
   Nothing -> error "Cannot load configuration data from graph."
 
 -- | Helper functions for backward compatibility.
-syncToConfd :: PhaseM LoopState l (Either SomeException ())
+syncToConfd :: PhaseM RC l (Either SomeException ())
 syncToConfd = do
   withSpielRC $ \lift -> do
      setProfileRC lift
@@ -470,13 +470,13 @@ syncToConfd = do
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
-txOpenContext :: LiftRC -> PhaseM LoopState l SpielTransaction
+txOpenContext :: LiftRC -> PhaseM RC l SpielTransaction
 txOpenContext lift = m0synchronously lift openTransaction
 
-txOpenLocalContext :: LiftRC -> PhaseM LoopState l SpielTransaction
+txOpenLocalContext :: LiftRC -> PhaseM RC l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
-txSyncToConfd :: LiftRC -> SpielTransaction -> PhaseM LoopState l ()
+txSyncToConfd :: LiftRC -> SpielTransaction -> PhaseM RC l ()
 txSyncToConfd lift t = do
   phaseLog "spiel" "Committing transaction to confd"
   M0.ConfUpdateVersion v h <- getConfUpdateVersion
@@ -496,7 +496,7 @@ txSyncToConfd lift t = do
 
 data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 
-loadConfData :: PhaseM LoopState l (Maybe TxConfData)
+loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
             <$> getM0Globals
             <*> getProfile
@@ -504,7 +504,7 @@ loadConfData = liftA3 TxConfData
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
-getConfUpdateVersion :: PhaseM LoopState l M0.ConfUpdateVersion
+getConfUpdateVersion :: PhaseM RC l M0.ConfUpdateVersion
 getConfUpdateVersion = do
   g <- getLocalGraph
   case G.connectedTo Cluster Has g of
@@ -515,14 +515,14 @@ getConfUpdateVersion = do
       return csu
 
 modifyConfUpdateVersion :: (M0.ConfUpdateVersion -> M0.ConfUpdateVersion)
-                        -> PhaseM LoopState l ()
+                        -> PhaseM RC l ()
 modifyConfUpdateVersion f = do
   csu <- getConfUpdateVersion
   let fcsu = f csu
   phaseLog "rg" $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
-txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM LoopState l SpielTransaction
+txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
@@ -636,7 +636,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
 
 -- | Load the current conf data, create a transaction that we would
 -- send to spiel and ask mero if the transaction cache is valid.
-validateTransactionCache :: PhaseM LoopState l (Either SomeException (Maybe String))
+validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
 validateTransactionCache = loadConfData >>= \case
   Nothing -> do
     phaseLog "spiel" "validateTransactionCache: loadConfData failed"
@@ -655,7 +655,7 @@ validateTransactionCache = loadConfData >>= \case
     return r
 
 -- | RC wrapper for 'getSpielAddress'.
-getSpielAddressRC :: PhaseM LoopState l (Maybe M0.SpielAddress)
+getSpielAddressRC :: PhaseM RC l (Maybe M0.SpielAddress)
 getSpielAddressRC = getSpielAddress True <$> getLocalGraph
 
 -- | Store 'ResourceGraph' in 'globalResourceGraphCache' in order to avoid dead
@@ -665,7 +665,7 @@ getSpielAddressRC = getSpielAddress True <$> getLocalGraph
 -- to RC, and such deadlock happens in spiel operations.
 -- For this reason we store a graph projection in a variable and methods that
 -- could be blocked should first query this cached value first.
-withResourceGraphCache :: PhaseM LoopState l a -> PhaseM LoopState l a
+withResourceGraphCache :: PhaseM RC l a -> PhaseM RC l a
 withResourceGraphCache action = do
   g <- getLocalGraph
   liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache (Just g)
@@ -680,17 +680,17 @@ withResourceGraphCache action = do
 -- | Return the 'M0.PoolRepairStatus' structure. If one is not in
 -- the graph, it means no repairs are going on
 getPoolRepairStatus :: M0.Pool
-                    -> PhaseM LoopState l (Maybe M0.PoolRepairStatus)
+                    -> PhaseM RC l (Maybe M0.PoolRepairStatus)
 getPoolRepairStatus pool = G.connectedTo pool Has <$> getLocalGraph
 
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.
-setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM LoopState l ()
+setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM RC l ()
 setPoolRepairStatus pool prs =
   modifyLocalGraph $ return . G.connect pool Has prs
 
 -- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
-unsetPoolRepairStatus :: M0.Pool -> PhaseM LoopState l ()
+unsetPoolRepairStatus :: M0.Pool -> PhaseM RC l ()
 unsetPoolRepairStatus pool = do
   phaseLog "info" $ "Unsetting PRS from " ++ show pool
   modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
@@ -699,7 +699,7 @@ unsetPoolRepairStatus pool = do
 -- long as it has the matching 'M0.prsRepairUUID'. This is useful if
 -- we want to clean up but we're not sure if the 'M0.PoolRepairStatus'
 -- belongs to the clean up handler.
-unsetPoolRepairStatusWithUUID :: M0.Pool -> UUID -> PhaseM LoopState l ()
+unsetPoolRepairStatusWithUUID :: M0.Pool -> UUID -> PhaseM RC l ()
 unsetPoolRepairStatusWithUUID pool uuid = getPoolRepairStatus pool >>= \case
   Just prs | M0.prsRepairUUID prs == uuid -> unsetPoolRepairStatus pool
   _ -> return ()
@@ -707,7 +707,7 @@ unsetPoolRepairStatusWithUUID pool uuid = getPoolRepairStatus pool >>= \case
 -- | Return the 'M0.PoolRepairInformation' structure. If one is not in
 -- the graph, it means no repairs are going on.
 getPoolRepairInformation :: M0.Pool
-                         -> PhaseM LoopState l (Maybe M0.PoolRepairInformation)
+                         -> PhaseM RC l (Maybe M0.PoolRepairInformation)
 getPoolRepairInformation pool =
     join . fmap M0.prsPri . G.connectedTo pool Has <$>
     getLocalGraph
@@ -719,7 +719,7 @@ getPoolRepairInformation pool =
 -- already.
 setPoolRepairInformation :: M0.Pool
                          -> M0.PoolRepairInformation
-                         -> PhaseM LoopState l ()
+                         -> PhaseM RC l ()
 setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
   Nothing -> return ()
   Just (M0.PoolRepairStatus prt uuid _) -> do
@@ -729,7 +729,7 @@ setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
 
 -- | Initialise 'M0.PoolRepairInformation' with some default values.
 possiblyInitialisePRI :: M0.Pool
-                      -> PhaseM LoopState l ()
+                      -> PhaseM RC l ()
 possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
   Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
   Just _ -> return ()
@@ -738,7 +738,7 @@ possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
 -- Any previously connected @PRI@s are disconnected.
 modifyPoolRepairInformation :: M0.Pool
                             -> (M0.PoolRepairInformation -> M0.PoolRepairInformation)
-                            -> PhaseM LoopState l ()
+                            -> PhaseM RC l ()
 modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
   case G.connectedTo pool Has $ g of
     Just (M0.PoolRepairStatus prt uuid (Just pri)) ->
@@ -750,7 +750,7 @@ modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
 -- 'PoolRepairInformation' in the graph. Also updates the
 -- 'priTimeOfFirstCompletion' if it has not yet been set.
 incrementOnlinePRSResponse :: M0.Pool
-                           -> PhaseM LoopState l ()
+                           -> PhaseM RC l ()
 incrementOnlinePRSResponse pool =
   DP.liftIO M0.getTime >>= \tnow -> modifyPoolRepairInformation pool (go tnow)
   where
@@ -766,7 +766,7 @@ incrementOnlinePRSResponse pool =
                     }
 
 -- | Updates 'priTimeLastHourlyRan' to current time.
-updatePoolRepairStatusTime :: M0.Pool -> PhaseM LoopState l ()
+updatePoolRepairStatusTime :: M0.Pool -> PhaseM RC l ()
 updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
   Just (M0.PoolRepairStatus _ _ (Just pr)) -> do
     t <- DP.liftIO M0.getTime
@@ -775,7 +775,7 @@ updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
 
 -- | Returns number of seconds until we have to run the hourly PRI
 -- query.
-getTimeUntilQueryHourlyPRI :: M0.Pool -> PhaseM LoopState l Int
+getTimeUntilQueryHourlyPRI :: M0.Pool -> PhaseM RC l Int
 getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
   Nothing -> return 0
   Just pri -> do
@@ -785,7 +785,7 @@ getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
     return $ M0.timeSpecToSeconds untilHourPasses
 
 -- | Set profile in current thread.
-setProfileRC :: LiftRC -> PhaseM LoopState l ()
+setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
   rg <- getLocalGraph
   let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported

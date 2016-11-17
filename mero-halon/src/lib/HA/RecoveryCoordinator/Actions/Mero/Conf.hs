@@ -90,7 +90,7 @@ import Prelude hiding (id)
 -- | Lookup a configuration object by its Mero FID.
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a, Typeable a)
                    => Fid
-                   -> PhaseM LoopState l (Maybe a)
+                   -> PhaseM RC l (Maybe a)
 lookupConfObjByFid f =
     fmap (M0.lookupConfObjByFid f) getLocalGraph
 
@@ -99,7 +99,7 @@ lookupConfObjByFid f =
 --   * Create a single profile, filesystem
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
-initialiseConfInRG :: PhaseM LoopState l M0.Filesystem
+initialiseConfInRG :: PhaseM RC l M0.Filesystem
 initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
@@ -132,7 +132,7 @@ initialiseConfInRG = getFilesystem >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
-    mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM LoopState l ()
+    mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM RC l ()
     mirrorRack fs (r, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0e <- mapM mirrorEncl encls
@@ -142,7 +142,7 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect fs M0.IsParentOf m0r
         >>> ( foldl' (.) id
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
-    mirrorEncl :: Enclosure -> PhaseM LoopState l M0.Enclosure
+    mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
     mirrorEncl r = lookupEnclosureM0 r >>= \case
       Just k -> return k
       Nothing -> do
@@ -166,7 +166,7 @@ initialiseConfInRG = getFilesystem >>= \case
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: M0.Filesystem
                 -> [CI.M0Host]
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
@@ -270,7 +270,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
-createMDPoolPVer :: M0.Filesystem -> PhaseM LoopState l ()
+createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
@@ -303,7 +303,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   only support a single profile, though in future there
 --   might be multiple profiles and this function will need
 --   to change.
-getProfile :: PhaseM LoopState l (Maybe M0.Profile)
+getProfile :: PhaseM RC l (Maybe M0.Profile)
 getProfile =
     G.connectedTo Cluster Has <$> getLocalGraph
 
@@ -311,7 +311,7 @@ getProfile =
 --   only support a single filesystem, though in future there
 --   might be multiple filesystems and this function will need
 --   to change.
-getFilesystem :: PhaseM LoopState l (Maybe M0.Filesystem)
+getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
 getFilesystem = getLocalGraph >>= \rg -> do
   return . listToMaybe
     $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
@@ -319,7 +319,7 @@ getFilesystem = getLocalGraph >>= \rg -> do
       ]
 
 -- | Fetch all (non-metadata) pools in the system.
-getPool :: PhaseM LoopState l [M0.Pool]
+getPool :: PhaseM RC l [M0.Pool]
 getPool = rgGetPool <$> getLocalGraph
 
 rgGetPool :: G.Graph -> [M0.Pool]
@@ -332,10 +332,10 @@ rgGetPool rg =
   ]
 
 -- | RC wrapper for 'getM0Services'.
-getM0ServicesRC :: PhaseM LoopState l [M0.Service]
+getM0ServicesRC :: PhaseM RC l [M0.Service]
 getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 
-lookupStorageDevice :: M0.SDev -> PhaseM LoopState l (Maybe StorageDevice)
+lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
     return $ do
@@ -343,23 +343,23 @@ lookupStorageDevice sdev = do
       G.connectedTo (dev :: M0.Disk) M0.At rg
 
 -- | Return the Mero SDev associated with the given storage device
-lookupStorageDeviceSDev :: StorageDevice -> PhaseM LoopState l (Maybe M0.SDev)
+lookupStorageDeviceSDev :: StorageDevice -> PhaseM RC l (Maybe M0.SDev)
 lookupStorageDeviceSDev sdev = do
   rg <- getLocalGraph
   return $ do
     disk <- G.connectedFrom M0.At sdev rg
     G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
 
-lookupSDevDisk :: M0.SDev -> PhaseM LoopState l (Maybe M0.Disk)
+lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)
 lookupSDevDisk sdev =
     G.connectedTo sdev M0.IsOnHardware <$> getLocalGraph
 
 -- | Given a 'M0.Disk', find the 'M0.SDev' attached to it.
-lookupDiskSDev :: M0.Disk -> PhaseM LoopState l (Maybe M0.SDev)
+lookupDiskSDev :: M0.Disk -> PhaseM RC l (Maybe M0.SDev)
 lookupDiskSDev disk =
     G.connectedFrom M0.IsOnHardware disk <$> getLocalGraph
 
-getSDevPool :: M0.SDev -> PhaseM LoopState l M0.Pool
+getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
     let ps =
@@ -393,7 +393,7 @@ getSDevPool sdev = do
 -- doesn't belong to the pool." See discussion at
 -- https://seagate.slack.com/archives/mero-halon/p1457632533003295 for
 -- details.
-getPoolSDevs :: M0.Pool -> PhaseM LoopState l [M0.SDev]
+getPoolSDevs :: M0.Pool -> PhaseM RC l [M0.SDev]
 getPoolSDevs pool = getLocalGraph >>= \rg -> do
   -- Find SDevs for every single pool version belonging to the disk.
   let sdevs =
@@ -412,14 +412,14 @@ getPoolSDevs pool = getLocalGraph >>= \rg -> do
 -- | Get all 'M0.SDev's in the given 'M0.Pool' with the given
 -- 'M0.ConfObjState'.
 getPoolSDevsWithState :: M0.Pool -> M0.ConfObjectState
-                       -> PhaseM LoopState l [M0.SDev]
+                       -> PhaseM RC l [M0.SDev]
 getPoolSDevsWithState pool st = getPoolSDevs pool >>= \devs -> do
   rg <- getLocalGraph
   let sts = (\d -> (M0.getConfObjState d rg, d)) <$> devs
   return . map snd . filter ((== st) . fst) $ sts
 
 
-lookupEnclosureM0 :: Enclosure -> PhaseM LoopState l (Maybe M0.Enclosure)
+lookupEnclosureM0 :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
     G.connectedFrom M0.At enc <$> getLocalGraph
 
@@ -427,7 +427,7 @@ lookupEnclosureM0 enc =
 --   endpoint for the HA service hosted by processes on that node. Whilst in
 --   theory different processes might have different HA endpoints, in
 --   practice this should not happen.
-lookupHostHAAddress :: Host -> PhaseM LoopState l (Maybe String)
+lookupHostHAAddress :: Host -> PhaseM RC l (Maybe String)
 lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
   [ ep | node <- G.connectedTo host Runs rg :: [M0.Node]
         , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
@@ -438,28 +438,28 @@ lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
 
 -- | Get all children of the conf object.
 getChildren :: forall a b l. G.Relation M0.IsParentOf a b
-            => a -> PhaseM LoopState l [b]
+            => a -> PhaseM RC l [b]
 getChildren obj = G.connectedToList obj M0.IsParentOf <$> getLocalGraph
 
 -- | Get parents of the conf objects.
 getParents :: forall a b l. G.Relation M0.IsParentOf a b
-           => b -> PhaseM LoopState l [a]
+           => b -> PhaseM RC l [a]
 getParents obj = G.connectedFromList M0.IsParentOf obj <$> getLocalGraph
 
 -- | Test if a service is the principal RM service
 isPrincipalRM :: M0.Service
-              -> PhaseM LoopState l Bool
+              -> PhaseM RC l Bool
 isPrincipalRM svc = getLocalGraph >>=
   return . G.isConnected svc Is M0.PrincipalRM
 
-getPrincipalRM :: PhaseM LoopState l (Maybe M0.Service)
+getPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 getPrincipalRM = getLocalGraph >>= \rg ->
   return . listToMaybe
     . filter (\x -> M0.getState x rg == M0.SSOnline)
     $ G.connectedFrom Is M0.PrincipalRM rg
 
 setPrincipalRMIfUnset :: M0.Service
-                      -> PhaseM LoopState l M0.Service
+                      -> PhaseM RC l M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
@@ -468,7 +468,7 @@ setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
     return svc
 
 -- | Pick a Principal RM out of the available RM services.
-pickPrincipalRM :: PhaseM LoopState l (Maybe M0.Service)
+pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 pickPrincipalRM = getLocalGraph >>= \g ->
   let rms =
         [ rm

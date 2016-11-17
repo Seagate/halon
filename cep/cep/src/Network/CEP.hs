@@ -15,7 +15,8 @@
 module Network.CEP
     (
     -- * Specification API
-      PhaseM
+      Application(..)
+    , PhaseM
     , RuleM
     , MonadProcess(..)
     , Definitions
@@ -23,7 +24,6 @@ module Network.CEP
     , Token
     , Scope(..)
     , ForkType(..)
-    , Logs(..)
     , Jump
     , PhaseHandle
     , Started
@@ -111,6 +111,7 @@ import qualified Data.Set        as Set
 import Network.CEP.Buffer
 import Network.CEP.Engine
 import Network.CEP.Execution
+import qualified Network.CEP.Log as Log
 import Network.CEP.SM
 import Network.CEP.Types
 import Network.CEP.Utils
@@ -144,15 +145,16 @@ initRuleTypeMap rd = foldr go M.empty $ _ruleTypes rd
 
 -- | Constructs a CEP engine state by using an initial global state value and a
 --   definition state machine.
-buildMachine :: s -> Specification s () -> Machine s
+buildMachine :: forall app g. (Application app, g ~ GlobalState app)
+             => g -> Specification app () -> Machine app
 buildMachine s defs = go (emptyMachine s) $ view defs
   where
-    go :: Machine s -> ProgramView (Declare s) () -> Machine s
+    go :: Machine app -> ProgramView (Declare app) () -> Machine app
     go st (Return _) = fillMachineTypeMap st
     go st (DefineRule n m :>>= k) =
         let idx = _machRuleCount st
             key = RuleKey idx n
-            dat = buildRuleData n (newSM key) m (_machPhaseBuf st)
+            dat = buildRuleData n (newSM key) m (_machPhaseBuf st) (_machLogger st)
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
@@ -160,7 +162,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
         go st' $ view $ k ()
     go st (Init m :>>= k) =
         let buf  = _machPhaseBuf st
-            dat  = buildRuleData "init" (newSM initRuleKey) m buf
+            dat  = buildRuleData "init" (newSM initRuleKey) m buf (_machLogger st)
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in
@@ -202,12 +204,16 @@ buildMachine s defs = go (emptyMachine s) $ view defs
 --     2. 'SubRequest': It registers the new subscribers to subscribers map.
 --     3. 'Appeared': It dispatches the message to the according rule state
 --        machine.
-cepEngine :: s -> Specification s () -> Engine
+cepEngine :: (Application app, g ~ GlobalState app)
+          => g
+          -> Specification app ()
+          -> Engine
 cepEngine s defs = newEngine $ buildMachine s defs
 
 -- | Executes CEP 'Specification' to the 'Process' monad given initial global
 --   state.
-execute :: s -> Specification s () -> Process ()
+execute :: (Application app, g ~ GlobalState app)
+          => g -> Specification app () -> Process ()
 execute s defs = runItForever $ cepEngine s defs
 
 -- | Set of messages accepted by the 'runItForever' driver.
@@ -452,37 +458,49 @@ buildTypeList = foldr (go . jumpPhaseCall) Set.empty
 
 -- | Executes a rule state machine in order to produce a rule state data
 --   structure.
-buildRuleData :: String
-              -> (Jump (Phase g l) -> String -> M.Map String (Jump (Phase g l)) -> Buffer -> l -> SM g)
-              -> RuleM g l (Started g l)
+buildRuleData :: Application app
+              => String
+              -> ( Jump (Phase app l)
+                -> String
+                -> M.Map String (Jump (Phase app l))
+                -> Buffer
+                -> l
+                -> Maybe (SMLogger app l)
+                -> SM app)
+              -> RuleM app l (Started app l)
               -> Buffer
-              -> RuleData g
-buildRuleData name mk rls buf = go M.empty Set.empty $ view rls
+              -> Maybe (Log.Event (LogType app) -> GlobalState app -> Process ())
+              -> RuleData app
+buildRuleData name mk rls buf logFn = go M.empty Set.empty initLogger $ view rls
   where
-    go ps tpes (Return (StartingPhase l p)) =
+    initLogger = (\l -> SMLogger l Nothing) <$> logFn
+    go ps tpes logger (Return (StartingPhase l p)) =
         RuleData
         { _ruleDataName = name
-        , _ruleStack    = mk p name ps buf l
+        , _ruleStack    = mk p name ps buf l logger
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
         }
-    go ps tpes (Start ph l :>>= k) =
+    go ps tpes logger (Start ph l :>>= k) =
         let old = ps M.! jumpPhaseHandle ph
             jmp = jumpBaseOn ph old in
-        go ps tpes $ view $ k (StartingPhase l jmp)
-    go ps tpes (NewHandle n :>>= k) =
+        go ps tpes logger $ view $ k (StartingPhase l jmp)
+    go ps tpes logger (NewHandle n :>>= k) =
         let jmp    = normalJump $ Phase n (DirectCall $ return ())
             handle = PhaseHandle n
             ps'    = M.insert n jmp ps in
-        go ps' tpes $ view $ k $ normalJump handle
-    go ps tpes (SetPhase jmp call :>>= k) =
+        go ps' tpes logger $ view $ k $ normalJump handle
+    go ps tpes logger (SetPhase jmp call :>>= k) =
         let _F p    = p { _phCall = call }
             nxt_jmp = fmap _F $ jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
             ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps in
-        go ps' tpes $ view $ k ()
-    go ps tpes (Wants (prx :: Proxy a) :>>= k) =
+        go ps' tpes logger $ view $ k ()
+    go ps tpes logger (Wants (prx :: Proxy a) :>>= k) =
         let tok = Token :: Token a
             tpe = TypeInfo (fingerprint (undefined :: a)) prx in
-        go ps (Set.insert tpe tpes) $ view $ k tok
+        go ps (Set.insert tpe tpes) logger $ view $ k tok
+    go ps tpes logger (SetRuleSetting rs :>>= k) = case rs of
+      LocalStateLogger l ->
+        go ps tpes ((\sml -> sml{sml_state_logger = Just l}) <$> logger) $ view $ k ()
 
 -- | Subscribes for a specific type of event. Every time that event occures,
 --   this 'Process' will receive a 'Published a' message.

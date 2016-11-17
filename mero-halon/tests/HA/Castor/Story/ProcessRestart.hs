@@ -135,7 +135,7 @@ doRestart transport pg startingState runRestartTest =
       _ -> fail $ "doRestart: expected single process in initial data but got "
                ++ show procs
 
-  rule :: Definitions LoopState ()
+  rule :: Definitions RC ()
   rule = defineSimple "testProcessRestart" $ \(HAEvent eid (RuleHook pid) _) -> do
     rg <- getLocalGraph
     -- Processes with IOS filtered out

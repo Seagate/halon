@@ -13,7 +13,7 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   ) where
 
 import HA.RecoveryCoordinator.Actions.Core
-  ( LoopState
+  ( RC
   , getLocalGraph
   , modifyGraph
   , notify
@@ -57,7 +57,7 @@ queryInterval = 5 * 60
 
 -- | Periodically queries the filesystem stats and updates this in the
 --   resource graph.
-periodicQueryStats :: Definitions LoopState ()
+periodicQueryStats :: Definitions RC ()
 periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
 
   stats_fetch <- phaseHandle "stats_fetch"
@@ -103,6 +103,6 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
 
   start stats_fetch Nothing
 
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ periodicQueryStats ]

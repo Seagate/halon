@@ -96,7 +96,7 @@ import           Text.Printf (printf)
 import           Prelude hiding ((.), id)
 
 -- | All the rules that are required for cluster start.
-clusterRules :: Definitions LoopState ()
+clusterRules :: Definitions RC ()
 clusterRules = sequence_
   [ requestClusterStatus
   , ruleClusterStart
@@ -117,7 +117,7 @@ clusterRules = sequence_
 
 -- | Fix we failed to load kernel modules on any server, then
 -- we need to put cluster into a failed state.
-eventNodeFailedStart :: Definitions LoopState ()
+eventNodeFailedStart :: Definitions RC ()
 eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $
   \result -> do
     case result of
@@ -137,7 +137,7 @@ eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" 
 --   - 'Event.BarrierPass'
 -- Idempotent
 -- Nonblocking
-eventAdjustClusterState :: Definitions LoopState ()
+eventAdjustClusterState :: Definitions RC ()
 eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-cluster-state"
   $ \msg -> do
     let findChanges = do -- XXX: move to the common place
@@ -162,7 +162,7 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
 --   - internal notifications
 -- Idempotent
 -- Nonblocking
-eventUpdatePrincipalRM :: Definitions LoopState ()
+eventUpdatePrincipalRM :: Definitions RC ()
 eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-principal-rm" $ \msg -> do
     let findChanges = do -- XXX: move to the common place
           InternalObjectStateChange chs <- liftProcess $ decodeP msg
@@ -189,7 +189,7 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 -- | Query mero cluster status.
 --
 -- Nilpotent request.
-requestClusterStatus :: Definitions LoopState ()
+requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getLocalGraph
@@ -235,7 +235,7 @@ jobClusterStart = Job "castor::cluster::start"
 -- Note: This rule should be used with great care as if configuration data has
 -- changed, or mkfs have not been completed, this call could put cluster into
 -- a bad state.
-ruleMarkProcessesBootstrapped :: Definitions LoopState ()
+ruleMarkProcessesBootstrapped :: Definitions RC ()
 ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-process-bootstrapped" $
   \(MarkProcessesBootstrapped ch) -> do
      rg <- getLocalGraph
@@ -261,7 +261,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
 --   - 'processStartProcessesOnNode' - start all server processes on node
 --   - 'processStartClientsOnNode'   - start all m0t1fs mounts on node
 --
-ruleClusterStart :: Definitions LoopState ()
+ruleClusterStart :: Definitions RC ()
 ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
     wait_server_jobs  <- phaseHandle "wait_server_jobs"
     start_client_jobs <- phaseHandle "start_client_jobs"
@@ -452,7 +452,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
 --   rule will do nothing.
 --   Sends 'StopProcessesOnNodeRequest' to all nodes.
 --   TODO: Does this include stopping clients on the nodes?
-requestClusterStop :: Definitions LoopState ()
+requestClusterStop :: Definitions RC ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
   $ \(HAEvent eid (ClusterStopRequest ch) _) -> do
       rg <- getLocalGraph
@@ -484,7 +484,7 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
 --   the recovery co-ordinator. Note that this should only be done if the
 --   cluster is in a 'steady state', which is to say there are no running
 --   SMs and all 'midway' suspended SMs have timed out.
-requestClusterReset :: Definitions LoopState ()
+requestClusterReset :: Definitions RC ()
 requestClusterReset = defineSimple "castor::cluster::reset"
   $ \(HAEvent eid (ClusterResetRequest deepReset) _) -> do
     phaseLog "info" "Cluster reset requested."
@@ -529,7 +529,7 @@ requestClusterReset = defineSimple "castor::cluster::reset"
 --
 -- 1. we check if there is halon:m0d service on the node
 -- 2. find if there is m0t1fs service with a given fid
-requestStopMeroClient :: Definitions LoopState ()
+requestStopMeroClient :: Definitions RC ()
 requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $ \(StopMeroClientRequest fid) -> do
   phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
   mnp <- runMaybeT $ do
@@ -547,7 +547,7 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
 --
 -- 1. Checks if client process exists in database
 -- 2. Tries to start the client process through 'ruleProcessStart'.
-requestStartMeroClient :: Definitions LoopState ()
+requestStartMeroClient :: Definitions RC ()
 requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::start" $
   \(StartMeroClientRequest fid) -> do
     phaseLog "info" $ "Start mero client " ++ show fid ++ " requested."
@@ -564,7 +564,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::sta
 -- monitors events relevant to cluster stopping that are flying by and
 -- reports progress back to the caller. The caller can choose to block
 -- until it's satisfied, report to the user with progress and so on.
-ruleClusterMonitorStop :: Definitions LoopState ()
+ruleClusterMonitorStop :: Definitions RC ()
 ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
   start_monitoring <- phaseHandle "start-monitoring"
   caller_died <- phaseHandle "caller-died"
@@ -671,7 +671,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
             liftProcess $ usend caller diff
             when (_csp_cluster_stopped diff) $ continue finish
 
-    calculateStoppingState :: PhaseM LoopState l ClusterStoppingState
+    calculateStoppingState :: PhaseM RC l ClusterStoppingState
     calculateStoppingState = do
       rg <- getLocalGraph
       let ps = [ (p, M0.getState p rg)

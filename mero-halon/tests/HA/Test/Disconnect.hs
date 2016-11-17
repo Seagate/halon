@@ -70,7 +70,7 @@ remotableDecl [ [d|
   rcWithDeath :: [NodeId] -> ProcessId -> StoreChan -> Process ()
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
-      rcDeathRules :: [Definitions LoopState ()]
+      rcDeathRules :: [Definitions RC ()]
       rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC _) -> do
         liftProcess $ say "RC death requested from Disconnect.hs:rcDeathRules"
         messageProcessed uuid

@@ -21,10 +21,12 @@
 --
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE EmptyDataDecls     #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue
   ( EventQueue(_eqMap)
@@ -231,8 +233,14 @@ startEventQueue rg = do
     register eventQueueLabel eq
     return eq
 
+data EQApp
+
+instance Application EQApp where
+  type GlobalState EQApp = ()
+  type LogType EQApp = ()
+
 eqRules :: RGroup g
-        => g EventQueue -> ProcessPool -> TMVar ProcessId -> Definitions () ()
+        => g EventQueue -> ProcessPool -> TMVar ProcessId -> Definitions EQApp ()
 eqRules rg pool groupMonitor = do
     -- Whenever an RC is spawned, we want to start a poller process. Upon
     -- noticing new events, this process will forward them to the RC.
@@ -249,7 +257,7 @@ eqRules rg pool groupMonitor = do
             if b then Just <$> receiveChan rp else return Nothing
           when (null ms) $ eqTrace "Poller: No messages"
           forM_ (ms :: [PersistMessage]) $ \sm -> do
-            liftIO $ traceMarkerIO $ "sending to RC: " ++ show (persistMessageId sm) 
+            liftIO $ traceMarkerIO $ "sending to RC: " ++ show (persistMessageId sm)
             eqTrace $ "Sending to RC: " ++ show (persistMessageId sm)
             usend rc sm
           tf <- liftIO $ getTime Monotonic

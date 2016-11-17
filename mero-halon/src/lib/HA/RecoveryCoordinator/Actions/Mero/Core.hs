@@ -63,7 +63,7 @@ newFidSeq rg = case G.connectedTo Cluster Has rg of
            in (w, rg')
 
 -- | Atomically fetch a FID sequence number of increment the sequence count.
-newFidSeqRC :: PhaseM LoopState l Word64
+newFidSeqRC :: PhaseM RC l Word64
 newFidSeqRC = do
   rg <- getLocalGraph
   let (w, rg') = newFidSeq rg
@@ -74,7 +74,7 @@ newFid :: M0.ConfObj a => Proxy a -> G.Graph -> (Fid, G.Graph)
 newFid p rg = (M0.fidInit p 1 w, rg') where
   (w, rg') = newFidSeq rg
 
-newFidRC :: M0.ConfObj a => Proxy a -> PhaseM LoopState l Fid
+newFidRC :: M0.ConfObj a => Proxy a -> PhaseM RC l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
 
 uniquePVerCounter :: G.Graph -> (Word32, G.Graph)
@@ -90,14 +90,14 @@ mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 -- Core configuration
 --------------------------------------------------------------------------------
 
-getM0Globals :: PhaseM LoopState l (Maybe CI.M0Globals)
+getM0Globals :: PhaseM RC l (Maybe CI.M0Globals)
 getM0Globals = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero globals."
   return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph
 loadMeroGlobals :: CI.M0Globals
-                -> PhaseM LoopState l ()
+                -> PhaseM RC l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 
 --------------------------------------------------------------------------------
@@ -152,7 +152,7 @@ loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 -- | Synchronously run the given computation in the m0 thread dedicated to the RC.
 --
 -- This call will return Nothing if no RC worker was created.
-liftM0RC :: IO a -> PhaseM LoopState l (Maybe a)
+liftM0RC :: IO a -> PhaseM RC l (Maybe a)
 liftM0RC task = liftIO getM0Worker >>= traverse (\worker -> runOnM0Worker worker task)
 
 -- | A operation with guarantee that mero worker is available. This call provide
@@ -164,15 +164,15 @@ liftM0RC task = liftIO getM0Worker >>= traverse (\worker -> runOnM0Worker worker
 -- withM0RC $ \lift ->
 --    m0synchronously lift $ someOperationThatShouldBeRunningInM0Thread
 -- @@@
-withM0RC :: (LiftRC -> PhaseM LoopState l b)
-         -> PhaseM LoopState l b
+withM0RC :: (LiftRC -> PhaseM RC l b)
+         -> PhaseM RC l b
 withM0RC f = liftIO getM0Worker >>= \case
   Nothing -> throwM WorkerIsNotAvailable
   Just w  -> f (LiftRC w)
 
 -- | Create a highly unsafe function that can run process state in
 -- *any* IO, only different 'sends' are safe to be run in such thread.
-mkUnliftProcess :: PhaseM LoopState l (Process a -> IO a)
+mkUnliftProcess :: PhaseM RC l (Process a -> IO a)
 mkUnliftProcess = do
   lproc <- liftProcess $ DI.Process ask
   return $ DI.runLocalProcess lproc
@@ -193,7 +193,7 @@ mkLiftRC = LiftRC
 -- RC thread will be blocked until result will be received.
 m0synchronously :: LiftRC
                 -> IO a
-                -> PhaseM LoopState l a
+                -> PhaseM RC l a
 m0synchronously (LiftRC w) = runOnM0Worker w
 
 -- | Run action asynchronously. RC thread will not be blocked and will
@@ -202,7 +202,7 @@ m0synchronously (LiftRC w) = runOnM0Worker w
 m0asynchronously :: LiftRC
                  -> (Either SomeException a -> Process ())
                  -> IO a
-                 -> PhaseM LoopState l ()
+                 -> PhaseM RC l ()
 m0asynchronously (LiftRC w) onExecution action = liftProcess $ do
   lproc <- DI.Process ask
   liftIO $ queueM0Worker w $ do
@@ -214,6 +214,6 @@ m0asynchronously (LiftRC w) onExecution action = liftProcess $ do
 -- to RC thread.
 m0asynchronously_ :: LiftRC
                   -> IO a
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 m0asynchronously_ (LiftRC w) = liftIO . queueM0Worker w . void
 

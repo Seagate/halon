@@ -24,7 +24,6 @@ module HA.RecoveryCoordinator.RC.Actions
 
 import           HA.Service (ServiceFailed(..))
 import           HA.RecoveryCoordinator.RC.Internal
-import           HA.Resources.RC
 
 import           HA.RecoveryCoordinator.Actions.Core
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
@@ -34,6 +33,7 @@ import qualified HA.EQTracker as EQT
 
 import qualified HA.ResourceGraph    as G
 import qualified HA.Resources        as R
+import qualified HA.Resources.RC     as R
 import qualified HA.Resources.Castor as R
 import           Network.CEP
 
@@ -59,11 +59,11 @@ import GHC.Generics (Generic)
 import Prelude hiding (id, (.))
 
 -- | Current RC.
-currentRC :: RC
-currentRC = RC 0 -- XXX: use version from the package/git version info?
+currentRC :: R.RC
+currentRC = R.RC 0 -- XXX: use version from the package/git version info?
 
 -- | 'getCurrentRC', fails if no active RC exists.
-getCurrentRC :: PhaseM LoopState l RC
+getCurrentRC :: PhaseM RC l R.RC
 getCurrentRC = tryGetCurrentRC >>= \case
   Nothing -> error "Can't find active rc in the graph"
   Just x  -> return x
@@ -72,7 +72,7 @@ getCurrentRC = tryGetCurrentRC >>= \case
 -- graph contained old RC - update handler is called @update oldRC newRC@.
 -- Old RC is no longer connected to the root of the graph, so it may be garbage
 -- collected after calling upate handler.
-makeCurrentRC :: (RC -> RC -> PhaseM LoopState l ()) -> PhaseM LoopState l RC
+makeCurrentRC :: (R.RC -> R.RC -> PhaseM RC l ()) -> PhaseM RC l R.RC
 makeCurrentRC update = do
   mOldRC <- tryGetCurrentRC
   case mOldRC of
@@ -87,21 +87,21 @@ makeCurrentRC update = do
   where
     mkRC = modifyGraph $ \g ->
       let g' = G.newResource currentRC
-           >>> G.newResource Active
+           >>> G.newResource R.Active
            >>> G.connect R.Cluster R.Has currentRC
-           >>> G.connect currentRC R.Is  Active
+           >>> G.connect currentRC R.Is R.Active
              $ g
       in g'
 
 
 -- | Find currenlty running RC in resource graph.
-tryGetCurrentRC :: PhaseM LoopState l (Maybe RC)
+tryGetCurrentRC :: PhaseM RC l (Maybe R.RC)
 tryGetCurrentRC = do
   rg <- getLocalGraph
   return $ listToMaybe
     [ rc
-    | Just rc <- [G.connectedTo R.Cluster R.Has rg :: Maybe RC]
-    , G.isConnected rc R.Is Active rg
+    | Just rc <- [G.connectedTo R.Cluster R.Has rg :: Maybe R.RC]
+    , G.isConnected rc R.Is R.Active rg
     ]
 
 -- | Increment epoch
@@ -109,19 +109,19 @@ incrementEpoch :: Word64 -> R.EpochId
 incrementEpoch = R.EpochId . succ
 
 -- | Get current epoch
-getCurrentEpoch :: PhaseM LoopState l Word64
+getCurrentEpoch :: PhaseM RC l Word64
 getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i) .
                   G.connectedTo R.Cluster R.Has <$> getLocalGraph
 
 -- | Read old epoch value and update it to the next one.
-updateEpoch :: PhaseM LoopState l Word64
+updateEpoch :: PhaseM RC l Word64
 updateEpoch = do
   old <- getCurrentEpoch
   modifyGraph $ G.connect R.Cluster R.Has (incrementEpoch old)
   return old
 
 -- | Monitor node and register callback to run when node dies.
-registerNodeMonitor :: R.Node -> (forall v . PhaseM LoopState v ()) -> PhaseM LoopState l MonitorRef
+registerNodeMonitor :: R.Node -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
 registerNodeMonitor (R.Node node) callback = do
   mref <- liftProcess $ monitorNode node
   mmon <- getStorageRC
@@ -132,7 +132,7 @@ registerNodeMonitor (R.Node node) callback = do
   return mref
 
 -- | Monitor process and register callback to run when node dies.
-registerProcessMonitor :: ProcessId -> (forall v . PhaseM LoopState v ()) -> PhaseM LoopState l MonitorRef
+registerProcessMonitor :: ProcessId -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
 registerProcessMonitor pid callback = do
   mref <- liftProcess $ monitor pid
   mmon <- getStorageRC
@@ -145,7 +145,7 @@ registerProcessMonitor pid callback = do
   return mref
 
 -- | Unregister previouly created callback
-unregisterMonitor :: MonitorRef -> PhaseM LoopState l ()
+unregisterMonitor :: MonitorRef -> PhaseM RC l ()
 unregisterMonitor mref = do
   liftProcess $ unmonitor mref
   mnmon <- getStorageRC
@@ -157,8 +157,8 @@ unregisterMonitor mref = do
 -- scope on another thread.
 registerSpawnAsync :: R.Node
                    -> Closure (Process ())
-                   -> (forall v . PhaseM LoopState v ())
-                   -> PhaseM LoopState l SpawnRef
+                   -> (forall v . PhaseM RC v ())
+                   -> PhaseM RC l SpawnRef
 registerSpawnAsync (R.Node nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
   phaseLog "info" $ "Register spawn async"
@@ -171,7 +171,7 @@ registerSpawnAsync (R.Node nid) clo callback = do
       Just (RegisteredSpawns mm) -> Map.insert key (AnyLocalState callback) mm
   return ref
 
-unregisterSpawnAsync :: SpawnRef -> PhaseM LoopState l ()
+unregisterSpawnAsync :: SpawnRef -> PhaseM RC l ()
 unregisterSpawnAsync ref = do
   let key = encode ref
   phaseLog "info" $ "Unregister spawn async"
@@ -184,7 +184,7 @@ unregisterSpawnAsync ref = do
 --
 -- This call provisions node, restart services there and add required
 -- monitoring procedures.
-addNodeToCluster :: [NodeId] -> R.Node -> PhaseM LoopState l ()
+addNodeToCluster :: [NodeId] -> R.Node -> PhaseM RC l ()
 addNodeToCluster eqs node@(R.Node nid) = do
   is_monitored <- isMonitored node
   if not is_monitored
@@ -224,14 +224,14 @@ newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set R.Node}
 
 -- | Check if given monitor node is monitored by angel.
 -- See [Note:monitor angel request serialisation]
-isMonitored :: R.Node -> PhaseM LoopState l Bool
+isMonitored :: R.Node -> PhaseM RC l Bool
 isMonitored node = do
   mmns <- getStorageRC
   return $ maybe False (Set.member node . getMonitoredNodes) mmns
 
 -- | Start node monitoring using angel
 -- See [Note:monitor angel request serialisation]
-startMonitoring :: R.Node -> PhaseM LoopState l ()
+startMonitoring :: R.Node -> PhaseM RC l ()
 startMonitoring node@(R.Node nid) = do
   phaseLog "info" "Adding new node to the cluster."
   phaseLog "node" $ show nid
@@ -243,7 +243,7 @@ startMonitoring node@(R.Node nid) = do
 
 -- | Stop node monitoring using Angel.
 -- See [Note:monitor angel request serialisation]
-stopMonitoring :: R.Node -> PhaseM LoopState l ()
+stopMonitoring :: R.Node -> PhaseM RC l ()
 stopMonitoring node@(R.Node nid) = do
   phaseLog "info" "Unregister node monitor"
   phaseLog "node" $ show nid
@@ -270,7 +270,7 @@ instance Binary AngelMonUp
 heartbeatDelay :: Int
 heartbeatDelay = 2 * 1000000 -- XXX: make halon var
 
-registerNodeMonitoringAngel :: PhaseM LoopState l ()
+registerNodeMonitoringAngel :: PhaseM RC l ()
 registerNodeMonitoringAngel = do
   pid <- liftProcess $ do
     rc <- getSelfPid

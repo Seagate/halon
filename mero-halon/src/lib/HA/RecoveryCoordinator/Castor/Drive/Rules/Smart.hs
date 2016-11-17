@@ -22,7 +22,7 @@ import HA.EventQueue.Types
   , UUID
   )
 import HA.RecoveryCoordinator.Actions.Core
-  ( LoopState
+  ( RC
   , fldUUID
   , messageProcessed
   , unlessM
@@ -85,7 +85,7 @@ jobRunSmartTest = Job "castor::drive::smart::run"
 -- | Rule for running a SMART test.
 --   Consumes 'SMARTRequest'
 --   Emits 'SMARTResponse'
-runSmartTest :: Definitions LoopState ()
+runSmartTest :: Definitions RC ()
 runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     smart         <- phaseHandle "smart"
     smartSuccess  <- phaseHandle "smart-success"
@@ -216,6 +216,6 @@ onSmartFailure (HAEvent eid cmd _) _
 onSmartFailure _ _ _ = return Nothing
 
 -- | All rules exported by this module.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ runSmartTest ]

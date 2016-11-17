@@ -28,14 +28,14 @@ import Data.Typeable
 data AnyLocalState g a = AnyLocalState
   { runAnyLocalState :: (forall l . PhaseM g l a) }
 
-newtype RegisteredMonitors = RegisteredMonitors (Map MonitorRef (AnyLocalState LoopState ()))
+newtype RegisteredMonitors = RegisteredMonitors (Map MonitorRef (AnyLocalState RC ()))
   deriving (Typeable)
 
-newtype RegisteredSpawns = RegisteredSpawns (Map ByteString (AnyLocalState LoopState ()))
+newtype RegisteredSpawns = RegisteredSpawns (Map ByteString (AnyLocalState RC ()))
   deriving (Typeable)
 
 -- Notify all interested subscribers
-runMonitorCallback :: MonitorRef -> PhaseM LoopState l ()
+runMonitorCallback :: MonitorRef -> PhaseM RC l ()
 runMonitorCallback mref = do
   mmons <- getStorageRC
   for_ mmons $ \(RegisteredMonitors mons) -> do
@@ -43,7 +43,7 @@ runMonitorCallback mref = do
     putStorageRC (RegisteredMonitors mons')
     for_ actions $ runAnyLocalState
 
-runSpawnCallback :: SpawnRef -> PhaseM LoopState l ()
+runSpawnCallback :: SpawnRef -> PhaseM RC l ()
 runSpawnCallback ref = do
   mmons <- getStorageRC
   for_ mmons $ \(RegisteredSpawns mons) -> do

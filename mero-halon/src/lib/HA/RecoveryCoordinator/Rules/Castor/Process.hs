@@ -45,7 +45,7 @@ import           Data.Typeable
 import           Data.Vinyl
 import           Text.Printf
 
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_ [
     ruleProcessOnline
   , ruleProcessStopped
@@ -61,7 +61,7 @@ rules = sequence_ [
 -- 'ProcessRestartRequest' for every failed process, allowing
 -- 'ruleProcessStart' to do its job while assuring only one on-going
 -- restart per process.
-ruleProcessDispatchRestart :: Definitions LoopState ()
+ruleProcessDispatchRestart :: Definitions RC ()
 ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
   rule_init <- phaseHandle "rule_init"
 
@@ -113,7 +113,7 @@ jobProcessStart = Job "process-start"
 -- online, that cluster remains online. Basically we have little
 -- resilence towards cluster state changing after we have made initial
 -- checks at start of the job.
-ruleProcessStart :: Definitions LoopState ()
+ruleProcessStart :: Definitions RC ()
 ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
   configure <- phaseHandle "configure"
   configure_result <- phaseHandle "configure_result"
@@ -331,7 +331,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
                                     , "Process already online, restart will occur")
 
 -- | Handle process started notifications.
-ruleProcessOnline :: Definitions LoopState ()
+ruleProcessOnline :: Definitions RC ()
 ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
@@ -393,7 +393,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 -- and decide whether we want to fail the process. If we do fail the
 -- process, 'ruleProcessRestarted' deals with the internal state
 -- change notification.
-ruleProcessStopped :: Definitions LoopState ()
+ruleProcessStopped :: Definitions RC ()
 ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
@@ -438,7 +438,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
 jobStop :: Job StopProcessesRequest StopProcessesResult
 jobStop = Job "castor::process::stop"
 
-ruleStop :: Definitions LoopState ()
+ruleStop :: Definitions RC ()
 ruleStop = mkJobRule jobStop args $ \finish -> do
   quiesce <- phaseHandle "quiesce"
   quiesce_ack <- phaseHandle "quiesce_ack"
@@ -569,7 +569,7 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
 -- Finds the non-failed processes which failed to be notified (through
 -- endpoints of the services in question) and fails them. This allows
 -- 'ruleProcessRestarted' to deal with them accordingly.
-ruleFailedNotificationFailsProcess :: Definitions LoopState ()
+ruleFailedNotificationFailsProcess :: Definitions RC ()
 ruleFailedNotificationFailsProcess =
   defineSimpleTask "notification-failed-fails-process" $ \(NotifyFailureEndpoints eps) -> do
     phaseLog "info" $ "Handling notification failure for: " ++ show eps
@@ -595,7 +595,7 @@ ruleFailedNotificationFailsProcess =
     isProcFailed _ = False
 
 -- | Listen for 'RpcEvent's. Currently just log the event.
-ruleRpcEvent :: Definitions LoopState ()
+ruleRpcEvent :: Definitions RC ()
 ruleRpcEvent = defineSimpleTask "rpc-event" $ \(HAMsg (rpc :: RpcEvent) meta) -> do
   phaseLog "rpc-event" $ show rpc
   phaseLog "meta" $ show meta

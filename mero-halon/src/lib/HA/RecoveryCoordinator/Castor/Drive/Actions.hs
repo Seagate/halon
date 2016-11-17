@@ -98,10 +98,10 @@ handleSNSReply (Left se) = case fromException se of
 --   attachDisk m0sdev
 -- @
 mkAttachDisk ::
-      (l -> PhaseM LoopState l (Maybe M0.SDev))
-   -> (M0.SDev -> String -> PhaseM LoopState l ()) -- ^ Action in case of failure
-   -> (M0.SDev -> PhaseM LoopState l ())           -- ^ Action in case of success
-   -> RuleM LoopState l (Jump PhaseHandle, M0.SDev -> PhaseM LoopState l ())
+      (l -> PhaseM RC l (Maybe M0.SDev))
+   -> (M0.SDev -> String -> PhaseM RC l ()) -- ^ Action in case of failure
+   -> (M0.SDev -> PhaseM RC l ())           -- ^ Action in case of success
+   -> RuleM RC l (Jump PhaseHandle, M0.SDev -> PhaseM RC l ())
 mkAttachDisk getter onFailure onSuccess = do
   ph <- phaseHandle "Disk was attached."
 
@@ -154,10 +154,10 @@ mkAttachDisk getter onFailure onSuccess = do
 --   attachDisk m0sdev
 -- @
 mkDetachDisk ::
-      (l -> PhaseM LoopState l (Maybe M0.SDev))
-   -> (M0.SDev -> String -> PhaseM LoopState l ())
-   -> (M0.SDev -> PhaseM LoopState l ())
-   -> RuleM LoopState l (Jump PhaseHandle, M0.SDev -> PhaseM LoopState l ())
+      (l -> PhaseM RC l (Maybe M0.SDev))
+   -> (M0.SDev -> String -> PhaseM RC l ())
+   -> (M0.SDev -> PhaseM RC l ())
+   -> RuleM RC l (Jump PhaseHandle, M0.SDev -> PhaseM RC l ())
 mkDetachDisk getter onFailure onSuccess = do
   ph <- phaseHandle "Disk was detached."
 
@@ -193,16 +193,16 @@ mkDetachDisk getter onFailure onSuccess = do
 
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
-markRemovedFromRAID :: StorageDevice -> PhaseM LoopState l ()
+markRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
 markRemovedFromRAID sdev = setStorageDeviceAttr sdev SDRemovedFromRAID
 
 -- | Remove the marker indicating that a device has been removed from the RAID
 --   array of which it is part.
-unmarkRemovedFromRAID :: StorageDevice -> PhaseM LoopState l ()
+unmarkRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
 unmarkRemovedFromRAID sdev = unsetStorageDeviceAttr sdev SDRemovedFromRAID
 
 -- | Check whether a device has been removed from its RAID array.
-isRemovedFromRAID :: StorageDevice -> PhaseM LoopState l Bool
+isRemovedFromRAID :: StorageDevice -> PhaseM RC l Bool
 isRemovedFromRAID = fmap (not . null) . findStorageDeviceAttrs go
   where
     go SDRemovedFromRAID = True
@@ -210,7 +210,7 @@ isRemovedFromRAID = fmap (not . null) . findStorageDeviceAttrs go
 
 -- | Send an IEM about 'M0.SDev' failure transition being prevented by
 -- maximum allowed failure tolerance.
-iemFailureOverTolerance :: M0.SDev -> PhaseM LoopState l ()
+iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
 iemFailureOverTolerance sdev =
   sendInterestingEvent . InterestingEventMessage $ logFailureOverK
       (" {'failedDevice':" <> T.pack (fidToStr $ M0.fid sdev) <> "}")

@@ -57,7 +57,7 @@ lookupStorageDevicePathsInGraph sd g =
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
-castorRules :: Definitions LoopState ()
+castorRules :: Definitions RC ()
 castorRules = sequence_
   [ ruleInitialDataLoad
 #ifdef USE_MERO
@@ -75,7 +75,7 @@ castorRules = sequence_
 
 -- | Load initial data from facts file into the system.
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
-ruleInitialDataLoad :: Definitions LoopState ()
+ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
   rg  <- getLocalGraph
   let racks  = G.connectedTo Cluster Has rg :: [Rack]
@@ -128,7 +128,7 @@ entryPointTimeout = 1 -- 1s
 
 -- | Load information that is required to complete transaction from
 -- resource graph.
-ruleGetEntryPoint :: Definitions LoopState ()
+ruleGetEntryPoint :: Definitions RC ()
 ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
@@ -170,12 +170,12 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
        phaseLog "rm.ep"        $ show rm_ep
 #endif
 
-goRack :: CI.Rack -> PhaseM LoopState l ()
+goRack :: CI.Rack -> PhaseM RC l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
 
-goEnc :: Rack -> CI.Enclosure -> PhaseM LoopState l ()
+goEnc :: Rack -> CI.Enclosure -> PhaseM RC l ()
 goEnc rack (CI.Enclosure{..}) = let
     enclosure = Enclosure enc_id
   in do
@@ -183,7 +183,7 @@ goEnc rack (CI.Enclosure{..}) = let
     mapM_ (registerBMC enclosure) enc_bmc
     mapM_ (goHost enclosure) enc_hosts
 
-goHost :: Enclosure -> CI.Host -> PhaseM LoopState l ()
+goHost :: Enclosure -> CI.Host -> PhaseM RC l ()
 goHost enc (CI.Host{..}) = let
     host = Host h_fqdn
     mem = fromIntegral h_memsize

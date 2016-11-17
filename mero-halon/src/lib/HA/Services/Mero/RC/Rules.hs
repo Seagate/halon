@@ -34,7 +34,7 @@ import Network.CEP
 import Prelude hiding (id)
 
 -- | Rules that are needed to support halon:m0d service in RC.
-rules :: Definitions LoopState ()
+rules :: Definitions RC ()
 rules = sequence_
   [ ruleRegisterChannels
 -- , ruleNotificationsDeliveredToHalonM0d
@@ -49,7 +49,7 @@ rules = sequence_
 
 -- | Register channels that can be used in order to communicate with halon:m0d
 -- service.
-ruleRegisterChannels :: Definitions LoopState ()
+ruleRegisterChannels :: Definitions RC ()
 ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
   \(DeclareMeroChannel sp c cc) -> do
       let node = R.Node (processNodeId sp)
@@ -60,7 +60,7 @@ ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
 
 -- | Rule that allow old interface that was listening to internal message to be
 -- used.
-ruleGenericNotification :: Definitions LoopState ()
+ruleGenericNotification :: Definitions RC ()
 ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
    \(Notified epoch msg _ fails) -> do
       promulgateRC msg
@@ -78,7 +78,7 @@ ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
 -- | When notification Set was delivered to some process we should mark that
 -- in graph and check if there are some other pending processes, if not -
 -- announce set as beign sent.
-ruleNotificationsDeliveredToM0d :: Definitions LoopState ()
+ruleNotificationsDeliveredToM0d :: Definitions RC ()
 ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivered-to-mero" $
   \(NotificationAck epoch fid) -> do
       mdiff <- getStateDiffByEpoch epoch
@@ -88,7 +88,7 @@ ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::
 
 -- | When notification was failed to be delivered to mero we mark it as not
 -- delivered, so other services who rely on that notification could see that.
-ruleNotificationsFailedToBeDeliveredToM0d :: Definitions LoopState ()
+ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
 ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivery-failed" $
   \(NotificationFailure epoch fid) -> do
       phaseLog "epoch" $ show epoch
@@ -106,7 +106,7 @@ ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::noti
 --
 -- As a result of such event RC should mark all pending messages as
 -- non-delivered and mark halon:m0d on the node as 'Outdated', (see $outdated)
-ruleHalonM0dFailed :: Definitions LoopState ()
+ruleHalonM0dFailed :: Definitions RC ()
 ruleHalonM0dFailed = defineSimpleTask "service::m0d::notification::halon-m0d-failed" $
   \(ServiceFailed node info _) -> do
      ServiceInfo svc _ <- decodeMsg info
@@ -116,7 +116,7 @@ ruleHalonM0dFailed = defineSimpleTask "service::m0d::notification::halon-m0d-fai
 
 -- | Handle normal exit from service.
 -- (See 'ruleHalonM0dFailed' for more explations)
-ruleHalonM0dExit :: Definitions LoopState ()
+ruleHalonM0dExit :: Definitions RC ()
 ruleHalonM0dExit = defineSimpleTask "service::m0d::notification::halon-m0d-exit" $
   \(ServiceExit node info _) -> do
      ServiceInfo svc _ <- decodeMsg info
@@ -126,7 +126,7 @@ ruleHalonM0dExit = defineSimpleTask "service::m0d::notification::halon-m0d-exit"
 
 -- | Handle exceptional exit from service.
 -- (See 'ruleHalonM0dFailed' for more explations)
-ruleHalonM0dException :: Definitions LoopState ()
+ruleHalonM0dException :: Definitions RC ()
 ruleHalonM0dException = defineSimpleTask "service::m0d::notification::halon-m0d-exception" $
   \(ServiceUncaughtException node info _ _) -> do
      ServiceInfo svc _ <- decodeMsg info

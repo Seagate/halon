@@ -168,8 +168,8 @@ createDeferredStateChanges stateSets rg =
 -- | Apply a number of state changes, executing an action between updating
 --   the graph and sending notifications to Mero and internally.
 genericApplyStateChanges :: [AnyStateSet]
-                         -> PhaseM LoopState l a
-                         -> PhaseM LoopState l a
+                         -> PhaseM RC l a
+                         -> PhaseM RC l a
 genericApplyStateChanges ass act = getLocalGraph >>= \rg ->
   genericApplyDeferredStateChanges (createDeferredStateChanges ass rg) act
 
@@ -182,8 +182,8 @@ genericApplyStateChanges ass act = getLocalGraph >>= \rg ->
 --   For more flexibility, you can write your own apply method which takes
 --   a `DeferredStateChanges` argument.
 genericApplyDeferredStateChanges :: DeferredStateChanges
-                                 -> PhaseM LoopState l a -- ^ action
-                                 -> PhaseM LoopState l a
+                                 -> PhaseM RC l a -- ^ action
+                                 -> PhaseM RC l a
 genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   diff <- mkStateDiff f (encodeP i) []
   notifyMeroAsync diff s
@@ -201,13 +201,13 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
 
 -- | Apply state changes and do nothing else.
 applyStateChanges :: [AnyStateSet]
-                  -> PhaseM LoopState l ()
+                  -> PhaseM RC l ()
 applyStateChanges ass =
     genericApplyStateChanges ass (return ())
 
 -- | Apply state changes and synchronise with confd.
 applyStateChangesSyncConfd :: [AnyStateSet]
-                           -> PhaseM LoopState l ()
+                           -> PhaseM RC l ()
 applyStateChangesSyncConfd ass =
     genericApplyStateChanges ass act
   where
@@ -222,12 +222,15 @@ applyStateChangesSyncConfd ass =
 -- local rule state to the object we're interested in.
 --
 -- TODO: Do we need to handle UUID here?
-setPhaseNotified :: forall b l g.
-                    (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+setPhaseNotified :: forall app b l g.
+                    ( Application app
+                    , g ~ GlobalState app
+                    , M0.HasConfObjectState b
+                    , Typeable (M0.StateCarrier b))
                  => Jump PhaseHandle
                  -> (l -> Maybe (b, M0.StateCarrier b -> Bool))
-                 -> ((b, M0.StateCarrier b) -> PhaseM g l ())
-                 -> RuleM g l ()
+                 -> ((b, M0.StateCarrier b) -> PhaseM app l ())
+                 -> RuleM app l ()
 setPhaseNotified handle extract act =
   setPhaseIf handle changeGuard act
   where
@@ -248,7 +251,8 @@ setPhaseNotified handle extract act =
 --
 -- State will endup in either @Nothing@ or @Just []@ depends on lens
 -- implementation.
-setPhaseAllNotified :: forall l g. Jump PhaseHandle
+setPhaseAllNotified :: forall l g. Application g
+                    => Jump PhaseHandle
                     -> (Lens' l (Maybe [AnyStateSet]))
                     -> PhaseM g l () -- ^ Callback when set has been notified
                     -> RuleM g l ()
@@ -275,10 +279,11 @@ setPhaseAllNotified handle extract act =
 --
 -- State will endup in either @Nothing@ or @Just []@ depends on lens
 -- implementation.
-setPhaseAllNotifiedBy :: forall l g. Jump PhaseHandle
+setPhaseAllNotifiedBy :: forall l app. Application app
+                      => Jump PhaseHandle
                       -> (Lens' l (Maybe [AnyStateSet -> Bool]))
-                      -> PhaseM g l () -- ^ Callback when set has been notified
-                      -> RuleM g l ()
+                      -> PhaseM app l () -- ^ Callback when set has been notified
+                      -> RuleM app l ()
 setPhaseAllNotifiedBy handle extract act =
   setPhase handle $ \(HAEvent _ msg _) -> do
      mn <- gets Local (^. extract)
@@ -297,23 +302,28 @@ setPhaseAllNotifiedBy handle extract act =
     extractStateSet (AnyStateChange a _ n _) = stateSet a n
 
 -- | As 'setPhaseInternalNotificationWithState', accepting all object states.
-setPhaseInternalNotification :: forall b l g.
-                                (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+setPhaseInternalNotification :: forall b l app.
+                                (Application app
+                                , M0.HasConfObjectState b
+                                , Typeable (M0.StateCarrier b))
                                 => Jump PhaseHandle
-                                -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
-                                -> RuleM g l ()
+                                -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM app l ())
+                                -> RuleM app l ()
 setPhaseInternalNotification handle act =
   setPhaseInternalNotificationWithState handle (const $ const True) act
 
 -- | Given a predicate on object state, retrieve all objects and
 -- states satisfying the predicate from the internal state change
 -- notification.
-setPhaseInternalNotificationWithState :: forall b l g.
-                                      (M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
+setPhaseInternalNotificationWithState :: forall app b l g.
+                                      ( Application app
+                                      , g ~ GlobalState app
+                                      , M0.HasConfObjectState b
+                                      , Typeable (M0.StateCarrier b))
                                       => Jump PhaseHandle
                                       -> (M0.StateCarrier b -> M0.StateCarrier b -> Bool)
-                                      -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM g l ())
-                                      -> RuleM g l ()
+                                      -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM app l ())
+                                      -> RuleM app l ()
 setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGuard act
   where
     changeGuard :: HAEvent InternalObjectStateChangeMsg
@@ -334,9 +344,9 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
 mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
               => Int -- ^ timeout
               -> (l -> Maybe (b, M0.StateCarrier b)) -- ^ state getter
-              -> PhaseM LoopState l () -- ^ on failure
-              -> (b -> M0.StateCarrier b -> PhaseM LoopState l [Jump PhaseHandle]) -- ^ on success
-              -> RuleM LoopState l (b -> M0.StateCarrier b -> PhaseM LoopState l [Jump PhaseHandle])
+              -> PhaseM RC l () -- ^ on failure
+              -> (b -> M0.StateCarrier b -> PhaseM RC l [Jump PhaseHandle]) -- ^ on success
+              -> RuleM RC l (b -> M0.StateCarrier b -> PhaseM RC l [Jump PhaseHandle])
 mkPhaseNotify t getter onFailure onSuccess = do
   notify_done <- phaseHandle "Notification done"
   notify_timed_out <- phaseHandle "Notification timed out"

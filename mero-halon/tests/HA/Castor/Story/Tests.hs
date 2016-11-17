@@ -127,7 +127,7 @@ newMeroChannel pid = do
               $ DeclareMeroChannel pid sdChan connChan
   return (recv, recv1, notfication)
 
-testRules :: Definitions LoopState ()
+testRules :: Definitions RC ()
 testRules = do
   defineSimple "register-mock-service" $
     \(HAEvent eid (MockM0 dc@(DeclareMeroChannel _ _ _)) _) -> do
@@ -193,7 +193,7 @@ run :: (Typeable g, RGroup g)
     => Transport
     -> Proxy g
     -> (ProcessId -> String -> Process ()) -- interceptor callback
-    -> [Definitions LoopState ()]
+    -> [Definitions RC ()]
     -> (    TestArgs
          -> ProcessId
          -> ReceivePort NotificationMessage
