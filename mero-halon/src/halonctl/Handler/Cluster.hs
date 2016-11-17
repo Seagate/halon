@@ -544,7 +544,7 @@ clusterCommand eqnids mk output = do
     Nothing -> do
       hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
       exitFailure
-    Just () -> exitSuccess
+    Just () -> return ()
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
