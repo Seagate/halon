@@ -112,13 +112,13 @@ ruleResetInit = define "rule-reset-init" $ do
 
   startFork dispatch_wait ()
   where
-    ioqDisk (HAEvent eid (HAMsg stob _) _) ls _ = return $
+    ioqDisk (HAEvent eid (HAMsg stob _)) ls _ = return $
       (eid,) <$> M0.lookupConfObjByFid (_sie_conf_sdev stob) (lsGraph ls)
 
     mkTransientDisk rg (Note fid' M0_NC_TRANSIENT) = M0.lookupConfObjByFid fid' rg
     mkTransientDisk _ _ = Nothing
 
-    nvecTransients (HAEvent eid (Set nvec) _) ls _ =
+    nvecTransients (HAEvent eid (Set nvec)) ls _ =
       return $ case mapMaybe (mkTransientDisk (lsGraph ls)) nvec of
         xs@(_ : _) -> Just (eid, xs)
         _ -> Nothing
@@ -365,7 +365,7 @@ onCommandAck :: forall g l. (FldDeviceInfo ∈ l)
              -> g
              -> FieldRec l
              -> Process (Maybe (Bool, UUID))
-onCommandAck k (HAEvent eid cmd _) _
+onCommandAck k (HAEvent eid cmd) _
                ((view $ rlens fldDeviceInfo . rfield)
                 -> Just (DeviceInfo _ serial)) =
   case commandAckType cmd of

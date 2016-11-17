@@ -87,13 +87,13 @@ instance Binary WhoAmI
 
 testRules :: ProcessId ->  [Definitions RC ()]
 testRules pid =
-  [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t) _) ->
+  [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t)) ->
       void $ sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)
-  , defineSimple "sspl-test-reply" $ \(HAEvent _ s@CommandAck{} _) ->
+  , defineSimple "sspl-test-reply" $ \(HAEvent _ s@CommandAck{}) ->
       liftProcess $ say $ "TEST-CA " ++ show s
-  , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s) _) ->
+  , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s)) ->
       liftProcess $ usend pid (SChan s)
-  , defineSimple "who-am-i" $ \(HAEvent _ WhoAmI _) ->
+  , defineSimple "who-am-i" $ \(HAEvent _ WhoAmI) ->
       liftProcess $ usend pid =<< getSelfPid
   ]
 

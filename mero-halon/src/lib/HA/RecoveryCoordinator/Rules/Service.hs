@@ -133,15 +133,15 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
          ServiceStartRequest _ stopping_node _ _ _ <- decodeMsg msg
          unless (died_node == stopping_node) loop
          continue do_register
-   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _) _) ->
+   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _)) ->
      service_died  node info
-   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _) _) ->
+   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _)) ->
      service_died node info
-   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _)) ->
      service_died node info
-   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+   setPhase wait_exc $ \(HAEvent _ (ServiceUncaughtException node info _ _)) ->
      service_died node info
-   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl) _) -> do
+   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl)) -> do
      Just msg <- fromLocal fldReq
      ServiceStartRequest _ node svc _ _ <- decodeMsg msg
      unless (tgtnode == node && serviceLabel svc == lbl) loop
@@ -168,7 +168,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
    -- We do not acknowledge this message, because it should be done by another
    -- rule. Ideal solution here will require introduction service rule that
    -- will control running jobs, so they will be isolated
-   setPhase wait_cancel $ \(HAEvent _ msg _) -> do
+   setPhase wait_cancel $ \(HAEvent _ msg) -> do
      ServiceStopRequest stoppingNode stoppingSvc <- decodeMsg msg
      Just mmsg <- fromLocal fldReq
      ServiceStartRequest _ startingNode startingSvc _ _ <- decodeMsg mmsg
@@ -186,7 +186,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
    -- We do not acknowledge this message, because it should be done by another
    -- rule. Ideal solution here will require introduction service rule that
    -- will control running jobs, so they will be isolated
-   setPhase wait_reply $ \(HAEvent _ (ServiceStarted startedNode info pid) _) -> do
+   setPhase wait_reply $ \(HAEvent _ (ServiceStarted startedNode info pid)) -> do
      ServiceInfo svc startedConf <- decodeMsg info
      Just mmsg <- fromLocal fldReq
      ServiceStartRequest _ startingNode startingSvc conf _ <- decodeMsg mmsg
@@ -284,13 +284,13 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
              continue finish
            Nothing -> loop
          else loop
-   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _) _) ->
+   setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _)) ->
      service_died  node info
-   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _) _) ->
+   setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _)) ->
      service_died node info
-   setPhase wait_exc  $ \(HAEvent _ (ServiceUncaughtException node info _ _) _) ->
+   setPhase wait_exc  $ \(HAEvent _ (ServiceUncaughtException node info _ _)) ->
      service_died node info
-   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl) _) -> do
+   setPhase wait_not_running $ \(HAEvent _ (ServiceStopNotRunning tgtnode lbl)) -> do
      Just msg <- fromLocal fldReq
      ServiceStopRequest node svc <- decodeMsg msg
      unless (tgtnode == node && serviceLabel svc == lbl) loop
@@ -300,7 +300,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
        putLocal fldRep $ ServiceStopRequestOk
      continue finish
 
-   setPhase wait_cancel $ \(HAEvent _ msg _) -> do
+   setPhase wait_cancel $ \(HAEvent _ msg) -> do
      ServiceStartRequest _ startingNode startingSvc _ _ <- decodeMsg msg
      Just mmsg <- fromLocal fldReq
      (ServiceStopRequest stoppingNode stoppingSvc) <- decodeMsg mmsg
@@ -331,7 +331,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
 
 -- | Request service status.
 serviceStatus :: Definitions RC ()
-serviceStatus = defineSimple "rc::service::status" $ \(HAEvent uuid msg _) -> do
+serviceStatus = defineSimple "rc::service::status" $ \(HAEvent uuid msg) -> do
   ServiceStatusRequest node svc listeners <- decodeMsg msg
   minfo <- node & Service.lookupInfoMsg $ svc
   case minfo of

@@ -9,7 +9,7 @@ module HA.Services.Frontier.CEP
   , ruleDumpKeyValues
   , ruleDumpGraph
   ) where
-  
+
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Core
 import HA.Services.Frontier.Command
@@ -29,7 +29,7 @@ frontierRules = sequence_
   , ruleDumpGraph
   ]
 
--- | Individual rule. Reads all key values in storage and sends that to 
+-- | Individual rule. Reads all key values in storage and sends that to
 -- the caller. Reply it send as a stream of a 'Data.ByteString.ByteString's
 -- followed by '()' when everything is sent.
 --
@@ -37,29 +37,29 @@ frontierRules = sequence_
 -- of RC failure.
 ruleDumpKeyValues :: Definitions RC ()
 ruleDumpKeyValues = defineSimple "frontiner-get-key-values" $
-  \(HAEvent uuid (MultimapGetKeyValuePairs, pid) _) -> do
+  \(HAEvent uuid (MultimapGetKeyValuePairs, pid)) -> do
       chan <- lsMMChan <$> get Global
       _ <- liftProcess $ spawnLocal $ do
              reply <- mmKeyValues . Just <$> getKeyValuePairs chan
-             mapM_ (usend pid) $ BL.toChunks 
+             mapM_ (usend pid) $ BL.toChunks
                                $ toLazyByteString . lazyByteString $ reply
              usend pid ()
       messageProcessed uuid
-      
--- | Individual rule. Reads graph and sends serializes that into graphviz 
+
+-- | Individual rule. Reads graph and sends serializes that into graphviz
 -- format. Reply it send as a stream of a 'Data.ByteString.ByteString's
 -- followed by '()' when everything is sent.
 --
 -- This call marked as proccessed immediately and is not reprocessed if case
 -- of RC failure.
 ruleDumpGraph :: Definitions RC ()
-ruleDumpGraph = defineSimple "frontier-dump-graph" $ 
-  \(HAEvent uuid (ReadResourceGraph, pid) _) -> do
+ruleDumpGraph = defineSimple "frontier-dump-graph" $
+  \(HAEvent uuid (ReadResourceGraph, pid)) -> do
       rg   <- getLocalGraph
       _ <- liftProcess $ spawnLocal $ do
              let reply = dumpGraph $ G.getGraphResources rg
              say "start sending graph"
-             mapM_ (usend pid) $ BL.toChunks 
+             mapM_ (usend pid) $ BL.toChunks
                                $ toLazyByteString . lazyByteString $ reply
              usend pid ()
              say "finished sending graph"

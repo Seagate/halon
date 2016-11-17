@@ -185,7 +185,7 @@ onSmartSuccess :: forall g l. (FldDeviceInfo ∈ l)
                -> g
                -> FieldRec l
                -> Process (Maybe UUID)
-onSmartSuccess (HAEvent eid cmd _) _
+onSmartSuccess (HAEvent eid cmd) _
                ((view $ rlens fldDeviceInfo . rfield) -> Just (DeviceInfo _ serial)) =
     case commandAckType cmd of
       Just (SmartTest x)
@@ -202,7 +202,7 @@ onSmartFailure :: forall g l. (FldDeviceInfo ∈ l)
                -> g
                -> FieldRec l
                -> Process (Maybe UUID)
-onSmartFailure (HAEvent eid cmd _) _
+onSmartFailure (HAEvent eid cmd) _
                ((view $ rlens fldDeviceInfo . rfield) -> Just (DeviceInfo _ serial)) =
     case commandAckType cmd of
       Just (SmartTest x)

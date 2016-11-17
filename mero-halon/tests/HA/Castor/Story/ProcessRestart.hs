@@ -136,7 +136,7 @@ doRestart transport pg startingState runRestartTest =
                ++ show procs
 
   rule :: Definitions RC ()
-  rule = defineSimple "testProcessRestart" $ \(HAEvent eid (RuleHook pid) _) -> do
+  rule = defineSimple "testProcessRestart" $ \(HAEvent eid (RuleHook pid)) -> do
     rg <- getLocalGraph
     -- Processes with IOS filtered out
     let procs = [ (p, srvs)

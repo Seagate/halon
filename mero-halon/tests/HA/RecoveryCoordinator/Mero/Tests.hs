@@ -251,7 +251,7 @@ testConfObjectStateQuery transport pg =
       init_state <- phaseHandle "init_state"
       wait_failure <- phaseHandle "wait_failure"
 
-      setPhase init_state $ \(HAEvent uuid (WaitFailedSDev caller m0sdev st) _) -> do
+      setPhase init_state $ \(HAEvent uuid (WaitFailedSDev caller m0sdev st)) -> do
         let state = M0.sdsFailTransient st
         put Local (uuid, caller, m0sdev, state)
         applyStateChanges [ stateSet m0sdev state ]
@@ -305,7 +305,7 @@ testConfValidates iData transport pg act =
       act
   where
     validateCacheRules :: [Definitions RC ()]
-    validateCacheRules = return $ defineSimple "validate-cache" $ \(HAEvent eid (ValidateCache sender) _) -> do
+    validateCacheRules = return $ defineSimple "validate-cache" $ \(HAEvent eid (ValidateCache sender)) -> do
       liftProcess $ say "validating cache"
       Right res <- validateTransactionCache
       liftProcess . say $ "validated cache: " ++ show res

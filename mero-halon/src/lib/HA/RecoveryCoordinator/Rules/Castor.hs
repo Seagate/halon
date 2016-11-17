@@ -76,7 +76,7 @@ castorRules = sequence_
 -- | Load initial data from facts file into the system.
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions RC ()
-ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..} _) -> do
+ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..}) -> do
   rg  <- getLocalGraph
   let racks  = G.connectedTo Cluster Has rg :: [Rack]
   if null racks
@@ -132,7 +132,7 @@ ruleGetEntryPoint :: Definitions RC ()
 ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
-  setPhase main $ \(HAEvent uuid (GetSpielAddress fid profile pid) _) -> do
+  setPhase main $ \(HAEvent uuid (GetSpielAddress fid profile pid)) -> do
     phaseLog "info" $ "Spiel Address requested."
     phaseLog "info" $ "requester.fid = " ++ show fid
     phaseLog "info" $ "requester.profile = " ++ show profile

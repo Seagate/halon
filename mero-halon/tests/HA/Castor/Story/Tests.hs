@@ -130,7 +130,7 @@ newMeroChannel pid = do
 testRules :: Definitions RC ()
 testRules = do
   defineSimple "register-mock-service" $
-    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel _ _ _)) _) -> do
+    \(HAEvent eid (MockM0 dc@(DeclareMeroChannel _ _ _))) -> do
       rg <- getLocalGraph
       nid <- liftProcess $ getSelfNode
       let node = Node nid
@@ -153,7 +153,7 @@ testRules = do
       Service.register node m0d mockMeroConf
       void . liftProcess $ promulgateEQ [nid] dc
       messageProcessed eid
-  defineSimple "mark-disk-failed" $ \(HAEvent eid MarkDriveFailed _) -> do
+  defineSimple "mark-disk-failed" $ \(HAEvent eid MarkDriveFailed) -> do
       rg <- getLocalGraph
       case G.getResourcesOfType rg of
         (sd:_) -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"

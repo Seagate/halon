@@ -482,7 +482,7 @@ mkQueryHostInfo andThen orFail = do
                      -> g
                      -> FieldRec l
                      -> Process (Maybe (UUID, HostHardwareInfo))
-    systemInfoOnNode (HAEvent eid (SystemInfo node' info) _) _ l = let
+    systemInfoOnNode (HAEvent eid (SystemInfo node' info)) _ l = let
         Just node = getField . rget fldNode $ l
       in
         return $ if node == node' then Just (eid, info) else Nothing

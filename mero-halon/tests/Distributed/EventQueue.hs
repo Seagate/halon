@@ -125,7 +125,7 @@ main =
         newRemoteRC nt $ \ln1 rc -> do
           send eq rc
           _ <- triggerEvent nid0 1
-          HAEvent (EventId _ 1) _ _ <- (expect :: Process (HAEvent [ByteString]))
+          HAEvent (EventId _ 1) _ <- (expect :: Process (HAEvent [ByteString]))
           say "RC forwarded the event"
           say "Simulating connection lost..."
           say $ "Remote endpoint address: " ++ show (nodeAddress nid0)
@@ -139,5 +139,5 @@ main =
           r2 <- triggerEvent nid0 2
           -- EQ should reconnect to the RC, and the RC should forward the
           -- event to me.
-          HAEvent (EventId r2 1) _ _ <- (expect :: Process (HAEvent [ByteString]))
+          HAEvent (EventId r2 1) _ <- (expect :: Process (HAEvent [ByteString]))
           say "RC reconnected from broken connection from EQ."

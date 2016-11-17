@@ -110,7 +110,7 @@ failed = define "castor::drive::raid::failed" $ do
     end <- phaseHandle "end"
     sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failure (return ())
 
-    setPhase raid_update $ \(HAEvent eid (RaidUpdate{..}) _) -> do
+    setPhase raid_update $ \(HAEvent eid RaidUpdate{..}) -> do
       let
         (Node nid) = ruNode
         go [] = return ()
@@ -240,7 +240,7 @@ replacement = define "castor::drive::raid::replaced" $ do
     sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failure logInfo
     tidyup <- phaseHandle "tidyup"
 
-    setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev) _) -> do
+    setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev)) -> do
       todo eid
       -- Check if this is a metadata drive
       lookupStorageDeviceRaidDevice sdev >>= \case

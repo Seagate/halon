@@ -107,8 +107,8 @@ mkJobRule (Job name)
                   fork CopyNewerBuffer $ switch next
 
 
-    setPhase request $ \(HAEvent eid input _) -> processRequest eid input []
-    setPhase indexed_request $ \(HAEvent eid (JobStartRequest uuid input) _) ->
+    setPhase request $ \(HAEvent eid input) -> processRequest eid input []
+    setPhase indexed_request $ \(HAEvent eid (JobStartRequest uuid input)) ->
        processRequest eid input [uuid]
 
     directly finish $ do  -- XXX: use rule finalier, when implemented

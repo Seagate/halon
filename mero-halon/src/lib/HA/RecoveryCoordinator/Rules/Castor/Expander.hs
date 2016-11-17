@@ -121,7 +121,7 @@ ruleReassembleRaid =
       dispatcher <- mkDispatcher
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
 
-      setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc) _) -> do
+      setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc)) -> do
 
         todo eid
 

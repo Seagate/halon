@@ -218,7 +218,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
    pcommit <- phaseHandle "after commit to graph"
    finish <- phaseHandle "finish"
 
-   setPhase pinit $ \(HAEvent uuid (nid, srdm) _) -> fork CopyNewerBuffer $ do
+   setPhase pinit $ \(HAEvent uuid (nid, srdm)) -> fork CopyNewerBuffer $ do
      let enc' = Enclosure . T.unpack
                           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                           $ srdm
@@ -332,7 +332,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions RC ()
-ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid (nid, srphi) _) -> do
+ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid (nid, srphi)) -> do
       let wwn = DIWWN . T.unpack
                       . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                       $ srphi
@@ -494,7 +494,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
   reset_failure <- phaseHandle "reset_failure"
   end <- phaseHandle "end"
 
-  setPhase raid_msg $ \(HAEvent uid (nid::NodeId, srrd) _) -> let
+  setPhase raid_msg $ \(HAEvent uid (nid::NodeId, srrd)) -> let
       device_t = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
       device = T.unpack device_t
       -- Drives should have min length 2, so it's OK to access these directly
@@ -604,7 +604,7 @@ ruleMonitorExpanderReset = defineSimpleTask "monitor-expander-reset" $ \(nid, Ex
   forM_ menc $ promulgateRC . ExpanderReset
 
 ruleThreadController :: Definitions RC ()
-ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc) _) -> let
+ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc)) -> let
     module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc
     thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
   in do
@@ -632,7 +632,7 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
      messageProcessed uuid
 
   -- SSPL Monitor interface data
-  -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum) _) _ ->
+  -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum)) _ ->
   --     return $ sensorResponseMessageSensor_response_typeIf_data hum
   --   ) $ \(SensorResponseMessageSensor_response_typeIf_data hn _ ifs') ->
   --     let
@@ -647,7 +647,7 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
   -- Dummy rule for handling SSPL HL commands
 
 ruleHlNodeCmd :: Service SSPLConf -> Definitions RC ()
-ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr _ ) _ ->
+ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr) _ ->
     return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
               $ cr
@@ -702,7 +702,7 @@ updateDriveManagerWithFailure disk st reason = do
 
 ruleSSPLTimeout :: Service SSPLConf -> Definitions RC ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
-      \(HAEvent uuid (SSPLServiceTimeout nid) _) -> do
+      \(HAEvent uuid (SSPLServiceTimeout nid)) -> do
           mcfg <- Service.lookupInfoMsg (Node nid) sspl
           for_ mcfg $ \_ -> do
             phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
@@ -711,6 +711,6 @@ ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
 
 ruleSSPLConnectFailure :: Definitions RC ()
 ruleSSPLConnectFailure = defineSimple "sspl-service-connect-failure" $
-      \(HAEvent uuid (SSPLConnectFailure nid) _) -> do
+      \(HAEvent uuid (SSPLConnectFailure nid)) -> do
           phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
           messageProcessed uuid

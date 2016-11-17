@@ -213,7 +213,7 @@ ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
 
 ruleSyncPing :: Definitions RC () -- XXX: move to rules file
 ruleSyncPing = defineSimple "sync-ping" $
-      \(HAEvent uuid (SyncPing str) _) -> do
+      \(HAEvent uuid (SyncPing str)) -> do
         eqPid <- lsEQPid <$> get Global
         registerSyncGraph $ do
           liftProcess $ sayRC $ "received SyncPing " ++ str

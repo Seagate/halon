@@ -33,7 +33,6 @@ import GHC.Generics (Generic)
 data HAEvent a = HAEvent
     { eventId      :: {-# UNPACK #-} !UUID
     , eventPayload :: a
-    , eventHops    :: [ProcessId]
     } deriving (Generic, Typeable)
 
 instance Binary a => Binary (HAEvent a)
@@ -50,7 +49,6 @@ newPersistMessage msg = liftIO $ do
     let evt = HAEvent
               { eventId      = uuid
               , eventPayload = msg
-              , eventHops    = []
               }
     return $ persistMessage uuid evt
 

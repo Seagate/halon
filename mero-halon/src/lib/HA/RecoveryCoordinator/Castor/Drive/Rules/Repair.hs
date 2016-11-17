@@ -239,7 +239,7 @@ querySpiel = define "spiel::sns:query-status" $ do
   (rebalance_status, rebalanceStatus) <-
     mkRebalanceStatusRequestOperation process_failure process_info
 
-  setPhase query_status $ \(HAEvent uid (SpielQuery pool prt ruuid) _) -> do
+  setPhase query_status $ \(HAEvent uid (SpielQuery pool prt ruuid)) -> do
     phaseLog "pool.fid" $ show (M0.fid pool)
     phaseLog "repair.type" $ show prt
     put Local $ Just (uid, pool, prt, ruuid)
@@ -262,9 +262,9 @@ querySpiel = define "spiel::sns:query-status" $ do
       promulgateRC $ SpielQueryHourly pool prt ruuid
 
   setPhase abort_on_quiesce $
-    \(HAEvent _ (QuiesceSNSOperation _pool) _) -> return ()
+    \(HAEvent _ (QuiesceSNSOperation _pool)) -> return ()
   setPhase abort_on_abort $
-    \(HAEvent _ (AbortSNSOperation _pool _) _) -> return ()
+    \(HAEvent _ (AbortSNSOperation _pool _)) -> return ()
 
   start query_status Nothing
 
@@ -305,9 +305,9 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
         return $ Just loop
 
   setPhase abort_on_quiesce $
-    \(HAEvent _ (QuiesceSNSOperation _pool) _) -> continue finish
+    \(HAEvent _ (QuiesceSNSOperation _pool)) -> continue finish
   setPhase abort_on_abort   $
-    \(HAEvent _ (AbortSNSOperation _pool _) _) -> continue finish
+    \(HAEvent _ (AbortSNSOperation _pool _)) -> continue finish
 
   (repair_status, repairStatus) <-
      mkRepairStatusRequestOperation process_failure process_info
@@ -416,7 +416,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
     statusRebalance pool
     continue status_received
 
-  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
+  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps)) -> do
     todo uuid
     when (not $ null eps) $ do
       phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting rebalance"
@@ -560,7 +560,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
     continue status_received
 
   -- Check if it's IOS that failed, if not then just keep going
-  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps) _) -> do
+  setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps)) -> do
     todo uuid
     when (not $ null eps) $ do
       phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting repair"

@@ -33,7 +33,7 @@ import Prelude hiding (id)
 
 meroRules :: Definitions RC ()
 meroRules = do
-  defineSimple "Sync-to-confd" $ \(HAEvent eid afterSync _) -> do
+  defineSimple "Sync-to-confd" $ \(HAEvent eid afterSync) -> do
     syncAction (Just eid) afterSync
     messageProcessed eid
   defineSimple "Sync-to-confd-local" $ \(uuid, afterSync) -> do

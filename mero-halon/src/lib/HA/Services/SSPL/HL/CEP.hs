@@ -34,7 +34,7 @@ import Text.Regex.TDFA ((=~))
 -- | Set of SSPL HL rules. Contain rules for status queries inside a graph.
 ssplHLRules :: Definitions RC ()
 ssplHLRules = defineSimple "status-query" $
-  \(HAEvent uuid (CommandRequestMessageStatusRequest mef et,msgId, pid) _) -> do
+  \(HAEvent uuid (CommandRequestMessageStatusRequest mef et,msgId, pid)) -> do
       rg <- getLocalGraph
       let
         items = case et of

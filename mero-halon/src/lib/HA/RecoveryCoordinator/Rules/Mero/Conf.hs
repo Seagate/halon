@@ -236,7 +236,7 @@ setPhaseNotified handle extract act =
   where
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (b, M0.StateCarrier b))
-    changeGuard (HAEvent _ msg _) _ (extract -> Just (obj, p)) =
+    changeGuard (HAEvent _ msg) _ (extract -> Just (obj, p)) =
       (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
         return $ listToMaybe . mapMaybe (getObjP obj p) $ iosc
     changeGuard _ _ _ = return Nothing
@@ -257,7 +257,7 @@ setPhaseAllNotified :: forall l g. Application g
                     -> PhaseM g l () -- ^ Callback when set has been notified
                     -> RuleM g l ()
 setPhaseAllNotified handle extract act =
-  setPhase handle $ \(HAEvent _ msg _) -> do
+  setPhase handle $ \(HAEvent _ msg) -> do
      mn <- gets Local (^. extract)
      case mn of
        Nothing -> do phaseLog "error" "Internal noficications are not set."
@@ -285,7 +285,7 @@ setPhaseAllNotifiedBy :: forall l app. Application app
                       -> PhaseM app l () -- ^ Callback when set has been notified
                       -> RuleM app l ()
 setPhaseAllNotifiedBy handle extract act =
-  setPhase handle $ \(HAEvent _ msg _) -> do
+  setPhase handle $ \(HAEvent _ msg) -> do
      mn <- gets Local (^. extract)
      case mn of
        Nothing -> do phaseLog "error" "Internal noficications are not set."
@@ -328,7 +328,7 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
   where
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
-    changeGuard (HAEvent eid msg _) _ _ =
+    changeGuard (HAEvent eid msg) _ _ =
       (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
         case mapMaybe getObjP iosc of
           [] -> return Nothing

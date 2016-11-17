@@ -258,14 +258,14 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
        <+> fldRunType    =: Nothing
        <+> fldRetryCount =: 0
 
-    configureResult (HAEvent uid (ProcessControlResultConfigureMsg _ result) _) _ l = do
+    configureResult (HAEvent uid (ProcessControlResultConfigureMsg _ result)) _ l = do
       let Just (ProcessStartRequest p) = getField . rget fldReq $ l
       case result of
         Left (p', failMsg) | p == p' -> return . Just $ Left (uid, failMsg)
         Right p' | p == p' -> return . Just $ Right uid
         _ -> return Nothing
 
-    startCmdResult (HAEvent uid (ProcessControlResultMsg _ result) _) _ l = do
+    startCmdResult (HAEvent uid (ProcessControlResultMsg _ result)) _ l = do
       let Just (ProcessStartRequest p) = getField . rget fldReq $ l
       return $ case result of
         Left (p', failMsg) | p == p' -> Just $ Left (uid, failMsg)
@@ -380,7 +380,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   start rule_init Nothing
   where
-    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m) _) ls _ = do
+    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
@@ -428,7 +428,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       M0.PSOffline -> True
       _ -> False
 
-    stoppedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta) _) ls _ = do
+    stoppedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
@@ -558,7 +558,7 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
           printf "Node: %s, Processes: %s"
                  (show n) (show p)
 
-    processControlForProcs (HAEvent eid (ProcessControlResultStopMsg _ results) _) _ l =
+    processControlForProcs (HAEvent eid (ProcessControlResultStopMsg _ results)) _ l =
       case (l ^. rlens fldReq . rfield) of
         Just (StopProcessesRequest _ p)
           | sort (M0.fid <$> p) == sort ((either fst id) <$> results)

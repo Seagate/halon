@@ -35,7 +35,7 @@ testRemoteTable = TestRunner.__remoteTableDecl $
 -- until the right message is received.
 serviceStarted :: Typeable a => Service a -> Process ProcessId
 serviceStarted srv = do
-  (Published (HAEvent _ (ServiceStarted _ msg pid) _) _) <- expect
+  (Published (HAEvent _ (ServiceStarted _ msg pid)) _) <- expect
   ServiceInfo srvi _ <- decodeP msg
   if maybe False (srv==) (cast srvi)
   then return pid

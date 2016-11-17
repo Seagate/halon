@@ -71,7 +71,7 @@ remotableDecl [ [d|
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
       rcDeathRules :: [Definitions RC ()]
-      rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC _) -> do
+      rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC) -> do
         liftProcess $ say "RC death requested from Disconnect.hs:rcDeathRules"
         messageProcessed uuid
         error "RC death requested from Disconnect.hs:rcDeathRules"

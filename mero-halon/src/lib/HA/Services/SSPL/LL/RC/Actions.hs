@@ -151,7 +151,7 @@ mkDispatchAwaitCommandAck dispatcher failed logAction = do
     return sspl_notify_done
   where
     -- Phase guard for command acknowledgements
-    onCommandAck (HAEvent eid cmd _) _ l =
+    onCommandAck (HAEvent eid cmd) _ l =
       case (l ^. rlens fldCommandAck . rfield, commandAckUUID cmd) of
         (xs, Just y) | y `elem` xs -> return $ Just (eid, y, cmd)
         _ -> return Nothing

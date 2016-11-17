@@ -454,7 +454,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
 --   TODO: Does this include stopping clients on the nodes?
 requestClusterStop :: Definitions RC ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
-  $ \(HAEvent eid (ClusterStopRequest ch) _) -> do
+  $ \(HAEvent eid (ClusterStopRequest ch)) -> do
       rg <- getLocalGraph
       let eresult = if isClusterStopped rg
                     then Left StateChangeFinished
@@ -486,7 +486,7 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
 --   SMs and all 'midway' suspended SMs have timed out.
 requestClusterReset :: Definitions RC ()
 requestClusterReset = defineSimple "castor::cluster::reset"
-  $ \(HAEvent eid (ClusterResetRequest deepReset) _) -> do
+  $ \(HAEvent eid (ClusterResetRequest deepReset)) -> do
     phaseLog "info" "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getLocalGraph <&> \rg -> [ node
@@ -574,7 +574,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
 
   let watchForChanges = switch [caller_died, isc_watcher, cluster_level_watcher]
 
-  setPhase start_monitoring $ \(HAEvent uuid (MonitorClusterStop caller) _) -> do
+  setPhase start_monitoring $ \(HAEvent uuid (MonitorClusterStop caller)) -> do
     todo uuid
     st <- calculateStoppingState
     mref <- liftProcess $ monitor caller
@@ -629,7 +629,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     -- care about for stop purposes so we save ourselves work and
     -- empty sends.
     iscGuard :: HAEvent InternalObjectStateChangeMsg -> g -> l -> Process (Maybe ())
-    iscGuard (HAEvent _ msg _) _ _ = decodeP msg >>= \(InternalObjectStateChange iosc) ->
+    iscGuard (HAEvent _ msg) _ _ = decodeP msg >>= \(InternalObjectStateChange iosc) ->
       let isInteresting :: forall t. Typeable t
                         => (t -> M0.StateCarrier t -> M0.StateCarrier t -> Bool)
                         -> AnyStateChange -> Bool

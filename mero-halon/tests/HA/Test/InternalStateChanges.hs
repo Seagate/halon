@@ -112,7 +112,7 @@ stateCascade t pg = doTest t pg [rule] test'
             lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
             lget = fmap (\(_,_,x,_) -> x)
 
-      setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
+      setPhase init_rule $ \(HAEvent eid (RuleHook pid)) -> do
         rg <- getLocalGraph
         let Just p = listToMaybe $
                 [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
@@ -188,7 +188,7 @@ failvecCascade t pg = doTest t pg [rule] test'
             lset (Just (a,b,_,d)) x = Just (a,b,fromMaybe [] x,d)
             lget = fmap (\(_,_,x,_) -> x)
 
-      setPhase init_rule $ \(HAEvent eid (RuleHook pid) _) -> do
+      setPhase init_rule $ \(HAEvent eid (RuleHook pid)) -> do
         phaseLog "info" "Set hooks"
         rg <- getLocalGraph
         let disks@(d0:d1:_) =

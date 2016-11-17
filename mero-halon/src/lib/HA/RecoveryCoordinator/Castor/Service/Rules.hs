@@ -64,7 +64,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
        -- Check that the service has the given tag (predicate) and
        -- check that it's not in the given state in RG already.
-       serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m) _) ls =
+       serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m)) ls =
          let rg = lsGraph ls
              isStateChanged s = M0.getState s (lsGraph ls) /= typ
          in case M0.lookupConfObjByFid (_hm_fid m) rg of
@@ -74,7 +74,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
        isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
        isServiceStopped = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STOPPED) M0.SSOffline
 
-       startOrStop msg@(HAEvent eid _ _) ls _ = return . Just . maybe (Left eid) Right $
+       startOrStop msg@(HAEvent eid _) ls _ = return . Just . maybe (Left eid) Right $
          case isServiceOnline msg ls of
            Nothing -> isServiceStopped msg ls
            Just x -> Just x

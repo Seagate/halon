@@ -371,7 +371,7 @@ done uuid = do
 -- othwewise returns @Nothing@. This method is intended to be as a predicate
 -- in 'setPhaseIf' family of functions.
 isNotHandled :: HAEvent a -> LoopState -> l -> Process (Maybe (HAEvent a))
-isNotHandled evt@(HAEvent eid _ _) ls _
+isNotHandled evt@(HAEvent eid _) ls _
     | Map.member eid $ lsRefCount ls = return Nothing
     | otherwise = return $ Just evt
 
@@ -381,7 +381,7 @@ defineSimpleTask :: Serializable a
                  => String
                  -> (forall l . a -> PhaseM RC l ())
                  -> Definitions RC ()
-defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a _) ->
+defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a) ->
    todo uuid >> f a >> done uuid
 
 -- | Variant on `setPhaseIf` which will consume the message if it's not
@@ -395,7 +395,7 @@ setPhaseIfConsume :: (Serializable a, Serializable b)
                   -> (b -> PhaseM RC l ())
                   -> RuleM RC l ()
 setPhaseIfConsume handle guard phase = setPhase handle $
-  \msg@(HAEvent eid _ _) -> do
+  \msg@(HAEvent eid _) -> do
     todo eid
     g <- get Global
     l <- get Local

@@ -140,7 +140,7 @@ testHpiExistingWWN = mkHpiTest rules test
       let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
       uuid <- liftIO $ nextRandom
       say "send HPI message"
-      usend rc $ HAEvent uuid (me, request) [] -- send request
+      usend rc $ HAEvent uuid (me, request) -- send request
       say "await for reply"
       receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
@@ -150,7 +150,7 @@ testHpiExistingWWN = mkHpiTest rules test
       usend rc ()  -- Prepare graph test
       uuid1 <- liftIO $ nextRandom
       say "send message again"
-      usend rc $ HAEvent uuid1 (me, request) [] -- send request
+      usend rc $ HAEvent uuid1 (me, request) -- send request
       receiveWait [ matchIf (\u -> u == uuid1) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
       say "check that graph didn't change"
@@ -170,7 +170,7 @@ testHpiNewWWN = mkHpiTest rules test
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
       uuid <- liftIO $ nextRandom
-      usend rc $ HAEvent uuid (me, request) []
+      usend rc $ HAEvent uuid (me, request)
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       usend rc ()
       False <- expect
@@ -197,10 +197,10 @@ testHpiUpdatedWWN = mkHpiTest rules test
       uuid0 <- liftIO $ nextRandom
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       let request0 = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
-      usend rc $ HAEvent uuid0 (me, request0) []
+      usend rc $ HAEvent uuid0 (me, request0)
       let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
-      usend rc $ HAEvent uuid (me, request) []
+      usend rc $ HAEvent uuid (me, request)
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       usend rc (Enclosure "enclosure_2", 1::Int)
@@ -230,10 +230,10 @@ testDMRequest = mkHpiTest rules test
         me <- getSelfNode
         let requestA = mkHpiMessage "primus.example.com" "enclosure1" "serial1" 0 "loop1" "wwn1"
         uuidA <- liftIO $ nextRandom
-        usend rc $ HAEvent uuidA (me, requestA) []
+        usend rc $ HAEvent uuidA (me, requestA)
         let requestB = mkHpiMessage "primus.example.com" "enclosure1" "serial2" 1 "loop2" "wwn2"
         uuidB <- liftIO $ nextRandom
-        usend rc $ HAEvent uuidB (me, requestB) []
+        usend rc $ HAEvent uuidB (me, requestB)
         --  0  -- active drive
         --  1  -- removed drive
         usend rc ()
@@ -241,32 +241,32 @@ testDMRequest = mkHpiTest rules test
         say "Unused ok for good drive"
         let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
         uuid0 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid0 (me, request0) []
+        usend rc $ HAEvent uuid0 (me, request0)
         liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid0
         say "Unused ok for removed drive"
         let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
         uuid1 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid1 (me, request1) []
+        usend rc $ HAEvent uuid1 (me, request1)
         liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid1
         say "Failed smart for good drive"
         let request2 = dmRequest "FAILED" "SMART" "serial1" 0 "path"
         uuid2 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid2 (me, request2) []
+        usend rc $ HAEvent uuid2 (me, request2)
         liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid2
         say "Failed smart for removed drive"
         let request3 = dmRequest "FAILED" "SMART" "serial1" 1 "path"
         uuid3 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid3 (me, request3) []
+        usend rc $ HAEvent uuid3 (me, request3)
         liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid3
         say "OK_None smart for good"
         let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid4 (me, request4) []
+        usend rc $ HAEvent uuid4 (me, request4)
         liftIO . assertEqual "OK_None smart for good" "drive-ok" =<< await uuid4
         say "OK_None smart for bad"
         let request5 = dmRequest "OK" "None" "serial1" 1 "path"
         uuid5 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid5 (me, request5) []
+        usend rc $ HAEvent uuid5 (me, request5)
         liftIO . assertEqual "OK_None smart for bad" "drive-ok" =<< await uuid5
         return ()
       where
