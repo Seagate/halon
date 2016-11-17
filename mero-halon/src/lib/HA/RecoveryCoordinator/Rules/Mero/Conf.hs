@@ -46,7 +46,7 @@ import Control.Category ((>>>))
 import Control.Distributed.Process (Process)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
-import Control.Monad (join, when, guard)
+import Control.Monad (forM_, join, when, guard)
 import Control.Monad.Fix (fix)
 import Control.Lens
 
