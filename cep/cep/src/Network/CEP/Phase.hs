@@ -292,6 +292,9 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
         inner (PhaseLog ctx lg :>>= k) = do
           logIt $ Log.PhaseLog $ Log.PhaseLogInfo ctx lg
           go l buf $ k ()
+        inner (AppLog evt :>>= k) = do
+          logIt $ Log.ApplicationLog $ Log.ApplicationLogInfo evt
+          go l buf $ k ()
         inner (Switch xs :>>= _) = do
           logIt $ Log.Switch $ Log.SwitchInfo (logJump <$> xs)
           return ((buf, SM_Complete l xs), [], Nothing)

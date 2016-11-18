@@ -548,6 +548,7 @@ data PhaseInstr app l a where
     Peek :: Serializable a => Index -> PhaseInstr app l (Index, a)
     Shift :: Serializable a => Index -> PhaseInstr app l (Index, a)
     Catch :: Exception e => (PhaseM app l a) -> (e -> PhaseM app l a) -> PhaseInstr app l a
+    AppLog :: Application app => LogType app -> PhaseInstr app l ()
 
 -- | Gets scoped state from memory.
 get :: Application app => Scope (GlobalState app) l a -> PhaseM app l a
@@ -600,6 +601,10 @@ publish e = singleton $ Publish e
 -- | Simple log. First parameter is the context and the last one is the log.
 phaseLog :: String -> String -> PhaseM app l ()
 phaseLog ctx line = singleton $ PhaseLog ctx line
+
+-- | Application log. Log a value in the underlying application log type.
+appLog :: Application app => LogType app -> PhaseM app l ()
+appLog evt  = singleton $ AppLog evt
 
 -- | Changes state machine context. Given the list of 'PhaseHandle', switch to
 --   the first 'Phase' that's successfully executed.

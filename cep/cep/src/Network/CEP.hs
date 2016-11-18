@@ -49,6 +49,7 @@ module Network.CEP
     , suspend
     , publish
     , phaseLog
+    , appLog
     , peek
     , shift
     , define
@@ -56,6 +57,7 @@ module Network.CEP
     , defineSimple
     , defineSimpleIf
     , setLogger
+    , setLocalStateLogger
     , setRuleFinalizer
     , setBuffer
     , setDefaultHandler
