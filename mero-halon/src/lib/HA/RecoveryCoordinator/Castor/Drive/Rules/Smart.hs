@@ -8,7 +8,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns   #-}
@@ -40,6 +39,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   , SMARTResponse(..)
   , SMARTResponseStatus(..)
   )
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
 import HA.Resources.Castor (StorageDevice)
 import HA.Services.SSPL.CEP
@@ -54,7 +54,7 @@ import HA.Services.SSPL.LL.Resources
 import Control.Distributed.Process (Process)
 import Control.Lens
 
-import Data.Foldable (for_)
+import qualified Data.Map.Strict as Map
 import Data.Proxy
 import qualified Data.Text as T
 import Data.Vinyl
@@ -92,20 +92,31 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     smartFailure  <- phaseHandle "smart-failure"
     smartTimeout  <- phaseHandle "smart-timeout"
 
+    setLocalStateLogger $ \l -> let
+        di = case (l ^. rlens fldDeviceInfo . rfield) of
+          Nothing -> []
+          Just dinfo -> [ ("device.id", show (dinfo ^. diSDev))
+                        , ("device.serial", show (dinfo ^. diSerial))
+                        ]
+      in Map.fromList $ [
+          ("uuid", show $ l ^. rlens fldUUID . rfield)
+        , ("request", show $ l ^. rlens fldReq . rfield)
+        , ("reply", show $ l ^. rlens fldRep . rfield)
+        , ("node", show $ l ^. rlens fldNode . rfield)
+        ] ++ di
+
     directly smart $ do
       Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
       Just (DeviceInfo sdev serial) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
 
-      logInfo
-
       whenM (isStorageDriveRemoved sdev) $ do
-        phaseLog "info" $ "Drive is removed."
+        Log.rcLog' Log.DEBUG "Drive is removed."
         modify Local $ rlens fldRep . rfield .~
           (Just $ SMARTResponse sdev SRSNotPossible)
         continue finish
       unlessM (isStorageDevicePowered sdev) $ do
-        phaseLog "info" $ "Drive is not powered."
+        Log.rcLog' Log.DEBUG "Drive is not powered."
         modify Local $ rlens fldRep . rfield .~
           (Just $ SMARTResponse sdev SRSNotPossible)
         continue finish
@@ -113,11 +124,11 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
       sent <- sendNodeCmd nid Nothing (SmartTest serial)
       if sent
       then do
-        phaseLog "info" $ "Running SMART test."
+        Log.rcLog' Log.DEBUG "Running SMART test."
         switch [ smartSuccess, smartFailure
                , timeout smartTestTimeout smartTimeout ]
       else do
-        phaseLog "warning" $ "Cannot send message to SSPL."
+        Log.rcLog' Log.WARN "Cannot send message to SSPL."
         modify Local $ rlens fldRep . rfield .~
           (Just $ SMARTResponse sdev SRSNotAvailable)
         continue finish
@@ -125,8 +136,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     setPhaseIf smartSuccess onSmartSuccess $ \eid -> do
       Just (DeviceInfo sdev _) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
-      logInfo
-      phaseLog "info" $ "SMART test success"
+      Log.rcLog' Log.DEBUG "SMART test success"
       modify Local $ rlens fldRep . rfield .~
         (Just $ SMARTResponse sdev SRSSuccess)
       messageProcessed eid
@@ -135,8 +145,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     setPhaseIf smartFailure onSmartFailure $ \eid -> do
       Just (DeviceInfo sdev _) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
-      logInfo
-      phaseLog "warning" $ "SMART test failed"
+      Log.rcLog' Log.WARN "SMART test failed"
       modify Local $ rlens fldRep . rfield .~
         (Just $ SMARTResponse sdev SRSFailed)
       messageProcessed eid
@@ -145,13 +154,14 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
     directly smartTimeout $ do
       Just (DeviceInfo sdev _) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
-      logInfo
-      phaseLog "warning" $ "SMART test timeout"
+      Log.rcLog' Log.WARN "SMART test timeout"
       modify Local $ rlens fldRep . rfield .~
         (Just $ SMARTResponse sdev SRSTimeout)
       continue finish
 
     return $ \(SMARTRequest node sdev) -> do
+      Log.tagContext Log.SM node Nothing
+      Log.tagContext Log.SM sdev Nothing
       lookupStorageDeviceSerial sdev >>= \case
         (T.pack -> serial):_ -> do
           modify Local $ rlens fldNode . rfield .~ (Just node)
@@ -159,8 +169,8 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
             (Just $ DeviceInfo sdev serial)
           return $ Just [smart]
         [] -> do
-          phaseLog "device.id" $ show sdev
-          phaseLog "warning" $ "Cannot find serial number for sdev."
+          Log.rcLog' Log.DEBUG ("device.id", show sdev)
+          Log.rcLog' Log.WARN "Cannot find serial number for sdev."
           return Nothing
   where
     fldReq :: Proxy '("request", Maybe SMARTRequest)
@@ -172,13 +182,6 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
        <+> fldRep           =: Nothing
        <+> fldNode          =: Nothing
        <+> fldDeviceInfo    =: Nothing
-    logInfo = do
-      node <- gets Local (^. rlens fldNode . rfield)
-      mdinfo <- gets Local (^. rlens fldDeviceInfo . rfield)
-      phaseLog "node" $ show node
-      for_ mdinfo $ \dinfo -> do
-        phaseLog "device.id" $ show (dinfo ^. diSDev)
-        phaseLog "device.serial" $ show (dinfo ^. diSerial)
 
 onSmartSuccess :: forall g l. (FldDeviceInfo ∈ l)
                => HAEvent CommandAck
