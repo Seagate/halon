@@ -50,6 +50,7 @@ import           HA.Resources.HalonVars
 import           HA.Services.DecisionLog (decisionLog, printLogs)
 import qualified HA.Resources.Castor as M0
 import           HA.RecoveryCoordinator.RC.Actions (addNodeToCluster)
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 #ifdef USE_MERO
 import           Data.Monoid  -- XXX: remote ifdef if possible
 import qualified Data.Text as T
@@ -90,6 +91,7 @@ rcInitRule argv = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
+      RCLog.sysLog' $ RCLog.RCStarted nid
       liftProcess $ do
          sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
          sayRC $ "Executing on node: " ++ show nid

@@ -27,6 +27,7 @@ import           HA.RecoveryCoordinator.RC.Internal
 
 import           HA.RecoveryCoordinator.Actions.Core
 import qualified HA.RecoveryCoordinator.Actions.Service as Service
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
 import qualified HA.EQTracker as EQT
@@ -161,8 +162,7 @@ registerSpawnAsync :: R.Node
                    -> PhaseM RC l SpawnRef
 registerSpawnAsync (R.Node nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
-  phaseLog "info" $ "Register spawn async"
-  phaseLog "ref"  $ show ref
+  Log.actLog "registerSpawnAsync" [("nid", show nid), ("ref", show ref)]
   msp <- getStorageRC
   let key = encode ref
   putStorageRC $ RegisteredSpawns $
@@ -173,9 +173,8 @@ registerSpawnAsync (R.Node nid) clo callback = do
 
 unregisterSpawnAsync :: SpawnRef -> PhaseM RC l ()
 unregisterSpawnAsync ref = do
+  Log.actLog "unregisterSpawnAsync" [("ref", show ref)]
   let key = encode ref
-  phaseLog "info" $ "Unregister spawn async"
-  phaseLog "ref"  $ show ref
   mnmon <- getStorageRC
   for_ mnmon $ \(RegisteredSpawns mons) -> do
     putStorageRC $ RegisteredSpawns $ Map.delete key mons
@@ -186,6 +185,7 @@ unregisterSpawnAsync ref = do
 -- monitoring procedures.
 addNodeToCluster :: [NodeId] -> R.Node -> PhaseM RC l ()
 addNodeToCluster eqs node@(R.Node nid) = do
+  Log.actLog "addNodeToCluster" [("nid", show nid), ("eqs", show eqs)]
   is_monitored <- isMonitored node
   if not is_monitored
   then do
@@ -233,8 +233,8 @@ isMonitored node = do
 -- See [Note:monitor angel request serialisation]
 startMonitoring :: R.Node -> PhaseM RC l ()
 startMonitoring node@(R.Node nid) = do
+  Log.actLog "startMonitoring" [("nid", show nid)]
   phaseLog "info" "Adding new node to the cluster."
-  phaseLog "node" $ show nid
   mmns <- getStorageRC
   putStorageRC $ maybe (MonitoredNodes (Set.singleton node))
                        (MonitoredNodes . Set.insert node . getMonitoredNodes)
@@ -245,8 +245,7 @@ startMonitoring node@(R.Node nid) = do
 -- See [Note:monitor angel request serialisation]
 stopMonitoring :: R.Node -> PhaseM RC l ()
 stopMonitoring node@(R.Node nid) = do
-  phaseLog "info" "Unregister node monitor"
-  phaseLog "node" $ show nid
+  Log.actLog "stopMonitoring" [("nid", show nid)]
   mmns <- getStorageRC
   for_ mmns $ \mns -> putStorageRC $
     MonitoredNodes . Set.delete node . getMonitoredNodes $ mns

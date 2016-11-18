@@ -30,6 +30,7 @@ import HA.Encode (decodeP, encodeP)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.RecoveryCoordinator.Actions.Castor
 import HA.RecoveryCoordinator.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.RecoveryCoordinator.Actions.Mero.Spiel
 import HA.RecoveryCoordinator.Events.Mero
 import qualified HA.Resources.Mero as M0
@@ -189,13 +190,11 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
   notifyMeroAsync diff s
   let (InternalObjectStateChange iosc) = i
   for_ iosc $ \(AnyStateChange a o n _) -> do
-    phaseLog "state-update" $ unwords
-      [ M0.showFid a
-      , "transitioned to"
-      , show n
-      , "from"
-      , show o
-      ]
+    Log.sysLog' . Log.StateChange $ Log.StateChangeInfo {
+      Log.lsc_entity = M0.showFid a
+    , Log.lsc_oldState = show o
+    , Log.lsc_newState = show n
+    }
   action
 
 

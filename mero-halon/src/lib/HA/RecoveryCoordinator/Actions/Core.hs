@@ -75,6 +75,7 @@ import HA.Resources
   )
 
 import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.EventQueue.Types
 import HA.EventQueue.Producer (promulgateWait)
 import HA.Encode
@@ -333,6 +334,7 @@ unsafePromulgateRC msg callback = liftProcess $ do
 -- process this message before current rule will call 'done'.
 todo :: UUID -> PhaseM RC l ()
 todo uuid = do
+  Log.sysLog' $ Log.Todo uuid
   st <- get Global
   put Global st{ lsRefCount = Map.insertWith add uuid 1 (lsRefCount st)}
   where
@@ -346,6 +348,7 @@ todo uuid = do
 -- were 'todo's, and some time gap was given.
 done :: UUID -> PhaseM RC l ()
 done uuid = do
+  Log.sysLog' $ Log.Done uuid
   st <- get Global
   put Global st{ lsRefCount = Map.adjust (\x -> x - 1) uuid (lsRefCount st)}
 
