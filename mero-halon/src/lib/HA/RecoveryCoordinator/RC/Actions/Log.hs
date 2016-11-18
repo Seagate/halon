@@ -124,6 +124,9 @@ instance Taggable String where
 instance Taggable Environment where
   toTagContent = TagEnv
 
+instance Taggable [(String, String)] where
+  toTagContent = TagEnv . Map.fromList
+
 instance Taggable UUID where
   toTagContent uuid = TagScope [Thread uuid]
 
