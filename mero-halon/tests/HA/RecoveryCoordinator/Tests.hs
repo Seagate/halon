@@ -37,7 +37,7 @@ import           HA.Resources
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
-import           Network.CEP (subscribe, Definitions)
+import           Network.CEP (LogType, subscribe, Definitions)
 import qualified Network.CEP.Log as Log
 import           Network.Transport (Transport)
 import           Prelude hiding ((<$>), (<*>))
@@ -181,7 +181,7 @@ testDecisionLog transport pg = do
         _ <- serviceStarted DLog.decisionLog
         serviceStart Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         _ <- serviceStarted Dummy.dummy
-        (_ :: Log.Event ()) <- expect
+        (_ :: Log.Event (LogType RC)) <- expect
         return ()
 
 testServiceStopped :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()

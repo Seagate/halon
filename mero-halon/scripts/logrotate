@@ -6,13 +6,3 @@
   rotate 30
   compress
 }
-
-/var/log/m0trace.* {
-  size 100M
-  copytruncate
-  create 700 root root
-  dateext
-  rotate 20
-  compress
-  maxage 30
-}

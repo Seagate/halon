@@ -35,6 +35,7 @@ import Options.Schema.Builder
 import qualified Network.CEP.Log as CL
 import Text.PrettyPrint.Leijen hiding ((<>),(<$>))
 
+import qualified HA.RecoveryCoordinator.Log as Log
 import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
 
@@ -107,10 +108,10 @@ data EntriesLogged =
 
 instance Binary EntriesLogged
 
-newtype WriteLogs = WriteLogs (CL.Event () -> Process ())
+newtype WriteLogs = WriteLogs (CL.Event Log.Event -> Process ())
 
 -- | Pretty-print a log entry
-ppLogs :: CL.Event () -> Doc
+ppLogs :: CL.Event Log.Event -> Doc
 ppLogs evt =
     ppLoc (CL.evt_loc evt) <+> ppEvt (CL.evt_log evt)
   where
@@ -140,7 +141,7 @@ openLogFile path = liftIO $ do
 cleanupHandle :: Handle -> Process ()
 cleanupHandle h = liftIO $ hClose h
 
-handleLogs :: DecisionLogOutput -> CL.Event () -> Process ()
+handleLogs :: DecisionLogOutput -> CL.Event Log.Event -> Process ()
 handleLogs dlo logs = case dlo of
     ProcessOutput pid -> usend pid logs
     StandardOutput -> liftIO $ do
@@ -159,8 +160,8 @@ handleLogs dlo logs = case dlo of
 newWriteLogs :: DecisionLogOutput -> WriteLogs
 newWriteLogs tpe = WriteLogs $ handleLogs tpe
 
-writeLogs :: WriteLogs -> CL.Event () -> Process ()
+writeLogs :: WriteLogs -> CL.Event Log.Event -> Process ()
 writeLogs (WriteLogs k) logs = k logs
 
-printLogs :: CL.Event () -> Process ()
+printLogs :: CL.Event Log.Event -> Process ()
 printLogs = handleLogs DPLogger

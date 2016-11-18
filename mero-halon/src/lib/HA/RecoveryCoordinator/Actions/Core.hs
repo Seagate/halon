@@ -2,7 +2,6 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE TypeFamilies #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -82,7 +81,7 @@ import HA.Encode
   ( ProcessEncode(..)
   , decodeP
   )
-
+import HA.RecoveryCoordinator.RC.Application
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -108,22 +107,6 @@ import qualified Data.Set as Set
 import           Data.Maybe (fromMaybe)
 
 import Network.CEP
-
--- | 'Phantom' type used to define CEP 'Application'.
-data RC
-
-instance Application RC where
-  type GlobalState RC = LoopState
-  type LogType RC = ()
-
-data LoopState = LoopState {
-    lsGraph    :: G.Graph -- ^ Graph
-  , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
-  , lsEQPid    :: ProcessId -- ^ EQ pid
-  , lsRefCount :: Map.Map UUID Int
-    -- ^ Set of HAEvent uuid we've already handled.
-  , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
-}
 
 -- | Get value from non-peristent global storage.
 getStorageRC :: Typeable a => PhaseM RC l (Maybe a)
