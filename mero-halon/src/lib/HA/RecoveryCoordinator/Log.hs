@@ -4,10 +4,14 @@
 --
 -- Defines the logging type for the recovery coordinator.
 
+{-# LANGUAGE TemplateHaskell #-}
 module HA.RecoveryCoordinator.Log where
 
-import Control.Distributed.Process (NodeId)
 
+import qualified HA.Resources as R (Node)
+
+
+import Data.SafeCopy
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
@@ -55,7 +59,7 @@ instance Binary TagContextInfo
 data Scope =
     Thread UUID -- ^ Tag a "thread" of processing. This could be used to
                      --   group multiple rules all driven from a single message.
-  | Node NodeId -- ^ Associated node
+  | Node R.Node -- ^ Associated node
   | StorageDevice UUID -- ^ Associated storage device.
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
@@ -93,7 +97,7 @@ data SystemEvent =
     -- ^ Declare that the state of a stateful resource has changed.
   | ActionCalled String Environment
     -- ^ Declare than an action has been called with certain parameters.
-  | RCStarted NodeId
+  | RCStarted R.Node
     -- ^ Declare that the RC has started on a node.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
@@ -144,3 +148,13 @@ data UserEvent =
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Binary UserEvent
+
+--------------------------------------------------------------------------------
+-- Safecopy instances
+--------------------------------------------------------------------------------
+deriveSafeCopy 0 'base ''TagContent
+deriveSafeCopy 0 'base ''Scope
+deriveSafeCopy 0 'base ''SystemEvent
+deriveSafeCopy 0 'base ''StateChangeInfo
+deriveSafeCopy 0 'base ''SourceLoc
+deriveSafeCopy 0 'base ''Level

@@ -120,6 +120,8 @@ Library
 
   Other-Modules:   HA.RecoveryCoordinator.RC.Internal
                    HA.RecoveryCoordinator.RC.Subscription
+                   HA.Services.DecisionLog.Logger
+                   HA.Services.DecisionLog.Trace
                    HA.Services.DecisionLog.Types
                    HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler

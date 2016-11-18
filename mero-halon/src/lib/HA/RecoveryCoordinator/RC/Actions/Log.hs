@@ -131,10 +131,10 @@ instance Taggable UUID where
   toTagContent uuid = TagScope [Thread uuid]
 
 instance Taggable Res.Node where
-  toTagContent (Res.Node nid) = TagScope [Node nid]
+  toTagContent node = TagScope [Node node]
 
 instance Taggable NodeId where
-  toTagContent nid = TagScope [Node nid]
+  toTagContent nid = TagScope [Node (Res.Node nid)]
 
 instance Taggable Res.StorageDevice where
   toTagContent (Res.StorageDevice uuid) = TagScope [StorageDevice uuid]

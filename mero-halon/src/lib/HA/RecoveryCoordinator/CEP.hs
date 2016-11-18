@@ -47,7 +47,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.HalonVars
-import           HA.Services.DecisionLog (decisionLog, printLogs)
+import           HA.Services.DecisionLog (decisionLog, traceLogs)
 import qualified HA.Resources.Castor as M0
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 #ifdef USE_MERO
@@ -90,7 +90,7 @@ rcInitRule argv = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
-      RCLog.sysLog' $ RCLog.RCStarted nid
+      RCLog.sysLog' $ RCLog.RCStarted (Node nid)
       liftProcess $ do
          sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
          sayRC $ "Executing on node: " ++ show nid
@@ -397,13 +397,13 @@ rulePidRequest = defineSimpleTask "rule-pid-request" $ \(RequestRCPid caller) ->
 --   is found across all nodes, just defaults to 'printLogs'.
 sendLogs :: Log.Event (LogType RC) -> LoopState -> Process ()
 sendLogs logs ls = do
-  case nodes of
-    [] -> printLogs logs
-    _  -> for_ nodes $ \(Node nid) ->
-            nsendRemote nid (serviceLabel decisionLog) logs
+   if null nodes
+   then traceLogs logs
+   else for_ nodes $ \(Node nid) ->
+          nsendRemote nid (serviceLabel decisionLog) logs
   where
-    rg = lsGraph ls
-    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
-                , n <- G.connectedTo host Runs rg :: [Node]
-                , not . null $ lookupServiceInfo n decisionLog rg
-                ]
+   rg = lsGraph ls
+   nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
+               , n <- G.connectedTo host Runs rg :: [Node]
+               , not . null $ lookupServiceInfo n decisionLog rg
+               ]

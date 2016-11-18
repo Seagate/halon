@@ -12,156 +12,145 @@
 --
 module HA.Services.DecisionLog.Types where
 
-import           Prelude hiding ((<$>))
-import qualified Data.ByteString      as Strict
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor ((<$>))
-import           Data.Typeable
-import           GHC.Generics
-import           System.IO
+import Data.Typeable
+import GHC.Generics
 
 import Control.Distributed.Process hiding (bracket)
-import Control.Monad.Catch (bracket)
 import Data.Aeson
 import Data.Binary (Binary)
+import Data.Foldable (asum)
 import Data.Text (Text)
-import Data.Defaultable
+import qualified Data.Text as T
 import Data.Hashable
 import Data.Monoid ((<>))
 import Data.SafeCopy
-import Data.Time (getCurrentTime)
 import Options.Schema
 import Options.Schema.Builder
-import qualified Network.CEP.Log as CL
-import Text.PrettyPrint.Leijen hiding ((<>),(<$>))
 
-import qualified HA.RecoveryCoordinator.Log as Log
 import HA.SafeCopy.OrphanInstances()
 import HA.Service.TH
 
 
-data DecisionLogOutput
-    = FileOutput FilePath
+-- | Old version on 'DecisionLog'
+data DecisionLogOutput_v0
+    = FileOutput_v0 FilePath
       -- ^ File path of a file.
-    | ProcessOutput ProcessId
+    | ProcessOutput_v0 ProcessId
       -- ^ Sends any log to the specified 'Process'.
-    | StandardOutput
+    | StandardOutput_v0
       -- ^ Writes to stdout.
-    | StandardError
+    | StandardError_v0
       -- ^ Writes to stderr.
-    | DPLogger
+    | DPLogger_v0
       -- ^ Sends logs to the logger of d-p in the local node.
     deriving (Eq, Show, Generic)
 
-deriveSafeCopy 0 'base ''DecisionLogOutput
+-- | Specify ouput for decision log.
+data DecisionLogOutput
+  = LogTextFile FilePath
+    -- ^ output textual representation in file.
+  | LogBinaryFile FilePath
+    -- ^ output binary representation in file.
+  | LogDP
+    -- ^ output textual representation using d-p framework.
+  | LogDB FilePath
+    -- ^ log decision log to database.
+  | LogStdout
+    -- ^ Log to stdout
+  | LogStderr
+    -- ^ Log to stderr
+  deriving (Eq, Show, Generic)
+
+instance Migrate DecisionLogOutput where
+  type MigrateFrom DecisionLogOutput = DecisionLogOutput_v0
+  migrate (FileOutput_v0 f)    = LogTextFile f
+  migrate (ProcessOutput_v0 _) = LogDP -- sorry no good way to do that. FIXME
+  migrate  StandardOutput_v0   = LogStdout
+  migrate  StandardError_v0    = LogStderr
+  migrate  DPLogger_v0         = LogDP
+
+deriveSafeCopy 0 'base ''DecisionLogOutput_v0
+deriveSafeCopy 1 'extension ''DecisionLogOutput
 
 instance Binary DecisionLogOutput
 instance Hashable DecisionLogOutput
 instance ToJSON DecisionLogOutput where
-  toJSON (FileOutput fp) = object ["type" .= ("file"::Text), "filename" .= fp]
-  toJSON (ProcessOutput p) = object ["type" .= ("process"::Text), "process" .= show p]
-  toJSON (StandardOutput)  = object ["type" .= ("stdout"::Text) ]
-  toJSON (StandardError)   = object ["type" .= ("stderr"::Text) ]
-  toJSON (DPLogger)        = object ["type" .= ("default_logger"::Text) ]
+  toJSON (LogTextFile fp) = object [ "type" .= ("file"::Text)
+                                   , "filename" .= fp
+                                   , "format" .= ("text"::Text)]
+  toJSON (LogBinaryFile fp) = object [ "type" .= ("file"::Text)
+                                     , "filename" .= fp
+                                     , "format" .= ("binary"::Text)]
+  toJSON (LogDB fp) = object ["type" .= ("db"::Text)
+                             , "filename" .= fp ]
+  toJSON (LogDP) = object ["type" .= ("default_logger"::Text) ]
+  toJSON LogStdout = object [ "type" .= ("stdout"::Text)]
+  toJSON LogStderr = object [ "type" .= ("stderr"::Text)]
 
 
--- | Writes any log to a file. It will append the content from the end of the
---   file.
-fileOutput :: FilePath -> DecisionLogOutput
-fileOutput = FileOutput
+data TraceLogOutput
+  = TraceText FilePath
+    -- ^ Send trace files in text format to the specified file.
+  | TraceBinary FilePath
+    -- ^ Send traces in binary formats to the specified file.
+  | TraceProcess ProcessId
+    -- ^ Send files to the remote process, that will handle traces.
+  | TraceTextDP
+    -- ^ Send trace files in text format to using D-P framework.
+  | TraceNull
+    -- ^ Do not output any traces.
+  deriving (Eq, Show, Generic)
 
--- | Sends any log to that 'Process'.
-processOutput :: ProcessId -> DecisionLogConf
-processOutput = DecisionLogConf . ProcessOutput
+instance Binary TraceLogOutput
+instance Hashable TraceLogOutput
+instance ToJSON TraceLogOutput where
+  toJSON (TraceText fp) = object [ "type" .= ("file"::Text)
+                                 , "filename" .= fp
+                                 , "format" .= ("text"::Text)]
+  toJSON (TraceBinary fp) = object [ "type" .= ("file"::Text)
+                                  , "filename" .= fp
+                                 , "format" .= ("binary"::Text)]
+  toJSON (TraceTextDP) = object ["type" .= ("dp"::Text)]
+  toJSON (TraceProcess pid) = object ["type" .= ("process"::Text)
+                                     , "pid" .= T.pack (show pid)]
+  toJSON (TraceNull) = object ["type" .= ("no trace"::Text) ]
 
+deriveSafeCopy 0 'base ''TraceLogOutput
 
--- | Writes any log to stdout.
-standardOutput :: DecisionLogConf
-standardOutput = DecisionLogConf StandardOutput
-
-newtype DecisionLogConf = DecisionLogConf  DecisionLogOutput
+newtype DecisionLogConf_v0 = DecisionLogConf_v0  DecisionLogOutput
     deriving (Eq, Generic, Show, Typeable)
+
+data DecisionLogConf = DecisionLogConf DecisionLogOutput TraceLogOutput
+    deriving (Eq, Generic, Show, Typeable)
+     
+instance Migrate DecisionLogConf where
+  type MigrateFrom DecisionLogConf = DecisionLogConf_v0
+  migrate (DecisionLogConf_v0 f) = DecisionLogConf f TraceNull
 
 instance Binary DecisionLogConf
 instance Hashable DecisionLogConf
 instance ToJSON DecisionLogConf
 
+deriveSafeCopy 0 'base ''DecisionLogConf_v0
+deriveSafeCopy 1 'base ''DecisionLogConf
+
 decisionLogSchema :: Schema DecisionLogConf
 decisionLogSchema =
-    let _filepath = strOption
-                   $  long "file"
-                   <> short 'f'
-                   <> metavar "DECISION_LOG_FILE"
-        filepath = FileOutput <$> _filepath in
-    fmap (DecisionLogConf . fromDefault) $ defaultable StandardOutput filepath
+    let filepath = asum
+          [ fmap LogTextFile . strOption $ long "log-text" <> metavar "DECISION_LOG_FILE"
+             <> summary "store logs as human readable text"
+          , fmap LogBinaryFile . strOption $ long "log-binary" <> metavar "DECISION_LOG_FILE"
+             <> summary "store logs as binary data"
+          , fmap LogDB . strOption $ long "log-db" <> metavar "DECISION_LOG_FILE"
+             <> summary "send human readable logs to halon log subsystem"
+          ]
+        tracepath = asum
+          [ fmap TraceText . strOption $ long "trace-file" <> metavar "TRACE_LOG_FILE"
+             <> summary "store traces as human readable text"
+          , fmap TraceBinary . strOption $ long "trace-binary" <> metavar "TRACE_LOG_FILE"
+             <> summary "store traces as binary data"
+          ]
+    in DecisionLogConf <$> filepath <*> tracepath
 
 $(generateDicts ''DecisionLogConf)
 $(deriveService ''DecisionLogConf 'decisionLogSchema [])
-deriveSafeCopy 0 'base ''DecisionLogConf
-
-data EntriesLogged =
-    EntriesLogged
-    { elRuleId  :: !Strict.ByteString
-    , elInputs  :: !Lazy.ByteString
-    , elEntries :: !Lazy.ByteString
-    } deriving (Generic, Typeable)
-
-instance Binary EntriesLogged
-
-newtype WriteLogs = WriteLogs (CL.Event Log.Event -> Process ())
-
--- | Pretty-print a log entry
-ppLogs :: CL.Event Log.Event -> Doc
-ppLogs evt =
-    ppLoc (CL.evt_loc evt) <+> ppEvt (CL.evt_log evt)
-  where
-    ppLoc CL.Location{..} = encloseSep lbrace rbrace colon
-      $ text <$> [loc_rule_name, show loc_sm_id, loc_phase_name]
-    ppJump (CL.NormalJump s) = text s
-    ppJump (CL.TimeoutJump t s) =
-      text "timeout" <+> parens (text $ show t) <+> text s
-    ppEvt (CL.PhaseLog CL.PhaseLogInfo{..}) =
-      text pl_key <+> hcat [equals, rangle] <+> text pl_value
-    ppEvt CL.PhaseEntry = text "ENTER_PHASE"
-    ppEvt CL.Stop = text "STOP"
-    ppEvt CL.Suspend = text "SUSPEND"
-    ppEvt (CL.Continue CL.ContinueInfo{..}) =
-      text "CONTINUE" <+> ppJump c_continue_phase
-    ppEvt (CL.Switch CL.SwitchInfo{..}) =
-      text "SWITCH" <+> ( encloseSep lbracket rbracket comma
-                        $ ppJump <$> s_switch_phases)
-    ppEvt _ = empty
-
-openLogFile :: FilePath -> Process Handle
-openLogFile path = liftIO $ do
-    h <- openFile path AppendMode
-    hSetBuffering h LineBuffering
-    return h
-
-cleanupHandle :: Handle -> Process ()
-cleanupHandle h = liftIO $ hClose h
-
-handleLogs :: DecisionLogOutput -> CL.Event Log.Event -> Process ()
-handleLogs dlo logs = case dlo of
-    ProcessOutput pid -> usend pid logs
-    StandardOutput -> liftIO $ do
-      putDoc $ ppLogs logs
-      putStr "\n"
-    StandardError -> liftIO $ do
-      hPutDoc stderr $ ppLogs logs
-      hPutStr stderr "\n"
-    DPLogger -> say $ displayS (renderPretty 0.4 80 $ ppLogs logs) ""
-    FileOutput path ->
-      bracket (openLogFile path) cleanupHandle $ \h -> liftIO $ do
-        hPutStrLn h . show =<< getCurrentTime
-        hPutDoc h $ ppLogs logs
-        hPutStr h "\n"
-
-newWriteLogs :: DecisionLogOutput -> WriteLogs
-newWriteLogs tpe = WriteLogs $ handleLogs tpe
-
-writeLogs :: WriteLogs -> CL.Event Log.Event -> Process ()
-writeLogs (WriteLogs k) logs = k logs
-
-printLogs :: CL.Event Log.Event -> Process ()
-printLogs = handleLogs DPLogger
