@@ -60,9 +60,11 @@ failedNotificationIOS eps rg =
 --
 --  * [IDLE] - SNS is not doing any job
 --  * [FAILED] - SNS failed previous job but cleared up and ready
+--  * [PAUSED] - SNS job has been paused by quiesce, but we can do new things.
 iosReady :: Spiel.SnsCmStatus -> Bool
 iosReady Spiel.M0_SNS_CM_STATUS_IDLE   = True
 iosReady Spiel.M0_SNS_CM_STATUS_FAILED = True
+iosReady Spiel.M0_SNS_CM_STATUS_PAUSED = True
 iosReady _                             = False
 
 

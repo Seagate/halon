@@ -19,19 +19,22 @@
 --
 -- TODO: Only abort repair on notification failure if it's IOS that failed
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
-  ( handleRepairExternal
-  , ruleRebalanceStart
-  , ruleRepairStart
-  , noteToSDev
+  ( noteToSDev
   , querySpiel
   , querySpielHourly
-  , checkRepairOnClusterStart
-  , checkRepairOnServiceUp
+  , rules
+    -- * Individual rules exported for test purposes
+  , handleRepairExternal
+  , ruleRebalanceStart
+  , ruleRepairStart
   , ruleSNSOperationAbort
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
+  , ruleSNSOperationRestart
   , ruleOnSnsOperationQuiesceFailure
   , ruleHandleRepair
+  , checkRepairOnClusterStart
+  , checkRepairOnServiceUp
   ) where
 
 import           Control.Applicative
@@ -430,7 +433,10 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
       Nothing -> phaseLog "error" "No pool info in local state"
       Just (pool, _) -> do
         ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
-        applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
+        -- Don't need to think about K here as both rebalance and
+        -- repaired are failed states.
+        applyStateChanges $ map (\d -> stateSet d M0.SDSRepaired) ds
+        unsetPoolRepairStatus pool
 
     -- Is this device ready to be rebalanced onto?
     deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
@@ -527,6 +533,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
         modify Local $ rlens fldRep .~ Field (Just $ PoolRepairStarted pool)
         possiblyInitialisePRI pool
         incrementOnlinePRSResponse pool
+        abort_if_needed pool
         continue finish
 
   (status_received, statusRepair) <- mkRepairStatusRequestOperation
@@ -581,7 +588,35 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
         -- because notification failure handler will check for
         -- already failed processes.
         applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
+        unsetPoolRepairStatus pool
 
+    -- It's possible that after calling for the repair to start, but before
+    -- receiving notification from the IOSservers that repair *has* started,
+    -- additional drives have failed or transient. If this is the case, normal
+    -- handling rules will not pick them up, because they arrive before PRS
+    -- has been set. So after start, we check them again, and potentially abort
+    -- at this point. Note this is different from 'abortRepairStart' as the
+    -- repair has already started.
+    abort_if_needed pool = getPoolRepairStatus pool >>= \case
+      Just (M0.PoolRepairStatus _ uuid _) -> do
+        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
+        fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        when (not $ null tr) $
+          phaseLog "disks.transient" $ show tr
+        when (not $ null fa) $
+          phaseLog "disks.failed" $ show fa
+        case (null tr, null fa) of
+          (True, False) -> do
+            phaseLog "info" "Devices failed after repair start - restarting."
+            promulgateRC $ RestartSNSOperationRequest pool uuid
+          (False, True) -> do
+            phaseLog "info" "Devices transient after repair start - quiescing."
+            promulgateRC $ QuiesceSNSOperation pool
+          (False, False) -> do
+            phaseLog "info" "Devices both transient and failed after repair start - aborting."
+            promulgateRC $ AbortSNSOperation pool uuid
+          _ -> return ()
+      Nothing -> phaseLog "error" "abort_if_needed called but PRS is unset."
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStartResult)
@@ -849,6 +884,67 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
         <+> fldUUID =: Nothing
         <+> RNil
 
+jobSNSOperationRestart :: Job RestartSNSOperationRequest RestartSNSOperationResult
+jobSNSOperationRestart = Job "castor::sns::restart"
+
+-- | Abort an ongoing SNS operation and restart it. Returns one of the
+--   following:
+--   'RestartSNSOperationSuccess' - if operation was restarted
+--   'RestartSNSOperationFailed' - if operation could not be restarted
+--   'RestartSNSOperationSkip' - if no operation was running
+--   This rule itself just invokes 'abort' and subsequently 'start' rules.
+ruleSNSOperationRestart :: Definitions LoopState ()
+ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
+  abort_req <- phaseHandle "abort_req"
+  start_req <- phaseHandle "start_req"
+  result <- phaseHandle "result"
+
+  directly abort_req $ do
+    Just (RestartSNSOperationRequest pool uuid) <- getField . rget fldReq <$> get Local
+    mprs <- getPoolRepairStatus pool
+    case mprs of
+      Just _ -> do
+        promulgateRC $ AbortSNSOperation pool uuid
+        continue start_req
+      Nothing -> do
+        phaseLog "info" "Skipping repair as pool repair status is not set."
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSkip pool)
+        continue finish
+
+  setPhase start_req $ \absns -> do
+    Just (RestartSNSOperationRequest pool _) <- getField . rget fldReq <$> get Local
+    case absns of
+      AbortSNSOperationOk pool' | pool == pool' -> do
+        promulgateRC $ PoolRepairRequest pool
+        continue result
+      AbortSNSOperationFailure pool' err | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationFailed pool err)
+        continue finish
+      AbortSNSOperationSkip pool' | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSkip pool)
+        continue finish
+      _ -> continue start_req
+
+  setPhase result $ \prsr -> do
+    Just (RestartSNSOperationRequest pool _) <- getField . rget fldReq <$> get Local
+    case prsr of
+      PoolRepairStarted pool' | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSuccess pool)
+        continue finish
+      PoolRepairFailedToStart pool' err | pool == pool' -> do
+        modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationFailed pool err)
+        continue finish
+      _ -> continue result
+
+  return $ \_ -> return $ Just [abort_req]
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe RestartSNSOperationRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe RestartSNSOperationResult)
+
+    args =  fldUUID =: Nothing
+        <+> fldRep =: Nothing
+        <+> fldReq =: Nothing
+
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
 ruleOnSnsOperationQuiesceFailure :: Definitions LoopState ()
 ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
@@ -1016,6 +1112,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
 
         tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
         fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        repairing <- getPoolSDevsWithState pool M0_NC_REPAIR
 
             -- If no devices are transient and something is failed, begin
             -- repair. It's up to caller to ensure any previous repair has
@@ -1031,16 +1128,18 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
             -- devices were reported we could request pool rebalance procedure start.
             -- That procedure can decide itself if there any work to do.
             maybeBeginRebalance = when (and [ null tr
-                                            , S.null $ getSDevs diskMap M0_NC_FAILED
-                                            , S.null $ getSDevs diskMap M0_NC_TRANSIENT
+                                            , null repairing
+                                            , null fa
                                             ])
               $ promulgateRC (PoolRebalanceRequest pool)
 
         getPoolRepairStatus pool >>= \case
-          Just (M0.PoolRepairStatus prt _ _)
+          Just (M0.PoolRepairStatus prt uuid _)
             -- Repair happening, device failed, restart repair
             | fa' <- getSDevs diskMap M0_NC_FAILED
-            , not (S.null fa') -> maybeBeginRepair
+            , not (S.null fa') -> do
+              phaseLog "info" $ "Repair happening, device failed, restart repair"
+              promulgateRC $ RestartSNSOperationRequest pool uuid
             -- Repair happening, some devices are transient
             | tr' <- getSDevs diskMap M0_NC_TRANSIENT
             , not (S.null tr') -> do
@@ -1059,7 +1158,9 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
                 else phaseLog "repair" $ "Still some drives transient: " ++ show sts
             | otherwise -> phaseLog "repair" $
                 "Repair on-going but don't know what to do with " ++ show diskMap
-          Nothing -> maybeBeginRepair
+          Nothing -> do
+            phaseLog "info" "No ongoing repair found, maybe begin repair."
+            maybeBeginRepair
 
 -- | When the cluster has completed starting up, it's possible that
 --   we have devices that failed during the startup process.
@@ -1248,3 +1349,18 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
   where
     isIOSProcess p rg = not . null $ [s | s <- G.connectedTo p M0.IsParentOf rg
                                         , CST_IOS <- [M0.s_type s] ]
+
+-- | All rules exported by this module.
+rules :: Definitions LoopState ()
+rules = sequence_
+  [ checkRepairOnClusterStart
+  , checkRepairOnServiceUp
+  , ruleRepairStart
+  , ruleRebalanceStart
+  , ruleSNSOperationAbort
+  , ruleSNSOperationQuiesce
+  , ruleSNSOperationContinue
+  , ruleSNSOperationRestart
+  , ruleOnSnsOperationQuiesceFailure
+  , ruleHandleRepair
+  ]

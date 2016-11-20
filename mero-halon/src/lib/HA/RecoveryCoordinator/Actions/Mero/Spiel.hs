@@ -382,7 +382,9 @@ mkRepairAbortOperation =
     (Proxy :: Proxy "Repair abort")
     mkRepairStatusRequestOperation
     poolRepairAbort
-    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
+    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
 
 -- | Create code that allow to quisce repair operation.
 mkRebalanceQuiesceOperation ::
@@ -412,7 +414,9 @@ mkRebalanceAbortOperation = do
     (Proxy :: Proxy "Rebalance abort")
     mkRebalanceStatusRequestOperation
     poolRebalanceAbort
-    [Mero.Spiel.M0_SNS_CM_STATUS_FAILED,Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
+    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because
