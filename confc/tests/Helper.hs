@@ -6,7 +6,6 @@
 module Helper
   ( withSudo
   , withEndpoint
-  , withHASession
   , withMeroRoot
   , getLnetNid
   , confdEndpoint
@@ -19,7 +18,6 @@ module Helper
   ) where
 
 
-import Mero.ConfC (withHASession)
 import Control.Exception (bracket, onException)
 import Control.Monad (when)
 import Data.Maybe (catMaybes)

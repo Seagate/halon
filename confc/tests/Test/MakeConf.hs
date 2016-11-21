@@ -77,7 +77,7 @@ test = do
     initRPC
     withEndpoint (rpcAddress localAddress) $ \ep -> do
       rpcMach <- getRPCMachine_se ep
-      withConf rpcMach (rpcAddress confdAddress) $ \_ -> withHASession ep (rpcAddress confdAddress) $ do
+      withConf rpcMach (rpcAddress confdAddress) $ \_ -> do
         setCmdProfile $ Just $ show $ fids "profile"
         withTransaction $ transaction server1_endpoint server2_endpoint
     finalizeRPC
