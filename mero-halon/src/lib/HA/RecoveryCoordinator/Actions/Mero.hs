@@ -9,8 +9,8 @@
 --
 module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
-  , module HA.RecoveryCoordinator.Actions.Mero.Core
-  , module HA.RecoveryCoordinator.Actions.Mero.Spiel
+  , module HA.RecoveryCoordinator.Mero.Actions.Core
+  , module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , noteToSDev
   , calculateRunLevel
   , calculateStopLevel
@@ -32,13 +32,13 @@ module HA.RecoveryCoordinator.Actions.Mero
   )
 where
 
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf as Conf
-import HA.RecoveryCoordinator.Actions.Mero.Core
-import HA.RecoveryCoordinator.Actions.Mero.Spiel
-import HA.RecoveryCoordinator.Events.Service
-import HA.RecoveryCoordinator.Events.Castor.Cluster
-import HA.RecoveryCoordinator.Events.Castor.Process
+import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
+import HA.RecoveryCoordinator.Mero.Actions.Core
+import HA.RecoveryCoordinator.Mero.Actions.Spiel
+import HA.RecoveryCoordinator.Service.Events
+import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Process.Events
 
 import HA.Resources.Castor (Is(..))
 import HA.Resources (Has(..))

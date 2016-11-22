@@ -11,7 +11,7 @@ module HA.Services.Frontier.CEP
   ) where
 
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import HA.Services.Frontier.Command
 import HA.Multimap (getKeyValuePairs)
 import qualified HA.ResourceGraph as G

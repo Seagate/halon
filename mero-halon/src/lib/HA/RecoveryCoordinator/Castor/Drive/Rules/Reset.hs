@@ -17,15 +17,15 @@ import HA.EventQueue.Types
   ( HAEvent(..)
   , UUID
   )
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Mero.State
 import HA.Resources (Node(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Mero as M0

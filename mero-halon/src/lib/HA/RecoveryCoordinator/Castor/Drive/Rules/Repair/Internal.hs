@@ -7,7 +7,7 @@
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal where
 
 import           Data.List (nub)
-import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0

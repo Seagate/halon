@@ -20,8 +20,8 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Dispatch
+import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.RC.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Hardware
   ( getSDevNode
   , lookupStorageDevicePaths

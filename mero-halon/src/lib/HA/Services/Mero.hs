@@ -29,7 +29,7 @@ module HA.Services.Mero
 import HA.Debug
 import HA.Logger
 import HA.EventQueue.Producer (promulgate, promulgateWait)
-import qualified HA.RecoveryCoordinator.Events.Mero as M0
+import qualified HA.RecoveryCoordinator.Mero.Events as M0
 import qualified HA.Resources.Mero as M0
 import HA.Service
 import HA.Services.Mero.Types

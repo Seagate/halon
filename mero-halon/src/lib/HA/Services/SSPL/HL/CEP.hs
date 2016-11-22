@@ -20,7 +20,7 @@ import HA.Resources.Mero
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 #endif
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 
 import SSPL.Bindings
 import Network.CEP

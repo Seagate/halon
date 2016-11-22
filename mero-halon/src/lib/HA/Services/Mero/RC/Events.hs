@@ -4,7 +4,7 @@ module HA.Services.Mero.RC.Events
   ( Notified(..)
   ) where
 
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Events
 import HA.Resources.Mero as M0
 
 import Data.Binary (Binary)

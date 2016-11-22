@@ -30,8 +30,8 @@ import Network.Transport (Transport, EndPointAddress)
 import HA.Encode
 import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
-import HA.RecoveryCoordinator.Events.Cluster
-import HA.RecoveryCoordinator.Events.Service
+import HA.RecoveryCoordinator.RC.Events.Cluster
+import HA.RecoveryCoordinator.Service.Events
 import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.CEP

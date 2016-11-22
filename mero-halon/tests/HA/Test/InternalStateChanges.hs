@@ -18,7 +18,7 @@ import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Rules.Mero.Conf
+import           HA.RecoveryCoordinator.Mero.State
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources

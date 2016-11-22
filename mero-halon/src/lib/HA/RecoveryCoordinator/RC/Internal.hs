@@ -22,7 +22,7 @@ import qualified Data.Map as Map
 import Data.Foldable (for_)
 import Network.CEP
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions.Core
 import Data.Typeable
 
 data AnyLocalState g a = AnyLocalState

@@ -10,7 +10,7 @@ import HA.EventQueue.Producer (promulgateEQ)
 import HA.NodeUp ( nodeUp )
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
-import HA.RecoveryCoordinator.Events.Service
+import HA.RecoveryCoordinator.Service.Events
 import HA.Startup
 import HA.Encode
 import qualified HA.Services.DecisionLog as DLog

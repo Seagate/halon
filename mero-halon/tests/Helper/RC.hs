@@ -5,8 +5,8 @@ module Helper.RC
   ( emptyLoopState
   ) where
 
-import HA.RecoveryCoordinator.Actions.Core
-import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
+import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
 import Control.Distributed.Process
 import HA.Resources
 import HA.Multimap

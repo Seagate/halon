@@ -20,7 +20,7 @@ import Data.Hashable (Hashable(..))
 import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Events
 import Data.Word
 
 -- | Peninding notification to mero services.

@@ -34,11 +34,11 @@ import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Actions.Mero.Failure
-import HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
+import HA.RecoveryCoordinator.Mero.Actions.Failure
+import HA.RecoveryCoordinator.Mero.Failure.Simple
 import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, stateSet)
+import HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import HA.Replicator (RGroup(..))
 import HA.Resources

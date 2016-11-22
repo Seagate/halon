@@ -10,7 +10,7 @@ import HA.Services.Mero.RC.Actions
 import HA.Services.Mero.RC.Events
 
 -- RC dependencies
-import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.RC.Actions
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies

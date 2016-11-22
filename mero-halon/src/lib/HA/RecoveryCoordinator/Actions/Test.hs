@@ -9,7 +9,7 @@ module HA.RecoveryCoordinator.Actions.Test
 import Prelude hiding ((.), id, mapM_)
 import HA.Services.Noisy
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
 
 import Network.CEP

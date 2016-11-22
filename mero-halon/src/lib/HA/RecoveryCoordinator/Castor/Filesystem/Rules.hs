@@ -12,16 +12,16 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   , periodicQueryStats
   ) where
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
   ( RC
   , getLocalGraph
   , modifyGraph
   , notify
   )
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
-import HA.RecoveryCoordinator.Actions.Mero.Conf (getFilesystem)
-import HA.RecoveryCoordinator.Actions.Mero.Core (mkUnliftProcess)
-import HA.RecoveryCoordinator.Actions.Mero.Spiel
+import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem)
+import HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
+import HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( withSpielIO
   , withRConfIO
   )

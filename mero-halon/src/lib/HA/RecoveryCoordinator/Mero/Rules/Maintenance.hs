@@ -11,13 +11,11 @@ module HA.RecoveryCoordinator.Mero.Rules.Maintenance
   ( rules
   ) where
 
-import HA.RecoveryCoordinator.Mero.Events
-
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf
+import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.Mero.Actions.Conf
   (lookupConfObjByFid)
-import HA.RecoveryCoordinator.Events.Mero (stateSet)
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Mero.Events
+import HA.RecoveryCoordinator.Mero.State
   (applyStateChanges)
 import qualified HA.Resources.Mero.Note as M0
 import Network.CEP
@@ -52,4 +50,3 @@ ruleUpdateObjectState = defineSimpleTask "mero::maintenance::update-object-state
                _ -> return ParseFailed
      applyStateChanges updates
      liftProcess $ sendChan chan $ ForceObjectStateUpdateReply results
-

@@ -21,7 +21,7 @@ import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Job.Internal
 
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 
 import Control.Distributed.Process.Serializable
 import Control.Lens

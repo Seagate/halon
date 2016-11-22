@@ -34,7 +34,7 @@ import qualified HA.Services.Noisy       as Noisy
 import qualified HA.Services.Ping        as Ping
 import qualified HA.Services.SSPL        as SSPL
 import qualified HA.Services.SSPLHL      as SSPLHL
-import           HA.RecoveryCoordinator.Events.Service
+import           HA.RecoveryCoordinator.Service.Events
 
 import Lookup
 

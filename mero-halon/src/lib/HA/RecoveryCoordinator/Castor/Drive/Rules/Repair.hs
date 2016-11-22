@@ -69,15 +69,15 @@ import           GHC.Generics (Generic)
 import           HA.Encode
 import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
-import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
-import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Castor.Cluster.Actions (barrierPass)
+import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Events.Castor.Cluster
-import           HA.RecoveryCoordinator.Events.Mero
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Mero.State
   ( applyStateChanges
   , setPhaseInternalNotificationWithState
   , setPhaseAllNotified
@@ -1380,4 +1380,6 @@ rules = sequence_
   , ruleOnSnsOperationQuiesceFailure
   , ruleHandleRepair
   , ruleHandleRepairNVec
+  , querySpiel
+  , querySpielHourly
   ]

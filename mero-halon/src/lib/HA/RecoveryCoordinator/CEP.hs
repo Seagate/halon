@@ -38,10 +38,10 @@ import           HA.Services.Dummy
 import           HA.Services.Ping
 import qualified HA.EQTracker as EQT
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Events.Cluster
-import           HA.RecoveryCoordinator.Rules.Castor
-import qualified HA.RecoveryCoordinator.Rules.Service
-import qualified HA.RecoveryCoordinator.Rules.Debug as Debug (rules)
+import           HA.RecoveryCoordinator.RC.Events.Cluster
+import           HA.RecoveryCoordinator.Castor.Rules
+import qualified HA.RecoveryCoordinator.Service.Rules
+import qualified HA.RecoveryCoordinator.RC.Rules.Debug as Debug (rules)
 import           HA.RecoveryCoordinator.Job.Actions
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -49,16 +49,15 @@ import           HA.Resources.Castor
 import           HA.Resources.HalonVars
 import           HA.Services.DecisionLog (decisionLog, printLogs)
 import qualified HA.Resources.Castor as M0
-import           HA.RecoveryCoordinator.RC.Actions (addNodeToCluster)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 #ifdef USE_MERO
 import           Data.Monoid  -- XXX: remote ifdef if possible
 import qualified Data.Text as T
-import           HA.RecoveryCoordinator.Events.Mero
-import           HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
-import           HA.RecoveryCoordinator.Rules.Castor.Cluster (clusterRules)
-import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges)
-import qualified HA.RecoveryCoordinator.Rules.Mero (meroRules)
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (nodeToM0Node)
+import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
+import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
 import           HA.Resources.Mero (NodeState(..))
 import           HA.Services.Mero.RC (rules)
 import           HA.Services.SSPL
@@ -133,7 +132,7 @@ rcRules argv additionalRules = do
               , rulePidRequest
               ]
     setLogger sendLogs
-    HA.RecoveryCoordinator.Rules.Service.rules
+    HA.RecoveryCoordinator.Service.Rules.rules
     Debug.rules argv
     HA.Services.SSPL.CEP.ssplRules sspl
     castorRules
@@ -142,8 +141,8 @@ rcRules argv additionalRules = do
     HA.RecoveryCoordinator.RC.Rules.rules
 #ifdef USE_MERO
     HA.Services.Mero.RC.rules
-    HA.RecoveryCoordinator.Rules.Mero.meroRules
-    HA.RecoveryCoordinator.Rules.Castor.Cluster.clusterRules
+    HA.RecoveryCoordinator.Mero.Rules.meroRules
+    HA.RecoveryCoordinator.Castor.Cluster.Rules.clusterRules
 #endif
     sequence_ additionalRules
 

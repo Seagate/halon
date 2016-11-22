@@ -34,7 +34,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
-import HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.Castor.Cluster.Events
 import Mero.ConfC ( Fid )
 
 import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)

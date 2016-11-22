@@ -16,10 +16,10 @@
 --
 --    * Reset - castor specific procedule of drive reset. This procedure
 --       tries to recover disk in case if error appeared on the mero side.
---       See "HA.RecoveryCoordinator.Rules.Castor.Disk.Reset" for details.
+--       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Reset" for details.
 --    * Repair - mero specific procedure of recovering data in case of
 --       disk failure or new drive insertion.
---       See "HA.RecoveryCoordinator.Rules.Castor.Disk.Repair" for details.
+--       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Repair" for details.
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Rank2Types #-}
@@ -42,10 +42,10 @@ import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart  as Smart
 import HA.RecoveryCoordinator.Castor.Drive.Events
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Castor.Drive.Actions
-import HA.RecoveryCoordinator.Events.Castor.Cluster (PoolRebalanceRequest(..))
+import HA.RecoveryCoordinator.Castor.Cluster.Events (PoolRebalanceRequest(..))
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
 import HA.Resources
@@ -53,11 +53,11 @@ import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Mero.State
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Events
 
 import Control.Distributed.Process hiding (catch)
 import Control.Lens

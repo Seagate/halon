@@ -17,7 +17,7 @@ import Data.Binary (Binary)
 import Data.Hashable
 import Data.Typeable
 import GHC.Generics (Generic)
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor

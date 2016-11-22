@@ -13,7 +13,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE LambdaCase                 #-}
 module HA.RecoveryCoordinator.Mero
-       ( module HA.RecoveryCoordinator.Actions.Core
+       ( module HA.RecoveryCoordinator.RC.Actions
        , module HA.RecoveryCoordinator.Actions.Hardware
        , module HA.RecoveryCoordinator.Actions.Test
        , IgnitionArguments(..)
@@ -29,8 +29,8 @@ import Prelude hiding ((.), id, mapM_)
 import HA.Resources
 import HA.Multimap
 
-import HA.RecoveryCoordinator.Actions.Core
-import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
+import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Test
 import qualified HA.Resources.Castor as M0

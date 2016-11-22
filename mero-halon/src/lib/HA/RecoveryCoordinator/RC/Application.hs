@@ -8,7 +8,7 @@
 module HA.RecoveryCoordinator.RC.Application where
 
 import HA.Multimap (StoreChan)
-import qualified HA.RecoveryCoordinator.Actions.Storage as Storage
+import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
 import qualified HA.ResourceGraph as G
 
 import Control.Distributed.Process (ProcessId)

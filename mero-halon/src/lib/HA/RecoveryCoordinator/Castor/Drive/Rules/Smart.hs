@@ -20,7 +20,7 @@ import HA.EventQueue.Types
   ( HAEvent(..)
   , UUID
   )
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
   ( RC
   , fldUUID
   , messageProcessed

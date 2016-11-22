@@ -11,16 +11,16 @@ module HA.RecoveryCoordinator.Castor.Service.Rules
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
   ( RC
   , LoopState(..)
   , todo
   , done
   , getLocalGraph
   )
-import HA.RecoveryCoordinator.Events.Mero (stateSet)
+import HA.RecoveryCoordinator.Mero.Events (stateSet)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Rules.Mero.Conf
+import HA.RecoveryCoordinator.Mero.State
   ( applyStateChanges
   , setPhaseNotified
   )

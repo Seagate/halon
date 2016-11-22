@@ -20,13 +20,15 @@ module HA.RecoveryCoordinator.RC.Actions
   -- * Cluster
   , registerNodeMonitoringAngel
   , addNodeToCluster
+  -- * Core functions
+  , module HA.RecoveryCoordinator.RC.Actions.Core
   ) where
 
 import           HA.Service (ServiceFailed(..))
 import           HA.RecoveryCoordinator.RC.Internal
 
-import           HA.RecoveryCoordinator.Actions.Core
-import qualified HA.RecoveryCoordinator.Actions.Service as Service
+import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 
 import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)

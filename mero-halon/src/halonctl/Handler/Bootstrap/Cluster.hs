@@ -19,7 +19,7 @@ import           HA.EventQueue.Producer
 import qualified Handler.Bootstrap.TrackingStation as Station
 import qualified Handler.Bootstrap.Satellite as Satellite
 import           HA.Resources.Castor.Initial as CI
-import HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.Castor.Cluster.Events
 import           Lookup (conjureRemoteNodeId)
 
 import qualified Options.Applicative as Opt

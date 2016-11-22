@@ -13,10 +13,10 @@ module HA.Castor.Story.Tests where
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.NodeUp (nodeUp)
-import HA.RecoveryCoordinator.Actions.Castor.Cluster (notifyOnClusterTransition)
-import HA.RecoveryCoordinator.Actions.Mero.Conf (encToM0Enc)
-import HA.RecoveryCoordinator.Events.Service
-import qualified HA.RecoveryCoordinator.Actions.Service as Service
+import HA.RecoveryCoordinator.Castor.Cluster.Actions (notifyOnClusterTransition)
+import HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc)
+import HA.RecoveryCoordinator.Service.Events
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import HA.RecoveryCoordinator.Castor.Drive
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import qualified HA.ResourceGraph as G

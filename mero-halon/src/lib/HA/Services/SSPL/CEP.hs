@@ -19,12 +19,12 @@ import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
 
 import HA.RecoveryCoordinator.Castor.Drive.Events
-import qualified HA.RecoveryCoordinator.Actions.Service as Service
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import HA.ResourceGraph hiding (null)
 import HA.Resources (Node(..), Has(..), Cluster(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
-import HA.RecoveryCoordinator.Rules.Mero.Conf -- XXX: remove if possible
+import HA.RecoveryCoordinator.Mero.State -- XXX: remove if possible
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import Mero.ConfC (strToFid)

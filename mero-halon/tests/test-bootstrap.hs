@@ -18,7 +18,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-import HA.RecoveryCoordinator.Events.Castor.Cluster
+import HA.RecoveryCoordinator.Castor.Cluster.Events
 import HA.Resources.Mero
 import Helper.Environment
 import Mero.ConfC

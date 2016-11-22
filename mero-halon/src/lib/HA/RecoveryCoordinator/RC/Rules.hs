@@ -8,7 +8,6 @@ module HA.RecoveryCoordinator.RC.Rules
   , initialRule
   ) where
 
-import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Events
 import           HA.RecoveryCoordinator.RC.Internal

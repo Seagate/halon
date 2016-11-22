@@ -20,8 +20,8 @@ module HA.Services.SSPL.LL.RC.Actions
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Dispatch
+import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.RC.Actions.Dispatch
 import HA.Services.SSPL.LL.Resources
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R

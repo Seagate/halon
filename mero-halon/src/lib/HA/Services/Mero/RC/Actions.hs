@@ -39,11 +39,10 @@ import qualified HA.Resources.Mero.Note as M0
 
 -- RC dependencies
 import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Events
 
 import HA.EventQueue.Producer (promulgateWait)
-import HA.RecoveryCoordinator.Actions.Core
-import HA.RecoveryCoordinator.Actions.Mero.Conf (nodeToM0Node)
+import HA.RecoveryCoordinator.Mero.Actions.Conf (nodeToM0Node)
 import Control.Distributed.Process
 import Network.CEP
 

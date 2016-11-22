@@ -84,7 +84,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , mergeStorageDevices
 ) where
 
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor

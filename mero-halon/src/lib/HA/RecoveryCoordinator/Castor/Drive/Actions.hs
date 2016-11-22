@@ -33,16 +33,16 @@ import Data.List (nub)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
-import HA.RecoveryCoordinator.Actions.Core
+import HA.RecoveryCoordinator.RC.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
   ( findStorageDeviceAttrs
   , setStorageDeviceAttr
   , unsetStorageDeviceAttr
   )
-import HA.RecoveryCoordinator.Actions.Mero.Conf
-import HA.RecoveryCoordinator.Actions.Mero.Spiel
-import HA.RecoveryCoordinator.Actions.Mero.Core
-import HA.RecoveryCoordinator.Events.Mero
+import HA.RecoveryCoordinator.Mero.Actions.Conf
+import HA.RecoveryCoordinator.Mero.Actions.Spiel
+import HA.RecoveryCoordinator.Mero.Actions.Core
+import HA.RecoveryCoordinator.Mero.Events
 import qualified HA.Resources as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0

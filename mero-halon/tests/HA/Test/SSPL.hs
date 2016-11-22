@@ -32,7 +32,7 @@ import HA.Services.SSPL.LL.Resources
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Events.Service
+import HA.RecoveryCoordinator.Service.Events
 import HA.Startup (startupHalonNode, ignition)
 import HA.NodeUp  (nodeUp)
 import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)

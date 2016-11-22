@@ -86,28 +86,28 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
-                   HA.RecoveryCoordinator.Events.Debug
-                   HA.RecoveryCoordinator.Events.Cluster
-                   HA.RecoveryCoordinator.Actions.Core
-                   HA.RecoveryCoordinator.Actions.Dispatch
-                   HA.RecoveryCoordinator.Actions.Storage
+                   HA.RecoveryCoordinator.RC.Events.Debug
+                   HA.RecoveryCoordinator.RC.Events.Cluster
+                   HA.RecoveryCoordinator.RC.Actions
+                   HA.RecoveryCoordinator.RC.Actions.Dispatch
+                   HA.RecoveryCoordinator.RC.Internal.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
-                   HA.RecoveryCoordinator.Actions.Service
+                   HA.RecoveryCoordinator.Service.Actions
                    HA.RecoveryCoordinator.Actions.Test
                    HA.RecoveryCoordinator.Job.Actions
                    HA.RecoveryCoordinator.Job.Events
-                   HA.RecoveryCoordinator.Rules.Castor
-                   HA.RecoveryCoordinator.Rules.Debug
-                   HA.RecoveryCoordinator.Rules.Service
+                   HA.RecoveryCoordinator.Castor.Rules
+                   HA.RecoveryCoordinator.RC.Rules.Debug
+                   HA.RecoveryCoordinator.Service.Rules
                    HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
-                   HA.RecoveryCoordinator.Events.Service
+                   HA.RecoveryCoordinator.Service.Events
                    HA.RecoveryCoordinator.Log
                    -- RC interface modules.
                    HA.RecoveryCoordinator.RC
                    HA.RecoveryCoordinator.RC.Events
                    HA.RecoveryCoordinator.RC.Rules
-                   HA.RecoveryCoordinator.RC.Actions
+                   HA.RecoveryCoordinator.RC.Actions.Core
                    HA.RecoveryCoordinator.RC.Actions.Log
                    HA.RecoveryCoordinator.RC.Application
                    HA.Resources.RC
@@ -119,6 +119,7 @@ Library
                    Version
 
   Other-Modules:   HA.RecoveryCoordinator.RC.Internal
+                   HA.RecoveryCoordinator.RC.Subscription
                    HA.Services.DecisionLog.Types
                    HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler
@@ -177,35 +178,34 @@ Library
                        Mero.Notification
                        Mero.Notification.HAState
                        HA.RecoveryCoordinator.Actions.Mero
-                       HA.RecoveryCoordinator.Actions.Mero.Conf
+                       HA.RecoveryCoordinator.Mero.Actions.Conf
                        HA.RecoveryCoordinator.Castor.Drive
-                       HA.RecoveryCoordinator.Rules.Mero
+                       HA.RecoveryCoordinator.Mero.Rules
                        HA.Resources.Mero
                        HA.Resources.Mero.Note
                        HA.Services.Mero
                        HA.Services.Mero.RC.Actions
                        HA.Services.Mero.Types
-                       HA.RecoveryCoordinator.Actions.Castor
-                       HA.RecoveryCoordinator.Actions.Castor.Cluster
-                       HA.RecoveryCoordinator.Actions.Mero.Failure
-                       HA.RecoveryCoordinator.Actions.Mero.Failure.Simple
-                       HA.RecoveryCoordinator.Actions.Mero.Failure.Formulaic
-                       HA.RecoveryCoordinator.Actions.Mero.Failure.Internal
-                       HA.RecoveryCoordinator.Actions.Mero.Core
+                       HA.RecoveryCoordinator.Castor.Cluster.Actions
+                       HA.RecoveryCoordinator.Mero.Actions.Failure
+                       HA.RecoveryCoordinator.Mero.Failure.Simple
+                       HA.RecoveryCoordinator.Mero.Failure.Formulaic
+                       HA.RecoveryCoordinator.Mero.Failure.Internal
+                       HA.RecoveryCoordinator.Mero.Actions.Core
                        HA.RecoveryCoordinator.Castor.Drive.Actions
                        HA.RecoveryCoordinator.Castor.Filesystem
                        HA.RecoveryCoordinator.Castor.Service
-                       HA.RecoveryCoordinator.Rules.Mero.Conf
-                       HA.RecoveryCoordinator.Events.Castor.Cluster
-                       HA.RecoveryCoordinator.Events.Castor.Process
-                       HA.RecoveryCoordinator.Rules.Castor.Process.Keepalive
-                       HA.RecoveryCoordinator.Events.Mero
+                       HA.RecoveryCoordinator.Mero.State
+                       HA.RecoveryCoordinator.Castor.Cluster.Events
+                       HA.RecoveryCoordinator.Castor.Process.Events
+                       HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
                        HA.RecoveryCoordinator.Mero.Events
                        HA.Services.Mero.RC
       Other-Modules:
                       Mero.Engine
-                      HA.RecoveryCoordinator.Actions.Mero.Spiel
-                      HA.RecoveryCoordinator.Actions.Mero.Node
+                      HA.RecoveryCoordinator.Mero.Actions.Spiel
+                      HA.RecoveryCoordinator.Castor.Node.Actions
+                      HA.RecoveryCoordinator.Castor.Drive.Internal
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
@@ -214,10 +214,10 @@ Library
                       HA.RecoveryCoordinator.Castor.Filesystem.Events
                       HA.RecoveryCoordinator.Castor.Filesystem.Rules
                       HA.RecoveryCoordinator.Castor.Service.Rules
-                      HA.RecoveryCoordinator.Rules.Castor.Cluster
-                      HA.RecoveryCoordinator.Rules.Castor.Process
-                      HA.RecoveryCoordinator.Rules.Castor.Node
-                      HA.RecoveryCoordinator.Rules.Castor.Expander
+                      HA.RecoveryCoordinator.Castor.Cluster.Rules
+                      HA.RecoveryCoordinator.Castor.Process.Rules
+                      HA.RecoveryCoordinator.Castor.Node.Rules
+                      HA.RecoveryCoordinator.Castor.Expander.Rules
                       HA.RecoveryCoordinator.Mero.Rules.Maintenance
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.RC.Rules

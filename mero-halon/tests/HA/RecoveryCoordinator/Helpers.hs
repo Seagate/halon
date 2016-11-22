@@ -13,7 +13,7 @@ import           Control.Distributed.Process.Serializable
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.Service
-import           HA.RecoveryCoordinator.Events.Service
+import           HA.RecoveryCoordinator.Service.Events
 import           HA.Resources
 import           HA.Encode
 import           Network.CEP (Published(..))

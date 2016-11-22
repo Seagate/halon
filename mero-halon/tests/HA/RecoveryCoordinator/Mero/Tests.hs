@@ -45,10 +45,10 @@ import           GHC.Generics
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Mero (validateTransactionCache)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK)
-import           HA.RecoveryCoordinator.Events.Cluster
-import           HA.RecoveryCoordinator.Events.Mero (stateSet)
+import           HA.RecoveryCoordinator.RC.Events.Cluster
+import           HA.RecoveryCoordinator.Mero.Events (stateSet)
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Rules.Mero.Conf (applyStateChanges, setPhaseNotified)
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseNotified)
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note

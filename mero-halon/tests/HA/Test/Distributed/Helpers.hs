@@ -8,7 +8,7 @@ module HA.Test.Distributed.Helpers where
 
 import Control.Distributed.Process
 import Data.Proxy
-import HA.RecoveryCoordinator.Events.Cluster
+import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.RecoveryCoordinator.RC
 import HA.Resources
 import Network.CEP hiding (timeout)

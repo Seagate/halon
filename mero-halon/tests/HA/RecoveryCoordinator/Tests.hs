@@ -29,9 +29,9 @@ import           HA.EventQueue
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Actions.Core (defineSimpleTask, RC)
+import           HA.RecoveryCoordinator.RC.Actions (defineSimpleTask, RC)
 import           HA.RecoveryCoordinator.Helpers
-import           HA.RecoveryCoordinator.Events.Service
+import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
 import           HA.Resources
 import           HA.Service

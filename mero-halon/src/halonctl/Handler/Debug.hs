@@ -18,7 +18,7 @@ import HA.EventQueue.Types
   , EQStatReq(..)
   , PoolStats(..)
   )
-import HA.RecoveryCoordinator.Events.Debug
+import HA.RecoveryCoordinator.RC.Events.Debug
 import Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 
 import Lookup

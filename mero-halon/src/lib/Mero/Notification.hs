@@ -58,7 +58,7 @@ import Network.RPC.RPCLite
   ( RPCAddress
   , RPCMachine
   )
-import HA.RecoveryCoordinator.Events.Mero (GetSpielAddress(..),GetFailureVector(..))
+import HA.RecoveryCoordinator.Mero.Events (GetSpielAddress(..),GetFailureVector(..))
 
 import Control.Arrow ((***))
 import Control.Lens
