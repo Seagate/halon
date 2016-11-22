@@ -253,6 +253,11 @@ prettyNodeState NSFailed  = "failed(recoverable)"
 prettyNodeState NSFailedUnrecoverable  = "failed(unrecoverable)"
 prettyNodeState NSOnline = "online"
 
+displayNodeState :: NodeState -> (String, Maybe String)
+displayNodeState xs@NSFailed = ("failed", Just $ prettyNodeState xs)
+displayNodeState xs@NSFailedUnrecoverable = ("failed", Just $ prettyNodeState xs)
+displayNodeState xs = (prettyNodeState xs, Nothing)
+
 newtype Rack = Rack Fid
   deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
@@ -338,6 +343,10 @@ prettyServiceState SSStopping = "stopping"
 prettyServiceState SSFailed   = "failed"
 prettyServiceState (SSInhibited st) = "inhibited (" ++ prettyServiceState st ++ ")"
 
+displayServiceState :: ServiceState -> (String, Maybe String)
+displayServiceState s@SSInhibited{} = ("inhibited", Just $ prettyServiceState s)
+displayServiceState s = (prettyServiceState s, Nothing)
+
 data SDev = SDev {
     d_fid :: Fid
   , d_idx :: Word32 -- ^ Index of device in pool
@@ -382,6 +391,11 @@ prettySDevState SDSRepaired = "Repaired"
 prettySDevState SDSRebalancing = "Rebalancing"
 prettySDevState (SDSInhibited x) = "Inhibited (" ++ prettySDevState x ++ ")"
 prettySDevState (SDSTransient x) = "Transient failure (" ++ prettySDevState x ++ ")"
+
+displaySDevState :: SDevState -> (String, Maybe String)
+displaySDevState s@SDSInhibited{} = ("inhibited", Just $ prettySDevState s)
+displaySDevState s@SDSTransient{} = ("transient", Just $ prettySDevState s)
+displaySDevState s = (prettySDevState s, Nothing)
 
 -- | Transiently fail a drive in an existing state. Most of the time
 --   this will result in @x@ becoming @SDSTransient x@, but with exceptions
@@ -693,6 +707,10 @@ prettyProcessState PSStopping = "stopping"
 prettyProcessState (PSFailed reason) = "failed (" ++ reason ++ ")"
 prettyProcessState (PSInhibited st) = "inhibited (" ++ prettyProcessState st ++ ")"
 
+displayProcessState :: ProcessState -> (String, Maybe String)
+displayProcessState s@PSFailed{} = ("failed", Just $ prettyProcessState s)
+displayProcessState s@PSInhibited{} = ("inhibited", Just $ prettyProcessState s)
+displayProcessState s = ( prettyProcessState s, Nothing)
 
 -- | Label to attach to a Mero process providing extra context about how
 --   it should run.

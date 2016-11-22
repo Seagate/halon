@@ -608,20 +608,34 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
              putStrLn $ "      time of start: " ++ show (M0.priTimeOfFirstCompletion i) --XXX: bad naming?
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
-      putStrLn $ "Hosts:"
+      putStrLn $ "\nHosts:"
       forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps sdevs) -> do
-         putStrLn $ "  " ++ qfdn ++ showNodeFid m0fid ++ " ["++ M0.prettyNodeState st ++ "]"
+         let (nst,extSt) = M0.displayNodeState st
+         printf node_pattern nst (showNodeFid m0fid) qfdn
+         for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
-           putStrLn $ "    " ++ "[" ++ M0.prettyProcessState proc_st ++ "]\t"
-                             ++ endpoint ++ "\t" ++ inferType (map fst srvs) ++ "\t==> " ++ fidToStr rfid
+           let (pst,proc_extSt) = M0.displayProcessState proc_st
+           printf proc_pattern (pst)
+                               (fidToStr rfid)
+                               (endpoint)
+                               (inferType (map fst srvs)::String)
+           for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
-             putStrLn $ "        [" ++ M0.prettyServiceState sst ++ "]\t" ++ show t' ++ "\t\t\t==> " ++ fidToStr fid'
+             let (serv_st,serv_extSt) = M0.displayServiceState sst
+             printf serv_pattern (serv_st)
+                                 (fidToStr fid')
+                                 (show t')
+             for_ serv_extSt $ printf serv_pattern_ext (""::String)
          when (showDevices && (not . null) sdevs) $ do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, sdi, ids) -> do
-             putStrLn $ "        " ++ show sdi ++ "\t" ++ fidToStr sdev_fid ++ "\tat " ++ sdev_path ++ "\t[" ++ M0.prettySDevState sdev_st ++ "]"
-             for_ ids $ \ident ->
-               putStrLn $ "          " ++ show ident
+             let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
+             printf sdev_pattern (sd_st)
+                                 (fidToStr sdev_fid)
+                                 (show sdi)
+                                 (sdev_path)
+             for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
+             for_ ids $ printf sdev_patterni (""::String) . show
    where
      inferType srvs
        | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
@@ -630,7 +644,16 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
        | any (\(M0.Service _ t _ _) -> t == CST_HA)  srvs = "halon    "
        | otherwise                                        = "m0t1fs   "
      showNodeFid Nothing = ""
-     showNodeFid (Just (M0.Node fid)) = " ==> " ++ show fid ++ " "
+     showNodeFid (Just (M0.Node fid)) = show fid
+     node_pattern  = "  [%9s] %-24s  %s\n"
+     node_pattern_ext  = "  %13s Extended state: %s\n"
+     proc_pattern  = "  [%9s] %-24s    %s %s\n"
+     proc_pattern_ext  = "  %13s Extended state: %s\n"
+     serv_pattern  = "  [%9s] %-24s      %s\n"
+     serv_pattern_ext  = "  %13s Extended state: %s\n"
+     sdev_pattern  = "  [%9s] %-24s        %s %s\n"
+     sdev_pattern_ext  = "  %13s Extended state: %s\n"
+     sdev_patterni = "  %46s %s\n"
 
 clusterHVarsUpdate :: [NodeId] -> VarsOptions -> Process ()
 clusterHVarsUpdate eqnids (VarsSet{..}) = do
