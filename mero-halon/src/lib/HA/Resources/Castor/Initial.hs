@@ -26,6 +26,7 @@ import Data.Hashable (Hashable)
 
 import qualified Data.Hashable as H
 import qualified Data.HashMap.Strict as HM
+import SSPL.Bindings.Instances () -- HashMap
 
 import Data.Word
   ( Word32
@@ -470,6 +471,16 @@ parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
 
 #ifdef USE_MERO
 deriveSafeCopy 0 'base ''FailureSetScheme
+deriveSafeCopy 0 'base ''M0Device
 deriveSafeCopy 0 'base ''M0Globals
+deriveSafeCopy 0 'base ''M0Host
+deriveSafeCopy 0 'base ''M0Process
+deriveSafeCopy 0 'base ''M0Service
 #endif
 deriveSafeCopy 0 'base ''BMC
+deriveSafeCopy 0 'base ''Enclosure
+deriveSafeCopy 0 'base ''HalonSettings
+deriveSafeCopy 0 'base ''Host
+deriveSafeCopy 0 'base ''InitialData
+deriveSafeCopy 0 'base ''Rack
+deriveSafeCopy 0 'base ''RoleSpec

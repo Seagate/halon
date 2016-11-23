@@ -62,16 +62,13 @@ import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
 import Data.Maybe (fromJust)
 import Data.Time
+import Data.SafeCopy
 import Data.Typeable
 import qualified Data.UUID as UUID
 import Network.AMQP
 import GHC.Generics
 
 import TestRunner
-
-data RChan = RChan String deriving (Generic, Typeable)
-
-instance Binary RChan
 
 data SChan = SChan SensorResponseMessageSensor_response_typeDisk_status_drivemanager deriving (Generic, Typeable)
 
@@ -170,7 +167,6 @@ runSSPLTest transport interseptor test =
     _ <- liftIO $ forkProcess n $ registerInterceptor $ \string ->
       case string of
         str@"Starting service sspl"   -> usend self str
-        -- str@"Register channels"       -> usend self (RChan str)
         x -> interseptor self x
     _ <- promulgateEQ [localNodeId n] WhoAmI
     rc <- expect
@@ -295,3 +291,6 @@ testDelivery transport = runSSPLTest transport interseptor test
       liftIO $ assertEqual "Correct command received" scmd s
       _ <- receiveTimeout 500000 []
       return ()
+
+deriveSafeCopy 0 'base ''TestSmartCmd
+deriveSafeCopy 0 'base ''WhoAmI

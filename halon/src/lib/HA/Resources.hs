@@ -124,5 +124,5 @@ instance Binary a => Binary (EpochTransition a)
 -- | Sent when a node goes down and we need to try to recover it
 newtype RecoverNode = RecoverNode Node
   deriving (Typeable, Generic, Show, Eq, Ord)
-
 instance Binary RecoverNode
+deriveSafeCopy 0 'base ''RecoverNode

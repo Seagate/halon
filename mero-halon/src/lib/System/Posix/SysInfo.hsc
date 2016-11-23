@@ -31,6 +31,7 @@ import Control.Monad (unless, (<=<))
 
 import Data.Binary (Binary)
 import Data.Either (isRight)
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics
@@ -66,13 +67,13 @@ getMemTotalMB = do
 
 data SystemInfo = SystemInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
-
 instance Binary SystemInfo
+deriveSafeCopy 0 'base ''SystemInfo
 
 data ServerInfo = ServerInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
-
 instance Binary ServerInfo
+deriveSafeCopy 0 'base ''ServerInfo
 
 
 -- | Load information about system hardware. Reply is sent via 'promulgate'.

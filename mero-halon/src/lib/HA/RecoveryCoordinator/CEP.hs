@@ -20,6 +20,7 @@ import Control.Category
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Binary (Binary)
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl hiding ((:~:))
@@ -382,6 +383,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId
   deriving (Show, Eq, Generic, Typeable)
+
 newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
   deriving (Show, Eq, Generic, Typeable)
 
@@ -407,3 +409,5 @@ sendLogs logs ls = do
                , n <- G.connectedTo host Runs rg :: [Node]
                , not . null $ lookupServiceInfo n decisionLog rg
                ]
+
+deriveSafeCopy 0 'base ''RequestRCPid

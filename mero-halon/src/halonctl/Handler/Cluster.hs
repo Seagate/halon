@@ -25,6 +25,7 @@ import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Foldable
 import Data.Maybe (mapMaybe)
 import Data.Proxy
+import Data.SafeCopy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
 import HA.EventQueue (eventQueueLabel)
@@ -539,7 +540,7 @@ clusterReset eqnids (ResetOptions hard unstick) = if unstick
     where
       wait = void (expect :: Process ProcessMonitorNotification)
 
-clusterCommand :: (Serializable a, Serializable b, Show b)
+clusterCommand :: (SafeCopy a, Serializable a, Serializable b, Show b)
                => [NodeId]
                -> Maybe Int -- ^ Custom timeout in seconds, default 10s
                -> (SendPort b -> a)

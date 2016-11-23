@@ -1,7 +1,10 @@
-{-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving, RankNTypes, DeriveGeneric #-}
-{-# LANGUAGE TypeFamilies #-}
-
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE EmptyDataDecls             #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 module Tests where
 
 import Control.Distributed.Process hiding (catch, try)
@@ -13,6 +16,7 @@ import Data.Typeable
 import Data.List (sort)
 import Data.IORef
 import Data.PersistMessage
+import Data.SafeCopy
 import qualified Data.UUID as UUID
 import GHC.Generics
 
@@ -1279,13 +1283,15 @@ setPhaseIfPartial = do
 testsSMessage :: (Process () -> IO ()) -> TestTree
 testsSMessage launch = testGroup "PersistedMessage"
   [ testCase "PersistMessage works" $ launch stableMessageWorks
+  , testCase "PersistMessage decode . encode = id" $ launch persistEncodeDecode
+  , testCase "SafeCopy migrate PersistMessage works" $ launch migrateWorks
   ]
 
 stableMessageWorks :: Process ()
 stableMessageWorks = do
     self <- getSelfPid
 
-    let specs = define "exception-handling" $ do
+    let specs = define "persist-message" $ do
           ph0 <- phaseHandle "ph0"
           setPhase ph0 $ \Baz{} -> liftProcess $ usend self "foo"
           start ph0 ()
@@ -1297,6 +1303,53 @@ stableMessageWorks = do
     link pid
     let a = Baz 3
     usend pid $ persistMessage UUID.nil a
-    assertEqual "Handle firt message" "foo" =<< expect
+    assertEqual "Handle first message" "foo" =<< expect
     usend pid $ persistMessage UUID.nil B
     assertEqual "Second message was not processed" "default" =<< expect
+
+persistEncodeDecode :: Process ()
+persistEncodeDecode = do
+  let content = SomeType_v0 "a b c d"
+      recoded = Data.PersistMessage.unwrapMessage $ persistMessage UUID.nil content
+  assertEqual "unwrapMessage . persistMessage … = Just" (Just content) recoded
+
+data SomeType_v0 = SomeType_v0 String
+  deriving (Eq, Show, Generic)
+
+data SomeType = SomeType String String
+  deriving (Eq, Show, Generic)
+
+instance Binary SomeType_v0
+instance Binary SomeType
+
+instance Migrate SomeType where
+  type MigrateFrom SomeType = SomeType_v0
+  migrate (SomeType_v0 s) = SomeType s "bar"
+
+migrateWorks :: Process ()
+migrateWorks = do
+  self <- getSelfPid
+  let specs = define "persist-message-migrate" $ do
+        ph0 <- phaseHandle "ph0"
+        setPhase ph0 $ \m@(SomeType{}) -> liftProcess $ usend self m
+        start ph0 ()
+  pid <- spawnLocal $ execute () $ do
+    setDefaultHandler $ \_ _ _ _ -> do
+      liftProcess $ usend self ("default" :: String)
+    specs
+  link pid
+  let oldContent = SomeType_v0 "foo"
+      newContent = migrate oldContent :: SomeType
+      oldMsg = persistMessage UUID.nil oldContent
+      newMsg = persistMessage UUID.nil newContent
+      sendMsg = oldMsg { persistMessagePrint = persistMessagePrint newMsg }
+  usend pid sendMsg
+  assertEqual "Handle migrated message" newContent =<< expect
+  usend pid $ persistMessage UUID.nil B
+  assertEqual "Second message was not processed" "default" =<< expect
+
+deriveSafeCopy 0 'base ''AB
+deriveSafeCopy 0 'base ''Baz
+
+deriveSafeCopy 0 'base ''SomeType_v0
+deriveSafeCopy 1 'extension ''SomeType

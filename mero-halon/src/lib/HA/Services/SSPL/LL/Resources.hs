@@ -88,6 +88,7 @@ data IPMIOp = IPMI_ON | IPMI_OFF | IPMI_CYCLE | IPMI_STATUS
 
 instance Binary IPMIOp
 instance Hashable IPMIOp
+deriveSafeCopy 0 'base ''IPMIOp
 
 ipmiOpString :: IPMIOp -> T.Text
 ipmiOpString IPMI_ON = "on"
@@ -116,6 +117,7 @@ data RaidCmd =
 
 instance Binary RaidCmd
 instance Hashable RaidCmd
+deriveSafeCopy 0 'base ''RaidCmd
 
 raidCmdToText :: T.Text -> RaidCmd -> T.Text
 raidCmdToText dev (RaidFail x) = T.intercalate " " ["fail", dev, x]
@@ -125,6 +127,21 @@ raidCmdToText dev (RaidAssemble xs) = T.intercalate " " $ ["assemble", dev] ++ x
 raidCmdToText dev RaidRun = T.intercalate " " ["run", dev]
 raidCmdToText dev RaidDetail = T.intercalate " " ["detail", dev]
 raidCmdToText dev RaidStop = T.intercalate " " ["stop", dev]
+
+data LedControlState
+      = FaultOn
+      | FaultOff
+      | IdentifyOn
+      | IdentifyOff
+      | PulseSlowOn
+      | PulseSlowOff
+      | PulseFastOn
+      | PulseFastOff
+      deriving (Eq, Show, Generic, Typeable)
+
+instance Binary LedControlState
+instance Hashable LedControlState
+deriveSafeCopy 0 'base ''LedControlState
 
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
@@ -142,20 +159,7 @@ data NodeCmd
 
 instance Binary NodeCmd
 instance Hashable NodeCmd
-
-data LedControlState
-      = FaultOn
-      | FaultOff
-      | IdentifyOn
-      | IdentifyOff
-      | PulseSlowOn
-      | PulseSlowOff
-      | PulseFastOn
-      | PulseFastOff
-      deriving (Eq, Show, Generic, Typeable)
-
-instance Binary LedControlState
-instance Hashable LedControlState
+deriveSafeCopy 0 'base ''NodeCmd
 
 -- | Convert control state to text.
 controlStateToText :: LedControlState -> T.Text
@@ -243,6 +247,7 @@ data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
               deriving (Eq, Show, Generic, Typeable)
 
 instance Binary AckReply
+deriveSafeCopy 0 'base ''AckReply
 
 -- | Parse text representation of the @AckReply@
 tryParseAckReply :: T.Text -> Either String AckReply
@@ -263,6 +268,7 @@ data CommandAck = CommandAck
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Binary CommandAck
+deriveSafeCopy 0 'base ''CommandAck
 
 emptyActuatorMsg :: ActuatorRequestMessageActuator_request_type
 emptyActuatorMsg = ActuatorRequestMessageActuator_request_type
@@ -304,6 +310,7 @@ makeLoggerMsg lc = emptyActuatorMsg {
 -- | Event that sspl service didn't receive any messages in time.
 newtype SSPLServiceTimeout = SSPLServiceTimeout NodeId
   deriving (Eq, Show, Binary, Typeable)
+deriveSafeCopy 0 'base ''SSPLServiceTimeout
 
 -- | Request hard SSPL service restart.
 data ResetSSPLService = ResetSSPLService
@@ -319,6 +326,7 @@ instance Binary RequestChannels
 -- | Event happens when SSPL can't connect to Rabbit-MQ broker
 newtype SSPLConnectFailure = SSPLConnectFailure NodeId
    deriving (Eq, Show, Binary, Typeable)
+deriveSafeCopy 0 'base ''SSPLConnectFailure
 
 -- | Event representing an expander reset, which is otherwise
 --   an empty message.
@@ -326,6 +334,7 @@ data ExpanderResetInternal = ExpanderResetInternal
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary ExpanderResetInternal
+deriveSafeCopy 0 'base ''ExpanderResetInternal
 
 --------------------------------------------------------------------------------
 -- Channels                                                                   --
@@ -340,6 +349,7 @@ data ActuatorChannels = ActuatorChannels
 
 instance Binary ActuatorChannels
 instance Hashable ActuatorChannels
+deriveSafeCopy 0 'base ''ActuatorChannels
 
 -- | Message to the RC advertising which channels to talk on.
 data DeclareChannels = DeclareChannels
@@ -349,6 +359,7 @@ data DeclareChannels = DeclareChannels
 
 instance Binary DeclareChannels
 instance Hashable DeclareChannels
+deriveSafeCopy 0 'base ''DeclareChannels
 
 -- | Resource graph representation of a channel
 newtype Channel a = Channel (SendPort a)

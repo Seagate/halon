@@ -59,6 +59,7 @@ import Control.Monad
 
 import Data.Bifunctor (first, second)
 import Data.Binary as Binary
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -76,14 +77,14 @@ import HA.Resources
 -- | A notification of a failure to start a service.
 data ServiceCouldNotStart = ServiceCouldNotStart Node ServiceInfoMsg
   deriving (Typeable, Generic)
-
 instance Binary ServiceCouldNotStart
+deriveSafeCopy 0 'base ''ServiceCouldNotStart
 
 -- | A notification of a successful service start.
 data ServiceStarted = ServiceStarted Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
-
 instance Binary ServiceStarted
+deriveSafeCopy 0 'base ''ServiceStarted
 
 -- | Add a entry that service with some config should be running on the
 -- any given node. This functions disconnects all the services of the given

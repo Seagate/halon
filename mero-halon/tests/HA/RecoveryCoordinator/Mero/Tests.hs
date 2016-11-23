@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -40,6 +41,7 @@ import           Data.Binary (Binary)
 import           Data.Function (on)
 import           Data.List (isPrefixOf, sortBy, sort)
 import           Data.List (tails)
+import           Data.SafeCopy
 import qualified Data.Text as T
 import           GHC.Generics
 import           HA.EventQueue.Types (HAEvent(..))
@@ -75,22 +77,9 @@ tests transport pg =
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
       when False (testBadConfDoesNotValidate transport pg)
   , testCase "RG can load different fids with the same type" $ testFidsLoad
-#else
-  , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
-      return ()
-  , testCase "good-conf-validates [disabled by compilation flags]" $ return ()
-  , testCase "bad-conf-does-not-validate [disabled by compilation flags]" $
-      return ()
 #endif
   ]
 
-#ifdef USE_MERO
--- | label used to test spiel sync through a rule
-data SpielSync = SpielSync
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Binary SpielSync
-#endif
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
 --   and updates its status accordingly.
@@ -264,9 +253,7 @@ testConfObjectStateQuery transport pg =
         messageProcessed uuid
 
       start init_state (error "waitFailedSDev: state not initialised")
-#endif
 
-#ifdef USE_MERO
 -- | Validation query. Reply sent to the given process id.
 newtype ValidateCache = ValidateCache ProcessId
   deriving (Eq, Show, Ord, Generic)
@@ -336,9 +323,7 @@ testBadConfDoesNotValidate transport pg =
     -- mero the test for this does not yet exist so we can't steal any
     -- ideas.
     iData = Helper.InitialData.defaultInitialData
-#endif
 
-#ifdef USE_MERO
 testFidsLoad :: IO ()
 testFidsLoad = do
   let mmchan = error "Graph mmchan is not used in this test"
@@ -349,4 +334,8 @@ testFidsLoad = do
        >>> G.newResource (M0.DiskV (fids !! 1))
          $ G.emptyGraph mmchan
   liftIO $ assertEqual "all objects should be found" 2 (length $ lookupConfObjectStates fids g)
+
+deriveSafeCopy 0 'base ''RunDriveManagerFailure
+deriveSafeCopy 0 'base ''ValidateCache
+deriveSafeCopy 0 'base ''WaitFailedSDev
 #endif

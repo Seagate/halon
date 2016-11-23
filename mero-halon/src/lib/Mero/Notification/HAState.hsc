@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 -- |
@@ -63,6 +64,7 @@ import Data.Dynamic           ( Typeable )
 import Data.Hashable          ( Hashable )
 import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef , newIORef )
 import Data.Int
+import Data.SafeCopy
 import Data.Word              ( Word8, Word32, Word64 )
 import Foreign.C.Types        ( CInt(..) )
 import Foreign.C.String       ( CString, withCString )
@@ -86,15 +88,6 @@ import System.IO.Unsafe       ( unsafePerformIO )
 
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
 
-data HAMsg a = HAMsg { _ha_msg_data :: a, _ha_msg_meta :: HAMsgMeta }
-  deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance Binary a => Binary (HAMsg a)
-instance Hashable a => Hashable (HAMsg a)
-instance ToJSON a => ToJSON (HAMsg a)
-
-newtype {-# CTYPE "ha/msg.h" "const struct m0_ha_msg" #-} HAMsgPtr = HAMsgPtr (Ptr HAMsgPtr)
-
 -- | ha_msg_metadata
 data HAMsgMeta = HAMsgMeta
   { _hm_fid :: Fid
@@ -106,15 +99,17 @@ data HAMsgMeta = HAMsgMeta
 instance Binary HAMsgMeta
 instance Hashable HAMsgMeta
 instance ToJSON HAMsgMeta
+deriveSafeCopy 0 'base ''HAMsgMeta
 
-data ProcessEvent = ProcessEvent
-  { _chp_event :: ProcessEventType
-  , _chp_type :: ProcessType
-  , _chp_pid :: Word64
-  } deriving (Show, Eq, Ord, Typeable, Generic)
+data HAMsg a = HAMsg { _ha_msg_data :: a, _ha_msg_meta :: HAMsgMeta }
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
-instance Binary ProcessEvent
-instance Hashable ProcessEvent
+instance Binary a => Binary (HAMsg a)
+instance Hashable a => Hashable (HAMsg a)
+instance ToJSON a => ToJSON (HAMsg a)
+deriveSafeCopy 0 'base ''HAMsg
+
+newtype {-# CTYPE "ha/msg.h" "const struct m0_ha_msg" #-} HAMsgPtr = HAMsgPtr (Ptr HAMsgPtr)
 
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
   ProcessType = TAG_M0_CONF_HA_PROCESS_OTHER
@@ -125,6 +120,7 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
 
 instance Binary ProcessType
 instance Hashable ProcessType
+deriveSafeCopy 0 'base ''ProcessType
 
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
   ProcessEventType = TAG_M0_CONF_HA_PROCESS_STARTING
@@ -135,14 +131,17 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
 
 instance Binary ProcessEventType
 instance Hashable ProcessEventType
+deriveSafeCopy 0 'base ''ProcessEventType
 
-data ServiceEvent = ServiceEvent
-  { _chs_event :: ServiceEventType
-  , _chs_type :: ServiceType
+data ProcessEvent = ProcessEvent
+  { _chp_event :: ProcessEventType
+  , _chp_type :: ProcessType
+  , _chp_pid :: Word64
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
-instance Binary ServiceEvent
-instance Hashable ServiceEvent
+instance Binary ProcessEvent
+instance Hashable ProcessEvent
+deriveSafeCopy 0 'base ''ProcessEvent
 
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
   ServiceEventType = TAG_M0_CONF_HA_SERVICE_STARTING
@@ -154,6 +153,16 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 
 instance Binary ServiceEventType
 instance Hashable ServiceEventType
+deriveSafeCopy 0 'base ''ServiceEventType
+
+data ServiceEvent = ServiceEvent
+  { _chs_event :: ServiceEventType
+  , _chs_type :: ServiceType
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
+instance Binary ServiceEvent
+instance Hashable ServiceEvent
+deriveSafeCopy 0 'base ''ServiceEvent
 
 data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
   BELocation =
@@ -166,6 +175,7 @@ data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
 instance Binary BELocation
 instance Hashable BELocation
 instance ToJSON BELocation
+deriveSafeCopy 0 'base ''BELocation
 
 data {-# CTYPE "stob/io.h" "struct m0_stob_io_opcode" #-}
   StobIoOpcode =
@@ -179,6 +189,7 @@ data {-# CTYPE "stob/io.h" "struct m0_stob_io_opcode" #-}
 instance Binary StobIoOpcode
 instance Hashable StobIoOpcode
 instance ToJSON StobIoOpcode
+deriveSafeCopy 0 'base ''StobIoOpcode
 
 data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
   BEIoErr = BEIoErr {
@@ -193,6 +204,7 @@ data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
 instance Binary BEIoErr
 instance Hashable BEIoErr
 instance ToJSON BEIoErr
+deriveSafeCopy 0 'base ''BEIoErr
 
 data {-# CTYPE "stob/stob.h" "struct m0_stob_id" #-}
   StobId = StobId { _si_domain_fid :: Fid
@@ -202,6 +214,7 @@ data {-# CTYPE "stob/stob.h" "struct m0_stob_id" #-}
 instance Binary StobId
 instance Hashable StobId
 instance ToJSON StobId
+deriveSafeCopy 0 'base ''StobId
 
 data {-# CTYPE "stob/ioq_error.h" "struct m0_be_ioq_error" #-}
   StobIoqError = StobIoqError
@@ -218,6 +231,7 @@ data {-# CTYPE "stob/ioq_error.h" "struct m0_be_ioq_error" #-}
 instance Binary StobIoqError
 instance Hashable StobIoqError
 instance ToJSON StobIoqError
+deriveSafeCopy 0 'base ''StobIoqError
 
 data {-# CTYPE "rpc/ha.h" "struct m0_ha_msg_rpc" #-}
   RpcEvent = RpcEvent
@@ -228,6 +242,7 @@ data {-# CTYPE "rpc/ha.h" "struct m0_ha_msg_rpc" #-}
 instance Binary RpcEvent
 instance Hashable RpcEvent
 instance ToJSON RpcEvent
+deriveSafeCopy 0 'base ''RpcEvent
 
 -- | Notes telling the state of a given configuration object
 data Note = Note
@@ -237,6 +252,7 @@ data Note = Note
 
 instance Binary Note
 instance Hashable Note
+deriveSafeCopy 0 'base ''Note
 
 -- | Lists of notes
 type NVec = [Note]
@@ -257,7 +273,7 @@ cbRefs :: IORef [SomeFunPtr]
 cbRefs = unsafePerformIO $ newIORef []
 
 -- | List of callbacks beign used by notification interface
-data HAStateCallbacks = HSC 
+data HAStateCallbacks = HSC
   { hscStateGet :: HALink -> Word64 -> NVec -> IO ()
     -- ^ Called when a request to get the state of some objects is
     -- received.
@@ -409,10 +425,10 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
         _ | otherwise -> do
              ha_msg_debug_print p "unsupported message"
              delivered hl p
-    
+
     wrapGenericCallback = cwrapGenericCB $ \hl msg -> catch
        (msgCallback (HALink hl) (HAMsgPtr msg))
-       $ \e -> hPutStrLn stderr $ 
+       $ \e -> hPutStrLn stderr $
                   "initHAState.wrapGenericCallback: " ++ show (e :: SomeException)
 
     wrapEntryCB = cwrapEntryCB $ \reqId processPtr profilePtr -> catch (do

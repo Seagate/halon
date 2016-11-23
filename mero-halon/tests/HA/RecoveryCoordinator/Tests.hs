@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2013-2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -22,6 +23,7 @@ import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Monad (replicateM_)
 import           Data.Binary
 import           Data.Defaultable
+import           Data.SafeCopy
 import           Data.Typeable
 import           GHC.Generics
 import           HA.Encode
@@ -205,3 +207,6 @@ testServiceStopped transport pg = runDefaultTest transport $ do
 
     (_ :: ProcessMonitorNotification) <- expect
     sayTest $ "dummy service stopped."
+
+deriveSafeCopy 0 'base ''AbraCadabra
+deriveSafeCopy 0 'base ''Step

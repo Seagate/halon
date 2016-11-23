@@ -1,8 +1,8 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.RC.Events.Debug
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-
 module HA.RecoveryCoordinator.RC.Events.Debug where
 
 import HA.Resources
@@ -12,6 +12,7 @@ import Control.Distributed.Process (NodeId, ProcessId)
 import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.Map.Strict as Map
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 
@@ -52,3 +53,6 @@ data DebugResponse = DebugResponse {
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary DebugResponse
+
+deriveSafeCopy 0 'base ''DebugRequest
+deriveSafeCopy 0 'base ''NodeStatusRequest

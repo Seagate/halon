@@ -50,6 +50,7 @@ instance ToJSON PingConf
 -- | An event that causes the RC to write pending changes to the RG.
 newtype SyncPing = SyncPing String
   deriving (Show, Generic, Typeable, Binary)
+deriveSafeCopy 0 'base ''SyncPing
 
 pingSchema :: Schema PingConf
 pingSchema = pure PingConf

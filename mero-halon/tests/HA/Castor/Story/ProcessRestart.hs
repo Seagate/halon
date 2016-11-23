@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell    #-}
 -- | Module testing handling of notifications from SSPL and
 -- notification interface related to systemd services and their
 -- underlying process being restarted.
@@ -17,6 +18,7 @@ import           Control.Exception as E hiding (assert)
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (sort)
+import           Data.SafeCopy
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -209,3 +211,5 @@ testProcessStartsOK t pg = doRestart t pg M0.PSStarting $ \p srvs recv -> do
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "ruleProcessOnline sets process to online"
            (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
+
+deriveSafeCopy 0 'base ''RuleHook

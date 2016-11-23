@@ -25,6 +25,8 @@ import qualified Data.Text as T (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
 import Data.List
+import Data.SafeCopy
+import Data.Serialize (runGetLazy, runPutLazy)
 import Data.UUID (UUID)
 import Data.Function (on)
 import GHC.Generics
@@ -59,7 +61,7 @@ data PersistMessage = PersistMessage
   { persistMessageId :: UUID
   , persistMessagePrint :: StablePrint
   , persistMessagePayload :: ByteString
-  } deriving (Typeable, Generic)
+  } deriving (Typeable, Generic, Show)
 
 instance Binary PersistMessage
 
@@ -69,11 +71,13 @@ instance Eq PersistMessage where
 instance Ord PersistMessage where
     compare = compare `on` persistMessageId
 
-persistMessage :: (Typeable a, Binary a) => UUID -> a -> PersistMessage
-persistMessage u a = PersistMessage u (stableprint a) (encode a)
+persistMessage :: (SafeCopy a, Typeable a) => UUID -> a -> PersistMessage
+persistMessage u a = PersistMessage u (stableprint a) (runPutLazy $ safePut a)
 
-unwrapMessage :: forall a. (Typeable a, Binary a) => PersistMessage -> Maybe a
+unwrapMessage :: forall a. (SafeCopy a, Typeable a) => PersistMessage -> Maybe a
 unwrapMessage msg =
     if persistMessagePrint msg == stableprint (undefined :: a)
-    then Just $! decode $ persistMessagePayload msg
+    then case runGetLazy safeGet $ persistMessagePayload msg of
+      Left _err -> Nothing -- TODO: Might want to do something here?
+      Right !m -> Just m
     else Nothing

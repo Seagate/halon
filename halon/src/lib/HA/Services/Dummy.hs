@@ -67,8 +67,8 @@ deriveSafeCopy 0 'base ''DummyConf
 -- | An event which produces no action in the RC. Used for testing.
 data DummyEvent = DummyEvent String
   deriving (Typeable, Generic)
-
 instance Binary DummyEvent
+deriveSafeCopy 0 'base ''DummyEvent
 
 remotableDecl [ [d|
   dummy :: Service DummyConf

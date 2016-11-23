@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell            #-}
 module HA.RecoveryCoordinator.Castor.Cluster.Events
   (
   -- * Requests
@@ -52,6 +53,7 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
 import Data.Binary
+import Data.SafeCopy
 import Data.Typeable
 import Mero.ConfC
 import Data.Aeson
@@ -261,3 +263,20 @@ data ClusterStopDiff = ClusterStopDiff
   deriving (Show, Eq, Typeable, Generic)
 
 instance Binary ClusterStopDiff
+
+deriveSafeCopy 0 'base ''ClusterResetRequest
+deriveSafeCopy 0 'base ''ClusterStartRequest
+deriveSafeCopy 0 'base ''ClusterStatusRequest
+deriveSafeCopy 0 'base ''ClusterStopRequest
+deriveSafeCopy 0 'base ''MarkProcessesBootstrapped
+deriveSafeCopy 0 'base ''MonitorClusterStop
+deriveSafeCopy 0 'base ''PoolRebalanceRequest
+deriveSafeCopy 0 'base ''PoolRepairRequest
+deriveSafeCopy 0 'base ''StartClientsOnNodeRequest
+deriveSafeCopy 0 'base ''StartHalonM0dRequest
+deriveSafeCopy 0 'base ''StartMeroClientRequest
+deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''StopHalonM0dRequest
+deriveSafeCopy 0 'base ''StopMeroClientRequest
+deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''StopProcessesRequest

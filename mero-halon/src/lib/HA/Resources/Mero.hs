@@ -139,6 +139,7 @@ data SyncToConfd =
 
 instance Binary SyncToConfd
 instance Hashable SyncToConfd
+deriveSafeCopy 0 'base ''SyncToConfd
 
 newtype SyncDumpToBSReply = SyncDumpToBSReply (Either String BS.ByteString)
   deriving (Eq, Generic, Show, Typeable)

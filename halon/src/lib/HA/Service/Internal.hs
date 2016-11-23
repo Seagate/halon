@@ -167,7 +167,7 @@ serviceLabel svc = "service." ++ serviceName svc
 
 data NextStep = Continue
               | Teardown
-              | Failure 
+              | Failure
 
 -- | A relation connecting the cluster to the services it supports.
 data Supports = Supports
@@ -235,6 +235,7 @@ instance Binary ExitReason
 data ServiceExit = ServiceExit Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
 instance Binary ServiceExit
+deriveSafeCopy 0 'base ''ServiceExit
 
 -- | A notification of a service failure.
 --
@@ -243,6 +244,7 @@ instance Binary ServiceExit
 data ServiceFailed = ServiceFailed Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
 instance Binary ServiceFailed
+deriveSafeCopy 0 'base ''ServiceFailed
 
 -- | A notification of a service failure due to unexpected case.
 --
@@ -251,12 +253,14 @@ instance Binary ServiceFailed
 data ServiceUncaughtException = ServiceUncaughtException Node ServiceInfoMsg String ProcessId
   deriving (Typeable, Generic)
 instance Binary ServiceUncaughtException
+deriveSafeCopy 0 'base ''ServiceUncaughtException
 
 -- | A notification of service stop failure due to service is not
 -- running at all.
 data ServiceStopNotRunning = ServiceStopNotRunning Node String
   deriving (Typeable, Generic)
 instance Binary ServiceStopNotRunning
+deriveSafeCopy 0 'base ''ServiceStopNotRunning
 
 data Result b = AlreadyRunning ProcessId
               | ServiceStarted (Either String b)
@@ -304,7 +308,7 @@ remoteStartService (caller, msg) = do
           serviceLog $ "exception during start: " ++ e
           promulgateWait $ ServiceFailed (Node node) msg self
         ServiceStarted (Right r) -> do
-          let notify :: forall a . (Binary a, Typeable a)
+          let notify :: forall a . (SafeCopy a, Typeable a)
                      => (Node -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
               notify f = promulgateWait $ f (Node (processNodeId self)) msg self
           confirmStarted conf r
@@ -333,7 +337,7 @@ remoteStartService (caller, msg) = do
                serviceLog $ "unhandled mesage" ++ show s
                return (Continue, b)
             ]) `catchExit` (onExit b)
-        
+
         runTeardown teardown notify b = do
           self <- getSelfPid
           teardown conf b

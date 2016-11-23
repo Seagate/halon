@@ -8,7 +8,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module HA.SafeCopy.OrphanInstances where
 
-import Control.Distributed.Process (ProcessId, NodeId)
+import Control.Distributed.Process (ProcessId, SendPort, NodeId)
+import Control.Distributed.Process.Serializable
 import Data.Binary (Binary, encode, decode)
 import Data.Defaultable (Defaultable)
 import Data.SafeCopy (SafeCopy(..), primitive, contain, deriveSafeCopy, base)
@@ -34,6 +35,11 @@ instance SafeCopy ProcessId where
 instance SafeCopy UUID where
   putCopy = contain . put . encode
   getCopy = contain $ fmap decode get
+  kind = primitive
+
+instance Serializable a => SafeCopy (SendPort a) where
+  putCopy = contain . put . encode
+  getCopy = contain $ decode <$> get
   kind = primitive
 
 deriveSafeCopy 0 'base ''NodeId

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -12,6 +13,7 @@ import           Control.Exception as E
 import           Data.Binary (Binary)
 import           Data.List (sort)
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
+import           Data.SafeCopy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
@@ -234,3 +236,5 @@ failvecCascade t pg = doTest t pg [rule] test'
         messageProcessed eid
 
       start init_rule Nothing
+
+deriveSafeCopy 0 'base ''RuleHook

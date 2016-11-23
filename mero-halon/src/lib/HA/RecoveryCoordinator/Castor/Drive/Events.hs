@@ -4,6 +4,7 @@
 --
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE TemplateHaskell    #-}
 module HA.RecoveryCoordinator.Castor.Drive.Events
   ( DriveRemoved(..)
   , DriveInserted(..)
@@ -31,14 +32,16 @@ import Data.UUID (UUID)
 import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.Text as T
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
-data ResetAttempt = ResetAttempt StorageDevice
+newtype ResetAttempt = ResetAttempt StorageDevice
   deriving (Eq, Generic, Show, Typeable, Ord)
 
 instance Binary ResetAttempt
+deriveSafeCopy 0 'base ''ResetAttempt
 
 -- | Result for 'ResetAttempt'
 data ResetAttemptResult = ResetFailure StorageDevice
@@ -114,19 +117,21 @@ instance Binary DriveOK
 
 -- | Event sent when a drive is ready and available to be used by the system.
 --   This is presently only consumed by the metatada drive rules.
-data DriveReady = DriveReady StorageDevice
+newtype DriveReady = DriveReady StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveReady
 instance Binary DriveReady
+deriveSafeCopy 0 'base ''DriveReady
 
 -- | Sent when an expander reset attempt happens in the enclosure. In such
 --   a case, we expect to see (or have seen) multiple drive transient events.
-data ExpanderReset = ExpanderReset Enclosure
+newtype ExpanderReset = ExpanderReset Enclosure
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ExpanderReset
 instance Binary ExpanderReset
+deriveSafeCopy 0 'base ''ExpanderReset
 
 -- | Sent when RAID controller reports that part of a RAID array has failed.
 data RaidUpdate = RaidUpdate
@@ -137,6 +142,7 @@ data RaidUpdate = RaidUpdate
 
 instance Hashable RaidUpdate
 instance Binary RaidUpdate
+deriveSafeCopy 0 'base ''RaidUpdate
 
 -- | Sent to request a SMART test is run on the system.
 data SMARTRequest = SMARTRequest {
@@ -146,6 +152,7 @@ data SMARTRequest = SMARTRequest {
 
 instance Hashable SMARTRequest
 instance Binary SMARTRequest
+deriveSafeCopy 0 'base ''SMARTRequest
 
 -- | Possible response from SMART testing.
 data SMARTResponseStatus
@@ -158,6 +165,7 @@ data SMARTResponseStatus
 
 instance Binary SMARTResponseStatus
 instance Hashable SMARTResponseStatus
+deriveSafeCopy 0 'base ''SMARTResponseStatus
 
 -- | Response from SMART test job.
 data SMARTResponse = SMARTResponse {
@@ -167,3 +175,4 @@ data SMARTResponse = SMARTResponse {
 
 instance Binary SMARTResponse
 instance Hashable SMARTResponse
+deriveSafeCopy 0 'base ''SMARTResponse

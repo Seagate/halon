@@ -16,20 +16,23 @@ library
                        SSPL.Bindings.ActuatorResponse
                        SSPL.Bindings.CommandRequest
                        SSPL.Bindings.CommandResponse
+                       SSPL.Bindings.Instances
                        SSPL.Bindings.SensorRequest
                        SSPL.Bindings.SensorResponse
-  other-modules:       SSPL.Bindings.Instances
+                       SSPL.Orphans
   hs-source-dirs:      src
   build-depends:       base >=4.7,
                        aeson,
                        aeson-schema >= 0.4,
                        binary,
+                       cereal,
                        containers,
                        ghc-prim,
                        hashable,
                        regex-base,
                        regex-compat,
                        regex-pcre,
+                       safecopy,
                        scientific >= 0.3.4.0,
                        text,
                        text-binary,

@@ -24,6 +24,7 @@ import Control.Monad.Catch
 import Data.List
 import Data.Binary
 import Data.Hashable (Hashable)
+import Data.SafeCopy
 
 import Network.Transport (Transport, EndPointAddress)
 
@@ -65,6 +66,7 @@ data KillRC = KillRC
 
 instance Binary KillRC
 instance Hashable KillRC
+deriveSafeCopy 0 'base ''KillRC
 
 remotableDecl [ [d|
   rcWithDeath :: [NodeId] -> ProcessId -> StoreChan -> Process ()

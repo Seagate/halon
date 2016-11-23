@@ -116,6 +116,7 @@ newtype NotifyFailureEndpoints = NotifyFailureEndpoints [String]
 
 instance Binary NotifyFailureEndpoints
 instance Hashable NotifyFailureEndpoints
+deriveSafeCopy 0 'base ''NotifyFailureEndpoints
 
 --------------------------------------------------------------------------------
 -- Printing objects in a nicer way                                            --

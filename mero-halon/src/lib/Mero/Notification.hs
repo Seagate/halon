@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- |
@@ -81,6 +82,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Maybe (listToMaybe, fromMaybe)
 import Data.Monoid ((<>))
+import Data.SafeCopy
 import Data.Tuple (swap)
 import Data.Typeable (Typeable)
 import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef')
@@ -97,14 +99,15 @@ import Debug.Trace (traceEventIO)
 -- and the change has to be communicated to Mero.
 --
 newtype Set = Set NVec
-        deriving (Generic, Typeable, Binary, Hashable, Show, Eq)
+  deriving (Generic, Typeable, Binary, Hashable, Show, Eq)
+deriveSafeCopy 0 'base ''Set
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.
 data Get = Get ProcessId [Fid]
         deriving (Generic, Typeable)
-
 instance Binary Get
+deriveSafeCopy 0 'base ''Get
 
 -- | This message is sent by the RC in reply to a 'Get' message.
 newtype GetReply = GetReply NVec

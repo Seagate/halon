@@ -28,9 +28,9 @@ import Control.Lens
 import Control.Monad (unless, join)
 import Control.Monad.IO.Class (liftIO)
 
-import Data.Binary (Binary)
 import Data.Foldable (for_)
 import Data.Traversable (for)
+import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl
@@ -139,7 +139,7 @@ mkJobRule (Job name)
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
 
-startJob :: (Typeable r, Binary r) => r -> PhaseM RC l ListenerId
+startJob :: (Typeable r, SafeCopy r) => r -> PhaseM RC l ListenerId
 startJob request = do
   l <- ListenerId <$> liftIO UUID.nextRandom
   promulgateRC $ JobStartRequest l request

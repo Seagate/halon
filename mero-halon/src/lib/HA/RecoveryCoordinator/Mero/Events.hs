@@ -161,7 +161,6 @@ newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
 newtype InternalObjectStateChangeMsg =
     InternalObjectStateChangeMsg BS.ByteString
   deriving (Binary, Typeable, Eq, Show, Ord, Hashable)
-deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg
@@ -254,3 +253,14 @@ data WorkerIsNotAvailableException = WorkerIsNotAvailable
   deriving (Show, Typeable, Generic)
 instance Exception WorkerIsNotAvailableException
 instance Binary WorkerIsNotAvailableException
+
+deriveSafeCopy 0 'base ''AbortSNSOperation
+deriveSafeCopy 0 'base ''ForceObjectStateUpdateReply
+deriveSafeCopy 0 'base ''ForceObjectStateUpdateRequest
+deriveSafeCopy 0 'base ''GetFailureVector
+deriveSafeCopy 0 'base ''GetSpielAddress
+deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
+deriveSafeCopy 0 'base ''MeroKernelFailed
+deriveSafeCopy 0 'base ''QuiesceSNSOperation
+deriveSafeCopy 0 'base ''RestartSNSOperationRequest
+deriveSafeCopy 0 'base ''UpdateResult

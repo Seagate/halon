@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -20,6 +21,7 @@ import Data.Binary (Binary)
 import Data.Binary.Put
 import Data.Hashable
 import Data.Maybe (catMaybes)
+import Data.SafeCopy
 import Data.Typeable (Typeable, typeOf)
 
 import HA.Multimap
@@ -27,18 +29,20 @@ import HA.ResourceGraph hiding (null)
 
 import GHC.Generics
 
-data Command
-    = CM MultimapGetKeyValuePairs
-    | CR ReadResourceGraph
-    | Quit
-
 data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
   deriving (Eq, Show, Typeable, Generic)
 instance Binary MultimapGetKeyValuePairs
+deriveSafeCopy 0 'base ''MultimapGetKeyValuePairs
 
 data ReadResourceGraph = ReadResourceGraph
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ReadResourceGraph
+deriveSafeCopy 0 'base ''ReadResourceGraph
+
+data Command
+    = CM MultimapGetKeyValuePairs
+    | CR ReadResourceGraph
+    | Quit
 
 parseCommand :: B.ByteString -> Maybe Command
 parseCommand "mmvalues\r" = Just $ CM MultimapGetKeyValuePairs

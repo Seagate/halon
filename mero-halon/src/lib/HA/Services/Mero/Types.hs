@@ -101,12 +101,14 @@ data NotificationAck = NotificationAck Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationAck
 instance Binary   NotificationAck
+deriveSafeCopy 0 'base ''NotificationAck
 
 -- | Acknowledgement that delivery for cetrain procedd definitely failed.
 data NotificationFailure = NotificationFailure Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationFailure
 instance Binary   NotificationFailure
+deriveSafeCopy 0 'base ''NotificationFailure
 
 data NotificationMessage = NotificationMessage
        { notificationEpoch   :: Word64    -- Current epoch
@@ -157,24 +159,28 @@ data ProcessControlResultMsg =
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
+deriveSafeCopy 0 'base ''ProcessControlResultMsg
 
 data ProcessControlResultStopMsg =
       ProcessControlResultStopMsg NodeId [Either (Fid,String) Fid]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
+deriveSafeCopy 0 'base ''ProcessControlResultStopMsg
 
 data ProcessControlResultConfigureMsg =
       ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Binary ProcessControlResultConfigureMsg
 instance Hashable ProcessControlResultConfigureMsg
+deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg
 
 -- | We haven't heard back from a process for a while about keepalive so we're
 data KeepaliveTimedOut = KeepaliveTimedOut [(Fid, M0.TimeSpec)]
   deriving (Eq, Generic, Show, Typeable)
 instance Binary KeepaliveTimedOut
 instance Hashable KeepaliveTimedOut
+deriveSafeCopy 0 'base ''KeepaliveTimedOut
 
 data DeclareMeroChannel =
     DeclareMeroChannel
@@ -186,6 +192,7 @@ data DeclareMeroChannel =
 
 instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
+deriveSafeCopy 0 'base ''DeclareMeroChannel
 
 data MeroChannelDeclared =
     MeroChannelDeclared
@@ -197,7 +204,7 @@ data MeroChannelDeclared =
 
 instance Binary MeroChannelDeclared
 instance Hashable MeroChannelDeclared
-
+deriveSafeCopy 0 'base ''MeroChannelDeclared
 
 resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
 resourceDictMeroChannel = Dict

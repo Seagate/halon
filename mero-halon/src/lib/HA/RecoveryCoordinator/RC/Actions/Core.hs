@@ -106,6 +106,7 @@ import Data.Proxy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Maybe (fromMaybe)
+import Data.SafeCopy
 
 import Network.CEP
 
@@ -292,7 +293,7 @@ getMultimapChan = fmap lsMMChan $ get Global
 --
 -- However, 'promulgateRC' introduces additional synchronization overhead in normal
 -- case, so on a fast-path 'unsafePromulgateRC' could be used.
-promulgateRC :: Serializable msg => msg -> PhaseM RC l ()
+promulgateRC :: (SafeCopy msg, Typeable msg) => msg -> PhaseM RC l ()
 promulgateRC msg = liftProcess $ promulgateWait msg
 
 -- | Fast-path 'promulgateRC', this call is not blocking call, so there is no guarantees
@@ -305,7 +306,7 @@ promulgateRC msg = liftProcess $ promulgateWait msg
 -- callback could be set.
 --
 -- Promulgate call will be cancelled if RC thread that emitted call will die.
-unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM RC l ()
+unsafePromulgateRC :: (SafeCopy msg, Typeable msg) => msg -> Process () -> PhaseM RC l ()
 unsafePromulgateRC msg callback = liftProcess $ do
    self <- getSelfPid
    void $ spawnLocal $ do

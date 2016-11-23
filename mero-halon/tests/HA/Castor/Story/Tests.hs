@@ -59,6 +59,7 @@ import Data.Foldable (find)
 import Data.Function (fix)
 import Data.Hashable (Hashable)
 import Data.Proxy
+import Data.SafeCopy
 import Data.Typeable
 import Data.Text (pack)
 import Data.Defaultable
@@ -945,3 +946,6 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                (Note (M0.fid m0enc) M0_NC_ONLINE) `elem` notes
 
     return ()
+
+deriveSafeCopy 0 'base ''MarkDriveFailed
+deriveSafeCopy 0 'base ''MockM0

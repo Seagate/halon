@@ -1,9 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE TypeFamilies #-}
-
-
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeFamilies              #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Service.Events
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- XXX: module documentation
@@ -246,3 +246,7 @@ data ServiceStartedInternal a = ServiceStartedInternal Node a ProcessId
   deriving (Typeable, Generic, Show)
 
 instance Binary a => Binary (ServiceStartedInternal a)
+
+deriveSafeCopy 0 'base ''ServiceStartRequestMsg
+deriveSafeCopy 0 'base ''ServiceStatusRequestMsg
+deriveSafeCopy 0 'base ''ServiceStopRequestMsg

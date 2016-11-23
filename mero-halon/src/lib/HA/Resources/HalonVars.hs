@@ -1,13 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
+{-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Dealing with configurable values throughout the halon rules.
-
 module HA.Resources.HalonVars
   ( HalonVars(..)
   , module HA.Resources.HalonVars
@@ -15,6 +14,7 @@ module HA.Resources.HalonVars
 
 import Data.Binary (Binary)
 import Data.Hashable
+import Data.SafeCopy
 import Data.Typeable
 import GHC.Generics (Generic)
 import HA.RecoveryCoordinator.RC.Actions
@@ -62,6 +62,7 @@ newtype SetHalonVars = SetHalonVars HalonVars
   deriving (Show, Eq, Generic, Typeable)
 instance Binary SetHalonVars
 instance Hashable SetHalonVars
+deriveSafeCopy 0 'base ''SetHalonVars
 
 newtype HalonVarsUpdated = HalonVarsUpdated HalonVars
   deriving (Show, Eq, Generic, Typeable)

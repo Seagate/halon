@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
 -- |
@@ -62,6 +63,7 @@ import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Monoid ((<>))
+import           Data.SafeCopy
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
 import           Data.Vinyl hiding ((:~:))
 import           GHC.Generics (Generic)
@@ -98,7 +100,7 @@ import           Network.CEP
 import           Prelude
 
 --------------------------------------------------------------------------------
--- Queries                                                               --
+-- Types                                                                      --
 --------------------------------------------------------------------------------
 
 -- | Event sent when we want a 5 minute spiel query rule to fire
@@ -106,18 +108,41 @@ data SpielQuery = SpielQuery Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
 instance B.Binary SpielQuery
+deriveSafeCopy 0 'base ''SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
 data SpielQueryHourly = SpielQueryHourly Pool M0.PoolRepairType UUID
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance B.Binary SpielQueryHourly
+deriveSafeCopy 0 'base ''SpielQueryHourly
 
 -- | Event that hourly job finihed.
 data SpielQueryHourlyFinished = SpielQueryHourlyFinished Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
 instance B.Binary SpielQueryHourlyFinished
+deriveSafeCopy 0 'base ''SpielQueryHourlyFinished
+
+data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance B.Binary ContinueSNS
+deriveSafeCopy 0 'base ''ContinueSNS
+
+data ContinueSNSResult
+       = SNSContinued UUID M0.Pool M0.PoolRepairType
+       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
+       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
+
+instance B.Binary ContinueSNSResult
+deriveSafeCopy 0 'base ''ContinueSNSResult
+
+--------------------------------------------------------------------------------
+-- Queries                                                                    --
+--------------------------------------------------------------------------------
+
 
 -- | Handler for @M0_NC_ONLINE@ 'Pool' messages. Its main role is to
 -- load all metadata information and schedule request that will check
@@ -633,19 +658,6 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
        <+> fldRep           =: Nothing
        <+> fldNotifications =: Nothing
        <+> fldPool          =: Nothing
-
-data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
-      deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNS
-
-data ContinueSNSResult
-       = SNSContinued UUID M0.Pool M0.PoolRepairType
-       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
-       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
-      deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNSResult
 
 -- | Job that convers all the repair continue logic.
 jobContinueSNS :: Job ContinueSNS ContinueSNSResult
