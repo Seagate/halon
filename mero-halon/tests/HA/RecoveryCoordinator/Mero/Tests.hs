@@ -138,7 +138,7 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
   nid <- getSelfNode
   self <- getSelfPid
   registerInterceptor $ \case
-    str | "lcType = \"HDS\"}" `isInfixOf` str ->
+    str | "lcType = \\\"HDS\\\"}" `isInfixOf` str ->
             when (any (interestingSN `isPrefixOf`) (tails str)) $
               usend self ("OK" :: String)
         | otherwise -> return ()
