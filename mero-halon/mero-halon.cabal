@@ -73,6 +73,7 @@ Library
                    Mero.RemoteTables
                    HA.Network.Transport
                    HA.Services.DecisionLog
+                   HA.Services.Ekg.RC
                    HA.Services.Frontier
                    HA.Services.Frontier.Command
                    HA.Services.Frontier.CEP
@@ -171,7 +172,6 @@ Library
                    vinyl,
                    gitrev,
                    inline-c
-
 
   if flag(mero)
       c-sources:       src/lib/Version/Read.c
@@ -334,10 +334,10 @@ Executable halond
   -- Reduce the context-switch interval to improve sharing
   -- of the CPU when there are CPU-intensive computations
   -- in the RC.
-  Ghc-Options: -threaded -Wall -with-rtsopts=-C0 -rtsopts -g -Werror
+  Ghc-Options: -threaded -Wall "-with-rtsopts=-C0 -T" -rtsopts -g -Werror
 
   if flag(debug)
-    ghc-options:      -debug "-with-rtsopts=-C0 -l-au"
+    ghc-options:      -debug "-with-rtsopts=-C0 -l-au -T"
   default-language:   Haskell2010
   Default-Extensions: DeriveDataTypeable
                       DisambiguateRecordFields

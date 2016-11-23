@@ -40,6 +40,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , lookupStorageDeviceInEnclosure
   , lookupStorageDeviceOnHost
   , lookupStorageDevicesWithDI
+  , lookupStorageDevicesWithAttr
     -- ** Querying device properties
   , getSDevNode
   , getSDevHost
@@ -91,6 +92,7 @@ import HA.Resources.Castor
 #ifdef USE_MERO
 import qualified HA.Resources.Mero as M0
 #endif
+import HA.Services.Ekg.RC
 
 import Control.Category ((>>>))
 import Control.Distributed.Process (liftIO)
@@ -408,6 +410,10 @@ lookupStorageDeviceInEnclosure enc ident = do
 lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM RC l [StorageDevice]
 lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 
+-- | Find all 'StorageDevice's with the given 'StorageDeviceAttr'.
+lookupStorageDevicesWithAttr :: StorageDeviceAttr -> PhaseM RC l [StorageDevice]
+lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getLocalGraph
+
 -- | Lookup 'StorageDevice' on a host if it was not found to a lookup
 -- on enclosure that host is on.
 lookupStorageDeviceOnHost :: Host
@@ -588,6 +594,17 @@ findStorageDeviceAttrs k sdev = do
                   , k attr
                   ]
 
+-- | Update a metric monitoring how many drives are currently
+-- undergoing reset. Note that increasing when we start reset and
+-- decreasing when we stop reset can provide bad results: consider
+-- what happens if we start EKG service half way through a rule doing
+-- the marking. We will decrease but haven't increased and we end up
+-- with reported data being wrong.
+updateDiskResetCount :: PhaseM RC l ()
+updateDiskResetCount = do
+  i <- fromIntegral . length <$> lookupStorageDevicesWithAttr SDOnGoingReset
+  runEkgMetricCmd (ModifyGauge "ongoing_disk_resets" $ GaugeSet i)
+
 -- | Test whether a given device is currently undergoing a reset operation.
 hasOngoingReset :: StorageDevice -> PhaseM RC l Bool
 hasOngoingReset =
@@ -603,7 +620,9 @@ markOnGoingReset sdev = do
         _F _                 = False
     m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
-      Nothing -> setStorageDeviceAttr sdev SDOnGoingReset
+      Nothing -> do
+        setStorageDeviceAttr sdev SDOnGoingReset
+        updateDiskResetCount
       _       -> return ()
 
 -- | Mark that a storage device has completed reset.
@@ -614,7 +633,9 @@ markResetComplete sdev = do
     m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
     case m of
       Nothing  -> return ()
-      Just old -> unsetStorageDeviceAttr sdev old
+      Just old -> do
+        unsetStorageDeviceAttr sdev old
+        updateDiskResetCount
 
 incrDiskResetAttempts :: StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do

@@ -13,7 +13,7 @@ import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
 import HA.Services.Mero.RC (__remoteTable)
 import System.Posix.SysInfo ( __remoteTable )
 #endif
-
+import HA.Services.Ekg ( __remoteTable, __remoteTableDecl )
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl )
 import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl )
@@ -41,6 +41,8 @@ meroRemoteTable next =
    HA.Services.SSPLHL.__remoteTableDecl $
    HA.Services.Frontier.__remoteTable $
    HA.Services.Frontier.__remoteTableDecl $
+   HA.Services.Ekg.__remoteTable $
+   HA.Services.Ekg.__remoteTableDecl $
    HA.Services.DecisionLog.__remoteTable $
    HA.Services.DecisionLog.__remoteTableDecl $
    HA.Stats.__remoteTable $
