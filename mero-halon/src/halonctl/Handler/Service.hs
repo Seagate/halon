@@ -25,6 +25,7 @@ import HA.Resources ( Node(..) )
 import HA.Encode
 import HA.Service
 import qualified HA.Services.DecisionLog as DLog
+import qualified HA.Services.Ekg as Ekg
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
 #ifdef USE_MERO
@@ -79,6 +80,7 @@ data ServiceCmdOptions =
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
     | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
+    | EkgServiceCmd (StandardServiceOptions Ekg.EkgConf)
 #ifdef USE_MERO
     | MeroServiceCmd (StandardServiceOptions Mero.MeroConf)
 #endif
@@ -206,6 +208,9 @@ parseService =
     ) <|>
     (DLogServiceCmd <$> (O.subparser $
          mkStandardServiceCmd DLog.decisionLog)
+    ) <|>
+    (EkgServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Ekg.ekg)
     )
 #ifdef USE_MERO
     <|> (MeroServiceCmd <$> (O.subparser $
@@ -227,6 +232,7 @@ service nids so = case so of
   SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
+  EkgServiceCmd sso      ->standardService nids sso Ekg.ekg
 #ifdef USE_MERO
   MeroServiceCmd sso     -> standardService nids sso Mero.m0d
 #endif
