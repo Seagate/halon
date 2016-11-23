@@ -23,6 +23,7 @@ import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Mero.State
@@ -286,7 +287,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
-               applyStateChanges [ stateSet m0sdev M0.SDSOnline ]
+               applyStateChanges [ stateSet m0sdev Tr.sdevOnline ]
                Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
                modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
              x ->

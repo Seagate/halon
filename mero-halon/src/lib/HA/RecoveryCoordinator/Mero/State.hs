@@ -1,15 +1,15 @@
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE StaticPointers   #-}
+{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Mero.State
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE StaticPointers      #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE ViewPatterns        #-}
 module HA.RecoveryCoordinator.Mero.State
   ( DeferredStateChanges(..)
   , applyStateChanges
@@ -24,6 +24,8 @@ module HA.RecoveryCoordinator.Mero.State
   , setPhaseAllNotifiedBy
   , setPhaseInternalNotification
   , setPhaseInternalNotificationWithState
+  , ascPred
+  , anyStateToAscPred
   )  where
 
 import HA.Encode (decodeP, encodeP)
@@ -33,6 +35,8 @@ import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Events
+import HA.RecoveryCoordinator.Mero.Transitions.Internal
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Transition
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
@@ -52,12 +56,13 @@ import Control.Monad.Fix (fix)
 import Control.Lens
 
 import Data.Constraint (Dict)
+import Data.Either (partitionEithers)
 import Data.Foldable (for_)
 import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
-import Data.List (nub, genericLength, (\\))
+import Data.List (foldl', nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
@@ -124,36 +129,38 @@ cascadeStateChange asc rg = go [asc] [asc] id
                      => StateCascadeRule a b
                      -> (a, M0.StateCarrier a, M0.StateCarrier a)   -- state change
                      -> (Maybe (G.Graph -> G.Graph),[(b, M0.StateCarrier b, M0.StateCarrier b)]) -- new updated states
-    applyCascadeRule
-      (StateCascadeRule old new f u)
-      (a, a_old, a_new) =
-        if (old a_old) && (new a_new)
-        then ( Nothing
-             , [ (b, b_old, b_new)
-               | b <- f a rg
-               , let b_old = M0.getState b rg
-               , let b_new = u a_new b_old
-               , b_old /= b_new
-               ])
-        else (Nothing, [])
-    applyCascadeRule
-      (StateCascadeTrigger old new fg)
-      (a, a_old, a_new) =
-        if (old a_old) && (new a_new)
-        then (Just (fg a), [])
-        else (Nothing, [])
+    applyCascadeRule (StateCascadeRule old new f u) (a, a_old, a_new) =
+      if old a_old && new a_new
+      then ( Nothing
+           , [ (b, b_old, b_new)
+             | b <- f a rg
+             , let b_old = M0.getState b rg
+             , TransitionTo b_new <- [runTransition (u a_new) b_old]
+             -- We still want this because we don't always catch
+             -- NoTransition for every case
+             , b_old /= b_new
+             ])
+      else (Nothing, [])
+    applyCascadeRule (StateCascadeTrigger old new fg) (a, a_old, a_new) =
+      if old a_old && new a_new
+      then (Just (fg a), [])
+      else (Nothing, [])
 
 -- | Create deferred state changes for a number of objects.
---   Should implicitly cascade all necessary changes under the covers.
-createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> DeferredStateChanges
+--
+-- Should implicitly cascade all necessary changes under the covers.
+-- Returns a list of warnings (if any) along with 'DeferredStateChanges'.
+createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> ([String], DeferredStateChanges)
 createDeferredStateChanges stateSets rg =
-    DeferredStateChanges (fn>>>trigger_fn) (Set nvec) (InternalObjectStateChange iosc)
+    (wrns, DeferredStateChanges (fn>>>trigger_fn) (Set nvec) (InternalObjectStateChange iosc))
   where
     (trigger_fn, stateChanges) = fmap join $
         mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges
-    rootStateChanges = lookupOldState <$> stateSets
-    lookupOldState (AnyStateSet (x :: a) st) =
-        AnyStateChange x (M0.getState x rg) st sp
+    (wrns, rootStateChanges) = partitionEithers $ mapMaybe lookupOldState stateSets
+    lookupOldState (AnyStateSet (x :: a) t) = case runTransition t $ M0.getState x rg of
+      NoTransition -> Nothing
+      InvalidTransition err -> Just $ Left err
+      TransitionTo st -> Just . Right $ AnyStateChange x (M0.getState x rg) st sp
       where
         sp = staticApplyPtr
               (static M0.someHasConfObjectStateDict)
@@ -171,8 +178,10 @@ createDeferredStateChanges stateSets rg =
 genericApplyStateChanges :: [AnyStateSet]
                          -> PhaseM RC l a
                          -> PhaseM RC l a
-genericApplyStateChanges ass act = getLocalGraph >>= \rg ->
-  genericApplyDeferredStateChanges (createDeferredStateChanges ass rg) act
+genericApplyStateChanges ass act = getLocalGraph >>= \rg -> do
+  let (warns, changes) = createDeferredStateChanges ass rg
+  for_ warns $ phaseLog "warn"
+  genericApplyDeferredStateChanges changes act
 
 -- | Generic function to apply deferred state changes in the standard order.
 --   The provided 'action' is executed between updating the graph and sending
@@ -236,7 +245,7 @@ setPhaseNotified handle extract act =
     changeGuard :: HAEvent InternalObjectStateChangeMsg
                 -> g -> l -> Process (Maybe (b, M0.StateCarrier b))
     changeGuard (HAEvent _ msg) _ (extract -> Just (obj, p)) =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) -> do
+      liftProcess (decodeP msg) >>= \(InternalObjectStateChange iosc) -> do
         return $ listToMaybe . mapMaybe (getObjP obj p) $ iosc
     changeGuard _ _ _ = return Nothing
 
@@ -245,60 +254,83 @@ setPhaseNotified handle extract act =
         Just Refl | a == obj && p n -> Just (a,n)
         _ -> Nothing
 
--- | Similar to 'setPhaseNotified' but works on a set of notifications
--- rather than a singular one.
+-- | Helper for 'setPhaseAllNotified' and 'setPhaseAllNotifiedBy'.
 --
--- State will endup in either @Nothing@ or @Just []@ depends on lens
--- implementation.
+-- TODO: We should allow the user to pass in extra phases for timeout. Consider
+--
+-- @switch [all_notified, timeout t timed_out]@
+--
+-- If *any* 'InternalObjectStateChange' flies by before the timeout,
+-- we won't be done, we'll 'continue' too @all_notified@ and the
+-- timeout is effectively ignored.
+mkPhaseAllNotified :: forall a l g. Application g
+                   => (a -> AnyStateChange -> Bool)
+                   -> Jump PhaseHandle
+                   -> (Lens' l (Maybe [a]))
+                   -> PhaseM g l () -- ^ Callback when set has been notified
+                   -> RuleM g l ()
+mkPhaseAllNotified toPred handle extract act =
+  setPhase handle $ \(HAEvent _ msg) -> do
+     mn <- gets Local (^. extract)
+     case mn of
+       Nothing -> do phaseLog "error" "Internal notifications are not set."
+                     act
+       Just notificationSet -> do
+         InternalObjectStateChange iosc <- liftProcess $ decodeP (msg :: InternalObjectStateChangeMsg)
+         -- O(n*(max(n, m))) i.e. at least O(n²) but possibly worse
+         -- n = length notificationSet
+         -- m = length iosc
+         let next = foldl' (\sts asc -> filter (\s -> not $ toPred s asc) sts)
+                           notificationSet iosc
+         modify Local $ set extract (Just next)
+         case next of
+           [] -> act
+           -- We're not done, re-run phase waiting for another state
+           -- change message.
+           _  -> continue handle
+
+-- | For the given 'AnyStateSet', wait until every corresponding
+-- 'InternalObjectStateChange' has been seen. If you want to accept a
+-- wider range of messages than the ones directly specified by
+-- 'AnyStateSet', use 'setPhaseAllNotifiedBy' instead.
+--
+-- Works across multiple separate notifications, until the set of
+-- messages we are waiting for is empty.
 setPhaseAllNotified :: forall l g. Application g
                     => Jump PhaseHandle
                     -> (Lens' l (Maybe [AnyStateSet]))
                     -> PhaseM g l () -- ^ Callback when set has been notified
                     -> RuleM g l ()
-setPhaseAllNotified handle extract act =
-  setPhase handle $ \(HAEvent _ msg) -> do
-     mn <- gets Local (^. extract)
-     case mn of
-       Nothing -> do phaseLog "error" "Internal noficications are not set."
-                     act
-       Just notificationSet -> do
-         InternalObjectStateChange iosc <- liftProcess . decodeP $ (msg :: InternalObjectStateChangeMsg)
-         let internalStateSet = map extractStateSet iosc
-             next = notificationSet \\ internalStateSet
-         modify Local $ set extract (Just next)
-         case next of
-           [] -> act
-           _  -> continue handle
-  where
-    extractStateSet (AnyStateChange a _ n _) = stateSet a n
+setPhaseAllNotified = mkPhaseAllNotified anyStateToAscPred
 
--- | Similar to 'setPhaseAllNotified' but takes a list of predicates which
--- may be satisfied by an incoming notification. When all predicates have
--- been satisfied, enter the phase.
---
--- State will endup in either @Nothing@ or @Just []@ depends on lens
--- implementation.
-setPhaseAllNotifiedBy :: forall l app. Application app
+-- | As 'setPhaseAllNotified' but works on predicates on
+-- 'AnyStateChange's. This allows finer control over what messages we
+-- want to accept.
+setPhaseAllNotifiedBy :: forall l g. Application g
                       => Jump PhaseHandle
-                      -> (Lens' l (Maybe [AnyStateSet -> Bool]))
-                      -> PhaseM app l () -- ^ Callback when set has been notified
-                      -> RuleM app l ()
-setPhaseAllNotifiedBy handle extract act =
-  setPhase handle $ \(HAEvent _ msg) -> do
-     mn <- gets Local (^. extract)
-     case mn of
-       Nothing -> do phaseLog "error" "Internal noficications are not set."
-                     act
-       Just notificationSet -> do
-         InternalObjectStateChange iosc <- liftProcess . decodeP $ (msg :: InternalObjectStateChangeMsg)
-         let internalStateSet = map extractStateSet iosc
-             next = filter (\f -> not $ any f internalStateSet) notificationSet
-         modify Local $ set extract (Just next)
-         case next of
-           [] -> act
-           _  -> continue handle
-  where
-    extractStateSet (AnyStateChange a _ n _) = stateSet a n
+                      -> (Lens' l (Maybe [AnyStateChange -> Bool]))
+                      -> PhaseM g l () -- ^ Callback when set has been notified
+                      -> RuleM g l ()
+setPhaseAllNotifiedBy = mkPhaseAllNotified id
+
+-- | Create a predicate on 'AnyStateChange' from an object and its
+-- state. Useful for 'setPhaseAllNotifiedBy'.
+ascPred :: M0.HasConfObjectState a => a -> (M0.StateCarrier a -> Bool)
+        -> AnyStateChange -> Bool
+ascPred (obj :: a) p (AnyStateChange obj' _ n _) = case (cast obj', cast n) of
+  (Just obj'', Just n') -> obj == obj'' && p n'
+  _ -> False
+
+-- | Check that the 'AnyStateChange' directly corresponds to
+-- 'Transition' encoded in the 'AnyStateSet'.
+anyStateToAscPred :: AnyStateSet -> AnyStateChange -> Bool
+anyStateToAscPred (AnyStateSet a tr) (AnyStateChange (obj :: objT) o n _) =
+  case (cast a, cast tr) of
+    (Just (a' :: objT), Just (tr' :: Transition objT)) ->
+      obj == a' && case runTransition tr' o of
+        TransitionTo n' -> n == n'
+        _ -> False
+    _ -> False
 
 -- | As 'setPhaseInternalNotificationWithState', accepting all object states.
 setPhaseInternalNotification :: forall b l app.
@@ -343,9 +375,9 @@ setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGua
 mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
               => Int -- ^ timeout
               -> (l -> Maybe (b, M0.StateCarrier b)) -- ^ state getter
-              -> PhaseM RC l () -- ^ on failure
+              -> PhaseM RC l [Jump PhaseHandle] -- ^ on failure
               -> (b -> M0.StateCarrier b -> PhaseM RC l [Jump PhaseHandle]) -- ^ on success
-              -> RuleM RC l (b -> M0.StateCarrier b -> PhaseM RC l [Jump PhaseHandle])
+              -> RuleM RC l (b -> Transition b -> PhaseM RC l [Jump PhaseHandle])
 mkPhaseNotify t getter onFailure onSuccess = do
   notify_done <- phaseHandle "Notification done"
   notify_timed_out <- phaseHandle "Notification timed out"
@@ -353,17 +385,21 @@ mkPhaseNotify t getter onFailure onSuccess = do
   let getterP l = fmap (fmap (==)) (getter l)
 
   setPhaseNotified notify_done getterP $ \(o, oSt) -> onSuccess o oSt >>= switch
-  directly notify_timed_out onFailure
+  directly notify_timed_out $ onFailure >>= switch
 
-  return $ \obj objSt -> do
+  return $ \obj tr -> do
     rg <- getLocalGraph
-    if M0.getState obj rg == objSt
-    then do
-      phaseLog "info" "Object already in desired state, not notifying"
-      onSuccess obj objSt
-    else do
-      applyStateChanges [stateSet obj objSt]
-      return [notify_done, timeout t notify_timed_out]
+    let currentSt = M0.getState obj rg
+    case runTransition tr currentSt of
+      NoTransition -> do
+        phaseLog "info" "Object already in desired state, not notifying"
+        onSuccess obj currentSt
+      InvalidTransition err -> do
+        phaseLog "warn" $ "Bad transition: " ++ err
+        onFailure
+      TransitionTo _ -> do
+        applyStateChanges [stateSet obj tr]
+        return [notify_done, timeout t notify_timed_out]
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where
@@ -373,7 +409,7 @@ data StateCascadeRule a b where
                     => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
                     -> (M0.StateCarrier a -> Bool)  --  New state(s)
                     -> (a -> G.Graph -> [b]) --  Function to find new objects
-                    -> (M0.StateCarrier a -> M0.StateCarrier b -> M0.StateCarrier b)
+                    -> (M0.StateCarrier a -> Transition b)
                     -> StateCascadeRule a b
   -- Trigger an arbitrary graph update as a result of a state change.
   StateCascadeTrigger :: (M0.HasConfObjectState a, b ~ a)
@@ -415,7 +451,7 @@ rackCascadeEnclosureRule = StateCascadeRule
   (M0.M0_NC_ONLINE==)
   (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (const $ const M0.M0_NC_TRANSIENT)  -- XXX: what if enclosure if failed (?)
+  Transition.rackCascadeEnclosure   -- XXX: what if enclosure is failed (?)
 
 enclosureCascadeControllerRules :: [StateCascadeRule M0.Enclosure M0.Controller]
 enclosureCascadeControllerRules =
@@ -423,12 +459,12 @@ enclosureCascadeControllerRules =
       (M0.M0_NC_ONLINE ==)
       (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
       (\x rg -> G.connectedTo x M0.IsParentOf rg)
-      (const $ const M0.CSTransient)
+      Transition.enclosureCascadeControllerTransient
   , StateCascadeRule
       (M0.M0_NC_ONLINE /=)
       (M0.M0_NC_ONLINE ==)
       (\x rg -> G.connectedTo x M0.IsParentOf rg)
-      (const $ const M0.CSOnline)
+      Transition.enclosureCascadeControllerOnline
   ]
 
 processCascadeServiceRule :: StateCascadeRule M0.Process M0.Service
@@ -436,48 +472,14 @@ processCascadeServiceRule = StateCascadeRule
     (const True)
     (const True)
     (\x rg -> G.connectedTo x M0.IsParentOf rg)
-    (\s o -> case s of
-              M0.PSStarting -> M0.SSStarting -- error "M0.SSStarting"
-              M0.PSOnline -> M0.SSOnline
-              M0.PSOffline
-                | o == M0.SSFailed -> o
-                | otherwise -> M0.SSOffline
-              M0.PSFailed _ -> M0.SSFailed
-              M0.PSQuiescing
-                | o `elem` [M0.SSFailed, M0.SSOffline] -> o
-                | inhibited o -> o
-                | otherwise -> M0.SSInhibited o
-              M0.PSStopping
-                | o == M0.SSFailed -> o
-                | otherwise -> M0.SSStopping
-              M0.PSInhibited _
-                | o == M0.SSFailed -> o
-                | inhibited o -> o
-                | otherwise -> M0.SSInhibited o
-              M0.PSUnknown -> o)
-  where
-    inhibited (M0.SSInhibited _) = True
-    inhibited _ = False
+    Transition.processCascadeService
 
 serviceCascadeDiskRule :: StateCascadeRule M0.Service M0.SDev
 serviceCascadeDiskRule = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\s o  ->
-     let break' M0.SDSFailed  = M0.SDSFailed
-         break' (M0.SDSInhibited x) = M0.SDSInhibited x
-         break' x = M0.SDSInhibited x
-         unbreak (M0.SDSInhibited x) = x
-         unbreak x = x
-     in case s of
-          M0.SSUnknown  -> o
-          M0.SSOffline  -> break' o
-          M0.SSFailed   -> break' o
-          M0.SSStarting -> unbreak o
-          M0.SSOnline   -> unbreak o
-          M0.SSStopping -> break' o
-          M0.SSInhibited _ -> break' o)
+  Transition.serviceCascadeDisk
 
 -- | This is a rule which interprets state change events and is responsible for
 -- changing the state of the cluster accordingly'
@@ -486,11 +488,7 @@ nodeFailsProcessRule = StateCascadeRule
   (const True)
   (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\_ o -> inhibit o)
-  where
-    inhibit (M0.PSFailed x) = M0.PSFailed x
-    inhibit x@(M0.PSInhibited _) = x
-    inhibit y = M0.PSInhibited y
+  Transition.nodeFailsProcess
 
 -- | When node becames online again, we should mark it as
 nodeUnfailsProcessRule :: StateCascadeRule M0.Node M0.Process
@@ -498,15 +496,7 @@ nodeUnfailsProcessRule = StateCascadeRule
   (\x -> M0.NSFailed == x || M0.NSFailedUnrecoverable == x)
   (== M0.NSOnline)
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
-  (\_ o -> uninhibit o)
-  where
-    uninhibit (M0.PSInhibited M0.PSOffline) = M0.PSOffline
-    uninhibit (M0.PSInhibited M0.PSUnknown) = M0.PSUnknown
-    uninhibit (M0.PSInhibited x@M0.PSInhibited{}) = uninhibit x
-    -- if process was in inhibited state because of the node
-    -- failure then process should be failed.
-    uninhibit (M0.PSInhibited _)           = M0.PSFailed "node failure"
-    uninhibit x                            = x
+  Transition.nodeUnfailsProcess
 
 -- This is a phantom rule; SDev state is queried through Disk state,
 -- so this rule just exists to include the `SDev` in the set of
@@ -516,25 +506,21 @@ sdevCascadeDisk = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> maybeToList $ G.connectedTo x M0.IsOnHardware rg)
-  const
+  Transition.sdevCascadeDisk'
 
 diskCascadeSdev :: StateCascadeRule M0.Disk M0.SDev
 diskCascadeSdev = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> maybeToList $ G.connectedFrom M0.IsOnHardware x rg)
-  const
+  Transition.diskCascadeSDev'
 
 nodeCascadeController :: StateCascadeRule M0.Node M0.Controller
 nodeCascadeController = StateCascadeRule
   (const True)
   (const True)
   (\x rg -> maybeToList $ G.connectedTo x M0.IsOnHardware rg)
-  (\s o -> case s of
-            M0.NSUnknown -> o
-            M0.NSOnline -> M0.CSOnline
-            _ -> M0.CSTransient
-  )
+  Transition.nodeCascadeController'
 
 -- | HALON-425
 --   This is a temporary cascade rule. Normally, there should be no direct link
@@ -549,9 +535,8 @@ iosFailsController = [
         serviceFailed
         (\x rg -> case M0.s_type x of
           CST_IOS -> iosToController rg x
-          _ -> []
-        )
-        (\_ _ -> M0.CSTransient)
+          _ -> [])
+        Transition.iosFailsControllerTransient
     , StateCascadeRule
         (const True)  -- XXX: this is workaround as halon sets IOS to unknown
                       -- in prior to cluster start. As a result this rule never
@@ -559,9 +544,8 @@ iosFailsController = [
         (not . serviceFailed)
         (\x rg -> case M0.s_type x of
           CST_IOS ->  iosToController rg x
-          _ -> []
-        )
-        (\_ _ -> M0.CSOnline)
+          _ -> [])
+        Transition.iosFailsControllerOnline
     ]
   where
     serviceFailed M0.SSFailed = True
@@ -587,7 +571,7 @@ diskFailsPVer = StateCascadeRule
                     guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
                     return pver
             in lefts $ map (checkBroken rg) pvers)
-  (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
+  Transition.diskChangesPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
@@ -627,7 +611,7 @@ diskFixesPVer = StateCascadeRule
                      guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                      return pver
             in lefts $ map (checkBroken rg) pvers)
-  (\a _ -> M0.toConfObjState (undefined :: M0.Disk) a)
+  Transition.diskChangesPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do

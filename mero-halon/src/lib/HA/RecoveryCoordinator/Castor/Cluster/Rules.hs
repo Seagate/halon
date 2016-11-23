@@ -66,7 +66,6 @@ import           HA.RecoveryCoordinator.Castor.Node.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
-import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import           Mero.ConfC (ServiceType(..))
@@ -76,7 +75,7 @@ import           Control.Applicative
 import           Control.Category
 import           Control.Distributed.Process hiding (catch, try)
 import           Control.Lens
-import           Control.Monad (join, unless, when)
+import           Control.Monad (join, unless, void, when)
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
@@ -173,10 +172,7 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
     mrm <- getPrincipalRM
     unless (isJust mrm) $ do
       changed_processes :: [M0.Process] <- findChanges
-      unless (null changed_processes) $
-        pickPrincipalRM >>= \msrv -> forM_ msrv $ \srv -> do
-          procs :: [M0.Process] <- getParents srv
-          applyStateChanges $! stateSet srv M0.SSOnline:((`stateSet` M0.PSOnline) <$> procs)
+      unless (null changed_processes) $ void pickPrincipalRM
 
 -------------------------------------------------------------------------------
 -- Requests handling

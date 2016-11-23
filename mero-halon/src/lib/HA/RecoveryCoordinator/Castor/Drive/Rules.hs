@@ -58,6 +58,7 @@ import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 
 import Control.Distributed.Process hiding (catch)
 import Control.Lens
@@ -117,11 +118,10 @@ mkCheckAndHandleDriveReady getter smartLens next = do
   let post_process m0sdev = do
         Just sdev <- getter <$> get Local
         promulgateRC $ DriveReady sdev
-        oldState <- getLocalGraph <&> getState m0sdev
-        case oldState of
+        getState m0sdev <$> getLocalGraph >>= \case
           SDSUnknown -> do
             -- We do not know the old state, so set the new state to online
-            applyStateChanges [ stateSet m0sdev SDSOnline ]
+            applyStateChanges [ stateSet m0sdev Tr.sdevOnline ]
             next m0sdev
           SDSOnline -> return () -- Do nothing
           SDSFailed -> do
@@ -144,7 +144,7 @@ mkCheckAndHandleDriveReady getter smartLens next = do
                 continue abort_result
           SDSTransient _ -> do
             -- Transient failure - recover
-            applyStateChanges [ stateSet m0sdev . sdsRecoverTransient $ oldState ]
+            applyStateChanges [ stateSet m0sdev Tr.sdevRecoverTransient]
             next m0sdev
           SDSRebalancing -> next m0sdev
           SDSInhibited _ -> do
@@ -238,8 +238,7 @@ ruleDriveRemoved = define "drive-removed" $ do
 
   let post_process m0sdev = do
         Just (uuid, _, _, _, _) <- get Local
-        old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
         switch [reinsert, timeout driveRemovalTimeout removal]
         messageProcessed uuid
 
@@ -278,8 +277,7 @@ ruleDriveRemoved = define "drive-removed" $ do
   directly removal $ do
     Just (uuid, _, _, _, m0sdev) <- get Local
     phaseLog "debug" "Notifying M0_NC_FAILED for sdev"
-    old_state <- getLocalGraph <&> getState m0sdev
-    applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
+    applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
     messageProcessed uuid
     continue finish
 
@@ -430,8 +428,7 @@ ruleDriveFailed :: Definitions RC ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
   forM_ sd $ \m0sdev -> do
-    old_state <- getLocalGraph <&> getState m0sdev
-    applyStateChanges [ stateSet m0sdev $ sdsFailFailed old_state ]
+    applyStateChanges [ stateSet m0sdev Tr.sdevFailFailed]
   messageProcessed uuid
 
 -- | When a drive is powered off
@@ -457,8 +454,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       Just b -> y b g l
 
   let post_process m0sdev = do
-        old_state <- getLocalGraph >>= return . getState m0sdev
-        applyStateChanges [stateSet m0sdev $ sdsFailTransient old_state]
+        applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
         continue post_power_removed
   (device_detached, detachDisk) <- mkDetachDisk
     (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
@@ -519,8 +515,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
     -- Mark Mero device as permanently failed
     mm0sdev <- lookupStorageDeviceSDev dpcDevice
     forM_ mm0sdev $ \m0sdev -> do
-      old_state <- getLocalGraph <&> getState m0sdev
-      applyStateChanges [stateSet m0sdev $ sdsFailFailed old_state]
+      applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
     done uuid
     continue finish
 
@@ -589,13 +584,12 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
 ruleDriveBlip :: Definitions RC ()
 ruleDriveBlip = defineSimple "castor::disk::blip"
   $ \(DriveTransient eid _ _ disk) -> do
-    rg <- getLocalGraph
     removed <- isStorageDriveRemoved disk
     powered <- isStorageDevicePowered disk
     unless (removed || not powered) $ do
       mm0sdev <- lookupStorageDeviceSDev disk
       forM_ mm0sdev $ \sd -> do
-        applyStateChanges [ stateSet sd . sdsFailTransient $ getState sd rg ]
+        applyStateChanges [ stateSet sd Tr.sdevFailTransient]
     messageProcessed eid
 
 -- | Fires when a drive is marked as 'ready' for use. This is typically

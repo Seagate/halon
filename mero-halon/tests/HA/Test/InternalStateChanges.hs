@@ -17,6 +17,7 @@ import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.Replicator
@@ -132,9 +133,9 @@ stateCascade t pg = doTest t pg [rule] test'
             -- procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
             srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
         liftProcess . usend pid $ p
-        applyStateChanges [stateSet p M0.PSOnline]
-        let notifySet = stateSet p M0.PSOnline
-                      : (flip stateSet M0.SSOnline <$> srvs)
+        applyStateChanges [stateSet p Tr.processOnline]
+        let notifySet = stateSet p Tr.processOnline
+                      : (flip stateSet Tr.serviceOnline <$> srvs)
             meroSet = Note (M0.fid p) M0_NC_ONLINE
                     : (flip Note M0_NC_ONLINE . M0.fid <$> srvs)
         put Local $ Just (eid, pid, notifySet, meroSet)
@@ -200,7 +201,7 @@ failvecCascade t pg = doTest t pg [rule] test'
                 , (disk :: M0.Disk) <- G.connectedTo controller M0.IsParentOf rg
                 ]
         liftProcess . usend pid $ disks
-        let failure_set = [stateSet d0 M0.SDSFailed, stateSet d1 M0.SDSFailed]
+        let failure_set = [stateSet d0 Tr.diskFailed, stateSet d1 Tr.diskFailed]
         applyStateChanges failure_set
         let meroSet = [ Note (M0.fid d0) M0_NC_FAILED
                       , Note (M0.fid d1) M0_NC_TRANSIENT

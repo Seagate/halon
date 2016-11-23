@@ -197,11 +197,13 @@ Library
                        HA.RecoveryCoordinator.Castor.Drive.Actions
                        HA.RecoveryCoordinator.Castor.Filesystem
                        HA.RecoveryCoordinator.Castor.Service
+                       HA.RecoveryCoordinator.Mero.Events
                        HA.RecoveryCoordinator.Mero.State
+                       HA.RecoveryCoordinator.Mero.Transitions
+                       HA.RecoveryCoordinator.Mero.Transitions.Internal
                        HA.RecoveryCoordinator.Castor.Cluster.Events
                        HA.RecoveryCoordinator.Castor.Process.Events
                        HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
-                       HA.RecoveryCoordinator.Mero.Events
                        HA.Services.Mero.RC
       Other-Modules:
                       Mero.Engine

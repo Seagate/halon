@@ -47,6 +47,7 @@ import           HA.RecoveryCoordinator.Actions.Mero (validateTransactionCache)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Mero.Events (stateSet)
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseNotified)
 import qualified HA.Resources.Castor.Initial as CI
@@ -254,7 +255,7 @@ testConfObjectStateQuery transport pg =
       setPhase init_state $ \(HAEvent uuid (WaitFailedSDev caller m0sdev st)) -> do
         let state = M0.sdsFailTransient st
         put Local (uuid, caller, m0sdev, state)
-        applyStateChanges [ stateSet m0sdev state ]
+        applyStateChanges [ stateSet m0sdev Tr.sdevFailTransient ]
         continue wait_failure
 
       setPhaseNotified wait_failure (\(_, _, m0sdev, st) -> Just (m0sdev, (== st))) $ \(d, st) -> do

@@ -18,10 +18,11 @@ module HA.RecoveryCoordinator.Castor.Expander.Rules
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
+import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessesRequest(..))
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Mero.Actions.Conf
-import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessesRequest(..))
-import HA.RecoveryCoordinator.Mero.Events (AnyStateSet(..))
+import HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
+import HA.RecoveryCoordinator.Mero.Transitions
 import HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
 import HA.RecoveryCoordinator.Mero.State
 import HA.RecoveryCoordinator.Castor.Node.Rules
@@ -53,7 +54,6 @@ import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Proxy
 import Data.UUID.V4 (nextRandom)
 import qualified Data.Text as T
-import Data.Typeable (cast)
 import Data.Vinyl
 
 import Network.CEP
@@ -164,8 +164,8 @@ ruleReassembleRaid =
             -- Mark enclosure as transiently failed. This should cascade down to
             -- controllers, disks etc.
             forM_ mm0 $ \(m0enc, m0node) -> let
-                notifications = [ stateSet m0enc M0.M0_NC_TRANSIENT ]
-                notificationChk = fmap (==) notifications
+                notifications = [ stateSet m0enc enclosureTransient ]
+                notificationChk = anyStateToAscPred <$> notifications
               in do
                 applyStateChanges notifications
                 modify Local $ rlens fldNotifications . rfield .~ Just notificationChk
@@ -230,13 +230,12 @@ ruleReassembleRaid =
             -- e.g. first try `Spiel.processStop`, then systemd,
             -- then kill -9. Maybe `processQuiesce`? HALON-374
             promulgateRC $ StopProcessesRequest m0node procs
-            let notifications = (\p -> \(AnyStateSet p' s) ->
-                  case (,) <$> cast p' <*> cast s of
-                    Just (p'', M0.PSOffline) | p == p'' -> True
-                    Just (p'', M0.PSFailed _) | p == p'' -> True
-                    _ -> False
-                  ) <$> procs
-            modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
+            let notifications = (\p -> ascPred p $ \case
+                                     M0.PSOffline -> True
+                                     M0.PSFailed{} -> True
+                                     _ -> False) <$> procs
+
+            modify Local $ rlens fldNotifications . rfield .~ Just notifications
             waitFor mero_notify_done
             onSuccess unmount
             continue dispatcher
@@ -331,11 +330,11 @@ ruleReassembleRaid =
       -- Mark the enclosure as healthy again
       directly mark_mero_healthy $ do
         Just (m0enc, _) <- gets Local (^. rlens fldM0 . rfield)
-        let notifications = [ stateSet m0enc M0.M0_NC_ONLINE ]
-            notificationChk = fmap (==) notifications
+        let notifications = [ stateSet m0enc enclosureOnline ]
+            notificationChk = anyStateToAscPred <$> notifications
         applyStateChanges notifications
 
-        modify Local $ rlens fldNotifications . rfield .~ (Just notificationChk)
+        modify Local $ rlens fldNotifications . rfield .~ Just notificationChk
         waitFor mero_notify_done
         onSuccess finish
 
@@ -382,7 +381,7 @@ ruleReassembleRaid =
     fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     fldHardware = Proxy
     -- Notifications to wait for
-    fldNotifications :: Proxy '("notifications", Maybe [AnyStateSet -> Bool])
+    fldNotifications :: Proxy '("notifications", Maybe [AnyStateChange -> Bool])
     fldNotifications = Proxy
     -- RAID devices
     fldRaidDevices :: Proxy '("raidDevices", [String])
