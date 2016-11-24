@@ -161,3 +161,15 @@ Also by default, Halon attempts to verify that it is running against the
 same version of the Mero library that it was built with. This check can
 prevent unexpected bugs, but may occasionally inhibit testing. You can disable
 this check by setting the `DISABLE_MERO_COMPAT_CHECK` environment variable.
+
+# System requirements.
+
+Architecture: amd64, x86.
+
+OS requrements: geneneric linux distribution
+  In case of mero build: Linux distribution should be supported by mero.
+  System libraries: leveldb, libgmp, libffi, rabbitmq-c.
+
+Memory requirements:
+   0.5Gb - singlenode setup.
+   2Gb   - 6 nodes cluster.
