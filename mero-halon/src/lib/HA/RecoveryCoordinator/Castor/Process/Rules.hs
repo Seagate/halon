@@ -21,6 +21,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
 import           HA.RecoveryCoordinator.Mero.State
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Runs(..))
 import           HA.Resources.Castor (Host(..), Is(..))
@@ -129,7 +130,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
         phaseLog "warn" m
         Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
         modify Local $ rlens fldRep . rfield .~ Just (ProcessStartFailed p m)
-        applyStateChanges [ stateSet p $ M0.PSFailed m ]
+        applyStateChanges [ stateSet p $ Tr.processFailed m ]
         return [finish]
 
   run_notification <- mkPhaseNotify 20
@@ -137,8 +138,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
              Just (ProcessStartRequest p) -> Just (p, M0.PSStarting)
              Nothing -> Nothing)
     (do phaseLog "warn" "Failed to notify."
-        finisher <- fail_start "Notification about PSStarting failed"
-        switch finisher)
+        fail_start "Notification about PSStarting failed")
     (\p _ -> G.isConnected p Is M0.ProcessBootstrapped <$> getLocalGraph >>= \case
         True -> return [start_process]
         False -> return [configure])
@@ -151,7 +151,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
             Just failMsg -> Just <$> fail_start failMsg
             Nothing -> do
               forM_ (runWarnings p rg) $ phaseLog "warn"
-              notification_phases <- run_notification p M0.PSStarting
+              notification_phases <- run_notification p Tr.processStarting
               return $ Just notification_phases
 
   directly configure $ do
@@ -239,7 +239,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
     restartMaxAttempts <- _hv_process_max_start_attempts <$> getHalonVars
     phaseLog "info" $ printf "%s: Retrying restart (%d/%d)"
                              (showFid p) retryCount restartMaxAttempts
-    notification_phases <- run_notification p M0.PSStarting
+    notification_phases <- run_notification p Tr.processStarting
     switch notification_phases
 
   return route
@@ -366,14 +366,14 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        applyStateChanges [ stateSet p M0.PSOnline ]
+        applyStateChanges [ stateSet p Tr.processOnline ]
       (_, _)
         | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
         phaseLog "action" "HA Process started."
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        applyStateChanges [ stateSet p M0.PSOnline ]
+        applyStateChanges [ stateSet p Tr.processOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
@@ -416,8 +416,8 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
           -- We are intending to stop this process. Either this or the
           -- notification from systemd should be sufficient to mark it
           -- as stopped.
-          applyStateChanges [stateSet p $ M0.PSOffline]
-        _ -> applyStateChanges [stateSet p $ M0.PSFailed "MERO-failed"]
+          applyStateChanges [stateSet p Tr.processOffline ]
+        _ -> applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
     done eid
 
   startFork rule_init ()
@@ -452,8 +452,8 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
       <- gets Local (^. rlens fldReq . rfield)
     showContext
     phaseLog "info" $ "Setting processes to quiesce."
-    let notifications = (flip stateSet M0.PSQuiescing) <$> p
-    modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
+    let notifications = (`stateSet` Tr.processQuiescing) <$> p
+    modify Local $ rlens fldNotifications . rfield .~ Just notifications
     applyStateChanges notifications
     switch [quiesce_ack, timeout notificationTimeout quiesce_timeout]
 
@@ -480,8 +480,10 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
       Nothing -> do
         showContext
         phaseLog "error" "No process control channel found. Failing processes."
-        let failState = M0.PSFailed "No process control channel found during stop."
-        applyStateChanges $ (flip stateSet failState) <$> p
+        let failMsg = "No process control channel found during stop."
+        let failTr = Tr.processFailed failMsg
+        let failState = M0.PSFailed failMsg
+        applyStateChanges $ (`stateSet` failTr) <$> p
         modify Local $ rlens fldRep . rfield .~
           (Just $ StopProcessesResult m0node ((,failState) <$> p))
         continue finish
@@ -494,12 +496,14 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
     rg <- getLocalGraph
     let resultProcs :: [(M0.Process, M0.ProcessState)]
         resultProcs = mapMaybe (\case
-          Right x ->  (,M0.PSOffline) <$> M0.lookupConfObjByFid x rg
-          Left (x,s) -> (,M0.PSFailed $ "Failed to stop: " ++ show s)
+          Right x ->  (, M0.PSOffline) <$> M0.lookupConfObjByFid x rg
+          Left (x,s) -> (, M0.PSFailed $ "Failed to stop: " ++ show s)
                       <$> M0.lookupConfObjByFid x rg
           )
           results
-    applyStateChanges $ (uncurry stateSet) <$> resultProcs
+    let setTr p (M0.PSFailed msg) = stateSet p (Tr.processFailed msg)
+        setTr p _ = stateSet p Tr.processOffline
+    applyStateChanges $ uncurry setTr <$> resultProcs
 
     modify Local $ rlens fldRep . rfield .~
       (Just $ StopProcessesResult m0node resultProcs)
@@ -516,15 +520,16 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
     -- restarted the process. So we should only mark those processes
     -- which are still @PSStopping@ as being failed.
     rg <- getLocalGraph
-    let failState = M0.PSFailed "Timeout while stopping."
+    let failMsg = "Timeout while stopping."
+        failState = M0.PSFailed failMsg
+        failTr = Tr.processFailed failMsg
         stoppingProcs = filter (\p -> getState p rg == M0.PSStopping) ps
         resultProcs = (\p -> case getState p rg of
             M0.PSStopping -> (p, failState)
             x -> (p, x)
           ) <$> ps
 
-    applyStateChanges $ (flip stateSet failState)
-                    <$> stoppingProcs
+    applyStateChanges $ (`stateSet` failTr) <$> stoppingProcs
 
     modify Local $ rlens fldRep . rfield .~
       (Just $ StopProcessesResult m0node resultProcs)
@@ -589,7 +594,7 @@ ruleFailedNotificationFailsProcess =
     -- handler for failed notifications so there isn't anything sane
     -- we could do here anyway.
     unless (null procs) $ do
-      applyStateChanges $ map (\p -> stateSet p $ M0.PSFailed "notification-failed") procs
+      applyStateChanges $ map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
   where
     isProcFailed (M0.PSFailed _) = True
     isProcFailed _ = False

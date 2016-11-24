@@ -42,6 +42,7 @@ module HA.RecoveryCoordinator.Mero.Events
   ) where
 
 import HA.Encode (ProcessEncode(..))
+import HA.RecoveryCoordinator.Mero.Transitions
 import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note
@@ -125,18 +126,13 @@ instance Binary GetSpielAddress
 --   resolves it against the graph, which will yield
 --   a state change event.
 data AnyStateSet =
-  forall a. HasConfObjectState a => AnyStateSet a (StateCarrier a)
+  forall a. HasConfObjectState a => AnyStateSet a (Transition a)
   deriving Typeable
-
-instance Eq AnyStateSet where
-  AnyStateSet obj st == AnyStateSet obj' st' = case (cast obj', cast st') of
-    (Just cobj, Just cst) -> obj == cobj && st == cst
-    _ -> False
 
 -- | Create a state 'set' request.
 stateSet :: HasConfObjectState a
          => a
-         -> StateCarrier a
+         -> Transition a
          -> AnyStateSet
 stateSet = AnyStateSet
 

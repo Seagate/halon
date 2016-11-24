@@ -76,6 +76,7 @@ import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
 import HA.RecoveryCoordinator.Mero.State
   ( applyStateChanges
@@ -373,7 +374,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
                     -- Can ignore K here: disks are in Repaired state
                     -- so moving to rebalancing does not increase
                     -- number of failures.
-                    let messages = stateSet pool M0_NC_REBALANCE : (flip stateSet M0.SDSRebalancing <$> disks)
+                    let messages = stateSet pool Tr.poolRebalance : (flip stateSet Tr.diskRebalance <$> disks)
                     modify Local $ rlens fldNotifications .~ Field (Just messages)
                     modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
                     applyStateChanges messages
@@ -438,7 +439,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
         ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
         -- Don't need to think about K here as both rebalance and
         -- repaired are failed states.
-        applyStateChanges $ map (\d -> stateSet d M0.SDSRepaired) ds
+        applyStateChanges $ map (\d -> stateSet d Tr.sdevRepaired) ds
         unsetPoolRepairStatus pool
 
     -- Is this device ready to be rebalanced onto?
@@ -513,7 +514,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
               True -> do
                 -- OK to just set repairing here without checking K:
                 -- @fa@ are already failed by this point.
-                let msgs = stateSet pool M0_NC_REPAIR : (flip stateSet M0.SDSRepairing <$> fa)
+                let msgs = stateSet pool Tr.poolRepairing : (flip stateSet Tr.sdevRepairing <$> fa)
                 modify Local $ rlens fldNotifications .~ Field (Just msgs)
                 modify Local $ rlens fldPool .~ Field (Just pool)
                 applyStateChanges msgs
@@ -591,7 +592,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
         -- notification fires first. The race does not matter
         -- because notification failure handler will check for
         -- already failed processes.
-        applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds
+        applyStateChanges $ (`stateSet` Tr.sdevFailed) <$> ds
         unsetPoolRepairStatus pool
 
     -- It's possible that after calling for the repair to start, but before
@@ -1031,14 +1032,18 @@ completeRepair pool prt muid = do
           repaired_sdevs = Set.fromList [ f | (f, v) <- drive_updates, v >= iosvs]
           -- drives that are under operation but were not fixed
           non_repaired_sdevs = repairing_sdevs `Set.difference` repaired_sdevs
-          repairedState M0.Rebalance = M0.SDSOnline
-          repairedState M0.Failure = M0.SDSRepaired
+
+          repairedSdevTr M0.Rebalance = Tr.sdevOnline
+          repairedSdevTr M0.Failure = Tr.sdevRepaired
+
+          repairedDiskTr M0.Rebalance = Tr.diskOnline
+          repairedDiskTr M0.Failure = Tr.diskRepaired
 
       repaired_disks <- mapMaybeM lookupSDevDisk $ Set.toList repaired_sdevs
       unless (null repaired_sdevs) $ do
 
-        applyStateChanges $ map (\s -> stateSet s (repairedState prt)) (Set.toList repaired_sdevs)
-                         ++ map (\s -> stateSet s (repairedState prt)) repaired_disks
+        applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
+                         ++ map (`stateSet` repairedDiskTr prt) repaired_disks
 
         when (prt == M0.Rebalance) $
            forM_ repaired_sdevs $ \m0sdev -> void $ runMaybeT $ do
@@ -1049,7 +1054,7 @@ completeRepair pool prt muid = do
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool
-                applyStateChanges [stateSet pool $ R.repairedNotificationMsg prt]
+                applyStateChanges [stateSet pool $ R.repairedNotificationTransition prt]
                 unsetPoolRepairStatus pool
                 when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
         else do phaseLog "info" $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)

@@ -25,6 +25,7 @@ import HA.Resources (Node(..), Has(..), Cluster(..))
 import HA.Resources.Castor
 #ifdef USE_MERO
 import HA.RecoveryCoordinator.Mero.State -- XXX: remove if possible
+import HA.RecoveryCoordinator.Mero.Transitions
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
 import Mero.ConfC (strToFid)
@@ -455,7 +456,7 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
             phaseLog "info" $ "Failing " ++ showFid p
             when updatePid $ do
               modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
-            applyStateChanges [stateSet p $ M0.PSFailed "SSPL notification about service failure"]
+            applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
         Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
         Just p -> do

@@ -43,6 +43,8 @@ import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.Resources as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -230,10 +232,10 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     -- We can't tolerate more failures so keep/set device transient.
     -- @newFailure@ ensures that transient doesn't wrap a state into
     -- what's considered a failed state.
-    | newFailure && k <= fs -> Left $ stateSet sdev (M0.sdsFailTransient $ M0.getState sdev rg)
-    | otherwise -> Right $ stateSet sdev st
+    | newFailure && k <= fs -> Left $ stateSet sdev Tr.sdevFailTransient
+    | otherwise -> Right $ stateSet sdev (TrI.constTransition st)
   -- Couldn't find K for some reason, just blindly change state
-  Nothing -> Right $ stateSet sdev st
+  Nothing -> Right $ stateSet sdev (TrI.constTransition st)
   where
     getK :: M0.PVer -> Maybe Word32
     getK pver = case M0.v_type pver of

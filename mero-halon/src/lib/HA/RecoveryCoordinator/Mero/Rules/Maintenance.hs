@@ -27,6 +27,8 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Writer
 import Control.Distributed.Process (sendChan)
 
+import HA.RecoveryCoordinator.Mero.Transitions.Internal (constTransition)
+
 -- | Set of all rules.
 rules :: Definitions RC ()
 rules = sequence_
@@ -45,7 +47,7 @@ ruleUpdateObjectState = defineSimpleTask "mero::maintenance::update-object-state
             case mo of
               Nothing -> return ObjectNotFound
               Just o  -> case reads state of
-               [(st, _)] -> do tell [stateSet o st]
+               [(st, _)] -> do tell [stateSet o $ constTransition st]
                                return Success
                _ -> return ParseFailed
      applyStateChanges updates

@@ -9,6 +9,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal where
 import           Data.List (nub)
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Mero
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -16,12 +17,18 @@ import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
 
+-- | Get a 'Tr.Transition' corresponding to a pool completing
+-- repair/rebalance.
+repairedNotificationTransition :: M0.PoolRepairType -> Tr.Transition M0.Pool
+repairedNotificationTransition M0.Rebalance = Tr.poolOnline
+repairedNotificationTransition M0.Failure = Tr.poolRepaired
+
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or
 -- repairing.
 repairedNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
 repairedNotificationMsg M0.Rebalance = M0.M0_NC_ONLINE
-repairedNotificationMsg M0.Failure = M0.M0_NC_REPAIRED
+repairedNotificationMsg M0.Failure = M0.M0_NC_REBALANCE
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or

@@ -20,14 +20,11 @@ import HA.RecoveryCoordinator.RC.Actions
   )
 import HA.RecoveryCoordinator.Mero.Events (stateSet)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Mero.State
-  ( applyStateChanges
-  , setPhaseNotified
-  )
+import HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseNotified)
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-
 import Mero.Notification.HAState
   ( HAMsg(..)
   , HAMsgMeta(..)
@@ -93,7 +90,8 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
         , ("service.type", show typ) -- XXX: remove
         ] Nothing
       put Local $ Just (eid, Just (service, st), Nothing)
-      applyStateChanges [stateSet service st]
+      let tr = if st == M0.SSOnline then Tr.serviceOnline else Tr.serviceOffline
+      applyStateChanges [stateSet service tr]
       switch [service_notified, timeout 30 timed_out]
 
   setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
@@ -121,7 +119,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
           pst -> do
             Log.rcLog Log.DEBUG $ "Service for process failed, process state was " ++ show pst
             let failMsg = "Underlying service failed: " ++ show (M0.fid srv)
-            applyStateChanges [stateSet p . M0.PSFailed $ failMsg]
+            applyStateChanges [stateSet p $ Tr.processFailed failMsg]
         err ->
           phaseLog "warn" $ "Couldn't handle bad state for " ++ M0.showFid srv
                           ++ ": " ++ show err

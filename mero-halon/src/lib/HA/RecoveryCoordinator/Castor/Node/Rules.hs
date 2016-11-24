@@ -129,6 +129,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Actions (meroChannel, lookupMeroChannelByNode)
 import           HA.Services.SSPL.CEP ( sendInterestingEvent )
@@ -240,7 +241,7 @@ eventKernelStarted :: Definitions RC ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
   g <- getLocalGraph
   let nodes = nodeToM0Node (R.Node $ processNodeId sp) g
-  applyStateChanges $ (`stateSet` M0.NSOnline) <$> nodes
+  applyStateChanges $ (`stateSet` nodeOnline) <$> nodes
   for_ nodes $ notify . KernelStarted
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
@@ -262,7 +263,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
            $ G.connectedTo p M0.IsParentOf g
         ]
   let failMsg = "mero-kernel failed to start: " ++ msg
-  applyStateChanges $ (`stateSet` M0.PSFailed failMsg) <$> haprocesses
+  applyStateChanges $ (`stateSet` processFailed failMsg) <$> haprocesses
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure
 
@@ -287,7 +288,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
                  ( "{ 'metadata':" <> code meta
                 <> ", 'beError':" <> code beioerr
                 <> "}" )
-              applyStateChanges [stateSet node M0.NSFailed]
+              applyStateChanges [stateSet node nodeFailed]
             where
               code :: Aeson.ToJSON a => a -> T.Text
               code = TL.toStrict . TL.decodeUtf8 . Aeson.encode
@@ -345,7 +346,7 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
      rg <- getLocalGraph
      case listToMaybe $ m0nodeToNode m0node rg of
        Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
-       Just node -> do let ps = [ stateSet p M0.PSStopping
+       Just node -> do let ps = [ stateSet p processStopping
                                 | p <- G.connectedTo m0node M0.IsParentOf rg
                                 , any (\s -> M0.s_type s == CST_HA)
                                       $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
@@ -420,7 +421,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
       -- TOOD: shuffle retrigger around a bit
       rg <- getLocalGraph
       let m0nodes = nodeToM0Node node rg
-      applyStateChanges $ flip stateSet M0.NSOnline <$> m0nodes
+      applyStateChanges $ (`stateSet` nodeOnline) <$> m0nodes
       case m0nodes of
         [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
         [m0node] -> retriggerMeroNodeBootstrap m0node
@@ -946,10 +947,9 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      let failedProcs = getLabeledNodeProcesses node (mkLabel lvl) rg
      -- XXX: quite possibly we want to say they are inhibited, as we are not
      -- sure.
-     applyStateChanges $ (\p -> stateSet p $ M0.PSFailed "Timeout on stop.")
-                          <$> failedProcs
-     applyStateChanges [stateSet m0node M0.NSUnknown]
-     modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeTimeout)
+     applyStateChanges $ (`stateSet` processFailed "Timeout on stop.") <$> failedProcs
+     applyStateChanges [stateSet m0node nodeUnknown]
+     modify Local $ rlens fldRep .~ Field (Just StopProcessesOnNodeTimeout)
      -- go back to teardown_exec, let it notice no more processes on
      -- this level and deal with transition into next
      continue teardown_exec
@@ -1006,5 +1006,5 @@ ruleFailNodeIfProcessCantRestart =
       phaseLog "info" $ "Process start failure for " ++ M0.showFid p ++ ": " ++ r
       rg <- getLocalGraph
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
-      applyStateChanges $ map (`stateSet` M0.NSFailed) m0ns
+      applyStateChanges $ map (`stateSet` nodeFailed) m0ns
     _ -> return ()
