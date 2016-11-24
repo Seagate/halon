@@ -140,6 +140,9 @@ instance Binary KeepAlive
 traceSSPLHL :: String -> Process ()
 traceSSPLHL = mkHalonTracer "ssplhl-service"
 
+logSSPL :: String -> IO ()
+logSSPL s = putStrLn $ "[service:sspl-hl] " ++ s
+
 cmdHandler :: ProcessId -- ^ Status handler
            -> SendPort CommandResponseMessage -- ^ Response channel
            -> ProcessId -- ^ Supervisor handler
@@ -189,11 +192,11 @@ remotableDecl [ [d|
               match $ \(ProcessMonitorNotification _ _ r) -> do
                 say $ "SSPL Process died:\n\t" ++ show r
                 connectRetry lock
-            , match $ \() -> unmonitor mref >> (liftIO $ putMVar lock ())
+            , match $ \() -> unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
             , match $ \KeepAlive -> next
             ]
           case mx of
-            Nothing -> unmonitor mref >> (liftIO $ putMVar lock ())
+            Nothing -> unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
             Just x  -> return x
       connectSSPL lock parent = do
         bracket (liftIO $ Rabbit.openConnection scConnectionConf)
@@ -201,7 +204,17 @@ remotableDecl [ [d|
                              say "Connection closed.")
           $ \conn -> do
           self <- getSelfPid
-          chan <- liftIO $ openChannel conn
+          chan <- liftIO $ do
+            chan <- openChannel conn
+            addReturnListener chan $ \(_msg, err) ->
+              logSSPL $ unlines [ "Error during publishing message (" ++ show (errReplyCode err) ++ ")"
+                                , "  " ++ maybe ("No exchange") (\x -> "Exchange: " ++ T.unpack x) (errExchange err)
+                                , "  Routing key: " ++ T.unpack (errRoutingKey err)
+                                ]
+            addChannelExceptionHandler chan $ \se -> do
+              logSSPL $ "Exception on channel: " ++ show se
+              void $ tryPutMVar lock ()
+            return chan
           _ <- spawnLocal $ do
             link self
             forever $ do

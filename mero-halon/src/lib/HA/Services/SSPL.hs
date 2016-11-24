@@ -114,6 +114,9 @@ saySSPL msg = say $ "[Service:SSPL] " ++ msg
 traceSSPL:: String -> Process ()
 traceSSPL = mkHalonTracer "service:sspl"
 
+-- | Messages that are always logged.
+logSSPL :: String -> IO ()
+logSSPL msg = putStrLn $ "[Service:SSPL] " ++ msg
 
 -- | Maximum allowed timeout between any sspl messages.
 ssplMaxMessageTimeout :: Int
@@ -289,15 +292,14 @@ ssplProcess (SSPLConf{..}) = let
             liftIO $ do
               void $ SystemD.restartService "rabbitmq-server.service"
               void $ SystemD.restartService "sspl-ll.service"
-              _ <- tryTakeMVar lock
-              putMVar lock ()
+              void $ tryPutMVar lock ()
             loop
         , match $ \RequestChannels -> do
             promulgateWait decl
             loop
         , match $ \() -> do
             saySSPL $ "tearing server down"
-            unmonitor mref >> (liftIO $ putMVar lock ())
+            unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
         ]
   connectSSPL lock pid = do
     node <- getSelfNode
@@ -315,7 +317,17 @@ ssplProcess (SSPLConf{..}) = let
               _ <- receiveTimeout 1000000 []
               retry (n-1 :: Int) action
     conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
-    chan <- liftIO $ openChannel conn
+    chan <- liftIO $ do
+      chan <- openChannel conn
+      addReturnListener chan $ \(_msg, err) ->
+        logSSPL $ unlines [ "Error during publishing message (" ++ show (errReplyCode err) ++ ")"
+                          , "  " ++ maybe ("No exchange") (\x -> "Exchange: " ++ T.unpack x) (errExchange err)
+                          , "  Routing key: " ++ T.unpack (errRoutingKey err)
+                          ]
+      addChannelExceptionHandler chan $ \se -> do
+        logSSPL $ "Exception on channel: " ++ show se
+        void $ tryPutMVar lock ()
+      return chan
     (sendPort, receivePort) <- newChan
     startSensors chan sendPort scSensorConf
     decl <- startActuators chan scActuatorConf pid sendPort
