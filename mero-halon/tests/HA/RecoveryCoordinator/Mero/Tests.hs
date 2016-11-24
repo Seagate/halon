@@ -41,7 +41,6 @@ import           Data.Binary (Binary)
 import           Data.Function (on)
 import           Data.List (isPrefixOf, sortBy, sort)
 import           Data.List (tails)
-import           Data.SafeCopy
 import qualified Data.Text as T
 import           GHC.Generics
 import           HA.EventQueue.Types (HAEvent(..))
@@ -55,6 +54,7 @@ import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseN
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           HA.Services.SSPL.CEP
 import           Helper.Environment
 import qualified Helper.InitialData
@@ -119,8 +119,6 @@ testDriveAddition transport pg = runDefaultTest transport $ do
 data RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary RunDriveManagerFailure
-
 -- | Update receiving a drive failure from SSPL,
 testDriveManagerUpdate :: (Typeable g, RGroup g)
                        => Transport -> Proxy g -> IO ()
@@ -179,8 +177,6 @@ data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
 
 data WaitFailedSDevReply = WaitFailedSDevReply M0.SDev M0.SDevState
   deriving (Show, Eq, Generic, Typeable)
-
-instance Binary WaitFailedSDev
 instance Binary WaitFailedSDevReply
 
 -- | Test that the recovery coordinator answers queries of configuration object
@@ -257,8 +253,6 @@ testConfObjectStateQuery transport pg =
 -- | Validation query. Reply sent to the given process id.
 newtype ValidateCache = ValidateCache ProcessId
   deriving (Eq, Show, Ord, Generic)
-
-instance Binary ValidateCache
 
 -- | Validation result used for validation tests
 newtype ValidateCacheResult = ValidateCacheResult (Maybe String)

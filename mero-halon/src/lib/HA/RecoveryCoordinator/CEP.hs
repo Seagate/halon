@@ -20,7 +20,6 @@ import Control.Category
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Binary (Binary)
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl hiding ((:~:))
@@ -48,6 +47,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.HalonVars
+import           HA.SafeCopy
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
 import qualified HA.Resources.Castor as M0
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
@@ -386,8 +386,6 @@ newtype RequestRCPid = RequestRCPid ProcessId
 
 newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
   deriving (Show, Eq, Generic, Typeable)
-
-instance Binary RequestRCPid
 instance Binary RequestRCPidAnswer
 
 -- | Asks RC for its own 'ProcessId'.

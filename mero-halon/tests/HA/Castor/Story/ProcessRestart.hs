@@ -15,10 +15,8 @@ module HA.Castor.Story.ProcessRestart (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
-import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (sort)
-import           Data.SafeCopy
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -32,6 +30,7 @@ import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           HA.Services.Mero
 import           Mero.ConfC (fidToStr, Fid(..), ServiceType(..))
 import           Mero.Notification
@@ -107,7 +106,6 @@ mkProcessStartedNotification p (M0.PID pid) = HAMsg event meta
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
   deriving (Generic, Typeable)
-instance Binary RuleHook
 
 -- | Generic test runner for failing processes. Attaches the given
 -- starting state and 'testProcessPid' to the process in RG before

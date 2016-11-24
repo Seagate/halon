@@ -18,6 +18,7 @@ module Data.PersistMessage
   , unwrapMessage
   ) where
 
+import Control.Distributed.Process.Serializable (Serializable)
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString as BS (ByteString)
 import Data.Binary (Binary(..), encode, decode)
@@ -25,11 +26,10 @@ import qualified Data.Text as T (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
 import Data.List
-import Data.SafeCopy
-import Data.Serialize (runGetLazy, runPutLazy)
 import Data.UUID (UUID)
 import Data.Function (on)
 import GHC.Generics
+import HA.SafeCopy
 
 
 -- | 'GHC.Fingerprint' analogue that identifies the modules and type names
@@ -61,7 +61,7 @@ data PersistMessage = PersistMessage
   { persistMessageId :: UUID
   , persistMessagePrint :: StablePrint
   , persistMessagePayload :: ByteString
-  } deriving (Typeable, Generic, Show)
+  } deriving (Typeable, Generic)
 
 instance Binary PersistMessage
 
@@ -71,13 +71,18 @@ instance Eq PersistMessage where
 instance Ord PersistMessage where
     compare = compare `on` persistMessageId
 
-persistMessage :: (SafeCopy a, Typeable a) => UUID -> a -> PersistMessage
-persistMessage u a = PersistMessage u (stableprint a) (runPutLazy $ safePut a)
+-- | Create a new 'PersistMessage'.
+--
+-- ['SafeCopy'] While this constraint is technically redundant here,
+-- it is not useless. It transitively forces all users of
+-- 'persistMessage' to present a 'SafeCopy' instance. This is __very__
+-- useful because now a user can't persist messages that aren't safe
+-- and they can't forget to have to provide an instance.
+persistMessage :: (SafeCopy a, Serializable a) => UUID -> a -> PersistMessage
+persistMessage u a = PersistMessage u (stableprint a) (encode a)
 
-unwrapMessage :: forall a. (SafeCopy a, Typeable a) => PersistMessage -> Maybe a
+unwrapMessage :: forall a. Serializable a => PersistMessage -> Maybe a
 unwrapMessage msg =
     if persistMessagePrint msg == stableprint (undefined :: a)
-    then case runGetLazy safeGet $ persistMessagePayload msg of
-      Left _err -> Nothing -- TODO: Might want to do something here?
-      Right !m -> Just m
+    then Just $! decode $ persistMessagePayload msg
     else Nothing

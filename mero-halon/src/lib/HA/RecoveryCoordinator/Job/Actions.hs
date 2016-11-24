@@ -17,9 +17,9 @@ module HA.RecoveryCoordinator.Job.Actions
    , fldListenerId
    ) where
 
+import HA.SafeCopy (SafeCopy)
 import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Job.Internal
-
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
 
@@ -30,7 +30,6 @@ import Control.Monad.IO.Class (liftIO)
 
 import Data.Foldable (for_)
 import Data.Traversable (for)
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy
 import Data.Vinyl
@@ -66,7 +65,8 @@ newtype Job input output = Job String
 -- this @body@.
 mkJobRule :: forall input output l s .
    ( '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
-   , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l, Show output)
+   , SafeCopy input, Serializable input, Serializable output
+   , Ord input, Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
    -> (Jump PhaseHandle -> RuleM RC s (input -> PhaseM RC s (Maybe [Jump PhaseHandle])))

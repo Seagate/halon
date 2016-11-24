@@ -21,6 +21,7 @@ module HA.Services.Ping
   ) where
 
 import HA.EventQueue.Producer
+import HA.SafeCopy
 import HA.Service
 import HA.Service.TH
 import HA.Services.Dummy (DummyEvent(..))
@@ -31,9 +32,7 @@ import Control.Distributed.Static
   ( staticApply )
 
 import Data.Aeson
-import Data.Binary (Binary)
 import Data.Hashable (Hashable)
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -43,13 +42,12 @@ import Options.Schema (Schema)
 
 data PingConf = PingConf deriving (Eq, Generic, Show, Typeable)
 
-instance Binary PingConf
 instance Hashable PingConf
 instance ToJSON PingConf
 
 -- | An event that causes the RC to write pending changes to the RG.
 newtype SyncPing = SyncPing String
-  deriving (Show, Generic, Typeable, Binary)
+  deriving (Show, Generic, Typeable)
 deriveSafeCopy 0 'base ''SyncPing
 
 pingSchema :: Schema PingConf

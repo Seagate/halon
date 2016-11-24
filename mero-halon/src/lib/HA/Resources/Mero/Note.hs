@@ -28,6 +28,7 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note.TH
 import qualified HA.ResourceGraph as G
 import HA.Resources.TH
+import HA.SafeCopy
 import Mero.ConfC (Fid(..), fidToStr)
 
 import Control.Distributed.Static (Static, staticPtr)
@@ -41,7 +42,6 @@ import Data.Hashable (Hashable)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
 import Data.Monoid ((<>))
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.Proxy (Proxy(..))
 import Data.Word ( Word64 )
@@ -86,7 +86,6 @@ data ConfObjectState
     deriving (Eq, Show, Enum, Typeable, Generic, Ord, Read)
 deriveSafeCopy 0 'base ''ConfObjectState
 
-instance Binary ConfObjectState
 instance Hashable ConfObjectState
 instance ToJSON ConfObjectState
 instance FromJSON ConfObjectState
@@ -104,7 +103,6 @@ prettyConfObjState M0_NC_REBALANCE = "rebalance"
 data PrincipalRM = PrincipalRM
   deriving (Eq, Show, Enum, Typeable, Generic)
 
-instance Binary PrincipalRM
 instance Hashable PrincipalRM
 deriveSafeCopy 0 'base ''PrincipalRM
 
@@ -114,7 +112,6 @@ deriveSafeCopy 0 'base ''PrincipalRM
 newtype NotifyFailureEndpoints = NotifyFailureEndpoints [String]
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary NotifyFailureEndpoints
 instance Hashable NotifyFailureEndpoints
 deriveSafeCopy 0 'base ''NotifyFailureEndpoints
 

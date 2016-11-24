@@ -25,7 +25,6 @@ module HA.Services.DecisionLog.Logger
 
 import qualified Data.ByteString.Lazy as B
 import Data.ByteString.Lazy (ByteString)
-import Data.SafeCopy
 import Data.Serialize
 import GHC.Generics
 
@@ -43,6 +42,7 @@ import Data.List (insert)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import HA.RecoveryCoordinator.Log as RC
+import HA.SafeCopy
 import Network.CEP.Log as CEP
 import Control.Lens hiding (Context, Level)
 
@@ -69,7 +69,7 @@ printMessage (Printer runPrinter) l ctx = runPrinter $ PrintMessage l ctx
 
 closePrinter :: Printer -> Process ()
 closePrinter (Printer runPrinter) = runPrinter ClosePrinter
-  
+
 -- | Printer state machine.
 newtype Printer = Printer (forall a . PrinterQuery a -> Process a)
 
@@ -189,7 +189,7 @@ mkLogger printer0 = mk printer0 initState where
          let smId = loc_sm_id loc
          return $! mk p $! st & (localContexts %~ Map.alter (maybe (Just [uuid]) (Just . filter (/= uuid))) smId)
                               . (contextScopes %~ Map.delete uuid)
-      TagContext info -> do 
+      TagContext info -> do
         let rname = loc_rule_name loc
             smId  = loc_sm_id loc
             tag   = tc_data info
@@ -198,7 +198,7 @@ mkLogger printer0 = mk printer0 initState where
             f = \x -> case ctx of
                         Rule    -> rulesScopes %~ insertToList rname x
                         Phase   -> currentPhaseScopes %~ insertToList smId x
-                        SM      -> smScopes %~ insertToList smId x 
+                        SM      -> smScopes %~ insertToList smId x
                         Local u -> contextScopes %~ insertToList u x
         return $! mk p (st & f (tag, comment))
       EvtInContexts ctxs event -> do
@@ -213,7 +213,7 @@ mkLogger printer0 = mk printer0 initState where
             return $! mk p' st'
            CE_UserEvent lvl msloc ue ->
             case ue of
-              Env e -> do 
+              Env e -> do
                 p' <- printMessage p (Log rloc (LogEnv lvl e msloc)) scopes
                 return $! mk p' st
               Message s -> do
@@ -231,7 +231,7 @@ mkLogger printer0 = mk printer0 initState where
   getTagsByContext :: LoggerState -> Location -> Context -> [(TagContent,Maybe String)]
   getTagsByContext st (loc_rule_name -> rname) Rule =
     fromMaybe [] . Map.lookup rname $ st ^. rulesScopes
-  getTagsByContext st (loc_sm_id -> smId) Phase = 
+  getTagsByContext st (loc_sm_id -> smId) Phase =
     fromMaybe [] . Map.lookup smId $ st ^. currentPhaseScopes
   getTagsByContext st (loc_sm_id -> smId) SM =
     fromMaybe [] . Map.lookup smId $ st ^. smScopes
@@ -250,4 +250,3 @@ mkLogger printer0 = mk printer0 initState where
 deriveSafeCopy 0 'base ''RCSrc
 deriveSafeCopy 0 'base ''LogData
 deriveSafeCopy 0 'base ''Log
-

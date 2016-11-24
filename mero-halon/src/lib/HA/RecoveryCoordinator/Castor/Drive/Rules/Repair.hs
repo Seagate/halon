@@ -46,7 +46,6 @@ import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
-import qualified Data.Binary as B
 import           Data.Either (partitionEithers)
 import           Data.Foldable
 import qualified Data.HashSet as S
@@ -63,7 +62,6 @@ import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Monoid ((<>))
-import           Data.SafeCopy
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
 import           Data.Vinyl hiding ((:~:))
 import           GHC.Generics (Generic)
@@ -92,6 +90,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero
   hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 import           Mero.ConfC (ServiceType(CST_IOS))
@@ -106,28 +105,21 @@ import           Prelude
 -- | Event sent when we want a 5 minute spiel query rule to fire
 data SpielQuery = SpielQuery Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
-
-instance B.Binary SpielQuery
 deriveSafeCopy 0 'base ''SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
 data SpielQueryHourly = SpielQueryHourly Pool M0.PoolRepairType UUID
   deriving (Eq, Ord, Show, Generic, Typeable)
-
-instance B.Binary SpielQueryHourly
 deriveSafeCopy 0 'base ''SpielQueryHourly
 
 -- | Event that hourly job finihed.
 data SpielQueryHourlyFinished = SpielQueryHourlyFinished Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
-instance B.Binary SpielQueryHourlyFinished
 deriveSafeCopy 0 'base ''SpielQueryHourlyFinished
 
 data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
       deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNS
 deriveSafeCopy 0 'base ''ContinueSNS
 
 data ContinueSNSResult
@@ -135,8 +127,6 @@ data ContinueSNSResult
        | SNSFailed    UUID M0.Pool M0.PoolRepairType String
        | SNSSkipped   UUID M0.Pool M0.PoolRepairType
       deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNSResult
 deriveSafeCopy 0 'base ''ContinueSNSResult
 
 --------------------------------------------------------------------------------

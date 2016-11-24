@@ -26,21 +26,18 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
 
 import HA.Resources
 import HA.Resources.Castor
+import HA.SafeCopy
 
 import Data.UUID (UUID)
-
 import Data.Binary   (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.Text as T
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
 newtype ResetAttempt = ResetAttempt StorageDevice
   deriving (Eq, Generic, Show, Typeable, Ord)
-
-instance Binary ResetAttempt
 deriveSafeCopy 0 'base ''ResetAttempt
 
 -- | Result for 'ResetAttempt'
@@ -121,7 +118,6 @@ newtype DriveReady = DriveReady StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveReady
-instance Binary DriveReady
 deriveSafeCopy 0 'base ''DriveReady
 
 -- | Sent when an expander reset attempt happens in the enclosure. In such
@@ -130,7 +126,6 @@ newtype ExpanderReset = ExpanderReset Enclosure
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ExpanderReset
-instance Binary ExpanderReset
 deriveSafeCopy 0 'base ''ExpanderReset
 
 -- | Sent when RAID controller reports that part of a RAID array has failed.
@@ -141,7 +136,6 @@ data RaidUpdate = RaidUpdate
   } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable RaidUpdate
-instance Binary RaidUpdate
 deriveSafeCopy 0 'base ''RaidUpdate
 
 -- | Sent to request a SMART test is run on the system.
@@ -151,7 +145,6 @@ data SMARTRequest = SMARTRequest {
 } deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Hashable SMARTRequest
-instance Binary SMARTRequest
 deriveSafeCopy 0 'base ''SMARTRequest
 
 -- | Possible response from SMART testing.
@@ -163,7 +156,6 @@ data SMARTResponseStatus
   | SRSNotPossible -- ^ Sent when it is not possible to run a SMART test.
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary SMARTResponseStatus
 instance Hashable SMARTResponseStatus
 deriveSafeCopy 0 'base ''SMARTResponseStatus
 
@@ -173,6 +165,5 @@ data SMARTResponse = SMARTResponse {
   , srpStatus :: SMARTResponseStatus
 } deriving (Eq, Show, Typeable, Generic)
 
-instance Binary SMARTResponse
 instance Hashable SMARTResponse
 deriveSafeCopy 0 'base ''SMARTResponse

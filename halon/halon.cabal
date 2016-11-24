@@ -61,7 +61,6 @@ Library
                    HA.Replicator.Log
                    HA.Replicator.Mock
                    HA.RecoverySupervisor
-                   HA.SafeCopy.OrphanInstances
                    HA.Storage
                    HA.NodeUp
                    HA.Network.RemoteTables
@@ -105,7 +104,7 @@ Library
                    mtl >= 2.0,
                    process >= 1.1,
                    replicated-log,
-                   safecopy,
+                   halon-instances,
                    singletons,
                    stm,
                    text,
@@ -249,6 +248,7 @@ Test-Suite tests
                     exceptions,
                     filepath,
                     hashable,
+                    halon-instances,
                     mtl,
                     network,
                     network-transport,
@@ -258,7 +258,6 @@ Test-Suite tests
                     unordered-containers,
                     options-schema >= 0.1.1.0,
                     random,
-                    safecopy,
                     tasty >= 0.8,
                     tasty-files,
                     tasty-hunit,
@@ -304,6 +303,7 @@ Test-Suite scheduler-tests
                     exceptions,
                     filepath,
                     hashable,
+                    halon-instances,
                     network,
                     network-transport,
                     network-transport-controlled,

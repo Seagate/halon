@@ -10,9 +10,8 @@ module HA.RecoveryCoordinator.Log where
 
 
 import qualified HA.Resources as R (Node)
+import HA.SafeCopy
 
-
-import Data.SafeCopy
 import Data.Aeson
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
@@ -85,7 +84,6 @@ data Scope =
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary Scope
 instance ToJSON Scope where
   toJSON (Thread uuid) = object [ "type" .= ("thread"::Text)
                                 , "uuid" .= UUID.toText uuid
@@ -106,7 +104,6 @@ data TagContent =
   | TagString String -- ^ Associate an arbitrary message with a context.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary TagContent
 instance ToJSON TagContent
 
 -- | An event which may be contextualised.
@@ -137,7 +134,6 @@ data SystemEvent =
     -- ^ Declare that the RC has started on a node.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary SystemEvent
 instance ToJSON SystemEvent where
   toJSON (Promulgate s u) = object [ "type" .= ("promulgate"::Text)
                                    , "message" .= s
@@ -167,7 +163,6 @@ data StateChangeInfo = StateChangeInfo {
   , lsc_newState :: String
 } deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary StateChangeInfo
 instance ToJSON StateChangeInfo
 
 --------------------------------------------------------------------------------
@@ -182,7 +177,6 @@ data Level =
           --   be inspected.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary Level
 instance ToJSON Level
 
 -- | Log a location in source code. If used, it's expected that this will be
@@ -192,7 +186,6 @@ data SourceLoc = SourceLoc {
   , lsl_line :: Int
 } deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary SourceLoc
 instance ToJSON SourceLoc
 
 data UserEvent =

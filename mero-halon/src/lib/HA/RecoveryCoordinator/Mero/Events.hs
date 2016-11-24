@@ -47,6 +47,7 @@ import HA.Resources
 import HA.Resources.Castor
 import HA.Resources.Mero.Note
 import qualified HA.Resources.Mero as M0
+import HA.SafeCopy
 
 import Control.Applicative (many)
 import Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
@@ -63,7 +64,6 @@ import Data.Binary.Get (runGet)
 import qualified Data.ByteString.Lazy as BS
 import Data.Constraint (Dict(..))
 import Data.Foldable (traverse_)
-import Data.SafeCopy
 import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
 import Data.Typeable
@@ -77,8 +77,6 @@ data ForceObjectStateUpdateRequest = ForceObjectStateUpdateRequest
   (SendPort ForceObjectStateUpdateReply)
   deriving (Generic, Typeable, Show)
 
-instance Binary ForceObjectStateUpdateRequest
-
 -- | Result of the update operation
 data UpdateResult
       = Success         -- ^ Operation completed succesfully
@@ -86,12 +84,10 @@ data UpdateResult
       | DictNotFound    -- ^ Object can't be updated
       | ParseFailed     -- ^ Failed to parse object state.
       deriving (Generic, Typeable, Show)
-instance Binary UpdateResult
 
 -- | Reply to the 'ForceObjectStateUpdateRequest'
 newtype ForceObjectStateUpdateReply = ForceObjectStateUpdateReply [(M0.Fid, UpdateResult)]
-  deriving (Generic, Typeable, Show, Binary)
-
+  deriving (Generic, Typeable, Show)
 
 data SyncComplete = SyncComplete UUID
       deriving (Eq, Show, Typeable, Generic)
@@ -119,7 +115,6 @@ data GetSpielAddress = GetSpielAddress
        , entrypointProfileFid :: M0.Fid
        , entrypointRequester  :: ProcessId
        } deriving (Eq, Show, Typeable, Generic)
-instance Binary GetSpielAddress
 
 -- | Universally quantified state 'set' request.
 --   Typically, one creates a state 'set' request, then
@@ -160,7 +155,7 @@ newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
 
 newtype InternalObjectStateChangeMsg =
     InternalObjectStateChangeMsg BS.ByteString
-  deriving (Binary, Typeable, Eq, Show, Ord, Hashable)
+  deriving (Typeable, Eq, Show, Ord, Hashable)
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg
@@ -197,9 +192,7 @@ instance ProcessEncode InternalObjectStateChange where
 -- | A message we can use to notify bootstrap that mero-kernel failed
 -- to start.
 data MeroKernelFailed = MeroKernelFailed ProcessId String
-  deriving(Eq, Show, Typeable, Generic)
-
-instance Binary MeroKernelFailed
+  deriving (Eq, Show, Typeable, Generic)
 
 newtype NodeKernelFailed = NodeKernelFailed M0.Node
   deriving (Eq, Show, Typeable, Generic, Binary)
@@ -207,8 +200,6 @@ newtype NodeKernelFailed = NodeKernelFailed M0.Node
 -- | Request abort on the given pool.
 data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance Binary AbortSNSOperation
 
 -- | Reply to SNS operation abort.
 data AbortSNSOperationResult
@@ -220,7 +211,7 @@ data AbortSNSOperationResult
 instance Binary AbortSNSOperationResult
 
 newtype QuiesceSNSOperation = QuiesceSNSOperation M0.Pool
-  deriving (Eq, Show, Ord, Typeable, Generic, Binary)
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
 data QuiesceSNSOperationResult
           = QuiesceSNSOperationOk M0.Pool
@@ -234,8 +225,6 @@ instance Binary QuiesceSNSOperationResult
 data RestartSNSOperationRequest = RestartSNSOperationRequest M0.Pool UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
 
-instance Binary RestartSNSOperationRequest
-
 data RestartSNSOperationResult =
     RestartSNSOperationSuccess M0.Pool
   | RestartSNSOperationFailed M0.Pool String
@@ -246,8 +235,6 @@ instance Binary RestartSNSOperationResult
 
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
-instance Binary GetFailureVector
-
 
 data WorkerIsNotAvailableException = WorkerIsNotAvailable
   deriving (Show, Typeable, Generic)

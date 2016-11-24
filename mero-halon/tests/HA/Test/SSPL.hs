@@ -33,6 +33,7 @@ import HA.Resources
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Service.Events
+import HA.SafeCopy
 import HA.Startup (startupHalonNode, ignition)
 import HA.NodeUp  (nodeUp)
 import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)
@@ -62,7 +63,6 @@ import qualified Data.Text.Encoding as T
 import Data.List (isInfixOf)
 import Data.Maybe (fromJust)
 import Data.Time
-import Data.SafeCopy
 import Data.Typeable
 import qualified Data.UUID as UUID
 import Network.AMQP
@@ -76,11 +76,7 @@ instance Binary SChan
 
 data TestSmartCmd = TestSmartCmd NodeId ByteString deriving (Generic, Typeable)
 
-instance Binary TestSmartCmd
-
 data WhoAmI = WhoAmI deriving (Generic, Typeable)
-
-instance Binary WhoAmI
 
 testRules :: ProcessId ->  [Definitions RC ()]
 testRules pid =

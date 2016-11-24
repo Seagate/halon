@@ -16,7 +16,7 @@ import Data.Typeable
 import Data.List (sort)
 import Data.IORef
 import Data.PersistMessage
-import Data.SafeCopy
+import HA.SafeCopy
 import qualified Data.UUID as UUID
 import GHC.Generics
 
@@ -45,7 +45,7 @@ cepEngine = Network.CEP.cepEngine
 newtype Donut = Donut () deriving Binary
 
 newtype Foo = Foo { unFoo :: Int } deriving (Show, Binary)
-newtype Baz = Baz Int deriving (Show, Binary)
+newtype Baz = Baz Int deriving (Show)
 
 donut :: Donut
 donut = Donut ()
@@ -1261,8 +1261,6 @@ testsPhaseIf launch = testGroup "setPhaseIf"
 
 data AB = A | B deriving (Eq, Show, Generic, Typeable)
 
-instance Binary AB
-
 setPhaseIfPartial :: Process ()
 setPhaseIfPartial = do
     self <- getSelfPid
@@ -1318,9 +1316,6 @@ data SomeType_v0 = SomeType_v0 String
 
 data SomeType = SomeType String String
   deriving (Eq, Show, Generic)
-
-instance Binary SomeType_v0
-instance Binary SomeType
 
 instance Migrate SomeType where
   type MigrateFrom SomeType = SomeType_v0

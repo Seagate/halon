@@ -14,13 +14,13 @@ module HA.Resources.HalonVars
 
 import Data.Binary (Binary)
 import Data.Hashable
-import Data.SafeCopy
 import Data.Typeable
 import GHC.Generics (Generic)
 import HA.RecoveryCoordinator.RC.Actions
 import HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
+import HA.SafeCopy
 import Network.CEP
 
 -- | Default value for 'HalonVars'
@@ -60,7 +60,6 @@ getHalonVar f = f <$> getHalonVars
 
 newtype SetHalonVars = SetHalonVars HalonVars
   deriving (Show, Eq, Generic, Typeable)
-instance Binary SetHalonVars
 instance Hashable SetHalonVars
 deriveSafeCopy 0 'base ''SetHalonVars
 

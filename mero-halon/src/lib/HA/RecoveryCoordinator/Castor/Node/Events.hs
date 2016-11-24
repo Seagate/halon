@@ -5,12 +5,11 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Castor.Node.Events where
 
-import           Data.Binary (Binary)
-import           Data.SafeCopy
 import           GHC.Generics
 import qualified HA.Resources as R
+import           HA.SafeCopy
 
 -- | Request start of the 'ruleNewNode'.
 newtype StartProcessNodeNew = StartProcessNodeNew R.Node
-  deriving (Eq, Show, Generic, Binary, Ord)
+  deriving (Eq, Show, Generic, Ord)
 deriveSafeCopy 0 'base ''StartProcessNodeNew

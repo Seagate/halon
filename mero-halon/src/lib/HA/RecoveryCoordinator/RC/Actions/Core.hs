@@ -83,6 +83,7 @@ import HA.Encode
   , decodeP
   )
 import HA.RecoveryCoordinator.RC.Application
+import HA.SafeCopy (SafeCopy)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -106,7 +107,6 @@ import Data.Proxy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Maybe (fromMaybe)
-import Data.SafeCopy
 
 import Network.CEP
 
@@ -364,7 +364,7 @@ isNotHandled evt@(HAEvent eid _) ls _
 
 -- | Wrap rule in 'todo' and 'done' calls. User should not mark message as
 -- processed on it's own.
-defineSimpleTask :: Serializable a
+defineSimpleTask :: (SafeCopy a, Serializable a)
                  => String
                  -> (forall l . a -> PhaseM RC l ())
                  -> Definitions RC ()
@@ -376,7 +376,7 @@ defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a) ->
 --   available for other rules.
 --   Note that if the message passes the guard, `todo` will already have been
 --   called.
-setPhaseIfConsume :: (Serializable a, Serializable b)
+setPhaseIfConsume :: (SafeCopy a, Serializable a, Serializable b)
                   => Jump PhaseHandle
                   -> (HAEvent a -> LoopState -> l -> Process (Maybe b))
                   -> (b -> PhaseM RC l ())

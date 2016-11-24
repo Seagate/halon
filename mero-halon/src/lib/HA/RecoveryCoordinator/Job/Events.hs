@@ -11,9 +11,9 @@ module HA.RecoveryCoordinator.Job.Events
   ) where
 
 import HA.RecoveryCoordinator.Job.Internal
+import HA.SafeCopy
 
 import Data.Binary (Binary)
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -23,7 +23,6 @@ import GHC.Generics (Generic)
 -- in.
 data JobStartRequest a = JobStartRequest ListenerId a
   deriving (Typeable, Generic, Show)
-instance Binary a => Binary (JobStartRequest a)
 deriveSafeCopy 0 'base ''JobStartRequest
 
 -- | Event that is sent when job with listeners finished it's
@@ -31,4 +30,3 @@ deriveSafeCopy 0 'base ''JobStartRequest
 data JobFinished a = JobFinished [ListenerId] a
   deriving (Typeable, Generic, Show)
 instance Binary a => Binary (JobFinished a)
-deriveSafeCopy 0 'base ''JobFinished

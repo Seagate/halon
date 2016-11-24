@@ -10,10 +10,8 @@ module HA.Test.InternalStateChanges (mkTests) where
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Lens
 import           Control.Exception as E
-import           Data.Binary (Binary)
 import           Data.List (sort)
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
-import           Data.SafeCopy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
@@ -27,6 +25,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           HA.Services.Mero
 import           Mero.Notification
 import           Mero.Notification.HAState
@@ -55,7 +54,6 @@ mkTests pg = do
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
   deriving (Generic, Typeable)
-instance Binary RuleHook
 
 doTest :: (Typeable g, RGroup g)
      => Transport

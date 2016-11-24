@@ -1,0 +1,47 @@
+name:                halon-instances
+version:             0.1.0.0
+synopsis:            Instances, orphans &c needed by all halon packages
+-- description:
+license:             AllRightsReserved
+copyright:           (C) 2016 Seagate Technology Limited.
+category:            Network
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.10
+
+Flag maintainer
+  Description: Enforce strict code quality checks (-Werror, etc)
+  Default: False
+
+-- ghc-heap-view cannot be built with profiling, does we need to drop
+-- ghc-datasize which depends on it.
+Flag profiling
+  Description: Drop dependencies which can't be built with profiling enabled.
+  Default: False
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     HA.SafeCopy
+  other-extensions:    DeriveDataTypeable
+                       GeneralizedNewtypeDeriving
+                       DeriveGeneric
+  build-depends:       base >=4.6 && <5,
+                       binary,
+                       cereal,
+                       distributed-process,
+                       distributed-process-scheduler,
+                       hashable,
+                       network-transport,
+                       options-schema,
+                       safecopy,
+                       template-haskell,
+                       uuid
+
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+  if !flag(profiling)
+    build-depends:     ghc-datasize
+  if flag(maintainer)
+    Ghc-Options: -Werror

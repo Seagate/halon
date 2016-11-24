@@ -216,7 +216,7 @@ data Machine app where
         -- ^ List of SM that is in a runnable state
       , _machSuspendedSM :: [SMData app]
         -- ^ List of SM that are in suspended state
-      , _machDefaultHandler :: !(Maybe (UUID -> StablePrint -> ByteString -> GlobalState app -> Process ()))
+      , _machDefaultHandler :: !(Maybe (UUID -> StablePrint -> ByteString -> (GlobalState app) -> Process ()))
         -- ^ Handler for 'PersistMessages' of an unknown type.
         -- Raw messages of unknown type are silently discarded.
       , _machMaxThreadId :: !SMId

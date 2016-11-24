@@ -22,6 +22,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import HA.Logger
 import qualified HA.EQTracker as EQT
+import HA.SafeCopy
 
 import Control.Distributed.Process hiding (bracket)
 import Control.Monad (when, void)
@@ -29,7 +30,6 @@ import Control.Monad.Catch (bracket)
 
 import Data.Maybe (maybeToList)
 import Data.List ((\\))
-import Data.SafeCopy
 import Data.Typeable
 
 producerTrace :: String -> Process ()

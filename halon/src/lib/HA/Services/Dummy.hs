@@ -21,7 +21,7 @@ module HA.Services.Dummy
   , dummy__static
   ) where
 
-import HA.SafeCopy.OrphanInstances()
+import HA.SafeCopy
 import HA.Service
 import HA.Service.TH
 
@@ -31,11 +31,9 @@ import Control.Distributed.Static
   ( staticApply )
 
 import Data.Aeson
-import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -46,7 +44,7 @@ import Prelude
 
 newtype DummyConf = DummyConf {
   helloWorld :: Defaultable String
-} deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+} deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ToJSON DummyConf where
   toJSON (DummyConf h) = object [ "hello_string" .= fromDefault h ]
@@ -67,7 +65,6 @@ deriveSafeCopy 0 'base ''DummyConf
 -- | An event which produces no action in the RC. Used for testing.
 data DummyEvent = DummyEvent String
   deriving (Typeable, Generic)
-instance Binary DummyEvent
 deriveSafeCopy 0 'base ''DummyEvent
 
 remotableDecl [ [d|

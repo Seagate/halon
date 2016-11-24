@@ -15,6 +15,7 @@ module HA.Services.Mero.Types
 import HA.Resources.HalonVars
 import HA.Resources.Mero as M0
 import HA.ResourceGraph
+import HA.SafeCopy
 import qualified HA.Service
 import HA.Service.TH
 import qualified HA.Resources as R
@@ -30,7 +31,6 @@ import Data.Binary (Binary, encode, decode)
 import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
-import Data.SafeCopy
 import Data.Serialize (Serialize(..))
 import Data.Typeable (Typeable)
 import Data.UUID as UUID
@@ -45,7 +45,6 @@ import Options.Schema.Builder
 data MeroKernelConf = MeroKernelConf
        { mkcNodeUUID :: UUID    -- ^ Node UUID
        } deriving (Eq, Generic, Show, Typeable)
-instance Binary MeroKernelConf
 instance Hashable MeroKernelConf
 instance ToJSON MeroKernelConf where
   toJSON (MeroKernelConf uuid) = object [ "uuid" .= UUID.toString uuid ]
@@ -67,7 +66,6 @@ data MeroConf = MeroConf
        }
    deriving (Eq, Generic, Show, Typeable)
 
-instance Binary MeroConf
 instance Hashable MeroConf
 deriveSafeCopy 0 'base ''MeroConf
 
@@ -93,21 +91,18 @@ instance (Binary a, Typeable a) => SafeCopy (TypedChannel a) where
 data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
 
 deriveSafeCopy 0 'base ''MeroChannel
-instance Binary MeroChannel
 instance Hashable MeroChannel
 
 -- | Acknowledgement sent upon successfully calling m0_ha_state_set.
 data NotificationAck = NotificationAck Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationAck
-instance Binary   NotificationAck
 deriveSafeCopy 0 'base ''NotificationAck
 
 -- | Acknowledgement that delivery for cetrain procedd definitely failed.
 data NotificationFailure = NotificationFailure Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationFailure
-instance Binary   NotificationFailure
 deriveSafeCopy 0 'base ''NotificationFailure
 
 data NotificationMessage = NotificationMessage
@@ -157,28 +152,24 @@ instance Hashable ProcessControlMsg
 data ProcessControlResultMsg =
     ProcessControlResultMsg NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
   deriving (Eq, Generic, Show, Typeable)
-instance Binary ProcessControlResultMsg
 instance Hashable ProcessControlResultMsg
 deriveSafeCopy 0 'base ''ProcessControlResultMsg
 
 data ProcessControlResultStopMsg =
       ProcessControlResultStopMsg NodeId [Either (Fid,String) Fid]
   deriving (Eq, Generic, Show, Typeable)
-instance Binary ProcessControlResultStopMsg
 instance Hashable ProcessControlResultStopMsg
 deriveSafeCopy 0 'base ''ProcessControlResultStopMsg
 
 data ProcessControlResultConfigureMsg =
       ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
-instance Binary ProcessControlResultConfigureMsg
 instance Hashable ProcessControlResultConfigureMsg
 deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg
 
 -- | We haven't heard back from a process for a while about keepalive so we're
 data KeepaliveTimedOut = KeepaliveTimedOut [(Fid, M0.TimeSpec)]
   deriving (Eq, Generic, Show, Typeable)
-instance Binary KeepaliveTimedOut
 instance Hashable KeepaliveTimedOut
 deriveSafeCopy 0 'base ''KeepaliveTimedOut
 
@@ -189,8 +180,6 @@ data DeclareMeroChannel =
     , dmcCtrlChannel :: !(TypedChannel ProcessControlMsg)
     }
     deriving (Generic, Typeable)
-
-instance Binary DeclareMeroChannel
 instance Hashable DeclareMeroChannel
 deriveSafeCopy 0 'base ''DeclareMeroChannel
 
@@ -201,8 +190,6 @@ data MeroChannelDeclared =
     , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
     }
     deriving (Generic, Typeable)
-
-instance Binary MeroChannelDeclared
 instance Hashable MeroChannelDeclared
 deriveSafeCopy 0 'base ''MeroChannelDeclared
 

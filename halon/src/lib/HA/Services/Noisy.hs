@@ -27,6 +27,7 @@ module HA.Services.Noisy
 import HA.Debug
 import HA.EventQueue.Producer
 import HA.ResourceGraph
+import HA.SafeCopy
 import HA.Service
 import HA.Service.TH
 import HA.Services.Dummy (DummyEvent(..))
@@ -41,11 +42,9 @@ import Control.Distributed.Static
 import Control.Monad
 
 import Data.Aeson
-import Data.Binary (Binary)
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
@@ -55,7 +54,7 @@ import Options.Schema.Builder hiding (name, desc)
 
 newtype NoisyConf = NoisyConf {
   pings :: Defaultable String
-} deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+} deriving (Eq, Generic, Hashable, Show, Typeable)
 
 type instance ServiceState NoisyConf = ProcessId
 
@@ -71,13 +70,12 @@ noisySchema = let
   in NoisyConf <$> hw
 
 newtype NoisyPingCount = NoisyPingCount Int
-  deriving (Typeable, Binary, Eq, Hashable, Show)
+  deriving (Typeable, Eq, Hashable, Show)
 deriveSafeCopy 0 'base ''NoisyPingCount
 
 data HasPingCount = HasPingCount
   deriving (Typeable, Generic, Eq, Show)
 
-instance Binary HasPingCount
 instance Hashable HasPingCount
 deriveSafeCopy 0 'base ''HasPingCount
 
@@ -124,7 +122,7 @@ remotableDecl [ [d|
     mainloop _ pid = return
       [matchIf (\(ProcessMonitorNotification _ p _) -> p == pid)
                $ \_ -> return (Failure, pid)]
-    
+
     teardown _ _ = return ()
 
     service :: NoisyConf -> Process ()

@@ -16,6 +16,7 @@ import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.EventQueue.Producer (promulgate)
 import HA.Debug
 import HA.Logger
+import HA.SafeCopy
 import HA.Service
 import HA.Service.TH
 import qualified HA.Services.SSPL.HL.StatusHandler as StatusHandler
@@ -59,11 +60,9 @@ import Data.Hashable (Hashable)
 import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import Data.UUID (toString)
 import Data.UUID.V4 (nextRandom)
-
 import GHC.Generics (Generic)
 
 import Network.AMQP
@@ -112,7 +111,6 @@ data SSPLHLConf = SSPLHLConf {
 
 type instance ServiceState SSPLHLConf = ProcessId
 
-instance Binary SSPLHLConf
 instance Hashable SSPLHLConf
 instance ToJSON SSPLHLConf
 deriveSafeCopy 0 'base ''SSPLHLConf

@@ -20,7 +20,6 @@ module HA.Services.Frontier
 import           HA.Debug
 import qualified Data.ByteString      as B
 import           Data.Monoid ((<>))
-import           Data.SafeCopy
 import           Data.Typeable
 import           Control.Monad (forever, void)
 import           Control.Monad.Fix (fix)
@@ -32,13 +31,13 @@ import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Data.Aeson
-import Data.Binary (Binary)
 import Data.Hashable
 import Options.Schema
 import Options.Schema.Builder
 import Network hiding (Service)
 
 import HA.EventQueue.Producer (promulgate)
+import HA.SafeCopy
 import HA.Service hiding (configDict)
 import HA.Service.TH
 import HA.Services.Frontier.Command
@@ -51,7 +50,6 @@ type instance ServiceState FrontierConf = ProcessId
 
 instance Hashable FrontierConf
 instance ToJSON FrontierConf
-instance Binary FrontierConf
 deriveSafeCopy 0 'base ''FrontierConf
 
 frontierSchema :: Schema FrontierConf

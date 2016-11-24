@@ -21,18 +21,16 @@ module HA.Resources.Castor (
   , MI.Interface(..)
 ) where
 
-import HA.SafeCopy.OrphanInstances()
+import HA.SafeCopy
 import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
 
 import Data.Hashable (Hashable(..))
-import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID, fromText, toText)
 import Data.Aeson
 import Data.Aeson.Types (parseMaybe, typeMismatch)
-import Data.SafeCopy
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -41,19 +39,19 @@ import GHC.Generics (Generic)
 
 newtype Rack = Rack
   Int -- ^ Rack index
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+  deriving (Eq, Show, Generic, Typeable, Hashable)
 deriveSafeCopy 0 'base ''Rack
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure
     String -- ^ Enclosure UUID.
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable)
+  deriving (Eq, Show, Generic, Typeable, Hashable)
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
-  deriving (Eq, Show, Generic, Typeable, Binary, Hashable, FromJSON, ToJSON, Ord)
+  deriving (Eq, Show, Generic, Typeable, Hashable, FromJSON, ToJSON, Ord)
 deriveSafeCopy 0 'base ''Host
 
 -- | Generic 'host attribute'.
@@ -74,14 +72,13 @@ data HostAttr =
     -- to do so in timely manner.
   deriving (Eq, Ord, Show, Generic, Typeable)
 
-instance Binary HostAttr
 instance Hashable HostAttr
 deriveSafeCopy 0 'base ''HostAttr
 
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
     UUID -- ^ Internal UUID used to refer to the disk
-  deriving (Eq, Show, Ord, Generic, Typeable, Binary, Hashable)
+  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 
 instance FromJSON StorageDevice where
   parseJSON jsn@(Object v) = case fromText =<< parseMaybe (.: "uuid") v of
@@ -107,7 +104,6 @@ data StorageDeviceAttr
     | SDRemovedFromRAID
     deriving (Eq, Ord, Show, Generic)
 
-instance Binary StorageDeviceAttr
 instance Hashable StorageDeviceAttr
 deriveSafeCopy 0 'base ''StorageDeviceAttr
 
@@ -122,7 +118,6 @@ data DeviceIdentifier =
     | DIRaidDevice String -- Device name of RAID device containing this
   deriving (Eq, Show, Ord, Generic, Typeable)
 
-instance Binary DeviceIdentifier
 instance Hashable DeviceIdentifier
 instance ToJSON DeviceIdentifier
 instance FromJSON DeviceIdentifier
@@ -136,7 +131,6 @@ data StorageDeviceStatus = StorageDeviceStatus
     }
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary StorageDeviceStatus
 instance Hashable StorageDeviceStatus
 deriveSafeCopy 0 'base ''StorageDeviceStatus
 
@@ -144,7 +138,6 @@ deriveSafeCopy 0 'base ''StorageDeviceStatus
 data ReassemblingRaid = ReassemblingRaid
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary ReassemblingRaid
 instance Hashable ReassemblingRaid
 deriveSafeCopy 0 'base ''ReassemblingRaid
 --------------------------------------------------------------------------------
@@ -155,7 +148,6 @@ deriveSafeCopy 0 'base ''ReassemblingRaid
 data Is = Is
     deriving (Eq, Show, Generic, Typeable)
 
-instance Binary Is
 instance Hashable Is
 deriveSafeCopy 0 'base ''Is
 
@@ -163,7 +155,6 @@ deriveSafeCopy 0 'base ''Is
 data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReplacedBy
-instance Binary ReplacedBy
 deriveSafeCopy 0 'base ''ReplacedBy
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
@@ -219,7 +210,6 @@ data HalonVars = HalonVars
   -- before giving up on receiving a result.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
-instance Binary HalonVars
 instance Hashable HalonVars
 deriveSafeCopy 0 'base ''HalonVars
 

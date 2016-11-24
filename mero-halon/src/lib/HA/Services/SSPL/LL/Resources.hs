@@ -14,7 +14,7 @@ module HA.Services.SSPL.LL.Resources where
 
 import Control.Distributed.Process (NodeId)
 
-import HA.SafeCopy.OrphanInstances()
+import HA.SafeCopy
 import qualified HA.Service
 import HA.Service.TH
 import HA.Services.SSPL.IEM
@@ -43,7 +43,6 @@ import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Time
 import qualified Data.Text as T
-import Data.SafeCopy
 import Data.Serialize hiding (encode, decode)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
@@ -86,7 +85,6 @@ instance Hashable SystemdCmd
 data IPMIOp = IPMI_ON | IPMI_OFF | IPMI_CYCLE | IPMI_STATUS
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary IPMIOp
 instance Hashable IPMIOp
 deriveSafeCopy 0 'base ''IPMIOp
 
@@ -115,7 +113,6 @@ data RaidCmd =
   | RaidStop
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary RaidCmd
 instance Hashable RaidCmd
 deriveSafeCopy 0 'base ''RaidCmd
 
@@ -139,7 +136,6 @@ data LedControlState
       | PulseFastOff
       deriving (Eq, Show, Generic, Typeable)
 
-instance Binary LedControlState
 instance Hashable LedControlState
 deriveSafeCopy 0 'base ''LedControlState
 
@@ -157,7 +153,6 @@ data NodeCmd
   | Unmount T.Text -- ^ Unmount
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary NodeCmd
 instance Hashable NodeCmd
 deriveSafeCopy 0 'base ''NodeCmd
 
@@ -245,8 +240,6 @@ data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
               | AckReplyFailed       -- ^ Request failed.
               | AckReplyError T.Text -- ^ Error while processing request.
               deriving (Eq, Show, Generic, Typeable)
-
-instance Binary AckReply
 deriveSafeCopy 0 'base ''AckReply
 
 -- | Parse text representation of the @AckReply@
@@ -266,8 +259,6 @@ data CommandAck = CommandAck
   , commandAckType :: Maybe NodeCmd -- ^ Command text message.
   , commandAck     :: AckReply      -- ^ Command result.
   } deriving (Eq, Show, Generic, Typeable)
-
-instance Binary CommandAck
 deriveSafeCopy 0 'base ''CommandAck
 
 emptyActuatorMsg :: ActuatorRequestMessageActuator_request_type
@@ -309,7 +300,7 @@ makeLoggerMsg lc = emptyActuatorMsg {
 
 -- | Event that sspl service didn't receive any messages in time.
 newtype SSPLServiceTimeout = SSPLServiceTimeout NodeId
-  deriving (Eq, Show, Binary, Typeable)
+  deriving (Eq, Show, Typeable)
 deriveSafeCopy 0 'base ''SSPLServiceTimeout
 
 -- | Request hard SSPL service restart.
@@ -325,15 +316,13 @@ instance Binary RequestChannels
 
 -- | Event happens when SSPL can't connect to Rabbit-MQ broker
 newtype SSPLConnectFailure = SSPLConnectFailure NodeId
-   deriving (Eq, Show, Binary, Typeable)
+   deriving (Eq, Show, Typeable)
 deriveSafeCopy 0 'base ''SSPLConnectFailure
 
 -- | Event representing an expander reset, which is otherwise
 --   an empty message.
 data ExpanderResetInternal = ExpanderResetInternal
   deriving (Eq, Show, Generic, Typeable)
-
-instance Binary ExpanderResetInternal
 deriveSafeCopy 0 'base ''ExpanderResetInternal
 
 --------------------------------------------------------------------------------
@@ -347,7 +336,6 @@ data ActuatorChannels = ActuatorChannels
     }
   deriving (Generic, Typeable)
 
-instance Binary ActuatorChannels
 instance Hashable ActuatorChannels
 deriveSafeCopy 0 'base ''ActuatorChannels
 
@@ -357,7 +345,6 @@ data DeclareChannels = DeclareChannels
     ActuatorChannels -- Relevant channels
   deriving (Generic, Typeable)
 
-instance Binary DeclareChannels
 instance Hashable DeclareChannels
 deriveSafeCopy 0 'base ''DeclareChannels
 
@@ -373,16 +360,16 @@ instance (Typeable a, Binary a) => SafeCopy (Channel a) where
 data IEMChannel = IEMChannel
   deriving (Eq, Show, Typeable, Generic)
 
-deriveSafeCopy 0 'base ''IEMChannel
-instance Binary IEMChannel
 instance Hashable IEMChannel
+deriveSafeCopy 0 'base ''IEMChannel
+
 
 data CommandChannel = CommandChannel
   deriving (Eq, Show, Typeable, Generic)
 
-deriveSafeCopy 0 'base ''CommandChannel
-instance Binary CommandChannel
 instance Hashable CommandChannel
+deriveSafeCopy 0 'base ''CommandChannel
+
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -427,7 +414,6 @@ data ActuatorConf = ActuatorConf {
   , acDeclareChanTimeout :: Defaultable Int
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary ActuatorConf
 instance Hashable ActuatorConf
 instance ToJSON ActuatorConf where
   toJSON (ActuatorConf iem systemd command timeout) =
@@ -469,7 +455,6 @@ data SensorConf = SensorConf {
 } deriving (Eq, Generic, Show, Typeable)
 deriveSafeCopy 0 'base ''SensorConf
 
-instance Binary SensorConf
 instance Hashable SensorConf
 instance ToJSON SensorConf
 
@@ -488,7 +473,6 @@ data SSPLConf = SSPLConf {
 
 type instance HA.Service.ServiceState SSPLConf = ProcessId
 
-instance Binary SSPLConf
 instance Hashable SSPLConf
 instance ToJSON SSPLConf
 deriveSafeCopy 0 'base ''SSPLConf

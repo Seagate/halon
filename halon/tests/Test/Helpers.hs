@@ -8,9 +8,9 @@ module Test.Helpers where
 import Control.Distributed.Process hiding (unwrapMessage)
 import Data.Maybe (catMaybes)
 import Data.PersistMessage
-import Data.SafeCopy
 import Data.Typeable
 import HA.EventQueue.Types
+import HA.SafeCopy
 
 import qualified Test.Tasty.HUnit as HU
 

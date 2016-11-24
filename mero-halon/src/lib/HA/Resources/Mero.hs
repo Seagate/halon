@@ -44,20 +44,18 @@ import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Ord (comparing)
 import Data.Proxy (Proxy(..))
-import Data.SafeCopy hiding (Profile)
-import Data.Serialize (Serialize)
 import Data.Scientific
 import Data.Typeable (Typeable)
 import qualified Data.Vector as V
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
-
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
-import HA.SafeCopy.OrphanInstances()
+
 import qualified HA.ResourceGraph as G
+import HA.SafeCopy hiding (Profile)
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
@@ -68,7 +66,7 @@ typMask = 0x00ffffffffffffff
 
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 deriveSafeCopy 0 'base ''FidSeq
 
 -- | Couple of utility methods for conf objects. Minimal implementation:
@@ -137,7 +135,6 @@ data SyncToConfd =
     | SyncDumpToBS ProcessId
   deriving (Eq, Generic, Show, Typeable)
 
-instance Binary SyncToConfd
 instance Hashable SyncToConfd
 deriveSafeCopy 0 'base ''SyncToConfd
 
@@ -158,7 +155,6 @@ instance Hashable SyncDumpToBSReply
 data At = At
     deriving (Eq, Show, Generic, Typeable)
 
-instance Binary At
 instance Hashable At
 deriveSafeCopy 0 'base ''At
 
@@ -167,7 +163,6 @@ deriveSafeCopy 0 'base ''At
 data IsParentOf = IsParentOf
    deriving (Eq, Generic, Show, Typeable)
 
-instance Binary IsParentOf
 instance Hashable IsParentOf
 deriveSafeCopy 0 'base ''IsParentOf
 
@@ -176,7 +171,6 @@ deriveSafeCopy 0 'base ''IsParentOf
 data IsRealOf = IsRealOf
    deriving (Eq, Generic, Show, Typeable)
 
-instance Binary IsRealOf
 instance Hashable IsRealOf
 deriveSafeCopy 0 'base ''IsRealOf
 
@@ -186,12 +180,11 @@ deriveSafeCopy 0 'base ''IsRealOf
 data IsOnHardware = IsOnHardware
    deriving (Eq, Generic, Show, Typeable)
 
-instance Binary IsOnHardware
 instance Hashable IsOnHardware
 deriveSafeCopy 0 'base ''IsOnHardware
 
 newtype Root = Root Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj Root where
    fidType _ = fromIntegral . ord $ 't'
@@ -199,7 +192,7 @@ instance ConfObj Root where
 deriveSafeCopy 0 'base ''Root
 
 newtype Profile = Profile Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
+  deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
 
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
@@ -211,7 +204,6 @@ data Filesystem = Filesystem {
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary Filesystem
 instance Hashable Filesystem
 instance ToJSON Filesystem
 instance FromJSON Filesystem
@@ -222,7 +214,7 @@ instance ConfObj Filesystem where
 deriveSafeCopy 0 'base ''Filesystem
 
 newtype Node = Node Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
+  deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
 
 instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
@@ -241,7 +233,6 @@ data NodeState
   | NSOnline              -- ^ Node is online.
   deriving (Eq, Show, Typeable, Generic, Read, Ord)
 
-instance Binary NodeState
 instance Hashable NodeState
 instance ToJSON NodeState
 instance FromJSON NodeState
@@ -260,7 +251,7 @@ displayNodeState xs@NSFailedUnrecoverable = ("failed", Just $ prettyNodeState xs
 displayNodeState xs = (prettyNodeState xs, Nothing)
 
 newtype Rack = Rack Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj Rack where
   fidType _ = fromIntegral . ord $ 'a'
@@ -269,7 +260,7 @@ deriveSafeCopy 0 'base ''Rack
 
 newtype Pool = Pool Fid
   deriving
-    (Binary, Eq, Generic, Hashable, Show, Typeable, Ord, FromJSON, ToJSON)
+    (Eq, Generic, Hashable, Show, Typeable, Ord, FromJSON, ToJSON)
 
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
@@ -286,7 +277,6 @@ data Process = Process {
   , r_endpoint :: String
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary Process
 instance Hashable Process
 instance ToJSON Process
 instance FromJSON Process
@@ -309,7 +299,6 @@ data Service = Service {
 instance Ord Service where
   compare = comparing s_fid
 
-instance Binary Service
 instance Hashable Service
 instance ToJSON Service
 instance FromJSON Service
@@ -329,7 +318,6 @@ data ServiceState =
   | SSInhibited ServiceState -- ^ Service state is masked by a higher level
                              --   failure.
   deriving (Eq, Show, Typeable, Generic, Read, Ord)
-instance Binary ServiceState
 instance Hashable ServiceState
 instance ToJSON ServiceState
 instance FromJSON ServiceState
@@ -357,7 +345,6 @@ data SDev = SDev {
 } deriving (Eq, Generic, Show, Typeable, Ord)
 deriveSafeCopy 0 'base ''SDev
 
-instance Binary SDev
 instance Hashable SDev
 instance ToJSON SDev
 instance FromJSON SDev
@@ -377,7 +364,6 @@ data SDevState =
                            -- transient failure.
   deriving (Eq, Show, Typeable, Generic, Read, Ord)
 
-instance Binary SDevState
 instance Hashable SDevState
 instance ToJSON SDevState
 instance FromJSON SDevState
@@ -427,7 +413,7 @@ sdsFailFailed SDSRepaired = SDSRepaired
 sdsFailFailed _ = SDSFailed
 
 newtype Enclosure = Enclosure Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
@@ -437,7 +423,7 @@ deriveSafeCopy 0 'base ''Enclosure
 -- | A controller represents an entity which allows access to a number of
 --   disks. It will typically be hosted on a node.
 newtype Controller = Controller Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ToJSON Controller
 instance FromJSON Controller
@@ -456,7 +442,6 @@ data ControllerState
   deriving (Eq, Show, Typeable, Generic, Read)
 deriveSafeCopy 0 'base ''ControllerState
 
-instance Binary ControllerState
 instance Hashable ControllerState
 
 instance ConfObj Controller where
@@ -464,7 +449,7 @@ instance ConfObj Controller where
   fid (Controller f) = f
 
 newtype Disk = Disk Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable, Ord)
+  deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
 deriveSafeCopy 0 'base ''Disk
 
 instance ConfObj Disk where
@@ -480,7 +465,6 @@ data PVerType = PVerActual {
   , v_base  :: Fid
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary PVerType
 instance Hashable PVerType
 deriveSafeCopy 0 'base ''PVerType
 
@@ -489,12 +473,11 @@ data PVer = PVer {
   , v_type :: PVerType
 } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary PVer
 instance Hashable PVer
 deriveSafeCopy 0 'base ''PVer
 
 newtype PVerCounter = PVerCounter Word32
-  deriving (Binary, Eq, Generic, Show, Typeable, Ord, Hashable)
+  deriving (Eq, Generic, Show, Typeable, Ord, Hashable)
 
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
@@ -502,7 +485,7 @@ instance ConfObj PVer where
 deriveSafeCopy 0 'base ''PVerCounter
 
 newtype RackV = RackV Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj RackV where
   fidType _ = fromIntegral . ord $ 'j'
@@ -510,7 +493,7 @@ instance ConfObj RackV where
 deriveSafeCopy 0 'base ''RackV
 
 newtype EnclosureV = EnclosureV Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj EnclosureV where
   fidType _ = fromIntegral . ord $ 'j'
@@ -518,7 +501,7 @@ instance ConfObj EnclosureV where
 deriveSafeCopy 0 'base ''EnclosureV
 
 newtype ControllerV = ControllerV Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj ControllerV where
   fidType _ = fromIntegral . ord $ 'j'
@@ -526,7 +509,7 @@ instance ConfObj ControllerV where
 deriveSafeCopy 0 'base ''ControllerV
 
 newtype DiskV = DiskV Fid
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
@@ -542,9 +525,7 @@ deriveSafeCopy 0 'base ''DiskV
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
   deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
 
-instance Serialize TimeSpec
-instance SafeCopy TimeSpec where
-  kind = primitive
+deriveSafeCopy 0 'base ''TimeSpec
 
 -- | Create a 'TimeSpec' with the given number of seconds.
 mkTimeSpec :: Int64 -> TimeSpec
@@ -575,10 +556,6 @@ timeSpecToSeconds (TimeSpec (C.TimeSpec sec _)) = fromIntegral sec
 instance Hashable TimeSpec where
   hashWithSalt s (TimeSpec (C.TimeSpec sec nsec)) = hashWithSalt s (sec, nsec)
 
-instance Binary TimeSpec where
-  put (TimeSpec (C.TimeSpec sec nsec)) = put (sec, nsec)
-  get = get >>= \(sec, nsec) -> return (TimeSpec $ C.TimeSpec sec nsec)
-
 -- | Get current time using a 'C.Monotonic' 'C.Clock'.
 getTime :: IO TimeSpec
 getTime = TimeSpec <$> C.getTime C.Monotonic
@@ -601,7 +578,6 @@ data PoolRepairType = Failure | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 deriveSafeCopy 0 'base ''PoolRepairType
-instance Binary PoolRepairType
 instance Hashable PoolRepairType
 instance ToJSON PoolRepairType
 instance FromJSON PoolRepairType
@@ -614,7 +590,6 @@ data PoolRepairInformation = PoolRepairInformation
   , priStateUpdates      :: [(SDev, Int)]
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
-instance Binary PoolRepairInformation
 instance Hashable PoolRepairInformation
 instance ToJSON PoolRepairInformation
 instance FromJSON PoolRepairInformation
@@ -634,7 +609,6 @@ data PoolRepairStatus = PoolRepairStatus
   , prsPri :: Maybe PoolRepairInformation
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
-instance Binary PoolRepairStatus
 instance Hashable PoolRepairStatus
 instance ToJSON PoolRepairStatus where
   toJSON (PoolRepairStatus t u p) = object
@@ -655,11 +629,11 @@ deriveSafeCopy 0 'base ''PoolRepairStatus
 -- mero should always send information about that to mero in the same
 -- order.
 newtype DiskFailureVector = DiskFailureVector [Disk]
-  deriving (Eq, Show, Ord, Generic, Typeable, Hashable, Binary)
+  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 deriveSafeCopy 0 'base ''DiskFailureVector
 
 newtype LNid = LNid String
-  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 deriveSafeCopy 0 'base ''LNid
 
 data HostHardwareInfo = HostHardwareInfo
@@ -668,7 +642,6 @@ data HostHardwareInfo = HostHardwareInfo
        , hhLNidAddress :: String
        }
    deriving (Eq, Show, Typeable, Generic)
-instance Binary HostHardwareInfo
 instance Hashable HostHardwareInfo
 deriveSafeCopy 0 'base ''HostHardwareInfo
 
@@ -676,7 +649,6 @@ deriveSafeCopy 0 'base ''HostHardwareInfo
 newtype PID = PID Int
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary PID
 instance Hashable PID
 deriveSafeCopy 0 'base ''PID
 
@@ -692,7 +664,6 @@ data ProcessState =
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.
   deriving (Eq, Show, Typeable, Generic, Read, Ord)
-instance Binary ProcessState
 instance Hashable ProcessState
 instance ToJSON ProcessState
 instance FromJSON ProcessState
@@ -720,7 +691,6 @@ data ProcessLabel =
   | PLBootLevel BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
   | PLNoBoot  -- ^ Tag processes which should not boot.
   deriving (Eq, Show, Typeable, Generic)
-instance Binary ProcessLabel
 instance Hashable ProcessLabel
 
 -- | Process boot level.
@@ -736,7 +706,7 @@ instance Hashable ProcessLabel
 --   * 2 - clients
 newtype BootLevel = BootLevel { unBootLevel :: Int }
   deriving
-    (Eq, Show, Typeable, Generic, Binary, Hashable, Ord, FromJSON, ToJSON)
+    (Eq, Show, Typeable, Generic, Hashable, Ord, FromJSON, ToJSON)
 deriveSafeCopy 0 'base ''BootLevel
 deriveSafeCopy 0 'base ''ProcessLabel
 
@@ -748,7 +718,6 @@ data Disposition =
   | OFFLINE -- ^ Cluster should be offline (e.g. for maintenance)
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary Disposition
 instance Hashable Disposition
 instance ToJSON Disposition
 instance FromJSON Disposition
@@ -758,7 +727,6 @@ deriveSafeCopy 0 'base ''Disposition
 data RunLevel = RunLevel
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary RunLevel
 instance Hashable RunLevel
 deriveSafeCopy 0 'base ''RunLevel
 
@@ -766,7 +734,6 @@ deriveSafeCopy 0 'base ''RunLevel
 data StopLevel = StopLevel
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary StopLevel
 instance Hashable StopLevel
 deriveSafeCopy 0 'base ''StopLevel
 
@@ -799,7 +766,6 @@ prettyStatus MeroClusterState{..} = unlines [
 data ConfUpdateVersion = ConfUpdateVersion Word64 (Maybe Int)
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary ConfUpdateVersion
 instance Hashable ConfUpdateVersion
 deriveSafeCopy 0 'base ''ConfUpdateVersion
 
@@ -809,7 +775,6 @@ deriveSafeCopy 0 'base ''ConfUpdateVersion
 data ProcessBootstrapped = ProcessBootstrapped
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary ProcessBootstrapped
 instance Hashable ProcessBootstrapped
 deriveSafeCopy 0 'base ''ProcessBootstrapped
 
@@ -819,7 +784,6 @@ data FilesystemStats = FilesystemStats {
   , _fs_stats :: FSStats
 } deriving (Eq, Show, Typeable, Generic)
 
-instance Binary FilesystemStats
 instance Hashable FilesystemStats
 instance ToJSON FilesystemStats
 instance FromJSON FilesystemStats

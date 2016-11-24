@@ -44,11 +44,10 @@ import           Data.Hashable
 import           Data.Int (Int64)
 import qualified Data.Map as M
 import           Data.Monoid ((<>))
-import           Data.SafeCopy
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
-import           HA.SafeCopy.OrphanInstances ()
+import           HA.SafeCopy
 import           HA.Service.TH
 import           Options.Schema
 import           Options.Schema.Builder
@@ -65,7 +64,6 @@ data EkgConf = EkgConf
   , _ekg_port :: Int
   } deriving (Eq, Show, Generic)
 
-instance Binary EkgConf
 instance Hashable EkgConf
 instance ToJSON EkgConf
 

@@ -17,26 +17,23 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import           Data.Foldable
 
-import Data.Binary (Binary)
 import Data.Binary.Put
 import Data.Hashable
 import Data.Maybe (catMaybes)
-import Data.SafeCopy
 import Data.Typeable (Typeable, typeOf)
 
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
+import HA.SafeCopy
 
 import GHC.Generics
 
 data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
   deriving (Eq, Show, Typeable, Generic)
-instance Binary MultimapGetKeyValuePairs
 deriveSafeCopy 0 'base ''MultimapGetKeyValuePairs
 
 data ReadResourceGraph = ReadResourceGraph
   deriving (Eq, Show, Typeable, Generic)
-instance Binary ReadResourceGraph
 deriveSafeCopy 0 'base ''ReadResourceGraph
 
 data Command

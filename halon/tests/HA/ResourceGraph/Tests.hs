@@ -24,12 +24,10 @@ import Control.Exception
   , throwIO
   )
 import Control.Monad.Catch (catch)
-import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import qualified Data.HashSet as S
 import Data.List (sort, (\\))
 import Data.Proxy
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -41,6 +39,7 @@ import HA.Multimap.Process (startMultimap)
 import HA.Replicator (RGroup(..))
 import HA.ResourceGraph hiding (__remoteTable)
 import HA.Resources.TH
+import HA.SafeCopy
 
 import RemoteTables (remoteTable)
 import Test.Framework
@@ -56,37 +55,31 @@ data NodeA = NodeA Int
   deriving (Eq, Ord, Typeable, Generic, Show)
 
 instance Hashable NodeA
-instance Binary NodeA
 
 data NodeB = NodeB Int
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeB
-instance Binary NodeB
 
 data NodeC = NodeC Int
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeC
-instance Binary NodeC
 
 data HasA = HasA
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasA
-instance Binary HasA
 
 data HasB = HasB
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasB
-instance Binary HasB
 
 data HasC = HasC
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasC
-instance Binary HasC
 
 deriveSafeCopy 0 'base ''NodeA
 deriveSafeCopy 0 'base ''NodeB
