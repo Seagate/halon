@@ -364,16 +364,16 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
         , "existing device by serial number:", show existingBySerial
         ]
 
-      sdev <- case (existingByIdx, existingBySerial) of
+      (sdev,is_new) <- case (existingByIdx, existingBySerial) of
         (Just i, Just s) | i == s ->
           -- One existing device.
-          return i
+          return (i,False)
         (Just i, Just _) -> do
           -- Drive with this serial is known, but is not the drive in this slot.
           -- In this case the drive has probably been moved.
           -- TODO: investigate replacement with engineer temporarily pulling out drive scenario
           void $ attachStorageDeviceReplacement i [serial, wwn, idx]
-          return i
+          return (i,True)
         (Just i, Nothing) -> do
           lookupStorageDeviceSerial i >>= \case
             [] -> do
@@ -383,11 +383,11 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
               -- We have a device in this slot, but it has the wrong serial.
               -- So this is probably a replacement.
               void $ attachStorageDeviceReplacement i [serial, wwn, idx]
-          return i
+          return (i, True)
         (Nothing, Just s) -> do
           -- We have a serial number for the device, but don't know its location.
           identifyStorageDevice s [idx, wwn]
-          return s
+          return (s,False)
         (Nothing, Nothing) -> do
           -- This is a completely new device to Halon
           diskUUID <- liftIO $ nextRandom
@@ -398,7 +398,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
             locateStorageDeviceOnHost host disk
             locateHostInEnclosure host enc
           identifyStorageDevice disk [serial, wwn, idx]
-          return disk
+          return (disk,False)
 
       phaseLog "sspl-service" "Found matching device"
       phaseLog "sdev" $ show sdev
@@ -409,14 +409,15 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
       isOngoingReset <- hasOngoingReset sdev
 
       phaseLog "debug" $ unwords [
-          "was_installed:", show (not was_removed)
+          "was_replaced", show is_new
+        , "was_installed:", show (not was_removed)
         , "is_installed:", show is_installed
         , "was_powered:", show was_powered
         , "is_powered:", show is_powered
         , "is_undergoing_reset:", show isOngoingReset
         ]
       more_needed <- case (is_installed, is_powered) of
-       (True, _) | was_removed -> do
+       (True, _) | is_new || was_removed -> do
          notify $ DriveInserted uuid (Node nid) sdev enc diskNum serial is_powered
          return True
        (False, _) | not was_removed -> do
