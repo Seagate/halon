@@ -17,6 +17,7 @@ import HA.Service hiding (configDict)
 import HA.Services.SSPL.IEM
 import HA.Services.SSPL.LL.Resources
 import HA.RecoveryCoordinator.Mero
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
@@ -232,11 +233,12 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                 . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
                 $ srdm
 
-     phaseLog "sspl-service" $ "monitor-drivemanager request received."
-     phaseLog "enclosure"    $ show enc'
-     phaseLog "drive.sn"     $ show sn
-     phaseLog "drive.path"   $ show path
-     phaseLog "drive.idx"    $ show diidx
+     Log.tagContext Log.SM [ ("enclosure"::String, show enc')
+                           , ("drive.sn"::String,  show sn)
+                           , ("drive.path"::String, show path)
+                           , ("drive.idx"::String,  show diidx)
+                           ] Nothing
+     Log.rcLog' Log.DEBUG ("monitor-drivemanager request received." :: String)
 
      -- If SSPL doesn't know which enclosure the drive in, try to
      -- infer it from the drive serial number and info we may have
@@ -244,11 +246,11 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
      enc <- case enc' of
        Enclosure "HPI_Data_Not_Available" -> lookupStorageDevicesWithDI sn >>= \case
          [] -> do
-           phaseLog "warn" $ "No SD found with SN " ++ show sn
+           Log.rcLog' Log.WARN $ "No SD found with SN " ++ show sn
            return enc'
          sd : _ -> lookupEnclosureOfStorageDevice sd >>= \case
            Nothing -> do
-             phaseLog "warn" $ "No enclosure found for " ++ show sd
+             Log.rcLog' Log.WARN $ "No enclosure found for " ++ show sn
              -- TODO: don't return enc' but just abort
              return enc'
            Just enc'' -> return enc''
@@ -260,15 +262,15 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
          -- Try to check if we have device with known serial number, just without location.
          lookupStorageDeviceInEnclosure enc sn >>= \case
            Just disk -> do
-             phaseLog "sspl-service" $ "Drive not found by index. Found device "
-                                    ++ show disk ++ " by serial number."
-             phaseLog "disk" $ show disk
+             Log.tagContext Log.SM [("disk-by-sn"::String, show disk)] Nothing
+             Log.rcLog' Log.WARN $ "Drive not found by index. Found device "
+                                      ++ show disk ++ " by serial number."
              -- TODO: we don't want to blindly set path, should verify if it matches and panic if not
              identifyStorageDevice disk [diidx, path]
              selfMessage $ RuleDriveManagerDisk disk
            Nothing -> do
-             phaseLog "sspl-service"
-                 $ "Cant find disk in " ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
+             Log.rcLog' Log.WARN $ "Cant find disk in "
+               ++ show enc ++ " at " ++ show diskNum ++ " creating new entry."
              diskUUID <- liftIO $ nextRandom
              let disk = StorageDevice diskUUID
              locateStorageDeviceInEnclosure enc disk
@@ -283,7 +285,6 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
      Just (uuid, nid, enc, _diskNum, srdm, _sn, _path) <- get Local
-     phaseLog "disk" $ show disk
      let
       disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
@@ -293,17 +294,17 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
 
      if isOngoingReset
      then do
-       phaseLog "info" $ unwords [
-                            "Ignoring DriveManager updates for disk:"
-                          , show disk
-                          , "due to disk being"
-                          , "reset"
-                          ]
+       Log.rcLog' Log.DEBUG $ unwords [
+                                  "Ignoring DriveManager updates for disk:"
+                                , show disk
+                                , "due to disk being"
+                                , "reset"
+                                ]
        messageProcessed uuid
      else
        case (disk_status, disk_reason) of
         (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) -> do
-          phaseLog "sspl-service" $ "status unchanged: " ++ show oldDriveStatus
+          Log.rcLog' Log.DEBUG $ "status unchanged: " ++ show oldDriveStatus
           messageProcessed uuid
         (T.toUpper -> "FAILED", _) -> do
           updateDriveStatus disk (T.unpack disk_status) (T.unpack disk_reason)
@@ -350,6 +351,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
           is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
 
+      
       phaseLog "sspl-service" $ "monitor-hpi request received for drive:"
       phaseLog "enclosure" $ show enc
       phaseLog "drive.wwn" $ show wwn
