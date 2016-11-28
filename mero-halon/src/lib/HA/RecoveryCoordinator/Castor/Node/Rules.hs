@@ -126,6 +126,7 @@ import           HA.RecoveryCoordinator.Castor.Node.Actions
 import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.State
@@ -158,7 +159,6 @@ import           Control.Monad (void, guard, join)
 import           Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
-import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
@@ -167,8 +167,6 @@ import qualified Data.Text.Lazy.Encoding as TL
 import qualified Data.Text.Lazy as TL
 import           Data.Typeable
 import           Data.Vinyl
-
-import           GHC.Generics
 
 import           Network.CEP
 
@@ -367,10 +365,6 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
 -- and register node withing a castor cluster in that case.
 processNodeNew :: Job StartProcessNodeNew NewMeroServer
 processNodeNew = Job "castor::node::process::new"
-
--- | Request start of the 'ruleNewNode'.
-newtype StartProcessNodeNew  = StartProcessNodeNew R.Node
-  deriving (Eq, Show, Generic, Binary, Ord)
 
 ruleNodeNew :: Definitions RC ()
 ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do

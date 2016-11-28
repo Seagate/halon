@@ -19,13 +19,14 @@ import Control.Monad (forM)
 
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
-import Data.Binary (Binary)
-import qualified Data.Binary as B
+--import Data.Binary (Binary)
+--import qualified Data.Binary as B
 import Data.Data
 import Data.Hashable (Hashable)
 
 import qualified Data.Hashable as H
 import qualified Data.HashMap.Strict as HM
+import SSPL.Bindings.Instances () -- HashMap
 
 import Data.Word
   ( Word32
@@ -46,14 +47,13 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
 
 #endif
-import           Data.SafeCopy
 import qualified Data.Yaml as Y
+import           HA.SafeCopy
 
 data Network = Data | Management | Local
   deriving (Eq, Data, Generic, Show, Typeable)
 
 deriveSafeCopy 0 'base ''Network
-instance Binary Network
 instance Hashable Network
 instance A.FromJSON Network
 instance A.ToJSON Network
@@ -65,7 +65,6 @@ data Interface = Interface {
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 deriveSafeCopy 0 'base ''Interface
-instance Binary Interface
 instance Hashable Interface
 instance A.FromJSON Interface
 instance A.ToJSON Interface
@@ -75,7 +74,6 @@ data HalonSettings = HalonSettings
   , _hs_roles :: [RoleSpec]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary HalonSettings
 instance Hashable HalonSettings
 
 halonSettingsOptions :: A.Options
@@ -96,7 +94,6 @@ data Host = Host {
   , h_halon :: Maybe HalonSettings
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary Host
 instance Hashable Host
 instance A.FromJSON Host
 instance A.ToJSON Host
@@ -107,7 +104,6 @@ data BMC = BMC {
   , bmc_pass :: String
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary BMC
 instance Hashable BMC
 instance A.FromJSON BMC
 instance A.ToJSON BMC
@@ -119,7 +115,6 @@ data Enclosure = Enclosure {
   , enc_hosts :: [Host]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary Enclosure
 instance Hashable Enclosure
 instance A.FromJSON Enclosure
 instance A.ToJSON Enclosure
@@ -129,7 +124,6 @@ data Rack = Rack {
   , rack_enclosures :: [Enclosure]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary Rack
 instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
@@ -141,7 +135,6 @@ data FailureSetScheme =
   | Formulaic [[Word32]]
   deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary FailureSetScheme
 instance Hashable FailureSetScheme
 instance A.FromJSON FailureSetScheme
 instance A.ToJSON FailureSetScheme
@@ -154,7 +147,6 @@ data HalonRole = HalonRole
     -- ^ List of strings starting appropriate services
   } deriving (Show, Eq, Data, Ord, Generic, Typeable)
 
-instance Binary HalonRole
 instance Hashable HalonRole
 
 halonConfigOptions :: A.Options
@@ -188,7 +180,6 @@ data M0Globals = M0Globals {
   , m0_min_rpc_recvq_len :: Maybe Word32
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary M0Globals
 instance Hashable M0Globals
 instance A.FromJSON M0Globals
 instance A.ToJSON M0Globals
@@ -201,7 +192,6 @@ data M0Device = M0Device {
   , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary M0Device
 instance Hashable M0Device
 instance A.FromJSON M0Device
 instance A.ToJSON M0Device
@@ -215,7 +205,6 @@ data M0Host = M0Host {
   , m0h_devices :: [M0Device]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary M0Host
 instance Hashable M0Host
 instance A.FromJSON M0Host
 instance A.ToJSON M0Host
@@ -232,7 +221,6 @@ data M0Process = M0Process {
   , m0p_boot_level :: Word64
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary M0Process
 instance Hashable M0Process
 instance A.FromJSON M0Process
 instance A.ToJSON M0Process
@@ -244,7 +232,6 @@ data M0Service = M0Service {
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary M0Service
 instance Hashable M0Service
 instance A.FromJSON M0Service
 instance A.ToJSON M0Service
@@ -259,7 +246,6 @@ data InitialData = InitialData {
 #endif
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Binary InitialData
 instance Hashable InitialData
 instance A.FromJSON InitialData
 instance A.ToJSON InitialData
@@ -290,6 +276,7 @@ instance A.ToJSON RoleSpec where
 instance Hashable RoleSpec where
   hashWithSalt s (RoleSpec a v) = s `H.hashWithSalt` a `H.hashWithSalt` fmap HM.toList v
 
+{-
 -- TODO: We lose overrides here but we don't care about these in first
 -- place. We should do something like we have with 'UnexpandedHost' if
 -- we do care about it persisting through serialisation. This is
@@ -297,7 +284,7 @@ instance Hashable RoleSpec where
 instance Binary RoleSpec where
   put (RoleSpec a _) = B.put a
   get = RoleSpec <$> B.get <*> pure Nothing
-
+-}
 #ifdef USE_MERO
 
 -- | A single parsed role, ready to be used for building 'InitialData'
@@ -470,6 +457,16 @@ parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
 
 #ifdef USE_MERO
 deriveSafeCopy 0 'base ''FailureSetScheme
+deriveSafeCopy 0 'base ''M0Device
 deriveSafeCopy 0 'base ''M0Globals
+deriveSafeCopy 0 'base ''M0Host
+deriveSafeCopy 0 'base ''M0Process
+deriveSafeCopy 0 'base ''M0Service
 #endif
 deriveSafeCopy 0 'base ''BMC
+deriveSafeCopy 0 'base ''Enclosure
+deriveSafeCopy 0 'base ''HalonSettings
+deriveSafeCopy 0 'base ''Host
+deriveSafeCopy 0 'base ''InitialData
+deriveSafeCopy 0 'base ''Rack
+deriveSafeCopy 0 'base ''RoleSpec

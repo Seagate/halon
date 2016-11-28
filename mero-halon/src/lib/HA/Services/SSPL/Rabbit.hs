@@ -13,7 +13,6 @@
 module HA.Services.SSPL.Rabbit where
 
 import Prelude hiding ((<$>), (<*>))
-import HA.SafeCopy.OrphanInstances()
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
@@ -55,10 +54,9 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Data.SafeCopy
 import Data.Typeable (Typeable)
-
 import GHC.Generics (Generic)
+import HA.SafeCopy
 
 import Network.AMQP
 
@@ -77,7 +75,6 @@ data ConnectionConf = ConnectionConf {
   , ccPassword :: String
   } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary ConnectionConf
 instance Hashable ConnectionConf
 instance ToJSON ConnectionConf where
   toJSON (ConnectionConf hn vh login pass) =
@@ -98,7 +95,6 @@ data BindConf = BindConf {
   , bcQueueName :: Defaultable String
   } deriving (Eq, Generic, Show, Typeable)
 
-instance Binary BindConf
 instance Hashable BindConf
 instance ToJSON BindConf where
   toJSON (BindConf ex rk qn) =

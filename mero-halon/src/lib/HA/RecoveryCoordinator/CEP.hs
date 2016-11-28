@@ -47,6 +47,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.HalonVars
+import           HA.SafeCopy
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
 import qualified HA.Resources.Castor as M0
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
@@ -382,10 +383,9 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId
   deriving (Show, Eq, Generic, Typeable)
+
 newtype RequestRCPidAnswer = RequestRCPidAnswer ProcessId
   deriving (Show, Eq, Generic, Typeable)
-
-instance Binary RequestRCPid
 instance Binary RequestRCPidAnswer
 
 -- | Asks RC for its own 'ProcessId'.
@@ -407,3 +407,5 @@ sendLogs logs ls = do
                , n <- G.connectedTo host Runs rg :: [Node]
                , not . null $ lookupServiceInfo n decisionLog rg
                ]
+
+deriveSafeCopy 0 'base ''RequestRCPid

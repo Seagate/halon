@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- |
@@ -59,6 +60,7 @@ import Network.RPC.RPCLite
   , RPCMachine
   )
 import HA.RecoveryCoordinator.Mero.Events (GetSpielAddress(..),GetFailureVector(..))
+import HA.SafeCopy
 
 import Control.Arrow ((***))
 import Control.Lens
@@ -97,14 +99,14 @@ import Debug.Trace (traceEventIO)
 -- and the change has to be communicated to Mero.
 --
 newtype Set = Set NVec
-        deriving (Generic, Typeable, Binary, Hashable, Show, Eq)
+  deriving (Generic, Typeable, Hashable, Show, Eq)
+deriveSafeCopy 0 'base ''Set
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.
 data Get = Get ProcessId [Fid]
         deriving (Generic, Typeable)
-
-instance Binary Get
+deriveSafeCopy 0 'base ''Get
 
 -- | This message is sent by the RC in reply to a 'Get' message.
 newtype GetReply = GetReply NVec

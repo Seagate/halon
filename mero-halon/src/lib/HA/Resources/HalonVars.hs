@@ -1,13 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
+{-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Dealing with configurable values throughout the halon rules.
-
 module HA.Resources.HalonVars
   ( HalonVars(..)
   , module HA.Resources.HalonVars
@@ -21,6 +20,7 @@ import HA.RecoveryCoordinator.RC.Actions
 import HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
+import HA.SafeCopy
 import Network.CEP
 
 -- | Default value for 'HalonVars'
@@ -60,8 +60,8 @@ getHalonVar f = f <$> getHalonVars
 
 newtype SetHalonVars = SetHalonVars HalonVars
   deriving (Show, Eq, Generic, Typeable)
-instance Binary SetHalonVars
 instance Hashable SetHalonVars
+deriveSafeCopy 0 'base ''SetHalonVars
 
 newtype HalonVarsUpdated = HalonVarsUpdated HalonVars
   deriving (Show, Eq, Generic, Typeable)

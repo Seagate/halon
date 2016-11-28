@@ -1,11 +1,12 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.RC.Events.Debug
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-
 module HA.RecoveryCoordinator.RC.Events.Debug where
 
 import HA.Resources
+import HA.SafeCopy
 
 import Control.Distributed.Process (NodeId, ProcessId)
 
@@ -14,7 +15,6 @@ import Data.Hashable (Hashable)
 import qualified Data.Map.Strict as Map
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
-
 import GHC.Generics
 
 -- ^ Sent when a process wishes to enquire about the status of a node.
@@ -23,7 +23,6 @@ data NodeStatusRequest =
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable NodeStatusRequest
-instance Binary NodeStatusRequest
 
 -- ^ Response to a query about the status of a node.
 data NodeStatusResponse = NodeStatusResponse
@@ -39,7 +38,6 @@ data DebugRequest =
     DebugRequest ProcessId
   deriving (Eq, Show, Generic, Typeable)
 
-instance Binary DebugRequest
 instance Hashable DebugRequest
 
 data DebugResponse = DebugResponse {
@@ -50,5 +48,7 @@ data DebugResponse = DebugResponse {
   , dr_rg_gc_threshold :: Int
   }
   deriving (Eq, Show, Generic, Typeable)
-
 instance Binary DebugResponse
+
+deriveSafeCopy 0 'base ''DebugRequest
+deriveSafeCopy 0 'base ''NodeStatusRequest

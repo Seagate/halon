@@ -23,13 +23,13 @@ module HA.Services.Empty
   ) where
 
 import Data.Aeson
-import Data.Binary
 import Data.Hashable
-import Data.SafeCopy
 import Data.Typeable
 import GHC.Generics
 
+import HA.SafeCopy
 import HA.Service.TH
+
 
 #if ! MIN_VERSION_base(4,8,0)
 import Control.Applicative (pure)
@@ -39,7 +39,6 @@ import Options.Schema
 
 data EmptyConf = EmptyConf deriving (Eq, Generic, Show, Typeable)
 
-instance Binary EmptyConf
 instance Hashable EmptyConf
 instance ToJSON EmptyConf
 

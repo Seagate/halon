@@ -33,6 +33,7 @@ import HA.Resources
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Service.Events
+import HA.SafeCopy
 import HA.Startup (startupHalonNode, ignition)
 import HA.NodeUp  (nodeUp)
 import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)
@@ -69,21 +70,13 @@ import GHC.Generics
 
 import TestRunner
 
-data RChan = RChan String deriving (Generic, Typeable)
-
-instance Binary RChan
-
 data SChan = SChan SensorResponseMessageSensor_response_typeDisk_status_drivemanager deriving (Generic, Typeable)
 
 instance Binary SChan
 
 data TestSmartCmd = TestSmartCmd NodeId ByteString deriving (Generic, Typeable)
 
-instance Binary TestSmartCmd
-
 data WhoAmI = WhoAmI deriving (Generic, Typeable)
-
-instance Binary WhoAmI
 
 testRules :: ProcessId ->  [Definitions RC ()]
 testRules pid =
@@ -170,7 +163,6 @@ runSSPLTest transport interseptor test =
     _ <- liftIO $ forkProcess n $ registerInterceptor $ \string ->
       case string of
         str@"Starting service sspl"   -> usend self str
-        -- str@"Register channels"       -> usend self (RChan str)
         x -> interseptor self x
     _ <- promulgateEQ [localNodeId n] WhoAmI
     rc <- expect
@@ -295,3 +287,6 @@ testDelivery transport = runSSPLTest transport interseptor test
       liftIO $ assertEqual "Correct command received" scmd s
       _ <- receiveTimeout 500000 []
       return ()
+
+deriveSafeCopy 0 'base ''TestSmartCmd
+deriveSafeCopy 0 'base ''WhoAmI

@@ -17,9 +17,9 @@ module HA.RecoveryCoordinator.Job.Actions
    , fldListenerId
    ) where
 
+import HA.SafeCopy (SafeCopy)
 import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Job.Internal
-
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
 
@@ -28,7 +28,6 @@ import Control.Lens
 import Control.Monad (unless, join)
 import Control.Monad.IO.Class (liftIO)
 
-import Data.Binary (Binary)
 import Data.Foldable (for_)
 import Data.Traversable (for)
 import Data.Typeable (Typeable)
@@ -66,7 +65,8 @@ newtype Job input output = Job String
 -- this @body@.
 mkJobRule :: forall input output l s .
    ( '("request", Maybe input) ∈ l, '("reply", Maybe output) ∈ l
-   , Serializable input, Serializable output, Ord input,Show input, s ~ Rec ElField l, Show output)
+   , SafeCopy input, Serializable input, Serializable output
+   , Ord input, Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
    -> (Jump PhaseHandle -> RuleM RC s (input -> PhaseM RC s (Maybe [Jump PhaseHandle])))
@@ -139,7 +139,7 @@ mkJobRule (Job name)
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
 
-startJob :: (Typeable r, Binary r) => r -> PhaseM RC l ListenerId
+startJob :: (Typeable r, SafeCopy r) => r -> PhaseM RC l ListenerId
 startJob request = do
   l <- ListenerId <$> liftIO UUID.nextRandom
   promulgateRC $ JobStartRequest l request

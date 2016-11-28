@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
 -- |
@@ -45,7 +46,6 @@ import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
-import qualified Data.Binary as B
 import           Data.Either (partitionEithers)
 import           Data.Foldable
 import qualified Data.HashSet as S
@@ -90,6 +90,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero
   hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 import           Mero.ConfC (ServiceType(CST_IOS))
@@ -98,26 +99,40 @@ import           Network.CEP
 import           Prelude
 
 --------------------------------------------------------------------------------
--- Queries                                                               --
+-- Types                                                                      --
 --------------------------------------------------------------------------------
 
 -- | Event sent when we want a 5 minute spiel query rule to fire
 data SpielQuery = SpielQuery Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
-
-instance B.Binary SpielQuery
+deriveSafeCopy 0 'base ''SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
 data SpielQueryHourly = SpielQueryHourly Pool M0.PoolRepairType UUID
   deriving (Eq, Ord, Show, Generic, Typeable)
-
-instance B.Binary SpielQueryHourly
+deriveSafeCopy 0 'base ''SpielQueryHourly
 
 -- | Event that hourly job finihed.
 data SpielQueryHourlyFinished = SpielQueryHourlyFinished Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
-instance B.Binary SpielQueryHourlyFinished
+deriveSafeCopy 0 'base ''SpielQueryHourlyFinished
+
+data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
+deriveSafeCopy 0 'base ''ContinueSNS
+
+data ContinueSNSResult
+       = SNSContinued UUID M0.Pool M0.PoolRepairType
+       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
+       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
+      deriving (Eq, Show, Ord, Typeable, Generic)
+deriveSafeCopy 0 'base ''ContinueSNSResult
+
+--------------------------------------------------------------------------------
+-- Queries                                                                    --
+--------------------------------------------------------------------------------
+
 
 -- | Handler for @M0_NC_ONLINE@ 'Pool' messages. Its main role is to
 -- load all metadata information and schedule request that will check
@@ -633,19 +648,6 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
        <+> fldRep           =: Nothing
        <+> fldNotifications =: Nothing
        <+> fldPool          =: Nothing
-
-data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
-      deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNS
-
-data ContinueSNSResult
-       = SNSContinued UUID M0.Pool M0.PoolRepairType
-       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
-       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
-      deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance B.Binary ContinueSNSResult
 
 -- | Job that convers all the repair continue logic.
 jobContinueSNS :: Job ContinueSNS ContinueSNSResult

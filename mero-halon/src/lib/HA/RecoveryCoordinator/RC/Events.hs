@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -9,30 +10,29 @@ module HA.RecoveryCoordinator.RC.Events
   , GetHalonVars(..)
   ) where
 
-import Control.Distributed.Process
-  ( ProcessId, SendPort )
-import Data.Binary (Binary)
+import Control.Distributed.Process (ProcessId, SendPort)
 import Data.ByteString (ByteString)
 import Data.Typeable (Typeable)
+import HA.SafeCopy
 import HA.Resources.HalonVars
 import GHC.Generics
 
 -- | Request for process subscription.
-data SubscribeToRequest = SubscribeToRequest !ProcessId {- Fingerprint -} !ByteString
+data SubscribeToRequest = SubscribeToRequest !ProcessId !ByteString
   deriving (Eq, Show, Generic, Typeable)
-
-instance Binary SubscribeToRequest
+deriveSafeCopy 0 'base ''SubscribeToRequest
 
 -- | Reply for process subscription.
-newtype SubscribeToReply = SubscribeToReply {- Fingerprint -} ByteString
-  deriving (Eq, Show, Generic, Typeable, Binary)
+newtype SubscribeToReply = SubscribeToReply ByteString
+  deriving (Eq, Show, Generic, Typeable)
+deriveSafeCopy 0 'base ''SubscribeToReply
 
 -- | Request for process unsubscription.
-data UnsubscribeFromRequest = UnsubscribeFromRequest !ProcessId {- Fingerprint -} !ByteString
+data UnsubscribeFromRequest = UnsubscribeFromRequest !ProcessId !ByteString
   deriving (Eq, Show, Generic, Typeable)
-
-instance Binary UnsubscribeFromRequest
+deriveSafeCopy 0 'base ''UnsubscribeFromRequest
 
 -- | Request current halon vars.
 newtype GetHalonVars = GetHalonVars (SendPort HalonVars)
-  deriving (Eq, Show, Generic, Typeable, Binary)
+  deriving (Eq, Show, Generic, Typeable)
+deriveSafeCopy 0 'base ''GetHalonVars

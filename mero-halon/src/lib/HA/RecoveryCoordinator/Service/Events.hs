@@ -1,9 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE TypeFamilies #-}
-
-
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeFamilies              #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Service.Events
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- XXX: module documentation
@@ -39,7 +39,6 @@ import Data.Binary
 import Data.Binary.Put (runPut)
 import Data.Binary.Get (runGet)
 import qualified Data.ByteString.Lazy as BS
-import Data.SafeCopy
 import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
 import Data.Typeable (Typeable)
@@ -47,6 +46,7 @@ import GHC.Generics (Generic)
 
 import HA.ResourceGraph
 import HA.Resources
+import HA.SafeCopy
 
 -- | A request to start a service on a given node.
 data ServiceStartRequest =
@@ -55,7 +55,7 @@ data ServiceStartRequest =
   deriving Typeable
 
 newtype ServiceStartRequestMsg = ServiceStartRequestMsg BS.ByteString
-  deriving (Typeable, Binary, Ord, Eq, Show)
+  deriving (Typeable, Ord, Eq, Show)
 
 instance ProcessEncode ServiceStartRequest where
 
@@ -115,7 +115,7 @@ data ServiceStopRequest =
     deriving Typeable
 
 newtype ServiceStopRequestMsg = ServiceStopRequestMsg BS.ByteString
-  deriving (Typeable, Binary, Show, Eq, Ord)
+  deriving (Typeable, Show, Eq, Ord)
 
 instance ProcessEncode ServiceStopRequest where
     type BinRep ServiceStopRequest = ServiceStopRequestMsg
@@ -153,7 +153,7 @@ data ServiceStatusRequest =
     deriving Typeable
 
 newtype ServiceStatusRequestMsg = ServiceStatusRequestMsg BS.ByteString
-  deriving (Typeable, Binary)
+  deriving (Typeable)
 
 instance ProcessEncode ServiceStatusRequest where
     type BinRep ServiceStatusRequest = ServiceStatusRequestMsg
@@ -246,3 +246,7 @@ data ServiceStartedInternal a = ServiceStartedInternal Node a ProcessId
   deriving (Typeable, Generic, Show)
 
 instance Binary a => Binary (ServiceStartedInternal a)
+
+deriveSafeCopy 0 'base ''ServiceStartRequestMsg
+deriveSafeCopy 0 'base ''ServiceStatusRequestMsg
+deriveSafeCopy 0 'base ''ServiceStopRequestMsg

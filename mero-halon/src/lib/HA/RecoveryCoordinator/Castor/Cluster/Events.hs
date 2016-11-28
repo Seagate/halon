@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell            #-}
 module HA.RecoveryCoordinator.Castor.Cluster.Events
   (
   -- * Requests
@@ -51,18 +52,16 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
+import HA.SafeCopy
 import Data.Binary
 import Data.Typeable
 import Mero.ConfC
 import Data.Aeson
-
 import GHC.Generics
 
 data ClusterStatusRequest = ClusterStatusRequest (SendPort ReportClusterState) deriving (Eq,Show,Generic)
-instance Binary ClusterStatusRequest
 
 data ClusterStartRequest = ClusterStartRequest deriving (Eq, Show, Generic, Ord)
-instance Binary ClusterStartRequest
 
 data ClusterStartResult
       = ClusterStartOk
@@ -72,11 +71,10 @@ data ClusterStartResult
 instance Binary ClusterStartResult
 
 data ClusterStopRequest = ClusterStopRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic)
-instance Binary ClusterStopRequest
 
-newtype StopMeroClientRequest = StopMeroClientRequest Fid deriving (Eq, Show, Generic, Binary)
+newtype StopMeroClientRequest = StopMeroClientRequest Fid deriving (Eq, Show, Generic)
 
-newtype StartMeroClientRequest = StartMeroClientRequest Fid deriving (Eq, Show, Generic, Binary)
+newtype StartMeroClientRequest = StartMeroClientRequest Fid deriving (Eq, Show, Generic)
 
 data StateChangeResult
       = StateChangeError String
@@ -88,13 +86,13 @@ data StateChangeResult
 instance Binary StateChangeResult
 
 newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
-  deriving (Eq, Show, Ord, Binary, Typeable, Generic)
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
 newtype PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
   deriving (Show, Eq, Ord, Binary, Typeable, Generic)
 
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
-  deriving (Eq, Show, Ord, Binary, Typeable, Generic)
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
 data PoolRepairStartResult
   = PoolRepairStarted M0.Pool
@@ -120,7 +118,7 @@ instance Binary ClusterStateChange
 --   The optional Bool parameter determines whether to do a deeper reset,
 --   which will also purge the EQ and restart the RC.
 newtype ClusterResetRequest = ClusterResetRequest Bool
-  deriving (Eq, Show, Binary, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic)
 
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
@@ -162,17 +160,17 @@ instance FromJSON ReportClusterProcess
 newtype StartCastorNodeRequest = StartCastorNodeRequest R.Node deriving (Eq, Show, Generic, Binary)
 
 newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
-  deriving (Eq, Show, Typeable, Generic, Binary)
+  deriving (Eq, Show, Typeable, Generic)
 
 newtype StopHalonM0dRequest = StopHalonM0dRequest M0.Node
-  deriving (Eq, Show, Typeable, Generic, Binary)
+  deriving (Eq, Show, Typeable, Generic)
 
 -- | Request start of the 'ruleNewNode'.
 newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
-  deriving (Eq, Show, Generic, Binary, Ord)
+  deriving (Eq, Show, Generic, Ord)
 
 newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest M0.Node
-          deriving (Eq, Show, Generic, Binary, Ord)
+          deriving (Eq, Show, Generic, Ord)
 
 data StopProcessesOnNodeResult
        = StopProcessesOnNodeOk
@@ -183,7 +181,7 @@ data StopProcessesOnNodeResult
 instance Binary StopProcessesOnNodeResult
 
 newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
-         deriving (Eq, Show, Generic, Binary, Ord)
+         deriving (Eq, Show, Generic, Ord)
 
 data StartClientsOnNodeResult
        = ClientsStartOk M0.Node
@@ -199,8 +197,6 @@ data M0KernelResult
     = KernelStarted M0.Node
     | KernelStartFailure M0.Node
   deriving (Eq, Show, Generic)
-
-instance Binary M0KernelResult
 
 -- | Result of @StartProcessesOnNodeRequest@
 data StartProcessesOnNodeResult
@@ -219,8 +215,6 @@ instance Binary StartProcessesOnNodeResult
 data StopProcessesRequest = StopProcessesRequest M0.Node [M0.Process]
   deriving (Eq, Ord, Show, Generic)
 
-instance Binary StopProcessesRequest
-
 -- | Result of stopping processes. Note that in general most
 --   downstream rules will not care about this, as they will
 --   directly use the process state change notification.
@@ -233,7 +227,7 @@ instance Binary StopProcessesResult
 
 -- | Request to mark all processes as finished mkfs.
 newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
-  deriving (Eq, Show,Generic, Binary, Typeable)
+  deriving (Eq, Show, Generic, Typeable)
 
 -- * Messages used for cluster stop monitoring
 
@@ -241,8 +235,6 @@ newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
 -- 'ClusterStopProgress' messages.
 newtype MonitorClusterStop = MonitorClusterStop ProcessId
   deriving (Show, Eq, Typeable, Generic)
-
-instance Binary MonitorClusterStop
 
 data ClusterStopDiff = ClusterStopDiff
   { _csp_procs :: [(M0.Process, M0.ProcessState, M0.ProcessState)]
@@ -261,3 +253,21 @@ data ClusterStopDiff = ClusterStopDiff
   deriving (Show, Eq, Typeable, Generic)
 
 instance Binary ClusterStopDiff
+
+deriveSafeCopy 0 'base ''ClusterResetRequest
+deriveSafeCopy 0 'base ''ClusterStartRequest
+deriveSafeCopy 0 'base ''ClusterStatusRequest
+deriveSafeCopy 0 'base ''ClusterStopRequest
+deriveSafeCopy 0 'base ''M0KernelResult
+deriveSafeCopy 0 'base ''MarkProcessesBootstrapped
+deriveSafeCopy 0 'base ''MonitorClusterStop
+deriveSafeCopy 0 'base ''PoolRebalanceRequest
+deriveSafeCopy 0 'base ''PoolRepairRequest
+deriveSafeCopy 0 'base ''StartClientsOnNodeRequest
+deriveSafeCopy 0 'base ''StartHalonM0dRequest
+deriveSafeCopy 0 'base ''StartMeroClientRequest
+deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''StopHalonM0dRequest
+deriveSafeCopy 0 'base ''StopMeroClientRequest
+deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''StopProcessesRequest

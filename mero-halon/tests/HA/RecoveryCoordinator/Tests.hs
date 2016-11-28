@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2013-2015 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -20,7 +21,6 @@ module HA.RecoveryCoordinator.Tests
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Monad (replicateM_)
-import           Data.Binary
 import           Data.Defaultable
 import           Data.Typeable
 import           GHC.Generics
@@ -34,6 +34,7 @@ import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
 import           HA.Resources
+import           HA.SafeCopy
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
@@ -116,7 +117,7 @@ testServiceNotRestarting transport pg = runDefaultTest transport $ do
     sayTest $ "testServiceNotRestarting finished"
 
 -- | Used in 'testEQTrimming'
-newtype Step = Step () deriving (Binary)
+data Step = Step
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
 testEQTrimming :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -128,7 +129,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     nodeUp ([nid], 1000000)
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     subscribe eq (Proxy :: Proxy TrimDone)
-    replicateM_ 10 $ promulgateEQ [nid] $ Step ()
+    replicateM_ 10 $ promulgateEQ [nid] Step
     TrimDone{} <- expectPublished Proxy
 
     _ <- promulgateEQ [nid] $  encodeP $
@@ -139,17 +140,16 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     TrimDone{} <- expectPublished Proxy
     pid <- serviceStarted Dummy.dummy
     kill pid "test"
-    replicateM_ 10 $ promulgateEQ [nid] $ Step ()
+    replicateM_ 10 $ promulgateEQ [nid] Step
 
     TrimDone{} <- expectPublished Proxy
     sayTest $ "Everything got trimmed"
   where
     stepRule :: Definitions RC ()
-    stepRule = defineSimpleTask "step" $ \Step{} -> return ()
+    stepRule = defineSimpleTask "step" $ \Step -> return ()
 
 -- | Used by 'testEQTrimUnknown'
 data AbraCadabra = AbraCadabra deriving (Typeable, Generic)
-instance Binary AbraCadabra
 
 -- | This test verifies that every `HAEvent` sent to the RC is trimmed by the EQ
 testEQTrimUnknown :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -205,3 +205,6 @@ testServiceStopped transport pg = runDefaultTest transport $ do
 
     (_ :: ProcessMonitorNotification) <- expect
     sayTest $ "dummy service stopped."
+
+deriveSafeCopy 0 'base ''AbraCadabra
+deriveSafeCopy 0 'base ''Step

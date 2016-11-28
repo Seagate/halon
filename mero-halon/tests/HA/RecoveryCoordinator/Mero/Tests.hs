@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -53,6 +54,7 @@ import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseN
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           HA.Services.SSPL.CEP
 import           Helper.Environment
 import qualified Helper.InitialData
@@ -75,22 +77,9 @@ tests transport pg =
   , testCase "bad-conf-does-not-validate [disabled by TODO]" $
       when False (testBadConfDoesNotValidate transport pg)
   , testCase "RG can load different fids with the same type" $ testFidsLoad
-#else
-  , testCase "testConfObjectStateQuery [disabled by compilation flags]" $
-      return ()
-  , testCase "good-conf-validates [disabled by compilation flags]" $ return ()
-  , testCase "bad-conf-does-not-validate [disabled by compilation flags]" $
-      return ()
 #endif
   ]
 
-#ifdef USE_MERO
--- | label used to test spiel sync through a rule
-data SpielSync = SpielSync
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Binary SpielSync
-#endif
 
 -- | Test that the recovery co-ordinator successfully adds a drive to the RG,
 --   and updates its status accordingly.
@@ -129,8 +118,6 @@ testDriveAddition transport pg = runDefaultTest transport $ do
 -- | Used by 'testDriveManagerUpdate'
 data RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
   deriving (Eq, Show, Typeable, Generic)
-
-instance Binary RunDriveManagerFailure
 
 -- | Update receiving a drive failure from SSPL,
 testDriveManagerUpdate :: (Typeable g, RGroup g)
@@ -190,8 +177,6 @@ data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
 
 data WaitFailedSDevReply = WaitFailedSDevReply M0.SDev M0.SDevState
   deriving (Show, Eq, Generic, Typeable)
-
-instance Binary WaitFailedSDev
 instance Binary WaitFailedSDevReply
 
 -- | Test that the recovery coordinator answers queries of configuration object
@@ -264,14 +249,10 @@ testConfObjectStateQuery transport pg =
         messageProcessed uuid
 
       start init_state (error "waitFailedSDev: state not initialised")
-#endif
 
-#ifdef USE_MERO
 -- | Validation query. Reply sent to the given process id.
 newtype ValidateCache = ValidateCache ProcessId
   deriving (Eq, Show, Ord, Generic)
-
-instance Binary ValidateCache
 
 -- | Validation result used for validation tests
 newtype ValidateCacheResult = ValidateCacheResult (Maybe String)
@@ -336,9 +317,7 @@ testBadConfDoesNotValidate transport pg =
     -- mero the test for this does not yet exist so we can't steal any
     -- ideas.
     iData = Helper.InitialData.defaultInitialData
-#endif
 
-#ifdef USE_MERO
 testFidsLoad :: IO ()
 testFidsLoad = do
   let mmchan = error "Graph mmchan is not used in this test"
@@ -349,4 +328,8 @@ testFidsLoad = do
        >>> G.newResource (M0.DiskV (fids !! 1))
          $ G.emptyGraph mmchan
   liftIO $ assertEqual "all objects should be found" 2 (length $ lookupConfObjectStates fids g)
+
+deriveSafeCopy 0 'base ''RunDriveManagerFailure
+deriveSafeCopy 0 'base ''ValidateCache
+deriveSafeCopy 0 'base ''WaitFailedSDev
 #endif

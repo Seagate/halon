@@ -83,6 +83,7 @@ import HA.Encode
   , decodeP
   )
 import HA.RecoveryCoordinator.RC.Application
+import HA.SafeCopy (SafeCopy)
 
 import Control.Category ((>>>))
 import Control.Distributed.Process
@@ -292,7 +293,7 @@ getMultimapChan = fmap lsMMChan $ get Global
 --
 -- However, 'promulgateRC' introduces additional synchronization overhead in normal
 -- case, so on a fast-path 'unsafePromulgateRC' could be used.
-promulgateRC :: Serializable msg => msg -> PhaseM RC l ()
+promulgateRC :: (SafeCopy msg, Typeable msg) => msg -> PhaseM RC l ()
 promulgateRC msg = liftProcess $ promulgateWait msg
 
 -- | Fast-path 'promulgateRC', this call is not blocking call, so there is no guarantees
@@ -305,7 +306,7 @@ promulgateRC msg = liftProcess $ promulgateWait msg
 -- callback could be set.
 --
 -- Promulgate call will be cancelled if RC thread that emitted call will die.
-unsafePromulgateRC :: Serializable msg => msg -> Process () -> PhaseM RC l ()
+unsafePromulgateRC :: (SafeCopy msg, Typeable msg) => msg -> Process () -> PhaseM RC l ()
 unsafePromulgateRC msg callback = liftProcess $ do
    self <- getSelfPid
    void $ spawnLocal $ do
@@ -363,7 +364,7 @@ isNotHandled evt@(HAEvent eid _) ls _
 
 -- | Wrap rule in 'todo' and 'done' calls. User should not mark message as
 -- processed on it's own.
-defineSimpleTask :: Serializable a
+defineSimpleTask :: (SafeCopy a, Serializable a)
                  => String
                  -> (forall l . a -> PhaseM RC l ())
                  -> Definitions RC ()
@@ -375,7 +376,7 @@ defineSimpleTask n f = defineSimple n $ \(HAEvent uuid a) ->
 --   available for other rules.
 --   Note that if the message passes the guard, `todo` will already have been
 --   called.
-setPhaseIfConsume :: (Serializable a, Serializable b)
+setPhaseIfConsume :: (SafeCopy a, Serializable a, Serializable b)
                   => Jump PhaseHandle
                   -> (HAEvent a -> LoopState -> l -> Process (Maybe b))
                   -> (b -> PhaseM RC l ())

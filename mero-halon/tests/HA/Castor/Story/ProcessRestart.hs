@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell    #-}
 -- | Module testing handling of notifications from SSPL and
 -- notification interface related to systemd services and their
 -- underlying process being restarted.
@@ -14,7 +15,6 @@ module HA.Castor.Story.ProcessRestart (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
-import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (sort)
 import qualified Data.Text as T
@@ -30,6 +30,7 @@ import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
 import           HA.Services.Mero
 import           Mero.ConfC (fidToStr, Fid(..), ServiceType(..))
 import           Mero.Notification
@@ -105,7 +106,6 @@ mkProcessStartedNotification p (M0.PID pid) = HAMsg event meta
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
   deriving (Generic, Typeable)
-instance Binary RuleHook
 
 -- | Generic test runner for failing processes. Attaches the given
 -- starting state and 'testProcessPid' to the process in RG before
@@ -209,3 +209,5 @@ testProcessStartsOK t pg = doRestart t pg M0.PSStarting $ \p srvs recv -> do
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "ruleProcessOnline sets process to online"
            (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
+
+deriveSafeCopy 0 'base ''RuleHook

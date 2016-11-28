@@ -34,6 +34,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
+import HA.SafeCopy
 import HA.RecoveryCoordinator.Castor.Cluster.Events
 import Mero.ConfC ( Fid )
 
@@ -539,7 +540,7 @@ clusterReset eqnids (ResetOptions hard unstick) = if unstick
     where
       wait = void (expect :: Process ProcessMonitorNotification)
 
-clusterCommand :: (Serializable a, Serializable b, Show b)
+clusterCommand :: (SafeCopy a, Serializable a, Serializable b, Show b)
                => [NodeId]
                -> Maybe Int -- ^ Custom timeout in seconds, default 10s
                -> (SendPort b -> a)

@@ -256,7 +256,6 @@ data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
     , _fss_svc_replied :: Word32
   } deriving (Eq, Generic, Show)
 
-instance Binary FSStats
 instance Hashable FSStats
 instance FromJSON FSStats
 instance ToJSON FSStats

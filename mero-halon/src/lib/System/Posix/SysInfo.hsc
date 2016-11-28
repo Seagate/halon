@@ -24,12 +24,12 @@ module System.Posix.SysInfo
 import HA.EventQueue.Producer (promulgateWait)
 import HA.Resources (Node)
 import HA.Resources.Mero (HostHardwareInfo(..))
+import HA.SafeCopy
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure (remotable)
 import Control.Monad (unless, (<=<))
 
-import Data.Binary (Binary)
 import Data.Either (isRight)
 import Data.Typeable (Typeable)
 
@@ -66,13 +66,11 @@ getMemTotalMB = do
 
 data SystemInfo = SystemInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
-
-instance Binary SystemInfo
+deriveSafeCopy 0 'base ''SystemInfo
 
 data ServerInfo = ServerInfo Node HostHardwareInfo
   deriving (Eq, Show, Typeable, Generic)
-
-instance Binary ServerInfo
+deriveSafeCopy 0 'base ''ServerInfo
 
 
 -- | Load information about system hardware. Reply is sent via 'promulgate'.

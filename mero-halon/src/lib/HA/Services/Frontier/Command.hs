@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Copyright: (C) 2015 Tweag I/O Limited
 --
@@ -16,7 +17,6 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import           Data.Foldable
 
-import Data.Binary (Binary)
 import Data.Binary.Put
 import Data.Hashable
 import Data.Maybe (catMaybes)
@@ -24,21 +24,22 @@ import Data.Typeable (Typeable, typeOf)
 
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
+import HA.SafeCopy
 
 import GHC.Generics
+
+data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
+  deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 0 'base ''MultimapGetKeyValuePairs
+
+data ReadResourceGraph = ReadResourceGraph
+  deriving (Eq, Show, Typeable, Generic)
+deriveSafeCopy 0 'base ''ReadResourceGraph
 
 data Command
     = CM MultimapGetKeyValuePairs
     | CR ReadResourceGraph
     | Quit
-
-data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary MultimapGetKeyValuePairs
-
-data ReadResourceGraph = ReadResourceGraph
-  deriving (Eq, Show, Typeable, Generic)
-instance Binary ReadResourceGraph
 
 parseCommand :: B.ByteString -> Maybe Command
 parseCommand "mmvalues\r" = Just $ CM MultimapGetKeyValuePairs

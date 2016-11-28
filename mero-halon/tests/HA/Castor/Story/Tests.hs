@@ -27,6 +27,7 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note
 import HA.Multimap
 import HA.Encode
+import HA.SafeCopy
 import HA.Services.Mero
 import HA.Services.Mero.Types
 import HA.Services.SSPL
@@ -52,7 +53,6 @@ import Control.Exception as E hiding (assert)
 
 import Data.Aeson (decode, encode)
 import qualified Data.Aeson.Types as Aeson
-import Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (find)
@@ -87,7 +87,7 @@ myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
 
 newtype MockM0 = MockM0 DeclareMeroChannel
-  deriving (Binary, Generic, Hashable, Typeable)
+  deriving (Generic, Hashable, Typeable)
 
 mockMeroConf :: MeroConf
 mockMeroConf = MeroConf ""
@@ -100,7 +100,6 @@ mockMeroConf = MeroConf ""
                         (MeroKernelConf UUID.nil)
 
 data MarkDriveFailed = MarkDriveFailed deriving (Generic, Typeable)
-instance Binary MarkDriveFailed
 
 ssplTimeout :: Int
 ssplTimeout = 10*1000000
@@ -945,3 +944,6 @@ testExpanderResetRAIDReassemble transport pg = run transport pg interceptor [] t
                (Note (M0.fid m0enc) M0_NC_ONLINE) `elem` notes
 
     return ()
+
+deriveSafeCopy 0 'base ''MarkDriveFailed
+deriveSafeCopy 0 'base ''MockM0

@@ -9,7 +9,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HA.Resources where
@@ -17,13 +16,11 @@ module HA.Resources where
 import Control.Distributed.Process
 import Data.Binary
 import Data.Hashable (Hashable(..))
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
-import HA.SafeCopy.OrphanInstances ()
 import HA.Resources.TH
-
+import HA.SafeCopy
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -32,22 +29,20 @@ import HA.Resources.TH
 -- | The root of the resource graph.
 data Cluster = Cluster
   deriving (Eq, Ord, Show, Typeable, Generic)
+instance Hashable Cluster
 deriveSafeCopy 0 'base ''Cluster
 
-instance Binary Cluster
-instance Hashable Cluster
 
 -- | A resource graph representation for nodes.
 data Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic)
+instance Hashable Node
 deriveSafeCopy 0 'base ''Node
 
-instance Binary Node
-instance Hashable Node
 
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
-  deriving (Eq, Ord, Show, Typeable, Generic, Binary, Hashable)
+  deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
 deriveSafeCopy 0 'base ''EpochId
 
 --------------------------------------------------------------------------------
@@ -59,7 +54,6 @@ deriveSafeCopy 0 'base ''EpochId
 data Has = Has
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary Has
 instance Hashable Has
 deriveSafeCopy 0 'base ''Has
 
@@ -68,7 +62,6 @@ data Runs = Runs
   deriving (Eq, Show, Typeable, Generic)
 
 deriveSafeCopy 0 'base ''Runs
-instance Binary Runs
 instance Hashable Runs
 
 --------------------------------------------------------------------------------
@@ -124,5 +117,4 @@ instance Binary a => Binary (EpochTransition a)
 -- | Sent when a node goes down and we need to try to recover it
 newtype RecoverNode = RecoverNode Node
   deriving (Typeable, Generic, Show, Eq, Ord)
-
-instance Binary RecoverNode
+deriveSafeCopy 0 'base ''RecoverNode

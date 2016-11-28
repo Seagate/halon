@@ -56,7 +56,6 @@ import qualified Data.ByteString.Lazy as BS
 import Data.Functor (void)
 import Data.Function (on)
 import Data.Hashable (Hashable, hashWithSalt)
-import Data.SafeCopy
 import qualified Data.Serialize as Serialize
 import Data.Typeable (Typeable)
 
@@ -69,6 +68,7 @@ import HA.EventQueue.Producer (promulgateWait)
 import HA.ResourceGraph
 import HA.Resources
 import HA.Resources.TH
+import HA.SafeCopy
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -167,12 +167,11 @@ serviceLabel svc = "service." ++ serviceName svc
 
 data NextStep = Continue
               | Teardown
-              | Failure 
+              | Failure
 
 -- | A relation connecting the cluster to the services it supports.
 data Supports = Supports
   deriving (Eq, Show, Typeable, Generic)
-instance Binary Supports
 instance Hashable Supports
 deriveSafeCopy 0 'base ''Supports
 
@@ -185,7 +184,7 @@ data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
 -- and resource graph.
 -- See 'ProcessEncode' for additional details.
 newtype ServiceInfoMsg = ServiceInfoMsg BS.ByteString -- XXX: memoize StaticSomeConfigurationDict
-  deriving (Typeable, Binary, Eq, Hashable, Show)
+  deriving (Typeable, Eq, Hashable, Show)
 deriveSafeCopy 0 'base ''ServiceInfoMsg
 
 instance ProcessEncode ServiceInfo where
@@ -234,7 +233,7 @@ instance Binary ExitReason
 -- | A notification about service normal exit.
 data ServiceExit = ServiceExit Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
-instance Binary ServiceExit
+deriveSafeCopy 0 'base ''ServiceExit
 
 -- | A notification of a service failure.
 --
@@ -242,7 +241,7 @@ instance Binary ServiceExit
 -- throw this exception.
 data ServiceFailed = ServiceFailed Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
-instance Binary ServiceFailed
+deriveSafeCopy 0 'base ''ServiceFailed
 
 -- | A notification of a service failure due to unexpected case.
 --
@@ -250,13 +249,13 @@ instance Binary ServiceFailed
 -- about it.
 data ServiceUncaughtException = ServiceUncaughtException Node ServiceInfoMsg String ProcessId
   deriving (Typeable, Generic)
-instance Binary ServiceUncaughtException
+deriveSafeCopy 0 'base ''ServiceUncaughtException
 
 -- | A notification of service stop failure due to service is not
 -- running at all.
 data ServiceStopNotRunning = ServiceStopNotRunning Node String
   deriving (Typeable, Generic)
-instance Binary ServiceStopNotRunning
+deriveSafeCopy 0 'base ''ServiceStopNotRunning
 
 data Result b = AlreadyRunning ProcessId
               | ServiceStarted (Either String b)
@@ -304,7 +303,7 @@ remoteStartService (caller, msg) = do
           serviceLog $ "exception during start: " ++ e
           promulgateWait $ ServiceFailed (Node node) msg self
         ServiceStarted (Right r) -> do
-          let notify :: forall a . (Binary a, Typeable a)
+          let notify :: forall a . (SafeCopy a, Typeable a)
                      => (Node -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
               notify f = promulgateWait $ f (Node (processNodeId self)) msg self
           confirmStarted conf r
@@ -333,7 +332,7 @@ remoteStartService (caller, msg) = do
                serviceLog $ "unhandled mesage" ++ show s
                return (Continue, b)
             ]) `catchExit` (onExit b)
-        
+
         runTeardown teardown notify b = do
           self <- getSelfPid
           teardown conf b

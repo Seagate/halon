@@ -9,6 +9,7 @@ packages:
 - distributed-process-test
 - distributed-process-trans
 - halon
+- halon-instances
 - mero-halon
 - mero-integration
 - network-transport-controlled

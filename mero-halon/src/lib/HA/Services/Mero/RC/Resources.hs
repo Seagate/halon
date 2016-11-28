@@ -14,10 +14,9 @@ import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.RC as RC
 import HA.Resources.TH
+import HA.SafeCopy
 
-import Data.Binary (Binary(..))
 import Data.Hashable (Hashable(..))
-import Data.SafeCopy
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.RecoveryCoordinator.Mero.Events
@@ -30,18 +29,15 @@ data StateDiff = StateDiff
    , stateDiffOnCommit :: [OnCommit]
    } deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable StateDiff
-instance Binary   StateDiff
 
 data StateDiffIndex = StateDiffIndex Word64
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable StateDiffIndex
-instance Binary   StateDiffIndex
 
 -- | Action that should happen when notifications were delivered.
 data OnCommit = DoSyncGraph
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable OnCommit
-instance Binary OnCommit
 deriveSafeCopy 0 'base ''OnCommit
 deriveSafeCopy 0 'base ''StateDiff
 deriveSafeCopy 0 'base ''StateDiffIndex
@@ -49,25 +45,21 @@ deriveSafeCopy 0 'base ''StateDiffIndex
 data WaitingFor = WaitingFor
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable WaitingFor
-instance Binary   WaitingFor
 deriveSafeCopy 0 'base ''WaitingFor
 
 data DeliveredTo = DeliveredTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveredTo
-instance Binary   DeliveredTo
 deriveSafeCopy 0 'base ''DeliveredTo
 
 data ShouldDeliverTo = ShouldDeliverTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable ShouldDeliverTo
-instance Binary   ShouldDeliverTo
 deriveSafeCopy 0 'base ''ShouldDeliverTo
 
 data DeliveryFailedTo = DeliveryFailedTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveryFailedTo
-instance Binary   DeliveryFailedTo
 deriveSafeCopy 0 'base ''DeliveryFailedTo
 
 $(mkDicts

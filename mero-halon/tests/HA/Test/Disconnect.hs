@@ -37,6 +37,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.RC (subscribeOnTo)
 import HA.Resources.HalonVars
+import HA.SafeCopy
 import HA.EventQueue.Producer
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Resources
@@ -63,8 +64,8 @@ import Helper.InitialData (defaultInitialData)
 data KillRC = KillRC
   deriving (Eq, Show, Typeable, Generic)
 
-instance Binary KillRC
 instance Hashable KillRC
+deriveSafeCopy 0 'base ''KillRC
 
 remotableDecl [ [d|
   rcWithDeath :: [NodeId] -> ProcessId -> StoreChan -> Process ()

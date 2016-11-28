@@ -17,17 +17,15 @@ import GHC.Generics
 
 import Control.Distributed.Process hiding (bracket)
 import Data.Aeson
-import Data.Binary (Binary)
 import Data.Foldable (asum)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Hashable
 import Data.Monoid ((<>))
-import Data.SafeCopy
 import Options.Schema
 import Options.Schema.Builder
 
-import HA.SafeCopy.OrphanInstances()
+import HA.SafeCopy
 import HA.Service.TH
 
 
@@ -72,7 +70,6 @@ instance Migrate DecisionLogOutput where
 deriveSafeCopy 0 'base ''DecisionLogOutput_v0
 deriveSafeCopy 1 'extension ''DecisionLogOutput
 
-instance Binary DecisionLogOutput
 instance Hashable DecisionLogOutput
 instance ToJSON DecisionLogOutput where
   toJSON (LogTextFile fp) = object [ "type" .= ("file"::Text)
@@ -87,7 +84,6 @@ instance ToJSON DecisionLogOutput where
   toJSON LogStdout = object [ "type" .= ("stdout"::Text)]
   toJSON LogStderr = object [ "type" .= ("stderr"::Text)]
 
-
 data TraceLogOutput
   = TraceText FilePath
     -- ^ Send trace files in text format to the specified file.
@@ -101,7 +97,6 @@ data TraceLogOutput
     -- ^ Do not output any traces.
   deriving (Eq, Show, Generic)
 
-instance Binary TraceLogOutput
 instance Hashable TraceLogOutput
 instance ToJSON TraceLogOutput where
   toJSON (TraceText fp) = object [ "type" .= ("file"::Text)
@@ -117,17 +112,16 @@ instance ToJSON TraceLogOutput where
 
 deriveSafeCopy 0 'base ''TraceLogOutput
 
-newtype DecisionLogConf_v0 = DecisionLogConf_v0  DecisionLogOutput
+newtype DecisionLogConf_v0 = DecisionLogConf_v0 DecisionLogOutput
     deriving (Eq, Generic, Show, Typeable)
 
 data DecisionLogConf = DecisionLogConf DecisionLogOutput TraceLogOutput
     deriving (Eq, Generic, Show, Typeable)
-     
+
 instance Migrate DecisionLogConf where
   type MigrateFrom DecisionLogConf = DecisionLogConf_v0
   migrate (DecisionLogConf_v0 f) = DecisionLogConf f TraceNull
 
-instance Binary DecisionLogConf
 instance Hashable DecisionLogConf
 instance ToJSON DecisionLogConf
 

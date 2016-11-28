@@ -43,11 +43,11 @@ import Control.Monad.Trans (liftIO)
 import Control.Monad.Fix ( fix )
 
 import Control.Exception (SomeException, throwIO)
-import Data.Binary (Binary)
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
+import HA.SafeCopy
 
 import Network.HostName
 import System.IO
@@ -58,9 +58,8 @@ data NodeUp =
   -- | 'NodeUp' @nodeHostname@ @nodePid@
   NodeUp String ProcessId
   deriving (Eq, Show, Typeable, Generic, Ord)
-
-instance Binary NodeUp
 instance Hashable NodeUp
+deriveSafeCopy 0 'base ''NodeUp
 
 -- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
 --   to the EQ, until one is acknowledged with a '()' reply.

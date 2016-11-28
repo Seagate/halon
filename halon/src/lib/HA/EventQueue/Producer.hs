@@ -22,9 +22,9 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import HA.Logger
 import qualified HA.EQTracker as EQT
+import HA.SafeCopy
 
 import Control.Distributed.Process hiding (bracket)
-import Control.Distributed.Process.Serializable (Serializable)
 import Control.Monad (when, void)
 import Control.Monad.Catch (bracket)
 
@@ -49,7 +49,7 @@ promulgateTimeout = 5000000
 -- | Promulgate an event directly to an EQ node without indirection
 --   via the NodeAgent. Note that this spawns a local process in order
 --   to ensure that the event id is unique.
-promulgateEQ :: Serializable a
+promulgateEQ :: (SafeCopy a, Typeable a)
              => [NodeId] -- ^ EQ nodes.
              -> a -- ^ Event to send.
              -> Process ProcessId -- ^ PID of the spawned process. This can
@@ -64,7 +64,7 @@ promulgateEQ eqnids x = spawnLocal $ do
       when (res == Failure) $ receiveTimeout 1000000 [] >> go evt
 
 -- | Like 'promulgateEQ', but express a preference for certain EQ nodes.
-promulgateEQPref :: Serializable a
+promulgateEQPref :: (SafeCopy a, Typeable a)
                  => [NodeId] -- ^ Preferred EQ nodes.
                  -> [NodeId] -- ^ All EQ nodes.
                  -> a -- ^ Event to send.
@@ -81,7 +81,7 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 -- | Add an event to the event queue, and don't die yet. This uses the local
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
-promulgate :: Serializable a => a -> Process ProcessId
+promulgate :: (SafeCopy a, Typeable a) => a -> Process ProcessId
 promulgate x = do
     m <- newPersistMessage x
     producerTrace $ "promulgate: " ++ show (typeOf x, persistMessageId m)
@@ -92,7 +92,7 @@ promulgate x = do
 -- 'promulgateWait' will cancel promulgate call in case if caller thread
 -- will receive an exception, if this is not desired behaviour - use
 -- 'promulgate' instead.
-promulgateWait :: Serializable a => a -> Process ()
+promulgateWait :: (SafeCopy a, Typeable a) => a -> Process ()
 promulgateWait x =
    bracket (promulgate x)
            (flip kill "caller was killed")
@@ -164,5 +164,5 @@ promulgateHAEventPref peqnids eqnids msg = do
     _ -> return Failure
 
 -- | Add a new event to the event queue and then die.
-expiate :: Serializable a => a -> Process ()
+expiate :: (SafeCopy a, Typeable a) => a -> Process ()
 expiate x = promulgate x >> die "Expiate."

@@ -9,6 +9,7 @@ module SSPL.Bindings
   , module SSPL.Bindings.CommandResponse
   , module SSPL.Bindings.SensorRequest
   , module SSPL.Bindings.SensorResponse
+  , module SSPL.Orphans
   )
   where
 
@@ -18,3 +19,4 @@ import SSPL.Bindings.CommandRequest hiding (graph)
 import SSPL.Bindings.CommandResponse hiding (graph)
 import SSPL.Bindings.SensorRequest hiding (graph)
 import SSPL.Bindings.SensorResponse hiding (graph)
+import SSPL.Orphans

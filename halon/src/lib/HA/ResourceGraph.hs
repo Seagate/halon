@@ -132,13 +132,13 @@ import Data.Hashable
 import Data.List (foldl', delete)
 import Data.Maybe
 import Data.Proxy
-import Data.SafeCopy
 import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
 import Data.Singletons.TH
 import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
+import HA.SafeCopy
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"

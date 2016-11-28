@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright:  (C) 2015 Seagate Technology Limited.
 --
@@ -8,13 +9,14 @@ module HA.RecoveryCoordinator.Job.Internal
   ) where
 
 import Data.UUID
-import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import GHC.Generics
+import HA.SafeCopy
 
 -- | Wrapper for listener id.
 newtype ListenerId = ListenerId UUID
-  deriving (Typeable, Generic, Binary, Ord, Eq, Show)
+  deriving (Typeable, Generic, Ord, Eq, Show)
+deriveSafeCopy 0 'base ''ListenerId
 
 data JobDescription = JobDescription
   { requestUUIDS :: [UUID]
@@ -25,3 +27,5 @@ instance Monoid JobDescription where
   mempty = JobDescription [] []
   (JobDescription a b) `mappend` (JobDescription c d) =
     JobDescription (a `mappend` c) (b `mappend` d)
+
+deriveSafeCopy 0 'base ''JobDescription

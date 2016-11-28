@@ -39,12 +39,12 @@ import           HA.Service
 import HA.RecoveryCoordinator.Service.Events
 import HA.RecoveryCoordinator.Job.Actions
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
+import HA.SafeCopy
 
 import Control.Monad (when, unless)
 import Data.Functor (void)
 import Data.Proxy
 import Data.Vinyl hiding ((:~:))
-import Data.SafeCopy
 import Data.Serialize.Put (runPutLazy)
 import Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
 import Data.Foldable (for_)
