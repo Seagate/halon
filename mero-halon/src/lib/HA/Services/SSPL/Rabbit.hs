@@ -31,6 +31,7 @@ import Control.Distributed.Process
   , usend
   )
 import qualified Control.Distributed.Process as DP
+import qualified Control.Exception as E
 import Control.Monad (forever)
 import Control.Monad.Catch
   ( finally
@@ -215,11 +216,14 @@ receiveAck chan exchange queue routingKey handle = go `catch` (liftIO . logExcep
 ignoreException :: IO () -> IO ()
 ignoreException io = try io >>= \case
   Right _ -> return ()
-  Left e  -> logException e
-
+  Left e -> logException e
 
 logException :: SomeException -> IO ()
-logException e = putStrLn $ "[SSPL-HL]: exception: " ++ show (e::SomeException)
+logException e = case E.fromException e of
+  -- Don't make noise on just normal ThreadKilled: very annoying in
+  -- test output.
+  Just E.ThreadKilled -> return ()
+  _ -> putStrLn $ "[SSPL-HL]: exception: " ++ show e
 
 -- | Publish message
 data MQPublish = MQPublish

@@ -439,7 +439,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
         ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
         -- Don't need to think about K here as both rebalance and
         -- repaired are failed states.
-        applyStateChanges $ map (\d -> stateSet d Tr.sdevRepaired) ds
+        applyStateChanges $ map (\d -> stateSet d Tr.sdevRebalanceAbort) ds
         unsetPoolRepairStatus pool
 
     -- Is this device ready to be rebalanced onto?
@@ -514,7 +514,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
               True -> do
                 -- OK to just set repairing here without checking K:
                 -- @fa@ are already failed by this point.
-                let msgs = stateSet pool Tr.poolRepairing : (flip stateSet Tr.sdevRepairing <$> fa)
+                let msgs = stateSet pool Tr.poolRepairing : (flip stateSet Tr.sdevRepairStart <$> fa)
                 modify Local $ rlens fldNotifications .~ Field (Just msgs)
                 modify Local $ rlens fldPool .~ Field (Just pool)
                 applyStateChanges msgs
@@ -592,7 +592,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
         -- notification fires first. The race does not matter
         -- because notification failure handler will check for
         -- already failed processes.
-        applyStateChanges $ (`stateSet` Tr.sdevFailed) <$> ds
+        applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds
         unsetPoolRepairStatus pool
 
     -- It's possible that after calling for the repair to start, but before
@@ -1033,17 +1033,11 @@ completeRepair pool prt muid = do
           -- drives that are under operation but were not fixed
           non_repaired_sdevs = repairing_sdevs `Set.difference` repaired_sdevs
 
-          repairedSdevTr M0.Rebalance = Tr.sdevOnline
-          repairedSdevTr M0.Failure = Tr.sdevRepaired
+          repairedSdevTr M0.Rebalance = Tr.sdevRebalanceComplete
+          repairedSdevTr M0.Failure = Tr.sdevRepairComplete
 
-          repairedDiskTr M0.Rebalance = Tr.diskOnline
-          repairedDiskTr M0.Failure = Tr.diskRepaired
-
-      repaired_disks <- mapMaybeM lookupSDevDisk $ Set.toList repaired_sdevs
       unless (null repaired_sdevs) $ do
-
         applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
-                         ++ map (`stateSet` repairedDiskTr prt) repaired_disks
 
         when (prt == M0.Rebalance) $
            forM_ repaired_sdevs $ \m0sdev -> void $ runMaybeT $ do
@@ -1054,7 +1048,7 @@ completeRepair pool prt muid = do
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool
-                applyStateChanges [stateSet pool $ R.repairedNotificationTransition prt]
+                applyStateChanges [stateSet pool $ R.snsCompletedTransition prt]
                 unsetPoolRepairStatus pool
                 when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
         else do phaseLog "info" $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
