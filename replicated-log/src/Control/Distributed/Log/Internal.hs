@@ -1043,7 +1043,6 @@ replica Dict
                                         (decreeNumber w' - decreeNumber w0')
                       if takeSnapshot && isNothing mdumper then do
                         say $ "Log size when trimming: " ++ show (Map.size log)
-                        forM_ mdumper $ flip kill "saving a newer snapshot" . snd
                         -- dump the snapshot asynchronously
                         dumper <- spawnLocal $ do
                                     dumper <- getSelfPid
