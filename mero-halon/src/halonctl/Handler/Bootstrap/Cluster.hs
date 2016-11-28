@@ -46,6 +46,7 @@ data Config = Config
   , configHalonRoles :: Defaultable FilePath
   , configDryRun :: Bool
   , configVerbose :: Bool
+  , configMkfsDone :: Bool
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 schema :: Opt.Parser Config
@@ -73,7 +74,10 @@ schema = let
           $ Opt.long "verbose"
          <> Opt.short 'v'
          <> Opt.help "Verbose output"
-  in Config <$> initial <*> roles <*> halonRoles <*> dry <*> verbose
+    mkfs = Opt.switch
+         $ Opt.long "mkfs-done"
+         <> Opt.help "do not run mkfs on a cluster"
+  in Config <$> initial <*> roles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
 data ValidatedConfig = ValidatedConfig
       { vcTsConfig :: (String, Station.Config)  -- ^ Tracking station config and it's representation
@@ -168,6 +172,17 @@ bootstrap Config{..} = do
                               initialData
                               (fromDefault configInitialData)
                               (fromDefault configRoles)
+
+              when configMkfsDone $ do
+                if dry
+                then out $ "halonctl -l $IP:0 " ++ " cluster mkfs-done --confirm " 
+                             ++ intercalate " -t " station_hosts
+                else do
+                 let stnodes = conjureRemoteNodeId <$> station_hosts
+                 (schan, rchan) <- newChan
+                 _ <- promulgateEQ stnodes (MarkProcessesBootstrapped schan)
+                 void $ receiveWait [ matchChan rchan (const $ return ()) ]
+
               startCluster station_hosts
               unless configDryRun $
                 receiveTimeout step_delay [] >> return ()
