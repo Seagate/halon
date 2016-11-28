@@ -801,6 +801,11 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
     Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
     Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
+
+    ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
+    applyStateChanges $ (`stateSet` Tr.sdevRepaired) <$> ds
+    ds1 <- getPoolSDevsWithState pool M0_NC_REPAIR
+    applyStateChanges $ (`stateSet` Tr.sdevFailed) <$> ds1
     continue finish
 
   return route
