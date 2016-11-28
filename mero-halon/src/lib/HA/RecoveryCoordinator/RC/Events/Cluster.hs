@@ -25,8 +25,9 @@ import GHC.Generics
 newtype NewNodeConnected = NewNodeConnected Node
    deriving (Eq, Show, Typeable, Generic, Binary)
 
--- | Initial data were loaded.
+-- | Initial data was loaded or has failed to load.
 data InitialDataLoaded = InitialDataLoaded
+                       | InitialDataLoadFailed String
    deriving (Eq, Show, Typeable, Generic)
 
 instance Binary InitialDataLoaded

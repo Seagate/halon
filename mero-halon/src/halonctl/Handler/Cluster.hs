@@ -40,6 +40,7 @@ import Mero.ConfC ( Fid )
 
 import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import HA.RecoveryCoordinator.RC.Events
+import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
@@ -155,6 +156,7 @@ data LoadOptions = LoadOptions
     FilePath -- ^ Roles file
     FilePath -- ^ Halon roles file
     Bool -- ^ validate only
+    Int -- ^ Timeout (seconds)
   deriving (Eq, Show)
 
 parseLoadOptions :: Opt.Parser LoadOptions
@@ -186,19 +188,48 @@ parseLoadOptions = LoadOptions
      <> Opt.short 'v'
      <> Opt.help "Verify config file without reconfiguring cluster."
       )
+  <*> Opt.option Opt.auto
+    ( Opt.metavar "TIMEOUT(s)"
+    <> Opt.long "timeout"
+    <> Opt.help "How many seconds to wait for initial data to load before failing."
+    <> Opt.value 10
+    <> Opt.showDefault )
 
 dataLoad :: [NodeId] -- ^ EQ nodes to send data to
          -> LoadOptions
          -> Process ()
-dataLoad eqnids (LoadOptions cf maps halonMaps verify) = do
+dataLoad eqnids (LoadOptions cf maps halonMaps verify _t) = do
   initData <- liftIO $ CI.parseInitialData cf maps halonMaps
   case initData of
+#ifdef USE_MERO
+    Left err -> liftIO $ do
+      putStrLn $ prettyPrintParseException err
+      exitFailure
+    Right (datum, _) | verify -> liftIO $ do
+      putStrLn "Initial data file parsed successfully."
+      print datum
+    Right ((datum :: CI.InitialData), _) -> do
+      subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
+      promulgateEQ eqnids datum >>= flip withMonitor wait
+      expectTimeout (_t * 1000000) >>= \v -> do
+        unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+        case v of
+          Nothing -> liftIO $ do
+            hPutStrLn stderr "Timed out waiting for initial data to load."
+            exitFailure
+          Just p -> case pubValue p of
+            InitialDataLoaded -> return ()
+            InitialDataLoadFailed e -> liftIO $ do
+              hPutStrLn stderr $ "Initial data load failed: " ++ e
+              exitFailure
+#else
     Left err -> liftIO . putStrLn $ prettyPrintParseException err
     Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
     Right ((datum :: CI.InitialData), _) -> promulgateEQ eqnids datum
         >>= \pid -> withMonitor pid wait
+#endif
       where
         wait = void (expect :: Process ProcessMonitorNotification)
 

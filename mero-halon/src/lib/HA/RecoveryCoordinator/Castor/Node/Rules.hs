@@ -398,7 +398,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     createMeroClientConfig fs host hhi
     continue confd_running
 
-  setPhase wait_data_load $ \Event.InitialDataLoaded -> do
+  setPhaseIf wait_data_load initialDataLoaded $ \() -> do
     Just (StartProcessNodeNew node) <- getField . rget fldReq <$> get Local
     route node >>= switch
 
@@ -429,6 +429,10 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
 
   return check
   where
+    initialDataLoaded :: Event.InitialDataLoaded -> g -> l -> Process (Maybe ())
+    initialDataLoaded Event.InitialDataLoaded _ _ = return $ Just ()
+    initialDataLoaded Event.InitialDataLoadFailed{} _ _ = return Nothing
+
     fldReq :: Proxy '("request", Maybe StartProcessNodeNew)
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe NewMeroServer)

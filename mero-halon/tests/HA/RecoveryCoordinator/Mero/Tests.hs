@@ -72,10 +72,8 @@ tests transport pg =
   , testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
   , testCase "testConfObjectStateQuery" $
       testConfObjectStateQuery transport pg
-  , testCase "good-conf-validates [disabled by TODO]" $
-      when False (testGoodConfValidates transport pg)
-  , testCase "bad-conf-does-not-validate [disabled by TODO]" $
-      when False (testBadConfDoesNotValidate transport pg)
+  , testCase "good-conf-validates" $ testGoodConfValidates transport pg
+  , testCase "bad-conf-does-not-validate" $ testBadConfDoesNotValidate transport pg
   , testCase "RG can load different fids with the same type" $ testFidsLoad
 #endif
   ]
@@ -139,7 +137,7 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
     _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
 
     promulgateEQ [nid] initialData >>= flip withMonitor wait
-    _ <- expectPublished (Proxy :: Proxy InitialDataLoaded)
+    InitialDataLoaded <- expectPublished Proxy
 
     say "Sending online message"
     promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
@@ -195,7 +193,7 @@ testConfObjectStateQuery transport pg =
         testSay "Loading graph."
         void $ promulgateEQ [nid] $
           Helper.InitialData.initialData systemHostname "192.0.2.2" 1 12 Helper.InitialData.defaultGlobals
-        Just _ <- expectTimeout 20000000 :: Process (Maybe (Published InitialDataLoaded))
+        InitialDataLoaded <- expectPublished Proxy
 
         graph <- G.getGraph mm
         let sdevs = G.getResourcesOfType graph :: [M0.SDev]
@@ -271,52 +269,51 @@ testConfValidates iData transport pg act =
     nid <- getSelfNode
     self <- getSelfPid
 
-    registerInterceptor $ \string -> do
-      when ("Loaded initial data" `isInfixOf` string) $
-        usend self ("Loaded initial data" :: String)
-
     say $ "tests node: " ++ show nid
-    withTrackingStation pg validateCacheRules $ \(TestArgs _ _ _) -> do
+    withTrackingStation pg validateCacheRules $ \(TestArgs _ _ rc) -> do
       nodeUp ([nid], 1000000)
+      subscribe rc (Proxy :: Proxy InitialDataLoaded)
+
       say "Loading graph."
       void $ promulgateEQ [nid] iData
+      InitialDataLoaded <- expectPublished Proxy
 
-      "Loaded initial data" :: String <- expect
       say "Sending validate"
-      void . promulgateEQ [nid] $ ValidateCache self
+      usend rc $ ValidateCache self
       act
   where
     validateCacheRules :: [Definitions RC ()]
-    validateCacheRules = return $ defineSimple "validate-cache" $ \(HAEvent eid (ValidateCache sender)) -> do
+    validateCacheRules = return $ defineSimple "validate-cache" $ \(ValidateCache sender) -> do
       liftProcess $ say "validating cache"
       Right res <- validateTransactionCache
       liftProcess . say $ "validated cache: " ++ show res
       liftProcess . usend sender $ ValidateCacheResult res
-      messageProcessed eid
 
--- | Check that we can validate conf string for sample initial data
+-- | Check that we can validate conf for default initial data.
 testGoodConfValidates :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testGoodConfValidates transport pg = testConfValidates iData transport pg $ do
+testGoodConfValidates t pg = testConfValidates iData t pg $ do
   ValidateCacheResult Nothing <- expect
   return ()
   where
     iData = Helper.InitialData.defaultInitialData
 
--- | Check that we can detect a bad conf
---
--- TODO find initial data that will produce invalid conf string.
+-- | Check that we can detect a bad conf. Bad conf is produced by
+-- setting invalid endpoints for every process. Only the suffix of the
+-- endpoint is preserved, stripping the host prefix.
 testBadConfDoesNotValidate :: (Typeable g, RGroup g)
                            => Transport -> Proxy g -> IO ()
-testBadConfDoesNotValidate transport pg =
-    testConfValidates iData transport pg $ do
-      ValidateCacheResult (Just _) <- expect
-      return ()
+testBadConfDoesNotValidate t pg = testConfValidates iData t pg $ do
+  ValidateCacheResult (Just _) <- expect
+  return ()
   where
-    -- TODO manipulate initial data in a way that produces invalid
-    -- context that we can then test against. Unfortunately even in
-    -- mero the test for this does not yet exist so we can't steal any
-    -- ideas.
     iData = Helper.InitialData.defaultInitialData
+      { CI.id_m0_servers = map invalidateHost $ CI.id_m0_servers Helper.InitialData.defaultInitialData }
+
+    -- Set endpoints of processes for the host to invalid value,
+    -- making conf fail validation.
+    invalidateHost :: CI.M0Host -> CI.M0Host
+    invalidateHost h = h { CI.m0h_processes = map (\p -> p { CI.m0p_endpoint = "@tcp:12345:41:901" })
+                                              $ CI.m0h_processes h }
 
 testFidsLoad :: IO ()
 testFidsLoad = do
