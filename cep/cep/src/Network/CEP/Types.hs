@@ -34,7 +34,7 @@ import qualified Data.IntPSQ as PSQ
 import           Data.Hashable
 import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import           System.Clock
-import           Control.Lens.TH
+import           Control.Lens hiding (Index, Setting)
 
 import Network.CEP.Buffer
 import qualified Network.CEP.Log as Log
@@ -106,6 +106,9 @@ data EngineState g = EngineState
    }
 
 makeLenses ''EngineState
+
+nextSmId :: Monad m => State.StateT (EngineState g) m SMId
+nextSmId = engineStateMaxId <<%= (+1)
 
 newSubscribeRequest :: forall proxy a. Serializable a
                     => ProcessId

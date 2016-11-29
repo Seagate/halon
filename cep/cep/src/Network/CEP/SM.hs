@@ -66,9 +66,8 @@ newSM key startPhase rn ps initialBuffer initialL logger =
       SM (bootstrap (bufferInsert a b))
     bootstrap b i@(SMExecute _) = do
         ph <- jumpEmitTimeout key startPhase
-        EngineState (SMId idx) t g p <- State.get
-        State.put $ EngineState (SMId (idx+1)) t g p
-        interpretInput (SMId idx) initialL b [ph] i
+        sm <- nextSmId
+        interpretInput sm initialL b [ph] i
 
     interpretInput :: SMId
                    -> l
