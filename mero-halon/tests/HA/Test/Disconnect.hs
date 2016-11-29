@@ -243,7 +243,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       _ <- promulgateEQ [localNodeId m1] defaultInitialData
-      _ <- expectPublished (Proxy :: Proxy InitialDataLoaded)
+      InitialDataLoaded <- expectPublished Proxy
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
@@ -305,7 +305,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
 
 #ifdef USE_MERO
       _ <- promulgateEQ [localNodeId m1] defaultInitialData
-      _ <- expectPublished (Proxy :: Proxy InitialDataLoaded)
+      InitialDataLoaded <- expectPublished Proxy
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])
@@ -370,7 +370,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
 #ifdef USE_MERO
       _ <- promulgateEQ [localNodeId m1] defaultInitialData
-      _ <- expectPublished (Proxy :: Proxy InitialDataLoaded)
+      InitialDataLoaded <- expectPublished Proxy
 #endif
 
       say $ "isolating TS node " ++ show (localNodeId <$> [m1])

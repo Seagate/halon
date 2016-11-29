@@ -19,7 +19,10 @@ import           HA.EventQueue.Producer
 import qualified Handler.Bootstrap.TrackingStation as Station
 import qualified Handler.Bootstrap.Satellite as Satellite
 import           HA.Resources.Castor.Initial as CI
-import HA.RecoveryCoordinator.Castor.Cluster.Events
+
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
+import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           Lookup (conjureRemoteNodeId)
 
 import qualified Options.Applicative as Opt
@@ -34,11 +37,14 @@ import Data.Bifunctor
 import Data.Foldable (for_)
 import Data.List (intercalate)
 import Data.Monoid ((<>))
+import Data.Proxy
 import Data.Typeable
 import Data.Validation
 import GHC.Generics (Generic)
 
 import System.Exit
+
+import Network.CEP (Published(..))
 
 data Config = Config
   { configInitialData :: Defaultable FilePath
@@ -175,7 +181,7 @@ bootstrap Config{..} = do
 
               when configMkfsDone $ do
                 if dry
-                then out $ "halonctl -l $IP:0 " ++ " cluster mkfs-done --confirm " 
+                then out $ "halonctl -l $IP:0 " ++ " cluster mkfs-done --confirm "
                              ++ intercalate " -t " station_hosts
                 else do
                  let stnodes = conjureRemoteNodeId <$> station_hosts
@@ -235,9 +241,21 @@ bootstrap Config{..} = do
              ++ " cluster load -f " ++ fn ++ " -r " ++ roles
     loadInitialData satellites datum _ _ = do
         verbose "Loading initial data"
+
+        subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
         promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
-        _ <- receiveTimeout step_delay []
-        return ()
+
+        expectTimeout step_delay >>= \v -> do
+          unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+          case v of
+            Nothing -> liftIO $ do
+              putStrLn "Timed out waiting for initial data to load."
+              exitFailure
+            Just p -> case pubValue p of
+              InitialDataLoaded -> return ()
+              InitialDataLoadFailed e -> liftIO $ do
+                putStrLn $ "Initial data load failed: " ++ e
+                exitFailure
       where
         wait = void (expect :: Process ProcessMonitorNotification)
         eqnids = conjureRemoteNodeId <$> satellites
