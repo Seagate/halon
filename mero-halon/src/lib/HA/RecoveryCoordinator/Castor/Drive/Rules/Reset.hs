@@ -287,7 +287,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
-               applyStateChanges [ stateSet m0sdev Tr.sdevOnline ]
+               applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
                Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
                modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
              x ->

@@ -36,7 +36,7 @@ import HA.Multimap.Process (startMultimap)
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero.Actions.Failure
 import HA.RecoveryCoordinator.Mero.Failure.Simple
-import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
@@ -282,13 +282,13 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
 
     let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
 
-    (ls2, _) <- run ls1 $ applyStateChanges $ (`stateSet` Tr.processOnline) <$> procs
+    (ls2, _) <- run ls1 $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
       $ length (connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
         length procs
 
-    (ls3, _) <- run ls2 $ applyStateChanges $ (`stateSet` Tr.processStopping) <$> procs
+    (ls3, _) <- run ls2 $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSStopping) <$> procs
 
     assertMsg "All processes should be stopping"
       $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==

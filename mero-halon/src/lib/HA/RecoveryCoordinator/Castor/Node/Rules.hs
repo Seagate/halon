@@ -344,7 +344,7 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
      rg <- getLocalGraph
      case listToMaybe $ m0nodeToNode m0node rg of
        Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
-       Just node -> do let ps = [ stateSet p processStopping
+       Just node -> do let ps = [ stateSet p processHAStopping
                                 | p <- G.connectedTo m0node M0.IsParentOf rg
                                 , any (\s -> M0.s_type s == CST_HA)
                                       $ G.connectedTo (p::M0.Process) M0.IsParentOf rg

@@ -339,6 +339,8 @@ configureMeroProcess (TypedChannel chan) p runType mkfs = do
             else return $ ProcessConfigRemote p
     liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
 
+-- | TODO: 'stopNodeProcesses' uses direct graph update, make it use
+-- transition instead
 stopNodeProcesses :: TypedChannel ProcessControlMsg
                   -> [M0.Process]
                   -> PhaseM RC a ()

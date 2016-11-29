@@ -58,6 +58,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (find)
 import Data.Function (fix)
 import Data.Hashable (Hashable)
+import Data.Maybe (isJust)
 import Data.Proxy
 import Data.Typeable
 import Data.Text (pack)
@@ -367,10 +368,19 @@ expectLoggingMsg = expectActuatorMsg'
 
 expectActuatorMsg :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe (Maybe UUID, b))
 expectActuatorMsg f t = do
-    expectTimeout t >>= \case
-      Just (MQMessage _ msg) -> return $ pull2nd . (getUUID &&& f) =<< (decode . LBS.fromStrict $ msg)
-      Nothing -> do liftIO $ assertFailure "No message delivered to SSPL."
-                    undefined
+    let decodeBS = decode . LBS.fromStrict
+    let decodable msg = isJust $ decodeBS msg >>= f
+    r' <- receiveTimeout t
+      [ matchIf (\(MQMessage _ msg) -> decodable msg)
+                (\(MQMessage _ msg) ->
+                   let Just r = pull2nd . (getUUID &&& f) =<< decodeBS msg
+                   in return r)
+      ]
+    case r' of
+      Just _ -> return r'
+      Nothing -> do
+        liftIO $ assertFailure "No message delivered to SSPL."
+        return Nothing
   where
     getUUID arm = do
       uid_s <- actuatorRequestMessageSspl_ll_msg_headerUuid
@@ -378,10 +388,7 @@ expectActuatorMsg f t = do
                 . actuatorRequestMessage
                 $ arm
       UUID.fromText uid_s
-    pull2nd :: (a, Maybe b) -> Maybe (a,b)
-    pull2nd (x, Just y) = Just (x,y)
-    pull2nd (_, Nothing) = Nothing
-
+    pull2nd x = (,) <$> pure (fst x) <*> snd x
 
 expectActuatorMsg' :: (ActuatorRequest -> Maybe b) -> Int -> Process (Either String b)
 expectActuatorMsg' f t = do

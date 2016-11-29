@@ -17,11 +17,11 @@ import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
 
--- | Get a 'Tr.Transition' corresponding to a pool completing
+-- | Get a 'Tr.Transition' coresponding to a pool completing
 -- repair/rebalance.
-repairedNotificationTransition :: M0.PoolRepairType -> Tr.Transition M0.Pool
-repairedNotificationTransition M0.Rebalance = Tr.poolOnline
-repairedNotificationTransition M0.Failure = Tr.poolRepaired
+snsCompletedTransition :: M0.PoolRepairType -> Tr.Transition M0.Pool
+snsCompletedTransition M0.Rebalance = Tr.poolRebalanceComplete
+snsCompletedTransition M0.Failure = Tr.poolRepairComplete
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or

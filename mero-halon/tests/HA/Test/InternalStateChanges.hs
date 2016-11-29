@@ -132,12 +132,12 @@ stateCascade t pg = doTest t pg [rule] test'
             --           $ (G.connectedFrom M0.IsOnHardware ctrl rg :: [M0.Node])
             -- procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
             srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
-        liftProcess . usend pid $ p
-        applyStateChanges [stateSet p Tr.processOnline]
-        let notifySet = stateSet p Tr.processOnline
-                      : (flip stateSet Tr.serviceOnline <$> srvs)
-            meroSet = Note (M0.fid p) M0_NC_ONLINE
-                    : (flip Note M0_NC_ONLINE . M0.fid <$> srvs)
+        liftProcess $ usend pid p
+        applyStateChanges [stateSet p Tr.processStarting]
+        let notifySet = stateSet p Tr.processStarting
+                      : map (`stateSet` Tr.processCascadeService M0.PSStarting) srvs
+            meroSet = Note (M0.fid p) (toConfObjState p M0.PSStarting)
+                    : (flip Note (toConfObjState (undefined :: M0.Service) M0.SSStarting) . M0.fid <$> srvs)
         put Local $ Just (eid, pid, notifySet, meroSet)
         switch [notified, timeout 15 timed_out]
 
@@ -150,7 +150,7 @@ stateCascade t pg = doTest t pg [rule] test'
       directly timed_out $ do
         Just (eid, _, notifySet, _) <- get Local
         phaseLog "warn" $ "Notify timed out"
-        phaseLog "info" $ "Expecting " ++ (show $ length notifySet) ++ " notes."
+        phaseLog "info" $ "Expecting " ++ show (length notifySet) ++ " notes."
         messageProcessed eid
 
       start init_rule Nothing

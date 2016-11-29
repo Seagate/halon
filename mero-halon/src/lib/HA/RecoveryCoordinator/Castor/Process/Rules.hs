@@ -373,7 +373,7 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        applyStateChanges [ stateSet p Tr.processOnline ]
+        applyStateChanges [ stateSet p Tr.processHAOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid

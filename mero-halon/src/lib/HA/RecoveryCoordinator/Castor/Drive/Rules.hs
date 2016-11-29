@@ -121,7 +121,7 @@ mkCheckAndHandleDriveReady getter smartLens next = do
         getState m0sdev <$> getLocalGraph >>= \case
           SDSUnknown -> do
             -- We do not know the old state, so set the new state to online
-            applyStateChanges [ stateSet m0sdev Tr.sdevOnline ]
+            applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
             next m0sdev
           SDSOnline -> return () -- Do nothing
           SDSFailed -> do

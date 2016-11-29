@@ -159,7 +159,7 @@ createDeferredStateChanges stateSets rg =
     (wrns, rootStateChanges) = partitionEithers $ mapMaybe lookupOldState stateSets
     lookupOldState (AnyStateSet (x :: a) t) = case runTransition t $ M0.getState x rg of
       NoTransition -> Nothing
-      InvalidTransition err -> Just $ Left err
+      InvalidTransition mkErr -> Just . Left $ mkErr x
       TransitionTo st -> Just . Right $ AnyStateChange x (M0.getState x rg) st sp
       where
         sp = staticApplyPtr
@@ -323,12 +323,18 @@ ascPred (obj :: a) p (AnyStateChange obj' _ n _) = case (cast obj', cast n) of
 
 -- | Check that the 'AnyStateChange' directly corresponds to
 -- 'Transition' encoded in the 'AnyStateSet'.
+--
+-- Note that transitions that cause no state change ('NoTransition')
+-- match on every 'AnyStateChange' for their object type. This allows
+-- us to eliminate these transitions when looking through the set of
+-- 'AnyStateChange's.
 anyStateToAscPred :: AnyStateSet -> AnyStateChange -> Bool
 anyStateToAscPred (AnyStateSet a tr) (AnyStateChange (obj :: objT) o n _) =
   case (cast a, cast tr) of
     (Just (a' :: objT), Just (tr' :: Transition objT)) ->
       obj == a' && case runTransition tr' o of
         TransitionTo n' -> n == n'
+        NoTransition -> True
         _ -> False
     _ -> False
 
@@ -394,8 +400,8 @@ mkPhaseNotify t getter onFailure onSuccess = do
       NoTransition -> do
         phaseLog "info" "Object already in desired state, not notifying"
         onSuccess obj currentSt
-      InvalidTransition err -> do
-        phaseLog "warn" $ "Bad transition: " ++ err
+      InvalidTransition mkErr -> do
+        phaseLog "warn" $ mkErr obj
         onFailure
       TransitionTo _ -> do
         applyStateChanges [stateSet obj tr]
@@ -409,7 +415,7 @@ data StateCascadeRule a b where
                     => (M0.StateCarrier a -> Bool) --  Old state(s) if applicable
                     -> (M0.StateCarrier a -> Bool)  --  New state(s)
                     -> (a -> G.Graph -> [b]) --  Function to find new objects
-                    -> (M0.StateCarrier a -> Transition b)
+                    -> Transition.CascadeTransition a b
                     -> StateCascadeRule a b
   -- Trigger an arbitrary graph update as a result of a state change.
   StateCascadeTrigger :: (M0.HasConfObjectState a, b ~ a)
@@ -571,7 +577,7 @@ diskFailsPVer = StateCascadeRule
                     guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
                     return pver
             in lefts $ map (checkBroken rg) pvers)
-  Transition.diskChangesPVer
+  Transition.diskFailsPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
@@ -611,7 +617,7 @@ diskFixesPVer = StateCascadeRule
                      guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                      return pver
             in lefts $ map (checkBroken rg) pvers)
-  Transition.diskChangesPVer
+  Transition.diskFixesPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
    checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
