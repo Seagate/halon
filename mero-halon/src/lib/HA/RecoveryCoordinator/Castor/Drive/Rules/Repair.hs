@@ -803,9 +803,9 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
     unsetPoolRepairStatusWithUUID pool uuid
 
     ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
-    applyStateChanges $ (`stateSet` Tr.sdevRepaired) <$> ds
+    applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
     ds1 <- getPoolSDevsWithState pool M0_NC_REPAIR
-    applyStateChanges $ (`stateSet` Tr.sdevFailed) <$> ds1
+    applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
     continue finish
 
   return route
