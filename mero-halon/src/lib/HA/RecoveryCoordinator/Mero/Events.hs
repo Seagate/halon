@@ -19,7 +19,7 @@ module HA.RecoveryCoordinator.Mero.Events
   , StopMeroServer(..)
    -- ** Mero kernel.
   , MeroKernelFailed(..)
-  , NodeKernelFailed(..)
+  , MeroCleanupFailed(..)
   -- * Requests
   , GetSpielAddress(..)
   -- * Jobs
@@ -191,11 +191,13 @@ instance ProcessEncode InternalObjectStateChange where
 
 -- | A message we can use to notify bootstrap that mero-kernel failed
 -- to start.
+data MeroCleanupFailed = MeroCleanupFailed ProcessId String
+  deriving(Eq, Show, Typeable, Generic)
+
+-- | A message we can use to notify bootstrap that mero-kernel failed
+-- to start.
 data MeroKernelFailed = MeroKernelFailed ProcessId String
   deriving (Eq, Show, Typeable, Generic)
-
-newtype NodeKernelFailed = NodeKernelFailed M0.Node
-  deriving (Eq, Show, Typeable, Generic, Binary)
 
 -- | Request abort on the given pool.
 data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
@@ -247,6 +249,7 @@ deriveSafeCopy 0 'base ''ForceObjectStateUpdateRequest
 deriveSafeCopy 0 'base ''GetFailureVector
 deriveSafeCopy 0 'base ''GetSpielAddress
 deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
+deriveSafeCopy 0 'base ''MeroCleanupFailed
 deriveSafeCopy 0 'base ''MeroKernelFailed
 deriveSafeCopy 0 'base ''QuiesceSNSOperation
 deriveSafeCopy 0 'base ''RestartSNSOperationRequest

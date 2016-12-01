@@ -14,7 +14,9 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero   as M0
 import           HA.Service
   ( Service
@@ -25,6 +27,7 @@ import           HA.Service
 import           HA.EventQueue.Producer
 
 import Control.Monad (unless)
+import Control.Distributed.Process (usend)
 import Control.Distributed.Process.Internal.Types (processNodeId)
 import Data.Foldable (for_)
 import Data.Typeable (cast)
@@ -36,7 +39,8 @@ import Prelude hiding (id)
 -- | Rules that are needed to support halon:m0d service in RC.
 rules :: Definitions RC ()
 rules = sequence_
-  [ ruleRegisterChannels
+  [ ruleCheckCleanup
+  , ruleRegisterChannels
 -- , ruleNotificationsDeliveredToHalonM0d
   , ruleNotificationsDeliveredToM0d
   , ruleNotificationsFailedToBeDeliveredToM0d
@@ -46,6 +50,19 @@ rules = sequence_
   , ruleGenericNotification
   ]
 
+ruleCheckCleanup :: Definitions RC ()
+ruleCheckCleanup = defineSimpleTask "service::m0d::check-cleanup" $ do
+  \(CheckCleanup sp) -> do
+    rg <- getLocalGraph
+    let node = R.Node (processNodeId sp)
+        cleanup = null $
+          [ ()
+          | Just (host :: R.Host) <- [G.connectedFrom R.Runs node rg]
+          , m0node :: M0.Node <- G.connectedTo host R.Runs rg
+          , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+          , G.isConnected proc R.Is M0.ProcessBootstrapped rg
+          ]
+    liftProcess $ usend sp cleanup
 
 -- | Register channels that can be used in order to communicate with halon:m0d
 -- service.

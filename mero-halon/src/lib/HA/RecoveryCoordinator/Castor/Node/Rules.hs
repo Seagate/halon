@@ -86,6 +86,7 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
     rules
    -- ** Events
   , eventNewHalonNode
+  , eventCleanupFailed
   , eventKernelStarted
   , eventKernelFailed
   , eventBEError
@@ -186,6 +187,7 @@ rules = sequence_
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
+  , eventCleanupFailed
   , eventKernelStarted
   , eventKernelFailed
   , eventBEError
@@ -246,7 +248,6 @@ eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(
 -- Stop halon:m0d service on the node.
 --
 -- Listens:      'MeroKernelFailed'
--- Emits:        'NodeKernelFailed'
 -- State-Changes: 'M0.Node' Failed
 eventKernelFailed :: Definitions RC ()
 eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(MeroKernelFailed pid msg) -> do
@@ -261,6 +262,28 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
            $ G.connectedTo p M0.IsParentOf g
         ]
   let failMsg = "mero-kernel failed to start: " ++ msg
+  applyStateChanges $ (`stateSet` processFailed failMsg) <$> haprocesses
+  promulgateRC $ encodeP $ ServiceStopRequest node m0d
+  for_ m0nodes $ notify . KernelStartFailure
+
+-- | Handle a case when mero-cleanup failed to start on the node. Currently we
+--   treat this as a kernel failure, as it effectively is.
+--
+-- Listens:      'MeroCleanupFailed'
+-- State-Changes: 'M0.Node' Failed
+eventCleanupFailed :: Definitions RC ()
+eventCleanupFailed = defineSimpleTask "castor::node::event::cleanup-failed" $ \(MeroCleanupFailed pid msg) -> do
+  g <- getLocalGraph
+  let node = R.Node $ processNodeId pid
+      m0nodes = nodeToM0Node node g
+      haprocesses =
+        [ p
+        | m0node <- m0nodes
+        , (p :: M0.Process) <- G.connectedTo m0node M0.IsParentOf g
+        , any (\s -> M0.s_type s == CST_HA)
+           $ G.connectedTo p M0.IsParentOf g
+        ]
+  let failMsg = "mero-cleanup failed to start: " ++ msg
   applyStateChanges $ (`stateSet` processFailed failMsg) <$> haprocesses
   promulgateRC $ encodeP $ ServiceStopRequest node m0d
   for_ m0nodes $ notify . KernelStartFailure

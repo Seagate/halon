@@ -32,6 +32,7 @@ import HA.EventQueue.Producer (promulgate, promulgateWait)
 import qualified HA.RecoveryCoordinator.Mero.Events as M0
 import qualified HA.Resources.Mero as M0
 import HA.Service
+import HA.Services.Mero.RC.Events
 import HA.Services.Mero.Types
 
 import qualified Mero.Notification
@@ -332,9 +333,26 @@ remotableDecl [ [d|
               `staticApply` $(mkStatic 'configDictMeroConf))
 
   m0dFunctions :: ServiceFunctions MeroConf
-  m0dFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+  m0dFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
     bootstrap conf = do
       self <- getSelfPid
+      void . promulgate $ CheckCleanup self
+      cleanup <- expectTimeout (10 * 1000000)
+      case cleanup of
+        Just True -> (liftIO $ SystemD.startService "mero-cleanup")
+          >>= \case
+            Right _ -> return ()
+            Left i -> do
+              traceM0d $ "mero-cleanup did not run correctly: " ++ show i
+              promulgateWait . M0.MeroCleanupFailed self $
+                "mero-cleanup service failed to start: " ++ show i
+              Control.Distributed.Process.die Shutdown
+        Nothing ->
+          -- This case is pretty unusual. Means some kind of major failure of
+          -- the RC. Regardless, we continue, since at worst we just fail on
+          -- the next step instead.
+          traceM0d "Could not ascertain whether to run mero-cleanup."
+        _ -> return ()
       pid <- spawnLocalName "service::m0d::process" $ do
         link self
         m0dProcess self conf
@@ -359,8 +377,8 @@ remotableDecl [ [d|
              ]
     teardown _ (pid,_,_) = do
       mref <- monitor pid
-      exit pid "teardown" 
-      receiveWait 
+      exit pid "teardown"
+      receiveWait
         [ matchIf (\(ProcessMonitorNotification m _ _) -> mref == m)
                   $ \_ -> return ()
         ]
