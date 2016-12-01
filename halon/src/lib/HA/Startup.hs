@@ -8,7 +8,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-orphans #-}
 module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor )

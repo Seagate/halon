@@ -12,8 +12,8 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
+-- XXX: for graph instances:
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HA.Resources.Castor (
     module HA.Resources.Castor

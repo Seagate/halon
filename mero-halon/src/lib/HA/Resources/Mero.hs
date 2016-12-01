@@ -5,7 +5,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
+-- For graph instances
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.

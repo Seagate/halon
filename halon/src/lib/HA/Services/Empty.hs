@@ -11,10 +11,6 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE CPP                   #-}
-
-{-# OPTIONS_GHC -fno-warn-orphans      #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds #-}
-
 module HA.Services.Empty
   ( EmptyConf(..)
   , HA.Services.Empty.__remoteTable
