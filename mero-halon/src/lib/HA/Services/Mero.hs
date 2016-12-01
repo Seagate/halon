@@ -136,6 +136,17 @@ keepaliveProcess kaFreq kaTimeout niRef pid = do
 --
 -- TODO2: tag these with UUID so that we know that we're getting the
 -- right reply to the right message, then it won't matter either way
+--
+-- TODO2.5: really do TODO2; especially with stop, if we kill the
+-- process through different means then old running command may become
+-- unblocked and we may deliver old result! Or use some other solution
+-- that kills old call when a new one comes in. This works assuming
+-- jobs are only dispatchers of these control messages but also solves
+-- TODO3.
+--
+-- TODO3: Calls to configure\/start\/stop are blocking! They don't
+-- have to be anymore as upstream has own timeout. Run these async to
+-- allow processing of channel messages swiftly.
 controlProcess :: MeroConf
                -> ProcessId -- ^ Parent process to link to
                -> ReceivePort ProcessControlMsg
@@ -149,10 +160,10 @@ controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
       nid <- getSelfNode
       result <- liftIO $ startProcess runType p
       promulgateWait $ ProcessControlResultMsg nid result
-    StopProcesses procs -> do
+    StopProcess runType p -> do
       nid <- getSelfNode
-      results <- liftIO $ mapM (uncurry stopProcess) procs
-      promulgateWait $ ProcessControlResultStopMsg nid results
+      result <- liftIO $ stopProcess runType p
+      promulgateWait $ ProcessControlResultStopMsg nid result
   )
 
 --------------------------------------------------------------------------------
@@ -201,40 +212,40 @@ startProcess :: ProcessRunType   -- ^ Type of the process.
              -> M0.Process              -- ^ Process Fid.
              -> IO (Either (M0.Process, String) (M0.Process, Maybe Int))
 startProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
-  putStrLn $ "m0d: startProcess: " ++ show (M0.fid p) ++ " with type(s) " ++ show run
-  SystemD.restartService (unitString run (M0.fid p)) >>= return . \case
+  putStrLn $ "m0d: startProcess: " ++ fidToStr (M0.fid p) ++ " with type(s) " ++ show run
+  SystemD.restartService (unitString run p) >>= return . \case
     Right mpid -> Right (p, mpid)
     Left x -> Left (p, "Unit failed to restart with exit code " ++ show x)
 
 -- | Stop running mero service.
 stopProcess :: ProcessRunType        -- ^ Type of the process.
-            -> Fid                   -- ^ Process Fid.
-            -> IO (Either (Fid, String) Fid)
-stopProcess run fid = flip Catch.catch (generalProcFailureHandler fid) $ do
-  let unit = unitString run fid
+            -> M0.Process            -- ^ 'M0.Process' to stop.
+            -> IO (Either (M0.Process, String) M0.Process)
+stopProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
+  let unit = unitString run p
   putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
   ec <- ST.timeout ptimeout $ SystemD.stopService unit
   case ec of
     Nothing -> do
       putStrLn $ unwords [ "m0d: stopProcess timed out after", show ptimeoutSec, "s for", show unit ]
-      return $ Left (fid, "Failed to stop after " ++ show ptimeoutSec ++ "s")
+      return $ Left (p, "Failed to stop after " ++ show ptimeoutSec ++ "s")
     Just ExitSuccess -> do
       putStrLn $ "m0d: stopProcess OK for " ++ show unit
-      return $ Right fid
+      return $ Right p
     Just (ExitFailure x) -> do
       putStrLn $ "m0d: stopProcess failed."
-      return $ Left (fid, "Unit failed to stop with exit code " ++ show x)
+      return $ Left (p, "Unit failed to stop with exit code " ++ show x)
   where
     ptimeoutSec = 60
     ptimeout = ptimeoutSec * 1000000
 
 -- | Generate unit file name.
 unitString :: ProcessRunType       -- ^ Type of the process.
-           -> Fid                  -- ^ Process Fid.
+           -> M0.Process           -- ^ Process.
            -> String
-unitString run fid = case run of
-  M0T1FS -> "m0t1fs@" ++ fidToStr fid ++ ".service"
-  M0D -> "m0d@" ++ fidToStr fid ++ ".service"
+unitString run p = case run of
+  M0T1FS -> "m0t1fs@" ++ fidToStr (M0.fid p) ++ ".service"
+  M0D -> "m0d@" ++ fidToStr (M0.fid p)  ++ ".service"
 
 -- | General failure handler for the process start/stop/restart actions.
 generalProcFailureHandler :: a -> Catch.SomeException

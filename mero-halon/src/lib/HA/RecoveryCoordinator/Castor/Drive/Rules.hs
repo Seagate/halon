@@ -53,6 +53,7 @@ import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Mero.Notifications
 import HA.RecoveryCoordinator.Mero.State
 import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import qualified HA.Resources.Mero as M0
@@ -619,7 +620,7 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
 
   m0_drive_failed <- phaseHandle "m0_drive_failed"
 
-  setPhaseInternalNotificationWithState m0_drive_failed
+  setPhaseInternalNotification m0_drive_failed
     (\o n -> not (o `elem` [ M0.SDSRepaired
                            , M0.SDSFailed
                            , M0.SDSRepairing]) && n == M0.SDSFailed)

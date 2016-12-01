@@ -30,7 +30,7 @@ import           HA.EventQueue.Types
 import           HA.Multimap
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (notifyOnClusterTransition)
-import           HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessesResult)
+import           HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessResult)
 import           HA.RecoveryCoordinator.Castor.Drive
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
 import           HA.RecoveryCoordinator.Helpers
@@ -131,7 +131,7 @@ testRules = do
     -- Also mark the cluster disposition as ONLINE.
     modifyGraph $ G.connect Cluster Has M0.ONLINE
     -- Calculate cluster status.
-    notifyOnClusterTransition Nothing
+    notifyOnClusterTransition
     locateNodeOnHost node host
     Service.register node m0d mockMeroConf
     void . liftProcess $ promulgateEQ [nid] dc
@@ -748,7 +748,7 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
     prepareSubscriptions rc rmq
     subscribe rc (Proxy :: Proxy (HAEvent ExpanderReset))
     subscribe rc (Proxy :: Proxy (HAEvent RaidMsg))
-    subscribe rc (Proxy :: Proxy StopProcessesResult)
+    subscribe rc (Proxy :: Proxy StopProcessResult)
     host <- pack <$> liftIO getHostName
     let raidDevice = "/dev/raid"
         raidData = mkResponseRaidData host raidDevice
@@ -809,19 +809,15 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
 
     -- Mero services should be stopped
     _ <- do
-      StopProcesses pcs <- receiveChan recc
-      liftIO $ assertEqual "One process on node" 1 $ length pcs
+      StopProcess _ p <- receiveChan recc
       -- Reply with successful stoppage
-      let [(_, fid)] = pcs
-      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Right fid]
-      _ <- expectPublished (Proxy :: Proxy StopProcessesResult)
-
+      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid (Right p)
+      _ <- expectPublished (Proxy :: Proxy StopProcessResult)
       sayTest "Mero process stop finished"
 
     -- prepare RC for soon-to-be process start
     getSelfPid >>= usend rc . PrepareRC
     Just PrepareRC{} <- expectTimeout (10 * 1000000)
-
 
     -- Should see unmount message
     _ <- do

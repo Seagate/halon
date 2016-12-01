@@ -18,12 +18,14 @@ module HA.RecoveryCoordinator.Castor.Expander.Rules
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
-import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessesRequest(..))
+import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessRequest(..))
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
 import HA.RecoveryCoordinator.Mero.Transitions
+import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessResult(..))
 import HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
+import HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
 import HA.RecoveryCoordinator.Mero.State
 import HA.RecoveryCoordinator.Castor.Node.Rules
   ( StartProcessesOnNodeResult(..)
@@ -105,7 +107,6 @@ ruleReassembleRaid :: Definitions RC ()
 ruleReassembleRaid =
     define "castor::expander::reassembleRaid" $ do
       expander_reset_evt <- phaseHandle "expander_reset_evt"
-      mero_notify_done <- phaseHandle "mero_notify_done"
       notify_failed <- phaseHandle "notify_failed"
       stop_mero_services <- phaseHandle "stop_mero_services"
       unmount <- phaseHandle "unmount"
@@ -120,6 +121,18 @@ ruleReassembleRaid =
       tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
+      mero_notifier <- mkNotifier dispatcher
+
+      let mkProcessesAwait name next = mkLoop name (return [])
+            (\result l -> case result of
+                StopProcessResult (p, _) -> return . Right $
+                  (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+                -- Consider dead even if it timed out
+                StopProcessTimeout p -> return . Right $
+                  (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l)
+            (getField . rget fldWaitingProcs <$> get Local >>= return . \case
+                [] -> Just [next]
+                _ -> Nothing)
 
       let defaultState = args expander_reset_evt
 
@@ -167,13 +180,13 @@ ruleReassembleRaid =
             -- controllers, disks etc.
             forM_ mm0 $ \(m0enc, m0node) -> let
                 notifications = [ stateSet m0enc enclosureTransient ]
-                notificationChk = anyStateToAscPred <$> notifications
+                notificationChk = simpleNotificationToPred <$> notifications
               in do
+                setExpectedNotifications notificationChk
                 applyStateChanges notifications
-                modify Local $ rlens fldNotifications . rfield .~ Just notificationChk
                 modify Local $ rlens fldM0 . rfield .~ Just (m0enc, m0node)
                 -- Wait for Mero notification, and also jump to stop_mero_services
-                waitFor mero_notify_done
+                waitFor mero_notifier
                 onSuccess stop_mero_services
 
             showLocality
@@ -203,17 +216,11 @@ ruleReassembleRaid =
                               ++ "but there was no corresponding node."
             done eid
 
-      setPhaseAllNotifiedBy mero_notify_done
-                            (rlens fldNotifications . rfield) $ do
-        phaseLog "debug" "Mero notification complete"
-        modify Local $ rlens fldNotifications . rfield .~ Nothing
-        waitDone mero_notify_done
-        continue dispatcher
+      mero_processes_stop_wait <- mkProcessesAwait "mero-processes_stop_wait" dispatcher
 
       directly stop_mero_services $ do
         showLocality
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
-        Just (_, m0node) <- gets Local (^. rlens fldM0 . rfield)
 
         rg <- getLocalGraph
         -- TODO What if there are starting services? In other states?
@@ -228,19 +235,10 @@ ruleReassembleRaid =
           _ -> do
             phaseLog "info" $ "Stopping the following processes: "
                             ++ (show procs)
-            -- TODO stop processes with more gentle+violent means?
-            -- e.g. first try `Spiel.processStop`, then systemd,
-            -- then kill -9. Maybe `processQuiesce`? HALON-374
-            promulgateRC $ StopProcessesRequest m0node procs
-            let notifications = (\p -> ascPred p $ \case
-                                     M0.PSOffline -> True
-                                     M0.PSFailed{} -> True
-                                     _ -> False) <$> procs
-
-            modify Local $ rlens fldNotifications . rfield .~ Just notifications
-            waitFor mero_notify_done
+            forM_ procs $ promulgateRC . StopProcessRequest
+            modify Local $ rlens fldWaitingProcs . rfield .~ procs
             onSuccess unmount
-            continue dispatcher
+            continue mero_processes_stop_wait
 
       directly unmount $ do
         showLocality
@@ -333,11 +331,11 @@ ruleReassembleRaid =
       directly mark_mero_healthy $ do
         Just (m0enc, _) <- gets Local (^. rlens fldM0 . rfield)
         let notifications = [ stateSet m0enc enclosureOnline ]
-            notificationChk = anyStateToAscPred <$> notifications
+            notificationChk = simpleNotificationToPred <$> notifications
         applyStateChanges notifications
 
-        modify Local $ rlens fldNotifications . rfield .~ Just notificationChk
-        waitFor mero_notify_done
+        setExpectedNotifications notificationChk
+        waitFor mero_notifier
         onSuccess finish
 
         continue dispatcher
@@ -383,7 +381,7 @@ ruleReassembleRaid =
     fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     fldHardware = Proxy
     -- Notifications to wait for
-    fldNotifications :: Proxy '("notifications", Maybe [AnyStateChange -> Bool])
+    fldNotifications :: Proxy '("notifications", [AnyStateChange -> Bool])
     fldNotifications = Proxy
     -- RAID devices
     fldRaidDevices :: Proxy '("raidDevices", [String])
@@ -391,15 +389,18 @@ ruleReassembleRaid =
     -- Using Mero?
     fldM0 :: Proxy '("meroStuff", Maybe (M0.Enclosure, M0.Node))
     fldM0 = Proxy
+    -- We're waiting for some processes to stop, which ones?
+    fldWaitingProcs :: Proxy '("waiting-procs", [M0.Process])
+    fldWaitingProcs = Proxy
 
     args st = fldHardware =: Nothing
-       <+> fldNotifications =: Nothing
+       <+> fldNotifications =: []
        <+> fldUUID =: Nothing
        <+> fldCommandAck =: []
        <+> fldDispatch =: Dispatch [] st Nothing
        <+> fldRaidDevices =: []
        <+> fldM0 =: Nothing
-       <+> RNil
+       <+> fldWaitingProcs =: []
 
     showLocality = do
       hardware <- gets Local (^. rlens fldHardware . rfield)

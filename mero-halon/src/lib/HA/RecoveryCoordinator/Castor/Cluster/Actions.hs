@@ -15,12 +15,7 @@ import qualified HA.Resources        as R
 import qualified HA.Resources.Mero   as M0
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Event
 
-import Control.Category ((>>>))
 import Control.Distributed.Process (Process, usend)
-import Control.Lens ((<&>))
-
-import Data.Foldable (for_)
-import Data.UUID (UUID)
 
 import Network.CEP
 
@@ -47,19 +42,17 @@ barrierPass rightState (Event.ClusterStateChange _ state') _ _ =
 -- 'calculateMeroClusterStatus' which traverses the RG and checks the
 -- current cluster status and status of the processes on the current
 -- cluster boot level.
-notifyOnClusterTransition :: Maybe UUID -- ^ Message to declare processed
-                          -> PhaseM RC l ()
-notifyOnClusterTransition meid = do
-  oldState <- getLocalGraph <&> getClusterStatus
+notifyOnClusterTransition :: PhaseM RC l ()
+notifyOnClusterTransition = do
+  rg <- getLocalGraph
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
-  disposition <- getLocalGraph <&> maybe M0.OFFLINE id
-                                 . G.connectedTo R.Cluster R.Has
+  let disposition = maybe M0.OFFLINE id $ G.connectedTo R.Cluster R.Has rg
+  let oldState = getClusterStatus rg
   let newState = M0.MeroClusterState disposition newRunLevel newStopLevel
   phaseLog "oldState" $ show oldState
   phaseLog "newState" $ show newState
-  modifyGraph $ G.connect R.Cluster M0.RunLevel newRunLevel
-            >>> G.connect R.Cluster M0.StopLevel newStopLevel
-  registerSyncGraphCallback $ \self proc -> do
+  modifyGraph $ G.connect R.Cluster M0.StopLevel newStopLevel
+              . G.connect R.Cluster M0.RunLevel newRunLevel
+  registerSyncGraphCallback $ \self _ -> do
     usend self (Event.ClusterStateChange oldState newState)
-    for_ meid proc

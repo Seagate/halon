@@ -944,8 +944,16 @@ lookupConfObjByFid f =
   . filter ((== f) . fid)
   . G.getResourcesOfType
 
--- | Lookup 'Node' associated with the given 'R.Node'.
+-- | Lookup 'Node' associated with the given 'R.Node'. See
+-- 'nodeToM0Node' for inverse.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
   [ node | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
          , node <- G.connectedTo h R.Runs rg ]
+
+-- | Lookup 'R.Node' associated with the given 'Node'. See
+-- 'm0nodeToNode' for inverse.
+nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
+nodeToM0Node node rg = listToMaybe
+  [ m0n | Just (h :: R.Host) <- [G.connectedFrom R.Runs node rg]
+        , m0n <- G.connectedTo h R.Runs rg ]

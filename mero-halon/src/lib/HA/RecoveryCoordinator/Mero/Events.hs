@@ -36,7 +36,6 @@ module HA.RecoveryCoordinator.Mero.Events
   , InternalObjectStateChange(..)
   , InternalObjectStateChangeMsg(..)
   , stateSet
-  , unStateSet
   -- * Exceptions
  , WorkerIsNotAvailableException(..)
   ) where
@@ -131,11 +130,6 @@ stateSet :: HasConfObjectState a
          -> Transition a
          -> AnyStateSet
 stateSet = AnyStateSet
-
--- | Try to extract value from 'set' request.
-unStateSet :: forall a . (Typeable a, HasConfObjectState a, Typeable (StateCarrier a))
-           => AnyStateSet -> Maybe (a, StateCarrier a)
-unStateSet (AnyStateSet a c) = (,) <$> cast a <*> cast c
 
 -- | Universally quantified state 'change' event.
 data AnyStateChange =

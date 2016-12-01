@@ -30,25 +30,26 @@ newtype Transition a = Transition
   { _unTransition :: StateCarrier a -> TransitionResult a
   } deriving (Generic, Typeable)
 
+
 runTransition :: Eq (StateCarrier a) => Transition a -> StateCarrier a
               -> TransitionResult a
 runTransition (Transition runTr) st = case runTr st of
-  TransitionTo st' -> if st == st' then NoTransition else TransitionTo st'
+  TransitionTo st' | st == st' -> NoTransition
+                   | otherwise -> TransitionTo st'
   r -> r
 
 constTransition :: Eq (StateCarrier a) => StateCarrier a -> Transition a
-constTransition st = Transition $ \st' -> if st == st' then NoTransition
-                                                       else TransitionTo st
+constTransition st = Transition $ \_ -> TransitionTo st
 
 transitionErr :: (Show (StateCarrier a), ShowFidObj a)
               => CallStack -- ^ Location where transition was used
               -> StateCarrier a -- ^ State we received
               -> TransitionResult a
 transitionErr cs st = InvalidTransition $ \obj ->
-  printf "%s: transition from %s is invalid%s" (showFid obj) (show st) locInfo
+  printf "%s: transition from %s is invalid %s" (showFid obj) (show st) locInfo
   where
     -- Find last call-site: this should have been the direct use of
     -- transition itself.
     locInfo = case reverse $ getCallStack cs of
-      (_, loc) : _ -> " (" ++ showSrcLoc loc ++ ")"
-      _ -> ""
+      (_, loc) : _ -> "(" ++ showSrcLoc loc ++ ")"
+      _ -> "(no loc)"

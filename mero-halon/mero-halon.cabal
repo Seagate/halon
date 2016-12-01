@@ -198,6 +198,7 @@ Library
                        HA.RecoveryCoordinator.Castor.Service
                        HA.RecoveryCoordinator.Mero.Events
                        HA.RecoveryCoordinator.Mero.State
+                       HA.RecoveryCoordinator.Mero.Notifications
                        HA.RecoveryCoordinator.Mero.Transitions
                        HA.RecoveryCoordinator.Mero.Transitions.Internal
                        HA.RecoveryCoordinator.Castor.Cluster.Events
@@ -571,7 +572,8 @@ Test-Suite tests
                     exceptions,
                     lens,
                     split,
-                    aeson
+                    aeson,
+                    vinyl
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

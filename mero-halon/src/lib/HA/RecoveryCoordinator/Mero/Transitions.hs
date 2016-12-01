@@ -7,6 +7,13 @@
 --
 -- Collection of all 'Transition's.
 --
+-- [toConfObjState]: various transitions use 'toConfObjState' on the
+-- provided, old state. This is to reflect any existing code which
+-- does things based on 'ConfObjectState' and not object-specific
+-- state. Further, multiple object-specific states can map to a single
+-- 'ConfObjectState' so using 'toConfObjState' is the most sane
+-- solution.
+--
 -- TODO: Nicer naming.
 module HA.RecoveryCoordinator.Mero.Transitions
   ( module HA.RecoveryCoordinator.Mero.Transitions

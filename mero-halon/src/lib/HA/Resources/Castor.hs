@@ -183,6 +183,9 @@ data HalonVars = HalonVars
   -- process start command has completed. For the timeout pertaining
   -- to the timeout of the start command itself, see
   -- '_hv_process_start_cmd_timeout'.
+  , _hv_process_stop_timeout :: Int
+  -- ^ How many seconds to wait for the process to stop after the
+  -- process stop command has been issued.
   , _hv_process_max_start_attempts :: Int
   -- ^ How many times to try and start the same process if it fails to
   -- start. Note that if systemctl exits with an unexpected error
@@ -192,11 +195,15 @@ data HalonVars = HalonVars
   -- in case it has failed to start and we haven't met
   -- '_hv_process_max_start_attempts'.
   , _hv_mero_kernel_start_timeout :: Int
-  -- ^ How many seconds to wait for halon:m0d (and @mero-kernel@) to
+  -- ^ How many seconds to wait for @halon:m0d@ (and @mero-kernel@) to
   -- come up and declare channels.
   , _hv_clients_start_timeout :: Int
   -- ^ How many seconds to wait for clients during cluster bootstrap
   -- before giving up on receiving a result.
+  , _hv_node_stop_barrier_timeout :: Int
+  -- ^ How many seconds a node should wait for a cluster to transition
+  -- into the desired bootlevel during teardown procedure before
+  -- timing out.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

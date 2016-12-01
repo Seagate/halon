@@ -76,7 +76,6 @@ import           Control.Category
 import           Control.Distributed.Process hiding (catch, try)
 import           Control.Lens
 import           Control.Monad (join, unless, void, when)
-import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.List (sort)
@@ -150,7 +149,7 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
     procChanges <- findChanges
     unless (null procChanges) $ do
       phaseLog "debug" $ "Process changes: " ++ show (map formatProcess procChanges)
-      notifyOnClusterTransition Nothing
+      notifyOnClusterTransition
 
 
 -- | This is a rule catches death of the Principal RM and elects new one.
@@ -459,10 +458,14 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
   where
     stopCluster rg ch eid = do
       -- Set disposition to OFFLINE
-      modifyGraph $ G.connect R.Cluster R.Has (M0.OFFLINE)
+      modifyGraph $ G.connect R.Cluster R.Has M0.OFFLINE
       let nodes =
             [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-                   , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node] ]
+                   , m0n <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node]
+                   -- Why go through M0.Node? We want to make sure we have one.
+                   , Just node <- [M0.m0nodeToNode m0n rg]
+                   ]
+
       for_ nodes $ promulgateRC . StopProcessesOnNodeRequest
       registerSyncGraphCallback $ \pid proc -> do
         sendChan ch (StateChangeStarted pid)
@@ -516,26 +519,24 @@ requestClusterReset = defineSimple "castor::cluster::reset"
       messageProcessed eid
 
 -- | Stop m0t1fs service with given fid.
---   This may be triggered by the user using halonctl.
 --
---   Sends 'StopProcessesRequest' which has an explicit
---   list of Processes.
+-- This may be triggered by the user using halonctl.
 --
--- 1. we check if there is halon:m0d service on the node
--- 2. find if there is m0t1fs service with a given fid
+-- 1. Find if there is m0t1fs service with a given fid
+-- 2. Request that the process is stopped.
+--
+-- Does not wait for any sort of reply.
 requestStopMeroClient :: Definitions RC ()
-requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $ \(StopMeroClientRequest fid) -> do
-  phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
-  mnp <- runMaybeT $ do
-    proc <- MaybeT $ lookupConfObjByFid fid
-    node <- MaybeT $ getLocalGraph
-                  <&> G.connectedFrom M0.IsParentOf proc
-    return (node, proc)
-  forM_ mnp $ \(node, proc) -> do
-    rg <- getLocalGraph
-    if G.isConnected proc R.Has M0.PLM0t1fs rg
-    then promulgateRC $ StopProcessesRequest node [proc]
-    else phaseLog "warning" $ show fid ++ " is not a client process."
+requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $
+  \(StopMeroClientRequest fid) -> do
+    phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
+    lookupConfObjByFid fid >>= \case
+      Nothing -> phaseLog "warn" $ "Could not find process with fid " ++ show fid
+      Just p -> do
+        rg <- getLocalGraph
+        if G.isConnected p R.Has M0.PLM0t1fs rg
+        then promulgateRC $ StopProcessRequest p
+        else phaseLog "warning" $ show fid ++ " is not a client process."
 
 -- | Start already existing (in confd) mero client.
 --

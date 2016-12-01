@@ -32,8 +32,8 @@ module HA.RecoveryCoordinator.Castor.Cluster.Events
   , StopClientsOnNodeRequest(..)
   , M0KernelResult(..)
   -- * Process
-  , StopProcessesRequest(..)
-  , StopProcessesResult(..)
+  , StopProcessRequest(..)
+  , StopProcessResult(..)
   -- * Cluster state report
   , ReportClusterState(..)
   , ReportClusterHost(..)
@@ -164,15 +164,17 @@ newtype StartCastorNodeRequest = StartCastorNodeRequest R.Node deriving (Eq, Sho
 newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
   deriving (Eq, Show, Typeable, Generic)
 
-newtype StopHalonM0dRequest = StopHalonM0dRequest M0.Node
+-- | Trigger 'requestStopHalonM0d'.
+newtype StopHalonM0dRequest = StopHalonM0dRequest R.Node
   deriving (Eq, Show, Typeable, Generic)
 
 -- | Request start of the 'ruleNewNode'.
 newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
   deriving (Eq, Show, Generic, Ord)
 
-newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest M0.Node
-          deriving (Eq, Show, Generic, Ord)
+-- | Request start of 'ruleStopProcessesOnNode'.
+newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest R.Node
+  deriving (Eq, Show, Generic, Ord)
 
 data StopProcessesOnNodeResult
        = StopProcessesOnNodeOk
@@ -209,23 +211,21 @@ data StartProcessesOnNodeResult
 
 instance Binary StartProcessesOnNodeResult
 
--- | Request to stop specific processes on a node. This event
---   differs from @StopProcessesOnNodeRequest@ as that stops
---   all processes on the node in a staged manner. This event
---   should stop the precise processes without caring about the
---   overall cluster state.
-data StopProcessesRequest = StopProcessesRequest M0.Node [M0.Process]
+-- | Request to stop a specific process on a node. This event differs
+-- from @StopProcessesOnNodeRequest@ as that stops all processes on
+-- the node in a staged manner. This event should stop the precise
+-- process without caring about the overall cluster state.
+newtype StopProcessRequest = StopProcessRequest M0.Process
   deriving (Eq, Ord, Show, Generic)
 
--- | Result of stopping processes. Note that in general most
---   downstream rules will not care about this, as they will
---   directly use the process state change notification.
-data StopProcessesResult =
-    StopProcessesResult M0.Node [(M0.Process, M0.ProcessState)]
-  | StopProcessesTimeout M0.Node [M0.Process]
+-- | Result of stopping a process. Note that in general most
+-- downstream rules will not care about this, as they will directly
+-- use the process state change notification.
+data StopProcessResult =
+    StopProcessResult (M0.Process, M0.ProcessState)
+  | StopProcessTimeout M0.Process
   deriving (Eq, Show, Generic)
-
-instance Binary StopProcessesResult
+instance Binary StopProcessResult
 
 -- | Request to mark all processes as finished mkfs.
 newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
@@ -272,4 +272,4 @@ deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
 deriveSafeCopy 0 'base ''StopHalonM0dRequest
 deriveSafeCopy 0 'base ''StopMeroClientRequest
 deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
-deriveSafeCopy 0 'base ''StopProcessesRequest
+deriveSafeCopy 0 'base ''StopProcessRequest

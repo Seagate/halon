@@ -41,8 +41,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , pickPrincipalRM
     -- * Low level graph API
   , rgGetPool
-  , m0nodeToNode
-  , nodeToM0Node
   , m0encToEnc
   , encToM0Enc
   ) where
@@ -55,7 +53,6 @@ import qualified HA.ResourceGraph as G
 import HA.Resources (Cluster(..), Has(..), Runs(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
-import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -488,20 +485,6 @@ pickPrincipalRM = getLocalGraph >>= \g ->
         , M0.s_type rm == CST_RMS
         ]
   in traverse setPrincipalRMIfUnset $ listToMaybe rms
-
-
-m0nodeToNode :: M0.Node -> G.Graph -> [R.Node]
-m0nodeToNode m0node rg =
-  [ node
-  | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
-  , node <- G.connectedTo h R.Runs rg ]
-
--- | Lookup 'Node' associated with the given 'R.Node'.
-nodeToM0Node :: R.Node -> G.Graph -> [M0.Node]
-nodeToM0Node node rg =
-  [ m0node
-  | Just (h :: R.Host) <- [G.connectedFrom R.Runs node rg]
-  , m0node <- G.connectedTo h R.Runs rg ]
 
 -- | Lookup enclosure corresponding to Mero enclosure.
 m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure
