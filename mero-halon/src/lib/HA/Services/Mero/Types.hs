@@ -15,6 +15,7 @@ module HA.Services.Mero.Types
 import HA.Resources.HalonVars
 import HA.Resources.Mero as M0
 import HA.ResourceGraph
+import HA.Aeson hiding (encode, decode)
 import HA.SafeCopy
 import qualified HA.Service
 import HA.Service.TH
@@ -26,7 +27,6 @@ import Mero.Notification (Set)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
 
-import Data.Aeson hiding (encode, decode)
 import Data.Binary (Binary, encode, decode)
 import Data.ByteString (ByteString)
 import Data.Hashable (Hashable)
@@ -46,8 +46,7 @@ data MeroKernelConf = MeroKernelConf
        { mkcNodeUUID :: UUID    -- ^ Node UUID
        } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroKernelConf
-instance ToJSON MeroKernelConf where
-  toJSON (MeroKernelConf uuid) = object [ "uuid" .= UUID.toString uuid ]
+instance ToJSON MeroKernelConf
 deriveSafeCopy 0 'base ''MeroKernelConf
 
 -- | Mero service configuration

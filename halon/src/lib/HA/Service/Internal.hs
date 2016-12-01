@@ -40,6 +40,7 @@ module HA.Service.Internal
   , HA.Service.Internal.__remoteTable
   ) where
 
+import HA.Aeson
 import HA.Debug
 import Control.Distributed.Process hiding (try, catch, mask, onException)
 import Control.Distributed.Process.Closure
@@ -50,7 +51,6 @@ import Control.Monad.Fix (fix)
 import Control.Monad.Reader ( asks )
 
 
-import Data.Aeson
 import Data.Binary as Binary
 import qualified Data.ByteString.Lazy as BS
 import Data.Functor (void)

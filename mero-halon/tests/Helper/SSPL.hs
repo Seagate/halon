@@ -12,7 +12,7 @@ module Helper.SSPL
   , mkResponseRaidData
   ) where
 
-import qualified Data.Aeson as Aeson
+import qualified HA.Aeson as Aeson
 import Data.Text (Text)
 import qualified SSPL.Bindings as SSPL
 

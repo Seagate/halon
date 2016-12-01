@@ -17,10 +17,7 @@ import Mero.ConfC (ServiceParams, ServiceType)
 import Control.Monad (forM)
 #endif
 
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
---import Data.Binary (Binary)
---import qualified Data.Binary as B
+import qualified HA.Aeson as A
 import Data.Data
 import Data.Hashable (Hashable)
 

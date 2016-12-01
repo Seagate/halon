@@ -19,6 +19,7 @@ import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
+import HA.Aeson
 import HA.Resources.TH
 import HA.SafeCopy
 
@@ -37,6 +38,8 @@ deriveSafeCopy 0 'base ''Cluster
 data Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic)
 instance Hashable Node
+instance ToJSON Node
+instance FromJSON Node
 deriveSafeCopy 0 'base ''Node
 
 

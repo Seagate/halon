@@ -28,13 +28,13 @@ import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note.TH
 import qualified HA.ResourceGraph as G
 import HA.Resources.TH
+import HA.Aeson (FromJSON, ToJSON)
 import HA.SafeCopy
 import Mero.ConfC (Fid(..), fidToStr)
 
 import Control.Distributed.Static (Static, staticPtr)
 import Control.Monad (join)
 
-import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Constraint (Dict)
 import Data.Bits (shiftR)

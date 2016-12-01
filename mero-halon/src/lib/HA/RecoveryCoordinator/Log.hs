@@ -12,12 +12,10 @@ module HA.RecoveryCoordinator.Log where
 import qualified HA.Resources as R (Node)
 import HA.SafeCopy
 
-import Data.Aeson
+import HA.Aeson
 import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
-import Data.Text (Text)
 
 import GHC.Generics (Generic)
 
@@ -33,17 +31,8 @@ data Event =
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Binary Event
-instance ToJSON Event where
-  toJSON (BeginLocalContext uuid) = object [ "type" .= ("begin"::Text)
-                                           , "uuid" .= UUID.toText uuid ]
-  toJSON (EndLocalContext uuid) = object [ "type" .= ("end"::Text)
-                                         , "uuid" .= UUID.toText uuid ]
-  toJSON (TagContext info) = object [ "type" .= ("tag"::Text)
-                                    , "uuid" .= info ]
-  toJSON (EvtInContexts ctx ev) = object [ "type" .= ("event"::Text)
-                                         , "contexts" .= ctx
-                                         , "data" .= ev
-                                         ]
+instance ToJSON Event
+instance FromJSON Event
 
 --------------------------------------------------------------------------------
 -- Contexts and scopes
@@ -58,11 +47,8 @@ data Context =
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Binary Context
-instance ToJSON Context where
-  toJSON Rule = toJSON ("RULE" :: Text)
-  toJSON SM   = toJSON ("SM" :: Text)
-  toJSON Phase = toJSON ("PHASE" :: Text)
-  toJSON (Local uuid) = toJSON (UUID.toText uuid)
+instance ToJSON Context
+instance FromJSON Context
 
 -- | Used to associate data with a context.
 data TagContextInfo = TagContextInfo {
@@ -73,6 +59,7 @@ data TagContextInfo = TagContextInfo {
 
 instance Binary TagContextInfo
 instance ToJSON TagContextInfo
+instance FromJSON TagContextInfo
 
 -- | Possible scopes with which one can tag a context. These should be used to
 --   help in debugging particular subsets of the system.
@@ -84,19 +71,8 @@ data Scope =
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance ToJSON Scope where
-  toJSON (Thread uuid) = object [ "type" .= ("thread"::Text)
-                                , "uuid" .= UUID.toText uuid
-                                ]
-  toJSON (Node node) = object [ "type" .= ("node"::Text)
-                              , "node" .= show node
-                              ]
-  toJSON (StorageDevice uuid) = object [ "type" .= ("storage_dev"::Text)
-                                       , "uuid" .= UUID.toText uuid
-                                       ]
-  toJSON (MeroConfObj s) = object [ "type" .= ("mero_object"::Text)
-                                  , "fid" .= s
-                                  ]
+instance ToJSON Scope
+instance FromJSON Scope
 
 data TagContent =
     TagScope [Scope] -- ^ Tag context with a set of scopes.
@@ -105,6 +81,7 @@ data TagContent =
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance ToJSON TagContent
+instance FromJSON TagContent
 
 -- | An event which may be contextualised.
 data CtxEvent =
@@ -114,6 +91,7 @@ data CtxEvent =
 
 instance Binary CtxEvent
 instance ToJSON CtxEvent
+instance FromJSON CtxEvent
 
 --------------------------------------------------------------------------------
 -- System logging
@@ -134,27 +112,8 @@ data SystemEvent =
     -- ^ Declare that the RC has started on a node.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance ToJSON SystemEvent where
-  toJSON (Promulgate s u) = object [ "type" .= ("promulgate"::Text)
-                                   , "message" .= s
-                                   , "uuid" .= UUID.toText u
-                                   ]
-  toJSON (Todo u) = object [ "type" .= ("todo"::Text)
-                           , "uuid" .= UUID.toText u
-                           ]
-  toJSON (Done u) = object [ "type" .= ("done"::Text)
-                           , "uuid" .= UUID.toText u
-                           ]
-  toJSON (StateChange info) = object [ "type" .= ("state_change"::Text)
-                                     , "info" .= info
-                                     ]
-  toJSON (ActionCalled s env) = object [ "type" .= ("action"::Text)
-                                       , "message" .= s
-                                       , "info" .= env
-                                       ]
-  toJSON (RCStarted node) = object [ "type" .= ("rc_start"::Text)
-                                   , "node" .= show node
-                                   ]
+instance ToJSON SystemEvent
+instance FromJSON SystemEvent
 
 -- | Log that we are changing the state of an entity.
 data StateChangeInfo = StateChangeInfo {
@@ -164,6 +123,7 @@ data StateChangeInfo = StateChangeInfo {
 } deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance ToJSON StateChangeInfo
+instance FromJSON StateChangeInfo
 
 --------------------------------------------------------------------------------
 -- User level logging
@@ -178,6 +138,7 @@ data Level =
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance ToJSON Level
+instance FromJSON Level
 
 -- | Log a location in source code. If used, it's expected that this will be
 --   generated by some TH function.
@@ -187,6 +148,7 @@ data SourceLoc = SourceLoc {
 } deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance ToJSON SourceLoc
+instance FromJSON SourceLoc
 
 data UserEvent =
     Env Environment
@@ -202,6 +164,7 @@ data UserEvent =
 
 instance Binary UserEvent
 instance ToJSON UserEvent
+instance FromJSON UserEvent
 
 --------------------------------------------------------------------------------
 -- Safecopy instances

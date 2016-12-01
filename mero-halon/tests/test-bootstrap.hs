@@ -18,6 +18,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+import HA.Aeson
 import HA.RecoveryCoordinator.Castor.Cluster.Events
 import HA.Resources.Mero
 import Helper.Environment
@@ -26,7 +27,6 @@ import Mero.ConfC
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
-import Data.Aeson
 import qualified Data.ByteString.Lazy as BSL (empty)
 import qualified Data.ByteString.Lazy.Char8 as BSL (hPutStrLn)
 import GHC.IO.Handle (hDuplicateTo, hDuplicate)
@@ -109,7 +109,7 @@ main = withMeroRoot $ \mero_root -> do
   where
     checkStatus validProcState msg (rc, st, _) = do
       let parseStatus = join $
-            (`fmap` Data.Aeson.eitherDecode st) $
+            (`fmap` HA.Aeson.eitherDecode st) $
               \cs ->
                 let valid = all validProcState
                       [ crpState proc'

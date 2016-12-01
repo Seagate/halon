@@ -18,6 +18,7 @@ module Mero.Conf.Context where
 import Mero.Conf.Fid ( Fid(..) )
 
 import Control.Monad (when)
+import Data.Aeson
 import Data.Binary (Binary)
 import Data.Bits
   ( setBit
@@ -60,6 +61,8 @@ data Bitmap = Bitmap Int [Word64]
 
 instance Binary Bitmap
 instance Hashable Bitmap
+instance ToJSON Bitmap
+instance FromJSON Bitmap
 deriveSafeCopy 0 'base ''Bitmap
 
 -- | Bitmap structure is complex, so in order to poke

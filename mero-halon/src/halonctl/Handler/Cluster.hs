@@ -19,7 +19,6 @@ module Handler.Cluster
 #ifdef USE_MERO
 import Control.Distributed.Process.Serializable
 import Control.Monad.Fix (fix)
-import qualified Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Foldable
@@ -34,6 +33,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
+import qualified HA.Aeson
 import HA.SafeCopy
 import HA.RecoveryCoordinator.Castor.Cluster.Events
 import Mero.ConfC ( Fid )
@@ -710,5 +710,5 @@ clusterHVarsUpdate eqnids (VarsSet{..}) = do
 clusterHVarsUpdate _ VarsGet = return ()
 
 jsonReport :: ReportClusterState -> IO ()
-jsonReport = BSL.putStrLn . Data.Aeson.encode
+jsonReport = BSL.putStrLn . HA.Aeson.encode
 #endif

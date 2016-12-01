@@ -13,6 +13,7 @@
 module HA.Services.SSPLHL where
 
 import Prelude hiding ((<$>), (<*>), id, mapM_)
+import HA.Aeson (ToJSON, decode, encode)
 import HA.EventQueue.Producer (promulgate)
 import HA.Debug
 import HA.Logger
@@ -52,7 +53,6 @@ import Control.Distributed.Static
 import Control.Monad.State.Strict hiding (mapM_)
 import Control.Monad.Catch (bracket)
 
-import Data.Aeson (ToJSON, decode, encode)
 import Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable

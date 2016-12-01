@@ -34,8 +34,6 @@ import Mero.ConfC
   )
 import Mero.Spiel (FSStats)
 
-import Data.Aeson
-import Data.Aeson.Types (typeMismatch)
 import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
@@ -52,9 +50,9 @@ import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
 import Data.Maybe (listToMaybe)
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
 
 import qualified HA.ResourceGraph as G
+import HA.Aeson
 import HA.SafeCopy hiding (Profile)
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -280,8 +278,6 @@ data Process = Process {
 instance Hashable Process
 instance ToJSON Process
 instance FromJSON Process
-instance ToJSON Bitmap
-instance FromJSON Bitmap
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
@@ -610,17 +606,8 @@ data PoolRepairStatus = PoolRepairStatus
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Hashable PoolRepairStatus
-instance ToJSON PoolRepairStatus where
-  toJSON (PoolRepairStatus t u p) = object
-    [ "type" .= t
-    , "uuid" .= UUID.toText u
-    , "info" .= p
-    ]
-instance FromJSON PoolRepairStatus where
-  parseJSON = withObject "PoolRepairStatus" $ \v ->
-    PoolRepairStatus <$> v .: "type"
-                     <*> (maybe (fail "can't parse uuid") return . UUID.fromText =<< (v .: "uuid"))
-                     <*> v .: "info"
+instance ToJSON PoolRepairStatus
+instance FromJSON PoolRepairStatus
 
 -- instance FromJSON PoolRepairStatus
 deriveSafeCopy 0 'base ''PoolRepairStatus

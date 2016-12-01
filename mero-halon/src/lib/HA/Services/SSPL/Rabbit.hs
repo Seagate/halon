@@ -41,7 +41,6 @@ import Control.Monad.Catch
   , SomeException(..)
   )
 
-import Data.Aeson
 import Data.Maybe
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
@@ -57,6 +56,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import HA.Aeson
 import HA.SafeCopy
 
 import Network.AMQP

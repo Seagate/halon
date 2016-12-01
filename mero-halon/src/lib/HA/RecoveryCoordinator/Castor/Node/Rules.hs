@@ -118,6 +118,7 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
   ) where
 
 import           HA.Encode
+import qualified HA.Aeson as Aeson
 import           HA.Service
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.RC.Actions
@@ -159,7 +160,6 @@ import           Control.Lens
 import           Control.Monad (void, guard, join)
 import           Control.Monad.Trans.Maybe
 
-import qualified Data.Aeson as Aeson
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))

@@ -25,7 +25,7 @@ import HA.RecoveryCoordinator.RC.Actions
 import SSPL.Bindings
 import Network.CEP
 
-import qualified Data.Aeson as Aeson
+import qualified HA.Aeson as Aeson
 import qualified Data.Text as T
 import Data.UUID (toString)
 import Control.Distributed.Process (usend)

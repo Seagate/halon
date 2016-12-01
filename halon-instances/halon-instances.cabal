@@ -22,11 +22,14 @@ Flag profiling
 library
   hs-source-dirs:      src
   exposed-modules:     HA.SafeCopy
+                       HA.Aeson
   other-extensions:    DeriveDataTypeable
                        GeneralizedNewtypeDeriving
                        DeriveGeneric
   build-depends:       base >=4.6 && <5,
+                       aeson,
                        binary,
+                       bytestring,
                        cereal,
                        distributed-process,
                        distributed-process-scheduler,
@@ -35,6 +38,7 @@ library
                        options-schema,
                        safecopy,
                        template-haskell,
+                       text,
                        uuid
 
 

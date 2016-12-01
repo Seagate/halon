@@ -21,6 +21,7 @@ module HA.Resources.Castor (
   , MI.Interface(..)
 ) where
 
+import HA.Aeson
 import HA.SafeCopy
 import HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
@@ -28,9 +29,7 @@ import HA.Resources.TH
 
 import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
-import Data.UUID (UUID, fromText, toText)
-import Data.Aeson
-import Data.Aeson.Types (parseMaybe, typeMismatch)
+import Data.UUID (UUID)
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -80,18 +79,8 @@ newtype StorageDevice = StorageDevice
     UUID -- ^ Internal UUID used to refer to the disk
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 
-instance FromJSON StorageDevice where
-  parseJSON jsn@(Object v) = case fromText =<< parseMaybe (.: "uuid") v of
-    Just x -> pure $ StorageDevice x
-    Nothing -> typeMismatch "StorageDevice" jsn
-  parseJSON x = typeMismatch "StorageDevice" x
-
-instance ToJSON StorageDevice where
-  toJSON (StorageDevice uuid) =
-    object ["uuid" .= toText uuid]
-
-  toEncoding (StorageDevice uuid) =
-    pairs ("uuid" .= toText uuid)
+instance FromJSON StorageDevice
+instance ToJSON StorageDevice
 
 deriveSafeCopy 0 'base ''StorageDevice
 

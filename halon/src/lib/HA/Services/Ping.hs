@@ -20,6 +20,7 @@ module HA.Services.Ping
   , ping__static
   ) where
 
+import HA.Aeson
 import HA.EventQueue.Producer
 import HA.SafeCopy
 import HA.Service
@@ -31,7 +32,6 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 
-import Data.Aeson
 import Data.Hashable (Hashable)
 import Data.Typeable (Typeable)
 

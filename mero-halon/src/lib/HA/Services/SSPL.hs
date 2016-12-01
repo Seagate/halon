@@ -32,6 +32,8 @@ module HA.Services.SSPL
   , sspl__static
   ) where
 
+import HA.Aeson (decode, encode)
+import qualified HA.Aeson as Aeson
 import HA.EventQueue.Producer (promulgate, promulgateWait)
 import HA.Debug
 import HA.Logger (mkHalonTracer)
@@ -79,8 +81,6 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.Catch (onException, try, SomeException, MonadCatch)
 import Data.Foldable (for_)
 
-import Data.Aeson (decode, encode)
-import qualified Data.Aeson as Aeson
 
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Defaultable

@@ -21,6 +21,7 @@ module HA.Services.Dummy
   , dummy__static
   ) where
 
+import HA.Aeson
 import HA.SafeCopy
 import HA.Service
 import HA.Service.TH
@@ -30,7 +31,6 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
   ( staticApply )
 
-import Data.Aeson
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))

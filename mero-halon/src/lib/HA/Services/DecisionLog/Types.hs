@@ -16,7 +16,6 @@ import Data.Typeable
 import GHC.Generics
 
 import Control.Distributed.Process hiding (bracket)
-import Data.Aeson
 import Data.Foldable (asum)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -25,6 +24,7 @@ import Data.Monoid ((<>))
 import Options.Schema
 import Options.Schema.Builder
 
+import HA.Aeson
 import HA.SafeCopy
 import HA.Service.TH
 

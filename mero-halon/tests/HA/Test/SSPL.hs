@@ -22,6 +22,8 @@ module HA.Test.SSPL where
 import Test.Framework
 import Test.Tasty.HUnit
 
+import HA.Aeson
+import qualified HA.Aeson as Aeson
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Encode
@@ -49,8 +51,6 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Network.Transport (Transport)
 
-import Data.Aeson
-import qualified Data.Aeson as Aeson
 import Data.Defaultable
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)

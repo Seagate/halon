@@ -17,7 +17,6 @@ module HA.Services.Frontier
     , frontier__static
     ) where
 
-import           HA.Debug
 import qualified Data.ByteString      as B
 import           Data.Monoid ((<>))
 import           Data.Typeable
@@ -30,12 +29,13 @@ import Control.Distributed.Process hiding (finally, bracket)
 import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
-import Data.Aeson
 import Data.Hashable
 import Options.Schema
 import Options.Schema.Builder
 import Network hiding (Service)
 
+import HA.Aeson
+import HA.Debug
 import HA.EventQueue.Producer (promulgate)
 import HA.SafeCopy
 import HA.Service hiding (configDict)

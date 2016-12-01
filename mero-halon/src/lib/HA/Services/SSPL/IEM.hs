@@ -43,10 +43,10 @@ module HA.Services.SSPL.IEM
   , logMeroBEError
   ) where
 
-import Data.Aeson (ToJSON)
+import HA.Aeson (ToJSON)
+import qualified HA.Aeson as JSON
 import Data.Binary
 import Data.Hashable
-import qualified Data.Aeson as JSON
 import Data.ByteString (ByteString)
 import Data.List (intercalate)
 import Data.Text (Text)

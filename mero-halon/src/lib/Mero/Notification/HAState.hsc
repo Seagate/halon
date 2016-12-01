@@ -50,6 +50,7 @@ module Mero.Notification.HAState
 
 import HA.Resources.Mero.Note
 import HA.SafeCopy
+import HA.Aeson               ( ToJSON )
 
 import Mero.ConfC             (Cookie, Fid, Word128, ServiceType)
 import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
@@ -58,7 +59,6 @@ import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
 import Control.Monad          ( liftM2, liftM3, liftM4, void )
 import Control.Monad.Catch    ( catch )
 
-import Data.Aeson             ( ToJSON )
 import Data.ByteString as B   ( useAsCString )
 import Data.Dynamic           ( Typeable )
 import Data.Hashable          ( Hashable )

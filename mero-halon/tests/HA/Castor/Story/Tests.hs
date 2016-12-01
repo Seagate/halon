@@ -10,6 +10,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module HA.Castor.Story.Tests where
 
+import HA.Aeson (decode, encode)
+import qualified HA.Aeson as Aeson
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.NodeUp (nodeUp)
@@ -51,8 +53,6 @@ import Control.Distributed.Process hiding (bracket)
 import Control.Distributed.Process.Node
 import Control.Exception as E hiding (assert)
 
-import Data.Aeson (decode, encode)
-import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (find)

@@ -37,7 +37,6 @@ module HA.Services.Ekg.Types
   ) where
 
 import           Control.Distributed.Process
-import           Data.Aeson
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.Hashable
@@ -47,6 +46,7 @@ import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
+import           HA.Aeson
 import           HA.SafeCopy
 import           HA.Service.TH
 import           Options.Schema

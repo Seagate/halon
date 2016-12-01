@@ -22,11 +22,11 @@ module HA.Services.Empty
   , configDictEmptyConf__static
   ) where
 
-import Data.Aeson
 import Data.Hashable
 import Data.Typeable
 import GHC.Generics
 
+import HA.Aeson
 import HA.SafeCopy
 import HA.Service.TH
 

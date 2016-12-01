@@ -14,6 +14,7 @@ module HA.Services.SSPL.LL.Resources where
 
 import Control.Distributed.Process (NodeId)
 
+import HA.Aeson hiding (encode, decode)
 import HA.SafeCopy
 import qualified HA.Service
 import HA.Service.TH
@@ -36,7 +37,6 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Closure
 
-import Data.Aeson hiding (encode, decode)
 import Data.Binary (Binary, encode, decode)
 import Data.Defaultable
 import Data.Hashable (Hashable)

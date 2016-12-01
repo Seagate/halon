@@ -24,6 +24,7 @@ module HA.Services.Noisy
   , noisy__static
   ) where
 
+import HA.Aeson
 import HA.Debug
 import HA.EventQueue.Producer
 import HA.ResourceGraph
@@ -41,7 +42,6 @@ import Control.Distributed.Static
   ( staticApply )
 import Control.Monad
 
-import Data.Aeson
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))

@@ -131,7 +131,6 @@ Library
                    HA.RecoveryCoordinator.Job.Internal
 
   Build-Depends:   base,
-                   aeson,
                    amqp,
                    cereal,
                    halon,
@@ -287,7 +286,6 @@ Executable halonctl
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       mero-halon,
-                      aeson,
                       aeson-pretty,
                       base >= 4.5,
                       binary,
@@ -533,7 +531,6 @@ Test-Suite tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
-                    aeson,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -563,7 +560,6 @@ Test-Suite tests
                     process,
                     amqp,
                     text,
-                    aeson,
                     uuid,
                     time,
                     text,
@@ -614,7 +610,6 @@ Test-Suite scheduler-tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
-                    aeson,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -740,10 +735,10 @@ Test-Suite test-bootstrap
   Main-Is:          test-bootstrap.hs
   Other-Modules:    Helper.Environment
   if flag(mero)
-    Build-Depends:  aeson,
-                    base >= 4.5,
+    Build-Depends:  base >= 4.5,
                     bytestring,
                     confc,
+                    halon-instances,
                     directory,
                     filepath,
                     mero-halon,

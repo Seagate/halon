@@ -80,7 +80,6 @@ Library
   other-modules:   HA.Service.Internal
 
   Build-Depends:   base,
-                   aeson,
                    binary >= 0.6,
                    bytestring,
                    bytestring-trie,

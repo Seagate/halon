@@ -52,11 +52,11 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor as Castor
+import HA.Aeson
 import HA.SafeCopy
 import Data.Binary
 import Data.Typeable
 import Mero.ConfC
-import Data.Aeson
 import GHC.Generics
 
 data ClusterStatusRequest = ClusterStatusRequest (SendPort ReportClusterState) deriving (Eq,Show,Generic)

@@ -12,6 +12,7 @@ module HA.Services.SSPL.CEP where
 
 import HA.Services.SSPL.LL.RC.Actions
 
+import qualified HA.Aeson as Aeson
 import HA.EventQueue.Types (HAEvent(..))
 import HA.Service hiding (configDict)
 import HA.Services.SSPL.IEM
@@ -49,7 +50,6 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
-import qualified Data.Aeson as Aeson
 import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T

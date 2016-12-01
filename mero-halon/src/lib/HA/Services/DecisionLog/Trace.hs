@@ -6,7 +6,7 @@ module HA.Services.DecisionLog.Trace
 
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as B8
-import qualified Data.Aeson as JSON
+import qualified HA.Aeson as JSON
 import Data.Binary
 import Control.Distributed.Process
 import Data.Functor (void)

@@ -23,7 +23,6 @@ module HA.SafeCopy
 
 
 import "distributed-process" Control.Distributed.Process
-import "distributed-process" Control.Distributed.Process.Internal.Types (LocalProcessId)
 import "distributed-process" Control.Distributed.Process.Serializable
 import           Data.Binary (Binary, encode, decode)
 import qualified Data.Binary as B
@@ -34,10 +33,8 @@ import           Data.SafeCopy hiding (deriveSafeCopy)
 import           Data.Serialize (Serialize(..))
 import qualified Data.Serialize.Get as S
 import qualified Data.Serialize.Put as S
-import           Data.Typeable
 import           Data.UUID (UUID)
 import           Language.Haskell.TH
-import           Language.Haskell.TH.Syntax
 import           Network.Transport (EndPointAddress)
 import "distributed-process-scheduler" System.Clock (TimeSpec)
 
