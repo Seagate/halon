@@ -4,14 +4,9 @@
 
 module Flags where
 
-import Prelude hiding ( (<$>), (<*>) )
 import qualified Handler.Bootstrap as Bootstrap
 
 import Options.Applicative
-    ( (<$>)
-    , (<*>)
-    , (<>)
-    )
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 
@@ -19,6 +14,7 @@ import qualified Handler.Service as Service
 import qualified Handler.Cluster as Cluster
 import qualified Handler.Debug as Debug
 import qualified Handler.Status as Status
+import qualified Handler.Node as Node
 
 import System.Environment (getProgName)
 import System.IO.Unsafe (unsafePerformIO)
@@ -37,6 +33,7 @@ data Command =
     | Cluster Cluster.ClusterOptions
     | Status Status.StatusOptions
     | Debug Debug.DebugOptions
+    | Node  Node.NodeOptions
   deriving (Eq)
 
 getOptions :: IO (Maybe Options)
@@ -68,6 +65,8 @@ getOptions = do
                     O.withDesc Status.parseStatus "Query node status.")
               <> (O.command "debug" $ Debug <$>
                     O.withDesc Debug.parseDebug "Print Halon debugging information.")
+              <> (O.command "node" $ Node <$>
+                    O.withDesc Node.parseOptions "Control node wide options.")
             )
     hostname = unsafePerformIO $ readProcess "hostname" [] ""
     listenAddr = hostname ++ ":9001"

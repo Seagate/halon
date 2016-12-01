@@ -17,6 +17,7 @@ import Handler.Cluster
 import Handler.Service
 import Handler.Status
 import Handler.Debug
+import Handler.Node
 
 import Mero.RemoteTables (meroRemoteTable)
 
@@ -104,6 +105,7 @@ run (Options { .. }) =
           Cluster bs   -> cluster rnids bs
           Status  bs   -> status rnids bs
           Debug bs     -> debug rnids bs
+          Node bs      -> runNodeCmd rnids bs
       else do
         say "Failed to connect to controlled nodes: "
         liftIO $ mapM_ putStrLn $ concat replies
