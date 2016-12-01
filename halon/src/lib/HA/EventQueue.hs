@@ -30,7 +30,7 @@
 {-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue
   ( EventQueue(_eqMap)
-  , __remoteTable
+  , HA.EventQueue.__remoteTable
   , eventQueueLabel
   , TrimDone(..)
   , TrimUnknown(..)

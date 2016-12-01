@@ -73,7 +73,7 @@ module HA.ResourceGraph
     , anyConnectedFrom
     , anyConnectedTo
     , isConnected
-    , __remoteTable
+    , HA.ResourceGraph.__remoteTable
     , getGraphResources
     , getResourcesOfType
     -- * GC control

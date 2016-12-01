@@ -6,6 +6,7 @@
 module HA.Network.RemoteTables (haRemoteTable) where
 
 import HA.NodeUp ( __remoteTable )
+import HA.Logger ( __remoteTable )
 import HA.ResourceGraph ( __remoteTable )
 import HA.Resources ( __remoteTable )
 import HA.Services.Dummy ( __remoteTable, __remoteTableDecl )
@@ -33,6 +34,7 @@ import Control.Distributed.Process.Consensus.BasicPaxos ( __remoteTable )
 haRemoteTable :: RemoteTable -> RemoteTable
 haRemoteTable next =
    HA.NodeUp.__remoteTable $
+   HA.Logger.__remoteTable $
    HA.ResourceGraph.__remoteTable $
    HA.Resources.__remoteTable $
    HA.Services.Dummy.__remoteTable $
