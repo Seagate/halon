@@ -86,7 +86,7 @@ jobRunSmartTest = Job "castor::drive::smart::run"
 --   Consumes 'SMARTRequest'
 --   Emits 'SMARTResponse'
 runSmartTest :: Definitions RC ()
-runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
+runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
     smart         <- phaseHandle "smart"
     smartSuccess  <- phaseHandle "smart-success"
     smartFailure  <- phaseHandle "smart-failure"
@@ -167,11 +167,10 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \finish -> do
           modify Local $ rlens fldNode . rfield .~ (Just node)
           modify Local $ rlens fldDeviceInfo . rfield .~
             (Just $ DeviceInfo sdev serial)
-          return $ Just [smart]
+          return $ Right (SMARTResponse sdev SRSNotPossible, [smart])
         [] -> do
           Log.rcLog' Log.DEBUG ("device.id", show sdev)
-          Log.rcLog' Log.WARN "Cannot find serial number for sdev."
-          return Nothing
+          return $ Left  "Cannot find serial number for sdev."
   where
     fldReq :: Proxy '("request", Maybe SMARTRequest)
     fldReq = Proxy

@@ -96,6 +96,7 @@ instance Binary SyncComplete
 
 -- | New mero server was connected.
 data NewMeroServer = NewMeroServer Node
+                   | NewMeroServerFailure Node
       deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroServer

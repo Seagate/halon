@@ -70,7 +70,7 @@ serviceStartJob = Job "rc::service::start"
 --
 -- In case if node is not yet known - process will exit.
 serviceStart :: Definitions RC ()
-serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
+serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
    do_restart  <- phaseHandle "service restart attempt"
    do_register <- phaseHandle "register"
    do_start    <- phaseHandle "do_start"
@@ -95,20 +95,19 @@ serviceStart = mkJobRule serviceStartJob  args $ \finish -> do
             is_registered <- Service.has node (ServiceInfo svc conf)
             if is_registered && startType == Restart
             then do announce AttemptingToRestart listeners
-                    return $ Just [do_restart]
+                    return $ Right (ServiceStartRequestCancelled, [do_restart])
             else do
               mcfg <- Service.lookupConfig node svc
               case mcfg of
                 Just c | c /= conf -> do
                   announce AttemptingToRestart listeners
-                  return $ Just [do_restart]
+                  return $ Right (ServiceStartRequestCancelled, [do_restart])
                 _ -> do
                   announce AttemptingToStart listeners
-                  return $ Just [do_register]
+                  return $ Right (ServiceStartRequestCancelled, [do_register])
          else do
-           phaseLog "warning" "Unknown node - ignoring."
            announce NodeUnknown listeners
-           return Nothing
+           return $ Left "unknown node"
 
    let loop = do
          next <- fromLocal fldNext
@@ -233,7 +232,7 @@ serviceStopJob = Job "rc::service::stop"
 -- | Request to stop service on a given node - this code updates
 -- RG and stops service.
 serviceStop :: Definitions RC ()
-serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
+serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
    do_stop     <- phaseHandle "stopping service"
    do_stop_only <- phaseHandle "try to stop service without checking success"
    wait_cancel <- phaseHandle "wait_cancel"
@@ -251,8 +250,8 @@ serviceStop = mkJobRule serviceStopJob  args $ \finish -> do
              phaseLog "service.name" $ serviceName svc
              phaseLog "service.node" $ show node
              Service.markStopping node cfg
-             return $ Just [do_stop]
-           Nothing -> return $ Just [do_stop_only]
+             return $ Right (ServiceStopRequestCancelled, [do_stop])
+           Nothing -> return $ Right (ServiceStopRequestCancelled, [do_stop_only])
 
    let loop = switch [wait_cancel, wait_exit, wait_fail, wait_exc, wait_not_running]
 

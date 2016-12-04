@@ -159,7 +159,7 @@ nodeUpJob = Job "node-up"
 -- requesting 'Node' to the cluster. Brief description of each rule
 -- phase below.
 ruleNodeUp :: IgnitionArguments -> Definitions RC ()
-ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
+ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
   do_register <- phaseHandle "register node"
 
   let route (NodeUp h pid) = do -- XXX: remove pid here
@@ -181,7 +181,7 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \finish -> do
         registerNode node
         registerHost host
         locateNodeOnHost node host
-        return (Just [do_register])
+        return $ Right (NewNodeConnected node, [do_register])
 
   directly do_register $ do
     Just (NodeUp _ pid) <- getField . rget fldReq <$> get Local
@@ -239,17 +239,16 @@ recoverJob = Job "recover-job"
 -- problem and try to recover, so we send RecoverNode from service
 -- failure rule.
 ruleRecoverNode :: IgnitionArguments -> Definitions RC ()
-ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
+ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
   try_recover <- phaseHandle "try_recover"
   node_up     <- phaseHandle "Node already up"
   timeout_host <- phaseHandle "timeout_host"
 
   let start_recover (RecoverNode n1) = do
         g <- getLocalGraph
-        case G.connectedFrom Runs n1 g of
+        st <- case G.connectedFrom Runs n1 g of
           Nothing -> do
-            phaseLog "warn" $ "Couldn't find host for " ++ show n1
-            continue finish
+            return $ Left $ "Couldn't find host for " ++ show n1
           Just host -> do
             modify Local $ rlens fldNode .~ Field (Just n1)
             modify Local $ rlens fldHost .~ Field (Just host)
@@ -271,15 +270,19 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \finish -> do
                 -- OK with reboots so we only reboot servers.
                 rebootOrLogHost host
 #endif
+                return $ Right ()
               -- Node already marked as down, probably the RC died. Do
               -- the simple thing and start the recovery all over: as
               -- long as the RC doesn't die more often than a full node
               -- timeout happens, we'll finish the recovery eventually
-              True -> return ()
+              True -> return $ Right ()
 
-        phaseLog "info" $ "Marked transient: " ++ show n1
-        notify $ NodeTransient n1
-        return $ Just [try_recover]
+        case st of
+          Left e -> return $ Left e
+          Right{}  -> do
+            phaseLog "info" $ "Marked transient: " ++ show n1
+            notify $ NodeTransient n1
+            return $ Right (RecoverNodeFinished n1, [try_recover])
 
   directly try_recover $ do
     -- If max retries is negative, we keep doing recovery

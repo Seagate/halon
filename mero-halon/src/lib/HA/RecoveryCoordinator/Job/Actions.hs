@@ -10,6 +10,7 @@
 module HA.RecoveryCoordinator.Job.Actions
    ( -- * Process
      Job(..)
+   , JobHandle(..)
    , mkJobRule
    , startJob
    , ListenerId
@@ -22,6 +23,7 @@ import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Job.Internal
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 
 import Control.Distributed.Process.Serializable
 import Control.Lens
@@ -41,6 +43,16 @@ type FldListenerId = '("listenerId", Maybe ListenerId)
 
 fldListenerId :: Proxy FldListenerId
 fldListenerId = Proxy
+
+
+-- | Datatype that keeps all helper methods that are needed
+-- for implementing rule.
+data JobHandle s input = JobHandle
+  { getJobRequest :: PhaseM RC s input
+    -- ^ Helper to read request from the Local state
+  , finishJob :: Jump PhaseHandle
+    -- ^ Final state that should be reached by the end of the rule.
+  }
 
 -- | Process handle. Process is a long running rule
 -- that is triggered when some @input@ event is received
@@ -69,7 +81,7 @@ mkJobRule :: forall input output l s .
    , Ord input, Show input, s ~ Rec ElField l, Show output)
    => Job input output  -- ^ Process name.
    -> s
-   -> (Jump PhaseHandle -> RuleM RC s (input -> PhaseM RC s (Maybe [Jump PhaseHandle])))
+   -> (JobHandle s input -> RuleM RC s (input -> PhaseM RC s (Either String (output, [Jump PhaseHandle]))))
    -- ^ Rule body, takes final handle as paramter, returns an action  used to
    -- decide how to process rule
    -> Definitions RC ()
@@ -81,30 +93,45 @@ mkJobRule (Job name)
     finish          <- phaseHandle $ name ++ " -> finish"
     end             <- phaseHandle $ name ++ " -> end"
 
-    check_input <- body finish
+    let getRequest = do
+          state <- get Local
+          let mreq = state ^. rlens fldRequest
+          case getField mreq of
+            Nothing -> do
+              Log.rcLog' Log.ERROR ("No request found" :: String)
+              continue finish
+            Just req -> return req
+
+    check_input <- body $ JobHandle getRequest finish
 
     let processRequest eid input listeners = do
           isRunning <- memberStorageMapRC pJD input
           if isRunning
           then do
-            phaseLog "info" $ "Job is already running"
-            phaseLog "input" $ show input
+            Log.rcLog' Log.DEBUG [ ("input"::String, show input)
+                                 , ("info"::String,"already running"::String)
+                                 ]
             if null listeners
-            then do phaseLog "action" "Mark message processed"
-                    messageProcessed eid
-            else do phaseLog "action" "Adding listeners"
+            then do messageProcessed eid
+            else do Log.rcLog' Log.DEBUG ("add listener"::String, show eid)
                     insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
           else do
-              phaseLog "request" $ show input
               modify Local $ rlens fldRequest . rfield .~ Just input
               check_input input >>= \case
-                Nothing -> do
-                  phaseLog "action" "Ignoring message due to rule filter."
+                Left reason -> do
+                  Log.rcLog' Log.DEBUG [ ("input"::String, show input)
+                                       , ("action"::String, "Ignoring message due to rule filter" :: String)
+                                       , ("reason"::String, reason)
+                                       ]
                   messageProcessed eid
-                Just next -> do
-                  phaseLog "action" "Starting execution."
+                Right (def, next) -> fork CopyNewerBuffer $ do
+                  modify Local $ rlens fldReply . rfield .~ Just def
+                  Log.tagContext Log.SM [ ("request", show request)
+                                        , ("uuid", show eid)
+                                        , ("listeners", show listeners)
+                                        ] Nothing
                   insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
-                  fork CopyNewerBuffer $ switch next
+                  switch next
 
 
     setPhase request $ \(HAEvent eid input) -> processRequest eid input []
@@ -115,8 +142,8 @@ mkJobRule (Job name)
       state <- get Local
       let req  = state ^. rlens fldRequest
           rep  = state ^. rlens fldReply
-      phaseLog "request" $ maybe "N/A" show (getField req)
-      phaseLog "reply"   $ show (getField rep)
+      Log.tagContext Log.SM [("reply"::String, show (getField rep))] Nothing
+      Log.rcLog' Log.DEBUG ("Rule finished execution."::String)
       mdescription <- fmap join $ for (getField req) $ \input -> do
         x <- lookupStorageMapRC input
         deleteStorageMapRC pJD input

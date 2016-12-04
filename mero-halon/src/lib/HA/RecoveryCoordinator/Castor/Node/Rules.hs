@@ -390,7 +390,7 @@ processNodeNew :: Job StartProcessNodeNew NewMeroServer
 processNodeNew = Job "castor::node::process::new"
 
 ruleNodeNew :: Definitions RC ()
-ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
+ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> do
   confd_running   <- phaseHandle "confd-running"
   config_created  <- phaseHandle "client-config-created"
   wait_data_load  <- phaseHandle "wait-bootstrap"
@@ -411,8 +411,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
         if isNothing mhost
         then do
           phaseLog "error" $ "StartProcessNodeNew sent for node with no host: " ++ show node
-          return $ Just [finish]
-        else Just <$> route node
+          return $ Right (NewMeroServerFailure node, [finish])
+        else Right . (NewMeroServerFailure node,) <$> route node
 
   directly config_created $ do
     Just fs <- getFilesystem
@@ -422,7 +422,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     continue confd_running
 
   setPhaseIf wait_data_load initialDataLoaded $ \() -> do
-    Just (StartProcessNodeNew node) <- getField . rget fldReq <$> get Local
+    StartProcessNodeNew node <- getRequest
     route node >>= switch
 
   setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
@@ -433,21 +433,20 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
       Right () -> continue announce
 
   directly announce $ do
-    mreq <- getField . rget fldReq <$> get Local
-    for_ mreq $ \(StartProcessNodeNew node) -> do
-      -- TOOD: shuffle retrigger around a bit
-      rg <- getLocalGraph
-      let m0nodes = nodeToM0Node node rg
-      applyStateChanges $ (`stateSet` nodeOnline) <$> m0nodes
-      case m0nodes of
-        [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
-        [m0node] -> retriggerMeroNodeBootstrap m0node
-        m0ns -> do
-          phaseLog "warn" $
-            "Multiple mero nodes associated with halon node, this may be bad: " ++ show m0ns
-          mapM_ retriggerMeroNodeBootstrap m0ns
+    StartProcessNodeNew node <- getRequest
+    -- TOOD: shuffle retrigger around a bit
+    rg <- getLocalGraph
+    let m0nodes = nodeToM0Node node rg
+    applyStateChanges $ (`stateSet` nodeOnline) <$> m0nodes
+    case m0nodes of
+      [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
+      [m0node] -> retriggerMeroNodeBootstrap m0node
+      m0ns -> do
+        phaseLog "warn" $
+          "Multiple mero nodes associated with halon node, this may be bad: " ++ show m0ns
+        mapM_ retriggerMeroNodeBootstrap m0ns
 
-      modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
+    modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
     continue finish
 
   return check
@@ -570,7 +569,7 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 -- This job always returns: it's not necessary for the caller to have
 -- a timeout.
 ruleStartProcessesOnNode :: Definitions RC ()
-ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish -> do
+ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHandle _ finish) -> do
     kernel_up         <- phaseHandle "kernel_up"
     kernel_failed     <- phaseHandle "kernel_failed"
     boot_level_0      <- phaseHandle "boot_level_0"
@@ -578,6 +577,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
     kernel_timeout    <- phaseHandle "kernel_timeout"
 
     let route (StartProcessesOnNodeRequest m0node) = do
+          let def = NodeProcessesStartTimeout m0node []
           r <- runMaybeT $ do
             node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
             MaybeT $ do
@@ -603,9 +603,9 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
             -- set and wait for a timeout on their end.
             Nothing -> do
               phaseLog "warn" $ "Node not ready for start."
-              nodeFailedWith NodeProcessesStartFailure m0node
-              return $ Just [finish]
-            Just phs -> return $ Just phs
+              st <- nodeFailedWith NodeProcessesStartFailure m0node
+              return $ Right (st, [finish])
+            Just phs -> return $ Right (def, phs)
 
     -- Wait for notifications for processes on the current boot level.
     -- 'ruleProcessStart' always returns which allows us to fail as
@@ -619,7 +619,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
                  Right $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
                ProcessStartFailed _ _ -> do
                  Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-                 nodeFailedWith NodeProcessesStartFailure m0node
+                 void $ nodeFailedWith NodeProcessesStartFailure m0node
                  return $ Left finish)
           (getField . rget fldWaitingProcs <$> get Local >>= return . \case
              [] -> Just [next]
@@ -627,7 +627,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
 
     directly kernel_timeout $ do
       Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-      nodeFailedWith NodeProcessesStartTimeout m0node
+      void $ nodeFailedWith NodeProcessesStartTimeout m0node
       continue finish
 
     setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
@@ -645,7 +645,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
             | node == m0node -> return $ Just m0node
          _  -> return Nothing
        ) $ \ m0node -> do
-      nodeFailedWith NodeProcessesStartFailure m0node
+      void $ nodeFailedWith NodeProcessesStartFailure m0node
       continue finish
 
     boot_level_0_result <- mkProcessesAwait "boot_level_0_result" boot_level_1
@@ -690,13 +690,14 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       rg <- getLocalGraph
       let ps = getUnstartedProcesses m0node rg
       modify Local $ rlens fldRep .~ (Field . Just $ state m0node ps)
+      return $ state m0node ps
 
 processStartClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeResult
 processStartClientsOnNode = Job "castor::node::client::start"
 
 -- | Start all clients on the given node.
 ruleStartClientsOnNode :: Definitions RC ()
-ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> do
+ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle _ finish) -> do
     check_kernel_up <- phaseHandle "check-kernel-up"
     kernel_up <- phaseHandle "kernel-up"
     kernel_up_timeout <- phaseHandle "kernel-up-timeout"
@@ -726,7 +727,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
           let mnode = listToMaybe $ m0nodeToNode m0node rg
           mhost <- join <$> traverse findNodeHost mnode
           case liftA2 (,) mnode mhost of
-            Nothing -> return Nothing
+            Nothing -> return $ Left $ "Host or node not found"
             Just (node,host) -> do
               modify Local $ rlens fldM0Node .~ Field (Just m0node)
               modify Local $ rlens fldNode .~ Field (Just node)
@@ -734,12 +735,13 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
               let hasM0d = not . null $ lookupServiceInfo node m0d rg
               case getClusterStatus rg of
                 Just (M0.MeroClusterState M0.OFFLINE _ _ ) -> do
-                  phaseLog "warning" $ "Request to start clients but "
-                                     ++ "cluster disposition is OFFLINE."
-                  return Nothing
+                  return $ Left $ "Request to start clients but "
+                             ++ "cluster disposition is OFFLINE."
                 Just mcs | M0._mcs_runlevel mcs >= m0t1fsBootLevel && hasM0d
-                  -> return $ Just [check_kernel_up]
-                _ -> return $ Just [await_barrier]
+                  -> return $ Right (ClientsStartFailure m0node "default failure"
+                                    , [check_kernel_up])
+                _ -> return $ Right (ClientsStartFailure m0node "default failure"
+                                    , [await_barrier])
 
         -- Before starting client stuff, we want need the cluster to be
         -- in OK state and the mero service to be up and running on the
@@ -880,7 +882,7 @@ processStopProcessesOnNode = Job "castor::node::stop-processes"
 --        and they can start teardown of that level.
 --
 ruleStopProcessesOnNode :: Definitions RC ()
-ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish -> do
+ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandle getRequest finish) -> do
    teardown   <- phaseHandle "teardown"
    teardown_exec <- phaseHandle "teardown-exec"
    teardown_timeout  <- phaseHandle "teardown-timeout"
@@ -899,11 +901,10 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
          rg <- getLocalGraph
          let mnode = listToMaybe $ m0nodeToNode m0node rg
          case mnode of
-           Nothing -> do phaseLog "error" $ "No castor node for " ++ show m0node
-                         return Nothing
+           Nothing -> return $ Left $ "No castor node for " ++ show m0node
            Just node -> do modify Local $ rlens fldNode .~ (Field . Just $ node)
                            modify Local $ rlens fldBootLevel .~ (Field . Just $ M0.BootLevel maxTeardownLevel)
-                           return $ Just [teardown]
+                           return $ Right (StopProcessesOnNodeTimeout, [teardown])
 
    directly teardown $ do
      Just node <- getField . rget fldNode <$> get Local
@@ -954,14 +955,14 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
                                           (show node) (show lvl)
                 nextBootLevel
        ps -> do
-          Just (StopProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+          StopProcessesOnNodeRequest m0node <- getRequest
           phaseLog "info" $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
           promulgateRC $ StopProcessesRequest m0node ps
           nextBootLevel
 
    directly teardown_timeout $ do
      Just node <- getField . rget fldNode <$> get Local
-     Just (StopProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+     StopProcessesOnNodeRequest m0node <- getRequest
      Just lvl <- getField . rget fldBootLevel <$> get Local
      phaseLog "warning" $ printf "%s failed to stop services (timeout)" (show node)
      rg <- getLocalGraph
@@ -992,7 +993,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \finish ->
      Just node <- getField . rget fldNode <$> get Local
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
-     Just (StopProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+     StopProcessesOnNodeRequest m0node <- getRequest
      promulgateRC $ (StopHalonM0dRequest m0node)
      modify Local $ rlens fldRep .~ (Field . Just $ StopProcessesOnNodeOk)
      continue finish

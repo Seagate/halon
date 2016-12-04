@@ -189,7 +189,7 @@ jobResetAttempt :: Job ResetAttempt ResetAttemptResult
 jobResetAttempt = Job "reset-attempt"
 
 ruleResetAttempt :: Definitions RC ()
-ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
+ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
       reset         <- phaseHandle "reset"
       resetComplete <- phaseHandle "reset-complete"
       smart         <- phaseHandle "smart"
@@ -209,23 +209,19 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \finish -> do
                   (Just $ DeviceInfo sdev (pack serial))
 
                 isStorageDriveRemoved sdev >>= \case
-                  True -> do
-                    phaseLog "info" $ "Cancelling drive reset as drive is removed."
-                    phaseLog "sdev" $ show sdev
-                    return $ Just [finalize]
+                  True ->
+                    return $ Left $ "Cancelling drive reset as drive is removed." ++ show sdev
                   False -> do
                     markOnGoingReset sdev
-                    return $ Just [drive_removed, reset]
+                    return $ Right (ResetFailure sdev, [drive_removed, reset])
               ([], _) -> do
                  -- XXX: send IEM message
-                 phaseLog "warning" $ "Can't perform query to SSPL as node can't be found"
-                 return $ Just [finalize]
+                 return $ Left $  "Can't perform query to SSPL as node can't be found"
               (_, []) -> do
                 -- XXX: send IEM message
-                phaseLog "warning" $ "Cannot perform reset attempt for drive "
+                return $ Left $ "Cannot perform reset attempt for drive "
                                   ++ show sdev
                                   ++ " as it has no device serial number associated."
-                return $ Just [finalize]
 
       (disk_detached, detachDisk) <- mkDetachDisk
         (\l -> fmap join $ traverse

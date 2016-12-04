@@ -115,7 +115,7 @@ jobProcessStart = Job "process-start"
 -- resilence towards cluster state changing after we have made initial
 -- checks at start of the job.
 ruleProcessStart :: Definitions RC ()
-ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
+ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle _ finish) -> do
   configure <- phaseHandle "configure"
   configure_result <- phaseHandle "configure_result"
   configure_timeout <- phaseHandle "configure_timeout"
@@ -126,12 +126,14 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
   start_process_failure <- phaseHandle "start_process_failure"
   start_process_retry <- phaseHandle "start_process_retry"
 
-  let fail_start m = do
+  let defaultReply m = do
         phaseLog "warn" m
         Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
         modify Local $ rlens fldRep . rfield .~ Just (ProcessStartFailed p m)
         applyStateChanges [ stateSet p $ Tr.processFailed m ]
-        return [finish]
+        return (ProcessStartFailed p m, [finish])
+
+  let fail_start m = snd <$> defaultReply m
 
   run_notification <- mkPhaseNotify 20
     (\l -> case getField $ l ^. rlens fldReq of
@@ -146,13 +148,13 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \finish -> do
   let route (ProcessStartRequest p) = do
         rg <- getLocalGraph
         case runChecks p rg of
-          Just failMsg -> Just <$> fail_start failMsg
+          Just failMsg -> Right <$> defaultReply failMsg
           Nothing -> initResources p rg >>= \case
-            Just failMsg -> Just <$> fail_start failMsg
+            Just failMsg -> Right <$> defaultReply failMsg
             Nothing -> do
               forM_ (runWarnings p rg) $ phaseLog "warn"
               notification_phases <- run_notification p Tr.processStarting
-              return $ Just notification_phases
+              return $ Right (ProcessStartFailed p "default", notification_phases)
 
   directly configure $ do
     Just chan <- getField . rget fldChan <$> get Local
@@ -439,7 +441,7 @@ jobStop :: Job StopProcessesRequest StopProcessesResult
 jobStop = Job "castor::process::stop"
 
 ruleStop :: Definitions RC ()
-ruleStop = mkJobRule jobStop args $ \finish -> do
+ruleStop = mkJobRule jobStop args $ \(JobHandle _ finish) -> do
   quiesce <- phaseHandle "quiesce"
   quiesce_ack <- phaseHandle "quiesce_ack"
   quiesce_timeout <- phaseHandle "quiesce_timeout"
@@ -536,7 +538,8 @@ ruleStop = mkJobRule jobStop args $ \finish -> do
 
     continue finish
 
-  return $ \(StopProcessesRequest _ _) -> return $ Just [quiesce]
+  return $ \(StopProcessesRequest m0node ps) ->
+    return $ Right (StopProcessesTimeout m0node ps, [quiesce])
 
   where
     fldReq :: Proxy '("request", Maybe StopProcessesRequest)

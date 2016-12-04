@@ -258,7 +258,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
 --   - 'processStartClientsOnNode'   - start all m0t1fs mounts on node
 --
 ruleClusterStart :: Definitions RC ()
-ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
+ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
     wait_server_jobs  <- phaseHandle "wait_server_jobs"
     start_client_jobs <- phaseHandle "start_client_jobs"
     wait_client_jobs  <- phaseHandle "wait_client_jobs"
@@ -286,9 +286,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
                  Just ClusterStartTimeout{} -> ClusterStartFailure "client start failure" [] [s]
                  _ -> ClusterStartFailure "client start failure" [] [s])
 
-    let fail_job st = do
-          modify Local $ rlens fldRep . rfield .~ Just st
-          return $ Just [finish]
+    let fail_job st = return $ Right (st, [finish])
 
     let start_job = do
           rg <- getLocalGraph
@@ -323,10 +321,10 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
           case jobs of
             [] -> do
               phaseLog "warn" $ "No server nodes to start, skipping to clients."
-              return $ Just [start_client_jobs]
+              return $ Right (ClusterStartTimeout [], [start_client_jobs])
             _ -> do
               modify Local $ rlens fldNext . rfield .~ Just start_client_jobs
-              return $ Just [wait_server_jobs]
+              return $ Right (ClusterStartTimeout [], [wait_server_jobs])
 
     let route ClusterStartRequest{} = getFilesystem >>= \case
           Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." [] []
@@ -439,7 +437,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \finish -> do
 
     ourJob msg@(JobFinished l _) _ ls =
       if Set.null $ Set.fromList l `Set.intersection` getField (rget fldJobs ls)
-      then return Nothing
+      then return $ Nothing
       else return $ Just msg
 
 -- | Request cluster to teardown.

@@ -88,8 +88,10 @@ instance Binary StateChangeResult
 newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
 
-newtype PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
-  deriving (Show, Eq, Ord, Binary, Typeable, Generic)
+data PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
+                          | PoolRebalanceFailedToStart M0.Pool
+  deriving (Show, Eq, Ord, Typeable, Generic)
+instance Binary PoolRebalanceStarted 
 
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)

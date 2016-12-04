@@ -294,7 +294,7 @@ jobHourlyStatus  = Job "castor::sns::hourly-status"
 -- * it runs hourly
 -- * it runs until repairs complete
 querySpielHourly :: Definitions RC ()
-querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
+querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle _ finish) -> do
   run_query <- phaseHandle "run status query"
   abort_on_quiesce <- phaseHandle "abort due to SNS operation pause"
   abort_on_abort   <- phaseHandle "abort due to SNS operation abort"
@@ -318,7 +318,7 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \finish -> do
 
   let route (SpielQueryHourly pool prt ruid) = do
         modify Local $ rlens fldRep .~ Field (Just $ SpielQueryHourlyFinished pool prt ruid)
-        return $ Just loop
+        return $ Right (SpielQueryHourlyFinished pool prt ruid, loop)
 
   setPhase abort_on_quiesce $
     \(HAEvent _ (QuiesceSNSOperation _pool)) -> continue finish
@@ -360,7 +360,7 @@ jobRebalanceStart = Job "castor::sns::rebalance::start"
 --
 -- See 'ruleRepairStart' for some caveats.
 ruleRebalanceStart :: Definitions RC ()
-ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
+ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
@@ -381,8 +381,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
             for_ sdev_notready $ phaseLog "info"
             if null sdev_broken
             then if null sdev_ready
-                  then do phaseLog "info" $ "Can't start rebalance, no drive to rebalance on"
-                          return $ Just [finish]
+                  then return $ Left $ "Can't start rebalance, no drive to rebalance on"
                   else do
                     phaseLog "info" "starting rebalance"
                     disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
@@ -393,15 +392,11 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \finish -> do
                     modify Local $ rlens fldNotifications .~ Field (Just messages)
                     modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
                     applyStateChanges messages
-                    return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
-            else do phaseLog "info" $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
-                    return $ Just [finish]
-          False -> do
-            phaseLog "warn" "Not starting rebalance, some IOS are not online"
-            return Nothing
-        Just info -> do
-          phaseLog "warn" $ "Pool repair/rebalance is already running: " ++ show info
-          return Nothing
+                    return $ Right ( PoolRebalanceFailedToStart pool
+                                   , [pool_disks_notified, notify_failed, timeout 10 notify_timeout])
+            else return $ Left $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
+          False -> return $ Left $  "Not starting rebalance, some IOS are not online"
+        Just info -> return $ Left $ "Pool repair/rebalance is already running: " ++ show info
 
   (rebalance_started, startRebalance) <- mkRebalanceStartOperation $ \pool eresult -> do
      case eresult of
@@ -512,7 +507,7 @@ jobRepairStart = Job "castor-repair-start"
 -- before repairing but there is no guarantee we won't try to start
 -- repair on IOS that's down. HALON-403 should help.
 ruleRepairStart :: Definitions RC ()
-ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
+ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
@@ -533,16 +528,11 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \finish -> do
                 modify Local $ rlens fldNotifications .~ Field (Just msgs)
                 modify Local $ rlens fldPool .~ Field (Just pool)
                 applyStateChanges msgs
-                return $ Just [pool_disks_notified, notify_failed, timeout 10 notify_timeout]
-              False -> do
-                phaseLog "warn" $ "Not starting repair, have transient or no failed devices"
-                return $ Just [finish]
-          False -> do
-            phaseLog "warn" $ "Not starting repair, some IOS are not online"
-            return $ Just [finish]
-        Just _ -> do
-          phaseLog "warn" $ "Not starting repair, seems there is repair already on-going"
-          return $ Just [finish]
+                return $ Right ( PoolRepairFailedToStart pool "default"
+                               , [pool_disks_notified, notify_failed, timeout 10 notify_timeout])
+              False -> return $ Left $ "Not starting repair, have transient or no failed devices"
+          False -> return $ Left $ "Not starting repair, some IOS are not online"
+        Just _ -> return $ Left $ "Not starting repair, seems there is repair already on-going"
 
   (repair_started, startRepairOperation) <- mkRepairStartOperation $ \pool er -> do
     case er of
@@ -661,7 +651,7 @@ jobContinueSNS = Job "castor::sns:continue"
 --   * All IOS should be running.
 --   * At least one IO service status should be M0_SNS_CM_STATUS_PAUSED.
 ruleSNSOperationContinue :: Definitions RC ()
-ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
+ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish) -> do
 
   let process_failure pool s = do
         keepRunning <- isStillRunning pool
@@ -707,18 +697,18 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
   (rebalance_status, rebalanceStatus) <-
     mkRebalanceStatusRequestOperation process_failure (check_and_run rebalance)
 
-  return $ \(ContinueSNS _ pool prt) -> do
+  return $ \(ContinueSNS uuid pool prt) -> do
         keepRunning <- isStillRunning pool
         result <- R.allIOSOnline pool
         if keepRunning && result
         then case prt of
           M0.Failure -> do
             repairStatus pool
-            return $ Just [repair_status]
+            return $ Right (SNSFailed uuid pool prt "default", [repair_status])
           M0.Rebalance -> do
             rebalanceStatus pool
-            return $ Just [rebalance_status]
-        else return Nothing
+            return $ Right (SNSFailed uuid pool prt "default", [rebalance_status])
+        else return $ Left "SNS Operation is not running"
   where
     fldReq = Proxy :: Proxy '("request", Maybe ContinueSNS)
     fldRep = Proxy :: Proxy '("reply", Maybe ContinueSNSResult)
@@ -733,7 +723,7 @@ jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
 jobSNSAbort = Job "castor::node::sns::abort"
 
 ruleSNSOperationAbort :: Definitions RC ()
-ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
+ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
   entry <- phaseHandle "entry"
   ok    <- phaseHandle "ok"
   failure <- phaseHandle "SNS abort failed."
@@ -742,19 +732,17 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
         Nothing -> do
           phaseLog "repair" $ "Abort requested on " ++ show pool
                            ++ "but no repair seems to be happening."
-          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationSkip pool)
-          return $ Just [finish]
+          return $ Right (AbortSNSOperationSkip pool, [finish])
         Just (M0.PoolRepairStatus prt uuid' _) | uuid == uuid' -> do
           modify Local $ rlens fldPrt .~ (Field . Just $ prt)
           modify Local $ rlens fldRepairUUID .~ (Field . Just $ uuid')
-          return $ Just [entry]
+          return $ Right (AbortSNSOperationFailure pool "default", [entry])
         Just (M0.PoolRepairStatus _ uuid' _) -> do
           phaseLog "repair" $ "Abort requested on " ++ show pool ++ " but UUIDs mismatch"
           phaseLog "request.uuid" $ show uuid
           phaseLog "PRS.uuid" $ show uuid'
           let msg = show uuid ++ " /= " ++ show uuid'
-          modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationFailure pool msg)
-          return $ Just [finish]
+          return $ Right (AbortSNSOperationFailure pool msg, [finish])
 
   (ph_repair_abort, abortRepair) <- mkRepairAbortOperation 15
       (\l -> (\(Just (AbortSNSOperation pool _)) -> pool) $ getField (rget fldReq l))
@@ -830,7 +818,7 @@ jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
 jobSNSQuiesce = Job "castor::sns::quiesce"
 
 ruleSNSOperationQuiesce :: Definitions RC ()
-ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
+ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -> do
   entry <- phaseHandle "execute operation"
 
   let route (QuiesceSNSOperation pool) = do
@@ -839,12 +827,11 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \finish -> do
        mprs <- getPoolRepairStatus pool
        case mprs of
          Nothing -> do phaseLog "result" $ "no repair seems to be happening"
-                       modify Local $ rlens fldRep .~ (Field . Just $ QuiesceSNSOperationSkip pool)
-                       return $ Just [finish]
+                       return $ Right (QuiesceSNSOperationSkip pool, [finish])
          Just (M0.PoolRepairStatus prt uuid _) -> do
            modify Local $ rlens fldPrt .~ (Field . Just $ prt)
            modify Local $ rlens fldUUID .~ (Field . Just $ uuid)
-           return $ Just [entry]
+           return $ Right (QuiesceSNSOperationFailure pool "default", [entry])
 
   (ph_repair_quiesced, quiesceRepair) <- mkRepairQuiesceOperation 15
       (\l -> (\(Just (QuiesceSNSOperation pool)) -> pool) $ getField (rget fldReq l))
@@ -906,7 +893,7 @@ jobSNSOperationRestart = Job "castor::sns::restart"
 --   'RestartSNSOperationSkip' - if no operation was running
 --   This rule itself just invokes 'abort' and subsequently 'start' rules.
 ruleSNSOperationRestart :: Definitions RC ()
-ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
+ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \(JobHandle _ finish) -> do
   abort_req <- phaseHandle "abort_req"
   start_req <- phaseHandle "start_req"
   result <- phaseHandle "result"
@@ -948,7 +935,8 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \finish -> do
         continue finish
       _ -> continue result
 
-  return $ \_ -> return $ Just [abort_req]
+  return $ \(RestartSNSOperationRequest pool _) ->
+    return $ Right (RestartSNSOperationFailed pool "default", [abort_req])
   where
     fldReq = Proxy :: Proxy '("request", Maybe RestartSNSOperationRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe RestartSNSOperationResult)
