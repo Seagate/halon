@@ -83,6 +83,7 @@ tests launch =
   , testsDefaultHandler launch
   , testsPhaseIf launch
   , testsSMessage launch
+  , testsRuleRestart launch
   ]
 
 testsGlobal :: (Process () -> IO ()) -> TestTree
@@ -1342,6 +1343,52 @@ migrateWorks = do
   assertEqual "Handle migrated message" newContent =<< expect
   usend pid $ persistMessage UUID.nil B
   assertEqual "Second message was not processed" "default" =<< expect
+
+testsRuleRestart :: (Process () -> IO ()) -> TestTree
+testsRuleRestart launch = testGroup "RuleRestart"
+  [ testCase "Rule restarts when phase is finished" $ launch basicRuleRestart
+  , testCase "Rule restart preserves local state" $ launch ruleRestartPreservesState
+  ]
+
+basicRuleRestart :: Process ()
+basicRuleRestart = do
+  self <- getSelfPid
+  let specs = define "basic-rule-restart" $ do
+        ph0 <- phaseHandle "ph0"
+        ph1 <- phaseHandle "ph1"
+        setPhase ph0 $ \(Baz i) -> do
+          liftProcess $ usend self i
+          continue ph1
+        directly ph1 $ return ()
+        start ph0 ()
+  pid <- spawnLocal $ execute () specs
+  usend pid $ Baz 1
+  1 <- expect :: Process Int
+  usend pid $ Baz 2
+  2 <- expect :: Process Int
+  return ()
+
+ruleRestartPreservesState :: Process ()
+ruleRestartPreservesState = do
+  self <- getSelfPid
+  let specs = define "basic-rule-restart" $ do
+        ph0 <- phaseHandle "ph0"
+        ph1 <- phaseHandle "ph1"
+        setPhase ph0 $ \(Baz i) -> do
+          l <- get Local
+          liftProcess $ usend self l
+          put Local $ Just i
+          continue ph1
+        directly ph1 $ return ()
+        start ph0 Nothing
+  pid <- spawnLocal $ execute () specs
+  usend pid $ Baz 1
+  Nothing <- expect :: Process (Maybe Int)
+  usend pid $ Baz 2
+  Just 1 <- expect :: Process (Maybe Int)
+  usend pid $ Baz 3
+  Just 2 <- expect :: Process (Maybe Int)
+  return ()
 
 deriveSafeCopy 0 'base ''AB
 deriveSafeCopy 0 'base ''Baz
