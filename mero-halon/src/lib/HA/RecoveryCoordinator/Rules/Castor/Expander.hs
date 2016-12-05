@@ -121,8 +121,10 @@ ruleReassembleRaid =
       dispatcher <- mkDispatcher
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
 
-      setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc) _) -> do
+      let defaultState = args expander_reset_evt
 
+      setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc) _) -> do
+        put Local defaultState -- HALON-576, HALON-577
         todo eid
 
         mm0 <- runMaybeT $ do
@@ -375,7 +377,7 @@ ruleReassembleRaid =
         modifyGraph $ G.disconnect host R.Is R.ReassemblingRaid
         done uuid
 
-      startFork expander_reset_evt (args expander_reset_evt)
+      startFork expander_reset_evt defaultState
 
   where
     -- Enclosure, node
