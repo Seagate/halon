@@ -112,19 +112,20 @@ newSM key startPhase rn ps initialBuffer initialL logger =
             case out of
               SM_Complete l' newPhases -> do
                 liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
-                let (result, phs') = case newPhases of
+                let (result, phs', l'') = case newPhases of
                            -- This branch is required if we want to rule to be restarted
                           -- once it finishes "normally".
                           []  -> ( SMResult idm SMFinished
                                             (info [SuccessExe pname b buffer])
                                  , [startPhase]
-                                 )
+                                 , initialL)
                           ph' -> let xs = fmap mkPhase ph'
                                  in ( SMResult idm SMRunning
                                                (info [SuccessExe pname b buffer])
-                                    , xs)
+                                    , xs
+                                    , l')
                 fin_phs <- traverse (jumpEmitTimeout key) phs'
-                return [(result, SM $ interpretInput idm l' buffer fin_phs)]
+                return [(result, SM $ interpretInput idm l'' buffer fin_phs)]
               SM_Suspend -> executeStack logs subs smId' l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))

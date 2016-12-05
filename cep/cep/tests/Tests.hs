@@ -1347,7 +1347,7 @@ migrateWorks = do
 testsRuleRestart :: (Process () -> IO ()) -> TestTree
 testsRuleRestart launch = testGroup "RuleRestart"
   [ testCase "Rule restarts when phase is finished" $ launch basicRuleRestart
-  , testCase "Rule restart preserves local state" $ launch ruleRestartPreservesState
+  , testCase "Rule restart resets local state" $ launch ruleRestartPreservesState
   ]
 
 basicRuleRestart :: Process ()
@@ -1385,9 +1385,9 @@ ruleRestartPreservesState = do
   usend pid $ Baz 1
   Nothing <- expect :: Process (Maybe Int)
   usend pid $ Baz 2
-  Just 1 <- expect :: Process (Maybe Int)
+  Nothing <- expect :: Process (Maybe Int)
   usend pid $ Baz 3
-  Just 2 <- expect :: Process (Maybe Int)
+  Nothing <- expect :: Process (Maybe Int)
   return ()
 
 deriveSafeCopy 0 'base ''AB
