@@ -72,7 +72,7 @@ main = withMeroRoot $ \mero_root -> do
     hSetBuffering stderr LineBuffering
     hSetBuffering stdout LineBuffering
 
-    (ip, _) <- getTestListenSplit
+    ip <- testListenName
     setEnv "IP" ip
     let halon_sources = takeDirectory $ takeDirectory $ takeDirectory absSrcPath
     setEnv "HALON_SOURCES" halon_sources

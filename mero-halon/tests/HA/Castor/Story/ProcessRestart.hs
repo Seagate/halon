@@ -41,7 +41,6 @@ import           Network.Transport
 import           SSPL.Bindings
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual)
-import           TestRunner
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -120,12 +119,9 @@ doRestart :: (Typeable g, RGroup g)
           -- ^ Main test block
           -> IO ()
 doRestart transport pg startingState runRestartTest =
-  H.run transport pg interceptor [rule] test where
-  interceptor _ _ = return ()
+  H.run transport pg [rule] test where
 
-  test (TestArgs _ _ rc) rmq recv _ = do
-    H.prepareSubscriptions rc rmq
-    H.loadInitialData
+  test _ _ recv _ = do
     self <- getSelfPid
     nid <- getSelfNode
     _ <- promulgateEQ [nid] $ RuleHook self

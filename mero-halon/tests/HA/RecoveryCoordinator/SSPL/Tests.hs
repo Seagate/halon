@@ -10,6 +10,7 @@ import Control.Distributed.Process.Closure
 import qualified Data.Set as Set
 
 import Network.Transport (Transport)
+import Network.BSD (getHostName)
 import Network.CEP
 import Network.CEP.Testing (runPhase)
 
@@ -47,7 +48,6 @@ import Test.Tasty
 import Test.Tasty.HUnit (assertEqual)
 import Test.Framework
 import Control.Distributed.Process
-import Helper.Environment
 
 data GetGraph = GetGraph ProcessId deriving (Eq,Show, Typeable, Generic)
 
@@ -103,11 +103,12 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     self <- getSelfPid
     say "load data"
     ls <- emptyLoopState pid self
+    iData <- liftIO defaultInitialData
     (ls',_)  <- run ls $ do
-            mapM_ goRack (CI.id_racks myInitialData)
+            mapM_ goRack (CI.id_racks iData)
             filesystem <- initialiseConfInRG
-            loadMeroGlobals (CI.id_m0_globals myInitialData)
-            loadMeroServers filesystem (CI.id_m0_servers myInitialData)
+            loadMeroGlobals (CI.id_m0_globals iData)
+            loadMeroServers filesystem (CI.id_m0_servers iData)
     let testRule = mkTestRule self
     say "run RC"
     rc <- spawnLocal $ execute ls' $ do
@@ -137,7 +138,8 @@ testHpiExistingWWN = mkHpiTest rules test
       me <- getSelfNode
       say "prepare"
       usend rc ()  -- Prepare graph test
-      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
+      hostname <- liftIO getHostName
+      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
       uuid <- liftIO $ nextRandom
       say "send HPI message"
       usend rc $ HAEvent uuid (me, request) -- send request
@@ -168,7 +170,8 @@ testHpiNewWWN = mkHpiTest rules test
     test rc = do
       me <- getSelfNode
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
+      hostname <- liftIO getHostName
+      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request)
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
@@ -194,11 +197,12 @@ testHpiUpdatedWWN = mkHpiTest rules test
         liftProcess $ usend self (uuid, enc)
     test rc = do
       me   <- getSelfNode
-      uuid0 <- liftIO $ nextRandom
+      uuid0 <- liftIO nextRandom
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      let request0 = mkHpiMessage (pack systemHostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
+      hostname <- liftIO getHostName
+      let request0 = mkHpiMessage (pack hostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
       usend rc $ HAEvent uuid0 (me, request0)
-      let request = mkHpiMessage (pack systemHostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
+      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
       usend rc $ HAEvent uuid (me, request)
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
@@ -309,7 +313,3 @@ run :: forall app g. (Application app, g ~ GlobalState app)
     -> PhaseM app Int ()
     -> Process (g, [(Buffer, Int)])
 run ls = runPhase ls (0 :: Int) emptyFifoBuffer
-
--- | Sample initial data for test purposes
-myInitialData :: CI.InitialData
-myInitialData = initialData systemHostname testListenName 1 12 defaultGlobals

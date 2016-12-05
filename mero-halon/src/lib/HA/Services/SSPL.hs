@@ -192,7 +192,7 @@ startActuators :: Network.AMQP.Channel
                -> Process DeclareChannels
 startActuators chan ac pid monitorChan = do
     iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
-    systemdChan <- spawnChannelLocal $ \ch -> link pid >> (commandProcess $ acSystemd ac) ch
+    systemdChan <- spawnChannelLocal $ \ch -> link pid >> commandProcess (acSystemd ac) ch
     _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
     mypid <- getSelfPid
     let decl = DeclareChannels mypid (ActuatorChannels iemChan systemdChan)

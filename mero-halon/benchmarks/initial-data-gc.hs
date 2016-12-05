@@ -17,7 +17,7 @@ import Control.Exception as E
 import Criterion.Main
 import HA.Castor.Tests (loadInitialData)
 import HA.ResourceGraph (Graph, getGraphResources, garbageCollectRoot)
-import Helper.Environment (systemHostname)
+import Network.BSD (getHostname)
 import Mero (withM0)
 import Network.Transport (Transport(..))
 import Network.Transport.InMemory (createTransport)
@@ -39,4 +39,4 @@ main = defaultMain [
 -- | Run 'loadInitialData' and retrieve the resulting graph.
 loadInitialDataGraph :: IO Graph
 loadInitialDataGraph = E.bracket createTransport closeTransport $ \t ->
-  withTmpDirectory $ withM0 $ loadInitialData systemHostname t
+  withTmpDirectory $ withM0 $ loadInitialData getHostname t

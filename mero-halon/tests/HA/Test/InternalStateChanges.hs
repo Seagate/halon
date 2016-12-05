@@ -8,8 +8,8 @@
 module HA.Test.InternalStateChanges (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
-import           Control.Lens
 import           Control.Exception as E
+import           Control.Lens
 import           Data.List (sort)
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
 import           Data.Typeable
@@ -17,9 +17,10 @@ import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
-import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -34,7 +35,6 @@ import           Network.CEP
 import           Network.Transport
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, assertBool, assertFailure)
-import           TestRunner
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -55,26 +55,12 @@ mkTests pg = do
 newtype RuleHook = RuleHook ProcessId
   deriving (Generic, Typeable)
 
-doTest :: (Typeable g, RGroup g)
-     => Transport
-     -> Proxy g
-     -> [Definitions RC ()]
-     -> (ReceivePort NotificationMessage -> Process ())
-     -> IO ()
-doTest t pg rules test' = H.run t pg interceptor rules test where
-  interceptor _ _ = return ()
-  test (TestArgs _ _ rc) rmq recv _ = do
-    H.prepareSubscriptions rc rmq
-    test' recv
-
 -- | Test that internal object change message is properly sent out
 -- throughout RC for a cascaded event.
 --
 -- Relies on @processCascadeRule@. Set a process to Online and make
 -- sure a notification goes out for both the process and services
 -- belonging to that process.
---
--- * Load initial data
 --
 -- * Mark process as online
 --
@@ -87,7 +73,7 @@ doTest t pg rules test' = H.run t pg interceptor rules test where
 --
 -- * Compare the messages we're expecting with the messages actually sent out
 stateCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-stateCascade t pg = doTest t pg [rule] test'
+stateCascade t pg = H.run t pg [rule] (\_ _ recv _ -> test' recv)
   where
     test' :: ReceivePort NotificationMessage -> Process ()
     test' recv = do
@@ -96,9 +82,9 @@ stateCascade t pg = doTest t pg [rule] test'
       _ <- promulgateEQ [nid] $ RuleHook self
       ps <- expect :: Process M0.Process
       Set ns' <- H.nextNotificationFor (M0.fid ps) recv
-      H.debug $ "Received: " ++ show ns'
+      sayTest $ "Received: " ++ show ns'
       Set ns <- expect
-      H.debug $ "Expected: " ++ show ns
+      sayTest $ "Expected: " ++ show ns
       liftIO $ assertEqual "Mero gets the expected note set" (sort ns) (sort ns')
 
     rule :: Definitions RC ()
@@ -124,13 +110,6 @@ stateCascade t pg = doTest t pg [rule] test'
                 , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
                 , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
                 ]
-            -- Just encl = listToMaybe
-            --           $ (G.connectedTo p M0.IsParentOf rg :: [M0.Enclosure])
-            -- Just ctrl = listToMaybe
-            --           $ (G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
-            -- Just node = listToMaybe
-            --           $ (G.connectedFrom M0.IsOnHardware ctrl rg :: [M0.Node])
-            -- procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
             srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
         liftProcess $ usend pid p
         applyStateChanges [stateSet p Tr.processStarting]
@@ -156,7 +135,7 @@ stateCascade t pg = doTest t pg [rule] test'
       start init_rule Nothing
 
 failvecCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-failvecCascade t pg = doTest t pg [rule] test'
+failvecCascade t pg = H.run t pg [rule] (\_ _ recv _ -> test' recv)
   where
     test' :: ReceivePort NotificationMessage -> Process ()
     test' recv = do
@@ -166,7 +145,7 @@ failvecCascade t pg = doTest t pg [rule] test'
       (d0:d1:_disks) <- expect :: Process [M0.Disk]
       Set _ <- H.nextNotificationFor (M0.fid d0) recv
       mfailvec <- expect :: Process (Maybe [Note])
-      H.debug $ "Notifications: " ++ show mfailvec
+      sayTest $ "Notifications: " ++ show mfailvec
       case mfailvec of
         Just failvec -> do
           liftIO $ assertEqual "Mero sends both devices" 2 (length failvec)

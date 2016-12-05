@@ -33,6 +33,7 @@ import HA.Services.SSPL.Rabbit
 import HA.Services.SSPL.LL.Resources
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
+import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Service.Events
 import HA.SafeCopy
@@ -195,11 +196,14 @@ runSSPLTest transport interseptor test =
                                      (Configured "/")
                                      ("guest")
                                      ("guest")
+    sayTest "Clearing RMQ queues"
+    purgeRmqQueues pid [ "test-queue", "sspl_dcsque"
+                       , "sspl_iem", "sspl_command_ack"]
+    sayTest "Starting test"
     usend pid $ MQBind    "sspl_halon" "sspl_iem" "sspl_ll"
     usend pid $ MQSubscribe "sspl_iem" self
-    say "Starting test"
     test pid n
-    say "Test finished"
+    sayTest "Test finished"
     _ <- promulgateEQ [localNodeId n] $ encodeP $
           ServiceStopRequest (Node $ localNodeId n) sspl
     _ <- receiveTimeout 1000000 []
@@ -225,7 +229,7 @@ testSensor transport = runSSPLTest transport interseptor test
           Just (Just msg) = sensorResponseMessageSensor_response_typeDisk_status_drivemanager
             . sensorResponseMessageSensor_response_type
             . sensorResponseMessage <$> decodeStrict rawmsg
-      say "sending command"
+      sayTest "sending command"
       usend pid $ MQPublish "sspl_halon" "sspl_ll" rawmsg
       (SChan s) <- expect
       liftIO $ assertEqual "Correct command received" msg s

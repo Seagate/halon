@@ -56,7 +56,6 @@ import Test.Framework
 import qualified Test.Tasty.HUnit as Tasty
 
 import Helper.InitialData
-import Helper.Environment (systemHostname)
 import Helper.RC
 import Data.Maybe (catMaybes)
 import Data.Proxy
@@ -86,13 +85,12 @@ rGroupTest transport _ p = withTmpDirectory $ do
       (_, mmchan) <- startMultimap rGroup id
       p mmchan
 
-tests :: (Typeable g, RGroup g) => String -> Transport -> Proxy g -> [TestTree]
-tests _host transport pg = map (localOption (mkTimeout $ 10*60*1000000))
+tests :: (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
+tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport pg
   , testSuccess "failure-sets-2" $ testFailureSets2 transport pg
   , testSuccess "failure-sets-formulaic" $ testFailureSetsFormulaic transport pg
   , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
-  -- , testSuccess "large-data" $ largeInitialData host transport
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
   ]
 
@@ -103,6 +101,10 @@ testFailureSets :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
+    settings <- liftIO defaultInitialDataSettings
+    iData <- liftIO . initialData $ settings
+               { _id_drives = 8
+               , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
@@ -122,14 +124,14 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
-  where
-    iData = initialData systemHostname "192.0.2" 1 8
-            $ defaultGlobals { CI.m0_data_units = 4 }
 
 testFailureSets2 :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
+    settings <- liftIO defaultInitialDataSettings
+    iData <- liftIO . initialData $ settings
+               { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
@@ -163,13 +165,16 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
       $ fsSize (head failureSets110) == 0
     assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
       $ fsSize (failureSets110 !! 1) == 1
-  where
-    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 testFailureSetsFormulaic :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
+    settings <- liftIO defaultInitialDataSettings
+    iData <- liftIO . initialData $ settings
+               { _id_servers = 4
+               , _id_drives = 4
+               , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
@@ -200,14 +205,14 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
         liftIO $ Tasty.assertBool "all ids should be unique" (Set.size ids == length sets)
   where
     sets = [[0,0,0,0,1],[0,0,0,1,1]]
-    iData = initialData systemHostname "192.0.2" 4 4
-            $ defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets}
 
 -- | Test that failure domain logic works correctly when we are
 testControllerFailureDomain :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
+    settings <- liftIO defaultInitialDataSettings
+    iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
@@ -265,14 +270,14 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
                          , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
-  where
-    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 -- | Test that applying state changes works
 testApplyStateChanges :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls0 <- emptyLoopState pid (nullProcessId me)
+    settings <- liftIO defaultInitialDataSettings
+    iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
       mapM_ goRack (CI.id_racks iData)
       filesystem <- initialiseConfInRG
@@ -293,8 +298,6 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "All processes should be stopping"
       $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
         length procs
-  where
-    iData = initialData systemHostname "192.0.2" 4 4 defaultGlobals
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g
