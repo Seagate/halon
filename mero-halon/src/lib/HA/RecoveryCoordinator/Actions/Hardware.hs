@@ -98,6 +98,7 @@ import Control.Distributed.Process (liftIO)
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 import Data.Foldable
+import Data.Proxy (Proxy(..))
 
 import Network.CEP
 
@@ -553,10 +554,12 @@ actualizeStorageDeviceReplacement sdev = do
           phaseLog "rg" "failed to find disk that was attached"
           return rg
         Just dev -> do
-          let rg' = G.mergeResources (const dev) [sdev]
-                >>> G.disconnect sdev ReplacedBy dev
-                >>> G.disconnect sdev Has SDRemovedAt
-                >>> rgUpdateStorageDeviceSDev sdev
+          -- Remove all identifiers from the old disk - new identifiers
+          -- (including any which have not changed) will be copied from the new
+          -- candidate.
+          let rg' = G.disconnectAllFrom dev Has (Proxy :: Proxy DeviceIdentifier)
+                >>> G.mergeResources (const dev) [dev,sdev]
+                >>> rgUpdateStorageDeviceSDev dev
                   $ rg
           return rg'
 
@@ -564,8 +567,12 @@ actualizeStorageDeviceReplacement sdev = do
 attachStorageDeviceReplacement :: StorageDevice -> [DeviceIdentifier] -> PhaseM LoopState l StorageDevice
 attachStorageDeviceReplacement dev dis = do
   phaseLog "rg" $ "Inserting new device candidate to " ++ show dev
-  uuid <- liftProcess . liftIO $ nextRandom
-  let newDev = StorageDevice uuid
+  rg <- getLocalGraph
+  newDev <- case listToMaybe $ G.connectedTo dev ReplacedBy rg of
+              Nothing -> do
+                uuid <- liftProcess . liftIO $ nextRandom
+                return $ StorageDevice uuid
+              Just cand -> return cand
   identifyStorageDevice newDev dis
   modifyLocalGraph $ return . G.connect dev ReplacedBy newDev
   return newDev
