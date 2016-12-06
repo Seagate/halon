@@ -16,9 +16,14 @@ import qualified Handler.Debug as Debug
 import qualified Handler.Status as Status
 import qualified Handler.Node as Node
 
+import Data.Char
+import Data.Monoid
+import Data.List
+
 import System.Environment (getProgName)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (readProcess)
+import System.Directory
 
 data Options = Options
     { optTheirAddress :: [String] -- ^ Addresses of halond nodes to control.
@@ -36,23 +41,36 @@ data Command =
     | Node  Node.NodeOptions
   deriving (Eq)
 
+data SystemOptions = SystemOptions { soListen :: Last (String, String)
+                                   } deriving (Show)
+
+instance Monoid SystemOptions where
+  mempty = SystemOptions mempty
+  (SystemOptions a1) `mappend` (SystemOptions a2) = SystemOptions (a1 <> a2)
+
 getOptions :: IO (Maybe Options)
 getOptions = do
     self <- getProgName
+    exists <- doesFileExist sysconfig
+    defaults <- if exists
+                then mconcat . fmap toSystemOptions . lines <$> readFile sysconfig
+                else return mempty
     O.execParser $
-      O.withFullDesc self parseOptions "Control nodes (halond instances)."
+      O.withFullDesc self (parseOptions defaults) "Control nodes (halond instances)."
   where
-    parseOptions :: O.Parser (Maybe Options)
-    parseOptions = O.flag' Nothing (O.long "version" <> O.hidden) O.<|> (Just <$> normalOptions)
-    normalOptions = Options
-        <$> (O.many . O.strOption $ O.metavar "ADDRESSES" <>
-               O.long "address" <>
-               O.short 'a' <>
-               O.help "Addresses of nodes to control.")
+    parseOptions :: SystemOptions -> O.Parser (Maybe Options)
+    parseOptions o = O.flag' Nothing (O.long "version" <> O.hidden) O.<|> (Just <$> normalOptions o)
+    normalOptions (SystemOptions la) = Options
+        <$> (maybe O.some  (\(h,p) -> \x -> O.some x <|> pure [h++":"++p]) (getLast la) $
+               O.strOption $ O.metavar "ADDRESSES" <>
+                 O.long "address" <>
+                 O.short 'a' <>
+                 O.help "Addresses of nodes to control.")
         <*> (O.strOption $ O.metavar "ADDRESS" <>
                O.long "listen" <>
                O.short 'l' <>
-               O.value listenAddr <>
+               O.value (maybe (listenAddr hostname) 
+                              (listenAddr . fst) $ getLast la) <>
                O.help "Address halonctl binds to.")
         <*> (O.subparser $
                  (O.command "bootstrap" $ Bootstrap <$>
@@ -69,4 +87,13 @@ getOptions = do
                     O.withDesc Node.parseOptions "Control node wide options.")
             )
     hostname = unsafePerformIO $ readProcess "hostname" [] ""
-    listenAddr = hostname ++ ":9001"
+    listenAddr :: String -> String
+    listenAddr h = trim $ h ++ ":0"
+    toSystemOptions line
+      | "HALOND_LISTEN" `isPrefixOf` line = SystemOptions $ Last . Just $ extractIp (tail . snd $ span (/='=') line)
+      | otherwise = SystemOptions $ Last Nothing
+    extractIp = fmap tail . span (/= ':')
+    sysconfig :: String
+    sysconfig = "/etc/sysconfig/halond"
+
+    trim = filter (liftA2 (||) isAlphaNum isPunctuation)

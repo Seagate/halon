@@ -307,6 +307,7 @@ Executable halonctl
                       lens,
                       text,
                       mtl,
+                      directory,
                       unordered-containers
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
