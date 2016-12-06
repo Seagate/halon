@@ -1,5 +1,0 @@
-#!/bin/bash -e
-R=${HA_RPC_FOLDER:-tmp-HA-test-${RANDOM}}
-mkdir -p $R
-cd $R
-$*

@@ -351,7 +351,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
           is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
 
-      
+
       phaseLog "sspl-service" $ "monitor-hpi request received for drive:"
       phaseLog "enclosure" $ show enc
       phaseLog "drive.wwn" $ show wwn
@@ -608,7 +608,7 @@ ruleMonitorExpanderReset = defineSimpleTask "monitor-expander-reset" $ \(nid, Ex
   forM_ menc $ promulgateRC . ExpanderReset
 
 ruleThreadController :: Definitions RC ()
-ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid (nid, artc)) -> let
+ruleThreadController = defineSimpleTask "monitor-thread-controller" $ \(nid, artc) -> let
     module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc
     thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
   in do
@@ -624,6 +624,8 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
                         traverse (\x -> do
                           liftA2 (x,,) <$> driveStatus x
                                        <*> fmap listToMaybe (lookupStorageDeviceSerial x))
+             encl' <- findHostEnclosure host
+             phaseLog "debug" $ "MSDS: " ++ show (catMaybes <$> msds, host, encl')
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(_, status, serial) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
@@ -633,7 +635,6 @@ ruleThreadController = defineSimple "monitor-thread-controller" $ \(HAEvent uuid
                                                           (T.pack reason)
                  _ -> return ()
        _ -> return ()
-     messageProcessed uuid
 
   -- SSPL Monitor interface data
   -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum)) _ ->

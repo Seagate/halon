@@ -253,6 +253,13 @@ data MQBind = MQBind
 
 instance Binary MQBind
 
+data MQPurge = MQPurge
+  { mqPurgeQueueName :: ByteString
+  , mqPurgeCaller :: ProcessId
+  } deriving (Eq, Generic)
+
+instance Binary MQPurge
+
 -- | Creates Mock RabbitMQ Proxy.
 rabbitMQProxy :: ConnectionConf -> Process ()
 rabbitMQProxy conf = run
@@ -284,7 +291,12 @@ rabbitMQProxy conf = run
                 return (Set.insert name queues)
             | otherwise = return queues
           loop queues subscribers exchanges = receiveWait
-            [ match $ \(MQSubscribe k@(T.decodeUtf8 -> key) pid) -> do
+            [ match $ \msg@(MQPurge (T.decodeUtf8 -> que) p) -> do
+                queues' <- queuesIfMissing queues que
+                liftIO . void $ purgeQueue chan que
+                usend p msg
+                loop queues' subscribers exchanges
+            , match $ \(MQSubscribe k@(T.decodeUtf8 -> key) pid) -> do
                 queues' <- queuesIfMissing queues key
                 tag <- liftIO $ consumeMsgs chan key NoAck $ \(msg, _env) -> do
                    writeChan iochan (T.encodeUtf8 key, msgBody msg)

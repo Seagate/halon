@@ -17,9 +17,9 @@
 
 module HA.RecoveryCoordinator.Castor.Rules where
 
-import HA.EventQueue.Types
-import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
@@ -28,7 +28,6 @@ import qualified HA.ResourceGraph as G
 import Control.Monad
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.RecoveryCoordinator.Mero.Actions.Failure
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
@@ -67,7 +66,7 @@ castorRules = sequence_
 -- | Load initial data from facts file into the system.
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions RC ()
-ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid CI.InitialData{..}) -> do
+ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
   rg  <- getLocalGraph
   let racks  = G.connectedTo Cluster Has rg :: [Rack]
   if null racks
@@ -111,10 +110,12 @@ ruleInitialDataLoad = defineSimple "castor::initial-data-load" $ \(HAEvent eid C
                       phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
                       notify $ InitialDataLoadFailed (show e))
 #else
+      notify InitialDataLoaded
       phaseLog "info" "Initial data loaded."
 #endif
-  else phaseLog "error" "Initial data is already loaded."
-  messageProcessed eid
+  else do
+    phaseLog "error" "Initial data is already loaded."
+    notify $ InitialDataLoadFailed "Initial data is already loaded."
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do

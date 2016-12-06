@@ -106,24 +106,17 @@ withTrackingStation _ testRules action = do
   nid <- getSelfNode
   bracket
     (do
-      say "1"
       void $ EQT.startEQTracker [nid]
-      say "2"
       cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000 4000000
                          [nid] emptyEventQueue
-      say "3"
       cMMGroup <- newRGroup $(mkStatic 'mmDict) "mmtest" 1000 1000000 4000000
                          [nid] (defaultMetaInfo, fromList [])
-      say "4"
       (,) <$> join (unClosure cEQGroup) <*> join (unClosure cMMGroup)
     )
     (\(g0, g1) -> killReplica g0 nid >> killReplica g1 nid)
     (\(eqGroup, mmGroup :: g (MetaInfo, Multimap)) -> do
-      say "5"
       eq <- startEventQueue (eqGroup :: g EventQueue)
-      say "6"
       (chan, rc) <- runRCEx (eq, [nid]) testRules mmGroup
-      say "7"
       action $ TestArgs eq chan rc
     )
 

@@ -8,10 +8,9 @@ module Main where
 
 import qualified HA.Autoboot.Tests
 import qualified HA.RecoveryCoordinator.Tests
-import qualified HA.RecoveryCoordinator.Mero.Tests
+
 import HA.Replicator.Log
 import qualified HA.Test.Disconnect
-import Helper.Environment
 import Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import Test.Tasty.Ingredients.FileReporter (fileTestReporter)
@@ -23,17 +22,17 @@ import Control.Monad
 import Data.Proxy
 import Network.Transport (Transport)
 import Network.Transport.InMemory
+import System.Directory (getCurrentDirectory)
 import System.Posix.Env (setEnv)
 import System.IO
 
 #ifdef USE_MERO
-import Mero
 import Test.Framework (withTmpDirectory)
 #endif
 
 
-ut :: String -> Transport -> IO TestTree
-ut _host transport = do
+ut :: Transport -> IO TestTree
+ut transport = do
   let pg = Proxy :: Proxy RLogGroup
   return $
     testGroup "mero-halon" $ (:[]) $
@@ -44,8 +43,6 @@ ut _host transport = do
           HA.RecoveryCoordinator.Tests.testServiceNotRestarting transport pg
       , testCase "testEQTrimming" $
           HA.RecoveryCoordinator.Tests.testEQTrimming transport pg
-      , testCase "testDriveAddition" $
-          HA.RecoveryCoordinator.Mero.Tests.testDriveAddition transport pg
       , testCase "testServiceStopped" $
           HA.RecoveryCoordinator.Tests.testServiceStopped transport pg
       , testGroup "Autoboot" $
@@ -80,15 +77,17 @@ main = do
     hSetBuffering stderr LineBuffering
     setEnv "DP_SCHEDULER_ENABLED" "1" True
     tid <- myThreadId
-    (host0, _) <- getTestListenSplit
 
     _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                      forever $ do threadDelay 100000
                                   throwTo tid (ErrorCall "Timeout")
-    prepare $ runTests (ut host0)
+    prepare $ do
+      dir <- getCurrentDirectory
+      putStrLn $ "Running tests in " ++ dir
+      runTests ut
   where
 #ifdef USE_MERO
-    prepare = withTmpDirectory . withM0
+    prepare = withTmpDirectory
 #else
     prepare = id
 #endif

@@ -1,58 +1,43 @@
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : Helper.Environment
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
 --
-{-# LANGUAGE LambdaCase #-}
+-- Test helpers interacting with system environment.
 module Helper.Environment
-  ( withMeroRoot
-  , confdEndpoint
-  , confd2Endpoint
-  , getLnetNid
-  , getTestListen
-  , getTestListenSplit
-  , systemHostname
+  ( getTestListenSplit
   , testListenName
+  , withMeroRoot
   ) where
 
-import Control.Arrow (second)
-import Network.BSD
-import System.Environment
-    ( lookupEnv )
-import System.IO.Unsafe
-import System.Process (readProcess)
+import Data.List.Split (splitOn)
+import GHC.Word (Word8)
+import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 
 withMeroRoot :: (String -> IO a) -> IO a
 withMeroRoot f = lookupEnv "MERO_ROOT" >>= \case
   Nothing -> error "Please specify MERO_ROOT environment variable in order to run test."
   Just x  -> f x
 
-getLnetNid :: IO String
-getLnetNid = head . lines <$> readProcess "lctl" ["list_nids"] ""
-
--- | Endpoints environment names.
-confdEndpoint, confd2Endpoint :: String
-confdEndpoint = "SERVER1_ENDPOINT"
-confd2Endpoint = "SERVER2_ENDPOINT"
-
--- | Return the value of the @TEST_LISTEN@ environment variable.
--- Error out if the variable is not set.
-getTestListen :: IO String
-getTestListen = lookupEnv "TEST_LISTEN" >>= \case
-  Nothing ->
-    error "environment variable TEST_LISTEN is not set; example: 192.0.2.1:0"
-  Just str -> return str
-
 -- | Return the value of the @TEST_LISTEN@ environment variable split
--- into host and port. Error out if the variable is not set. Also see
--- 'getTestListen'.
-getTestListenSplit :: IO (String, String)
-getTestListenSplit = second (drop 1) . break (== ':') <$> getTestListen
+-- into host and port. Perform a minor check for formatting. 'Nothing'
+-- if we variable unset or we couldn't parse @address:port@ pair.
+getTestListenSplit :: IO (Maybe (String, Int))
+getTestListenSplit = fmap (splitOn ":") <$> lookupEnv "TEST_LISTEN" >>= \case
+  Just [ip, p] -> case (traverse readMaybe (splitOn "." ip), readMaybe p) of
+    (Just ([_, _, _, _] :: [Word8]), Just p') -> return $ Just (ip, p')
+    _ -> return Nothing
+  _ -> return Nothing
 
-systemHostname :: String
-systemHostname = unsafePerformIO getHostName
-
-testListenName :: String
-testListenName = unsafePerformIO $ do
-  mhost <- fmap (fst . (span (/=':'))) <$> lookupEnv "TEST_LISTEN"
+-- | Retrieve an IP for the current host from @TEST_LISTEN@
+-- ('getTestListenSplit') env variable.
+testListenName :: IO String
+testListenName = do
+  mhost <- fmap fst <$> getTestListenSplit
   case mhost of
-    Nothing -> getLnetNid
+    Nothing -> fail "Couldn't retrieve host IP from TEST_LISTEN env var."
     Just h  -> return h

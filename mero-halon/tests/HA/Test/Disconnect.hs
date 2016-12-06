@@ -242,7 +242,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       _ <- expectPublished (Proxy :: Proxy NewNodeMsg)
 
 #ifdef USE_MERO
-      _ <- promulgateEQ [localNodeId m1] defaultInitialData
+      _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished Proxy
 #endif
 
@@ -304,7 +304,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
 
 #ifdef USE_MERO
-      _ <- promulgateEQ [localNodeId m1] defaultInitialData
+      _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished Proxy
 #endif
 
@@ -369,7 +369,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
 
       _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
 #ifdef USE_MERO
-      _ <- promulgateEQ [localNodeId m1] defaultInitialData
+      _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished Proxy
 #endif
 

@@ -436,6 +436,7 @@ Test-Suite testsnapshot2
                    network-transport-tcp,
                    distributed-commands,
                    process
+
   if !(flag(distributed-tests) && flag(long-tests))
     Buildable:     False
 
@@ -567,7 +568,9 @@ Test-Suite tests
                     process,
                     uuid,
                     exceptions,
-                    lens
+                    lens,
+                    split,
+                    aeson
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC
@@ -640,7 +643,8 @@ Test-Suite scheduler-tests
                     process,
                     uuid,
                     exceptions,
-                    stm
+                    stm,
+                    split
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO
@@ -746,7 +750,8 @@ Test-Suite test-bootstrap
                     process,
                     process-extras,
                     template-haskell,
-                    unix
+                    unix,
+                    split
   else
     Buildable:        False
 
