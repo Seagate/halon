@@ -363,7 +363,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
   dispatcher <- mkDispatcher
-  notifier <- mkNotifierSimple dispatcher
+  notifier <- mkNotifierSimpleAct dispatcher waitClear
 
   let init_rule (PoolRebalanceRequest pool) = getPoolRepairInformation pool >>= \case
         Nothing -> R.allIOSOnline pool >>= \case
@@ -516,7 +516,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
   dispatcher <- mkDispatcher
-  notifier <- mkNotifierSimple dispatcher
+  notifier <- mkNotifierSimpleAct dispatcher waitClear
 
   let init_rule (PoolRepairRequest pool) = getPoolRepairInformation pool >>= \case
         -- We spare ourselves some work and if IOS aren't ready then

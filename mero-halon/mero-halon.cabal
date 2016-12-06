@@ -202,6 +202,7 @@ Library
                        HA.RecoveryCoordinator.Mero.Transitions
                        HA.RecoveryCoordinator.Mero.Transitions.Internal
                        HA.RecoveryCoordinator.Castor.Cluster.Events
+                       HA.RecoveryCoordinator.Castor.Node.Events
                        HA.RecoveryCoordinator.Castor.Process.Events
                        HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
                        HA.Services.Mero.RC
@@ -209,7 +210,6 @@ Library
                       Mero.Engine
                       HA.RecoveryCoordinator.Mero.Actions.Spiel
                       HA.RecoveryCoordinator.Castor.Node.Actions
-                      HA.RecoveryCoordinator.Castor.Node.Events
                       HA.RecoveryCoordinator.Castor.Drive.Internal
                       HA.RecoveryCoordinator.Castor.Drive.Rules
                       HA.RecoveryCoordinator.Castor.Drive.Rules.Raid

@@ -18,33 +18,23 @@ module HA.RecoveryCoordinator.Castor.Expander.Rules
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
-import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessRequest(..))
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
 import HA.RecoveryCoordinator.Mero.Transitions
-import HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessResult(..))
 import HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
+import HA.RecoveryCoordinator.Castor.Process.Events
 import HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
 import HA.RecoveryCoordinator.Mero.State
-import HA.RecoveryCoordinator.Castor.Node.Rules
-  ( StartProcessesOnNodeResult(..)
-  , StartProcessesOnNodeRequest(..)
-  )
+import HA.RecoveryCoordinator.Castor.Node.Events
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.SSPL.CEP (sendNodeCmd)
-import HA.Services.SSPL.LL.RC.Actions
-  ( fldCommandAck
-  , mkDispatchAwaitCommandAck
-  )
-import HA.Services.SSPL.LL.Resources
-  ( NodeCmd(..)
-  , RaidCmd(..)
-  )
+import HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
+import HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
 
 import Control.Distributed.Process (liftIO)
 import Control.Lens
@@ -121,7 +111,16 @@ ruleReassembleRaid =
       tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
-      mero_notifier <- mkNotifier dispatcher
+      mero_notifier <- mkNotifierAct dispatcher $
+        -- We have received mero notification so ramp up the timeout
+        -- in case we're waiting for SSPL. This is a little bit
+        -- awkward but without this we effectively end up waiting up
+        -- to 6 minutes to fail (notificationTimeout for SSPL
+        -- notification then notificationTimeout for mero
+        -- notification) if SSPL notification arrives late but still
+        -- in time. With this, we can set a short timeout first and
+        -- increase it after mero notification is accounted for.
+        onTimeout notificationTimeout notify_failed
 
       let mkProcessesAwait name next = mkLoop name (return [])
             (\result l -> case result of
@@ -134,10 +133,7 @@ ruleReassembleRaid =
                 [] -> Just [next]
                 _ -> Nothing)
 
-      let defaultState = args expander_reset_evt
-
       setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc)) -> do
-        put Local defaultState -- HALON-576, HALON-577
         todo eid
 
         mm0 <- runMaybeT $ do
@@ -187,6 +183,7 @@ ruleReassembleRaid =
                 modify Local $ rlens fldM0 . rfield .~ Just (m0enc, m0node)
                 -- Wait for Mero notification, and also jump to stop_mero_services
                 waitFor mero_notifier
+                onTimeout 10 notify_failed
                 onSuccess stop_mero_services
 
             showLocality
@@ -336,6 +333,7 @@ ruleReassembleRaid =
 
         setExpectedNotifications notificationChk
         waitFor mero_notifier
+        onTimeout 10 notify_failed
         onSuccess finish
 
         continue dispatcher
@@ -372,9 +370,10 @@ ruleReassembleRaid =
         Just uuid <- gets Local (^. rlens fldUUID . rfield)
         Just (_, host, _) <- gets Local (^. rlens fldHardware . rfield)
         modifyGraph $ G.disconnect host R.Is R.ReassemblingRaid
+        waitClear
         done uuid
 
-      startFork expander_reset_evt defaultState
+      startFork expander_reset_evt (args expander_reset_evt)
 
   where
     -- Enclosure, node

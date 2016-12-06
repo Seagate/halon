@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 -- |
@@ -12,7 +13,6 @@ import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E
 import           Control.Lens
 import           Data.Binary (Binary)
-import           Data.List (sort)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
 import           Data.Vinyl
@@ -24,7 +24,7 @@ import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
-import           HA.Replicator
+import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Mero as M0
@@ -48,9 +48,7 @@ mkTests pg = do
     Right x -> do
       closeConnection x
       return $ \t ->
-        [ testSuccess "Simple notification" $
-            simpleNotification t pg
-        , testSuccess "stateCascade" $
+        [ testSuccess "stateCascade" $
            stateCascade t pg
         ,testSuccess "failureVector" $
            failvecCascade t pg
@@ -59,61 +57,6 @@ mkTests pg = do
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
   deriving (Generic, Typeable, Binary)
-
--- | Send a simple notification and check that we can see it pass by
--- as an internal state change.
-simpleNotification :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-simpleNotification t pg = H.run t pg [rule] (\ta _ _ _ -> test' (ta_rc ta)) where
-  test' :: ProcessId -> Process ()
-  test' rc = do
-    self <- getSelfPid
-    usend rc $ RuleHook self
-    True <- expect
-    return ()
-
-  rule :: Definitions RC ()
-  rule = define "simple notification" $ do
-    init_rule      <- phaseHandle "init_rule"
-    notified       <- phaseHandle "notified"
-    notify_timeout <- phaseHandle "notify_timeout"
-    dispatch       <- mkDispatcher
-    notifier       <- mkNotifierSimple dispatch
-
-    setPhase init_rule $ \(RuleHook pid) -> do
-      rg <- getLocalGraph
-      -- Find any enclosure process, any process
-      let Just enc = listToMaybe $
-              [ encl
-              | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-              , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
-              , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
-              ]
-      let notifications = [stateSet enc Tr.enclosureTransient]
-      modify Local $ rlens fldPid . rfield .~ Just pid
-      setExpectedNotifications notifications
-      applyStateChanges notifications
-      waitFor notifier
-      onTimeout 5 notify_timeout
-      onSuccess notified
-      continue dispatch
-
-    directly notified $ do
-      phaseLog "debug" "Notified"
-      Just pid <- getField . rget fldPid <$> get Local
-      liftProcess $ usend pid True
-
-    directly notify_timeout $ do
-      phaseLog "debug" "Timed out"
-      Just pid <- getField . rget fldPid <$> get Local
-      liftProcess $ usend pid False
-
-    start init_rule args
-    where
-      fldPid = Proxy :: Proxy '("caller", Maybe ProcessId)
-      args = fldPid           =: Nothing
-         <+> fldNotifications =: []
-         <+> fldDispatch      =: Dispatch [] (error "simpleNotification dispatcher") Nothing
 
 -- | Test that internal object change message is properly sent out
 -- throughout RC for a cascaded event.
@@ -139,12 +82,11 @@ stateCascade t pg = H.run t pg [rule] (\ta _ recv _ -> test' (ta_rc ta) recv)
     test' rc recv = do
       self <- getSelfPid
       _ <- usend rc $ RuleHook self
-      ps <- expect :: Process M0.Process
-      Set ns' <- H.nextNotificationFor (M0.fid ps) recv
-      sayTest $ "Received: " ++ show ns'
-      Set ns <- expect
-      sayTest $ "Expected: " ++ show ns
-      liftIO $ assertEqual "Mero gets the expected note set" (sort ns) (sort ns')
+      _ <- H.spawnNotificationAcker recv
+      expect >>= \case
+        Left e -> fail e
+        Right True -> return ()
+        Right False -> fail "Process/service in unexpected state."
 
     rule :: Definitions RC ()
     rule = define "stateCascadeTest" $ do
@@ -171,40 +113,42 @@ stateCascade t pg = H.run t pg [rule] (\ta _ recv _ -> test' (ta_rc ta) recv)
 
         let notifySet = stateSet p Tr.processStarting
                       : map (`stateSet` Tr.processCascadeService M0.PSStarting) srvs
-            meroSet = Note (M0.fid p) (toConfObjState p M0.PSStarting)
-                    : (flip Note (toConfObjState (undefined :: M0.Service) M0.SSStarting) . M0.fid <$> srvs)
 
         modify Local $ rlens fldPid . rfield .~ Just pid
-        modify Local $ rlens fldMeroSet . rfield .~ meroSet
+        modify Local $ rlens fldProcess . rfield .~ Just p
 
         setExpectedNotifications notifySet
         applyStateChanges [stateSet p Tr.processStarting]
 
         waitFor notifier
-        onTimeout 15 timed_out
+        onTimeout 10 timed_out
         onSuccess notified
         continue dispatch
 
       directly notified $ do
         phaseLog "info" $ "All notified"
         Just pid <- getField . rget fldPid <$> get Local
-        meroSet <- getField . rget fldMeroSet <$> get Local
-        liftProcess . usend pid . Just $ Set meroSet
+        Just p <- getField . rget fldProcess <$> get Local
+        rg <- getLocalGraph
+        let pstate = getState p rg == M0.PSStarting
+            sstate = all (== M0.SSStarting)
+              [ getState s rg | (s :: M0.Service) <- G.connectedTo p M0.IsParentOf rg ]
+
+        liftProcess $ usend pid (Right (pstate && sstate) :: Either String Bool)
 
       directly timed_out $ do
-        phaseLog "warn" $ "Notify timed out"
         Just pid <- getField . rget fldPid <$> get Local
-        liftProcess $ usend pid (Nothing :: Maybe Set)
+        liftProcess . usend pid $ (Left "Notification timed out" :: Either String Bool)
 
       start init_rule args
       where
         fldPid = Proxy :: Proxy '("caller", Maybe ProcessId)
-        fldMeroSet = Proxy :: Proxy '("mero-set", NVec)
+        fldProcess = Proxy :: Proxy '("proc", Maybe M0.Process)
 
         args = fldNotifications =: []
            <+> fldPid           =: Nothing
            <+> fldDispatch      =: Dispatch [] (error "stateCascade.rule dispatcher") Nothing
-           <+> fldMeroSet       =: []
+           <+> fldProcess       =: Nothing
 
 failvecCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 failvecCascade t pg = H.run t pg [rule] (\ta _ recv _ -> test' (ta_rc ta) recv)

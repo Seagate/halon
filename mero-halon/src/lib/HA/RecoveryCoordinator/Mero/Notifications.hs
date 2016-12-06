@@ -11,13 +11,43 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Interaction with flying-by state change notifications.
+-- Interaction with flying-by state change notifications. A simple
+-- use-case may look as follows:
+--
+-- @
+-- ruleNotifyProcessOnline :: 'Definitions' 'RC' ()
+-- ruleNotifyProcessOnline = 'define' "ruleNotifyProcessOnline" $ do
+--   notify_process_online <- 'phaseHandle' "notify_process_online"
+--   notify_succeeded <- 'phaseHandle' "notify_succeeded"
+--   notify_timed_out <- 'phaseHandle' "notify_timed_out"
+--   dispatcher <- 'mkDispatcher'
+--   notifier <- 'mkNotifierSimple' dispatcher
+--
+--   'setPhase' notify_process_online $ \(SomeProcess p) -> do
+--     let notifications = [stateSet p processOnline]
+--     'setExpectedNotifications' notifications
+--     'applyStateChanges' notifications
+--     'waitFor' notify_succeeded
+--     'onTimeout' 10 notify_timed_out
+--     'onSuccess' notify_succeeded
+--     'continue' dispatcher
+--
+--   'directly' notify_succeeded $ …
+--   'directly' notify_timed_out $ …
+--
+--   start notify_process_online (args notify_process_online)
+--   where
+--     args st =  'fldNotifications' '=:' []
+--          '<+>' 'fldDispatch'      '=:' 'Dispatch' [] st 'Nothing'
+-- @
 
 module HA.RecoveryCoordinator.Mero.Notifications
   ( FldNotifications
   , fldNotifications
   , mkNotifier
+  , mkNotifierAct
   , mkNotifierSimple
+  , mkNotifierSimpleAct
   , setExpectedNotifications
   , setPhaseInternalNotification
   , setPhaseNotified
@@ -48,22 +78,33 @@ type FldNotifications a = '("notifications", [a])
 fldNotifications :: Proxy (FldNotifications AnyStateSet)
 fldNotifications = Proxy
 
+-- | A helper to set 'FldNotifications' in the local state.
 setExpectedNotifications :: forall a g l.
                             (FldNotifications a ∈ l, Application g)
                          => [a] -> PhaseM g (FieldRec l) ()
 setExpectedNotifications ns = modify Local $ rlens fldN . rfield .~ ns
   where
-    fldN = Proxy :: Proxy '("notifications", [a])
+    fldN = Proxy :: Proxy (FldNotifications a)
 
--- | Helper for 'setPhaseAllNotified' and 'setPhaseAllNotifiedBy'.
--- TODO: comment
+-- | Create a phase that awaits state change notifications. This phase
+-- is driven by a dispatcher ('FldDispatch') which allows us to
+-- interleave waits with other phases and easily set failure and
+-- success cases. Most likely you want to use one of
+-- 'mkNotifierSimpleAct', 'mkNotifierSimple', 'mkNotifier'.
 mkNotifier' :: forall a l. (FldDispatch ∈ l, FldNotifications a ∈ l)
             => (a -> AnyStateChange -> Bool)
-            -- ^ Underlying state transformer.
+            -- ^ Underlying state predicate generator. Given value in
+            -- 'FldNotifications' of type @a@, generate a predicate on
+            -- 'AnyStateChange' that we actually receive and see if
+            -- the two ‘match’.
             -> Jump PhaseHandle
-            -- ^ Dispatcher handle
+            -- ^ Dispatcher handle.
+            -> PhaseM RC (FieldRec l) ()
+            -- ^ Any extra action to perform when the notifier phase
+            -- is finished. Useful if you want to 'waitDone' or
+            -- 'waitClear' some extra phase handles.
             -> RuleM RC (FieldRec l) (Jump PhaseHandle)
-mkNotifier' toPred dispatcher = do
+mkNotifier' toPred dispatcher act = do
   notifier <- phaseHandle "notifier"
 
   setPhase notifier $ \(HAEvent eid (msg :: InternalObjectStateChangeMsg)) -> do
@@ -73,6 +114,7 @@ mkNotifier' toPred dispatcher = do
       [] -> do
          waitDone notifier
          done eid
+         act
          continue dispatcher
       notificationSet -> do
         InternalObjectStateChange iosc <- liftProcess $ decodeP msg
@@ -85,27 +127,51 @@ mkNotifier' toPred dispatcher = do
 
         -- We're not waiting for any more notifications, notifier has
         -- done its job.
-        when (null next) $ waitDone notifier
-        done eid
+        when (null next) $ do
+          waitDone notifier
+          done eid
+          act
         -- There may well be other phases this dispatcher is waiting
         -- for, we have to keep going.
         continue dispatcher
 
   return notifier
 
--- | TODO: comment
+-- | A wrapper over 'mkNotifier'' that works over @'FldNotifications'
+-- 'AnyStateSet'@ and allows the user to specify an additional action
+-- to perform after the notification phase is finished working. This
+-- action can be used to perform any additional clean-up, such as by
+-- removing ('waitDone') any potential abort phases &c.
+mkNotifierSimpleAct :: (FldDispatch ∈ l, FldNotifications AnyStateSet ∈ l)
+                    => Jump PhaseHandle
+                    -- ^ Dispatcher handle
+                    -> PhaseM RC (FieldRec l) ()
+                    -- ^ Act to perform after notifier phase is finished.
+                    -> RuleM RC (FieldRec l) (Jump PhaseHandle)
+mkNotifierSimpleAct = mkNotifier' simpleNotificationToPred
+
+-- | 'mkNotifierSimpleAct' with an action that does nothing.
 mkNotifierSimple :: (FldDispatch ∈ l, FldNotifications AnyStateSet ∈ l)
                  => Jump PhaseHandle
                  -- ^ Dispatcher handle
                  -> RuleM RC (FieldRec l) (Jump PhaseHandle)
-mkNotifierSimple = mkNotifier' simpleNotificationToPred
+mkNotifierSimple h = mkNotifier' simpleNotificationToPred h (return ())
 
--- | TODO: comment
+mkNotifierAct :: (FldDispatch ∈ l, FldNotifications (AnyStateChange -> Bool) ∈ l)
+              => Jump PhaseHandle
+              -- ^ Dispatcher handle
+              -> PhaseM RC (FieldRec l) ()
+              -- ^ Act to perform after notifier phase is finished.
+              -> RuleM RC (FieldRec l) (Jump PhaseHandle)
+mkNotifierAct = mkNotifier' id
+
+-- | 'mkNotifierSimple' that works directly over 'AnyStateChange'
+-- predicates stored in 'FldNotifications'.
 mkNotifier :: (FldDispatch ∈ l, FldNotifications (AnyStateChange -> Bool) ∈ l)
            => Jump PhaseHandle
            -- ^ Dispatcher handle
            -> RuleM RC (FieldRec l) (Jump PhaseHandle)
-mkNotifier = mkNotifier' id
+mkNotifier h = mkNotifierAct h (return ())
 
 -- | Check that the 'AnyStateChange' directly corresponds to
 -- 'Transition' encoded in the 'AnyStateSet'.

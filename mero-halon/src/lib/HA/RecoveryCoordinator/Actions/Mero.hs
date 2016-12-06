@@ -36,7 +36,7 @@ import HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Service.Events
-import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Node.Events
 import HA.RecoveryCoordinator.Castor.Process.Events
 
 import HA.Resources.Castor (Is(..))

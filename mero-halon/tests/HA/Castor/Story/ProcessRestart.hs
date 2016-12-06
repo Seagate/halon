@@ -1,8 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE ViewPatterns       #-}
 -- | Module testing handling of notifications from SSPL and
 -- notification interface related to systemd services and their
 -- underlying process being restarted.
@@ -15,6 +16,7 @@ module HA.Castor.Story.ProcessRestart (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
+import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (sort)
 import qualified Data.Text as T
@@ -22,7 +24,6 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
 import           HA.EventQueue.Producer
-import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
@@ -30,7 +31,6 @@ import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
-import           HA.SafeCopy
 import           HA.Services.Mero
 import           Mero.ConfC (fidToStr, Fid(..), ServiceType(..))
 import           Mero.Notification
@@ -41,6 +41,7 @@ import           Network.Transport
 import           SSPL.Bindings
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual)
+import           TestRunner (ta_rc)
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -104,7 +105,7 @@ mkProcessStartedNotification p (M0.PID pid) = HAMsg event meta
 
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable, Binary)
 
 -- | Generic test runner for failing processes. Attaches the given
 -- starting state and 'testProcessPid' to the process in RG before
@@ -121,10 +122,9 @@ doRestart :: (Typeable g, RGroup g)
 doRestart transport pg startingState runRestartTest =
   H.run transport pg [rule] test where
 
-  test _ _ recv _ = do
+  test (ta_rc -> rc) _ recv _ = do
     self <- getSelfPid
-    nid <- getSelfNode
-    _ <- promulgateEQ [nid] $ RuleHook self
+    _ <- usend rc $ RuleHook self
     procs <- expectTimeout 5000000 :: Process (Maybe [(M0.Process, [M0.Service])])
     case procs of
       Just [(p, srvs)] -> runRestartTest p srvs recv
@@ -132,7 +132,7 @@ doRestart transport pg startingState runRestartTest =
                ++ show procs
 
   rule :: Definitions RC ()
-  rule = defineSimple "testProcessRestart" $ \(HAEvent eid (RuleHook pid)) -> do
+  rule = defineSimple "testProcessRestart" $ \(RuleHook pid) -> do
     rg <- getLocalGraph
     -- Processes with IOS filtered out
     let procs = [ (p, srvs)
@@ -173,8 +173,6 @@ doRestart transport pg startingState runRestartTest =
     phaseLog "newProc" $ show newProc
     phaseLog "newSrvs" $ show newSrvs
     liftProcess $ usend pid procs
-    messageProcessed eid
-
 
 --------------------------------------------------------------------------------
 -- Actual tests
@@ -205,5 +203,3 @@ testProcessStartsOK t pg = doRestart t pg M0.PSStarting $ \p srvs recv -> do
   Set nt <- H.nextNotificationFor (M0.fid p) recv
   liftIO $ assertEqual "ruleProcessOnline sets process to online"
            (sort $ mkMsg p M0_NC_ONLINE : map (`mkMsg` M0_NC_ONLINE) srvs) (sort nt)
-
-deriveSafeCopy 0 'base ''RuleHook

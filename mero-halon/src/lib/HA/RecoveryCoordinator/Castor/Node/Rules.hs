@@ -357,25 +357,18 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
              Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
 
 -- | Request to stop halon node.
---
--- XXX: actually mero-kernel can't be stopped at the moment as halon can't
--- unload mero modules.
 requestStopHalonM0d :: Definitions RC ()
 requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
   \(StopHalonM0dRequest node) -> do
      rg <- getLocalGraph
-     do let ps = [ stateSet p processHAStopping
-                 | Just m0node <- [M0.nodeToM0Node node rg]
-                 , p <- G.connectedTo m0node M0.IsParentOf rg
-                 , any (\s -> M0.s_type s == CST_HA)
-                   $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
-                 ]
-        applyStateChanges ps
-        -- XXX: currently stop of the halon:m0d does not stop
-        -- mero-kernel, thus node should no online.
-
-        -- applyStateChanges [stateSet m0node M0.NSOffline]
-        promulgateRC $ encodeP $ ServiceStopRequest node m0d
+     let ps = [ stateSet p processHAStopping
+              | Just m0node <- [M0.nodeToM0Node node rg]
+              , p <- G.connectedTo m0node M0.IsParentOf rg
+              , any (\s -> M0.s_type s == CST_HA)
+                $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
+              ]
+     applyStateChanges ps
+     promulgateRC $ encodeP $ ServiceStopRequest node m0d
 
 -------------------------------------------------------------------------------
 -- Processes
@@ -505,7 +498,7 @@ mkQueryHostInfo andThen orFail = do
 
 
 -- | Process that will bootstrap mero node.
--- @@@
+-- @
 -- ----- NewNodeConnected -------------+
 --                                     |
 --                                     v
@@ -528,7 +521,7 @@ mkQueryHostInfo andThen orFail = do
 --                                    |------ Request New Node start ---------->
 --                                    |
 --                                  finish
---  @@@
+--  @
 processStartProcessesOnNode :: Job StartProcessesOnNodeRequest StartProcessesOnNodeResult
 processStartProcessesOnNode = Job "castor::node::process::start"
 

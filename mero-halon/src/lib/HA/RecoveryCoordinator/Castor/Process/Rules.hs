@@ -25,7 +25,6 @@ import           Data.Typeable
 import           Data.Vinyl
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
 import           HA.RecoveryCoordinator.Job.Actions
