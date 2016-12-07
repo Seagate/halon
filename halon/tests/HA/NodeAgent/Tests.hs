@@ -9,10 +9,10 @@
 
 module HA.NodeAgent.Tests (tests, __remoteTable) where
 
-import HA.EventQueue ( EventQueue, startEventQueue, emptyEventQueue )
-import HA.EventQueue.Producer (expiate)
+import HA.EventQueue
+import HA.EventQueue.Process hiding (__remoteTable)
+import HA.EQTracker.Process hiding (__remoteTable)
 import HA.Replicator ( RGroup(..) )
-import HA.EQTracker hiding (__remoteTable)
 import RemoteTables ( remoteTable )
 
 
@@ -91,7 +91,7 @@ tests :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO [TestTree]
 tests transport pg = do
     return
       [ testSuccess "rc-get-expiate" $ naTestWithEQ transport pg $ \_nodes -> do
-             _ <- spawnLocal $ expiate "hello0"
+             _ <- spawnLocal $ promulgateWait "hello0"
              liftIO $ takeMVar sync0
              assert True
 
@@ -102,7 +102,7 @@ tests transport pg = do
                      return $ find ((/=) self . localNodeId) nodes
              Just notMe <- getNotMe
              liftIO $ closeLocalNode notMe
-             _ <- spawnLocal $ expiate "hello1"
+             _ <- spawnLocal $ promulgateWait "hello1"
 
              liftIO $ takeMVar sync1
              assert True

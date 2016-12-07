@@ -21,7 +21,7 @@ import Data.Foldable (traverse_)
 import           Control.Distributed.Process
 import           Network.CEP
 
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import           HA.RecoveryCoordinator.Mero
 import           HA.Encode (encodeP)
 import           HA.Service

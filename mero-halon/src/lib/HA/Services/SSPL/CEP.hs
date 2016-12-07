@@ -15,7 +15,7 @@ module HA.Services.SSPL.CEP where
 import           Control.Applicative
 import           Control.Distributed.Process
 import qualified HA.Aeson as Aeson
-import           HA.EventQueue.Types (HAEvent(..))
+import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.RC.Application
 import           HA.RecoveryCoordinator.RC.Actions.Core

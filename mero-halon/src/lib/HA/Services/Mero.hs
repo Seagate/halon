@@ -38,7 +38,7 @@ import           Control.Exception (SomeException, IOException)
 import           Control.Monad (forever, unless, void, when)
 import qualified Control.Monad.Catch as Catch
 import           Control.Monad.Trans.Reader
-import           HA.EventQueue.Producer (promulgate, promulgateWait)
+import           HA.EventQueue (promulgate, promulgateWait)
 import           HA.Debug
 import           HA.Logger
 import qualified HA.RecoveryCoordinator.Mero.Events as M0

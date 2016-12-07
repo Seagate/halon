@@ -26,8 +26,7 @@ import           Data.Typeable
 import           GHC.Generics
 import           HA.Encode
 import           HA.EventQueue
-import           HA.EventQueue.Producer (promulgateEQ)
-import           HA.EventQueue.Types (HAEvent(..))
+import           HA.EventQueue.Process
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.RC.Actions (defineSimpleTask, RC)
 import           HA.RecoveryCoordinator.Helpers

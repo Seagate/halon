@@ -47,7 +47,7 @@ import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
 import Mero.Engine
 import Mero.M0Worker
-import HA.EventQueue.Producer (promulgate, promulgateWait)
+import HA.EventQueue (promulgate, promulgateWait)
 import HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R

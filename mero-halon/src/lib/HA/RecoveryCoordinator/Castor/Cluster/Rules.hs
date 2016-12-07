@@ -48,7 +48,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Rules
   , eventNodeFailedStart
   ) where
 
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import           HA.Encode
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R

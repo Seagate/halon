@@ -7,7 +7,7 @@
 module HA.Services.SSPL.HL.StatusHandler where
 
 import Control.Distributed.Process
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue (promulgate)
 import SSPL.Bindings
 
 import Control.Monad (forever)

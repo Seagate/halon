@@ -1,16 +1,22 @@
--- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
--- License   : All rights reserved.
---
--- Logic for reporting a new Node has been added to the cluster. A NodeUp
--- process is spawned which is responsible for sending `NodeUp` messages
--- to the RC until it acknowledges, at which point the process dies.
-
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
+-- |
+-- Copyright : (C) 2014 Xyratex Technology Limited.
+-- License   : All rights reserved.
+--
+-- Logic for adding new node to the halon cluster. When node can be
+-- added to cluster, one should issue 'nodeUp' call on the target node. 
+--
+-- 'nodeUp' requests list of the current event queue nodes and
+-- acknowledge node presence to Recovery Coordinator.
+-- This will update 'EQTracker' and node will try to announce itself.
+-- 
+-- After node announced itself with 'NodeUp' message, this message
+-- will be periodically resent until Recovery coordinator will acknowledge
+-- delivery.
 module HA.NodeUp
   ( NodeUp(..)
   , nodeUp
@@ -21,39 +27,21 @@ module HA.NodeUp
   )
 where
 
-import HA.EventQueue.Producer (promulgate)
-import qualified HA.EQTracker as EQT
-
-import Control.Distributed.Process
-  ( NodeId
-  , ProcessId
-  , Process
-  , getSelfPid
-  , expect
-  , say
-  , processNodeId
-  , usend
-  , whereis
-  , receiveTimeout
-  , expectTimeout
-  )
-import Control.Distributed.Process.Closure ( remotable )
-import Control.Monad.Catch (catch)
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Fix ( fix )
-
-import Control.Exception (SomeException, throwIO)
-import Data.Hashable (Hashable)
-import Data.Typeable (Typeable)
-
-import GHC.Generics (Generic)
-import HA.SafeCopy
-
-import Network.HostName
-import System.IO
+import           Control.Distributed.Process hiding (catch)
+import           Control.Distributed.Process.Closure
+import           Control.Monad.Catch
+import           Data.Function (fix)
+import           Data.Hashable
+import           Data.Typeable
+import           GHC.Generics
+import           HA.SafeCopy
+import           HA.EventQueue.Producer (promulgate)
+import qualified HA.EQTracker.Internal as EQT
+import           Network.HostName
+import           System.IO
 
 
--- | NodeUp message sent to the RC (via EQ) when a node starts.
+-- | NodeUp message sent to the Recovery Coordinator when a node starts.
 data NodeUp =
   -- | 'NodeUp' @nodeHostname@ @nodePid@
   NodeUp String ProcessId
@@ -106,7 +94,7 @@ nodeUp (eqs, _delay) = do
      liftIO $ hPutStrLn stderr $
        "nodeUp exception: " ++ show (e :: SomeException)
      say $ "nodeUp exception: " ++ show e
-     liftIO $ throwIO e
+     throwM e
   where
     withEQPid :: (Process a -> ProcessId -> Process a) -> Process a
     withEQPid act = fix $ \loop ->

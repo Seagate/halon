@@ -9,8 +9,7 @@
 
 module HA.RecoveryCoordinator.Mero.Rules where
 
-import HA.EventQueue.Types
-
+import HA.EventQueue
 import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log

@@ -41,7 +41,7 @@ import qualified HA.Resources.Mero.Note as M0
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Mero.Events
 
-import HA.EventQueue.Producer (promulgateWait)
+import HA.EventQueue (promulgateWait)
 import Control.Distributed.Process
 import Network.CEP
 

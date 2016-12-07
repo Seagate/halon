@@ -19,7 +19,7 @@ module HA.Services.SSPL.LL.RC.Actions
   , mkDispatchAwaitCommandAck
   ) where
 
-import HA.EventQueue.Types (HAEvent(..))
+import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
 import HA.Services.SSPL.LL.Resources

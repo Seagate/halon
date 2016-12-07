@@ -11,7 +11,7 @@ module Handler.Status
   , status
   ) where
 
-import HA.EventQueue.Producer (promulgateEQ)
+import HA.EventQueue
 import HA.RecoveryCoordinator.RC.Events.Debug
 import HA.Resources
 

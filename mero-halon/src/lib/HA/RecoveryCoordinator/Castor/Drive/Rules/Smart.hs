@@ -16,9 +16,9 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
   , runSmartTest
   ) where
 
-import HA.EventQueue.Types
+import Data.UUID (UUID)
+import HA.EventQueue
   ( HAEvent(..)
-  , UUID
   )
 import HA.RecoveryCoordinator.RC.Actions
   ( RC

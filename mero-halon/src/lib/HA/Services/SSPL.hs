@@ -34,7 +34,7 @@ module HA.Services.SSPL
 
 import HA.Aeson (decode, encode)
 import qualified HA.Aeson as Aeson
-import HA.EventQueue.Producer (promulgate, promulgateWait)
+import HA.EventQueue (promulgate, promulgateWait)
 import HA.Debug
 import HA.Logger (mkHalonTracer)
 import HA.Service

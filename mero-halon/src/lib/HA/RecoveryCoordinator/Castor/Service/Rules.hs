@@ -9,7 +9,7 @@ module HA.RecoveryCoordinator.Castor.Service.Rules
   ( rules
   ) where
 
-import HA.EventQueue.Types (HAEvent(..))
+import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
   ( RC
   , LoopState(..)

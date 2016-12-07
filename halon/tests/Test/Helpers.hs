@@ -9,7 +9,7 @@ import Control.Distributed.Process hiding (unwrapMessage)
 import Data.Maybe (catMaybes)
 import Data.PersistMessage
 import Data.Typeable
-import HA.EventQueue.Types
+import HA.EventQueue
 import HA.SafeCopy
 
 import qualified Test.Tasty.HUnit as HU

@@ -64,10 +64,11 @@ import           Data.Traversable (for)
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
 import           Data.Vinyl hiding ((:~:))
+import           Data.UUID (UUID)
 import           GHC.Generics (Generic)
 
 import           HA.Encode
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (barrierPass)
 import           HA.RecoveryCoordinator.RC.Actions

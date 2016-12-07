@@ -11,13 +11,7 @@ module Handler.Debug
   , debug
   ) where
 
-import HA.EventQueue (eventQueueLabel)
-import HA.EventQueue.Producer (promulgateEQ)
-import HA.EventQueue.Types
-  ( EQStatResp(..)
-  , EQStatReq(..)
-  , PoolStats(..)
-  )
+import HA.EventQueue
 import HA.RecoveryCoordinator.RC.Events.Debug
 import Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 
@@ -72,14 +66,13 @@ data EQStatsOptions = EQStatsOptions Int -- ^ Timeout for querying EQ.
 
 -- | Print Event Queue statistics.
 eqStats :: [NodeId] -> EQStatsOptions -> Process ()
-eqStats nids (EQStatsOptions t c m) = do
-    self <- getSelfPid
+eqStats nids (EQStatsOptions t c _) = do
     eqs <- findEQFromNodes t nids
     for_ eqs $ \eq -> do
-      nsendRemote eq eventQueueLabel $ EQStatReq self
+      requestEQStats eq
       expect >>= liftIO . display
       when c $ do
-        nsendRemote eq eventQueueLabel $ RuntimeInfoRequest self m
+        runtimeInfoRequest eq
         expect >>= displayCepReply
   where
     display (EQStatResp{..}) = do

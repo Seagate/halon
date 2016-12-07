@@ -10,7 +10,7 @@ module HA.Services.Frontier.CEP
   , ruleDumpGraph
   ) where
 
-import HA.EventQueue.Types
+import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import HA.Services.Frontier.Command
 import HA.Multimap (getKeyValuePairs)

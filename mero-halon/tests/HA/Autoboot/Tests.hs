@@ -19,6 +19,7 @@ import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
 
 import qualified HA.EQTracker as EQT
+import HA.EQTracker.Process as EQT
 import HA.Multimap
 import HA.NodeUp ( nodeUp )
 import HA.Startup hiding (__remoteTable)
@@ -48,8 +49,7 @@ eqtReceiveAllStations transport =
     meq <- whereis EQT.name
     say (show meq)
     Just eq <- return meq
-    self <- getSelfPid
-    usend eq (EQT.ReplicaRequest self)
+    EQT.lookupReplicas (processNodeId eq)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
     liftIO $ assertEqual "list of trackers was updated"
                 (Set.fromList xs)
@@ -62,8 +62,7 @@ eqtReceiveStationsAtStart transport = do
     _ <- EQT.startEQTracker [localNodeId $ head nids]
     nodeUp (map localNodeId nids, 1000000)
     Just eq <- whereis EQT.name
-    self <- getSelfPid
-    usend eq (EQT.ReplicaRequest self)
+    EQT.lookupReplicas (processNodeId eq)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect
     liftIO $ assertEqual "nodes updated" (Set.fromList $ map localNodeId nids)
                                          (Set.fromList xs)

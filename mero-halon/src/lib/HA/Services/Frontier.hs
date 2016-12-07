@@ -36,7 +36,7 @@ import Network hiding (Service)
 
 import HA.Aeson
 import HA.Debug
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue (promulgate)
 import HA.SafeCopy
 import HA.Service hiding (configDict)
 import HA.Service.TH

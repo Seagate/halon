@@ -11,17 +11,15 @@ module HA.EventQueue.Producer
   , promulgate
   , promulgateWait
   , promulgateEvent
-  , expiate
   ) where
 
 import HA.CallTimeout
   ( ncallRemoteSome
   , ncallRemoteSomePrefer
   )
-import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import HA.Logger
-import qualified HA.EQTracker as EQT
+import qualified HA.EQTracker.Internal as EQT
 import HA.SafeCopy
 
 import Control.Distributed.Process hiding (bracket)
@@ -47,8 +45,7 @@ promulgateTimeout :: Int
 promulgateTimeout = 5000000
 
 -- | Promulgate an event directly to an EQ node without indirection
---   via the NodeAgent. Note that this spawns a local process in order
---   to ensure that the event id is unique.
+--   via the "HA.EQTracker".
 promulgateEQ :: (SafeCopy a, Typeable a)
              => [NodeId] -- ^ EQ nodes.
              -> a -- ^ Event to send.
@@ -162,7 +159,3 @@ promulgateHAEventPref peqnids eqnids msg = do
       nsend EQT.name $ EQT.PreferReplica rnid
       return Success
     _ -> return Failure
-
--- | Add a new event to the event queue and then die.
-expiate :: (SafeCopy a, Typeable a) => a -> Process ()
-expiate x = promulgate x >> die "Expiate."

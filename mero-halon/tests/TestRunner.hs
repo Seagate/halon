@@ -24,9 +24,10 @@ module TestRunner
   , __remoteTableDecl
   ) where
 
-import qualified HA.EQTracker as EQT
+import qualified HA.EQTracker.Process as EQT
 import HA.EventQueue
 import HA.EventQueue.Types
+import HA.EventQueue.Process
 import HA.Multimap.Implementation
 import HA.Multimap.Process
 import HA.Multimap

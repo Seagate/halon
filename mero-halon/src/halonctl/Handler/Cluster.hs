@@ -16,6 +16,7 @@ module Handler.Cluster
   , cluster
   ) where
 
+import HA.EventQueue (promulgateEQ)
 #ifdef USE_MERO
 import Control.Distributed.Process.Serializable
 import Control.Monad.Fix (fix)
@@ -26,8 +27,7 @@ import Data.Maybe (mapMaybe)
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
-import HA.EventQueue (eventQueueLabel)
-import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..))
+import HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..) )
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
@@ -56,7 +56,6 @@ import Text.Read (readMaybe)
 import Control.Distributed.Process
 import Control.Monad
 import Data.Yaml (prettyPrintParseException)
-import HA.EventQueue.Producer (promulgateEQ)
 import qualified HA.Resources.Castor.Initial as CI
 import Lookup (findEQFromNodes)
 import Options.Applicative

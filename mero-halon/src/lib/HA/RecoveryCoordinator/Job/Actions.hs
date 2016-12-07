@@ -28,7 +28,7 @@ import           Data.Traversable (for)
 import           Data.Typeable (Typeable)
 import qualified Data.UUID.V4 as UUID
 import           Data.Vinyl
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import           HA.RecoveryCoordinator.Job.Events
