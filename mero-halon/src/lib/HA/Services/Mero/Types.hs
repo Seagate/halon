@@ -121,7 +121,7 @@ instance Hashable NotificationMessage
 data ProcessRunType =
     M0D -- ^ Run 'm0d' service.
   | M0T1FS -- ^ Run 'm0t1fs' service.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Ord, Eq, Show, Typeable, Generic)
 instance Binary ProcessRunType
 instance Hashable ProcessRunType
 
@@ -133,7 +133,7 @@ data ProcessConfig =
     -- ^ Process fid, endpoint, conf.xc
   | ProcessConfigRemote M0.Process
   -- ^ Process fid, endpoint
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Ord, Eq, Show, Typeable, Generic)
 instance Binary ProcessConfig
 instance Hashable ProcessConfig
 
@@ -142,7 +142,7 @@ data ProcessControlMsg =
     StartProcess ProcessRunType M0.Process
   | StopProcess ProcessRunType M0.Process
   | ConfigureProcess ProcessRunType ProcessConfig Bool
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Ord, Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
 

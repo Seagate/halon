@@ -41,7 +41,7 @@ import Mero.ConfC (Fid, fidToStr)
 
 import qualified Network.RPC.RPCLite as RPC
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.Trans.Reader
 import Control.Exception (SomeException, IOException)
 import qualified Control.Distributed.Process.Internal.Types as DI
@@ -58,6 +58,7 @@ import Control.Monad (forever, void)
 import qualified Control.Monad.Catch as Catch
 
 import qualified Data.ByteString as BS
+import qualified Data.Bimap as BM
 import Data.Char (toUpper)
 import Data.Maybe (maybeToList)
 import Data.Binary
@@ -127,8 +128,12 @@ keepaliveProcess kaFreq kaTimeout niRef pid = do
     unless (null pruned) $ do
       promulgateWait $ KeepaliveTimedOut pruned
 
--- | Process responsible for controlling the system level
---   Mero processes running on this node.
+-- | Process responsible for controlling the system level Mero
+-- processes running on this node.
+--
+-- Only one command for each value of 'ProcessControlMsg' is ran at a
+-- time. That is, sending the same command to the control process will
+-- have no effect if we don't have a result from previous run yet.
 --
 -- TODO: usend: RC restarts then we want probably *do* want to lose
 -- these messages as the job that caused them is going to restart and
@@ -143,28 +148,39 @@ keepaliveProcess kaFreq kaTimeout niRef pid = do
 -- that kills old call when a new one comes in. This works assuming
 -- jobs are only dispatchers of these control messages but also solves
 -- TODO3.
---
--- TODO3: Calls to configure\/start\/stop are blocking! They don't
--- have to be anymore as upstream has own timeout. Run these async to
--- allow processing of channel messages swiftly.
 controlProcess :: MeroConf
                -> ProcessId -- ^ Parent process to link to
                -> ReceivePort ProcessControlMsg
                -> Process ()
-controlProcess mc pid rp = link pid >> (forever $ receiveChan rp >>= \case
-    ConfigureProcess runType conf mkfs -> do
-      nid <- getSelfNode
-      result <- liftIO $ configureProcess mc runType conf mkfs
-      promulgateWait $ ProcessControlResultConfigureMsg nid result
-    StartProcess runType p -> do
-      nid <- getSelfNode
-      result <- liftIO $ startProcess runType p
-      promulgateWait $ ProcessControlResultMsg nid result
-    StopProcess runType p -> do
-      nid <- getSelfNode
-      result <- liftIO $ stopProcess runType p
-      promulgateWait $ ProcessControlResultStopMsg nid result
-  )
+controlProcess mc pid rp = do
+  link pid
+  master <- getSelfPid
+  let loop slaves = receiveWait
+        [ matchIf (\(ProcessMonitorNotification mref _ _) -> BM.member mref slaves)
+                  (\(ProcessMonitorNotification mref _ _) ->
+                     unmonitor mref >> loop (BM.delete mref slaves))
+        , matchChan rp $ \m -> do
+            when (m `BM.memberR` slaves) $ do
+              say $ "controlProcess: (" ++ show m ++ ") already running, doing nothing."
+              loop slaves
+
+            let forkIOInProcess act onResult = do
+                  slave <- spawnLocal $ link master >> liftIO act >>= onResult
+                  mref <- monitor slave
+                  loop $ BM.insert mref m slaves
+            nid <- getSelfNode
+            case m of
+              ConfigureProcess runType conf mkfs -> forkIOInProcess
+                (configureProcess mc runType conf mkfs)
+                (promulgateWait . ProcessControlResultConfigureMsg nid)
+              StartProcess runType p -> forkIOInProcess
+                (startProcess runType p)
+                (promulgateWait . ProcessControlResultMsg nid)
+              StopProcess runType p -> forkIOInProcess
+                (stopProcess runType p)
+                (promulgateWait . ProcessControlResultStopMsg nid)
+        ]
+  loop BM.empty
 
 --------------------------------------------------------------------------------
 -- Mero Process control
