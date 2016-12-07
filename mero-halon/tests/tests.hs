@@ -14,7 +14,6 @@ import qualified HA.Autoboot.Tests
 import qualified HA.Network.Socket as TCP
 import qualified HA.RecoveryCoordinator.Tests
 import           HA.Replicator.Log
-import           HA.Replicator.Mock
 import qualified HA.Test.Cluster
 import qualified HA.Test.Disconnect
 import qualified HA.Test.SSPL
@@ -41,33 +40,7 @@ import qualified HA.Castor.Story.Tests
 
 tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 tests transport breakConnection = do
-    utests <- ut transport
-    itests <- it transport breakConnection
-    return $ testGroup "mero-halon" [utests, itests]
-
-ut :: Transport -> IO TestTree
-ut transport = do
-  let pg = Proxy :: Proxy RLocalGroup
-#ifdef USE_MERO
-  driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
-  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
-  internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
-#endif
-  return $ testGroup "tests with mock replicator"
-      [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
-#ifdef USE_MERO
-      , testGroup "mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
-      , testGroup "InternalStateChanges" $ internalSCTests transport
-      , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
-      , testGroup "DriveFailure" $ driveFailureTests transport
-      , testGroup "ProcessRestart" $ processRestartTests transport
-      , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
-      , testGroup "NotificationSort" HA.Test.NotificationSort.tests
-#endif
-      ]
-
-it :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
-it transport breakConnection = do
+  -- For mock replicator, change to 'Proxy RLocalGroup'
   let pg = Proxy :: Proxy RLogGroup
   ssplTest <- HA.Test.SSPL.mkTests
 #ifdef USE_MERO
@@ -75,26 +48,22 @@ it transport breakConnection = do
   processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
 #endif
-  return $ testGroup "tests with log replicator"
+  return $ testGroup "mero-halon:tests"
       [ testCase "uncleanRPCClose" $ threadDelay 2000000
       , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
 #ifdef USE_MERO
-      , testGroup "mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
-      , testGroup "NotificationSort" HA.Test.NotificationSort.tests
-      , testGroup "InternalStateChanges" $ internalSCTests transport
       , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
       , testGroup "DriveFailure" $ driveFailureTests transport
+      , testGroup "InternalStateChanges" $ internalSCTests transport
+      , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
+      , testGroup "NotificationSort" HA.Test.NotificationSort.tests
+      , testGroup "NotificationSort" HA.Test.NotificationSort.tests
       , testGroup "ProcessRestart" $ processRestartTests transport
+      , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
 #endif
-      , testGroup "disconnect" $
-#ifdef USE_MERO
-        [ testCase "testRejoinTimeout" $ HA.Test.Disconnect.testRejoinTimeout transport breakConnection
-        , testCase "testRejoin" $ HA.Test.Disconnect.testRejoin transport breakConnection
-        ] ++
-#endif
-        [ testCase "testDisconnect" $ HA.Test.Disconnect.testDisconnect transport breakConnection ]
+      , HA.Test.Disconnect.tests transport breakConnection
       , ssplTest transport
       ]
 

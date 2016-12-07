@@ -20,6 +20,7 @@ import HA.Multimap.Process (startMultimap)
 import HA.EventQueue.Types
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
+import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.Replicator (RGroup(..))
@@ -99,9 +100,9 @@ mkHpiTest ::(Typeable g, RGroup g)
           -> Proxy g
           -> IO ()
 mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
-    say "start HPI test"
+    sayTest "start HPI test"
     self <- getSelfPid
-    say "load data"
+    sayTest "load data"
     ls <- emptyLoopState pid self
     iData <- liftIO defaultInitialData
     (ls',_)  <- run ls $ do
@@ -110,13 +111,13 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
             loadMeroGlobals (CI.id_m0_globals iData)
             loadMeroServers filesystem (CI.id_m0_servers iData)
     let testRule = mkTestRule self
-    say "run RC"
+    sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do
-            -- setLogger $ \l _ -> say (show l)
+            -- setLogger $ \l _ -> sayTest (show l)
             _ <- testRule
             _ <- ssplRules sspl
             return ()
-    say "start HPI test"
+    sayTest "start HPI test"
     test rc
 
 testHpiExistingWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -136,26 +137,26 @@ testHpiExistingWWN = mkHpiTest rules test
       start ph0 Nothing
     test rc = do
       me <- getSelfNode
-      say "prepare"
+      sayTest "prepare"
       usend rc ()  -- Prepare graph test
       hostname <- liftIO getHostName
       let request = mkHpiMessage (pack hostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
       uuid <- liftIO $ nextRandom
-      say "send HPI message"
+      sayTest "send HPI message"
       usend rc $ HAEvent uuid (me, request) -- send request
-      say "await for reply"
+      sayTest "await for reply"
       receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
       -- We may add new field (drive_status)
-      say "check that graph did change"
+      sayTest "check that graph did change"
       False <- expect
       usend rc ()  -- Prepare graph test
       uuid1 <- liftIO $ nextRandom
-      say "send message again"
+      sayTest "send message again"
       usend rc $ HAEvent uuid1 (me, request) -- send request
       receiveWait [ matchIf (\u -> u == uuid1) (\_ -> return ()) ] -- check that it was processed
       usend rc ()
-      say "check that graph didn't change"
+      sayTest "check that graph didn't change"
       True <- expect
       return ()
 
@@ -209,11 +210,9 @@ testHpiUpdatedWWN = mkHpiTest rules test
       _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       usend rc (Enclosure "enclosure_2", 1::Int)
       is   <- expect
-      liftIO $ assertEqual "Indentifiers matches"
-                 (Set.fromList [DIIndexInEnclosure 1
-                               , DIWWN "wwn10"
-                               , DISerialNumber "serial31"
-                               ])
+      liftIO $ assertEqual "Identifiers match"
+                 (Set.fromList [ DIWWN "wwn10"
+                               , DISerialNumber "serial31"])
                  (Set.fromList is)
 
 testDMRequest :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -242,32 +241,32 @@ testDMRequest = mkHpiTest rules test
         --  1  -- removed drive
         usend rc ()
         () <- expect
-        say "Unused ok for good drive"
+        sayTest "Unused ok for good drive"
         let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0)
         liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid0
-        say "Unused ok for removed drive"
+        sayTest "Unused ok for removed drive"
         let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
         uuid1 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid1 (me, request1)
         liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid1
-        say "Failed smart for good drive"
+        sayTest "Failed smart for good drive"
         let request2 = dmRequest "FAILED" "SMART" "serial1" 0 "path"
         uuid2 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid2 (me, request2)
         liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid2
-        say "Failed smart for removed drive"
+        sayTest "Failed smart for removed drive"
         let request3 = dmRequest "FAILED" "SMART" "serial1" 1 "path"
         uuid3 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid3 (me, request3)
         liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid3
-        say "OK_None smart for good"
+        sayTest "OK_None smart for good"
         let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4)
         liftIO . assertEqual "OK_None smart for good" "drive-ok" =<< await uuid4
-        say "OK_None smart for bad"
+        sayTest "OK_None smart for bad"
         let request5 = dmRequest "OK" "None" "serial1" 1 "path"
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5)
