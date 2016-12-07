@@ -171,7 +171,8 @@ Library
                    lens,
                    vinyl,
                    gitrev,
-                   inline-c
+                   inline-c,
+                   bimap
 
   if flag(mero)
       c-sources:       src/lib/Version/Read.c
