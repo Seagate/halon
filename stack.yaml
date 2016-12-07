@@ -35,7 +35,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/options-schema.git
-    commit: 9dbe49046b52b90eff5952e33e99583f1b30d17e
+    commit: 2986ae93b1af54f58b9bba1123139c3584da7695
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/tasty-files.git
