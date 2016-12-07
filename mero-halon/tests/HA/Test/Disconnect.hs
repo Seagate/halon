@@ -8,75 +8,69 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module HA.Test.Disconnect
-  ( testDisconnect
-  , testRejoin
-  , testRejoinTimeout
-  , testRejoinRCDeath
-  ) where
+module HA.Test.Disconnect (tests) where
 
-import Control.Distributed.Process hiding (bracket_)
-import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Node
+import           Control.Distributed.Process hiding (bracket_)
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Node
 import qualified Control.Distributed.Process.Scheduler as Scheduler
-import Control.Monad
-import Control.Monad.Catch
-import Data.List
-import Data.Binary
-import Data.Hashable (Hashable)
-
-import Network.Transport (Transport, EndPointAddress)
-
-import HA.Encode
-import HA.Multimap
-import HA.RecoveryCoordinator.Definitions
-import HA.RecoveryCoordinator.RC.Events.Cluster
-import HA.RecoveryCoordinator.Service.Events
-import HA.RecoveryCoordinator.Helpers
-import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.CEP
-import HA.RecoveryCoordinator.RC (subscribeOnTo)
-import HA.Resources.HalonVars
-import HA.SafeCopy
-import HA.EventQueue.Producer
-import HA.EventQueue.Types (HAEvent(..))
-import HA.Resources
+import           Control.Monad
+import           Control.Monad.Catch
+import           Data.Binary (Binary)
+import           Data.List
+import           Data.Typeable
+import           GHC.Generics
+import           HA.Encode
+import           HA.EventQueue.Producer
+import           HA.EventQueue.Types (HAEvent(..))
+import           HA.Multimap
+import           HA.Network.RemoteTables (haRemoteTable)
+import           HA.NodeUp (nodeUp)
+import           HA.RecoveryCoordinator.CEP
+import           HA.RecoveryCoordinator.Definitions
+import           HA.RecoveryCoordinator.Helpers
+import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.RC (subscribeOnTo)
+import           HA.RecoveryCoordinator.RC.Events.Cluster
+import           HA.RecoveryCoordinator.Service.Events
+import           HA.Resources
+import           HA.Resources.HalonVars
 import qualified HA.Services.Ping as Ping
-import HA.Network.RemoteTables (haRemoteTable)
-import Mero.RemoteTables (meroRemoteTable)
-import Network.CEP (Definitions, defineSimple, liftProcess, subscribe, Published(..))
+import           HA.Startup
+import           Mero.RemoteTables (meroRemoteTable)
+import           Network.CEP (Definitions, defineSimple, liftProcess, subscribe, Published(..))
+import           Network.Transport (Transport, EndPointAddress)
 import qualified Network.Transport.Controlled as Controlled
-
-import HA.NodeUp ( nodeUp )
-import HA.Startup
-import Test.Framework
-
-import Data.Typeable
-import GHC.Generics
-
-import TestRunner
+import           Test.Framework (registerInterceptor, testGroup, TestTree)
+import           Test.Tasty.HUnit (testCase)
+import           TestRunner
 
 #ifdef USE_MERO
-import Helper.InitialData (defaultInitialData)
+import           Helper.InitialData (defaultInitialData)
 #endif
 
 -- | message used to tell the RC to die, used in 'testRejoinRCDeath'
 data KillRC = KillRC
   deriving (Eq, Show, Typeable, Generic)
-
-instance Hashable KillRC
-deriveSafeCopy 0 'base ''KillRC
+instance Binary KillRC
 
 remotableDecl [ [d|
   rcWithDeath :: [NodeId] -> ProcessId -> StoreChan -> Process ()
   rcWithDeath = recoveryCoordinatorEx () rcDeathRules
     where
       rcDeathRules :: [Definitions RC ()]
-      rcDeathRules = return $ defineSimple "rc-with-death" $ \(HAEvent uuid KillRC) -> do
+      rcDeathRules = return $ defineSimple "rc-with-death" $ \KillRC -> do
         liftProcess $ say "RC death requested from Disconnect.hs:rcDeathRules"
-        messageProcessed uuid
         error "RC death requested from Disconnect.hs:rcDeathRules"
   |]]
+
+tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> TestTree
+tests t breakConnection = testGroup "Disconnect tests"
+  [ testCase "testDisconnect" $ testDisconnect t breakConnection
+  , testCase "testRejoin" $ testRejoin t breakConnection
+  , testCase "testRejoinRCDeath" $ testRejoinRCDeath t breakConnection
+  , testCase "testRejoinTimeout" $ testRejoinTimeout t breakConnection
+  ]
 
 myRemoteTable :: RemoteTable
 myRemoteTable = HA.Test.Disconnect.__remoteTableDecl . haRemoteTable $ meroRemoteTable initRemoteTable
@@ -135,7 +129,7 @@ disconnectHalonVars = defaultHalonVars { _hv_recovery_expiry_seconds = 5
 testDisconnect :: Transport
                -> (EndPointAddress -> EndPointAddress -> IO ())
                -> IO ()
-testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
+testDisconnect baseTransport connectionBreak = do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 4 2 $ \[m0,m1,m2,m3]
@@ -171,7 +165,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       _dhv <- expect :: Process (Published HalonVarsUpdated)
 
-      say "running NodeUp"
+      sayTest "running NodeUp"
       void $ liftIO $ forkProcess m3 $ do
         -- wait until the EQ tracker is registered
         nodeUp (map localNodeId [m0, m1, m2], 1000000)
@@ -183,15 +177,15 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
       runPing pingPid 0
 
       forM_ (zip [1 :: Int,3..] nids) $ \(i,m) -> do
-        say $ "isolating TS node " ++ (show m)
+        sayTest $ "isolating TS node " ++ (show m)
         splitNet [[m], filter (m /=) nids]
         runPing pingPid i
 
-        say $ "rejoining TS node " ++ (show m)
+        sayTest $ "rejoining TS node " ++ (show m)
         restoreNet nids
         runPing pingPid (i + 1)
 
-      say "testDisconnect complete"
+      sayTest "testDisconnect complete"
   where
     runPing :: ProcessId -> Int -> Process ()
     runPing pingPid i = do
@@ -208,7 +202,7 @@ testDisconnect baseTransport connectionBreak = withTmpDirectory $ do
 testRejoinTimeout :: Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
                   -> IO ()
-testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
+testRejoinTimeout baseTransport connectionBreak = do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 5 $ \[m0,m1]
@@ -235,7 +229,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
 
-      say "running NodeUp"
+      sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
@@ -246,7 +240,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       InitialDataLoaded <- expectPublished Proxy
 #endif
 
-      say $ "isolating TS node " ++ show (localNodeId <$> [m1])
+      sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
       _ <- expectPublished (Proxy :: Proxy NodeTransient)
@@ -259,7 +253,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
       void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
       _ <- expectPublished (Proxy :: Proxy NewNodeMsg)
 
-      say "testRejoinTimeout complete"
+      sayTest "testRejoinTimeout complete"
 
 -- | Tests that:
 --  * nodes in which we began recovery, continue recover after RC failure
@@ -270,7 +264,7 @@ testRejoinTimeout baseTransport connectionBreak = withTmpDirectory $ do
 testRejoinRCDeath :: Transport
                   -> (EndPointAddress -> EndPointAddress -> IO ())
                   -> IO ()
-testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
+testRejoinRCDeath baseTransport connectionBreak = do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 3 $ \[m0,m1]
@@ -287,8 +281,6 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy NodeTransient)
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy RecoveryAttempt)
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy OldNodeRevival)
-      subscribeOnTo [localNodeId m1] (Proxy :: Proxy NewNodeMsg)
-      subscribeOnTo [localNodeId m1] (Proxy :: Proxy HostDisconnected)
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy NewNodeConnected)
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy InitialDataLoaded)
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy HalonVarsUpdated)
@@ -296,25 +288,28 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
 
-      say "running NodeUp"
+      sayTest "running NodeUp"
       emptyMailbox (Proxy :: Proxy (Published NewNodeConnected))
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
       _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
 
+      _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
+      Just (RequestRCPidAnswer rcPid) <- expectTimeout 10000000
+
 #ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished Proxy
 #endif
 
-      say $ "isolating TS node " ++ show (localNodeId <$> [m1])
+      sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
       _ <- expectPublished (Proxy :: Proxy NodeTransient)
       -- Wait until recovery starts
       _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
-      _ <- promulgateEQ [localNodeId m1] KillRC
+      _ <- usend rcPid KillRC
       -- RC restarts but the node is still down
       -- _ <- expectPublished (Proxy :: Proxy NodeTransient)
       -- recovery restarts
@@ -324,7 +319,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
       -- and make sure it did come back up
       -- recovery restarts
       _ <- expectPublished (Proxy :: Proxy OldNodeRevival)
-      say "testRejoinRCDeath complete"
+      sayTest "testRejoinRCDeath complete"
 
 -- | Tests that:
 -- * The RC detects when a node disconnects.
@@ -336,7 +331,7 @@ testRejoinRCDeath baseTransport connectionBreak = withTmpDirectory $ do
 testRejoin :: Transport
            -> (EndPointAddress -> EndPointAddress -> IO ())
            -> IO ()
-testRejoin baseTransport connectionBreak = withTmpDirectory $ do
+testRejoin baseTransport connectionBreak = do
   (transport, controlled) <- Controlled.createTransport baseTransport
                                                         connectionBreak
   testSplit transport controlled 2 3 $ \[m0,m1]
@@ -362,7 +357,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
       _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
 
-      say "running NodeUp"
+      sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
@@ -373,7 +368,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       InitialDataLoaded <- expectPublished Proxy
 #endif
 
-      say $ "isolating TS node " ++ show (localNodeId <$> [m1])
+      sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
       _ <- expectPublished (Proxy :: Proxy NodeTransient)
@@ -385,7 +380,7 @@ testRejoin baseTransport connectionBreak = withTmpDirectory $ do
       -- until the node comes back up
       _ <- expectPublished (Proxy :: Proxy OldNodeRevival)
 
-      say "testRejoin complete"
+      sayTest "testRejoin complete"
 
 testSplit :: Transport
           -> Controlled.Controlled
