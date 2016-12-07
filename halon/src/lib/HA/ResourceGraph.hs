@@ -29,6 +29,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -64,6 +65,7 @@ module HA.ResourceGraph
     , null
     , memberResource
     , memberEdge
+    , memberEdgeBack
     , edgesFromSrc
     , edgesToDst
     , connectedFrom
@@ -87,6 +89,8 @@ module HA.ResourceGraph
     , removeRootNode
     , setGCThreshold
     , setSinceGC
+    -- * Testing
+    , getStoreUpdates
     ) where
 
 import HA.Logger
@@ -131,6 +135,7 @@ import qualified Data.HashSet as S
 import Data.Hashable
 import Data.List (foldl', delete)
 import Data.Maybe
+import Data.Monoid
 import Data.Proxy
 import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
@@ -184,6 +189,8 @@ data Res = forall a. Resource a => Res !a
 -- a relationship.
 data Rel = forall r a b. Relation r a b => InRel !r a b
          | forall r a b. Relation r a b => OutRel !r a b
+
+deriving instance Show Rel
 
 instance Hashable Res where
     hashWithSalt s (Res x) = s `hashWithSalt` (typeOf x, x)
@@ -322,6 +329,9 @@ data Graph = Graph
   , grGraphGCInfo :: GraphGCInfo
   } deriving (Typeable)
 
+instance Show Graph where
+  show g = show $ grGraph g
+
 -- | Edges between resources. Edge types are called relations. An edge is an
 -- element of some relation. The order of the fields matches that of
 -- subject-verb-object triples in RDF.
@@ -345,6 +355,14 @@ memberResource a g = M.member (Res a) $ grGraph g
 memberEdge :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
 memberEdge e g =
     (outFromEdge e) `S.member` maybe S.empty (S.filter isOut) (M.lookup (Res (edgeSrc e)) (grGraph g))
+
+-- | Test whether two resources are connected through the given relation.
+--   Compared to 'memberEdge', looks up the relation from the remote endpoint.
+--   This is mostly useful for testing, since 'memberEdge' and 'memgerEdgeBack'
+--   should give identical results all of the time.
+memberEdgeBack :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
+memberEdgeBack e g =
+    (inFromEdge e) `S.member` maybe S.empty (S.filter isIn) (M.lookup (Res (edgeDst e)) (grGraph g))
 
 outFromEdge :: Relation r a b => Edge a r b -> Rel
 outFromEdge Edge{..} = OutRel edgeRelation edgeSrc edgeDst
@@ -476,42 +494,68 @@ removeResource r g@Graph{..} = g {
 mergeResources :: forall a. Resource a => ([a] -> a) -> [a] -> Graph -> Graph
 mergeResources _ [] g = g
 mergeResources f xs g@Graph{..} = g
-    { grChangeLog = updateChangeLog
-                   (InsertMany [ (encodeRes newRes
-                                , S.toList . S.map encodeRel $ oldRels)
-                                ])
-                  . updateChangeLog
-                      (DeleteKeys (map (encodeRes . Res) xs))
-                  . foldr (.) id (fmap rehookCL $ S.toList oldRels)
+    { grChangeLog = mkAction InsertMany insertValuesMap
+                  . updateChangeLog (DeleteKeys $ map (encodeRes . Res) xs)
+                  . mkAction DeleteValues deleteValuesMap
                   $ grChangeLog
-    , grGraph = foldr (.) id adjustments grGraph
+    , grGraph = mkAdjustements insertNodes insertValuesMap
+              . mkAdjustements removeNodes deleteValuesMap
+              $ grGraph
     }
   where
+    -- new node that is a combination of the other nodes.
     newX = f xs
-    newRes = Res newX
+    -- Gather all old relations from nodes that will be merged.
     oldRels = foldl' S.union S.empty
-            . catMaybes
-            . map (\r -> M.lookup (Res r) grGraph)
+            . mapMaybe (\r -> M.lookup (Res r) grGraph)
             $ xs
-    adjustments = M.insert newRes oldRels
-                : fmap rehookG (S.toList oldRels)
-                ++ map (M.delete . Res) xs
-    otherEnd = \case InRel _ x _  -> Res x ; OutRel _ _ y -> Res y
-    rehookG rel = M.adjust
-      ( S.insert (updateOtherEnd rel newX)
-      . S.delete (inverse rel)
-      ) (otherEnd rel)
-    rehookCL rel = updateChangeLog
-        ( InsertMany [(encodeRes (otherEnd rel), [ encodeRel (updateOtherEnd rel newX) ])])
-      . updateChangeLog
-        ( DeleteValues [(encodeRes (otherEnd rel), [ encodeRel (inverse rel) ])])
-    updateOtherEnd :: forall q. Resource q => Rel -> q -> Rel
-    updateOtherEnd rel@(InRel r x (_ :: b)) y' = case eqT :: Maybe (q :~: b) of
-      Just Refl -> OutRel r x y'
+    -- New relations that should be inserted, we update local end in all
+    -- old relations.
+    newRels = S.filter doesNotMakeSelfLink
+            $ S.map (updateLocalEnd newX) oldRels
+    deleteValuesMap, insertValuesMap :: M.HashMap Res (S.HashSet Rel)
+    deleteValuesMap = M.unionWith (<>) (M.fromList [(Res x, S.empty) | x <- xs])
+                                       (mkUpdateMap oldRels)
+    insertValuesMap = M.unionWith (<>) (M.singleton (Res newX) S.empty)
+                                       (mkUpdateMap newRels)
+    -- Helpers:
+    -- Create a map that keeps updates in form.
+    mkUpdateMap :: HashSet Rel -> M.HashMap Res (S.HashSet Rel)
+    mkUpdateMap = M.fromListWith (<>)
+       . concatMap (\r -> case r of
+           InRel  _ a b -> [ (Res a, S.singleton $ inverse r)
+                           , (Res b, S.singleton r)]
+           OutRel _ a b -> [ (Res a, S.singleton r)
+                           , (Res b, S.singleton $ inverse r)]
+           )
+       . S.toList
+    -- Create update changelog action based on the update map.
+    mkAction action = updateChangeLog . action
+      . fmap (\(k,vs) -> (encodeRes k, map encodeRel $ S.toList vs)) . M.toList
+    -- Update local end in the relation.
+    updateLocalEnd :: forall q. Resource q => q -> Rel -> Rel
+    updateLocalEnd y' rel@(InRel r x (_::b)) = case eqT :: Maybe (q :~: b) of
+      Just Refl -> InRel r x y'
       Nothing -> rel
-    updateOtherEnd rel@(OutRel r (_ :: b) y) x' = case eqT :: Maybe (q :~: b) of
-      Just Refl -> InRel r x' y
+    updateLocalEnd x' rel@(OutRel r (_::b) y) = case eqT :: Maybe (q :~: b) of
+      Just Refl -> OutRel r x' y
       Nothing -> rel
+    -- If we don't want self links in result graph.
+    doesNotMakeSelfLink :: Rel -> Bool
+    doesNotMakeSelfLink (InRel  _ y _) = Res y `notElem` (Res newX:map Res xs)
+    doesNotMakeSelfLink (OutRel _ _ y) = Res y `notElem` (Res newX:map Res xs)
+    -- Create action that run on a graph and update that.
+    mkAdjustements action m z = foldl' (\g' (k,v) -> alter (action v) k g') z $ M.toList m
+    removeNodes _ Nothing = Nothing
+    removeNodes v (Just w) = case S.difference w v of
+                                      z | S.null z -> Nothing
+                                        | otherwise -> Just z
+    insertNodes v w = Just (v <> fromMaybe mempty w)
+    alter fz k m =
+      case fz (M.lookup k m) of
+        Nothing -> M.delete k m
+        Just v  -> M.insert k v m
+    {-# INLINE alter #-}
 
 -- | Remove all resources that are not connected to the rest of the graph,
 -- starting from the given root set. This cleans up resources that are no
@@ -830,3 +874,8 @@ defaultGraphGCInfo :: GraphGCInfo
 defaultGraphGCInfo = GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) []
   where
     mi = defaultMetaInfo
+
+-- * Tools for testing
+
+getStoreUpdates :: Graph -> [StoreUpdate]
+getStoreUpdates = fromChangeLog . grChangeLog

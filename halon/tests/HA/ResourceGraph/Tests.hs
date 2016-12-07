@@ -11,6 +11,8 @@
 
 module HA.ResourceGraph.Tests ( tests ) where
 
+import qualified HA.ResourceGraph.Tests.Merge as Merge
+
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure (mkStatic)
 import Control.Distributed.Process.Node
@@ -84,7 +86,6 @@ instance Hashable HasC
 deriveSafeCopy 0 'base ''NodeA
 deriveSafeCopy 0 'base ''NodeB
 deriveSafeCopy 0 'base ''NodeC
-
 deriveSafeCopy 0 'base ''HasA
 deriveSafeCopy 0 'base ''HasB
 deriveSafeCopy 0 'base ''HasC
@@ -95,6 +96,7 @@ $(mkDicts
   , (''NodeB, ''HasA, ''NodeA)
   , (''NodeA, ''HasC, ''NodeC)
   , (''NodeB, ''HasC, ''NodeC)
+  , (''NodeA, ''HasA, ''NodeA)
   ])
 $(mkResRel
   [''NodeA, ''NodeB, ''NodeC]
@@ -102,9 +104,11 @@ $(mkResRel
   , (''NodeB, Unbounded, ''HasA, Unbounded, ''NodeA)
   , (''NodeA, Unbounded, ''HasC, AtMostOne, ''NodeC)
   , (''NodeB, AtMostOne, ''HasC, AtMostOne, ''NodeC)
+  , (''NodeA, Unbounded, ''HasA, Unbounded, ''NodeA)
   ]
   ['mmSDict]
   )
+
 --------------------------------------------------------------------------------
 -- Test helpers                                                               --
 --------------------------------------------------------------------------------
@@ -169,7 +173,7 @@ tests :: forall g. (Typeable g, RGroup g)
       => Transport -> Proxy g -> IO [TestTree]
 tests transport _ = do
     let g = undefined :: g (MetaInfo, Multimap)
-    return
+    return $
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm
           ns <- getKeyValuePairs mm
@@ -302,17 +306,17 @@ tests transport _ = do
           assertBool "Meta not default" $ meta g1 /= meta g2'
           assertBool "Same meta" $ meta g2 == meta g2'
       , testSuccess "merge-resources" $ rGroupTest transport g $ \mm -> do
-          g1 <- syncWait . sampleGraph =<< getGraph mm
+          g1 <- syncWait . connect (NodeA 1) HasA (NodeA 2) . sampleGraph =<< getGraph mm
           g2 <- syncWait $ mergeResources head [NodeA 1, NodeA 2] g1
           let es1 = connectedTo (NodeA 1) HasB g2 :: [NodeB]
               es2 = connectedFrom HasA (NodeA 1) g2 :: [NodeB]
               es3 = connectedTo (NodeB 2) HasA g2 :: [NodeA]
-          assert $ memberResource (NodeA 1) g2 == True
-          assert $ memberResource (NodeA 2) g2 == False
-          assert $ length es1 == 1
-          assert $ length es2 == 2
-          assert $ elem (NodeA 1) es3
-          assert $ not $ elem (NodeA 2) es3
+          assertBool "NodeA 1 is graph member" $ memberResource (NodeA 1) g2
+          assertBool "NodeA 2 is not graph member" $ not $ memberResource (NodeA 2) g2
+          assertEqual "length {NodeA 1}.HasB" 1 $ length es1
+          assertEqual "length {NodeA 1}.HasA" 1 $ length es2
+          assertBool "exists {NodeB 2}.HasA.{NodeA 1}" $ elem (NodeA 1) es3
+          assertBool "not exists {NodeB 2}.HasA.{NodeA 2}" $ not $ elem (NodeA 2) es3
       , testSuccess "removeResource" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           g2 <- syncWait $ removeResource (NodeB 2) g1
@@ -343,4 +347,5 @@ tests transport _ = do
             -- Should have replaced the NodeC due to cardinality
             let res = connectedToList (NodeA 1) HasC g3 :: [NodeC]
             assertEqual "res is [NodeC 2]" [NodeC 2] res
-      ]
+       , Merge.tests
+       ] 
