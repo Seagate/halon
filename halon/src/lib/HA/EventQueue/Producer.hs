@@ -22,6 +22,7 @@ import HA.EventQueue (eventQueueLabel)
 import HA.EventQueue.Types
 import HA.Logger
 import qualified HA.EQTracker as EQT
+import qualified HA.EQTracker.Internal as EQT
 import HA.SafeCopy
 
 import Control.Distributed.Process hiding (bracket)

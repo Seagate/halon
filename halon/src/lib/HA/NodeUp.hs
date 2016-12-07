@@ -23,6 +23,7 @@ where
 
 import HA.EventQueue.Producer (promulgate)
 import qualified HA.EQTracker as EQT
+import qualified HA.EQTracker.Internal as EQT
 
 import Control.Distributed.Process
   ( NodeId

@@ -14,85 +14,33 @@
 -- Note that the EQTracker does not act as a proxy for the EventQueue, it just
 -- serves as a registry.
 module HA.EQTracker
-  ( startEQTracker
-  , ReplicaLocation(..)
-  , ReplicaRequest(..)
-  , ReplicaReply(..)
-  , PreferReplica(..)
-  , UpdateEQNodes(..)
-  , UpdateEQNodesAck(..)
-  , name
+  ( -- * Public API.
+    startEQTracker
   , updateEQNodes
+    -- * D-P internals.
   , updateEQNodes__static
   , updateEQNodes__sdict
   , updateEQNodes__tdict
   , __remoteTable
   ) where
 
-import HA.Debug
-import HA.Logger (mkHalonTracer)
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-
 import Control.Monad (unless)
-import Data.Binary (Binary)
-import Data.Hashable (Hashable)
 import Data.List (union)
-import Data.Typeable (Typeable)
+import HA.Debug
+import HA.EQTracker.Internal
+import HA.Logger (mkHalonTracer)
 
-import GHC.Generics (Generic)
-
--- | Update the nids of the EQs, for example, in the event of the
--- RC restarting on a different node.
---
--- @'UpdateEQNodes' caller eqnodes@
-data UpdateEQNodes = UpdateEQNodes ProcessId [NodeId]
-  deriving (Eq, Show, Generic, Typeable)
-instance Binary UpdateEQNodes
-
--- | Reply to 'UpdateEQNodes', sent to the caller.
-data UpdateEQNodesAck = UpdateEQNodesAck
-  deriving (Eq, Show, Generic, Typeable)
-instance Binary UpdateEQNodesAck
-
--- | Loop state for the tracker. We store a preferred replica as well as the
--- full list of known replicas. None of these are guaranteed to exist.
-data ReplicaLocation = ReplicaLocation
-  { eqsPreferredReplica :: Maybe NodeId
-  -- ^ Current leader of the event queue group.
-  , eqsReplicas :: [NodeId]
-  -- ^ List of replicas.
-  } deriving (Eq, Generic, Show, Typeable)
-
-instance Binary ReplicaLocation
-instance Hashable ReplicaLocation
-
--- | Message sent by clients to indicate a preference for a certain replica.
-data PreferReplica = PreferReplica NodeId
-  deriving (Eq, Generic, Show, Typeable)
-
-instance Binary PreferReplica
-instance Hashable PreferReplica
-
--- | Message sent by clients to request a replica list.
-newtype ReplicaRequest = ReplicaRequest ProcessId
-  deriving (Eq, Show, Typeable, Binary, Hashable)
-
--- | Reply to the 'ReplicaRequest'
-newtype ReplicaReply = ReplicaReply ReplicaLocation
-  deriving (Eq, Show, Typeable, Binary, Hashable)
-
--- | Process label: @"HA.EQTracker"@
-name :: String
-name = "HA.EQTracker"
-
+-- | Internal logs.
 traceTracker :: String -> Process ()
 traceTracker = mkHalonTracer "EQTracker"
 
 -- | Updates EQ tracker of the node. First it waits until the EQ tracker
 -- is registered and then it sends the request to update the list of
--- EQ nodes
-updateEQNodes :: [NodeId] -> Process ()
+-- EQ nodes.
+updateEQNodes :: [NodeId] -- ^ List of new event queue nodes.
+              -> Process ()
 updateEQNodes ns = do
   mt <- whereis name
   case mt of

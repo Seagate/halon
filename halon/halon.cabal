@@ -78,6 +78,7 @@ Library
                    Control.SpineSeq
                    System.SystemD.API
   other-modules:   HA.Service.Internal
+                   HA.EQTracker.Internal
 
   Build-Depends:   base,
                    binary >= 0.6,
