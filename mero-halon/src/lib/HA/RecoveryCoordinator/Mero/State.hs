@@ -17,19 +17,9 @@ module HA.RecoveryCoordinator.Mero.State
     -- * Re-export for convenience
   , AnyStateSet
   , stateSet
-    -- * Rule helpers
-  , mkPhaseNotify
-  , setPhaseNotified
-  , setPhaseAllNotified
-  , setPhaseAllNotifiedBy
-  , setPhaseInternalNotification
-  , setPhaseInternalNotificationWithState
-  , ascPred
-  , anyStateToAscPred
-  )  where
+  ) where
 
-import HA.Encode (decodeP, encodeP)
-import HA.EventQueue.Types (HAEvent(..))
+import HA.Encode (encodeP)
 import HA.RecoveryCoordinator.Castor.Drive.Internal
 import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -48,25 +38,22 @@ import Mero.Notification.HAState (Note(..))
 
 import Control.Applicative (liftA2)
 import Control.Category ((>>>))
-import Control.Distributed.Process (Process)
 import Control.Arrow (first)
 import Control.Distributed.Static (Static, staticApplyPtr)
 import Control.Monad (join, when, guard)
 import Control.Monad.Fix (fix)
-import Control.Lens
 
 import Data.Constraint (Dict)
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
-import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, mapMaybe, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
-import Data.List (foldl', nub, genericLength)
+import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
-import Data.UUID (UUID)
 
 import Network.CEP
 
@@ -136,9 +123,6 @@ cascadeStateChange asc rg = go [asc] [asc] id
              | b <- f a rg
              , let b_old = M0.getState b rg
              , TransitionTo b_new <- [runTransition (u a_new) b_old]
-             -- We still want this because we don't always catch
-             -- NoTransition for every case
-             , b_old /= b_new
              ])
       else (Nothing, [])
     applyCascadeRule (StateCascadeTrigger old new fg) (a, a_old, a_new) =
@@ -220,192 +204,6 @@ applyStateChangesSyncConfd ass =
     genericApplyStateChanges ass act
   where
     act = syncAction Nothing M0.SyncToConfdServersInRG
-
--- | @'setPhaseNotified' handle change extract act@
---
--- Create a 'RuleM' with the given @handle@ that runs the given
--- callback @act@ when internal state change notification for @change@
--- is received: effectively inside this rule we know that we have
--- notified mero about the change. @extract@ is used as a view from
--- local rule state to the object we're interested in.
---
--- TODO: Do we need to handle UUID here?
-setPhaseNotified :: forall app b l g.
-                    ( Application app
-                    , g ~ GlobalState app
-                    , M0.HasConfObjectState b
-                    , Typeable (M0.StateCarrier b))
-                 => Jump PhaseHandle
-                 -> (l -> Maybe (b, M0.StateCarrier b -> Bool))
-                 -> ((b, M0.StateCarrier b) -> PhaseM app l ())
-                 -> RuleM app l ()
-setPhaseNotified handle extract act =
-  setPhaseIf handle changeGuard act
-  where
-    changeGuard :: HAEvent InternalObjectStateChangeMsg
-                -> g -> l -> Process (Maybe (b, M0.StateCarrier b))
-    changeGuard (HAEvent _ msg) _ (extract -> Just (obj, p)) =
-      liftProcess (decodeP msg) >>= \(InternalObjectStateChange iosc) -> do
-        return $ listToMaybe . mapMaybe (getObjP obj p) $ iosc
-    changeGuard _ _ _ = return Nothing
-
-    getObjP obj p x = case x of
-      AnyStateChange (a::z) _ n _ -> case eqT :: Maybe (z :~: b) of
-        Just Refl | a == obj && p n -> Just (a,n)
-        _ -> Nothing
-
--- | Helper for 'setPhaseAllNotified' and 'setPhaseAllNotifiedBy'.
---
--- TODO: We should allow the user to pass in extra phases for timeout. Consider
---
--- @switch [all_notified, timeout t timed_out]@
---
--- If *any* 'InternalObjectStateChange' flies by before the timeout,
--- we won't be done, we'll 'continue' too @all_notified@ and the
--- timeout is effectively ignored.
-mkPhaseAllNotified :: forall a l g. Application g
-                   => (a -> AnyStateChange -> Bool)
-                   -> Jump PhaseHandle
-                   -> (Lens' l (Maybe [a]))
-                   -> PhaseM g l () -- ^ Callback when set has been notified
-                   -> RuleM g l ()
-mkPhaseAllNotified toPred handle extract act =
-  setPhase handle $ \(HAEvent _ msg) -> do
-     mn <- gets Local (^. extract)
-     case mn of
-       Nothing -> do phaseLog "error" "Internal notifications are not set."
-                     act
-       Just notificationSet -> do
-         InternalObjectStateChange iosc <- liftProcess $ decodeP (msg :: InternalObjectStateChangeMsg)
-         -- O(n*(max(n, m))) i.e. at least O(n²) but possibly worse
-         -- n = length notificationSet
-         -- m = length iosc
-         let next = foldl' (\sts asc -> filter (\s -> not $ toPred s asc) sts)
-                           notificationSet iosc
-         modify Local $ set extract (Just next)
-         case next of
-           [] -> act
-           -- We're not done, re-run phase waiting for another state
-           -- change message.
-           _  -> continue handle
-
--- | For the given 'AnyStateSet', wait until every corresponding
--- 'InternalObjectStateChange' has been seen. If you want to accept a
--- wider range of messages than the ones directly specified by
--- 'AnyStateSet', use 'setPhaseAllNotifiedBy' instead.
---
--- Works across multiple separate notifications, until the set of
--- messages we are waiting for is empty.
-setPhaseAllNotified :: forall l g. Application g
-                    => Jump PhaseHandle
-                    -> (Lens' l (Maybe [AnyStateSet]))
-                    -> PhaseM g l () -- ^ Callback when set has been notified
-                    -> RuleM g l ()
-setPhaseAllNotified = mkPhaseAllNotified anyStateToAscPred
-
--- | As 'setPhaseAllNotified' but works on predicates on
--- 'AnyStateChange's. This allows finer control over what messages we
--- want to accept.
-setPhaseAllNotifiedBy :: forall l g. Application g
-                      => Jump PhaseHandle
-                      -> (Lens' l (Maybe [AnyStateChange -> Bool]))
-                      -> PhaseM g l () -- ^ Callback when set has been notified
-                      -> RuleM g l ()
-setPhaseAllNotifiedBy = mkPhaseAllNotified id
-
--- | Create a predicate on 'AnyStateChange' from an object and its
--- state. Useful for 'setPhaseAllNotifiedBy'.
-ascPred :: M0.HasConfObjectState a => a -> (M0.StateCarrier a -> Bool)
-        -> AnyStateChange -> Bool
-ascPred (obj :: a) p (AnyStateChange obj' _ n _) = case (cast obj', cast n) of
-  (Just obj'', Just n') -> obj == obj'' && p n'
-  _ -> False
-
--- | Check that the 'AnyStateChange' directly corresponds to
--- 'Transition' encoded in the 'AnyStateSet'.
---
--- Note that transitions that cause no state change ('NoTransition')
--- match on every 'AnyStateChange' for their object type. This allows
--- us to eliminate these transitions when looking through the set of
--- 'AnyStateChange's.
-anyStateToAscPred :: AnyStateSet -> AnyStateChange -> Bool
-anyStateToAscPred (AnyStateSet a tr) (AnyStateChange (obj :: objT) o n _) =
-  case (cast a, cast tr) of
-    (Just (a' :: objT), Just (tr' :: Transition objT)) ->
-      obj == a' && case runTransition tr' o of
-        TransitionTo n' -> n == n'
-        NoTransition -> True
-        _ -> False
-    _ -> False
-
--- | As 'setPhaseInternalNotificationWithState', accepting all object states.
-setPhaseInternalNotification :: forall b l app.
-                                (Application app
-                                , M0.HasConfObjectState b
-                                , Typeable (M0.StateCarrier b))
-                                => Jump PhaseHandle
-                                -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM app l ())
-                                -> RuleM app l ()
-setPhaseInternalNotification handle act =
-  setPhaseInternalNotificationWithState handle (const $ const True) act
-
--- | Given a predicate on object state, retrieve all objects and
--- states satisfying the predicate from the internal state change
--- notification.
-setPhaseInternalNotificationWithState :: forall app b l g.
-                                      ( Application app
-                                      , g ~ GlobalState app
-                                      , M0.HasConfObjectState b
-                                      , Typeable (M0.StateCarrier b))
-                                      => Jump PhaseHandle
-                                      -> (M0.StateCarrier b -> M0.StateCarrier b -> Bool)
-                                      -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM app l ())
-                                      -> RuleM app l ()
-setPhaseInternalNotificationWithState handle p act = setPhaseIf handle changeGuard act
-  where
-    changeGuard :: HAEvent InternalObjectStateChangeMsg
-                -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
-    changeGuard (HAEvent eid msg) _ _ =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
-        case mapMaybe getObjP iosc of
-          [] -> return Nothing
-          objs -> return $ Just (eid, objs)
-
-    getObjP x = case x of
-      AnyStateChange (a::z) o n _ -> case eqT :: Maybe (z :~: b) of
-        Just Refl | p o n -> Just (a,n)
-        _ -> Nothing
-
--- | Notify mero about the given object and wait for the arrival on
--- notification, handling failure.
-mkPhaseNotify :: (Eq (M0.StateCarrier b), M0.HasConfObjectState b, Typeable (M0.StateCarrier b))
-              => Int -- ^ timeout
-              -> (l -> Maybe (b, M0.StateCarrier b)) -- ^ state getter
-              -> PhaseM RC l [Jump PhaseHandle] -- ^ on failure
-              -> (b -> M0.StateCarrier b -> PhaseM RC l [Jump PhaseHandle]) -- ^ on success
-              -> RuleM RC l (b -> Transition b -> PhaseM RC l [Jump PhaseHandle])
-mkPhaseNotify t getter onFailure onSuccess = do
-  notify_done <- phaseHandle "Notification done"
-  notify_timed_out <- phaseHandle "Notification timed out"
-
-  let getterP l = fmap (fmap (==)) (getter l)
-
-  setPhaseNotified notify_done getterP $ \(o, oSt) -> onSuccess o oSt >>= switch
-  directly notify_timed_out $ onFailure >>= switch
-
-  return $ \obj tr -> do
-    rg <- getLocalGraph
-    let currentSt = M0.getState obj rg
-    case runTransition tr currentSt of
-      NoTransition -> do
-        phaseLog "info" "Object already in desired state, not notifying"
-        onSuccess obj currentSt
-      InvalidTransition mkErr -> do
-        phaseLog "warn" $ mkErr obj
-        onFailure
-      TransitionTo _ -> do
-        applyStateChanges [stateSet obj tr]
-        return [notify_done, timeout t notify_timed_out]
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where

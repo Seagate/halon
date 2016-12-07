@@ -42,7 +42,6 @@ import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Mero.Events
 
 import HA.EventQueue.Producer (promulgateWait)
-import HA.RecoveryCoordinator.Mero.Actions.Conf (nodeToM0Node)
 import Control.Distributed.Process
 import Network.CEP
 
@@ -121,7 +120,7 @@ getNotificationChannels = do
   let nodes = [ (node, m0node)
               | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
               , node <- G.connectedTo host R.Runs rg
-              , m0node <- nodeToM0Node node rg
+              , Just m0node <- [M0.nodeToM0Node node rg]
               ]
   things <- for nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
@@ -216,7 +215,7 @@ failNotificationsOnNode node = do
   -- Find all processes on the current target node.
   ps <- (\rg ->
            [ m0process
-           | m0node <- nodeToM0Node node rg :: [M0.Node]
+           | Just m0node <- [M0.nodeToM0Node node rg]
            , m0process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
            ])
         <$> getLocalGraph

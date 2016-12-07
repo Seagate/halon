@@ -7,21 +7,42 @@
 module HA.RecoveryCoordinator.Castor.Process.Events
   ( ProcessStartRequest(..)
   , ProcessStartResult(..)
+  , StopProcessRequest(..)
+  , StopProcessResult(..)
   ) where
 
-import           Data.Typeable
+import           Data.Binary (Binary)
+import           Data.Typeable (Typeable)
 import           GHC.Generics
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
 
--- | Request that process be started.
-
+-- | Request that given 'M0.Process' be started.
 newtype ProcessStartRequest = ProcessStartRequest M0.Process
   deriving (Show, Eq, Ord, Typeable, Generic)
-deriveSafeCopy 0 'base ''ProcessStartRequest
 
 -- | Reply in job handling 'ProcessStartRequest'
 data ProcessStartResult = ProcessStarted M0.Process
                         | ProcessStartFailed M0.Process String
   deriving (Show, Eq, Ord, Typeable, Generic)
+
+
+-- | Request to stop a specific process on a node. This event differs
+-- from @StopProcessesOnNodeRequest@ as that stops all processes on
+-- the node in a staged manner. This event should stop the precise
+-- process without caring about the overall cluster state.
+newtype StopProcessRequest = StopProcessRequest M0.Process
+  deriving (Eq, Ord, Show, Generic)
+
+-- | Result of stopping a process. Note that in general most
+-- downstream rules will not care about this, as they will directly
+-- use the process state change notification.
+data StopProcessResult =
+    StopProcessResult (M0.Process, M0.ProcessState)
+  | StopProcessTimeout M0.Process
+  deriving (Eq, Show, Generic)
+instance Binary StopProcessResult
+
+deriveSafeCopy 0 'base ''StopProcessRequest
+deriveSafeCopy 0 'base ''ProcessStartRequest
 deriveSafeCopy 0 'base ''ProcessStartResult

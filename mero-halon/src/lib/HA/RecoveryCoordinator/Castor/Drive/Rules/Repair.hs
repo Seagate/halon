@@ -71,18 +71,16 @@ import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (barrierPass)
 import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.Mero.Notifications
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
-import HA.RecoveryCoordinator.Mero.State
-  ( applyStateChanges
-  , setPhaseInternalNotificationWithState
-  , setPhaseAllNotified
-  )
 import           HA.Services.SSPL.CEP
 import           HA.Resources
 import           HA.Resources.Castor
@@ -364,6 +362,8 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
+  dispatcher <- mkDispatcher
+  notifier <- mkNotifierSimpleAct dispatcher waitClear
 
   let init_rule (PoolRebalanceRequest pool) = getPoolRepairInformation pool >>= \case
         Nothing -> R.allIOSOnline pool >>= \case
@@ -389,14 +389,18 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                     -- so moving to rebalancing does not increase
                     -- number of failures.
                     let messages = stateSet pool Tr.poolRebalance : (flip stateSet Tr.diskRebalance <$> disks)
-                    modify Local $ rlens fldNotifications .~ Field (Just messages)
-                    modify Local $ rlens fldPoolDisks .~ Field (Just (pool, disks))
+                    modify Local $ rlens fldNotifications . rfield .~ messages
+                    modify Local $ rlens fldPoolDisks . rfield .~ Just (pool, disks)
                     applyStateChanges messages
-                    return $ Right ( PoolRebalanceFailedToStart pool
-                                   , [pool_disks_notified, notify_failed, timeout 10 notify_timeout])
-            else return $ Left $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
-          False -> return $ Left $  "Not starting rebalance, some IOS are not online"
-        Just info -> return $ Left $ "Pool repair/rebalance is already running: " ++ show info
+                    waitFor notifier
+                    waitFor notify_failed
+                    onSuccess pool_disks_notified
+                    onTimeout 10 notify_timeout
+                    return $ Right (PoolRebalanceFailedToStart pool, [dispatcher])
+            else do return . Left $ "Can't start rebalance, not all drives are ready: " ++ show sdev_broken
+          False -> return $ Left "Not starting rebalance, some IOS are not online"
+        Just info -> return . Left $ "Pool repair/rebalance is already running: " ++ show info
+
 
   (rebalance_started, startRebalance) <- mkRebalanceStartOperation $ \pool eresult -> do
      case eresult of
@@ -422,7 +426,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                 abortRebalanceStart
                 continue finish)
 
-  setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
+  directly pool_disks_notified $ do
     Just (pool, _) <- getField . rget fldPoolDisks <$> get Local
     statusRebalance pool
     continue status_received
@@ -474,14 +478,14 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRebalanceRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRebalanceStarted)
-    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
     fldPoolDisks = Proxy :: Proxy '("pooldisks", Maybe (M0.Pool, [M0.Disk]))
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
        <+> fldRep           =: Nothing
-       <+> fldNotifications =: Nothing
-       <+> fldPoolDisks =: Nothing
+       <+> fldNotifications =: []
+       <+> fldPoolDisks     =: Nothing
+       <+> fldDispatch      =: Dispatch [] (error "ruleRebalanceStart dispatcher") Nothing
 
 -- | 'Job' used by 'ruleRepairStart'
 jobRepairStart :: Job PoolRepairRequest PoolRepairStartResult
@@ -511,6 +515,8 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
+  dispatcher <- mkDispatcher
+  notifier <- mkNotifierSimpleAct dispatcher waitClear
 
   let init_rule (PoolRepairRequest pool) = getPoolRepairInformation pool >>= \case
         -- We spare ourselves some work and if IOS aren't ready then
@@ -525,14 +531,20 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
                 -- OK to just set repairing here without checking K:
                 -- @fa@ are already failed by this point.
                 let msgs = stateSet pool Tr.poolRepairing : (flip stateSet Tr.sdevRepairStart <$> fa)
-                modify Local $ rlens fldNotifications .~ Field (Just msgs)
-                modify Local $ rlens fldPool .~ Field (Just pool)
+                modify Local $ rlens fldNotifications . rfield .~ msgs
+                modify Local $ rlens fldPool . rfield .~ Just pool
                 applyStateChanges msgs
-                return $ Right ( PoolRepairFailedToStart pool "default"
-                               , [pool_disks_notified, notify_failed, timeout 10 notify_timeout])
-              False -> return $ Left $ "Not starting repair, have transient or no failed devices"
-          False -> return $ Left $ "Not starting repair, some IOS are not online"
-        Just _ -> return $ Left $ "Not starting repair, seems there is repair already on-going"
+                waitFor notifier
+                waitFor notify_failed
+                onSuccess pool_disks_notified
+                onTimeout 10 notify_timeout
+                return $ Right (PoolRepairFailedToStart pool "default", [dispatcher])
+              False -> do
+                return $ Left "Not starting repair, have transient or no failed devices"
+          False -> do
+            return $ Left "Not starting repair, some IOS are not online"
+        Just _ -> do
+          return $ Left "Not starting repair, seems there is repair already on-going"
 
   (repair_started, startRepairOperation) <- mkRepairStartOperation $ \pool er -> do
     case er of
@@ -560,7 +572,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
                 abortRepairStart
                 continue finish)
 
-  setPhaseAllNotified pool_disks_notified (rlens fldNotifications . rfield) $ do
+  directly pool_disks_notified $ do
     Just pool <- getField . rget fldPool <$> get Local
     statusRepair pool
     continue status_received
@@ -630,14 +642,14 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStartResult)
-    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
     fldPool = Proxy :: Proxy '("pool", Maybe M0.Pool)
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
        <+> fldRep           =: Nothing
-       <+> fldNotifications =: Nothing
+       <+> fldNotifications =: []
        <+> fldPool          =: Nothing
+       <+> fldDispatch      =: Dispatch [] (error "ruleRepairStart dispatcher") Nothing
 
 -- | Job that convers all the repair continue logic.
 jobContinueSNS :: Job ContinueSNS ContinueSNSResult
@@ -1330,7 +1342,7 @@ checkRepairOnServiceUp :: Definitions RC ()
 checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
     init_rule <- phaseHandle "init_rule"
 
-    setPhaseInternalNotificationWithState init_rule (\o n -> o /= M0.PSOnline &&  n == M0.PSOnline)
+    setPhaseInternalNotification init_rule (\o n -> o /= M0.PSOnline &&  n == M0.PSOnline)
       $ \(eid, procs :: [(M0.Process, M0.ProcessState)]) -> do
       todo eid
       rg <- getLocalGraph

@@ -20,7 +20,8 @@ import HA.RecoveryCoordinator.RC.Actions
   )
 import HA.RecoveryCoordinator.Mero.Events (stateSet)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseNotified)
+import HA.RecoveryCoordinator.Mero.Notifications (setPhaseNotified)
+import HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0

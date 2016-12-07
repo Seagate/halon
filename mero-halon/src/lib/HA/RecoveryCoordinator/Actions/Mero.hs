@@ -21,7 +21,6 @@ module HA.RecoveryCoordinator.Actions.Mero
   , startMeroService
   , startNodeProcesses
   , configureMeroProcess
-  , stopNodeProcesses
   , getAllProcesses
   , getLabeledProcesses
   , getLabeledNodeProcesses
@@ -37,7 +36,7 @@ import HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Service.Events
-import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Node.Events
 import HA.RecoveryCoordinator.Castor.Process.Events
 
 import HA.Resources.Castor (Is(..))
@@ -62,7 +61,7 @@ import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import Data.Proxy
-import Data.List (sort, foldl')
+import Data.List (sort)
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.UUID.V4 (nextRandom)
 
@@ -257,7 +256,7 @@ calculateStopLevel = do
       -- We allow stopping a process on level 1 if there are no running
       -- PLM0t1fs processes
       stillUnstopped <- getLocalGraph <&>
-        getLabeledProcesses (M0.PLM0t1fs)
+        getLabeledProcesses M0.PLM0t1fs
           ( \p g -> not . null $
           [ () | M0.getState p g `elem` [ M0.PSOnline
                                         , M0.PSQuiescing
@@ -339,25 +338,8 @@ configureMeroProcess (TypedChannel chan) p runType mkfs = do
             else return $ ProcessConfigRemote p
     liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
 
--- | TODO: 'stopNodeProcesses' uses direct graph update, make it use
--- transition instead
-stopNodeProcesses :: TypedChannel ProcessControlMsg
-                  -> [M0.Process]
-                  -> PhaseM RC a ()
-stopNodeProcesses (TypedChannel chan) ps = do
-   rg <- getLocalGraph
-   let msg = StopProcesses $ map (go rg) ps
-   phaseLog "debug" $ "Stop message: " ++ show msg
-   liftProcess $ sendChan chan msg
-   for_ ps $ \p -> modifyGraph
-     $ \rg' -> foldl' (\g s -> M0.setState (s::M0.Service) M0.SSStopping g)
-                      (M0.setState p M0.PSStopping rg')
-                      (G.connectedTo p M0.IsParentOf rg')
-   where
-     go rg p = case G.connectedTo p Has rg of
-        [M0.PLM0t1fs] -> (M0T1FS, M0.fid p)
-        _             -> (M0D, M0.fid p)
-
+-- | Get all 'M0.Processes' associated the given 'M0.ProcessLabel'
+-- that satisfy the predicate.
 getLabeledProcesses :: M0.ProcessLabel
                     -> (M0.Process -> G.Graph -> Bool)
                     -> G.Graph
@@ -372,13 +354,18 @@ getLabeledProcesses label predicate rg =
   , predicate proc rg
   ]
 
-getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
-getLabeledNodeProcesses node label rg =
+-- | Get all 'M0.Processes' associated to the given 'Res.Node' with
+-- the given 'M0.ProcessLabel' that satisfy the predicate.
+--
+-- For processes on any node, see 'getLabeledProcesses'.
+getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph
+                        -> (M0.Process -> Bool) -> [M0.Process]
+getLabeledNodeProcesses node label rg predicate =
    [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
-       , G.isConnected p Is M0.PSOnline rg
        , G.isConnected p Has label rg
+       , predicate p
    ]
 
 -- | Fetch the boot level for the given 'Process'. This is determined as

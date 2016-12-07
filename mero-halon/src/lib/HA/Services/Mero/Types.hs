@@ -140,7 +140,7 @@ instance Hashable ProcessConfig
 -- | Control system level m0d processes.
 data ProcessControlMsg =
     StartProcess ProcessRunType M0.Process
-  | StopProcesses [(ProcessRunType, Fid)]
+  | StopProcess ProcessRunType M0.Process
   | ConfigureProcess ProcessRunType ProcessConfig Bool
   deriving (Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
@@ -155,7 +155,7 @@ instance Hashable ProcessControlResultMsg
 deriveSafeCopy 0 'base ''ProcessControlResultMsg
 
 data ProcessControlResultStopMsg =
-      ProcessControlResultStopMsg NodeId [Either (Fid,String) Fid]
+      ProcessControlResultStopMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultStopMsg
 deriveSafeCopy 0 'base ''ProcessControlResultStopMsg

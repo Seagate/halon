@@ -56,10 +56,10 @@ import           Data.Monoid  -- XXX: remote ifdef if possible
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.RecoveryCoordinator.Mero.Actions.Conf (nodeToM0Node)
 import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
+import           HA.Resources.Mero (nodeToM0Node)
 import           HA.Services.Mero.RC (rules)
 import           HA.Services.SSPL
   ( sendInterestingEvent
@@ -263,8 +263,8 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 -- monitor disconnects and not here: what if node came
                 -- back before recovery fired? unlikely but who knows
                 case nodeToM0Node n1 g of
-                  [] -> phaseLog "warn" $ "Couldn't find any mero nodes for " ++ show n1
-                  ns -> applyStateChanges $ (\n -> stateSet n nodeFailed) <$> ns
+                  Nothing -> phaseLog "warn" $ "Couldn't find a mero node for " ++ show n1
+                  Just n -> applyStateChanges [stateSet n nodeFailed]
                 -- if the node is a mero server then power-cycle it.
                 -- Client nodes can run client-software that may not be
                 -- OK with reboots so we only reboot servers.

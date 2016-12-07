@@ -1,20 +1,25 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
-module HA.Castor.Story.Tests (mkTests, run, nextNotificationFor) where
+module HA.Castor.Story.Tests
+  ( mkTests
+  , run
+  , nextNotificationFor
+  , spawnNotificationAcker
+  ) where
 
 import           Control.Arrow ((&&&))
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Distributed.Process.Node
 import           Control.Exception as E hiding (assert)
-import           Control.Monad (forM_, replicateM_, void)
+import           Control.Monad (forever, forM_, replicateM_, void)
 import           Data.Aeson (decode, encode)
 import qualified Data.Aeson.Types as Aeson
 import           Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Defaultable
-import           Data.Foldable (find)
+import           Data.Foldable (find, for_)
 import           Data.Function (fix)
 import           Data.Hashable (Hashable)
 import           Data.Maybe (isJust)
@@ -30,14 +35,14 @@ import           HA.EventQueue.Types
 import           HA.Multimap
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (notifyOnClusterTransition)
-import           HA.RecoveryCoordinator.Castor.Cluster.Events (StopProcessesResult)
 import           HA.RecoveryCoordinator.Castor.Drive
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
+import           HA.RecoveryCoordinator.Castor.Process.Events (StopProcessResult)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc, getFilesystem)
 import           HA.RecoveryCoordinator.Mero.State
-import           HA.RecoveryCoordinator.Mero.Transitions (nodeOnline, processStarting)
+import           HA.RecoveryCoordinator.Mero.Transitions (nodeOnline)
 import           HA.RecoveryCoordinator.RC.Events.Cluster (InitialDataLoaded(..))
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.RecoveryCoordinator.Service.Events
@@ -65,7 +70,7 @@ import           Network.Transport
 import           RemoteTables (remoteTable)
 import           SSPL.Bindings
 import           Test.Framework
-import           Test.Tasty.HUnit (Assertion, assertEqual, assertBool, assertFailure)
+import           Test.Tasty.HUnit (Assertion, assertEqual, assertFailure)
 import           TestRunner
 
 myRemoteTable :: RemoteTable
@@ -110,11 +115,67 @@ newMeroChannel pid = do
               $ DeclareMeroChannel pid sdChan connChan
   return (recv, recv1, notfication)
 
+-- | Accept messages on @'ReceivePort' 'NotificationMessage'@ i.e. a
+-- channel mero would normally listen on and run
+-- 'tryCompleteStateChangeDiff' on the changes. This is needed because:
+--
+-- * 'notifyMero' is not reached in these tests. This means callbacks
+--   can not run, including callback that runs when no links are
+--   present for a process.
+--
+-- * Anything using notifications relies on
+--   'InternalObjectStateChangeMsg'. This message is sent from
+--   'ruleGenericNotification'. This is triggered by
+--   'tryCompleteStateDiff'.
+--
+-- * 'tryCompleteStateDiff' is triggered (through some wrappers) by
+--   the aforementioned callbacks.
+--
+-- You need this function when the following are true:
+--
+-- * You have any process in 'PSStarting', 'PSStopping' or 'PSOnline'
+--   state (see 'getNotificationChannels'). This includes the state
+--   change made in notification itself.
+--
+-- * You are trying to test code that relies on notifications
+--   succeeding.
+--
+-- For example, if you have no processes in the state listed above,
+-- you can 'applyStateChanges' happily and rely on notification ack as
+-- long as you aren't moving the process into any of those states.
+--
+-- @'PSOnline' -> 'PSQuiescing'@ transition is fine.
+--
+-- @'PSQuiescing' -> 'PSStarting'@ transition will apply but
+-- notification will *not* be ack'd.
+--
+-- If you need to test code that relies on an ack, use the below
+-- function which will manually trigger 'tryCompleteStateDiff'
+-- (through 'ruleNotificationsDelivereM0d') on the message. The
+-- message will be ack'd for every recepient.
+--
+-- This function should be ran on node co-located with EQ and will ack
+-- all incoming messages for as long as the process is running.
+spawnNotificationAcker :: ReceivePort NotificationMessage
+                       -- ^ Notification channel to listen on. You
+                       -- should obtain this from mero mock.
+                       -> Process ProcessId
+spawnNotificationAcker recv = do
+  master <- getSelfPid
+  spawnLocal $ do
+    link master
+    nid <- getSelfNode
+    forever $ do
+      NotificationMessage epoch s rs <- receiveChan recv
+      for_ rs $ \r -> do
+        sayTest $ "Acking " ++ show s ++ "  notifications for process " ++ show r
+        promulgateEQ [nid] $ NotificationAck epoch r
+
 testRules :: Definitions RC ()
 testRules = do
   defineSimple "register-mock-service" $ \(MockM0 dc) -> do
     rg <- getLocalGraph
-    nid <- liftProcess $ getSelfNode
+    nid <- liftProcess getSelfNode
     host <- Host <$> liftIO getHostName
     let node = Node nid
 
@@ -131,7 +192,7 @@ testRules = do
     -- Also mark the cluster disposition as ONLINE.
     modifyGraph $ G.connect Cluster Has M0.ONLINE
     -- Calculate cluster status.
-    notifyOnClusterTransition Nothing
+    notifyOnClusterTransition
     locateNodeOnHost node host
     Service.register node m0d mockMeroConf
     void . liftProcess $ promulgateEQ [nid] dc
@@ -748,8 +809,9 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
     prepareSubscriptions rc rmq
     subscribe rc (Proxy :: Proxy (HAEvent ExpanderReset))
     subscribe rc (Proxy :: Proxy (HAEvent RaidMsg))
-    subscribe rc (Proxy :: Proxy StopProcessesResult)
+    subscribe rc (Proxy :: Proxy StopProcessResult)
     host <- pack <$> liftIO getHostName
+    _ <- spawnNotificationAcker recv
     let raidDevice = "/dev/raid"
         raidData = mkResponseRaidData host raidDevice
                                         [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
@@ -764,6 +826,22 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
                   sensorResponseMessageSensor_response_typeExpander_reset =
                     Just Aeson.Null
                 }
+
+    -- Waits until given object enters state.
+    let waitState :: HasConfObjectState a => a
+                  -> (StateCarrier a -> Bool) -- Predicate on state
+                  -> Int                      -- Time between tries
+                  -> Int                      -- Number of tries, seconds
+                  -> Process (Maybe (StateCarrier a))
+        waitState _ _ _ tries | tries <= 0 = return Nothing
+        waitState obj p interval tries = do
+          rg <- G.getGraph mm
+          let st = HA.Resources.Mero.Note.getState obj rg
+          if p st
+          then return $ Just st
+          else do
+            _ <- receiveTimeout (interval * 1000000) []
+            waitState obj p interval (tries - 1)
 
     -- Before we can do anything, we need to establish a fake RAID device.
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" raidMsg
@@ -786,15 +864,13 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
     usend rmq $ MQPublish "sspl_halon" "sspl_ll" erm
 
     -- Should get propogated to the RC
-    _ <- expect :: Process (Published (HAEvent ExpanderReset))
+    _ <- expectPublished (Proxy :: Proxy (HAEvent ExpanderReset))
     sayTest "ExpanderReset rule fired"
 
     -- Should expect notification from Mero that the enclosure is transient
-    do
-      Set notes <- nextNotificationFor (M0.fid m0enc) recv
-      sayTest $ "Enc-transient-notes: " ++ show notes
-      liftIO $ assertBool "enclosure is in transient state" $
-               (Note (M0.fid m0enc) M0_NC_TRANSIENT) `elem` notes
+    waitState m0enc (== M0_NC_TRANSIENT) 2 10 >>= \case
+      Nothing -> fail "Enclosure didn't become transient"
+      Just{} -> return ()
 
     -- Should also expect a message to SSPL asking it to disable swap
     _ <- do
@@ -809,19 +885,15 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
 
     -- Mero services should be stopped
     _ <- do
-      StopProcesses pcs <- receiveChan recc
-      liftIO $ assertEqual "One process on node" 1 $ length pcs
+      StopProcess _ p <- receiveChan recc
       -- Reply with successful stoppage
-      let [(_, fid)] = pcs
-      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid [Right fid]
-      _ <- expectPublished (Proxy :: Proxy StopProcessesResult)
-
+      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid (Right p)
+      _ <- expectPublished (Proxy :: Proxy StopProcessResult)
       sayTest "Mero process stop finished"
 
     -- prepare RC for soon-to-be process start
     getSelfPid >>= usend rc . PrepareRC
     Just PrepareRC{} <- expectTimeout (10 * 1000000)
-
 
     -- Should see unmount message
     _ <- do
@@ -856,7 +928,6 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
       -- Reply with a command acknowledgement
       void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
-    -- Mero services should be restarted
     do
       sayTest "configure process"
       mconf <- receiveChan recc
@@ -887,14 +958,10 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
 
     sayTest "Mero process start result sent"
 
-    -- Should expect notification from Mero that the enclosure is online
-    do
-      Set notes <- nextNotificationFor (M0.fid m0enc) recv
-      sayTest $ "Enc-online-notes: " ++ show notes
-      liftIO $ assertBool "enclosure is in online state" $
-               (Note (M0.fid m0enc) M0_NC_ONLINE) `elem` notes
-
-    return ()
+    -- Should expect notification from Mero that the enclosure is transient
+    waitState m0enc (== M0_NC_ONLINE) 2 10 >>= \case
+      Nothing -> fail "Enclosure didn't become transient"
+      Just{} -> return ()
 
   -- Put RC in a state such that the test can pass.
   prepare :: Definitions RC ()
@@ -905,12 +972,5 @@ testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test w
     rg <- getLocalGraph
     let nodes :: [M0.Node]
         nodes = G.connectedTo fs M0.IsParentOf rg
-        procs = [ p | n <- nodes
-                    , p <- G.connectedTo n M0.IsParentOf rg ]
-
     applyStateChanges $ map (\n -> stateSet n nodeOnline) nodes
-    -- Hack! Notify PSStarting fails in start rule during this test
-    -- (Why? No idea!) so pre-set the state, making the rule skip the
-    -- notification.
-                     ++ map (\p -> stateSet p processStarting) procs
     liftProcess $ usend caller msg

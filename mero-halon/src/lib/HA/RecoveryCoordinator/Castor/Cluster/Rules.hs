@@ -57,6 +57,7 @@ import qualified HA.Resources.Mero.Note as M0
 
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Hardware
       ( findHostStorageDevices, findStorageDeviceIdentifiers )
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
@@ -64,6 +65,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Node.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Job.Actions
@@ -76,7 +78,6 @@ import           Control.Category
 import           Control.Distributed.Process hiding (catch, try)
 import           Control.Lens
 import           Control.Monad (join, unless, void, when)
-import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.List (sort)
@@ -150,7 +151,7 @@ eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-clust
     procChanges <- findChanges
     unless (null procChanges) $ do
       phaseLog "debug" $ "Process changes: " ++ show (map formatProcess procChanges)
-      notifyOnClusterTransition Nothing
+      notifyOnClusterTransition
 
 
 -- | This is a rule catches death of the Principal RM and elects new one.
@@ -458,11 +459,9 @@ requestClusterStop = defineSimple "castor::cluster::request::stop"
         Right action -> action
   where
     stopCluster rg ch eid = do
-      -- Set disposition to OFFLINE
-      modifyGraph $ G.connect R.Cluster R.Has (M0.OFFLINE)
-      let nodes =
-            [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-                   , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node] ]
+      modifyGraph $ G.connect R.Cluster R.Has M0.OFFLINE
+      let nodes = [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
+                         , node <- G.connectedTo host R.Runs rg ]
       for_ nodes $ promulgateRC . StopProcessesOnNodeRequest
       registerSyncGraphCallback $ \pid proc -> do
         sendChan ch (StateChangeStarted pid)
@@ -516,26 +515,25 @@ requestClusterReset = defineSimple "castor::cluster::reset"
       messageProcessed eid
 
 -- | Stop m0t1fs service with given fid.
---   This may be triggered by the user using halonctl.
 --
---   Sends 'StopProcessesRequest' which has an explicit
---   list of Processes.
+-- This may be triggered by the user using halonctl.
 --
--- 1. we check if there is halon:m0d service on the node
--- 2. find if there is m0t1fs service with a given fid
+-- 1. Find if there is m0t1fs service with a given fid
+-- 2. Request that the process is stopped.
+--
+-- Does not wait for any sort of reply.
 requestStopMeroClient :: Definitions RC ()
-requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $ \(StopMeroClientRequest fid) -> do
-  phaseLog "info" $ "Stop mero client " ++ show fid ++ " requested."
-  mnp <- runMaybeT $ do
-    proc <- MaybeT $ lookupConfObjByFid fid
-    node <- MaybeT $ getLocalGraph
-                  <&> G.connectedFrom M0.IsParentOf proc
-    return (node, proc)
-  forM_ mnp $ \(node, proc) -> do
-    rg <- getLocalGraph
-    if G.isConnected proc R.Has M0.PLM0t1fs rg
-    then promulgateRC $ StopProcessesRequest node [proc]
-    else phaseLog "warning" $ show fid ++ " is not a client process."
+requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $
+  \(StopMeroClientRequest fid) -> do
+    Log.tagContext Log.SM [("client.fid", show fid)] Nothing
+    phaseLog "info" $ "Stop mero client requested."
+    lookupConfObjByFid fid >>= \case
+      Nothing -> phaseLog "warn" "Could not find associated process."
+      Just p -> do
+        rg <- getLocalGraph
+        if G.isConnected p R.Has M0.PLM0t1fs rg
+        then promulgateRC $ StopProcessRequest p
+        else phaseLog "warn" "Not a client process."
 
 -- | Start already existing (in confd) mero client.
 --
@@ -544,12 +542,13 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
 requestStartMeroClient :: Definitions RC ()
 requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::start" $
   \(StartMeroClientRequest fid) -> do
-    phaseLog "info" $ "Start mero client " ++ show fid ++ " requested."
+    Log.tagContext Log.SM [("client.fid", show fid)] Nothing
+    phaseLog "info" $ "Start mero client requested."
     lookupConfObjByFid fid >>= \case
-      Nothing -> phaseLog "warn" $ "Could not find process with fid " ++ show fid
+      Nothing -> phaseLog "warn" "Could not find associated process."
       Just p -> G.isConnected p R.Has M0.PLM0t1fs <$> getLocalGraph >>= \case
         True -> promulgateRC $ ProcessStartRequest p
-        False -> phaseLog "warn" $ M0.showFid p ++ " is not a client process"
+        False -> phaseLog "warn" "Not a client process."
 
 -- | Caller 'ProcessId' signals that it's interested in cluster
 -- stopping ('MonitorClusterStop') and wants to receive information

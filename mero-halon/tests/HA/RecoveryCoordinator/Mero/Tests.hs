@@ -22,7 +22,8 @@ import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.Events (stateSet)
-import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, setPhaseNotified)
+import           HA.RecoveryCoordinator.Mero.Notifications (setPhaseNotified)
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.Replicator hiding (getState)
@@ -39,6 +40,7 @@ import           Mero.Notification
 import           Mero.Notification.HAState
 import           Network.CEP
 import           Network.Transport (Transport(..))
+import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, testCase)
 import           TestRunner

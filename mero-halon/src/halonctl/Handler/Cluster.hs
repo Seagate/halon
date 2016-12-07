@@ -36,6 +36,7 @@ import qualified HA.Resources.HalonVars as Castor
 import qualified HA.Aeson
 import HA.SafeCopy
 import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Node.Events
 import Mero.ConfC ( Fid )
 
 import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
