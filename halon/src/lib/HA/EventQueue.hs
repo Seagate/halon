@@ -446,7 +446,6 @@ sendReply sender reply = do here <- getSelfNode
 
 -- | Internal event meaning that event was removed from Event Queue.
 data TrimDone = TrimDone UUID deriving (Typeable, Generic)
-
 instance Binary TrimDone
 
 data TrimAck = TrimAck UUID deriving (Typeable, Generic)
