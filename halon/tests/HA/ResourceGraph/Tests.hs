@@ -11,6 +11,8 @@
 
 module HA.ResourceGraph.Tests ( tests ) where
 
+import qualified HA.ResourceGraph.Tests.Merge as Merge
+
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure (mkStatic)
 import Control.Distributed.Process.Node
@@ -169,7 +171,7 @@ tests :: forall g. (Typeable g, RGroup g)
       => Transport -> Proxy g -> IO [TestTree]
 tests transport _ = do
     let g = undefined :: g (MetaInfo, Multimap)
-    return
+    return $
       [ testSuccess "initial-graph" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait =<< getGraph mm
           ns <- getKeyValuePairs mm
@@ -343,4 +345,4 @@ tests transport _ = do
             -- Should have replaced the NodeC due to cardinality
             let res = connectedToList (NodeA 1) HasC g3 :: [NodeC]
             assertEqual "res is [NodeC 2]" [NodeC 2] res
-      ]
+      ] ++ Merge.tests

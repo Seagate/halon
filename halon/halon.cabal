@@ -220,6 +220,7 @@ Test-Suite tests
                     HA.NodeAgent.Tests
                     HA.RecoverySupervisor.Tests
                     HA.ResourceGraph.Tests
+                    HA.ResourceGraph.Tests.Merge
                     HA.Storage.Tests
                     RemoteTables
                     Test.Helpers
@@ -263,7 +264,8 @@ Test-Suite tests
                     cep,
                     uuid,
                     containers,
-                    stm
+                    stm,
+                    QuickCheck
   if flag(rpc)
       Build-Depends: network-transport-rpc
       CPP-Options:    -DUSE_RPC

@@ -29,6 +29,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -64,6 +65,7 @@ module HA.ResourceGraph
     , null
     , memberResource
     , memberEdge
+    , memberEdgeBack
     , edgesFromSrc
     , edgesToDst
     , connectedFrom
@@ -184,6 +186,8 @@ data Res = forall a. Resource a => Res !a
 -- a relationship.
 data Rel = forall r a b. Relation r a b => InRel !r a b
          | forall r a b. Relation r a b => OutRel !r a b
+
+deriving instance Show Rel
 
 instance Hashable Res where
     hashWithSalt s (Res x) = s `hashWithSalt` (typeOf x, x)
@@ -322,6 +326,9 @@ data Graph = Graph
   , grGraphGCInfo :: GraphGCInfo
   } deriving (Typeable)
 
+instance Show Graph where
+  show g = show $ grGraph g
+
 -- | Edges between resources. Edge types are called relations. An edge is an
 -- element of some relation. The order of the fields matches that of
 -- subject-verb-object triples in RDF.
@@ -345,6 +352,14 @@ memberResource a g = M.member (Res a) $ grGraph g
 memberEdge :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
 memberEdge e g =
     (outFromEdge e) `S.member` maybe S.empty (S.filter isOut) (M.lookup (Res (edgeSrc e)) (grGraph g))
+
+-- | Test whether two resources are connected through the given relation.
+--   Compared to 'memberEdge', looks up the relation from the remote endpoint.
+--   This is mostly useful for testing, since 'memberEdge' and 'memgerEdgeBack'
+--   should give identical results all of the time.
+memberEdgeBack :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
+memberEdgeBack e g =
+    (inFromEdge e) `S.member` maybe S.empty (S.filter isIn) (M.lookup (Res (edgeDst e)) (grGraph g))
 
 outFromEdge :: Relation r a b => Edge a r b -> Rel
 outFromEdge Edge{..} = OutRel edgeRelation edgeSrc edgeDst
@@ -478,7 +493,8 @@ mergeResources _ [] g = g
 mergeResources f xs g@Graph{..} = g
     { grChangeLog = updateChangeLog
                    (InsertMany [ (encodeRes newRes
-                                , S.toList . S.map encodeRel $ oldRels)
+                                , S.toList . S.map (encodeRel.updateOurEnd newX) $ oldRels
+                                )
                                 ])
                   . updateChangeLog
                       (DeleteKeys (map (encodeRes . Res) xs))
@@ -489,11 +505,11 @@ mergeResources f xs g@Graph{..} = g
   where
     newX = f xs
     newRes = Res newX
-    oldRels = foldl' S.union S.empty
-            . catMaybes
-            . map (\r -> M.lookup (Res r) grGraph)
+    oldRels = S.filter (\r -> not $ elem (otherEnd r) (Res <$> xs))
+            . foldl' S.union S.empty
+            . mapMaybe (\r -> M.lookup (Res r) grGraph)
             $ xs
-    adjustments = M.insert newRes oldRels
+    adjustments = M.insert newRes (S.map (updateOurEnd newX) oldRels)
                 : fmap rehookG (S.toList oldRels)
                 ++ map (M.delete . Res) xs
     otherEnd = \case InRel _ x _  -> Res x ; OutRel _ _ y -> Res y
@@ -505,6 +521,15 @@ mergeResources f xs g@Graph{..} = g
         ( InsertMany [(encodeRes (otherEnd rel), [ encodeRel (updateOtherEnd rel newX) ])])
       . updateChangeLog
         ( DeleteValues [(encodeRes (otherEnd rel), [ encodeRel (inverse rel) ])])
+    -- Update resources connected to/from the new node, instead of old local
+    -- object we are inserting new one.
+    updateOurEnd :: forall q. Resource q => q -> Rel -> Rel
+    updateOurEnd x' rel@(OutRel r (_::b) y) = case eqT :: Maybe (q :~: b) of
+      Just Refl -> OutRel r x' y
+      Nothing -> rel
+    updateOurEnd y' rel@(InRel r x (_::b)) = case eqT :: Maybe (q :~: b) of
+      Just Refl -> InRel r x y'
+      Nothing -> rel
     updateOtherEnd :: forall q. Resource q => Rel -> q -> Rel
     updateOtherEnd rel@(InRel r x (_ :: b)) y' = case eqT :: Maybe (q :~: b) of
       Just Refl -> OutRel r x y'
