@@ -1,11 +1,12 @@
 -- |
+-- Module    : HA.RecoveryCoordinator.Rules.Castor.Cluster
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero cluster rules
 --
 -- Relevant part of the resource graph.
--- @@@
+-- @
 --     R.Cluster
 --       |  |
 --       |  +-------M0.Root
@@ -18,7 +19,7 @@
 --      |  +--------->M0.Node
 --      v
 --     R.Node
--- @@@
+-- @
 --
 --
 --

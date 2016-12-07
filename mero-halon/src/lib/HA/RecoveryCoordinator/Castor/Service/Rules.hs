@@ -1,13 +1,12 @@
 {-# LANGUAGE LambdaCase            #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Castor.Service.Rules
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Service related rules.
 module HA.RecoveryCoordinator.Castor.Service.Rules
   ( rules
-    -- * Individual rules exported for test purposes
-  , ruleNotificationHandler
   ) where
 
 import HA.EventQueue.Types (HAEvent(..))
@@ -139,6 +138,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
   startFork start_rule startState
 
+-- | Service rules.
 rules :: Definitions RC ()
 rules = sequence_
   [ ruleNotificationHandler ]

@@ -17,30 +17,29 @@
 
 module HA.RecoveryCoordinator.Castor.Rules where
 
+
+import Data.Maybe
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.Resources
 import HA.Resources.Castor
-import qualified HA.Resources.Castor.Initial as CI
+import Network.CEP
 import qualified HA.ResourceGraph as G
+import qualified HA.Resources.Castor.Initial as CI
+
 #ifdef USE_MERO
-import Control.Monad
+import Data.Foldable (for_)
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero.Actions.Failure
-import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
-import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
-import qualified HA.RecoveryCoordinator.Castor.Service as Service
 import qualified HA.RecoveryCoordinator.Castor.Expander.Rules as Expander
+import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
+import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
+import qualified HA.RecoveryCoordinator.Castor.Service as Service
 #endif
-import Data.Foldable
-import Data.Maybe
-
-import Network.CEP
-import Prelude hiding (id, (.))
 
 lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
 lookupStorageDevicePathsInGraph sd g =
@@ -50,6 +49,7 @@ lookupStorageDevicePathsInGraph sd g =
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
+-- | Collection of Castor rules.
 castorRules :: Definitions RC ()
 castorRules = sequence_
   [ ruleInitialDataLoad
@@ -64,6 +64,7 @@ castorRules = sequence_
   ]
 
 -- | Load initial data from facts file into the system.
+--
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do

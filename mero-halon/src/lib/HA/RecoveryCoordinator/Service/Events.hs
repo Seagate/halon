@@ -54,6 +54,7 @@ data ServiceStartRequest =
        ServiceStartRequest ServiceStart Node (Service a) a [ProcessId] -- XXX: remove listeners
   deriving Typeable
 
+-- | Encoded version of 'ServiceStartRequest'.
 newtype ServiceStartRequestMsg = ServiceStartRequestMsg BS.ByteString
   deriving (Typeable, Ord, Eq, Show)
 
@@ -103,6 +104,7 @@ data ServiceStart = Start | Restart
 
 instance Binary ServiceStart
 
+-- | Has the request to start the service been accepted?
 data ServiceStartRequestResult
        = ServiceStartRequestCancelled
        | ServiceStartRequestOk
@@ -114,6 +116,7 @@ data ServiceStopRequest =
     forall a. Configuration a => ServiceStopRequest Node (Service a)
     deriving Typeable
 
+-- | Encoded version of 'ServiceStopRequest'.
 newtype ServiceStopRequestMsg = ServiceStopRequestMsg BS.ByteString
   deriving (Typeable, Show, Eq, Ord)
 
@@ -139,6 +142,7 @@ instance ProcessEncode ServiceStopRequest where
                    return $ ServiceStopRequest node svc
               Left err -> error $ "decode ServiceStopRequest: " ++ err
 
+-- | Has the service stop request been accepted?
 data ServiceStopRequestResult
         = ServiceStopRequestCancelled
         | ServiceStopRequestOk
@@ -152,6 +156,7 @@ data ServiceStatusRequest =
       ServiceStatusRequest Node (Service a) [ProcessId]
     deriving Typeable
 
+-- | Encoded version of 'ServiceStatusRequest'.
 newtype ServiceStatusRequestMsg = ServiceStatusRequestMsg BS.ByteString
   deriving (Typeable)
 
@@ -179,6 +184,7 @@ instance ProcessEncode ServiceStatusRequest where
                    return $ ServiceStatusRequest node svc lis
               Left err -> error $ "decode ServiceStatusRequest: " ++ err
 
+-- | Report on the status of a service
 data ServiceStatusResponse =
     SrvStatNotRunning
   | SrvStatStillRunning ProcessId
@@ -189,6 +195,7 @@ data ServiceStatusResponse =
   | SrvStatError String
   deriving Typeable
 
+-- | Encoded version of 'ServiceStatusResponse'.
 newtype ServiceStatusResponseMsg = ServiceStatusResponseMsg BS.ByteString
   deriving (Typeable, Binary)
 

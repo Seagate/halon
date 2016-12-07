@@ -125,7 +125,6 @@ Library
                    HA.Services.DecisionLog.Logger
                    HA.Services.DecisionLog.Trace
                    HA.Services.DecisionLog.Types
-                   HA.Services.SSPL.HL.Resources
                    HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions

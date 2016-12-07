@@ -5,26 +5,24 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.RC.Events.Debug where
 
-import HA.Resources
-import HA.SafeCopy
-
-import Control.Distributed.Process (NodeId, ProcessId)
-
-import Data.Binary   (Binary)
-import Data.Hashable (Hashable)
+import           Control.Distributed.Process (NodeId, ProcessId)
+import           Data.Binary (Binary)
+import           Data.Hashable (Hashable)
 import qualified Data.Map.Strict as Map
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
-import GHC.Generics
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
+import           GHC.Generics
+import           HA.SafeCopy
+import           HA.Resources
 
--- ^ Sent when a process wishes to enquire about the status of a node.
+-- | Sent when a process wishes to enquire about the status of a node.
 data NodeStatusRequest =
     NodeStatusRequest Node [ProcessId]
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable NodeStatusRequest
 
--- ^ Response to a query about the status of a node.
+-- | Response to a query about the status of a node.
 data NodeStatusResponse = NodeStatusResponse
   { nsrNode :: Node
   , nsrIsStation :: Bool
@@ -34,12 +32,14 @@ data NodeStatusResponse = NodeStatusResponse
 instance Hashable NodeStatusResponse
 instance Binary NodeStatusResponse
 
+-- | Request debug information from RC. Answered with 'DebugResponse'.
 data DebugRequest =
     DebugRequest ProcessId
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable DebugRequest
 
+-- | Debug information about halon. Requested with 'DebugRequest'.
 data DebugResponse = DebugResponse {
     dr_eq_nodes :: [NodeId]
   , dr_refCounts :: Map.Map UUID Int

@@ -1,9 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RankNTypes #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Actions.Core
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- XXX: write module level documentation
@@ -54,10 +55,9 @@ module HA.RecoveryCoordinator.RC.Actions.Core
   , setPhaseIfConsume
     -- * Lifted functions in PhaseM
   , decodeMsg
-  , getSelfProcessId
-  , sayRC
   , sendMsg
     -- * Utility functions
+  , sayRC
   , unlessM
   , whenM
   , mkLoop
@@ -66,27 +66,7 @@ module HA.RecoveryCoordinator.RC.Actions.Core
   , FldUUID
   ) where
 
-import HA.Multimap (StoreChan)
-import qualified HA.ResourceGraph as G
-import HA.Resources
-  ( Cluster(..)
-  , Has(..)
-  , Node
-  )
-
-import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.EventQueue.Types
-import HA.EventQueue.Producer (promulgateWait)
-import HA.Encode
-  ( ProcessEncode(..)
-  , decodeP
-  )
-import HA.RecoveryCoordinator.RC.Application
-import HA.SafeCopy (SafeCopy)
-
-import Control.Category ((>>>))
-import Control.Distributed.Process
+import           Control.Distributed.Process
   ( ProcessId
   , Process
   , usend
@@ -98,17 +78,26 @@ import Control.Distributed.Process
   , spawnLocal
   , link
   )
-import Control.Monad (when, unless, (<=<))
-import Control.Distributed.Process.Serializable
-
-import Data.Typeable (Typeable)
-import Data.Functor (void)
-import Data.Proxy
+import           Control.Distributed.Process.Serializable
+import           Control.Category ((>>>))
+import           Control.Monad (when, unless, (<=<))
+import           Data.Functor (void)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import           Data.Maybe (fromMaybe)
-
-import Network.CEP
+import           Data.Proxy
+import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
+import           HA.Encode (ProcessEncode(..), decodeP)
+import           HA.EventQueue.Producer (promulgateWait)
+import           HA.EventQueue.Types
+import           HA.Multimap (StoreChan)
+import           HA.RecoveryCoordinator.RC.Application
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..), Node)
+import           HA.SafeCopy
+import           Network.CEP
 
 -- | Get value from non-peristent global storage.
 getStorageRC :: Typeable a => PhaseM RC l (Maybe a)
@@ -119,20 +108,23 @@ getStorageRC = Storage.get . lsStorage <$> get Global
 putStorageRC :: Typeable a => a -> PhaseM RC l ()
 putStorageRC x = modify Global $ \g -> g{lsStorage = Storage.put x $ lsStorage g}
 
--- | Delete value from non-peristent global storage.
+-- | Delete value from the ephemeral storage.
 deleteStorageRC :: Typeable a => Proxy a -> PhaseM RC l ()
 deleteStorageRC p = modify Global $ \g -> g{lsStorage = Storage.delete p $ lsStorage g}
 
+-- | Put value in in global, ephemeral storage.
 insertStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l ()
 insertStorageSetRC x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
     Nothing -> g{lsStorage = Storage.put (Set.singleton x) $ lsStorage g}
     Just z  -> g{lsStorage = Storage.put (Set.insert x z)  $ lsStorage g}
 
+-- | Is the given value in global, ephemeral storage?
 memberStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l Bool
 memberStorageSetRC x = do
    maybe False (Set.member x) . Storage.get . lsStorage <$> get Global
 
+-- | Delete the value from the ephemeral storage.
 deleteStorageSetRC :: (Typeable a, Ord a) => a -> PhaseM RC l ()
 deleteStorageSetRC x = modify Global $ \g -> do
   case Storage.get (lsStorage g) of
@@ -146,12 +138,14 @@ memberStorageMapRC _ x =
   maybe False (\m -> Map.member x (m :: Map.Map k v))
     . Storage.get . lsStorage <$> get Global
 
+-- | 'Map.insertWith' into a 'Map' inside ephemeral 'Storage'.
 insertWithStorageMapRC :: (Typeable k, Typeable v, Ord k)
                        => (v -> v -> v) -> k -> v -> PhaseM RC l ()
 insertWithStorageMapRC f k v = modify Global $ \g -> do
   let z = fromMaybe Map.empty $ Storage.get (lsStorage g)
   g{lsStorage = Storage.put (Map.insertWith f k v z) $ lsStorage g}
 
+-- | Delete a map of given types from the ephemeral storage.
 deleteStorageMapRC :: forall proxy k v l . (Typeable k, Typeable v, Ord k)
                    => proxy v -> k -> PhaseM RC l ()
 deleteStorageMapRC _ x = modify Global $ \g -> do
@@ -159,6 +153,7 @@ deleteStorageMapRC _ x = modify Global $ \g -> do
     Nothing -> g
     Just (z::Map.Map k v) -> g{lsStorage = Storage.put (Map.delete x z)  $ lsStorage g}
 
+-- | Lookup a value store inside the a 'Map' inside ephemeral storage.
 lookupStorageMapRC :: forall k v l . (Typeable k, Typeable v, Ord k)
                    => k -> PhaseM RC l (Maybe v)
 lookupStorageMapRC x =
@@ -179,15 +174,19 @@ registerNode node = modifyLocalGraph $ \rg -> do
 
     return rg'
 
+-- | Retrieve the Resource 'G.Graph' from the 'Global' state.
 getLocalGraph :: PhaseM RC l G.Graph
 getLocalGraph = fmap lsGraph $ get Global
 
+-- | Update the RG in the global state.
 putLocalGraph :: G.Graph -> PhaseM RC l ()
 putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
 
+-- | Modify the RG in the global state.
 modifyGraph :: (G.Graph -> G.Graph) -> PhaseM RC l ()
 modifyGraph k = modifyLocalGraph $ return . k
 
+-- | Modify the RG in the global state using provided action.
 modifyLocalGraph :: (G.Graph -> PhaseM RC l G.Graph) -> PhaseM RC l ()
 modifyLocalGraph k = do
     rg  <- getLocalGraph
@@ -248,12 +247,15 @@ mkMessageProcessed = do
   eqPid <- lsEQPid <$> get Global
   return $ usend eqPid
 
+-- | 'say' prefixed with RC header.
 sayRC :: String -> Process ()
 sayRC s = say $ "Recovery Coordinator: " ++ s
 
+-- | 'when' over bool-producing action.
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM cond act = cond >>= flip when act
 
+-- | 'unless' over bool-producing action.
 unlessM :: Monad m => m Bool -> m () -> m ()
 unlessM cond act = cond >>= flip unless act
 
@@ -274,9 +276,6 @@ sendMsg pid a = liftProcess $ usend pid a
 -- | Lifted version of @decodeP@
 decodeMsg :: ProcessEncode a => BinRep a -> PhaseM g l a
 decodeMsg = liftProcess . decodeP
-
-getSelfProcessId :: PhaseM g l ProcessId
-getSelfProcessId = liftProcess getSelfPid
 
 -- | Get the 'StoreChan' for the multimap replicating the graph.
 getMultimapChan :: PhaseM RC l StoreChan
