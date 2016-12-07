@@ -102,6 +102,7 @@ Library
                    HA.RecoveryCoordinator.Service.Rules
                    HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
                    HA.RecoveryCoordinator.Service.Events
                    HA.RecoveryCoordinator.Log
                    -- RC interface modules.

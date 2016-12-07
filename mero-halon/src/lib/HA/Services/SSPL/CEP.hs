@@ -280,7 +280,22 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                locateHostInEnclosure host enc
              identifyStorageDevice disk [diidx, sn, path]
              selfMessage $ RuleDriveManagerDisk disk
-       Just st -> selfMessage (RuleDriveManagerDisk st)
+       Just st -> do
+         -- is report for the same drive that halon knows.
+         b <- hasStorageDeviceIdentifier st sn
+         if b
+         then unlessM (hasStorageDeviceIdentifier st path) $
+                void $ identifyStorageDevice st [path]
+         else
+           -- do we know about replacement for the drive
+           lookupStorageDeviceReplacement st >>= \case
+               Nothing  -> do
+                 -- We are attaching only path, but not all parameters, that
+                 -- allow to get into the create new storage device replacement
+                 -- in the HPI rule. 
+                 void $ attachStorageDeviceReplacement st [path]
+               Just dev -> identifyStorageDevice dev [path]
+         selfMessage (RuleDriveManagerDisk st)
      continue pcommit
 
    setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
@@ -374,7 +389,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           -- Drive with this serial is known, but is not the drive in this slot.
           -- In this case the drive has probably been moved.
           -- TODO: investigate replacement with engineer temporarily pulling out drive scenario
-          void $ attachStorageDeviceReplacement i [serial, wwn, idx]
+          void $ attachStorageDeviceReplacement i [serial, wwn]
           return (i,True)
         (Just i, Nothing) -> do
           lookupStorageDeviceSerial i >>= \case
@@ -384,7 +399,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
             _ -> do
               -- We have a device in this slot, but it has the wrong serial.
               -- So this is probably a replacement.
-              void $ attachStorageDeviceReplacement i [serial, wwn, idx]
+              void $ attachStorageDeviceReplacement i [serial, wwn]
           return (i, True)
         (Nothing, Just s) -> do
           -- We have a serial number for the device, but don't know its location.
