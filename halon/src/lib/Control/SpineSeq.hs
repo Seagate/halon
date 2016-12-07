@@ -1,7 +1,8 @@
 -- |
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
-
+--
+-- Helper functions for implementic spine strict functions.
 module Control.SpineSeq
   ( spineSeq
   ) where
