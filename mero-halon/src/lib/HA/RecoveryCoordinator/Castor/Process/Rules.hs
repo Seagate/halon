@@ -23,7 +23,7 @@ import           Data.List (nub)
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Typeable
 import           Data.Vinyl
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Process.Events

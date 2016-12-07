@@ -11,7 +11,7 @@ module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
 
-import HA.EventQueue.Types
+import HA.EventQueue
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G

@@ -49,8 +49,6 @@ Library
                    HA.Debug
                    HA.Encode
                    HA.EventQueue
-                   HA.EventQueue.Producer
-                   HA.EventQueue.Types
                    HA.EQTracker
                    HA.ResourceGraph
                    HA.Resources.TH
@@ -79,6 +77,9 @@ Library
                    System.SystemD.API
   other-modules:   HA.Service.Internal
                    HA.EQTracker.Internal
+                   HA.EventQueue.Process
+                   HA.EventQueue.Producer
+                   HA.EventQueue.Types
 
   Build-Depends:   base,
                    binary >= 0.6,

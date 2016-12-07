@@ -39,8 +39,7 @@ findEQFromNodes t n = go t n [] where
   go 0 [] nids = go 0 (reverse nids) []
   go _ [] _ = error "Failed to query EQ location from any node."
   go timeout (x:xs) done = do
-    self <- getSelfPid
-    nsendRemote x EQT.name $ EQT.ReplicaRequest self
+    EQT.lookupReplicas x
     rl <- expectTimeout timeout
     case rl of
       Just (EQT.ReplicaReply (EQT.ReplicaLocation _ rest@(_:_))) -> return rest

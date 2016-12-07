@@ -24,7 +24,7 @@ import           HA.Service
   , ServiceFailed(..)
   , ServiceExit(..)
   , ServiceUncaughtException(..))
-import           HA.EventQueue.Producer
+import           HA.EventQueue
 
 import Control.Monad (unless)
 import Control.Distributed.Process (usend)

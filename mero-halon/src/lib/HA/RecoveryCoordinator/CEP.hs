@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.CEP where
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import qualified HA.EQTracker as EQT
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import           HA.NodeUp
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero

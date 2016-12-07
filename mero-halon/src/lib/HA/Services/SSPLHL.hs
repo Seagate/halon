@@ -14,7 +14,7 @@ module HA.Services.SSPLHL where
 
 import Prelude hiding ((<$>), (<*>), id, mapM_)
 import HA.Aeson (ToJSON, decode, encode)
-import HA.EventQueue.Producer (promulgate)
+import HA.EventQueue (promulgate)
 import HA.Debug
 import HA.Logger
 import HA.SafeCopy

@@ -21,7 +21,7 @@ module System.Posix.SysInfo
 
 #include <unistd.h>
 
-import HA.EventQueue.Producer (promulgateWait)
+import HA.EventQueue (promulgateWait)
 import HA.Resources (Node)
 import HA.Resources.Mero (HostHardwareInfo(..))
 import HA.SafeCopy

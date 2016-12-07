@@ -14,10 +14,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
   , ruleResetInit
   ) where
 
-import HA.EventQueue.Types
-  ( HAEvent(..)
-  , UUID
-  )
+import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
@@ -62,6 +59,7 @@ import Data.Proxy (Proxy(..))
 import Data.Maybe (mapMaybe)
 import Data.Text (Text, pack)
 import Data.Vinyl
+import Data.UUID (UUID)
 
 import Network.CEP
 

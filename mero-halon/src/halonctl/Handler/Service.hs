@@ -20,7 +20,7 @@ module Handler.Service
 where
 
 import Prelude hiding ((<$>), (<*>))
-import HA.EventQueue.Producer (promulgateEQ)
+import HA.EventQueue (promulgateEQ)
 import HA.Resources ( Node(..) )
 import HA.Encode
 import HA.Service

@@ -87,9 +87,9 @@ import           Data.Maybe (fromMaybe)
 import           Data.Proxy
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
 import           HA.Encode (ProcessEncode(..), decodeP)
-import           HA.EventQueue.Producer (promulgateWait)
-import           HA.EventQueue.Types
+import           HA.EventQueue (HAEvent(..), promulgateWait)
 import           HA.Multimap (StoreChan)
 import           HA.RecoveryCoordinator.RC.Application
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log

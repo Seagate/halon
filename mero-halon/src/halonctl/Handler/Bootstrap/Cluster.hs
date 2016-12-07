@@ -15,7 +15,7 @@ module Handler.Bootstrap.Cluster
   ) where
 
 import qualified Handler.Service as Service
-import           HA.EventQueue.Producer
+import           HA.EventQueue
 import qualified Handler.Bootstrap.TrackingStation as Station
 import qualified Handler.Bootstrap.Satellite as Satellite
 import           HA.Resources.Castor.Initial as CI

@@ -19,7 +19,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
   , replacement
   ) where
 
-import HA.EventQueue.Types (HAEvent(..))
+import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Hardware

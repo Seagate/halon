@@ -14,6 +14,7 @@ module HA.EventQueue.Types
     , EQStatReq(..)
     , EQStatResp(..)
     , PoolStats(..)
+    , eventQueueLabel
     ) where
 
 import Control.Distributed.Process
@@ -79,3 +80,9 @@ data EQStatResp =
   deriving (Generic, Typeable)
 
 instance Binary EQStatResp
+
+-- | Since there is at most one Event Queue per tracking station node,
+-- the @eventQueueLabel@ is used to register and lookup the Event Queue of a
+-- node.
+eventQueueLabel :: String
+eventQueueLabel = "HA.EventQueue"

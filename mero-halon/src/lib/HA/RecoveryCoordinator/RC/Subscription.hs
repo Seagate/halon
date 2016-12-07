@@ -10,7 +10,7 @@ module HA.RecoveryCoordinator.RC.Subscription
   , unsubscribeOnFrom
   ) where
 
-import HA.EventQueue.Producer
+import HA.EventQueue
   ( promulgate
   , promulgateEQ
   , promulgateWait

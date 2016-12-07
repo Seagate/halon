@@ -119,7 +119,7 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
 import           HA.Encode
 import qualified HA.Aeson as Aeson
 import           HA.Service
-import           HA.EventQueue.Types
+import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -162,10 +162,11 @@ import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
-import qualified Data.Text as T
-import qualified Data.Text.Lazy.Encoding as TL
-import qualified Data.Text.Lazy as TL
 import           Data.Typeable
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
+import           Data.UUID (UUID)
 import           Data.Vinyl
 
 import           Network.CEP

@@ -17,6 +17,10 @@ module HA.EQTracker
   ( -- * Public API.
     startEQTracker
   , updateEQNodes
+  , name
+  , lookupReplicas
+  , ReplicaReply(..)
+  , ReplicaLocation(..)
     -- * D-P internals.
   , updateEQNodes__static
   , updateEQNodes__sdict
@@ -101,3 +105,10 @@ startEQTracker eqs = do
     eqt <- spawnLocalName "ha::eq" $ eqTrackerProcess eqs
     register name eqt
     return eqt
+
+-- | Lookup replica from the given node. After sending this request
+-- Process will receive 'ReplicaReply' in it's mailbox.
+lookupReplicas :: NodeId -> Process ()
+lookupReplicas n = do
+  self  <- getSelfPid
+  nsendRemote n name $ ReplicaRequest self

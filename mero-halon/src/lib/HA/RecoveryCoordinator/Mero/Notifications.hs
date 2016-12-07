@@ -63,7 +63,7 @@ import           Data.Typeable
 import           Data.UUID (UUID)
 import           Data.Vinyl hiding ((:~:))
 import           HA.Encode (decodeP)
-import           HA.EventQueue.Types (HAEvent(..))
+import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Transitions.Internal
 import           HA.RecoveryCoordinator.RC.Actions.Core

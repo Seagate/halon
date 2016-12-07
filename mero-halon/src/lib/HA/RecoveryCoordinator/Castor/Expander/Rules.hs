@@ -15,7 +15,7 @@
 module HA.RecoveryCoordinator.Castor.Expander.Rules
   ( rules ) where
 
-import HA.EventQueue.Types
+import HA.EventQueue
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
 import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
