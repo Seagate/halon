@@ -24,6 +24,7 @@ import           Data.Maybe (isJust, listToMaybe)
 import           Data.Typeable
 import           Data.Vinyl
 import           HA.EventQueue.Types
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
@@ -130,20 +131,21 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   dispatch <- mkDispatcher
   notifier <- mkNotifierSimple dispatch
 
-  let defaultReply m = do
+  let defaultReply c m = do
         phaseLog "warn" m
         ProcessStartRequest p <- getRequest
         applyStateChanges [ stateSet p $ Tr.processFailed m ]
-        return (ProcessStartFailed p m, [finish])
+        return (c p m, [finish])
 
-  let fail_start m = snd <$> defaultReply m
+  let fail_start m = snd <$> (defaultReply ProcessStartFailed) m
 
   let route (ProcessStartRequest p) = do
         rg <- getLocalGraph
         case runChecks p rg of
-          Just failMsg -> Right <$> defaultReply failMsg
+          Just chkFailMsg ->
+            Right <$> (defaultReply ProcessStartInvalid) chkFailMsg
           Nothing -> initResources p rg >>= \case
-            Just failMsg -> Right <$> defaultReply failMsg
+            Just failMsg -> Right <$> (defaultReply ProcessStartFailed) failMsg
             Nothing -> do
               forM_ (runWarnings p rg) $ phaseLog "warn"
 
@@ -263,7 +265,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     -- process start on a cluster which changed disposition to OFFLINE
     -- for example.
     route req >>=  \case
-      Left m -> defaultReply ("Failed process start retry: " ++ m) >>= \case
+      Left m -> defaultReply ProcessStartFailed ("Failed process start retry: " ++ m) >>= \case
         (rep, phs) -> do
           modify Local $ rlens fldRep . rfield .~ Just rep
           switch phs
@@ -630,5 +632,7 @@ ruleFailedNotificationFailsProcess =
 -- | Listen for 'RpcEvent's. Currently just log the event.
 ruleRpcEvent :: Definitions RC ()
 ruleRpcEvent = defineSimpleTask "rpc-event" $ \(HAMsg (rpc :: RpcEvent) meta) -> do
-  phaseLog "rpc-event" $ show rpc
-  phaseLog "meta" $ show meta
+  Log.rcLog' Log.DEBUG
+    [ ("rpc-event" , show rpc)
+    , ("meta", show meta)
+    ]

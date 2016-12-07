@@ -13,6 +13,7 @@ import HA.EventQueue.Types
 
 import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Service.Events
@@ -69,13 +70,15 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
 
   start main Nothing
   where
-    logEP Nothing = phaseLog "warning" "Entrypoint information not available."
-    logEP (Just (M0.SpielAddress confd_fids confd_eps quorum rm_fid rm_ep)) = do
-       phaseLog "confd.fids"   $ show confd_fids
-       phaseLog "confd.eps"    $ show confd_eps
-       phaseLog "confd.quorum" $ show quorum
-       phaseLog "rm.fids"      $ show rm_fid
-       phaseLog "rm.ep"        $ show rm_ep
+    logEP Nothing = Log.rcLog' Log.WARN "Entrypoint information not available."
+    logEP (Just (M0.SpielAddress confd_fids confd_eps quorum rm_fid rm_ep)) =
+      Log.rcLog' Log.DEBUG
+        [ ("confd.fids"   , show confd_fids)
+        , ("confd.eps"    , show confd_eps)
+        , ("confd.quorum" , show quorum)
+        , ("rm.fids"      , show rm_fid)
+        , ("rm.ep"        , show rm_ep)
+        ]
 
 meroRules :: Definitions RC ()
 meroRules = do

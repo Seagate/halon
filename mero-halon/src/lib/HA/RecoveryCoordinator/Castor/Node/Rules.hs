@@ -601,19 +601,27 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     -- happens to fail to start.
     let mkProcessesAwait name next = mkLoop name (return [])
           (\result l ->
-             case result of
-               ProcessStarted p -> return $
-                 Right $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
-               ProcessStartFailed p _ -> do
-                 --  Alternatively, instead of checking for the
-                 --  process, we could check if it's our job that
-                 --  we're receiving information about.
-                 if p `elem` getField (rget fldWaitingProcs l)
-                 then do
-                   StartProcessesOnNodeRequest m0node <- getRequest
-                   _ <- nodeFailedWith NodeProcessesStartFailure m0node
-                   return $ Left finish
-                 else return $ Right l)
+            case result of
+              ProcessStarted p -> return $
+                Right $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+              ProcessStartFailed p _ -> do
+                --  Alternatively, instead of checking for the
+                --  process, we could check if it's our job that
+                --  we're receiving information about.
+                if p `elem` getField (rget fldWaitingProcs l)
+                then do
+                  StartProcessesOnNodeRequest m0node <- getRequest
+                  _ <- nodeFailedWith NodeProcessesStartFailure m0node
+                  return $ Left finish
+                else return $ Right l
+              ProcessStartInvalid p _ -> do
+                if p `elem` getField (rget fldWaitingProcs l)
+                then do
+                  StartProcessesOnNodeRequest m0node <- getRequest
+                  _ <- nodeFailedWith NodeProcessesStartFailure m0node
+                  return $ Left finish
+                else return $ Right l
+          )
           (getField . rget fldWaitingProcs <$> get Local >>= return . \case
              [] -> Just [next]
              _  -> Nothing)
@@ -706,7 +714,13 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
                  Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
                  modify Local $ rlens fldRep . rfield .~
                    Just (ClientsStartFailure m0node $ printf "%s failed to start: %s" (M0.showFid p) r)
-                 return $ Left finish)
+                 return $ Left finish
+               ProcessStartInvalid p r -> do
+                 Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+                 modify Local $ rlens fldRep . rfield .~
+                   Just (ClientsStartFailure m0node $ printf "%s failed to start: %s" (M0.showFid p) r)
+                 return $ Left finish
+          )
           (getField . rget fldWaitingProcs <$> get Local >>= \case
              [] -> do
                Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local

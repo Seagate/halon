@@ -24,6 +24,7 @@ newtype ProcessStartRequest = ProcessStartRequest M0.Process
 -- | Reply in job handling 'ProcessStartRequest'
 data ProcessStartResult = ProcessStarted M0.Process
                         | ProcessStartFailed M0.Process String
+                        | ProcessStartInvalid M0.Process String
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 
