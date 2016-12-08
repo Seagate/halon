@@ -73,6 +73,7 @@ Library
                    HA.Services.Ping
                    HA.Startup
                    HA.Logger
+                   HA.Prelude
                    Control.SpineSeq
                    System.SystemD.API
   other-modules:   HA.Service.Internal
@@ -81,6 +82,7 @@ Library
                    HA.EventQueue.Process
                    HA.EventQueue.Producer
                    HA.EventQueue.Types
+                   HA.Prelude.Internal
 
   Build-Depends:   base,
                    binary >= 0.6,

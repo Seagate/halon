@@ -25,13 +25,11 @@ module HA.EQTracker.Process
   , __remoteTable
   ) where
 
-import Control.Distributed.Process
-import Control.Distributed.Process.Closure
-import Control.Monad (unless)
 import Data.List (union)
 import HA.Debug
 import HA.EQTracker.Internal
 import HA.Logger (mkHalonTracer)
+import HA.Prelude.Internal
 
 -- | Internal logs.
 traceTracker :: String -> Process ()

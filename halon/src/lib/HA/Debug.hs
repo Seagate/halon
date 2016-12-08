@@ -7,11 +7,13 @@ module HA.Debug
   ( labelProcess
   , spawnLocalName
   , traceMarkerP
+  , traceEventP
   ) where
 
 import Control.Distributed.Process
 import GHC.Conc
 import Debug.Trace
+import Network.CEP (MonadProcess(..))
 
 -- | Add label to the 'Process', this way haskell thread
 -- will have a label in the event logs.
@@ -28,5 +30,9 @@ spawnLocalName :: String -> Process () -> Process ProcessId
 spawnLocalName label action = spawnLocal $ labelProcess label >> action
 
 -- | Lifted version of the 'traceMarkerIO'.
-traceMarkerP :: String -> Process ()
-traceMarkerP = liftIO . traceMarkerIO
+traceMarkerP :: MonadProcess p => String -> p ()
+traceMarkerP = liftProcess . liftIO . traceMarkerIO
+
+-- | Lifted version of the 'traceEventIO'.
+traceEventP :: MonadProcess p => String -> p ()
+traceEventP = liftProcess . liftIO . traceEventIO

@@ -13,11 +13,7 @@ module HA.EQTracker.Internal
   , name
   ) where
 
-import Control.Distributed.Process (NodeId, ProcessId)
-import Data.Binary
-import Data.Hashable
-import Data.Typeable
-import GHC.Generics
+import HA.Prelude.Internal
 
 -- | Process label: @"HA.EQTracker"@
 name :: String

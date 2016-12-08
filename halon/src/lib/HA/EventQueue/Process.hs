@@ -20,44 +20,27 @@ module HA.EventQueue.Process
   , emptyEventQueue
   ) where
 
-import HA.Debug
-import HA.EventQueue.Types
-import HA.Logger
-import HA.Replicator ( RGroup
-                     , getStateWith
-                     , monitorRGroup
-                     , retryRGroup
-                     , updateStateWith
-                     )
-
-import Control.Distributed.Process hiding (catch, finally, mask_, try)
-import Control.Distributed.Process.Pool.Bounded
+import           Control.Concurrent (yield)
+import           Control.Concurrent.STM
+import           Control.Distributed.Process.Pool.Bounded
 import qualified Control.Distributed.Process.Scheduler.Raw as DP
-import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Monitor (withMonitoring)
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
-import Network.CEP hiding (continue)
-
-import Control.Applicative
-import Control.Concurrent (yield)
-import Control.Concurrent.STM
-import Control.Monad (when)
-import Control.Monad.Catch
-import Data.Binary (Binary)
-import Data.Foldable (forM_)
-import Data.Function (fix)
-import Data.Functor (void)
-import Data.Int (Int64)
+import           Data.Int (Int64)
 import qualified Data.Map.Strict as M
+import           Data.PersistMessage
 import qualified Data.Set as S
-import Data.PersistMessage
-import Data.Typeable
-import Data.Word (Word64)
-import GHC.Generics
-import System.Clock
-
-import Debug.Trace
-
+import           Data.Word (Word64)
+import           HA.Debug
+import           HA.EventQueue.Types
+import           HA.Logger
+import           HA.Replicator ( RGroup
+                               , getStateWith
+                               , monitorRGroup
+                               , retryRGroup
+                               , updateStateWith
+                               )
+import           Network.CEP
+import           System.Clock
+import HA.Prelude.Internal
 
 -- | Tells how many microseconds to wait between polls of the replicated state
 -- for new events.
@@ -232,8 +215,8 @@ eqRules rg pool groupMonitor = do
             b <- getStateWith rg $ $(mkClosure 'eqReadEvents) (sp, sn)
             if b then Just <$> receiveChan rp else return Nothing
           when (null ms) $ eqTrace "Poller: No messages"
-          forM_ (ms :: [PersistMessage]) $ \sm -> do
-            liftIO $ traceMarkerIO $ "sending to RC: " ++ show (persistMessageId sm)
+          for_ (ms :: [PersistMessage]) $ \sm -> do
+            traceMarkerP $ "sending to RC: " ++ show (persistMessageId sm)
             eqTrace $ "Sending to RC: " ++ show (persistMessageId sm)
             usend rc sm
           tf <- liftIO $ getTime Monotonic
@@ -342,7 +325,7 @@ eqRules rg pool groupMonitor = do
         -- Try to modify the replicated state.
         Just rgMonitor -> do
           (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
-            liftIO $ traceEventIO "START eq::record::event"
+            traceEventP "START eq::record::event"
             eqTrace $ "Recording event " ++ show (mid, rgMonitor)
             res <- withMonitoring (monitor rgMonitor) $
               updateStateWith rg $ $(mkClosure 'addSerializedEvent) ev
@@ -356,7 +339,7 @@ eqRules rg pool groupMonitor = do
               Nothing -> do
                 eqSay $ "[ERROR] Recording event failed " ++ show (mid, sender) ++ " - no quorum"
                 sendReply sender False
-            liftIO $ traceEventIO "STOP eq::record::event"
+            traceEventP "STOP eq::record::event"
 
     -- Debug information
     defineSimple "dump-stats" $ \(EQStatReq pid) -> let
