@@ -31,6 +31,8 @@ rpm:
 # and a pseudo-source tar in ./rpmbuild/SRPMS
 rpm-dev:
 	mkdir -p rpmbuild/SOURCES/role_maps
+	mkdir -p rpmbuild/SOURCES/systemd
+	mkdir -p rpmbuild/SOURCES/tmpfiles.d
 	cp .stack-work/install/x86_64-linux/lts-5.17/7.10.3/bin/halond rpmbuild/SOURCES/
 	cp .stack-work/install/x86_64-linux/lts-5.17/7.10.3/bin/halonctl rpmbuild/SOURCES/
 	cp systemd/halond.service rpmbuild/SOURCES/
@@ -40,4 +42,5 @@ rpm-dev:
 	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
 	cp mero-halon/scripts/halon_roles.yaml rpmbuild/SOURCES/role_maps/halon_role_mappings
+	cp mero-halon/scripts/tmpfiles.d/halond.conf rpmbuild/SOURCES/tmpfiles.d/halond.conf
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba halon-dev.spec

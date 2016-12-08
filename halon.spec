@@ -44,6 +44,7 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/etc/logrotate.d
+mkdir -p %{buildroot}%{_tmpfilesdir}
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
@@ -55,6 +56,7 @@ cp mero-halon/scripts/mero_provisioner_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/prov.ede
 cp mero-halon/scripts/halon_roles.yaml \
    %{buildroot}/etc/halon/role_maps/halon_role_mappings
+cp mero-halon/scripts/tmpfiles.d/halon.conf %{buildroot}%{_tmpfilesdir}/halond.conf
 ln -s /etc/halon/role_maps/prov.ede %{buildroot}/etc/halon/mero_role_mappings
 ln -s /etc/halon/role_maps/halon_role_mappings %{buildroot}/etc/halon/halon_role_mappings
 
@@ -74,6 +76,7 @@ rm -rf %{buildroot}
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
 /etc/logrotate.d/halon
+%{_tmpfilesdir}/halond.conf
 
 %post
 systemctl daemon-reload
