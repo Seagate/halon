@@ -26,7 +26,7 @@ import Data.Maybe (mapMaybe)
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
-import HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..))
+import HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..), promulgateEQ)
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)

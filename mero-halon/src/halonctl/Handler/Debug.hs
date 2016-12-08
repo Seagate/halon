@@ -66,8 +66,7 @@ data EQStatsOptions = EQStatsOptions Int -- ^ Timeout for querying EQ.
 
 -- | Print Event Queue statistics.
 eqStats :: [NodeId] -> EQStatsOptions -> Process ()
-eqStats nids (EQStatsOptions t c m) = do
-    self <- getSelfPid
+eqStats nids (EQStatsOptions t c _) = do
     eqs <- findEQFromNodes t nids
     for_ eqs $ \eq -> do
       requestEQStats eq

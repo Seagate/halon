@@ -12,7 +12,7 @@ module HA.Startup where
 
 import HA.RecoverySupervisor ( recoverySupervisor )
 import HA.EventQueue.Process ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
-import qualified HA.EQTracker as EQT
+import qualified HA.EQTracker.Process as EQT
 import HA.Logger
 import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
 import HA.Multimap.Implementation ( Multimap, fromList )

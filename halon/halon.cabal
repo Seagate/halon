@@ -77,6 +77,7 @@ Library
                    System.SystemD.API
   other-modules:   HA.Service.Internal
                    HA.EQTracker.Internal
+                   HA.EQTracker.Process
                    HA.EventQueue.Process
                    HA.EventQueue.Producer
                    HA.EventQueue.Types

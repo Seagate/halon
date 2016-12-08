@@ -4,9 +4,9 @@
 -- License   : All rights reserved.
 --
 -- All events intended to be delivered the Recovery Coordinator should be
--- sent to the Event Queue using the "HA.EventQueue.Producer" API. The Event
--- Queue is a replicated mailbox that is resilient to failure of any minority
--- of replicas. Events posted to the Event Queue are forwarded to consumers
+-- sent via Event Queue using . The Event Queue is a replicated mailbox
+-- that is resilient to failure of any minority of replicas.
+-- Events posted to the Event Queue are forwarded to consumers
 -- (typically the Recovery Coordinator) and only removed when the consumer
 -- have explicitly acknowledged to have handled them.
 --
@@ -21,12 +21,19 @@
 -- of the recovery coordinator be idempotent.
 --
 module HA.EventQueue
-  ( HAEvent(..)
-  , module HA.EventQueue.Producer
+  ( -- * Messaging
+    HAEvent(..)
+  , HA.EventQueue.Producer.promulgate
+  , HA.EventQueue.Producer.promulgateWait
+  , HA.EventQueue.Producer.promulgateEQ
+  , eventQueueLabel
+    -- * Debug utilities.
+    -- ** Queue control
   , DoClearEQ(..)
   , DoneClearEQ(..)
-    -- * Debug utilities.
-  , EQStatResp
+    -- ** Gather statistics
+  , EQStatResp(..)
+  , PoolStats(..)
   , requestEQStats
   , runtimeInfoRequest
   ) where
