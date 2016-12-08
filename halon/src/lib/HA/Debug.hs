@@ -3,6 +3,11 @@
 -- License   : All rights reserved.
 --
 -- Debug functions that make use of eventlog subsystem.
+-- Eventlog provides a way to offline monitor program. And
+-- especially useful during developemnt process and benchmarking.
+--
+-- To read more about perfomance profiling refer to
+-- <http:\/\/www.well-typed.com\/blog\/2014\/02\/ghc-events-analyze\/>
 module HA.Debug
   ( labelProcess
   , spawnLocalName

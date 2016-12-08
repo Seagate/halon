@@ -4,7 +4,7 @@
 -- License   : All rights reserved.
 --
 -- All events intended to be delivered the Recovery Coordinator should be
--- sent via Event Queue using . The Event Queue is a replicated mailbox
+-- sent via Event Queue. The Event Queue is a replicated mailbox
 -- that is resilient to failure of any minority of replicas.
 -- Events posted to the Event Queue are forwarded to consumers
 -- (typically the Recovery Coordinator) and only removed when the consumer

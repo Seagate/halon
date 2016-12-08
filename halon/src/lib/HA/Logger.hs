@@ -1,7 +1,17 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module:     Control.Distributed.Process.Logs
 -- Copyright:  (C) 2015-2016 Seagate Technology Limited.
-{-# LANGUAGE TemplateHaskell #-}
+--
+-- Wrapper to generate trace log subsystem. Trace logs - are
+-- special kind of logs that logs internal state. By default
+-- loggers are disabled as may have negative perfomance impact 
+-- and may make logs unusable, because they will generate too
+-- much logs, that are not useful unless debuging.
+--
+-- Such logs can be enabled either statically via setting
+-- environment labels or in runtime with 'silenceLogger', 
+-- 'verboseLogger' calls.
 module HA.Logger
   ( -- * Public API
     mkHalonTracer
@@ -17,14 +27,10 @@ module HA.Logger
   , verboseLogger__tdict
   ) where
 
-import Control.Distributed.Process
-import Control.Distributed.Process.Scheduler (schedulerIsEnabled)
-import Control.Distributed.Process.Closure (remotable)
+import HA.Prelude.Internal
 import Control.Concurrent
-import Control.Monad (when)
 
 import Data.Char
-import Data.Foldable (for_)
 import Data.IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -32,7 +38,6 @@ import qualified Data.Map.Strict as Map
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe
 import System.Environment
-
 
 -- | List of all loggers.
 loggers :: MVar (Map String (IORef Bool))
@@ -50,12 +55,16 @@ updateLogger s b = modifyMVar loggers $ \m -> do
       return (m, ref)
 
 -- | Disable log output in certain subsystem.
+-- 
+-- This method can be called remotely.
 silenceLogger :: String -> Process ()
 silenceLogger subsystem = liftIO $ withMVar loggers $ \m ->
   for_ (Map.lookup subsystem m) $ \ref ->
     writeIORef ref False
 
 -- | Enable log output in certain subsystem.
+-- 
+-- This method can be called remotely.
 verboseLogger :: String -> Process ()
 verboseLogger subsystem = liftIO $ withMVar loggers $ \m ->
   for_ (Map.lookup subsystem m) $ \ref ->

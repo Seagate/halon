@@ -44,7 +44,7 @@ Library
 
   Ghc-Options:  -Wall -Werror
 
-  Exposed-Modules: HA.CallTimeout
+  Exposed-Modules: HA.Prelude
                    HA.Resources
                    HA.Debug
                    HA.Encode
@@ -73,10 +73,10 @@ Library
                    HA.Services.Ping
                    HA.Startup
                    HA.Logger
-                   HA.Prelude
                    Control.SpineSeq
                    System.SystemD.API
-  other-modules:   HA.Service.Internal
+  other-modules:   HA.CallTimeout
+                   HA.Service.Internal
                    HA.EQTracker.Internal
                    HA.EQTracker.Process
                    HA.EventQueue.Process

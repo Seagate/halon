@@ -12,13 +12,13 @@
 module HA.EQTracker
   ( -- * Update
     updateEQNodes
-    -- * D-p functions.
-  , updateEQNodes__static
-  , updateEQNodes__sdict
     -- * Lookup
   , lookupReplicas
   , ReplicaReply(..)
   , ReplicaLocation(..)
+    -- * D-p functions.
+  , updateEQNodes__static
+  , updateEQNodes__sdict
   ) where
 
 import HA.EQTracker.Process
