@@ -17,17 +17,20 @@ module Network.CEP.SM
 
 import Data.Typeable
 
+import           Control.Monad.Trans (lift)
 import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
 import           Control.Lens
 import qualified Data.Map.Strict as M
 
-import Network.CEP.Buffer
-import Network.CEP.Execution
-import Network.CEP.Phase
-import Network.CEP.Types
+import           Network.CEP.Buffer
+import           Network.CEP.Execution
+import           Network.CEP.Phase
+import           Network.CEP.Types
+import qualified Network.CEP.Log as Log
 
-import Debug.Trace
+import           Data.Foldable (for_)
+import           Debug.Trace
 
 newtype SM app = SM { runSM :: forall a. SMIn app a -> a }
 
@@ -108,28 +111,47 @@ newSM key startPhase rn ps initialBuffer initialL logger =
             m <- runPhase rn subs logs smId' l b ph
             concat <$> traverse (next ph) m
       where
+        -- Interpret results of the state machine execution. We have phase that was executed
+        -- it's Id, resulting buffer and out - information about how rule have finished
         next ph (idm, (buffer, out)) =
             case out of
-              SM_Complete l' newPhases -> do
+              -- Rule completed successfully, but it's ended, i.e. there are no next steps.
+              --
+              -- Currect semantics specifies that in such case rule have to be restarted from
+              -- beginning. This includes:
+              --
+              --   1. emit Log.Restart event
+              --   2. set rule state to initial one
+              --   3. keep current buffer.
+              --
+              SM_Complete _ [] -> do
+                -- This branch is required if we want to rule to be restarted
+                -- once it finishes "normally".
                 liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
-                let (result, phs', l'') = case newPhases of
-                           -- This branch is required if we want to rule to be restarted
-                          -- once it finishes "normally".
-                          []  -> ( SMResult idm SMFinished
-                                            (info [SuccessExe pname b buffer])
-                                 , [startPhase]
-                                 , initialL)
-                          ph' -> let xs = fmap mkPhase ph'
-                                 in ( SMResult idm SMRunning
-                                               (info [SuccessExe pname b buffer])
-                                    , xs
-                                    , l')
-                fin_phs <- traverse (jumpEmitTimeout key) phs'
-                return [(result, SM $ interpretInput idm l'' buffer fin_phs)]
+                let result = SMResult idm SMFinished (info [SuccessExe pname b buffer])
+                g <- use engineStateGlobal
+                for_ logger $ \lf ->
+                  lift $ (sml_logger lf) (Log.Event (Log.Location (_ruleKeyName key) (getSMId idm) pname)
+                                                    (Log.Restart (Log.RestartInfo (jumpPhaseName startPhase))))
+                                         g
+
+                fin_phs <- jumpEmitTimeout key startPhase
+                return [(result, SM $ interpretInput idm initialL buffer [fin_phs])]
+              -- Rule completed sucessfully and there are next steps to run. In this case
+              -- we continue.
+              SM_Complete l' ph' -> do
+                liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
+                let result = SMResult idm SMRunning (info [SuccessExe pname b buffer])
+                fin_phs <- traverse (jumpEmitTimeout key) $ fmap mkPhase ph'
+                return [(result, SM $ interpretInput idm l' buffer fin_phs)]
+              -- Rule is suspended. We continue execution in order to find next phase that will
+              -- terminate.
               SM_Suspend -> executeStack logs subs smId' l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))
                                 phs
+              -- Rule is stopped. We continue execution in order to find next phase that will
+              -- terminate.
               SM_Stop -> executeStack logs subs smId' l b
                              f
                              (info . ((FailExe pname StopExe b):))
