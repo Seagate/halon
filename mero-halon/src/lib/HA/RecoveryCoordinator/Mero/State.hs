@@ -13,7 +13,6 @@
 module HA.RecoveryCoordinator.Mero.State
   ( DeferredStateChanges(..)
   , applyStateChanges
-  , applyStateChangesSyncConfd
     -- * Re-export for convenience
   , AnyStateSet
   , stateSet
@@ -23,7 +22,6 @@ import HA.Encode (encodeP)
 import HA.RecoveryCoordinator.Castor.Drive.Internal
 import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Mero.Transitions.Internal
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Transition
@@ -157,29 +155,18 @@ createDeferredStateChanges stateSets rg =
         nv' = (Note (M0.fid s) (M0.toConfObjState s s_new)) : nv
         io' = x : io
 
--- | Apply a number of state changes, executing an action between updating
---   the graph and sending notifications to Mero and internally.
-genericApplyStateChanges :: [AnyStateSet]
-                         -> PhaseM RC l a
-                         -> PhaseM RC l a
-genericApplyStateChanges ass act = getLocalGraph >>= \rg -> do
+-- | Apply a number of state changes.
+applyStateChanges :: [AnyStateSet] -> PhaseM RC l ()
+applyStateChanges ass = getLocalGraph >>= \rg -> do
   let (warns, changes) = createDeferredStateChanges ass rg
   for_ warns $ phaseLog "warn"
-  genericApplyDeferredStateChanges changes act
+  applyDeferredStateChanges changes
 
--- | Generic function to apply deferred state changes in the standard order.
---   The provided 'action' is executed between updating the graph and sending
---   both 'Set' and 'InternalObjectStateChange' messages. The provided Process
---   actions are called after sending notification to Mero, should this succeed
---   or fail respectively.
---
---   For more flexibility, you can write your own apply method which takes
---   a `DeferredStateChanges` argument.
-genericApplyDeferredStateChanges :: DeferredStateChanges
-                                 -> PhaseM RC l a -- ^ action
-                                 -> PhaseM RC l a
-genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
-  diff <- mkStateDiff f (encodeP i) []
+-- | Apply deferred state changes in the standard order.
+applyDeferredStateChanges :: DeferredStateChanges -> PhaseM RC l ()
+applyDeferredStateChanges (DeferredStateChanges f s i) = do
+  let ioscMsg = encodeP i
+  diff <- mkStateDiff f ioscMsg []
   notifyMeroAsync diff s
   let (InternalObjectStateChange iosc) = i
   for_ iosc $ \(AnyStateChange a o n _) -> do
@@ -188,22 +175,6 @@ genericApplyDeferredStateChanges (DeferredStateChanges f s i) action = do
     , Log.lsc_oldState = show o
     , Log.lsc_newState = show n
     }
-  action
-
-
--- | Apply state changes and do nothing else.
-applyStateChanges :: [AnyStateSet]
-                  -> PhaseM RC l ()
-applyStateChanges ass =
-    genericApplyStateChanges ass (return ())
-
--- | Apply state changes and synchronise with confd.
-applyStateChangesSyncConfd :: [AnyStateSet]
-                           -> PhaseM RC l ()
-applyStateChangesSyncConfd ass =
-    genericApplyStateChanges ass act
-  where
-    act = syncAction Nothing M0.SyncToConfdServersInRG
 
 -- | Rule for cascading state changes
 data StateCascadeRule a b where

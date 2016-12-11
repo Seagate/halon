@@ -92,15 +92,14 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
       CI.Rack {
         CI.rack_idx = 1
       , CI.rack_enclosures = fmap
-          (\i ->
+          (\ifaddr@(x,y,z,w) ->
             let host = if _id_servers > 1
-                       then _id_hostname ++ "_" ++ show i
+                       then _id_hostname ++ "_" ++ show w
                        else _id_hostname
-                ifaddr = (\(x,y,z,_) -> showIP (x, y, z, i)) _id_host_ip
-                ifaddrBMC = (\(x,y,z,_) -> showIP (x, y, z + 10, i)) _id_host_ip
+                ifaddrBMC = showIP (x, y, z + 10, w)
             in CI.Enclosure {
-                  CI.enc_idx = fromIntegral i
-                , CI.enc_id = "enclosure_" ++ show i
+                  CI.enc_idx = fromIntegral w
+                , CI.enc_id = "enclosure_" ++ show w
                 , CI.enc_bmc = [CI.BMC ifaddrBMC "admin" "admin"]
                 , CI.enc_hosts = [
                     CI.Host {
@@ -111,73 +110,43 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
                         CI.Interface {
                           CI.if_macAddress = "10-00-00-00-00"
                         , CI.if_network = CI.Data
-                        , CI.if_ipAddrs = [ifaddr]
+                        , CI.if_ipAddrs = [showIP ifaddr]
                         }
                       ]
                     , CI.h_halon = Just $ CI.HalonSettings {
-                        CI._hs_address = ifaddr ++ ":9000"
+                        CI._hs_address = showIP ifaddr ++ ":9000"
                       , CI._hs_roles = []
                       }
                     }
                   ]
                 })
-          (take (fromIntegral _id_servers) $ iterate (+ 1) _id_servers)
+          serverAddrs
       }
     ]
   , CI.id_m0_servers = fmap
-      (\i -> let host = if _id_servers > 1
-                        then _id_hostname ++ "_" ++ show i
-                        else _id_hostname
-                 ifaddr = (\(x,y,z,_) -> showIP (x, y, z, i)) _id_host_ip
+      (\ifaddr@(_,_,_,w) ->
+         let host = if _id_servers > 1
+                    then _id_hostname ++ "_" ++ show w
+                    else _id_hostname
         in CI.M0Host {
             CI.m0h_fqdn = host
-          , CI.m0h_processes = [
-              CI.M0Process {
-                CI.m0p_endpoint = ifaddr ++ "@tcp:12345:41:901"
-              , CI.m0p_mem_as = 1
-              , CI.m0p_boot_level = 1
-              , CI.m0p_mem_rss = 1
-              , CI.m0p_mem_stack = 1
-              , CI.m0p_mem_memlock = 1
-              , CI.m0p_cores = [1]
-              , CI.m0p_services = [
-                  CI.M0Service {
-                    CI.m0s_type = CST_MGS
-                  , CI.m0s_endpoints = [ifaddr ++ "@tcp:12345:44:101"]
-                  , CI.m0s_params = SPConfDBPath "/var/mero/confd"
-                  , CI.m0s_pathfilter = Nothing
-                  }
-                , CI.M0Service {
-                    CI.m0s_type = CST_RMS
-                  , CI.m0s_endpoints = [ifaddr ++ "@tcp:12345:41:301"]
-                  , CI.m0s_params = SPUnused
-                  , CI.m0s_pathfilter = Nothing
-                    }
-                , CI.M0Service {
-                    CI.m0s_type = CST_MDS
-                  , CI.m0s_endpoints = [ifaddr ++ "@tcp:12345:41:201"]
-                  , CI.m0s_params = SPUnused
-                  , CI.m0s_pathfilter = Nothing
-                  }
-                , CI.M0Service {
-                    CI.m0s_type = CST_IOS
-                  , CI.m0s_endpoints = [ifaddr ++ "@tcp:12345:41:401"]
-                  , CI.m0s_params = SPUnused
-                  , CI.m0s_pathfilter = Nothing
-                  }
-                ]
-              }
-            ]
+          , CI.m0h_processes = map ($ ifaddr)
+              [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
           , CI.m0h_devices = fmap
               (\j -> CI.M0Device
-                      ("wwn" ++ show i ++ show j)
-                      ("serial" ++ show i ++ show j)
+                      ("wwn" ++ show w ++ "_" ++ show j)
+                      ("serial" ++ show w ++ "_" ++ show j)
                       4 64000
-                      ("/dev/loop" ++ show i ++ show j))
+                      ("/dev/loop" ++ show w ++ "_" ++ show j))
               [(1 :: Int) .. _id_drives]
           })
-      (take (fromIntegral _id_servers) $ iterate (+ 1) _id_servers)
+      serverAddrs
 }
+  where
+    serverAddrs :: [(Word8, Word8, Word8, Word8)]
+    serverAddrs = take (fromIntegral _id_servers)
+                  -- Assign next IP to consecutive servers
+                  $ iterate (\(x,y,z,w) -> (x,y,z,w + 1)) _id_host_ip
 
 -- | Pre-populated 'InitialDataSettings'.
 defaultInitialDataSettings :: IO InitialDataSettings
@@ -199,3 +168,146 @@ defaultInitialDataSettings = do
 -- produced some.
 defaultInitialData :: IO CI.InitialData
 defaultInitialData = defaultInitialDataSettings >>= initialData
+
+-- * Processes
+
+-- | Create halon 'CI.M0Process'.
+haProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
+             -> CI.M0Process
+haProcess ifaddr = CI.M0Process
+  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:34:101"
+  , CI.m0p_mem_as = 1
+  , CI.m0p_boot_level = -1
+  , CI.m0p_mem_rss = 1
+  , CI.m0p_mem_stack = 1
+  , CI.m0p_mem_memlock = 1
+  , CI.m0p_cores = [1]
+  , CI.m0p_services =
+    [ CI.M0Service
+      { CI.m0s_type = CST_HA
+      , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:34:101"]
+      , CI.m0s_params = SPUnused
+      , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+      { CI.m0s_type = CST_RMS
+      , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:34:101"]
+      , CI.m0s_params = SPUnused
+      , CI.m0s_pathfilter = Nothing }
+    ]
+  }
+
+-- | Create a confd 'CI.M0Process'
+confdProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
+             -> CI.M0Process
+confdProcess ifaddr = CI.M0Process
+  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:44:101"
+  , CI.m0p_mem_as = 1
+  , CI.m0p_boot_level = 0
+  , CI.m0p_mem_rss = 1
+  , CI.m0p_mem_stack = 1
+  , CI.m0p_mem_memlock = 1
+  , CI.m0p_cores = [1]
+  , CI.m0p_services =
+    [ CI.M0Service
+        { CI.m0s_type = CST_MGS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:44:101"]
+        , CI.m0s_params = SPConfDBPath "/var/mero/confd"
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_RMS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:44:101"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    ]
+  }
+
+-- | Create an mds 'CI.M0Process'
+mdsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
+           -> CI.M0Process
+mdsProcess ifaddr = CI.M0Process
+  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:201"
+  , CI.m0p_mem_as = 1
+  , CI.m0p_boot_level = 0
+  , CI.m0p_mem_rss = 1
+  , CI.m0p_mem_stack = 1
+  , CI.m0p_mem_memlock = 1
+  , CI.m0p_cores = [1]
+  , CI.m0p_services =
+    [ CI.M0Service
+        { CI.m0s_type = CST_RMS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_MDS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_ADDB2
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    ]
+  }
+
+-- | Create an IOS 'CI.M0Process'
+iosProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
+           -> CI.M0Process
+iosProcess ifaddr = CI.M0Process
+  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
+  , CI.m0p_mem_as = 1
+  , CI.m0p_boot_level = 1
+  , CI.m0p_mem_rss = 1
+  , CI.m0p_mem_stack = 1
+  , CI.m0p_mem_memlock = 1
+  , CI.m0p_cores = [1]
+  , CI.m0p_services =
+    [ CI.M0Service
+        { CI.m0s_type = CST_RMS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_IOS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_SNS_REP
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+            , CI.M0Service
+        { CI.m0s_type = CST_SNS_REB
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    , CI.M0Service
+        { CI.m0s_type = CST_ADDB2
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    ]
+  }
+
+
+-- | Create an M0T1FS 'CI.M0Process'
+m0t1fsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
+           -> CI.M0Process
+m0t1fsProcess ifaddr = CI.M0Process
+  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
+  , CI.m0p_mem_as = 1
+  , CI.m0p_boot_level = 99
+  , CI.m0p_mem_rss = 1
+  , CI.m0p_mem_stack = 1
+  , CI.m0p_mem_memlock = 1
+  , CI.m0p_cores = [1]
+  , CI.m0p_services =
+    [ CI.M0Service
+        { CI.m0s_type = CST_RMS
+        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_params = SPUnused
+        , CI.m0s_pathfilter = Nothing }
+    ]
+  }

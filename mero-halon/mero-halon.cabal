@@ -99,6 +99,7 @@ Library
                    HA.RecoveryCoordinator.Job.Events
                    HA.RecoveryCoordinator.Castor.Rules
                    HA.RecoveryCoordinator.RC.Rules.Debug
+                   HA.RecoveryCoordinator.RC.Subscription
                    HA.RecoveryCoordinator.Service.Rules
                    HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
@@ -121,7 +122,6 @@ Library
                    Version
 
   Other-Modules:   HA.RecoveryCoordinator.RC.Internal
-                   HA.RecoveryCoordinator.RC.Subscription
                    HA.Services.DecisionLog.Logger
                    HA.Services.DecisionLog.Trace
                    HA.Services.DecisionLog.Types
@@ -207,6 +207,7 @@ Library
                        HA.RecoveryCoordinator.Castor.Process.Events
                        HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
                        HA.Services.Mero.RC
+                       HA.Services.Mero.RC.Events
       Other-Modules:
                       Mero.Engine
                       HA.RecoveryCoordinator.Mero.Actions.Spiel
@@ -227,7 +228,6 @@ Library
                       HA.RecoveryCoordinator.Mero.Rules.Maintenance
                       HA.Resources.Mero.Note.TH
                       HA.Services.Mero.RC.Rules
-                      HA.Services.Mero.RC.Events
                       HA.Services.Mero.RC.Resources
                       System.Posix.SysInfo
       -- cc-options aren't used when compiling Haskell files, and this is
@@ -504,10 +504,11 @@ Test-Suite tests
                     HA.RecoveryCoordinator.Helpers
                     HA.RecoveryCoordinator.SSPL.Tests
                     HA.RecoveryCoordinator.Tests
+                    HA.Services.Mero.Mock
                     HA.Autoboot.Tests
                     HA.Castor.Tests
                     HA.Castor.Story.Tests
-                    HA.Castor.Story.ProcessRestart
+                    HA.Castor.Story.Process
                     HA.Test.Cluster
                     HA.Test.Disconnect
                     HA.Test.InternalStateChanges
@@ -648,7 +649,8 @@ Test-Suite scheduler-tests
                     uuid,
                     exceptions,
                     stm,
-                    split
+                    split,
+                    lens
 
   if flag(mero)
     CPP-Options:    -DUSE_MERO

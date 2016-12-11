@@ -283,7 +283,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                Nothing  -> do
                  -- We are attaching only path, but not all parameters, that
                  -- allow to get into the create new storage device replacement
-                 -- in the HPI rule. 
+                 -- in the HPI rule.
                  void $ attachStorageDeviceReplacement st [path]
                Just dev -> identifyStorageDevice dev [path]
          selfMessage (RuleDriveManagerDisk st)

@@ -445,7 +445,7 @@ startMeroService host node = do
                                  (M0.fid srvRM)
                                  kaFreq kaTimeout
                                  (MeroKernelConf uuid)
-      in encodeP $ ServiceStartRequest Start node m0d conf []
+      in encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf []
 
 
 -- | It may happen that a node reboots (either through halon or

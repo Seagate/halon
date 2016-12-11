@@ -2,12 +2,13 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TupleSections       #-}
 module HA.Test.Disconnect (tests) where
 
 import           Control.Distributed.Process hiding (bracket_)
@@ -227,31 +228,31 @@ testRejoinTimeout baseTransport connectionBreak = do
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
 
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
-      _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
+      _ :: HalonVarsUpdated <- expectPublished
 
       sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
-      _ <- expectPublished (Proxy :: Proxy NewNodeMsg)
+      _ :: NewNodeMsg <- expectPublished
 
 #ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
-      InitialDataLoaded <- expectPublished Proxy
+      InitialDataLoaded <- expectPublished
 #endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      _ <- expectPublished (Proxy :: Proxy NodeTransient)
+      _ :: NodeTransient <- expectPublished
       -- wait until timeout happens
-      _ <- expectPublished (Proxy :: Proxy HostDisconnected)
+      _ :: HostDisconnected <- expectPublished
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make bring it back up
       _ <- emptyMailbox (Proxy :: Proxy (Published NewNodeMsg))
       void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
-      _ <- expectPublished (Proxy :: Proxy NewNodeMsg)
+      _ :: NewNodeMsg <- expectPublished
 
       sayTest "testRejoinTimeout complete"
 
@@ -286,39 +287,39 @@ testRejoinRCDeath baseTransport connectionBreak = do
       subscribeOnTo [localNodeId m1] (Proxy :: Proxy HalonVarsUpdated)
 
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
-      _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
+      _ :: HalonVarsUpdated <- expectPublished
 
       sayTest "running NodeUp"
       emptyMailbox (Proxy :: Proxy (Published NewNodeConnected))
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
-      _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
+      _ :: NewNodeConnected <- expectPublished
 
       _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
       Just (RequestRCPidAnswer rcPid) <- expectTimeout 10000000
 
 #ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
-      InitialDataLoaded <- expectPublished Proxy
+      InitialDataLoaded <- expectPublished
 #endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      _ <- expectPublished (Proxy :: Proxy NodeTransient)
+      _ :: NodeTransient <- expectPublished
       -- Wait until recovery starts
-      _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
+      _ :: RecoveryAttempt <- expectPublished
       _ <- usend rcPid KillRC
       -- RC restarts but the node is still down
-      -- _ <- expectPublished (Proxy :: Proxy NodeTransient)
+      -- _ :: NodeTransient <- expectPublished
       -- recovery restarts
-      -- _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
+      -- _ :: RecoveryAttempt <- expectPublished
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make sure it did come back up
       -- recovery restarts
-      _ <- expectPublished (Proxy :: Proxy OldNodeRevival)
+      _ :: OldNodeRevival <- expectPublished
       sayTest "testRejoinRCDeath complete"
 
 -- | Tests that:
@@ -355,30 +356,30 @@ testRejoin baseTransport connectionBreak = do
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
 
       _ <- promulgateEQ [localNodeId m1] $ SetHalonVars disconnectHalonVars
-      _ <- expectPublished (Proxy :: Proxy HalonVarsUpdated)
+      _ :: HalonVarsUpdated <- expectPublished
 
       sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
         nodeUp ([localNodeId m1], 1000000)
 
-      _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
+      _ :: NewNodeConnected <- expectPublished
 #ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
-      InitialDataLoaded <- expectPublished Proxy
+      InitialDataLoaded <- expectPublished
 #endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
       -- ack node down
-      _ <- expectPublished (Proxy :: Proxy NodeTransient)
+      _ :: NodeTransient <- expectPublished
       -- Wait until recovery starts
-      _ <- expectPublished (Proxy :: Proxy RecoveryAttempt)
+      _ :: RecoveryAttempt <- expectPublished
       -- Bring one node back up straight away…
       restoreNet (map localNodeId [m0, m1])
       -- …which gives us a revival of it, swallow recovery messages
       -- until the node comes back up
-      _ <- expectPublished (Proxy :: Proxy OldNodeRevival)
+      _ :: OldNodeRevival <- expectPublished
 
       sayTest "testRejoin complete"
 

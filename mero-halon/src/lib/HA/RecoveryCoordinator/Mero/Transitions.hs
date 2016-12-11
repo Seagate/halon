@@ -96,6 +96,7 @@ nodeUnfailsProcess _ = Transition uninhibit
 -- | 'M0.Service' came online.
 serviceOnline :: (?loc :: CallStack) => Transition M0.Service
 serviceOnline = Transition $ \case
+  M0.SSUnknown -> TransitionTo M0.SSOnline
   M0.SSStarting -> TransitionTo M0.SSOnline
   st -> transitionErr ?loc st
 

@@ -133,7 +133,7 @@ getNotificationChannels = do
      case (mchan, procs) of
        (_, []) -> return Nothing
        (Nothing, r) -> do
-         phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for"
+         phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for "
                               ++ show node
                               ++ "Recipients: "
                               ++ show r

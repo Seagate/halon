@@ -8,6 +8,8 @@
 -- Module    : HA.Services.Mero.Types
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
+--
+-- Types used by @halon:m0d@ service.
 module HA.Services.Mero.Types
   ( module HA.Services.Mero.Types
   , KeepaliveTimedOut(..)
@@ -44,7 +46,6 @@ data MeroKernelConf = MeroKernelConf
        } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroKernelConf
 instance ToJSON MeroKernelConf
-deriveSafeCopy 0 'base ''MeroKernelConf
 
 -- | Mero service configuration
 data MeroConf = MeroConf
@@ -61,9 +62,8 @@ data MeroConf = MeroConf
        , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
        }
    deriving (Eq, Generic, Show, Typeable)
-
 instance Hashable MeroConf
-deriveSafeCopy 0 'base ''MeroConf
+
 
 instance ToJSON MeroConf where
   toJSON (MeroConf haAddress profile process ha rm kaf kat kernel) =
@@ -88,21 +88,17 @@ instance (Binary a, Typeable a) => SafeCopy (TypedChannel a) where
 -- | Relation index connecting channels used by @halon:m0d@ service
 -- and the corresponding 'R.Node'.
 data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
-
-deriveSafeCopy 0 'base ''MeroChannel
 instance Hashable MeroChannel
 
 -- | Acknowledgement sent upon successfully calling m0_ha_state_set.
 data NotificationAck = NotificationAck Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationAck
-deriveSafeCopy 0 'base ''NotificationAck
 
 -- | Acknowledgement that delivery for cetrain procedd definitely failed.
 data NotificationFailure = NotificationFailure Word64 Fid
   deriving (Eq, Generic, Typeable)
 instance Hashable NotificationFailure
-deriveSafeCopy 0 'base ''NotificationFailure
 
 -- | A 'Set' of outgoing notifications from @halon:m0d@ to mero
 -- processes along with epoch information.
@@ -116,6 +112,11 @@ data NotificationMessage = NotificationMessage
   } deriving (Typeable, Generic, Show)
 instance Binary NotificationMessage
 instance Hashable NotificationMessage
+
+-- | Request information about service
+data ServiceStateRequest = ServiceStateRequest
+  deriving (Show, Typeable, Generic)
+instance Binary ServiceStateRequest
 
 -- | How to run a particular Mero Process. Processes can be hosted
 --   in three ways:
@@ -158,21 +159,18 @@ data ProcessControlResultMsg =
     ProcessControlResultMsg NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultMsg
-deriveSafeCopy 0 'base ''ProcessControlResultMsg
 
 -- | Results of @systemctl stop@ operations.
 data ProcessControlResultStopMsg =
       ProcessControlResultStopMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultStopMsg
-deriveSafeCopy 0 'base ''ProcessControlResultStopMsg
 
 -- | Results of @mero-mkfs@ @systemctl@ invocations.
 data ProcessControlResultConfigureMsg =
       ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultConfigureMsg
-deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg
 
 -- | The process hasn't replied to keepalive request for a too long.
 -- Carry this information to RC.
@@ -185,7 +183,6 @@ data KeepaliveTimedOut =
   -- TODO: Use NonEmpty
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable KeepaliveTimedOut
-deriveSafeCopy 0 'base ''KeepaliveTimedOut
 
 -- | Information about the @halon:m0d@ process as along with
 -- communication channels used by the service.
@@ -201,7 +198,6 @@ data DeclareMeroChannel =
     }
     deriving (Generic, Typeable)
 instance Hashable DeclareMeroChannel
-deriveSafeCopy 0 'base ''DeclareMeroChannel
 
 -- | 'DeclareMeroChannel' has been acted upon and registered in the
 -- RG. 'MeroChannelDeclared' is used to inform the rest of the system
@@ -218,7 +214,13 @@ data MeroChannelDeclared =
     }
     deriving (Generic, Typeable)
 instance Hashable MeroChannelDeclared
-deriveSafeCopy 0 'base ''MeroChannelDeclared
+
+newtype MeroServiceInstance = MeroServiceInstance { _msi_m0d :: HA.Service.Service MeroConf }
+  deriving (Eq, Show, Generic, Typeable)
+instance Hashable MeroServiceInstance
+
+resourceDictMeroServiceInstance :: Dict (Resource MeroServiceInstance)
+resourceDictMeroServiceInstance = Dict
 
 -- | Explicit 'NotificationMessage' channel dictionary used for
 -- 'Binary' instance.
@@ -229,6 +231,11 @@ resourceDictMeroChannel = Dict
 -- instance.
 resourceDictControlChannel :: Dict (Resource (TypedChannel ProcessControlMsg))
 resourceDictControlChannel = Dict
+
+-- | Explicit 'MeroServiceInstances' relation dictionary used for
+-- 'Binary' instance.
+relationDictMeroServiceInstance :: Dict (Relation R.Has R.Cluster MeroServiceInstance)
+relationDictMeroServiceInstance = Dict
 
 -- | Explicit 'NotificationMessage' channel relation dictionary used for
 -- 'Binary' instance.
@@ -297,17 +304,27 @@ kernelSchema = MeroKernelConf <$> uuid
             <> metavar "UUID"
 
 $(generateDicts ''MeroConf)
-$(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroChannel
+$(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroServiceInstance
+                                       , 'resourceDictMeroChannel
                                        , 'resourceDictControlChannel
+                                       , 'relationDictMeroServiceInstance
                                        , 'relationDictMeroChanelServiceProcessChannel
                                        , 'relationDictMeroChanelServiceProcessControlChannel
                                        ])
+
+instance Resource MeroServiceInstance where
+  resourceDict = $(mkStatic 'resourceDictMeroServiceInstance)
 
 instance Resource (TypedChannel NotificationMessage) where
     resourceDict = $(mkStatic 'resourceDictMeroChannel)
 
 instance Resource (TypedChannel ProcessControlMsg) where
     resourceDict = $(mkStatic 'resourceDictControlChannel)
+
+instance Relation R.Has R.Cluster MeroServiceInstance where
+  type CardinalityFrom R.Has R.Cluster MeroServiceInstance = 'AtMostOne
+  type CardinalityTo R.Has R.Cluster MeroServiceInstance   = 'AtMostOne
+  relationDict = $(mkStatic 'relationDictMeroServiceInstance)
 
 instance Relation MeroChannel R.Node (TypedChannel NotificationMessage) where
     type CardinalityFrom MeroChannel R.Node (TypedChannel NotificationMessage)
@@ -325,3 +342,16 @@ instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
 
 type instance HA.Service.ServiceState MeroConf =
   (ProcessId, SendPort NotificationMessage, SendPort ProcessControlMsg)
+
+deriveSafeCopy 0 'base ''DeclareMeroChannel
+deriveSafeCopy 0 'base ''KeepaliveTimedOut
+deriveSafeCopy 0 'base ''MeroChannel
+deriveSafeCopy 0 'base ''MeroChannelDeclared
+deriveSafeCopy 0 'base ''MeroConf
+deriveSafeCopy 0 'base ''MeroKernelConf
+deriveSafeCopy 0 'base ''MeroServiceInstance
+deriveSafeCopy 0 'base ''NotificationAck
+deriveSafeCopy 0 'base ''NotificationFailure
+deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg
+deriveSafeCopy 0 'base ''ProcessControlResultMsg
+deriveSafeCopy 0 'base ''ProcessControlResultStopMsg

@@ -1,5 +1,6 @@
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Copyright : (C) 2013-2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -82,14 +83,14 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
     subscribe rc (Proxy :: Proxy InitialDataLoaded)
     nodeUp ([nid], 1000000)
 
-    _ <- expectPublished (Proxy :: Proxy NewNodeConnected)
+    _ :: NewNodeConnected <- expectPublished
 
     void $ promulgateEQ [nid] iData
-    InitialDataLoaded <- expectPublished Proxy
+    InitialDataLoaded <- expectPublished
 
     sayTest "Sending online message"
     promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
-    _ <- expectPublished (Proxy :: Proxy DriveOK)
+    _ :: DriveOK <- expectPublished
 
     sayTest "Checking drive status sanity"
     graph <- G.getGraph mm
@@ -134,7 +135,7 @@ testConfObjectStateQuery transport pg =
         nodeUp ([nid], 1000000)
         sayTest "Loading graph."
         liftIO defaultInitialData >>= void . promulgateEQ [nid]
-        InitialDataLoaded <- expectPublished Proxy
+        InitialDataLoaded <- expectPublished
 
         graph <- G.getGraph mm
         let sdevs = G.getResourcesOfType graph :: [M0.SDev]
@@ -199,7 +200,7 @@ testConfLoads iData transport pg expectedResultP =
       nodeUp ([nid], 1000000)
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       void $ promulgateEQ [nid] iData
-      r <- expectPublished Proxy
+      r <- expectPublished
       unless (expectedResultP r) $ do
         fail $ "Initial data loaded unexpectedly with " ++ show r
 

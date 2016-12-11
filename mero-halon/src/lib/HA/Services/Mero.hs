@@ -1,3 +1,6 @@
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 -- |
 -- Module    : HA.Services.Mero
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -5,9 +8,6 @@
 -- License   : All rights reserved.
 --
 -- TODO: Fix copyright header
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE LambdaCase            #-}
 module HA.Services.Mero
     ( MeroChannel(..)
     , TypedChannel(..)
@@ -22,11 +22,18 @@ module HA.Services.Mero
     , MeroConf(..)
     , MeroKernelConf(..)
     , ServiceStateRequest(..)
-    , m0d
+    , m0d_real
+    , lookupM0d
+    , putM0d
+    , traceM0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
     , m0d__static
     , Mero.Notification.getM0Worker
+    , sendMeroChannel
+    , confXCPath
+    , unitString
+    , Started(..)
     ) where
 
 import           Control.Distributed.Process
@@ -38,14 +45,16 @@ import           Control.Exception (SomeException, IOException)
 import           Control.Monad (forever, unless, void, when)
 import qualified Control.Monad.Catch as Catch
 import           Control.Monad.Trans.Reader
-import           HA.EventQueue (promulgate, promulgateWait)
 import           HA.Debug
+import           HA.EventQueue (promulgate, promulgateWait)
 import           HA.Logger
 import qualified HA.RecoveryCoordinator.Mero.Events as M0
+import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import           HA.Service
-import           HA.Services.Mero.Types
 import           HA.Services.Mero.RC.Events (CheckCleanup(..))
+import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid, fidToStr)
 import qualified Mero.Notification
 import           Mero.Notification (NIRef)
@@ -57,9 +66,7 @@ import qualified Data.Bimap as BM
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
 import           Data.Maybe (maybeToList)
-import           Data.Typeable
 import qualified Data.UUID as UUID
-import           GHC.Generics
 import           System.Directory
 import           System.Exit
 import           System.FilePath
@@ -68,11 +75,6 @@ import qualified System.Timeout as ST
 -- | Tracer for @halon:m0d@ with value @"halon:m0d"@. See 'mkHalonTracer'.
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
-
--- | Request information about service
-data ServiceStateRequest = ServiceStateRequest
-  deriving (Show, Typeable, Generic)
-instance Binary ServiceStateRequest
 
 -- | Store information about communication channel in resource graph.
 sendMeroChannel :: SendPort NotificationMessage
@@ -413,3 +415,29 @@ remotableDecl [ [d|
         ]
     confirm  _ _ = return ()
     |] ]
+
+
+-- | Find the @'Service' 'MeroConf'@ instance that should be used. By
+-- default, 'm0d' is provided if no value.
+lookupM0d :: G.Graph -> Service MeroConf
+lookupM0d = maybe m0d _msi_m0d . G.connectedTo R.Cluster R.Has
+
+-- | Register the given @'Service' 'MeroConf'@ as the @halon:m0d@
+-- service to use when requested. This allows us to replace the
+-- default implementation by, for example, a mock.
+--
+-- This should only be used before any @halon:m0d@ service is started
+-- and should not be changed afterwards as to not confuse rules or
+-- even start two separate services.
+putM0d :: Service MeroConf -> G.Graph -> G.Graph
+putM0d m = G.connect R.Cluster R.Has (MeroServiceInstance m)
+
+-- | Alias for 'm0d'. Represents a "real" @halon:m0d@ service. It
+-- shouldn't be used directly unless you know what you're doing. Use
+-- 'lookupM0d' instead.
+--
+-- Use-sites:
+--
+-- * @halonctl@
+m0d_real :: Service MeroConf
+m0d_real = m0d

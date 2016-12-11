@@ -20,6 +20,7 @@
 module HA.NodeUp
   ( NodeUp(..)
   , nodeUp
+  , nodeUp'
   , nodeUp__static
   , nodeUp__sdict
   , nodeUp__tdict
@@ -50,16 +51,14 @@ instance Hashable NodeUp
 deriveSafeCopy 0 'base ''NodeUp
 
 -- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
---   to the EQ, until one is acknowledged with a '()' reply.
-nodeUp :: ( [NodeId]
-          , Int
-          )
+--   to the EQ, until one is acknowledged with a '()' reply.x
+nodeUp' :: String -- ^ Hostname to use for the node
+       -> ([NodeId] , Int)
         -- ^ @(eqs, delay)@: set of EQ nodes to contant and the
         -- interval between sending messages in milliseconds.
        -> Process ()
-nodeUp (eqs, _delay) = do
+nodeUp' h (eqs, _delay) = do
     self <- getSelfPid
-
     eqNodes <- case eqs of
       -- We're trying to set the list of EQ nodes to []: that's not
       -- good because then the promulgate will not complete under
@@ -86,7 +85,6 @@ nodeUp (eqs, _delay) = do
           _ -> retry
 
     say $ "Sending NodeUp message to " ++ show eqNodes ++ " me -> " ++ (show $ processNodeId self)
-    h <- liftIO getHostName
     _ <- promulgate $ NodeUp h self
     expect :: Process ()
     say "Node succesfully joined the cluster."
@@ -101,5 +99,14 @@ nodeUp (eqs, _delay) = do
       whereis EQT.name >>= maybe (receiveTimeout 100000 [] >> loop)
                                  (act loop)
 
+-- | Process which setup EQT and then repeatedly sends 'NodeUp'
+-- messages to the EQ, until one is acknowledged with a '()' reply.
+-- See 'nodeUp'' if you want to manually specify the hostname.
+-- 'getHostName' is used by default.
+nodeUp :: ( [NodeId] , Int )
+        -- ^ @(eqs, delay)@: set of EQ nodes to contant and the
+        -- interval between sending messages in milliseconds.
+       -> Process ()
+nodeUp eqs = liftIO getHostName >>= \h -> nodeUp' h eqs
 
 remotable ['nodeUp]

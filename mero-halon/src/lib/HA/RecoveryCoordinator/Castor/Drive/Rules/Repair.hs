@@ -1340,7 +1340,7 @@ allWithState sm@(SDevStateMap m) st =
 -- | Check if processes associated with IOS are up. If yes, try to
 -- restart repair/rebalance on the pools.
 checkRepairOnServiceUp :: Definitions RC ()
-checkRepairOnServiceUp = define "checkRepairOnProcessStarte" $ do
+checkRepairOnServiceUp = define "checkRepairOnProcessStarted" $ do
     init_rule <- phaseHandle "init_rule"
 
     setPhaseInternalNotification init_rule (\o n -> o /= M0.PSOnline &&  n == M0.PSOnline)

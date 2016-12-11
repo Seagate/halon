@@ -34,7 +34,7 @@ import HA.SafeCopy
 data HAEvent a = HAEvent
     { eventId      :: {-# UNPACK #-} !UUID
     , eventPayload :: a
-    } deriving (Generic, Typeable)
+    } deriving (Generic, Typeable, Show)
 
 instance Eq (HAEvent a) where
     (==) = (==) `on` eventId

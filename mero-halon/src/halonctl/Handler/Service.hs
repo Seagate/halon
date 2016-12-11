@@ -214,7 +214,7 @@ parseService =
     )
 #ifdef USE_MERO
     <|> (MeroServiceCmd <$> (O.subparser $
-         mkStandardServiceCmd Mero.m0d))
+         mkStandardServiceCmd Mero.m0d_real))
 #endif
 
 -- | Handle the "service" command.
@@ -234,7 +234,7 @@ service nids so = case so of
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
   EkgServiceCmd sso      ->standardService nids sso Ekg.ekg
 #ifdef USE_MERO
-  MeroServiceCmd sso     -> standardService nids sso Mero.m0d
+  MeroServiceCmd sso     -> standardService nids sso Mero.m0d_real
 #endif
 
 -- | Handle an instance of a "standard service" command.
