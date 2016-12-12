@@ -6,7 +6,7 @@
 
 module Main where
 
-import           Control.Concurrent (threadDelay, forkIO)
+import           Control.Concurrent (forkIO)
 import           Control.Concurrent.MVar
 import           Control.Exception
 import           Data.Proxy
@@ -24,7 +24,6 @@ import qualified Network.Transport.TCP as TCP
 import           System.Directory (getCurrentDirectory)
 import           System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import           Test.Framework
-import           Test.Tasty.HUnit (testCase)
 import           Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import           Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
@@ -32,7 +31,7 @@ import           Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 import qualified HA.Test.InternalStateChanges
 import qualified HA.Test.NotificationSort
-import qualified HA.Castor.Story.ProcessRestart
+import qualified HA.Castor.Story.Process
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
@@ -45,12 +44,11 @@ tests transport breakConnection = do
   ssplTest <- HA.Test.SSPL.mkTests
 #ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
-  processRestartTests <- HA.Castor.Story.ProcessRestart.mkTests pg
+  processTests <- HA.Castor.Story.Process.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
 #endif
   return $ testGroup "mero-halon:tests"
-      [ testCase "uncleanRPCClose" $ threadDelay 2000000
-      , testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
+      [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
 #ifdef USE_MERO
@@ -59,8 +57,7 @@ tests transport breakConnection = do
       , testGroup "InternalStateChanges" $ internalSCTests transport
       , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests
-      , testGroup "NotificationSort" HA.Test.NotificationSort.tests
-      , testGroup "ProcessRestart" $ processRestartTests transport
+      , testGroup "Process" $ processTests transport
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
 #endif
       , HA.Test.Disconnect.tests transport breakConnection

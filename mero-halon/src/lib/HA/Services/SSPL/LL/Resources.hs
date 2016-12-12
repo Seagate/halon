@@ -330,7 +330,7 @@ data ActuatorChannels = ActuatorChannels
     { iemPort :: SendPort InterestingEventMessage
     , systemdPort :: SendPort (Maybe UUID, ActuatorRequestMessageActuator_request_type)
     }
-  deriving (Generic, Typeable)
+  deriving (Show, Generic, Typeable)
 
 instance Hashable ActuatorChannels
 deriveSafeCopy 0 'base ''ActuatorChannels
@@ -339,7 +339,7 @@ deriveSafeCopy 0 'base ''ActuatorChannels
 data DeclareChannels = DeclareChannels
     ProcessId -- Identity of reporting process
     ActuatorChannels -- Relevant channels
-  deriving (Generic, Typeable)
+  deriving (Show, Generic, Typeable)
 
 instance Hashable DeclareChannels
 deriveSafeCopy 0 'base ''DeclareChannels

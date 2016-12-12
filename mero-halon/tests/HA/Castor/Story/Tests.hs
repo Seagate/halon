@@ -1,60 +1,71 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE ViewPatterns      #-}
 module HA.Castor.Story.Tests
   ( mkTests
   , run
-  , nextNotificationFor
-  , spawnNotificationAcker
+  , run'
+  , TestOptions(..)
+  , TestSetup(..)
+  , ClusterSetup(..)
+  , mkDefaultTestOptions
   ) where
 
 import           Control.Arrow ((&&&))
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Distributed.Process.Node
 import           Control.Exception as E hiding (assert)
-import           Control.Monad (forever, forM_, replicateM_, void)
+import           Control.Lens hiding (to)
+import           Control.Monad (foldM, forM_, replicateM_, void, when)
 import           Data.Aeson (decode, encode)
 import qualified Data.Aeson.Types as Aeson
 import           Data.Binary (Binary)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Defaultable
-import           Data.Foldable (find, for_)
-import           Data.Function (fix)
-import           Data.Hashable (Hashable)
-import           Data.Maybe (isJust)
+import           Data.Foldable (for_)
+import           Data.Maybe (isJust, listToMaybe, mapMaybe)
 import           Data.Proxy
 import           Data.Text (pack)
 import           Data.Typeable
 import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
+import           Data.Vinyl
 import           GHC.Generics (Generic)
+import qualified HA.EQTracker.Process as EQT
 import           HA.Encode
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.Multimap
-import           HA.NodeUp (nodeUp)
-import           HA.RecoveryCoordinator.Castor.Cluster.Actions (notifyOnClusterTransition)
+import           HA.NodeUp (nodeUp')
+import           HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Drive
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
-import           HA.RecoveryCoordinator.Castor.Process.Events (StopProcessResult)
+import           HA.RecoveryCoordinator.Castor.Node.Events
+import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Helpers
+import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc, getFilesystem)
-import           HA.RecoveryCoordinator.Mero.State
-import           HA.RecoveryCoordinator.Mero.Transitions (nodeOnline)
-import           HA.RecoveryCoordinator.RC.Events.Cluster (InitialDataLoaded(..))
-import qualified HA.RecoveryCoordinator.Service.Actions as Service
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc)
+import           HA.RecoveryCoordinator.RC.Events.Cluster
+import           HA.RecoveryCoordinator.RC.Subscription
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
+import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.SafeCopy
+import qualified HA.Services.DecisionLog as DL
 import           HA.Services.Mero
-import           HA.Services.Mero.Types
+import qualified HA.Services.Mero.Mock as Mock
 import           HA.Services.SSPL
 import           HA.Services.SSPL.LL.Resources
 import           HA.Services.SSPL.Rabbit
@@ -64,7 +75,6 @@ import           Mero.ConfC (Fid(..))
 import           Mero.Notification
 import           Mero.Notification.HAState
 import           Network.AMQP
-import           Network.BSD (getHostName)
 import           Network.CEP
 import           Network.Transport
 import           RemoteTables (remoteTable)
@@ -76,19 +86,29 @@ import           TestRunner
 myRemoteTable :: RemoteTable
 myRemoteTable = TestRunner.__remoteTableDecl remoteTable
 
-newtype MockM0 = MockM0 DeclareMeroChannel
-  deriving (Generic, Hashable, Typeable, Binary)
+-- | Ask RC to put mock version of @halon:m0d@ service in RG.
+-- Optionally set the cluster disposition to online.
+data MockM0 = MockM0 ProcessId Bool
+  deriving (Show, Eq, Generic, Typeable)
+instance Binary MockM0
 
-mockMeroConf :: MeroConf
-mockMeroConf = MeroConf ""
-                        (Fid 0x7000000000000001 0x1)
-                        (Fid 0x7200000000000001 0x18)
-                        (Fid 0x7200000000000001 0x25)
-                        (Fid 0x7200000000000001 0x26)
-                        (_hv_keepalive_frequency defaultHalonVars)
-                        (_hv_keepalive_timeout defaultHalonVars)
-                        (MeroKernelConf UUID.nil)
+-- | Reply to 'MockM0'
+data MockM0Reply = MockM0RequestOK NodeId
+                 | MockM0RequestFailed String
+  deriving (Generic, Typeable)
+instance Binary MockM0Reply
 
+
+-- | Ask RC to start a mock version of @halon:m0d@ service.
+data PopulateMock = PopulateMock ProcessId NodeId
+                  -- ^ PopulateMock @halon:m0d-worker-pid@ @target-node@
+  deriving (Show, Eq, Ord, Generic, Typeable)
+
+-- | Reply to 'MockM0'
+data PopulateMockReply = MockRunning NodeId
+                       | MockPopulateFailure NodeId String
+  deriving (Show, Eq, Ord, Generic, Typeable)
+instance Binary PopulateMockReply
 
 ssplTimeout :: Int
 ssplTimeout = 10*1000000
@@ -101,101 +121,80 @@ data ThatWhichWeCallADisk = ADisk {
   , aDiskWWN :: String -- ^ Has a WWN
 }
 
-newMeroChannel :: ProcessId
-               -> Process ( ReceivePort NotificationMessage
-                          , ReceivePort ProcessControlMsg
-                          , MockM0
-                          )
-newMeroChannel pid = do
-  (sd, recv) <- newChan
-  (cc, recv1) <- newChan
-  let sdChan   = TypedChannel sd
-      connChan = TypedChannel cc
-      notfication = MockM0
-              $ DeclareMeroChannel pid sdChan connChan
-  return (recv, recv1, notfication)
-
--- | Accept messages on @'ReceivePort' 'NotificationMessage'@ i.e. a
--- channel mero would normally listen on and run
--- 'tryCompleteStateChangeDiff' on the changes. This is needed because:
---
--- * 'notifyMero' is not reached in these tests. This means callbacks
---   can not run, including callback that runs when no links are
---   present for a process.
---
--- * Anything using notifications relies on
---   'InternalObjectStateChangeMsg'. This message is sent from
---   'ruleGenericNotification'. This is triggered by
---   'tryCompleteStateDiff'.
---
--- * 'tryCompleteStateDiff' is triggered (through some wrappers) by
---   the aforementioned callbacks.
---
--- You need this function when the following are true:
---
--- * You have any process in 'PSStarting', 'PSStopping' or 'PSOnline'
---   state (see 'getNotificationChannels'). This includes the state
---   change made in notification itself.
---
--- * You are trying to test code that relies on notifications
---   succeeding.
---
--- For example, if you have no processes in the state listed above,
--- you can 'applyStateChanges' happily and rely on notification ack as
--- long as you aren't moving the process into any of those states.
---
--- @'PSOnline' -> 'PSQuiescing'@ transition is fine.
---
--- @'PSQuiescing' -> 'PSStarting'@ transition will apply but
--- notification will *not* be ack'd.
---
--- If you need to test code that relies on an ack, use the below
--- function which will manually trigger 'tryCompleteStateDiff'
--- (through 'ruleNotificationsDelivereM0d') on the message. The
--- message will be ack'd for every recepient.
---
--- This function should be ran on node co-located with EQ and will ack
--- all incoming messages for as long as the process is running.
-spawnNotificationAcker :: ReceivePort NotificationMessage
-                       -- ^ Notification channel to listen on. You
-                       -- should obtain this from mero mock.
-                       -> Process ProcessId
-spawnNotificationAcker recv = do
-  master <- getSelfPid
-  spawnLocal $ do
-    link master
-    nid <- getSelfNode
-    forever $ do
-      NotificationMessage epoch s rs <- receiveChan recv
-      for_ rs $ \r -> do
-        sayTest $ "Acking " ++ show s ++ "  notifications for process " ++ show r
-        promulgateEQ [nid] $ NotificationAck epoch r
-
 testRules :: Definitions RC ()
 testRules = do
-  defineSimple "register-mock-service" $ \(MockM0 dc) -> do
-    rg <- getLocalGraph
-    nid <- liftProcess getSelfNode
-    host <- Host <$> liftIO getHostName
-    let node = Node nid
+  defineSimple "start-mock-service" $ \msg@(MockM0 caller setOnlineCluster) -> do
+    modifyGraph $ putM0d Mock.m0dMock
+    when setOnlineCluster $ do
+      modifyGraph $ G.connect Cluster Has M0.ONLINE
+    liftProcess $ usend caller msg
 
-        procs = [ proc
-                | Just (m0cont :: M0.Controller) <- [G.connectedFrom M0.At host rg]
-                , Just (m0node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware m0cont rg]
-                , proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-                ]
-    -- We have to mark the process as online in order for our mock mero
-    -- service to be sent notifications for them.
-    phaseLog "debug:procs" $ show procs
-    forM_ procs $ \proc -> do
-      modifyGraph $ setState proc M0.PSOnline
-    -- Also mark the cluster disposition as ONLINE.
-    modifyGraph $ G.connect Cluster Has M0.ONLINE
-    -- Calculate cluster status.
-    notifyOnClusterTransition
-    locateNodeOnHost node host
-    Service.register node m0d mockMeroConf
-    void . liftProcess $ promulgateEQ [nid] dc
+  let jobPopulateMock :: Job PopulateMock PopulateMockReply
+      jobPopulateMock = Job "populate-mock-service"
+
+  mkJobRule jobPopulateMock args $ \(JobHandle getRequest finish) -> do
+    process_map_set <- phaseHandle "process_map_set"
+    mock_initialise_done <- phaseHandle "mock_initialise_done"
+    mock_up <- phaseHandle "mock_up"
+    mock_timed_out <- phaseHandle "mock_timed_out"
+
+    let ourNode km _ l = return $ case (km, getField $ rget fldM0Node l) of
+          (KernelStarted m0n, Just m0n') | m0n == m0n' -> Just km
+          (KernelStartFailure m0n, Just m0n') | m0n == m0n' -> Just km
+          _ -> Nothing
+        cmdAck m _ l = return $ case (m, getField $ rget fldMockAck l) of
+          (u :: Mock.MockCmdAck, Just u') | u == u' -> Just ()
+          _ -> Nothing
+
+        route (PopulateMock m0dPid nid) = do
+          rg <- getLocalGraph
+          case M0.nodeToM0Node (Node nid) rg of
+            Nothing -> do
+              return $ Right ( MockPopulateFailure nid $ "No M0.Node associated with " ++ show nid
+                             , [finish] )
+            Just m0n -> do
+              let procs = getNodeProcesses (Node nid) rg
+                  pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
+              mack <- liftProcess $ Mock.sendMockCmd (Mock.SetProcessMap pmap) m0dPid
+              modify Local $ rlens fldM0Node . rfield .~ Just m0n
+              modify Local $ rlens fldMockAck . rfield .~ Just mack
+              return $ Right ( MockPopulateFailure nid $ "default: " ++ show nid
+                             , [process_map_set, timeout 10 mock_timed_out] )
+
+    setPhaseIf process_map_set cmdAck $ \() -> do
+      PopulateMock m0dPid _ <-  getRequest
+      mack <- liftProcess $ Mock.sendMockCmd Mock.MockInitialiseFinished m0dPid
+      modify Local $ rlens fldMockAck . rfield .~ Just mack
+      switch [mock_initialise_done, timeout 10 mock_timed_out]
+
+    setPhaseIf mock_initialise_done cmdAck $ \() -> do
+      switch [mock_up, timeout 20 mock_timed_out]
+
+    setPhaseIf mock_up ourNode $ \ks -> do
+      PopulateMock _ nid <-  getRequest
+      case ks of
+        KernelStarted{} ->
+          modify Local $ rlens fldRep . rfield .~ Just (MockRunning nid)
+        KernelStartFailure{} -> modify Local $ rlens fldRep . rfield .~ Just
+          (MockPopulateFailure nid $ "KernelStartFailure reported on " ++ show nid)
+      continue finish
+
+    directly mock_timed_out $ do
+      PopulateMock _ nid <-  getRequest
+      modify Local $ rlens fldRep . rfield .~ Just
+        (MockPopulateFailure nid $ "Timed out waiting for mock on " ++ show nid)
+      continue finish
+
+    return route
+    where
+      fldReq = Proxy :: Proxy '("request", Maybe PopulateMock)
+      fldRep = Proxy :: Proxy '("reply", Maybe PopulateMockReply)
+      fldM0Node = Proxy :: Proxy '("m0node", Maybe M0.Node)
+      fldMockAck = Proxy :: Proxy '("mock-ack", Maybe Mock.MockCmdAck)
+      args = fldM0Node  =: Nothing
+         <+> fldMockAck =: Nothing
+         <+> fldReq     =: Nothing
+         <+> fldRep     =: Nothing
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -226,54 +225,234 @@ mkTests pg = do
           testExpanderResetRAIDReassemble transport pg
         ]
 
+data TestOptions = TestOptions
+  { _to_initial_data :: CI.InitialData
+  , _to_run_decision_log :: !Bool
+  , _to_run_sspl :: !Bool
+  , _to_cluster_setup :: !ClusterSetup
+  } deriving (Eq, Show)
+
+data TestSetup = TestSetup
+  { _ts_rc :: ProcessId
+  -- ^ RC 'ProcessId'
+  , _ts_eq :: ProcessId
+  -- ^ EQ 'ProcessId'
+  , _ts_mm :: StoreChan
+  -- ^ MM 'ProcessId'
+  , _ts_rmq :: ProcessId
+  -- ^ RMQ 'ProcessId'
+  , _ts_nodes :: [LocalNode]
+    -- ^ Group of nodes involved in the test
+  }
+
+-- | What should we ask the cluster to do before we run the tests.
+data ClusterSetup =
+  Bootstrapped
+  -- ^ Cluster bootstrap will be ran and test will only start once
+  -- cluster has reported to have bootstrapped successfully.
+  | HalonM0DOnly
+  -- ^ Start @halon:m0d@ services only.
+  | NoSetup
+  -- ^ Perform no actions.
+  deriving (Show, Eq)
+
+-- | Create some default 'TestOptions' for a test.
+mkDefaultTestOptions :: IO TestOptions
+mkDefaultTestOptions = do
+  idata <- defaultInitialData
+  return $ TestOptions
+    { _to_initial_data = idata
+    , _to_run_decision_log = False
+    , _to_run_sspl = True
+    , _to_cluster_setup = NoSetup -- HalonM0DOnly
+    }
+
+-- | Start satellite nodes. This is intended to be ran from tracking
+-- station node.
+startSatellites :: [NodeId] -- ^ EQ nodes
+                -> [(LocalNode, String)] -- ^ @(node, hostname)@ pairs
+                -> Process ()
+startSatellites _ [] = sayTest "startSatellites called without any nodes."
+startSatellites eqs ns = withSubscription eqs (Proxy :: Proxy NewNodeConnected) $ do
+  eqtPid <- whereis EQT.name >>= \case
+    Nothing -> fail "startSatellites does not have a registered EQT"
+    Just pid -> return pid
+
+  liftIO . for_ ns $ \(n, h) -> forkProcess n $ do
+    register EQT.name eqtPid
+    sayTest $ "Sending nodeUp for: " ++ show (h, localNodeId n)
+    nodeUp' h (eqs, 1000000)
+
+  let loop [] = return ()
+      loop waits = receiveWait
+        [ matchIf (\(pubValue -> NewNodeConnected n) -> n `elem` waits)
+                  (\(pubValue -> NewNodeConnected n) -> loop $ filter (/= n) waits) ]
+      nodes = map (\(ln, _) -> Node $! localNodeId ln) ns
+  sayTest $ "Waiting for following satellites: " ++ show nodes
+  loop nodes
+  sayTest "startSatellites finished."
+
+-- | Get system hostname of the given 'NodeId' from RG.
+getHostName :: TestSetup
+            -> NodeId
+            -> Process (Maybe String)
+getHostName ts nid = do
+  rg <- G.getGraph (_ts_mm ts)
+  return $! case G.connectedFrom Runs (Node nid) rg of
+    Just (Host hn) -> Just hn
+    _ -> Nothing
+
+-- | Version of 'run'' using 'mkDefaultTestOptions'.
 run :: (Typeable g, RGroup g)
     => Transport
+    -- ^ Network transport
     -> Proxy g
+    -- ^ Replication group
     -> [Definitions RC ()]
-    -> (    TestArgs
-         -> ProcessId
-         -> ReceivePort NotificationMessage
-         -> ReceivePort ProcessControlMsg
-         -> Process ()
-       ) -- actual test
+    -- ^ Extra rules
+    -> (TestSetup -> Process ())
+    -- ^ Test itself
     -> Assertion
-run transport pg extraRules test =
-  runTest 2 20 15000000 transport myRemoteTable $ \[n] -> do
-    self <- getSelfPid
-    nid <- getSelfNode
+run t pg extraRules test' = do
+  topts <- mkDefaultTestOptions
+  run' t pg extraRules topts test'
+
+run' :: (Typeable g, RGroup g)
+     => Transport
+     -- ^ Network transport
+     -> Proxy g
+     -- ^ Replication group
+     -> [Definitions RC ()]
+     -- ^ Extra rules
+     -> TestOptions
+     -- ^ TestConfiguration
+     -> (TestSetup -> Process ())
+     -- ^ Test itself
+     -> Assertion
+run' transport pg extraRules to test = do
+  let idata = _to_initial_data to
+      numNodes = length (CI.id_m0_servers idata)
+  runTest (numNodes + 1) 20 15000000 transport myRemoteTable $ \lnodes -> do
+    sayTest $ "Starting setup for a " ++ show numNodes ++ " node test."
+    let lnWithHosts = zip lnodes $ map CI.m0h_fqdn (CI.id_m0_servers idata)
+        nids = map localNodeId lnodes
+
     withTrackingStation pg (testRules:extraRules) $ \ta -> do
-      nodeUp ([nid], 1000000)
+      let rcNodeId = processNodeId $ ta_rc ta
+      link (ta_rc ta)
+      -- Before we do much of anything, set a mock halon:m0d in the RG
+      -- so that nothing tries to run the real deal.
 
-      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded)
-      subscribe (ta_rc ta) (Proxy :: Proxy (HAEvent DeclareChannels))
-      subscribe (ta_rc ta) (Proxy :: Proxy (HAEvent ServiceStarted))
+      self <- getSelfPid
 
-      _ <- liftIO defaultInitialData >>= promulgateEQ [nid]
-      expectPublished Proxy >>= \case
-        InitialDataLoaded -> return ()
-        InitialDataLoadFailed e -> fail e
+      -- Start satellites before initial data is loaded as otherwise
+      -- RC rules will try to start processes on node automatically.
+      -- We want a potential clean bootstrap.
+      startSatellites [rcNodeId] lnWithHosts
 
-      serviceStart sspl ssplConf
-      _ <- serviceStarted sspl
-      DeclareChannels{} <- eventPayload <$> expectPublished Proxy
+      withSubscription [rcNodeId] (Proxy :: Proxy InitialDataLoaded) $ do
+        _ <- promulgateEQ [rcNodeId] idata
+        expectPublished >>= \case
+          InitialDataLoaded -> return ()
+          InitialDataLoadFailed e -> fail e
 
-      sayTest "Started SSPL service"
-      (meroRP, meroCP) <- startMeroServiceMock (ta_rc ta)
-      sayTest "Started Mero mock service"
+      when (_to_run_decision_log to) $ do
+        _ <- serviceStartOnNodes [rcNodeId] DL.decisionLog
+               (DL.processOutput self) nids (\_ _ -> return ())
+        sayTest "Started decision log services."
+
+      when (_to_run_sspl to) $ do
+        withSubscription [rcNodeId] (Proxy :: Proxy (HAEvent DeclareChannels)) $ do
+          void . serviceStartOnNodes [rcNodeId] sspl ssplConf nids $ \_ pid -> do
+            -- Wait for DeclareChannels for each service.
+            receiveWait
+             [ matchIf (\(eventPayload . pubValue -> DeclareChannels pid' _) -> const True $ pid == pid')
+                       (\_ -> return ()) ]
+        sayTest "Started SSPL services."
+
+      let startM0Ds = do
+            -- We're starting the cluster but our halon:m0d mocks will
+            -- sit there waiting for initialisation. Looking for the
+            -- services that are coming up and when we see their
+            -- worker process spawn, tell RC to initialise it and let
+            -- us hear back.
+            let loopDispatch [] = return ()
+                loopDispatch waits = do
+                  let act ws' nid = do
+                        whereisRemoteAsync nid Mock.m0dMockWorkerLabel
+                        WhereIsReply _ mt <- expect
+                        case mt of
+                          Nothing -> return ws'
+                          Just m0dPid -> do
+                            _ <- promulgateEQ [rcNodeId] $ PopulateMock m0dPid nid
+                            return $! filter (/= nid) ws'
+                  foldM act waits nids >>= \newWaits ->do
+                    -- 200ms breather otherwise we really go to town on requests
+                    _ <- receiveTimeout 200000 []
+                    loopDispatch newWaits
+            loopDispatch nids
+            sayTest "Finished dispatching halon:m0d initialisers."
+            -- Now that we asked RC to initialise everything, we just
+            -- wait for the mock services to bootstrap and send
+            -- relevant information back to RC and RC can send it back
+            -- to us.
+            let loopStarted [] = return ()
+                loopStarted waits = receiveWait
+                  [ matchIf (\case Published (MockPopulateFailure n _) _ ->
+                                     n `elem` waits
+                                   Published (MockRunning n) _ ->
+                                     n `elem` waits)
+                            (\case Published (MockPopulateFailure _ s) _ ->
+                                     fail s
+                                   Published (MockRunning n) _ ->
+                                     loopStarted $ filter (/= n) waits) ]
+            withSubscription [rcNodeId] (Proxy :: Proxy PopulateMockReply) $ do
+              loopStarted nids
+            sayTest "All halon:m0d mock instances populated."
+
+      let mockMsg = MockM0 self (_to_cluster_setup to == HalonM0DOnly)
+      usend (ta_rc ta) mockMsg
+      receiveWait [ matchIf (\m -> m == mockMsg) (\_ -> return ()) ]
+      sayTest "halon:m0d mock implanted in RG."
+
+      case _to_cluster_setup to of
+        Bootstrapped -> do
+          withSubscription [rcNodeId] (Proxy :: Proxy ClusterStartResult) $ do
+            _ <- promulgateEQ [rcNodeId] ClusterStartRequest
+            startM0Ds
+            expectPublished >>= \case
+              ClusterStartOk -> sayTest "Cluster bootstrap finished."
+              e -> fail $ "Cluster fail to bootstrap with: " ++ show e
+        HalonM0DOnly -> do
+          rg' <- G.getGraph (ta_mm ta)
+          for_ (mapMaybe (\n -> M0.nodeToM0Node (Node n) rg') nids) $ \m0n -> do
+            _ <- promulgateEQ [rcNodeId] $! StartHalonM0dRequest m0n
+            sayTest $ "Sent StartHalonM0dRequest for " ++ show m0n
+          startM0Ds
+        NoSetup -> sayTest "No setup requested."
+
+      -- TODO: We should only spawn this when SSPL is spawned.
       rmq <- spawnMockRabbitMQ self
+      usend rmq $ MQSubscribe "halon_sspl" self
+      usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
       sayTest "Started mock RabbitMQ service."
-      -- Run the test
-      sayTest "About to run the test"
+      sayTest "Starting test..."
 
-      test ta rmq meroRP meroCP
-      say "Test finished"
+      test $ TestSetup
+        { _ts_eq = ta_eq ta
+        , _ts_mm = ta_mm ta
+        , _ts_rc = ta_rc ta
+        , _ts_rmq = rmq
+        , _ts_nodes = lnodes }
+      sayTest "Test finished! Cleaning..."
 
-      -- Tear down the test
-      _ <- promulgateEQ [localNodeId n] $ encodeP $
-            ServiceStopRequest (Node $ localNodeId n) sspl
-      _ <- receiveTimeout 1000000 []
+      when (_to_run_sspl to) $ do
+        for_ nids $ \nid -> do
+          void . promulgateEQ [rcNodeId] . encodeP $ ServiceStopRequest (Node nid) sspl
+        void $ receiveTimeout 1000000 []
       unlink rmq
       kill rmq "end of game"
+      sayTest "All done!"
   where
     ssplConf = SSPLConf
       (ConnectionConf (Configured "localhost")
@@ -294,18 +473,6 @@ run transport pg extraRules test =
                               (Configured "sspl_command_ack"))
                     (Configured 1000000))
 
-    startMeroServiceMock :: ProcessId
-                         -> Process ( ReceivePort NotificationMessage
-                                    , ReceivePort ProcessControlMsg
-                                    )
-    startMeroServiceMock rc = do
-      subscribe rc (Proxy :: Proxy (HAEvent DeclareMeroChannel))
-      pid <- getSelfPid
-      (recv, recvc, channel) <- newMeroChannel pid
-      _ <- usend rc channel
-      DeclareMeroChannel{} <- eventPayload <$> expectPublished Proxy
-      return (recv, recvc)
-
     spawnMockRabbitMQ :: ProcessId -> Process ProcessId
     spawnMockRabbitMQ self = do
       pid <- spawnLocal $ do
@@ -314,12 +481,30 @@ run transport pg extraRules test =
                                        (Configured "/")
                                        ("guest")
                                        ("guest")
-      sayTest "Clearing RMQ queues"
+      sayTest "Clearing RMQ queues."
       purgeRmqQueues pid [ "sspl_dcsque", "sspl_iem"
                          , "halon_sspl", "sspl_command_ack"]
       sayTest "RMQ queues purged."
       link pid
       return pid
+
+-- | Waits until given object enters state.
+waitState :: HasConfObjectState a
+          => a                        -- ^ Object to examine
+          -> StoreChan                -- ^ Where to retrieve current RG from.
+          -> Int                      -- ^ Time between tries, seconds
+          -> Int                      -- ^ Number of tries
+          -> (StateCarrier a -> Bool) -- ^ Predicate on state
+          -> Process (Maybe (StateCarrier a))
+waitState _ _ _ tries _ | tries <= 0 = return Nothing
+waitState obj mm interval tries p = do
+  rg <- G.getGraph mm
+  let st = HA.Resources.Mero.Note.getState obj rg
+  if p st
+  then return $ Just st
+  else do
+    _ <- receiveTimeout (interval * 1000000) []
+    waitState obj mm interval (tries - 1) p
 
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
@@ -409,27 +594,9 @@ expectActuatorMsg' f t = expectTimeout t >>= return . \case
        Just x  -> Right x
   Nothing -> Nothing
 
-nextNotificationFor :: Fid -> ReceivePort NotificationMessage -> Process Set
-nextNotificationFor fid recv = fix $ \go -> do
-  nm <- receiveChan recv
-  let s@(Set notes) = notificationMessage nm
-  forM_ (notificationRecipients nm) $ promulgateWait . NotificationAck (notificationEpoch nm)
-  case (find (\(Note f _) -> f == fid) notes) of
-    Just _ -> return s
-    Nothing -> do
-      sayTest $ "Ignoring notification: " ++ show s ++ " looking for " ++ show fid
-      go
 --------------------------------------------------------------------------------
 -- Test primitives
 --------------------------------------------------------------------------------
-
-prepareSubscriptions :: ProcessId -> ProcessId -> Process ()
-prepareSubscriptions rc rmq = do
-  subscribe rc (Proxy :: Proxy (HAEvent ResetAttempt))
-
-  -- Subscribe to SSPL channels
-  usend rmq . MQSubscribe "halon_sspl" =<< getSelfPid
-  usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
 
 mkSDevFailedMsg :: M0.SDev -> HAMsg StobIoqError
 mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
@@ -453,524 +620,442 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
 
 
 -- | Fail a drive (via Mero notification)
-failDrive :: ReceivePort NotificationMessage -> ThatWhichWeCallADisk -> Process ()
+failDrive :: TestSetup -> ThatWhichWeCallADisk -> Process ()
 failDrive _ (ADisk _ Nothing _ _ _) = error "Cannot fail a non-Mero disk."
-failDrive recv (ADisk _ (Just sdev) serial _ _) = do
+failDrive ts (ADisk _ (Just sdev) serial _ _) = do
   let tserial = pack serial
   sayTest "failDrive"
-  nid <- getSelfNode
   -- We a drive failure note to the RC.
-  _ <- promulgateEQ [nid] (mkSDevFailedMsg sdev)
+  _ <- promulgateEQ [processNodeId $ _ts_rc ts] (mkSDevFailedMsg sdev)
+
   -- Mero should be notified that the drive should be transient.
-  Set msg <- nextNotificationFor (M0.fid sdev) recv
-  sayTest $ show msg
-  liftIO $ do
-    assertEqual "Response to failed drive should have entries for disk and sdev"
-      2 (length msg)
-    let [Note _ st1, Note _ st2] = msg
-    assertEqual "Initial response to failed drive should be setting TRANSIENT"
-      (M0_NC_TRANSIENT, M0_NC_TRANSIENT) (st1, st2)
+  Just{} <- waitState sdev (_ts_mm ts) 2 10 $ \case
+    M0.SDSTransient _ -> True
+    _ -> False
   sayTest "failDrive: Transient state set"
   -- The RC should issue a 'ResetAttempt' and should be handled.
-  _ <- expect :: Process (Published (HAEvent ResetAttempt))
+  _ :: HAEvent ResetAttempt <- expectPublished
   -- We should see `ResetAttempt` from SSPL
   let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
           $ nodeCmdString (DriveReset tserial)
   liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
   sayTest "failDrive: OK"
 
-resetComplete :: ProcessId -> StoreChan
-              -> ThatWhichWeCallADisk
+resetComplete :: ProcessId -- ^ RC
+              -> StoreChan -- ^ MM
+              -> ThatWhichWeCallADisk -- ^ Disk thing we're working on
+              -> AckReply -- ^ Smart result
               -> Process ()
-resetComplete rc mm adisk@(ADisk sdev m0sdev serial _ _) = do
+resetComplete rc mm adisk@(ADisk stord m0sdev serial _ _) success = do
   let tserial = pack serial
       resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
+      smartStatus = case success of
+        AckReplyPassed -> M0.SDSOnline
+        _ -> M0.SDSFailed
+      smartComplete = CommandAck Nothing (Just $ SmartTest tserial) success
   sayTest "resetComplete"
-  nid <- getSelfNode
   -- Send 'SpielDeviceDetached' to the RC
   forM_ m0sdev $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
   -- Send 'DriveOK'
   uuid <- liftIO nextRandom
   Just enc <- findDiskEnclosure adisk <$> G.getGraph mm
-  _ <- usend rc $ DriveOK uuid (Node nid) enc sdev
-  _ <- promulgateEQ [nid] resetCmd
+  rg <- G.getGraph mm
+  Just node <- return $ do
+    h :: Host <- G.connectedFrom Has (aDiskSD adisk) rg
+    listToMaybe $ G.connectedTo h Runs rg
+
+  _ <- usend rc $ DriveOK uuid node enc stord
+  _ <- promulgateEQ [processNodeId rc] resetCmd
   let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                        $ nodeCmdString (SmartTest tserial)
-  sayTest "resetComplete: waiting smart request."
+  sayTest "Waiting for SMART request."
   liftIO . assertEqual "RC requested smart test." (Just smartTestRequest)
               =<< expectNodeMsg ssplTimeout
-  sayTest "resetComplete: finished"
+  sayTest $ "Sending SMART completion message: " ++ show smartComplete
+  -- Confirms that the disk powerdown operation has occured.
+  _ <- promulgateEQ [processNodeId rc] smartComplete
 
-smartTestComplete :: ProcessId -> ReceivePort NotificationMessage
-                  -> AckReply -> ThatWhichWeCallADisk -> Process ()
-smartTestComplete rc recv success (ADisk _ msdev serial _ _) = let
-    tserial = pack serial
-    smartComplete = CommandAck Nothing
-                        (Just $ SmartTest tserial)
-                        success
-    status = case success of
-      AckReplyPassed -> M0_NC_ONLINE
-      AckReplyFailed -> M0_NC_FAILED
-      AckReplyError _ -> M0_NC_FAILED
-  in do
-    sayTest $ "smartTestComplete: " ++ show smartComplete
-    nid <- getSelfNode
-    -- Confirms that the disk powerdown operation has occured.
-    _ <- promulgateEQ [nid] smartComplete
+  -- If the sdev is there
+  forM_ m0sdev $ \sdev -> do
+    -- Send 'SpielDeviceAttached' to the RC
+    usend rc $ SpielDeviceAttached sdev (Right ())
 
-    -- If the sdev is there
-    forM_ msdev $ \sdev -> do
-      -- Send 'SpielDeviceAttached' to the RC
-      usend rc $ SpielDeviceAttached sdev (Right ())
-
-      -- Note: this is sensitive to ordering imposed by
-      -- 'HA.Services.Mero.RC.Actions.notifyMeroAsync'
-      Set [Note _ _, Note fid stat] <- nextNotificationFor (M0.fid sdev) recv
-      sayTest "smartTestComplete: Mero notification received"
-      liftIO $ assertEqual
-        "Smart test succeeded. Drive fids and status should match."
-        (M0.d_fid sdev, status)
-        (fid, stat)
+    -- Wait for reset job to finish. Check we have a reply for the
+    -- right device then check it's the expected reply.
+    _ <- expectPublishedIf $ \case
+      ResetSuccess stord' -> stord == stord' && success == AckReplyPassed
+      ResetFailure stord' -> stord == stord' && success /= AckReplyPassed
+    Just{} <- waitState sdev mm 2 10 (== smartStatus)
+    sayTest "Reset finished, device in expected state."
 
 --------------------------------------------------------------------------------
 -- Actual tests
 --------------------------------------------------------------------------------
 
 testDiskFailure :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testDiskFailure transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-
-    sdev <- G.getGraph mm >>= findSDev
-    failDrive recv sdev
-    resetComplete rc mm sdev
-    smartTestComplete rc recv AckReplyPassed sdev
+testDiskFailure transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+  sdev <- G.getGraph (_ts_mm ts) >>= findSDev
+  failDrive ts sdev
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
 
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHitResetLimit transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
+testHitResetLimit transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+  sdev <- G.getGraph (_ts_mm ts) >>= findSDev
+  let resetAttemptThreshold = _hv_drive_reset_max_retries defaultHalonVars
+  replicateM_ (resetAttemptThreshold + 1) $ do
+    sayTest "============== FAILURE START ================================"
+    failDrive ts sdev
+    resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
+    sayTest "============== FAILURE Finish ================================"
 
-    sdev <- G.getGraph mm >>= findSDev
-
-    let resetAttemptThreshold = _hv_drive_reset_max_retries defaultHalonVars
-    replicateM_ (resetAttemptThreshold + 1) $ do
-      sayTest "============== FAILURE START ================================"
-      failDrive recv sdev
-      resetComplete rc mm sdev
-      smartTestComplete rc recv AckReplyPassed sdev
-      sayTest "============== FAILURE Finish ================================"
-
-    forM_ (aDiskMero sdev) $ \m0sdev -> do
-      -- Fail the drive one more time
-      let fail_evt = mkSDevFailedMsg m0sdev
-      nid <- getSelfNode
-      void $ promulgateEQ [nid] fail_evt
-      -- Mero should be notified that the drive should be failed.
-      Set [Note _ st3, Note _ st4] <- notificationMessage <$> receiveChan recv
-      liftIO $ assertEqual "Mero should be notified that the drive should be failed."
-        (M0_NC_FAILED, M0_NC_FAILED) (st3, st4)
-
+  forM_ (aDiskMero sdev) $ \m0sdev -> do
+    -- Fail the drive one more time
+    void . promulgateEQ [processNodeId $ _ts_rc ts] $ mkSDevFailedMsg m0sdev
+    Just M0.SDSFailed <- waitState m0sdev (_ts_mm ts) 2 10 (== M0.SDSFailed)
     return ()
 
 testFailedSMART :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testFailedSMART transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-
-    sdev <- G.getGraph mm >>= findSDev
-    failDrive recv sdev
-    resetComplete rc mm sdev
-    smartTestComplete rc recv AckReplyFailed sdev
+testFailedSMART transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+  sdev <- G.getGraph (_ts_mm ts) >>= findSDev
+  failDrive ts sdev
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyFailed
 
 testSecondReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testSecondReset transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-
-    sdev <- G.getGraph mm >>= findSDev
-    sdev2 <- G.getGraph mm >>= find2SDev
-
-    failDrive recv sdev
-    failDrive recv sdev2
-    resetComplete rc mm sdev2
-    smartTestComplete rc recv AckReplyPassed sdev2
-    resetComplete rc mm sdev
-    smartTestComplete rc recv AckReplyPassed sdev
+testSecondReset transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+  sdev <- G.getGraph (_ts_mm ts) >>= findSDev
+  sdev2 <- G.getGraph (_ts_mm ts) >>= find2SDev
+  failDrive ts sdev
+  failDrive ts sdev2
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev2 AckReplyPassed
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
 
 -- | SSPL emits EMPTY_None event for one of the drives.
 testDriveRemovedBySSPL :: (Typeable g, RGroup g)
                        => Transport -> Proxy g -> IO ()
-testDriveRemovedBySSPL transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-    subscribe rc (Proxy :: Proxy DriveRemoved)
-    rg <- G.getGraph mm
-    sdev <- findSDev rg
-    let Just (Enclosure enclosureName) = findDiskEnclosure sdev rg
-    host <- pack <$> liftIO getHostName
-    let devIdx    = 1
-        message0 = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
-                    host (pack enclosureName)
-                    (pack $ aDiskSN sdev)
-                    (fromIntegral devIdx)
-                    (pack $ aDiskPath sdev)
-                    (pack $ aDiskWWN sdev)
-                    False True
-        message = LBS.toStrict $ encode $ mkSensorResponse
-           $ emptySensorMessage
-              { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-                Just $ mkResponseDriveManager (pack enclosureName)
-                                              (pack $ aDiskSN sdev)
-                                              devIdx "EMPTY" "None"
-                                              (pack $ aDiskPath sdev) }
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message0
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
-    _ <- receiveTimeout 1000000 []
-    sayTest "Check drive removed"
-    True <- checkStorageDeviceRemoved enclosureName devIdx <$> G.getGraph mm
+testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveRemoved)
+  rg <- G.getGraph (_ts_mm ts)
+  sdev <- findSDev rg
+  let Just (Enclosure enclosureName) = findDiskEnclosure sdev rg
 
-    -- XXX: dirty hack: deviceDetach call in mkDetachDisk can't
-    -- complete (or even begin) without m0worker. To arrange a mero
-    -- worker, we need a better test that also sets up (and tears
-    -- down) env than this one here. To temporarily unblock this test,
-    -- we "pretend" that the detach went OK by sending the message
-    -- that mkDetachDisk would send on successful detach: this is the
-    -- message the rule is waiting for.
-    forM_ (aDiskMero sdev) $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
+  -- Find the host on which this device is actually on
+  Just (Host host) <- return $ do
+    d :: M0.Disk <- G.connectedFrom M0.At (aDiskSD sdev) rg
+    c :: M0.Controller <- G.connectedFrom M0.IsParentOf d rg
+    G.connectedTo c M0.At rg
 
-    sayTest "Check notification"
-    forM_ (aDiskMero sdev) $ \m0disk -> do
-      -- make sure we're inspecting the right state, ordering can change
-      let getCorrectNote (Set ns) = filter (\(Note fid' _) -> M0.fid m0disk == fid') ns
-      [Note _ st] <- getCorrectNote <$> nextNotificationFor (M0.fid m0disk) recv
-      liftIO $ assertEqual "drive is in transient state" M0_NC_TRANSIENT st
+  let devIdx    = 1
+      message0 = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
+                  (pack host) (pack enclosureName)
+                  (pack $ aDiskSN sdev)
+                  (fromIntegral devIdx)
+                  (pack $ aDiskPath sdev)
+                  (pack $ aDiskWWN sdev)
+                  False True
+      message = LBS.toStrict $ encode $ mkSensorResponse
+         $ emptySensorMessage
+            { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
+              Just $ mkResponseDriveManager (pack enclosureName)
+                                            (pack $ aDiskSN sdev)
+                                            devIdx "EMPTY" "None"
+                                            (pack $ aDiskPath sdev) }
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message0
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+  Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
+  _ <- receiveTimeout 1000000 []
+  sayTest "Check drive removed"
+  True <- checkStorageDeviceRemoved enclosureName devIdx <$> G.getGraph (_ts_mm ts)
+
+  -- XXX: dirty hack: deviceDetach call in mkDetachDisk can't
+  -- complete (or even begin) without m0worker. To arrange a mero
+  -- worker, we need a better test that also sets up (and tears
+  -- down) env than this one here. To temporarily unblock this test,
+  -- we "pretend" that the detach went OK by sending the message
+  -- that mkDetachDisk would send on successful detach: this is the
+  -- message the rule is waiting for.
+  forM_ (aDiskMero sdev) $ \sd -> do
+    usend (_ts_rc ts) $ SpielDeviceDetached sd (Right ())
+    Just{} <- waitState sd (_ts_mm ts) 2 10 $ \case
+      M0.SDSTransient{} -> True
+      _ -> False
+    return ()
 
 -- | Test that a failed drive powers off successfully
 testDrivePoweredDown :: (Typeable g, RGroup g)
                       => Transport -> Proxy g -> IO ()
-testDrivePoweredDown transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-    prepareSubscriptions rc rmq
-    subscribe rc (Proxy :: Proxy (DriveFailed))
+testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveFailed)
+  rg <- G.getGraph (_ts_mm ts)
+  eid <- liftIO $ nextRandom
+  disk <- findSDev rg
+  let Just enc = findDiskEnclosure disk rg
+  Just node <- return $ do
+    h :: Host <- G.connectedFrom Has (aDiskSD disk) rg
+    listToMaybe $ G.connectedTo h Runs rg
 
-    rg <- G.getGraph mm
-    nid <- getSelfNode
-    eid <- liftIO $ nextRandom
-    disk <- findSDev rg
-    let Just enc = findDiskEnclosure disk rg
-    usend rc $ DriveFailed eid (Node nid) enc (aDiskSD disk)
-    -- Need to ack the response to Mero
-    forM_ (aDiskMero disk) $ \m0disk ->
-      void $ nextNotificationFor (M0.fid m0disk) recv
+  usend (_ts_rc ts) $ DriveFailed eid node enc (aDiskSD disk)
+  -- Need to ack the response to Mero
 
-    sayTest "Drive failed should be processed"
-    _ <- expect :: Process (Published DriveFailed)
+  forM_ (aDiskMero disk) $ \m0disk -> do
+    Just{} <- waitState m0disk (_ts_mm ts) 2 10 (== M0.SDSFailed)
+    return ()
 
-    sayTest "SSPL should receive a command to power off the drive"
-    do
-      msg <- expectNodeMsg ssplTimeout
-      sayTest $ "sspl_msg(poweroff): " ++ show msg
-      let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString (DrivePowerdown . pack $ aDiskSN disk)
-      liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
+  sayTest "Drive failed should be processed"
+  _ :: DriveFailed <- expectPublished
+
+  sayTest "SSPL should receive a command to power off the drive"
+  do
+    msg <- expectNodeMsg ssplTimeout
+    sayTest $ "sspl_msg(poweroff): " ++ show msg
+    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (DrivePowerdown . pack $ aDiskSN disk)
+    liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed.
 testMetadataDriveFailed :: (Typeable g, RGroup g)
                         => Transport -> Proxy g -> IO ()
-testMetadataDriveFailed transport pg = run transport pg [] test where
-  test (TestArgs _ mm rc) rmq recv _ = do
-      hostname <- liftIO getHostName
-      let host = pack hostname
-          raidDevice = "/dev/raid"
-          raidData = mkResponseRaidData host raidDevice
-                                        [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
-                                        , (("/dev/mddisk2", "mdserial2"), False) -- disk2 failed
-                                        ]
-          message = LBS.toStrict $ encode
-                                   $ mkSensorResponse
-                                   $ emptySensorMessage {
-                                      sensorResponseMessageSensor_response_typeRaid_data = Just raidData
-                                    }
-      prepareSubscriptions rc rmq
-      usend rmq $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
-      usend rmq . MQSubscribe "sspl_iem" =<< getSelfPid
+testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
 
-      subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+  someJoinedNode : _ <- return $ _ts_nodes ts
+  Just hostname <- getHostName ts $ localNodeId someJoinedNode
+  let raidDevice = "/dev/raid"
+      raidData = mkResponseRaidData (pack hostname) raidDevice
+                                    [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
+                                    , (("/dev/mddisk2", "mdserial2"), False) -- disk2 failed
+                                    ]
+      message = LBS.toStrict $ encode
+                               $ mkSensorResponse
+                               $ emptySensorMessage {
+                                  sensorResponseMessageSensor_response_typeRaid_data = Just raidData
+                                }
+  usend (_ts_rmq ts) $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
+  usend (_ts_rmq ts) . MQSubscribe "sspl_iem" =<< getSelfPid
 
-      usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-      nid <- getSelfNode
+  subscribeOnTo [processNodeId $ _ts_rc ts]
+    (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
 
-      sayTest "RAID message published"
-      -- Expect the message to be processed by RC
-      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
 
-      do
-        Just (uid, msg) <- expectNodeMsgUid ssplTimeout
-        -- We should see a message to SSPL to remove the drive
-        let nc = NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")
-            cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                  $ nodeCmdString nc
-        liftIO $ assertEqual "drive removal command is issued" cmd msg
-        void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
-      -- The RC should issue a 'ResetAttempt' and should be handled.
-      sayTest "RAID removal for drive received at SSPL"
-      _ <- expect :: Process (Published (HAEvent ResetAttempt))
+  sayTest "RAID message published"
+  -- Expect the message to be processed by RC
+  _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
 
-      rg <- G.getGraph mm
-      -- Look up the storage device by path
-      let [sd]  = [ d |  d <- G.connectedTo (Host hostname) Has rg
-                      , di <- G.connectedTo d Has rg
-                      , di == DIPath "/dev/mddisk2"
-                      ]
+  do
+    Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+    -- We should see a message to SSPL to remove the drive
+    let nc = NodeRaidCmd raidDevice (RaidRemove "/dev/mddisk2")
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString nc
+    liftIO $ assertEqual "drive removal command is issued" cmd msg
+    void . promulgateEQ [processNodeId $ _ts_rc ts] $ CommandAck uid (Just nc) AckReplyPassed
 
-      let disk2 = ADisk {
-          aDiskSD = sd
-        , aDiskMero = Nothing
-        , aDiskSN = "mdserial2"
-        , aDiskPath = "/dev/mddisk2"
-        , aDiskWWN = error "WWN not initialised"
-      }
+  -- The RC should issue a 'ResetAttempt' and should be handled.
+  sayTest "RAID removal for drive received at SSPL"
+  _ :: HAEvent ResetAttempt <- expectPublished
 
-      sayTest "ResetAttempt message published"
-      -- We should see `ResetAttempt` from SSPL
-      do
-        msg <- expectNodeMsg ssplTimeout
-        sayTest $ "sspl_msg(reset): " ++ show msg
-        let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                  $ nodeCmdString (DriveReset "mdserial2")
-        liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
+  rg <- G.getGraph (_ts_mm ts)
+  -- Look up the storage device by path
+  let [sd]  = [ d |  d <- G.connectedTo (Host hostname) Has rg
+                  , di <- G.connectedTo d Has rg
+                  , di == DIPath "/dev/mddisk2"
+                  ]
 
-      sayTest "Reset command received at SSPL"
-      resetComplete rc mm disk2
-      smartTestComplete rc recv AckReplyPassed disk2
+  let disk2 = ADisk {
+      aDiskSD = sd
+    , aDiskMero = Nothing
+    , aDiskSN = "mdserial2"
+    , aDiskPath = "/dev/mddisk2"
+    , aDiskWWN = error "WWN not initialised"
+  }
 
-      do
-        msg <- expectNodeMsg ssplTimeout
-        sayTest $ "sspl_msg(raid_add): " ++ show msg
-        let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                  $ nodeCmdString (NodeRaidCmd raidDevice (RaidAdd "/dev/mddisk2"))
-        liftIO $ assertEqual "Drive is added back to raid array" (Just cmd) msg
+  sayTest "ResetAttempt message published"
+  -- We should see `ResetAttempt` from SSPL
+  do
+    msg <- expectNodeMsg ssplTimeout
+    sayTest $ "sspl_msg(reset): " ++ show msg
+    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (DriveReset "mdserial2")
+    liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
 
-      sayTest "Raid_data message processed by RC"
+  sayTest "Reset command received at SSPL"
+  resetComplete (_ts_rc ts) (_ts_mm ts) disk2 AckReplyPassed
+
+  do
+    msg <- expectNodeMsg ssplTimeout
+    sayTest $ "sspl_msg(raid_add): " ++ show msg
+    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (NodeRaidCmd raidDevice (RaidAdd "/dev/mddisk2"))
+    liftIO $ assertEqual "Drive is added back to raid array" (Just cmd) msg
+
+  sayTest "Raid_data message processed by RC"
 
 -- | Message used in 'testGreeting'
 newtype MarkDriveFailed = MarkDriveFailed ProcessId
   deriving (Generic, Typeable, Binary)
 
 testGreeting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testGreeting transport pg = run transport pg [rule] test where
-  test (TestArgs _ _ rc) rmq _ _ = do
-    prepareSubscriptions rc rmq
+testGreeting transport pg = run transport pg [rule] $ \ts -> do
+  self <- getSelfPid
+  _ <- usend (_ts_rc ts) $ MarkDriveFailed self
+  MarkDriveFailed{} <- expect
 
-    self <- getSelfPid
-    _ <- usend rc $ MarkDriveFailed self
-    MarkDriveFailed{} <- expect
-
-    let
-      message = LBS.toStrict $ encode
-                               $ mkActuatorResponse
-                               $ emptyActuatorMessage {
-                                  actuatorResponseMessageActuator_response_typeThread_controller = Just $
-                                    ActuatorResponseMessageActuator_response_typeThread_controller
-                                      "ThreadController"
-                                      "SSPL-LL service has started successfully"
-                                 }
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" message
-    mmsg1 <- expectNodeMsg ssplTimeout
-    case mmsg1 of
-      Just _s  -> return () -- XXX: uids are not deterministic
-      Nothing -> liftIO $ assertFailure "node cmd was not received"
-    Just mmsg2 <- expectLoggingMsg ssplTimeout
-    case mmsg2 of
-      Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
-      Right _  -> return ()
-
-  rule = defineSimple "mark-disk-failed" $ \msg@(MarkDriveFailed caller) -> do
-    rg <- getLocalGraph
-    case G.getResourcesOfType rg of
-      sd : _ -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
-      [] -> return ()
-    liftProcess $ usend caller msg
+  let
+    message = LBS.toStrict $ encode
+                             $ mkActuatorResponse
+                             $ emptyActuatorMessage {
+                                actuatorResponseMessageActuator_response_typeThread_controller = Just $
+                                  ActuatorResponseMessageActuator_response_typeThread_controller
+                                    "ThreadController"
+                                    "SSPL-LL service has started successfully"
+                               }
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+  mmsg1 <- expectNodeMsg ssplTimeout
+  case mmsg1 of
+    Just _s  -> return () -- XXX: uids are not deterministic
+    Nothing -> liftIO $ assertFailure "node cmd was not received"
+  Just mmsg2 <- expectLoggingMsg ssplTimeout
+  case mmsg2 of
+    Left s  -> liftIO $ assertFailure $ "wrong message received" ++ s
+    Right _  -> return ()
+  where
+    rule = defineSimple "mark-disk-failed" $ \msg@(MarkDriveFailed caller) -> do
+      rg <- getLocalGraph
+      case G.getResourcesOfType rg of
+        sd : _ -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
+        [] -> return ()
+      liftProcess $ usend caller msg
 
 
 type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)
 
--- | Message used in 'testExpanderResetRAIDReassemble'
-newtype PrepareRC = PrepareRC ProcessId
-  deriving (Generic, Typeable, Binary)
-
 testExpanderResetRAIDReassemble :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testExpanderResetRAIDReassemble transport pg = run transport pg [prepare] test where
-  test (TestArgs _ mm rc) rmq recv recc = do
-    prepareSubscriptions rc rmq
-    subscribe rc (Proxy :: Proxy (HAEvent ExpanderReset))
-    subscribe rc (Proxy :: Proxy (HAEvent RaidMsg))
-    subscribe rc (Proxy :: Proxy StopProcessResult)
-    host <- pack <$> liftIO getHostName
-    _ <- spawnNotificationAcker recv
-    let raidDevice = "/dev/raid"
-        raidData = mkResponseRaidData host raidDevice
-                                        [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
-                                        , (("/dev/mddisk2", "mdserial2"), True) -- disk2 failed
-                                        ]
-        raidMsg = LBS.toStrict . encode
-              $ mkSensorResponse $ emptySensorMessage {
-                  sensorResponseMessageSensor_response_typeRaid_data = Just raidData
+testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport pg [] to $ \ts -> do
+  let rcNodeId = processNodeId $ _ts_rc ts
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy (HAEvent ExpanderReset))
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy (HAEvent RaidMsg))
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy StopProcessResult)
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy StartProcessesOnNodeResult)
+
+  -- We need to send info about raid device with a host that is in the
+  -- cluster info. Pick some random node using the test data. The
+  -- alternative would be to pick one from RG.
+  someJoinedNode : _ <- return $ _ts_nodes ts
+  Just host <- getHostName ts $ localNodeId someJoinedNode
+  let raidDevice = "/dev/raid"
+      raidData = mkResponseRaidData (pack host) raidDevice
+                                      [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
+                                      , (("/dev/mddisk2", "mdserial2"), True) -- disk2 failed
+                                      ]
+      raidMsg = LBS.toStrict . encode
+            $ mkSensorResponse $ emptySensorMessage {
+                sensorResponseMessageSensor_response_typeRaid_data = Just raidData
+            }
+      erm = LBS.toStrict . encode
+            $ mkSensorResponse $ emptySensorMessage {
+                sensorResponseMessageSensor_response_typeExpander_reset =
+                  Just Aeson.Null
               }
-        erm = LBS.toStrict . encode
-              $ mkSensorResponse $ emptySensorMessage {
-                  sensorResponseMessageSensor_response_typeExpander_reset =
-                    Just Aeson.Null
-                }
 
-    -- Waits until given object enters state.
-    let waitState :: HasConfObjectState a => a
-                  -> (StateCarrier a -> Bool) -- Predicate on state
-                  -> Int                      -- Time between tries
-                  -> Int                      -- Number of tries, seconds
-                  -> Process (Maybe (StateCarrier a))
-        waitState _ _ _ tries | tries <= 0 = return Nothing
-        waitState obj p interval tries = do
-          rg <- G.getGraph mm
-          let st = HA.Resources.Mero.Note.getState obj rg
-          if p st
-          then return $ Just st
-          else do
-            _ <- receiveTimeout (interval * 1000000) []
-            waitState obj p interval (tries - 1)
+  -- Before we can do anything, we need to establish a fake RAID device.
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" raidMsg
+  _ <- expect :: Process (Published (HAEvent RaidMsg))
+  sayTest "RAID devices established"
 
-    -- Before we can do anything, we need to establish a fake RAID device.
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" raidMsg
-    _ <- expect :: Process (Published (HAEvent RaidMsg))
-    sayTest "RAID devices established"
+  rg <- G.getGraph (_ts_mm ts)
+  let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
+                   , enc <- G.connectedTo rack Has rg]
 
-    nid <- getSelfNode
+  sayTest $ "Enclosures: " ++ show encs
+  let [enc] = encs
+      (Just m0enc) = encToM0Enc enc rg
 
-    rg <- G.getGraph mm
-    let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
-                     , enc <- G.connectedTo rack Has rg]
+  sayTest $ "(enc, m0enc): " ++ show (enc, m0enc)
 
-    sayTest $ "Enclosures: " ++ show encs
-    let [enc] = encs
-        (Just m0enc) = encToM0Enc enc rg
+  -- First, we sent expander reset message for an enclosure.
+  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" erm
 
-    sayTest $ "(enc, m0enc): " ++ show (enc, m0enc)
+  -- Should get propogated to the RC
+  _ :: HAEvent ExpanderReset <- expectPublished
+  sayTest "ExpanderReset rule fired"
 
-    -- First, we sent expander reset message for an enclosure.
-    usend rmq $ MQPublish "sspl_halon" "sspl_ll" erm
+  -- Should expect notification from Mero that the enclosure is transient
+  waitState m0enc (_ts_mm ts) 2 10 (== M0_NC_TRANSIENT) >>= \case
+    Nothing -> fail "Enclosure didn't become transient"
+    Just{} -> return ()
 
-    -- Should get propogated to the RC
-    _ <- expectPublished (Proxy :: Proxy (HAEvent ExpanderReset))
-    sayTest "ExpanderReset rule fired"
+  -- Should also expect a message to SSPL asking it to disable swap
+  _ <- do
+    Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+    sayTest $ "sspl_msg(disable_swap): " ++ show msg
+    let nc = SwapEnable False
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString nc
+    liftIO $ assertEqual "Swap is disabled" cmd msg
+    -- Reply with a command acknowledgement
+    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
 
-    -- Should expect notification from Mero that the enclosure is transient
-    waitState m0enc (== M0_NC_TRANSIENT) 2 10 >>= \case
-      Nothing -> fail "Enclosure didn't become transient"
-      Just{} -> return ()
+  -- TODO: Maybe expander code should use StopProcessesOnNodeRequest
+  -- or similar? Right now it just blindly tries to shut everything
+  -- down.
+  StopProcessResult _ <- expectPublished
+  sayTest "Mero process stop finished"
 
-    -- Should also expect a message to SSPL asking it to disable swap
-    _ <- do
-      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
-      sayTest $ "sspl_msg(disable_swap): " ++ show msg
-      let nc = SwapEnable False
-          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString nc
-      liftIO $ assertEqual "Swap is disabled" cmd msg
-      -- Reply with a command acknowledgement
-      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+  -- Should see unmount message
+  _ <- do
+    Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+    sayTest $ "sspl_msg(unmount): " ++ show msg
+    let nc = (Unmount "/var/mero")
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString nc
+    liftIO $ assertEqual "/var/mero is unmounted" cmd msg
+    -- Reply with a command acknowledgement
+    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
 
-    -- Mero services should be stopped
-    _ <- do
-      StopProcess _ p <- receiveChan recc
-      -- Reply with successful stoppage
-      void . promulgateEQ [nid] $ ProcessControlResultStopMsg nid (Right p)
-      _ <- expectPublished (Proxy :: Proxy StopProcessResult)
-      sayTest "Mero process stop finished"
+  -- Should see 'stop RAID' message
+  _ <- do
+    Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+    sayTest $ "sspl_msg(stop_raid): " ++ show msg
+    let nc = NodeRaidCmd raidDevice RaidStop
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString nc
+    liftIO $ assertEqual "RAID is stopped" cmd msg
+    -- Reply with a command acknowledgement
+    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
 
-    -- prepare RC for soon-to-be process start
-    getSelfPid >>= usend rc . PrepareRC
-    Just PrepareRC{} <- expectTimeout (10 * 1000000)
+  -- Should see 'reassemble RAID' message
+  _ <- do
+    Just (uid, msg) <- expectNodeMsgUid ssplTimeout
+    sayTest $ "sspl_msg(assemble_raid): " ++ show msg
+    let nc = NodeRaidCmd "--scan" (RaidAssemble [])
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString nc
+    liftIO $ assertEqual "RAID is assembling" cmd msg
+    -- Reply with a command acknowledgement
+    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
 
-    -- Should see unmount message
-    _ <- do
-      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
-      sayTest $ "sspl_msg(unmount): " ++ show msg
-      let nc = (Unmount "/var/mero")
-          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString nc
-      liftIO $ assertEqual "/var/mero is unmounted" cmd msg
-      -- Reply with a command acknowledgement
-      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+  -- TODO: Expand to all processes we would expect
+  NodeProcessesStarted _ <- expectPublished
+  sayTest "Mero process start result sent"
 
-    -- Should see 'stop RAID' message
-    _ <- do
-      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
-      sayTest $ "sspl_msg(stop_raid): " ++ show msg
-      let nc = NodeRaidCmd raidDevice RaidStop
-          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString nc
-      liftIO $ assertEqual "RAID is stopped" cmd msg
-      -- Reply with a command acknowledgement
-      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
+  -- Should expect notification from Mero that the enclosure is transient
+  waitState m0enc (_ts_mm ts) 2 10 (== M0_NC_ONLINE) >>= \case
+    Nothing -> fail "Enclosure didn't become transient"
+    Just{} -> return ()
+  where
+    topts = mkDefaultTestOptions <&> \tos ->
+      tos { _to_cluster_setup = Bootstrapped }
 
-    -- Should see 'reassemble RAID' message
-    _ <- do
-      Just (uid, msg) <- expectNodeMsgUid ssplTimeout
-      sayTest $ "sspl_msg(assemble_raid): " ++ show msg
-      let nc = NodeRaidCmd "--scan" (RaidAssemble [])
-          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-                $ nodeCmdString nc
-      liftIO $ assertEqual "RAID is assembling" cmd msg
-      -- Reply with a command acknowledgement
-      void . promulgateEQ [nid] $ CommandAck uid (Just nc) AckReplyPassed
 
-    do
-      sayTest "configure process"
-      mconf <- receiveChan recc
-      case mconf of
-        ConfigureProcess _ pc _ -> do
-          let p = case pc of
-                ProcessConfigLocal p' _ -> p'
-                ProcessConfigRemote p' -> p'
-          _ <- promulgateEQ [nid] $ ProcessControlResultConfigureMsg nid (Right p)
-          return ()
-        s -> liftIO $ assertFailure $ "Expected configure request, but received " ++ show s
-
-      sayTest "start process"
-      mstart <- receiveChan recc
-      case mstart of
-        StartProcess _ p -> do
-          -- Reply with successful stoppage
-          let fid = M0.fid p
-          _ <- promulgateEQ [nid] $ ProcessControlResultMsg nid (Right (p, Just 123))
-          -- Also send ONLINE for the process
-          let pe = ProcessEvent TAG_M0_CONF_HA_PROCESS_STARTED
-                                TAG_M0_CONF_HA_PROCESS_M0D
-                                123
-              meta = HAMsgMeta fid fid fid 0
-          _ <- promulgateEQ [nid] $ HAMsg pe meta
-          return ()
-        s ->  liftIO $ assertFailure $ "Expected (re)start request, but received " ++ show s
-
-    sayTest "Mero process start result sent"
-
-    -- Should expect notification from Mero that the enclosure is transient
-    waitState m0enc (== M0_NC_ONLINE) 2 10 >>= \case
-      Nothing -> fail "Enclosure didn't become transient"
-      Just{} -> return ()
-
-  -- Put RC in a state such that the test can pass.
-  prepare :: Definitions RC ()
-  prepare = defineSimple "raid-expander-prepare" $ \msg@(PrepareRC caller) -> do
-    -- Process start during expander reset requires the node to be
-    -- online.
-    Just fs <- getFilesystem
-    rg <- getLocalGraph
-    let nodes :: [M0.Node]
-        nodes = G.connectedTo fs M0.IsParentOf rg
-    applyStateChanges $ map (\n -> stateSet n nodeOnline) nodes
-    liftProcess $ usend caller msg
+deriveSafeCopy 0 'base ''PopulateMock

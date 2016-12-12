@@ -384,7 +384,7 @@ ruleServiceFailed = defineSimpleTask "rc::service::failed" $
 -- | If service have failed - try if it's the one that is registered
 -- and if so - restart it.
 ruleServiceUncaughtException :: Definitions RC ()
-ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaugh-exception" $
+ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaught-exception" $
   \(ServiceUncaughtException node info reason pid) -> do
     ServiceInfo svc config <- decodeMsg info
     phaseLog "error" $ "service failed because of exception"

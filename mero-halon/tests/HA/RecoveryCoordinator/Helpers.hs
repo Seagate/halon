@@ -13,20 +13,23 @@ module HA.RecoveryCoordinator.Helpers where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
+import Control.Monad (void)
 import Data.Foldable (for_)
+import Data.Function (fix)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Typeable
 import HA.Encode
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
+import HA.RecoveryCoordinator.RC.Subscription
 import HA.RecoveryCoordinator.Service.Events
 import HA.Resources
 import HA.Service
 import HA.Services.SSPL.Rabbit
 import Network.CEP (Published(..))
 import Network.Transport (Transport(..))
-import RemoteTables ( remoteTable )
+import RemoteTables (remoteTable)
 import TestRunner
 
 -- | Run the test with some common test parameters
@@ -34,8 +37,7 @@ runDefaultTest :: Transport -> Process () -> IO ()
 runDefaultTest transport act = runTest 1 20 15000000 transport testRemoteTable $ \_ -> act
 
 testRemoteTable :: RemoteTable
-testRemoteTable = TestRunner.__remoteTableDecl $
-                  remoteTable
+testRemoteTable = TestRunner.__remoteTableDecl remoteTable
 
 -- | Awaits a message about the start of the given service. Waits
 -- until the right message is received.
@@ -59,14 +61,81 @@ serviceStart svc conf = do
   _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
   return ()
 
+-- | Start the given 'Service' on given nodes. Blocks until every
+-- service has started.
+--
+-- Caveat from 'serviceStarted' applies. Returns 'ProcessId' of the
+-- started service for each of the nodes.
+serviceStartOnNodes :: Configuration a
+                    => [NodeId]
+                    -- ^ Location of EQ nodes for subscription purposes.
+                    -> Service a
+                    -- ^ Service to start
+                    -> a
+                    -- ^ Service 'Configuration'
+                    -> [NodeId]
+                    -- ^ Nodes to start the service on.
+                    -> (NodeId -> ProcessId -> Process ())
+                    -- ^ An action to perform once we hear that
+                    -- service has been registered. This can be used
+                    -- to wait for any additional ‘ready’ messages
+                    -- from the service for example. 'NodeId' for
+                    -- which we he started a service on and
+                    -- 'ProcessId' of the service are provided.
+                    -> Process [(NodeId, ProcessId)]
+serviceStartOnNodes eqs svc conf nids act = withSubscription eqs startedEvent $ do
+  for_ nids $ \nid -> do
+    void . promulgateEQ eqs . encodeP $ ServiceStartRequest Start (Node nid) svc conf []
+
+  let loop [] results = return results
+      loop waits results = do
+        ServiceStarted (Node nid) msg pid <- eventPayload . pubValue <$> expect
+        case nid `elem` waits of
+          True -> do
+            ServiceInfo svci _ <- decodeP msg
+            case maybe False (svc ==) (cast svci) of
+              True -> do
+                act nid pid
+                loop (filter (/= nid) waits) ((nid, pid) : results)
+              False -> loop waits results
+          False -> loop waits results
+  loop nids []
+  where
+    startedEvent = Proxy :: Proxy (HAEvent ServiceStarted)
+
+-- | Subscribe then unsubscribe for the duration of the given action.
+withSubscription :: Serializable a
+                 => [NodeId] -- ^ EQ nodes
+                 -> Proxy a -- ^ Event to subscribe to for duration of the action
+                 -> Process b -- ^ The action
+                 -> Process b
+withSubscription eqs p act = do
+  subscribeOnTo eqs p
+  r <- act
+  unsubscribeOnFrom eqs p
+  return r
+
+-- | 'expect' a 'Published' message that satisfies the predicate. It
+-- is up to the caller to have previously subscribed to the message.
+--
+-- Discards any messages in the inbox that don't satisfy the predicate.
+expectPublishedIf :: forall a. Serializable a => (a -> Bool) -> Process a
+expectPublishedIf p = do
+  let t = show $ typeRep (Proxy :: Proxy a)
+  fix $ \loop -> do
+    sayTest $ "Expecting " ++ t ++ " to be published."
+    r <- receiveWait [ match $ \(Published m _) -> return m ]
+    sayTest $ "Received a published " ++ t
+    if p r
+    then return r
+    else do
+      sayTest $ "Predicate on published " ++ t ++ " failed, retrying."
+      loop
+
 -- | 'expect' a 'Published' message. It is up to the caller to have
 -- previously subscribed to the message.
-expectPublished :: Serializable a => Proxy a -> Process a
-expectPublished p = do
-  say $ "Expecting " ++ show (typeRep p) ++ " to be published."
-  Published r _ <- expect
-  say $ "Received a published " ++ show (typeRep p)
-  return r
+expectPublished :: forall a. Serializable a => Process a
+expectPublished = expectPublishedIf $ \(_ :: a) -> True
 
 -- | Gets the pid of the given service on the given node. It blocks
 -- until the service actually starts.

@@ -156,7 +156,7 @@ import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
-import           Control.Monad (void, guard, join)
+import           Control.Monad (void, guard, join, when)
 import           Control.Monad.Trans.Maybe
 
 import           Data.Foldable (for_)
@@ -241,7 +241,8 @@ eventKernelStarted :: Definitions RC ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
   g <- getLocalGraph
   for_ (M0.nodeToM0Node (R.Node $ processNodeId sp) g) $ \node -> do
-    applyStateChanges [stateSet node nodeOnline]
+    when (M0.getState node g /= M0.NSOnline) $ do
+      applyStateChanges [stateSet node nodeOnline]
     notify $ KernelStarted node
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
@@ -263,7 +264,7 @@ eventKernelFailed = defineSimpleTask "castor::node::event::kernel-failed" $ \(Me
         ]
   let failMsg = "mero-kernel failed to start: " ++ msg
   applyStateChanges $ (`stateSet` processFailed failMsg) <$> haprocesses
-  promulgateRC $ encodeP $ ServiceStopRequest node m0d
+  promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d g)
   for_ mm0node $ notify . KernelStartFailure
 
 -- | Handle a case when mero-cleanup failed to start on the node. Currently we
@@ -285,7 +286,7 @@ eventCleanupFailed = defineSimpleTask "castor::node::event::cleanup-failed" $ \(
         ]
   let failMsg = "mero-cleanup failed to start: " ++ msg
   applyStateChanges $ (`stateSet` processFailed failMsg) <$> haprocesses
-  promulgateRC $ encodeP $ ServiceStopRequest node m0d
+  promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d g)
   for_ mm0node $ notify . KernelStartFailure
 
 -- | Handle error being thrown from Mero BE. This typically indicates something
@@ -369,7 +370,7 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
                 $ G.connectedTo (p::M0.Process) M0.IsParentOf rg
               ]
      applyStateChanges ps
-     promulgateRC $ encodeP $ ServiceStopRequest node m0d
+     promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d rg)
 
 -------------------------------------------------------------------------------
 -- Processes
@@ -579,7 +580,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
               else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
                       lookupMeroChannelByNode node >>= \case
                         Nothing -> do
-                          lookupInfoMsg node m0d >>= \case
+                          lookupInfoMsg node (lookupM0d rg) >>= \case
                             Nothing -> promulgateRC $ StartHalonM0dRequest m0node
                             Just _ -> phaseLog "info" "halon:m0d info in RG, waiting for it to come up through monitor"
                           -- TODO: kernel may already be up or starting, check
@@ -740,7 +741,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
               modify Local $ rlens fldM0Node .~ Field (Just m0node)
               modify Local $ rlens fldNode .~ Field (Just node)
               modify Local $ rlens fldHost .~ Field (Just host)
-              let hasM0d = not . null $ lookupServiceInfo node m0d rg
+              let hasM0d = not . null $ lookupServiceInfo node (lookupM0d rg) rg
               case getClusterStatus rg of
                 Just (M0.MeroClusterState M0.OFFLINE _ _ ) -> do
                   return $ Left $ "Request to start clients but "
@@ -762,7 +763,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
           Nothing -> Nothing
           Just _ -> case getField $ rget fldNode l of
             Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
-            Just n -> void $ listToMaybe $ lookupServiceInfo n m0d (lsGraph g)
+            Just n -> void $ listToMaybe $ lookupServiceInfo n (lookupM0d $ lsGraph g) (lsGraph g)
 
     setPhaseIf await_barrier
         (nodeRunning (\mcs -> M0._mcs_runlevel mcs >= m0t1fsBootLevel)) $ \() -> do

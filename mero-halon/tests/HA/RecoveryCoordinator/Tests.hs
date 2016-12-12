@@ -129,19 +129,19 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     subscribe eq (Proxy :: Proxy TrimDone)
     replicateM_ 10 $ promulgateEQ [nid] Step
-    TrimDone{} <- expectPublished Proxy
+    TrimDone{} <- expectPublished
 
     _ <- promulgateEQ [nid] $  encodeP $
       ServiceStartRequest Start (Node nid)
         Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         []
 
-    TrimDone{} <- expectPublished Proxy
+    TrimDone{} <- expectPublished
     pid <- serviceStarted Dummy.dummy
     kill pid "test"
     replicateM_ 10 $ promulgateEQ [nid] Step
 
-    TrimDone{} <- expectPublished Proxy
+    TrimDone{} <- expectPublished
     sayTest $ "Everything got trimmed"
   where
     stepRule :: Definitions RC ()
@@ -160,7 +160,7 @@ testEQTrimUnknown transport pg = runDefaultTest transport $ do
     subscribe eq (Proxy :: Proxy TrimDone)
     nodeUp ([nid], 1000000)
     _ <- promulgateEQ [nid] AbraCadabra
-    TrimDone{} <- expectPublished Proxy
+    TrimDone{} <- expectPublished
     return ()
 
 -- | Tests decision-log service by starting it and redirecting the logs to own
