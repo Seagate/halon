@@ -1,10 +1,12 @@
--- |
--- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
---
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE TemplateHaskell    #-}
+-- |
+-- Module    : HA.RecoveryCoordinator.Castor.Drive.Events
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Castor drive events
 module HA.RecoveryCoordinator.Castor.Drive.Events
   ( DriveRemoved(..)
   , DriveInserted(..)
@@ -18,6 +20,8 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , ResetAttemptResult(..)
     -- * Metadata drive events
   , RaidUpdate(..)
+  , RaidAddToArray(..)
+  , RaidAddResult(..)
     -- * SMART test EventsΩ
   , SMARTRequest(..)
   , SMARTResponse(..)
@@ -137,6 +141,21 @@ data RaidUpdate = RaidUpdate
 
 instance Hashable RaidUpdate
 deriveSafeCopy 0 'base ''RaidUpdate
+
+-- | Request that the given storage device is added to a RAID array.
+-- The array is determined by looking at 'StorageDevice' identifiers.
+newtype RaidAddToArray = RaidAddToArray StorageDevice
+  deriving (Eq, Show, Typeable, Generic, Ord)
+instance Hashable RaidAddToArray
+deriveSafeCopy 0 'base ''RaidAddToArray
+
+-- | Result part of 'RaidAddToArray'
+data RaidAddResult = RaidAddOK StorageDevice
+                   | RaidAddFailed StorageDevice
+  deriving (Eq, Show, Typeable, Generic, Ord)
+
+instance Binary RaidAddResult
+instance Hashable RaidAddResult
 
 -- | Sent to request a SMART test is run on the system.
 data SMARTRequest = SMARTRequest {
