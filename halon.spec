@@ -56,7 +56,7 @@ cp mero-halon/scripts/mero_provisioner_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/prov.ede
 cp mero-halon/scripts/halon_roles.yaml \
    %{buildroot}/etc/halon/role_maps/halon_role_mappings
-cp mero-halon/scripts/tmpfiles.d/halon.conf %{buildroot}%{_tmpfilesdir}/halond.conf
+cp mero-halon/scripts/tmpfiles.d/halond.conf %{buildroot}%{_tmpfilesdir}/halond.conf
 ln -s /etc/halon/role_maps/prov.ede %{buildroot}/etc/halon/mero_role_mappings
 ln -s /etc/halon/role_maps/halon_role_mappings %{buildroot}/etc/halon/halon_role_mappings
 
