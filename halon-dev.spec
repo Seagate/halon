@@ -27,8 +27,10 @@ cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/hctl $RPM_BUILD_DIR/halon
+cp $RPM_SOURCE_DIR/halon-cleanup $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-satellite.service $RPM_BUILD_DIR/systemd
+cp $RPM_SOURCE_DIR/halon-cleanup.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/role_maps/* $RPM_BUILD_DIR/role_maps
 cp $RPM_SOURCE_DIR/tmpfiles.d/* $RPM_BUILD_DIR/tmpfiles.d
 
@@ -41,8 +43,13 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
+mkdir -p %{buildroot}/usr/libexec/halon
 mkdir -p %{buildroot}%{_tmpfilesdir}
-cp -a $RPM_BUILD_DIR/halon/* %{buildroot}/usr/bin
+cp -a $RPM_BUILD_DIR/halon/halond %{buildroot}/usr/bin
+cp -a $RPM_BUILD_DIR/halon/halonctl %{buildroot}/usr/bin
+cp -a $RPM_BUILD_DIR/halon/halon-simplelocalcluster %{buildroot}/usr/bin
+cp -a $RPM_BUILD_DIR/halon/hctl %{buildroot}/usr/bin
+cp -a $RPM_BUILD_DIR/halon/halon-cleanup %{buildroot}/usr/libexec/halon
 cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
 cp -a $RPM_BUILD_DIR/role_maps/* %{buildroot}/etc/halon/role_maps
 cp -a $RPM_BUILD_DIR/tmpfiles.d/* %{buildroot}%{_tmpfilesdir}
@@ -59,8 +66,10 @@ rm -rf %{buildroot}
 /usr/bin/halonctl
 /usr/bin/halon-simplelocalcluster
 /usr/bin/hctl
+/usr/libexec/halon/halon-cleanup
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
+/usr/lib/systemd/system/halon-cleanup.service
 /etc/halon/role_maps/genders.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings

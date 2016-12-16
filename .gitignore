@@ -19,7 +19,7 @@ m0trace.*
 core
 core.*
 /tags
-/TAGS
+TAGS
 /cscope.*
 /ncscope.*
 GPATH
