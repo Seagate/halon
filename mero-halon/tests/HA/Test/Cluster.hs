@@ -51,7 +51,7 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
   _  <- liftIO $ forkProcess n $ ignition args >> usend self ()
   () <- expect
   _  <- liftIO $ forkProcess n $ do
-          nodeUp ([localNodeId n], 1000000)
+          nodeUp [localNodeId n]
           usend self ()
   () <- expect
   _  <- liftIO $ forkProcess n $ registerInterceptor $ \string -> do

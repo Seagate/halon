@@ -19,12 +19,12 @@ import Network.CEP hiding (timeout)
 waitForRCAndSubscribe :: [NodeId] -- ^ EQ nodes
                       -> Process ()
 waitForRCAndSubscribe nids = do
-  subscribeOnTo nids (Proxy :: Proxy NewNodeMsg)
+  subscribeOnTo nids (Proxy :: Proxy NewNodeConnected)
 
--- | Wait until 'NewNodeMsg' for given 'NodeId' is published by the RC.
+-- | Wait until 'NewNodeConnected' for given 'NodeId' is published by the RC.
 waitForNewNode :: NodeId -> Int -> Process (Maybe NodeId)
 waitForNewNode nid t = receiveTimeout t
-  [ matchIf (\(Published (NewNodeMsg (Node nid')) _) -> nid == nid')
+  [ matchIf (\(Published (NewNodeConnected (Node nid')) _) -> nid == nid')
             (const $ return nid)
   ]
 

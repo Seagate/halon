@@ -187,7 +187,6 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
     Just (NodeUp _ pid) <- getField . rget fldReq <$> get Local
     let nid  = processNodeId pid
         node = Node nid
-    publish $ NewNodeMsg node
     phaseLog "node.nid" $ show nid
     liftProcess $ usend pid ()
     modify Local $ rlens fldRep .~ (Field . Just $ NewNodeConnected node)
@@ -312,7 +311,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
              notify $ RecoveryAttempt node i
              modify Local $ rlens fldRetries .~ Field (Just $ i + 1)
              void . liftProcess . callLocal . spawnAsync nid $
-               $(mkClosure 'nodeUp) ((eqNodes argv), (100 :: Int))
+               $(mkClosure 'nodeUp) (eqNodes argv)
              expirySeconds <- getHalonVar _hv_recovery_expiry_seconds
              -- Even if maxRetries is negative to indicate
              -- infinite recovery time, we use it to work out a

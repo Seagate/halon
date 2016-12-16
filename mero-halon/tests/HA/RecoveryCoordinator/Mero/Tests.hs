@@ -81,7 +81,7 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
     subscribe rc (Proxy :: Proxy DriveOK)
     subscribe rc (Proxy :: Proxy NewNodeConnected)
     subscribe rc (Proxy :: Proxy InitialDataLoaded)
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
 
     _ :: NewNodeConnected <- expectPublished
 
@@ -132,7 +132,7 @@ testConfObjectStateQuery transport pg =
       sayTest $ "tests node: " ++ show nid
       withTrackingStation pg [waitFailedSDev] $ \(TestArgs _ mm rc) -> do
         subscribe rc (Proxy :: Proxy InitialDataLoaded)
-        nodeUp ([nid], 1000000)
+        nodeUp [nid]
         sayTest "Loading graph."
         liftIO defaultInitialData >>= void . promulgateEQ [nid]
         InitialDataLoaded <- expectPublished
@@ -197,7 +197,7 @@ testConfLoads iData transport pg expectedResultP =
     nid <- getSelfNode
     sayTest $ "tests node: " ++ show nid
     withTrackingStation pg [] $ \(TestArgs _ _ rc) -> do
-      nodeUp ([nid], 1000000)
+      nodeUp [nid]
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       void $ promulgateEQ [nid] iData
       r <- expectPublished

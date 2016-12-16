@@ -8,12 +8,12 @@
 -- License   : All rights reserved.
 --
 -- Logic for adding new node to the halon cluster. When node can be
--- added to cluster, one should issue 'nodeUp' call on the target node. 
+-- added to cluster, one should issue 'nodeUp' call on the target node.
 --
 -- 'nodeUp' requests list of the current event queue nodes and
 -- acknowledge node presence to Recovery Coordinator.
 -- This will update 'EQTracker' and node will try to announce itself.
--- 
+--
 -- After node announced itself with 'NodeUp' message, this message
 -- will be periodically resent until Recovery coordinator will acknowledge
 -- delivery.
@@ -53,11 +53,9 @@ deriveSafeCopy 0 'base ''NodeUp
 -- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
 --   to the EQ, until one is acknowledged with a '()' reply.x
 nodeUp' :: String -- ^ Hostname to use for the node
-       -> ([NodeId] , Int)
-        -- ^ @(eqs, delay)@: set of EQ nodes to contant and the
-        -- interval between sending messages in milliseconds.
-       -> Process ()
-nodeUp' h (eqs, _delay) = do
+        -> [NodeId] -- ^ set of EQ nodes to contact
+        -> Process ()
+nodeUp' h eqs = do
     self <- getSelfPid
     eqNodes <- case eqs of
       -- We're trying to set the list of EQ nodes to []: that's not
@@ -84,9 +82,10 @@ nodeUp' h (eqs, _delay) = do
           Just EQT.UpdateEQNodesAck -> return eqs'
           _ -> retry
 
-    say $ "Sending NodeUp message to " ++ show eqNodes ++ " me -> " ++ (show $ processNodeId self)
+    say $ "Sending NodeUp message to " ++ show eqNodes ++ " from " ++ show (processNodeId self)
     _ <- promulgate $ NodeUp h self
-    expect :: Process ()
+    -- Ack
+    () <- expect :: Process ()
     say "Node succesfully joined the cluster."
    `catch` \e -> do
      liftIO $ hPutStrLn stderr $
@@ -103,9 +102,7 @@ nodeUp' h (eqs, _delay) = do
 -- messages to the EQ, until one is acknowledged with a '()' reply.
 -- See 'nodeUp'' if you want to manually specify the hostname.
 -- 'getHostName' is used by default.
-nodeUp :: ( [NodeId] , Int )
-        -- ^ @(eqs, delay)@: set of EQ nodes to contant and the
-        -- interval between sending messages in milliseconds.
+nodeUp :: [NodeId] -- ^set of EQ nodes to contact
        -> Process ()
 nodeUp eqs = liftIO getHostName >>= \h -> nodeUp' h eqs
 

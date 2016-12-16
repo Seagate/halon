@@ -45,7 +45,7 @@ eqtReceiveAllStations transport =
     node <- fmap processNode ask
     bootupCluster $ node : nids
     say . ("requesting from node " ++). show =<< getSelfNode
-    nodeUp (map localNodeId nids, 1000000)
+    nodeUp $ map localNodeId nids
     meq <- whereis EQT.name
     say (show meq)
     Just eq <- return meq
@@ -60,7 +60,7 @@ eqtReceiveStationsAtStart transport = do
   runTest 7 10 15000000 transport myRemoteTable $ \nodes@(_ : nids) -> do
     _ <- spawnLocal $ bootupCluster nodes
     _ <- EQT.startEQTracker [localNodeId $ head nids]
-    nodeUp (map localNodeId nids, 1000000)
+    nodeUp $ map localNodeId nids
     Just eq <- whereis EQT.name
     EQT.lookupReplicas (processNodeId eq)
     EQT.ReplicaReply (EQT.ReplicaLocation _ xs) <- expect

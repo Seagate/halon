@@ -158,7 +158,7 @@ runSSPLTest transport interseptor test =
     _ <- liftIO $ forkProcess n $ ignition args >> usend self ()
     () <- expect
     _ <- liftIO $ forkProcess n $ do
-            nodeUp ([localNodeId n], 1000000)
+            nodeUp [localNodeId n]
             usend self ()
     () <- expect
     _ <- liftIO $ forkProcess n $ registerInterceptor $ \string ->
