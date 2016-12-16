@@ -72,6 +72,10 @@ startService srv = do
 stopService :: String -> IO ExitCode
 stopService = doService "stop"
 
+-- | Get exit code of @systemctl status@ for the given service.
+statusService :: String -> IO ExitCode
+statusService = doService "status"
+
 -- | Restart the service with the given name
 restartService :: String -> IO (Either Int (Maybe Int))
 restartService srv = do

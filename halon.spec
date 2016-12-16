@@ -44,9 +44,11 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/etc/logrotate.d
+mkdir -p %{buildroot}/usr/libexec/halon
 mkdir -p %{buildroot}%{_tmpfilesdir}
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
+cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
 cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
@@ -68,8 +70,10 @@ rm -rf %{buildroot}
 /usr/bin/halond
 /usr/bin/halonctl
 /usr/bin/hctl
+/usr/libexec/halon/halon-cleanup
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
+/usr/lib/systemd/system/halon-cleanup.service
 /etc/halon/role_maps/genders.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings
