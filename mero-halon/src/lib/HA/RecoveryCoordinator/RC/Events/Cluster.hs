@@ -13,7 +13,6 @@ module HA.RecoveryCoordinator.RC.Events.Cluster
   , OldNodeRevival(..)
   , RecoveryAttempt(..)
   , NodeTransient(..)
-  , NewNodeMsg(..)
   ) where
 
 import HA.Resources
@@ -49,13 +48,6 @@ data RecoveryAttempt = RecoveryAttempt Node Int
 newtype NodeTransient = NodeTransient Node
   deriving (Show, Eq, Typeable, Generic)
 
--- | Node is about to be registered on cluster.
---
--- TODO: Remove and use 'nodeUpJob' result instead.
-newtype NewNodeMsg = NewNodeMsg Node
-  deriving (Show, Eq, Typeable, Generic)
-
 instance Binary OldNodeRevival
 instance Binary RecoveryAttempt
 instance Binary NodeTransient
-instance Binary NewNodeMsg

@@ -281,7 +281,7 @@ startSatellites eqs ns = withSubscription eqs (Proxy :: Proxy NewNodeConnected) 
   liftIO . for_ ns $ \(n, h) -> forkProcess n $ do
     register EQT.name eqtPid
     sayTest $ "Sending nodeUp for: " ++ show (h, localNodeId n)
-    nodeUp' h (eqs, 1000000)
+    nodeUp' h eqs
 
   let loop [] = return ()
       loop waits = receiveWait

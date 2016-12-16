@@ -67,7 +67,7 @@ testServiceRestarting transport pg = runDefaultTest transport $ do
   sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     sayTest "started"
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
 
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
@@ -96,7 +96,7 @@ testServiceNotRestarting transport pg = runDefaultTest transport $ do
 
   sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
     _ <- promulgateEQ [nid] . encodeP $
@@ -125,7 +125,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
 
   sayTest $ "tests node: " ++ show nid
   withTrackingStation pg [stepRule] $ \(TestArgs eq _ rc) -> do
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     subscribe eq (Proxy :: Proxy TrimDone)
     replicateM_ 10 $ promulgateEQ [nid] Step
@@ -158,7 +158,7 @@ testEQTrimUnknown transport pg = runDefaultTest transport $ do
   say $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs eq _ _) -> do
     subscribe eq (Proxy :: Proxy TrimDone)
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
     _ <- promulgateEQ [nid] AbraCadabra
     TrimDone{} <- expectPublished
     return ()
@@ -173,7 +173,7 @@ testDecisionLog transport pg = do
       self <- getSelfPid
 
       withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
-        nodeUp ([nid], 1000000)
+        nodeUp [nid]
         -- Awaits the node local monitor to be up.
         subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
         serviceStart DLog.decisionLog (DLog.processOutput self)
@@ -189,7 +189,7 @@ testServiceStopped transport pg = runDefaultTest transport $ do
 
   sayTest $ "tests node: " ++ show nid
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
-    nodeUp ([nid], 1000000)
+    nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     _ <- promulgateEQ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy

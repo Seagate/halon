@@ -169,7 +169,7 @@ testDisconnect baseTransport connectionBreak = do
       sayTest "running NodeUp"
       void $ liftIO $ forkProcess m3 $ do
         -- wait until the EQ tracker is registered
-        nodeUp (map localNodeId [m0, m1, m2], 1000000)
+        nodeUp $ map localNodeId [m0, m1, m2]
         void . promulgateEQ nids $
           encodeP $ ServiceStartRequest Start (Node $ localNodeId m3) Ping.ping
                                         Ping.PingConf []
@@ -222,7 +222,7 @@ testRejoinTimeout baseTransport connectionBreak = do
       subscribe rc (Proxy :: Proxy NodeTransient)
       subscribe rc (Proxy :: Proxy RecoveryAttempt)
       subscribe rc (Proxy :: Proxy OldNodeRevival)
-      subscribe rc (Proxy :: Proxy NewNodeMsg)
+      subscribe rc (Proxy :: Proxy NewNodeConnected)
       subscribe rc (Proxy :: Proxy HostDisconnected)
       subscribe rc (Proxy :: Proxy InitialDataLoaded)
       subscribe rc (Proxy :: Proxy HalonVarsUpdated)
@@ -233,8 +233,8 @@ testRejoinTimeout baseTransport connectionBreak = do
       sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
-        nodeUp ([localNodeId m1], 1000000)
-      _ :: NewNodeMsg <- expectPublished
+        nodeUp [localNodeId m1]
+      _ :: NewNodeConnected <- expectPublished
 
 #ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
@@ -250,9 +250,9 @@ testRejoinTimeout baseTransport connectionBreak = do
       -- then bring it back up
       restoreNet (map localNodeId [m0, m1])
       -- and make bring it back up
-      _ <- emptyMailbox (Proxy :: Proxy (Published NewNodeMsg))
-      void $ liftIO $ forkProcess m0 $ nodeUp ([localNodeId m1], 1000000)
-      _ :: NewNodeMsg <- expectPublished
+      _ <- emptyMailbox (Proxy :: Proxy (Published NewNodeConnected))
+      void $ liftIO $ forkProcess m0 $ nodeUp [localNodeId m1]
+      _ :: NewNodeConnected <- expectPublished
 
       sayTest "testRejoinTimeout complete"
 
@@ -293,7 +293,7 @@ testRejoinRCDeath baseTransport connectionBreak = do
       emptyMailbox (Proxy :: Proxy (Published NewNodeConnected))
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
-        nodeUp ([localNodeId m1], 1000000)
+        nodeUp [localNodeId m1]
       _ :: NewNodeConnected <- expectPublished
 
       _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
@@ -361,7 +361,7 @@ testRejoin baseTransport connectionBreak = do
       sayTest "running NodeUp"
       void $ liftIO $ forkProcess m0 $ do
         -- wait until the EQ tracker is registered
-        nodeUp ([localNodeId m1], 1000000)
+        nodeUp [localNodeId m1]
 
       _ :: NewNodeConnected <- expectPublished
 #ifdef USE_MERO

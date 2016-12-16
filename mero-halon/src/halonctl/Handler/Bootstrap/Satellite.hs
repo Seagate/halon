@@ -20,7 +20,6 @@ module Handler.Bootstrap.Satellite
   )
 where
 
-import Prelude hiding ((<*>), (<$>))
 import HA.NodeUp (nodeUp, nodeUp__static, nodeUp__sdict)
 import Lookup (conjureRemoteNodeId)
 
@@ -41,20 +40,17 @@ import Data.Traversable (forM)
 import Data.Typeable (Typeable)
 
 import GHC.Generics (Generic)
-
-import Options.Applicative ((<*>), (<$>))
 import qualified Options.Applicative as Opt
 
 data Config = Config
   { configTrackers :: Defaultable [String]
-  , configDelay :: Defaultable Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Binary Config
 instance Hashable Config
 
 defaultConfig :: Config
-defaultConfig = Config (Default []) (Default 10000000)
+defaultConfig = Config (Default [])
 
 schema :: Opt.Parser Config
 schema = let
@@ -63,13 +59,7 @@ schema = let
             <> Opt.short 't'
             <> Opt.help "Addresses of tracking station nodes."
             <> Opt.metavar "ADDRESSES"
-    pingDelay = defaultable 10000000 . (Opt.option Opt.auto)
-             $ Opt.long "pingDelay"
-            <> Opt.short 'd'
-            <> Opt.help ("Time between sending NodeUp messages "
-                          ++ "to the tracking station (ms).")
-            <> Opt.metavar "DELAY"
-  in Config <$> trackers <*> pingDelay
+  in Config <$> trackers
 
 selfName :: String
 selfName = "HA.Satellite"
@@ -77,22 +67,20 @@ selfName = "HA.Satellite"
 start :: NodeId -> Config -> Process (Maybe String)
 start nid Config{..} = do
     say $ "This is " ++ selfName
-    (sender, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
-                   (trackers, fromDefault configDelay)
+    (sender, mref) <- spawnMonitor nid $ $(mkClosure 'nodeUp) trackers
 #ifdef USE_RPC
     -- The RPC transport triggers a bug in spawn where the action never
     -- executes.
     _ <- receiveTimeout 1000000 [] :: Process (Maybe ())
 #endif
-    result <- receiveTimeout (fromDefault configDelay `div` 2)
+    result <- receiveTimeout 5000000
       [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref) handler ]
     case result of
       Nothing -> do
         kill sender "timeout.."
         say $ "Failed to connect to the cluster, retrying.."
-        (_, mref2) <- spawnMonitor nid $ $(mkClosure 'nodeUp)
-           (trackers, fromDefault configDelay)
-        result2 <- receiveTimeout (fromDefault configDelay)
+        (_, mref2) <- spawnMonitor nid $ $(mkClosure 'nodeUp) trackers
+        result2 <- receiveTimeout 5000000
            [ matchIf (\(ProcessMonitorNotification ref _ _) -> ref == mref2) handler ]
         case result2 of
           Nothing -> return (Just "Timeout.")
