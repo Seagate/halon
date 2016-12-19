@@ -235,7 +235,7 @@ calculateStopLevel = do
       -- We allow stopping a process on level i if there are no running
       -- processes on level i+1
       stillUnstopped <- getLocalGraph <&>
-        getLabeledProcesses (M0.PLBootLevel . M0.BootLevel $ 1)
+        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
           ( \p g -> not . null $
           [ () | M0.getState p g `elem` [ M0.PSOnline
                                         , M0.PSQuiescing
