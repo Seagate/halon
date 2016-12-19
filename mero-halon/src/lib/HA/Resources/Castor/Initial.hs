@@ -512,9 +512,26 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
   Left err -> return $ Left err
   Right initialWithRoles -> EDE.eitherResult <$> EDE.parseFile halonMaps >>= \case
     Left err -> return $ mkExc err
-    Right obj -> do
-      initialD <- resolveRoles initialWithRoles maps
-      return $ (,) <$> initialD <*> pure obj
+    Right obj -> resolveRoles initialWithRoles maps >>= \case
+      Left err -> return $ Left err
+      Right initialD -> return $ case validateData initialD of
+        Left err -> Left $ Y.AesonException err
+        Right initialD' -> Right (initialD', obj)
+  where
+    validateData :: InitialData -> Either String InitialData
+    validateData idata =
+      let encs = [ enc | r <- id_racks idata , enc <- rack_enclosures r ]
+          ixs = map enc_idx encs
+          ns = map enc_id encs
+
+          check True _ = return idata
+          check False m = Left m
+      in check (length (nub ixs) == length ixs)
+               "Enclosures with non-unique enc_idx exist."
+         >> check (length ns == 0 || any (not . null) ns)
+                  "Enclosure without enc_id specified."
+         >> check (length ns == length (nub ns))
+                  "Enclosures with non-unique enc_id exist."
 #else
 parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
 #endif
