@@ -271,6 +271,8 @@ testDMRequest = mkHpiTest rules test
         uuid5 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid5 (me, request5)
         liftIO . assertEqual "OK_None smart for bad" "drive-ok" =<< await uuid5
+
+        _ <- receiveTimeout 2000000 [] -- HALON-590
         return ()
       where
         await uuid = receiveWait
