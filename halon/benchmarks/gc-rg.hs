@@ -96,8 +96,7 @@ mkGCGraph f = f $ emptyGraph mmchan
 buildGraph :: Int -- ^ Number of nodes in graph
            -> ConnectFilter -- ^ Edges to connect in the graph
            -> Graph -> Graph
-buildGraph n p = addRootNode (NodeA 1) . addEdges . addResources where
-  addResources g0 = foldl' (\g n' -> newResource (NodeA n') g) g0 [1 .. n]
+buildGraph n p = addRootNode (NodeA 1) . addEdges where
   addEdges g0 = foldl' (\g (a, b) -> connect (NodeA a) (EdgeA 0) (NodeA b) g) g0
               $ p n
 

@@ -23,7 +23,6 @@ module HA.RecoveryCoordinator.Mero
        , labelRecoveryCoordinator
        ) where
 
-import           Control.Category
 import           Control.Distributed.Process
 import           Data.Binary (Binary)
 import           Data.Dynamic
@@ -72,15 +71,14 @@ ack pid = liftProcess $ usend pid ()
 initialize :: StoreChan -> Process G.Graph
 initialize mm = do
     rg <- G.getGraph mm
-    if G.null rg then say "Starting from empty graph."
-                 else say "Found existing graph."
     -- Empty graph means cluster initialization.
-    let rg' | G.null rg =
-            G.newResource Cluster >>>
-            G.addRootNode Cluster
-            $ rg
-            | otherwise = rg
-    return rg'
+    if G.null rg
+    then do
+      say "Starting from empty graph."
+      return $! G.addRootNode Cluster rg
+    else do
+      say "Found existing graph."
+      return rg
 
 ----------------------------------------------------------
 -- Recovery Co-ordinator                                --

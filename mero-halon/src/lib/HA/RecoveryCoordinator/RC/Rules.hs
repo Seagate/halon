@@ -100,15 +100,10 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
       _ <- monitor pid
       rawSubscribeThem self fp pid
     rc <- getCurrentRC
-    modifyGraph $ \g -> do
-      let s  = R.Subscriber pid bs
-          p  = R.SubProcessId pid
-      let g' = G.newResource s
-           >>> G.newResource p
-           >>> G.connect p R.IsSubscriber s
-           >>> G.connect s R.SubscribedTo rc
-             $ g
-      g'
+    let s  = R.Subscriber pid bs
+    modifyGraph $ G.connect (R.SubProcessId pid) R.IsSubscriber s
+              >>> G.connect s R.SubscribedTo rc
+
     registerSyncGraphCallback $ \_ _ -> do
       usend pid (SubscribeToReply bs)
 
@@ -128,8 +123,7 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
     rc <- getCurrentRC
     modifyGraph $ \g -> do
       let s  = R.Subscriber pid bs
-          p  = R.SubProcessId pid
-      let g' = G.disconnect p R.IsSubscriber s
+          g' = G.disconnect (R.SubProcessId pid) R.IsSubscriber s
            >>> G.disconnect s R.SubscribedTo rc
              $ g
       g'

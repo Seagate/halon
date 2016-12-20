@@ -23,14 +23,10 @@ getNoisyPingCount = do
     rg <- getLocalGraph
     let (rg', i) =
           case G.connectedTo noisy HasPingCount rg of
-            Nothing ->
-              let nrg = G.connect noisy HasPingCount (NoisyPingCount 0) $
-                        G.newResource (NoisyPingCount 0) rg in
-              (nrg, 0)
+            Nothing -> (G.connect noisy HasPingCount (NoisyPingCount 0) rg, 0)
             Just pc@(NoisyPingCount iPc) ->
               let newPingCount = NoisyPingCount (iPc + 1)
                   nrg = G.connect noisy HasPingCount newPingCount $
-                        G.newResource newPingCount $
                         G.disconnect noisy HasPingCount pc rg in
               (nrg, iPc)
     putLocalGraph rg'

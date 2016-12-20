@@ -71,7 +71,6 @@ import Mero.ConfC (Fid)
 import Mero.M0Worker
 
 import Control.Applicative
-import Control.Category ((>>>))
 import qualified Control.Distributed.Process as DP
 import Control.Monad (void, join)
 import Control.Monad.Catch
@@ -512,7 +511,7 @@ getConfUpdateVersion = do
     Just ver -> return ver
     Nothing -> do
       let csu = M0.ConfUpdateVersion 1 Nothing
-      modifyLocalGraph $ G.newResource csu >>> return . G.connect Cluster Has csu
+      modifyGraph $ G.connect Cluster Has csu
       return csu
 
 modifyConfUpdateVersion :: (M0.ConfUpdateVersion -> M0.ConfUpdateVersion)
