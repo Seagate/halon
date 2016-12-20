@@ -24,42 +24,36 @@ module HA.RecoveryCoordinator.RC.Actions
   , module HA.RecoveryCoordinator.RC.Actions.Core
   ) where
 
-import           HA.Service (ServiceFailed(..))
-import           HA.RecoveryCoordinator.RC.Internal
-
-import           HA.RecoveryCoordinator.RC.Actions.Core
-import qualified HA.RecoveryCoordinator.Service.Actions as Service
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-
-import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
-import qualified HA.EQTracker as EQT
-
-import qualified HA.ResourceGraph    as G
-import qualified HA.Resources        as R
-import qualified HA.Resources.RC     as R
-import qualified HA.Resources.Castor as R
-import           Network.CEP
-
-import Control.Distributed.Process hiding (try)
-import Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
-import Control.Distributed.Process.Closure (mkClosure)
-import Control.Category
-import Control.Monad.Fix (fix)
-
-import Data.Binary (Binary,encode)
-import Data.Foldable (for_, traverse_)
-import Data.Functor (void)
+import           Control.Category ((>>>))
+import           Control.Distributed.Process hiding (try)
+import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
+import           Control.Monad.Fix (fix)
+import           Data.Binary (Binary,encode)
+import           Data.Foldable (for_, traverse_)
+import           Data.Functor (void)
 import qualified Data.List as List
 import qualified Data.Map as Map
+import           Data.Maybe (listToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Maybe (listToMaybe)
-import Data.Typeable (Typeable)
-import Data.Word (Word64)
+import           Data.Typeable (Typeable)
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           HA.EQTracker (updateEQNodes__static, updateEQNodes__sdict)
+import qualified HA.EQTracker as EQT
+import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import           HA.RecoveryCoordinator.RC.Internal
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
+import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
+import           HA.Resources.HalonVars
+import qualified HA.Resources.RC as R
+import           HA.Service (ServiceFailed(..))
+import           Network.CEP
 
-import GHC.Generics (Generic)
-
-import Prelude hiding (id, (.))
 
 -- | Current RC.
 currentRC :: R.RC
@@ -265,14 +259,14 @@ instance Binary Heartbeat
 data AngelMonUp = AngelMonUp deriving (Generic, Typeable)
 instance Binary AngelMonUp
 
--- | Delay (seconds) at which the heartbeat process sends a 'Heartbeat' event to
---   main monitor process thread. Delay may be postponed in case if new nodes
---   were added or removed from the monitor list.
-heartbeatDelay :: Int
-heartbeatDelay = 2 * 1000000 -- XXX: make halon var
-
+-- | Spawn a process acting on 'MonitorAngelCmd's. If no commands come
+-- within '_hv_monitor_angel_delay' second period, 'Heartbeat' is sent
+-- to all monitored nodes which allows network-transport to notice
+-- connection breakage if there is any but otherwise no traffic is
+-- happening.
 registerNodeMonitoringAngel :: PhaseM RC l ()
 registerNodeMonitoringAngel = do
+  t <- getHalonVar _hv_monitoring_angel_delay
   pid <- liftProcess $ do
     rc <- getSelfPid
     pid <- spawnLocal $ do
@@ -281,7 +275,7 @@ registerNodeMonitoringAngel = do
       register labelMonitorAngel me
       usend rc AngelMonUp
       fix (\loop nodes -> do
-        mcommand <- expectTimeout heartbeatDelay
+        mcommand <- expectTimeout (t * 1000000)
         case mcommand of
           Just (AddNode node) -> do
             -- say $ "rc.angel.node-monitor: add " ++ show node
@@ -294,7 +288,6 @@ registerNodeMonitoringAngel = do
             usend pid (node `elem` nodes)
             loop nodes
           Nothing -> do
-            -- say $ "Sending heartbeat to " ++ show nodes  -- XXX: remove unused
             -- Monitoring is working only if there are some traffic between
             -- nodes otherwise network-transport implementation may not note
             -- connection breakage. So for each node that is connected to

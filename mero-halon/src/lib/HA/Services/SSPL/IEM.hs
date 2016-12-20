@@ -78,7 +78,7 @@ instance Hashable IEM
 -- | Interestng event message log.
 data IEMLog = IEMLog IEM LogLevel deriving (Eq, Show)
 
--- |
+-- | Severity of the event the log describes
 data LogLevel = LOG_EMERG -- ^ A panic condition was reported to all processes.
                           -- Examples: Something that will cause the node to immediately go down
               | LOG_ALERT -- ^ A condition that should be corrected immediately

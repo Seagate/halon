@@ -16,7 +16,7 @@ import Data.Binary (Binary)
 import Data.Hashable
 import Data.Typeable
 import GHC.Generics (Generic)
-import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.RC.Actions.Core
 import HA.ResourceGraph as G
 import HA.Resources
 import HA.Resources.Castor
@@ -40,6 +40,11 @@ defaultHalonVars = HalonVars
   , _hv_mero_kernel_start_timeout = 300
   , _hv_clients_start_timeout = 600
   , _hv_node_stop_barrier_timeout = 600
+  , _hv_drive_insertion_timeout = 10
+  , _hv_drive_removal_timeout = 60
+  , _hv_expander_node_up_timeout = 460
+  , _hv_expander_sspl_ack_timeout = 180
+  , _hv_monitoring_angel_delay = 2
   }
 
 -- | Get 'HalonVars' from RG
@@ -60,11 +65,15 @@ modifyHalonVars f = f <$> getHalonVars >>= setHalonVars
 getHalonVar :: (HalonVars -> a) -> PhaseM RC l a
 getHalonVar f = f <$> getHalonVars
 
+-- | Set the 'HalonVars' in RG to the variables specified in this
+-- message.
 newtype SetHalonVars = SetHalonVars HalonVars
   deriving (Show, Eq, Generic, Typeable)
 instance Hashable SetHalonVars
 deriveSafeCopy 0 'base ''SetHalonVars
 
+-- | 'SetHalonVars' has finished and the 'HalonVars' in this message
+-- were set.
 newtype HalonVarsUpdated = HalonVarsUpdated HalonVars
   deriving (Show, Eq, Generic, Typeable)
 instance Binary HalonVarsUpdated

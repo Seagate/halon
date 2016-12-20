@@ -1,15 +1,12 @@
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Mero.Actions.Core
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-
 module HA.RecoveryCoordinator.Mero.Actions.Core
   ( -- * Graph manipulation
-    newFidSeq
-  , newFidSeqRC
-  , newFid
+    newFid
   , newFidRC
   , uniquePVerCounter
   , mkVirtualFid
@@ -28,30 +25,25 @@ module HA.RecoveryCoordinator.Mero.Actions.Core
   , m0asynchronously_
   ) where
 
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.Mero.Events
+import           Control.Distributed.Process (Process)
+import qualified Control.Distributed.Process.Internal.Types as DI
+import           Control.Monad.Catch (SomeException, try, throwM)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Reader (ask)
+import           Data.Bits (setBit)
+import           Data.Functor (void)
+import           Data.Proxy
+import           Data.Word ( Word64, Word32 )
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
-import HA.Resources (Cluster(..), Has(..))
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import HA.Services.Mero (getM0Worker)
-
-import Mero.ConfC ( Fid(..) )
-import Mero.M0Worker
-
-import Control.Distributed.Process (Process)
-import qualified Control.Distributed.Process.Internal.Types as DI
-import Control.Monad.IO.Class
-import Control.Monad.Catch (SomeException, try, throwM)
-import Control.Monad.Trans.Reader (ask)
-import Data.Bits (setBit)
-import Data.Functor (void)
-import Data.Proxy
-import Data.Word ( Word64, Word32 )
-
-import Network.CEP
-
-import Prelude hiding (id)
+import           HA.Services.Mero (getM0Worker)
+import           Mero.ConfC ( Fid(..) )
+import           Mero.M0Worker
+import           Network.CEP
 
 newFidSeq :: G.Graph -> (Word64, G.Graph)
 newFidSeq rg = case G.connectedTo Cluster Has rg of
@@ -70,17 +62,20 @@ newFidSeqRC = do
   putLocalGraph rg'
   return w
 
+-- | Create a new 'Fid' for the given 'M0.ConfObj' type.
 newFid :: M0.ConfObj a => Proxy a -> G.Graph -> (Fid, G.Graph)
 newFid p rg = (M0.fidInit p 1 w, rg') where
   (w, rg') = newFidSeq rg
 
+-- | Like 'newFid' but graph is taken from phase global state.
 newFidRC :: M0.ConfObj a => Proxy a -> PhaseM RC l Fid
 newFidRC p = M0.fidInit p 1 <$> newFidSeqRC
 
+-- | Generate a unique pool version number.
 uniquePVerCounter :: G.Graph -> (Word32, G.Graph)
 uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
    Nothing -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
-   Just (M0.PVerCounter i) ->
+   Just (M0.PVerCounter !i) ->
      (i+1, G.connect Cluster Has (M0.PVerCounter (i+1)) rg)
 
 mkVirtualFid :: Fid -> Fid
@@ -90,6 +85,7 @@ mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 -- Core configuration
 --------------------------------------------------------------------------------
 
+-- | Retrieve 'CI.M0Globals' from the RG.
 getM0Globals :: PhaseM RC l (Maybe CI.M0Globals)
 getM0Globals = getLocalGraph >>= \rg -> do
   phaseLog "rg-query" $ "Looking for Mero globals."
@@ -216,4 +212,3 @@ m0asynchronously_ :: LiftRC
                   -> IO a
                   -> PhaseM RC l ()
 m0asynchronously_ (LiftRC w) = liftIO . queueM0Worker w . void
-

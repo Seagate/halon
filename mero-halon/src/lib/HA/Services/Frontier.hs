@@ -88,16 +88,6 @@ dialog h = loop
             , match return
             ] :: Process ()
           loop
-        CR r -> do
-          self <- getSelfPid
-          _ <- promulgate (r, self)
-          fix $ \go -> receiveWait
-            [ match $ \resp -> do
-                liftIO $ B.hPut h resp >> hFlush h
-                go
-            , match return
-            ] :: Process ()
-          loop
         Quit -> return ()
 
 cleanupHandle :: Handle -> Process ()

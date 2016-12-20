@@ -204,6 +204,22 @@ data HalonVars = HalonVars
   -- ^ How many seconds a node should wait for a cluster to transition
   -- into the desired bootlevel during teardown procedure before
   -- timing out.
+  , _hv_drive_insertion_timeout :: Int
+  -- ^ How many seconds should we allow for new drive
+  -- insertion/removal events in the disk slot before proceeding with
+  -- drive insertion procedures.
+  , _hv_drive_removal_timeout :: Int
+  -- ^ How many seconds should we wait for drive re-insertion before
+  -- giving up and considering drive as removed.
+  , _hv_expander_node_up_timeout :: Int
+  -- ^ How many seconds to wait for a node to finish restarting
+  -- processes during expander reset.
+  , _hv_expander_sspl_ack_timeout :: Int
+  -- ^ How many seconds to wait for SSPL to reply during expander reset.
+  , _hv_monitoring_angel_delay :: Int
+  -- ^ How many seconds should the node monitor angel wait without
+  -- receiving any commands and deciding to send heartbeat to
+  -- monitored nodes.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

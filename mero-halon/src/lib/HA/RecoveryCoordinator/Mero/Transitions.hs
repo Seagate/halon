@@ -75,12 +75,16 @@ processOffline = Transition $ \case
 processQuiescing :: Transition M0.Process
 processQuiescing = constTransition M0.PSQuiescing
 
+-- | Node has failed so inhibit the processes. See also
+-- 'nodeUnfailsProcess'.
 nodeFailsProcess :: CascadeTransition M0.Node M0.Process
 nodeFailsProcess _ = Transition $ \case
   M0.PSFailed{} -> NoTransition
   M0.PSInhibited{} -> NoTransition
   x -> TransitionTo $ M0.PSInhibited x
 
+-- | Node is no longer failed. Uninhibit processes. See also
+-- 'nodeFailsProcess'.
 nodeUnfailsProcess :: CascadeTransition M0.Node M0.Process
 nodeUnfailsProcess _ = Transition uninhibit
   where
@@ -100,9 +104,11 @@ serviceOnline = Transition $ \case
   M0.SSStarting -> TransitionTo M0.SSOnline
   st -> transitionErr ?loc st
 
+-- | Unconditionally transition the service 'M0.SSOffline'.
 serviceOffline :: Transition M0.Service
 serviceOffline = constTransition M0.SSOffline
 
+-- | Process state changed, adjust service states accordingly.
 processCascadeService :: CascadeTransition M0.Process M0.Service
 processCascadeService M0.PSStarting = constTransition M0.SSStarting
 processCascadeService M0.PSOnline = constTransition M0.SSOnline
@@ -126,23 +132,30 @@ processCascadeService M0.PSUnknown = Transition $ \_ -> NoTransition
 
 -- * 'M0.Node'
 
+-- | Unconditionally transition 'M0.Node' to 'M0.NSUnknown'.
 nodeUnknown :: Transition M0.Node
 nodeUnknown = constTransition M0.NSUnknown
 
+-- | Unconditionally transition 'M0.Node' to 'M0.NSOnline'.
 nodeOnline :: Transition M0.Node
 nodeOnline = constTransition M0.NSOnline
 
+-- | Unconditionally transition 'M0.Node' to 'M0.NSFailed'.
 nodeFailed :: Transition M0.Node
 nodeFailed = constTransition M0.NSFailed
 
 -- * 'M0.Enclosure'
 
+-- | Unconditionally transition 'M0.Enclosure' to 'M0_NC_TRANSIENT'.
 enclosureTransient :: Transition M0.Enclosure
 enclosureTransient = constTransition M0_NC_TRANSIENT
 
+-- | Unconditionally transition 'M0.Enclosure' to 'M0_NC_ONLINE'.
 enclosureOnline :: Transition M0.Enclosure
 enclosureOnline = constTransition M0_NC_ONLINE
 
+-- | Unconditionally transition 'M0.Enclosure' to 'M0_NC_TRANSIENT'
+-- due to 'M0.Rack' state change.
 rackCascadeEnclosure :: CascadeTransition M0.Rack M0.Enclosure
 rackCascadeEnclosure _ = constTransition M0_NC_TRANSIENT
 
@@ -173,6 +186,7 @@ poolRebalanceComplete = Transition $ \case
 
 -- * 'M0.Disk'
 
+-- | Unconditionally transition 'M0.Disk' to 'M0.SDSOnline'.
 diskOnline :: Transition M0.Disk
 diskOnline = constTransition M0.SDSOnline
 
@@ -184,6 +198,7 @@ diskRebalance = Transition $ \case
          TransitionTo M0.SDSRebalancing
      | otherwise -> transitionErr ?loc st
 
+-- | Unconditionally transiniot 'M0.Disk' to 'M0.SDSFailed'.
 diskFailed :: Transition M0.Disk
 diskFailed = constTransition M0.SDSFailed
 
@@ -234,6 +249,7 @@ sdevReady = Transition $ \case
   M0.SDSTransient{} -> TransitionTo M0.SDSOnline
   st -> transitionErr ?loc st
 
+-- | Perform 'M0.sdsFailTransient' on the 'M0.SDev'.
 sdevFailTransient :: Transition M0.SDev
 sdevFailTransient = Transition $ TransitionTo . M0.sdsFailTransient
 
@@ -243,9 +259,14 @@ sdevRecoverTransient = Transition $ \case
   st@M0.SDSTransient{} -> TransitionTo $ M0.sdsRecoverTransient st
   st -> transitionErr ?loc st
 
+-- | Perform 'M0.sdsFailFailed' on the 'M0.SDev'.
 sdevFailFailed :: Transition M0.SDev
 sdevFailFailed = Transition $ TransitionTo . M0.sdsFailFailed
 
+-- | 'M0.Service' has changed state: if there are any 'M0.SDev's
+-- associated with it, adjust accordingly.
+--
+-- Currently this only applies to IOS.
 serviceCascadeDisk :: CascadeTransition M0.Service M0.SDev
 serviceCascadeDisk = \case
   M0.SSUnknown -> Transition $ \_ -> NoTransition
@@ -270,14 +291,19 @@ diskCascadeSDev' st = Transition $ \_ -> TransitionTo st
 
 -- * 'M0.Controller'
 
+-- | 'M0.Node' state change so adjust 'M0.Controller' accordingly.
 nodeCascadeController' :: CascadeTransition M0.Node M0.Controller
 nodeCascadeController' M0.NSUnknown = Transition $ \_ -> NoTransition
 nodeCascadeController' M0.NSOnline = constTransition M0.CSOnline
 nodeCascadeController' _ = constTransition M0.CSTransient
 
+-- | Set 'M0.Controller' to 'M0.CSTransient' as a result of a
+-- 'M0.Service' state change.
 iosFailsControllerTransient :: CascadeTransition M0.Service M0.Controller
 iosFailsControllerTransient _ = constTransition M0.CSTransient
 
+-- | Set 'M0.Controller' to 'M0.CSOnline' as a result of a
+-- 'M0.Service' state change.
 iosFailsControllerOnline :: CascadeTransition M0.Service M0.Controller
 iosFailsControllerOnline _ = constTransition M0.CSOnline
 
@@ -296,8 +322,12 @@ diskFixesPVer a = Transition $ \case
   st@M0_NC_ONLINE -> transitionErr ?loc st
   _ -> TransitionTo (toConfObjState (undefined :: M0.Disk) a)
 
+-- | Set 'M0.Controller' to 'M0.CSTransient' as a result of a
+-- 'M0.Enclosure' state change.
 enclosureCascadeControllerTransient :: CascadeTransition M0.Enclosure M0.Controller
 enclosureCascadeControllerTransient _ = constTransition M0.CSTransient
 
+-- | Set 'M0.Controller' to 'M0.CSOnline' as a result of a
+-- 'M0.Enclosure' state change.
 enclosureCascadeControllerOnline :: CascadeTransition M0.Enclosure M0.Controller
 enclosureCascadeControllerOnline _ = constTransition M0.CSOnline

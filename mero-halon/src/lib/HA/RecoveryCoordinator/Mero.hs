@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2013,2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -9,9 +10,6 @@
 -- Behaviour of RC is determined by the state of RG and incoming HA events that
 -- are posted by R from the event queue maintained by R. After recovering an HA
 -- event, RC instructs R to drop the event, using a globally unique identifier.
-
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE LambdaCase                 #-}
 module HA.RecoveryCoordinator.Mero
        ( module HA.RecoveryCoordinator.RC.Actions
        , module HA.RecoveryCoordinator.Actions.Hardware
@@ -25,28 +23,22 @@ module HA.RecoveryCoordinator.Mero
        , labelRecoveryCoordinator
        ) where
 
-import Prelude hiding ((.), id, mapM_)
-import HA.Resources
-import HA.Multimap
-
-import HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Test
-import qualified HA.Resources.Castor as M0
-import qualified HA.ResourceGraph as G
-
-import Control.Distributed.Process
-import Control.Category
-
-import Data.Binary (Binary)
-import Data.Dynamic
-import Data.Foldable (for_)
+import           Control.Category
+import           Control.Distributed.Process
+import           Data.Binary (Binary)
+import           Data.Dynamic
+import           Data.Foldable (for_)
 import qualified Data.Map.Strict as Map
-
-import GHC.Generics (Generic)
-
-import Network.CEP
+import           GHC.Generics (Generic)
+import           HA.Multimap
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Actions.Test
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
+import qualified HA.ResourceGraph as G
+import           HA.Resources
+import qualified HA.Resources.Castor as M0
+import           Network.CEP
 
 -- | Initial configuration data.
 data IgnitionArguments = IgnitionArguments
@@ -73,6 +65,7 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
     setHostAttr h M0.HA_DOWN
     publish $ HostDisconnected h
 
+-- | Send '()' to the given 'ProcessId' as a form of acknowledgement.
 ack :: ProcessId -> PhaseM RC l ()
 ack pid = liftProcess $ usend pid ()
 
@@ -93,6 +86,8 @@ initialize mm = do
 -- Recovery Co-ordinator                                --
 ----------------------------------------------------------
 
+-- | Create a 'LoopState'. Multimap 'StoreChan' and EQ 'ProcessId'
+-- have to be specified.
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
@@ -102,6 +97,7 @@ buildRCState mm eq = do
 msgProcessedGap :: Int
 msgProcessedGap = 10
 
+-- | Process label used by the recovery coordinator.
 labelRecoveryCoordinator :: String
 labelRecoveryCoordinator = "mero-halon.RC"
 

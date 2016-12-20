@@ -1,15 +1,13 @@
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
---
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE LambdaCase                 #-}
-
 module HA.RecoveryCoordinator.Mero.Actions.Conf
   ( -- * Initialization
     initialiseConfInRG
@@ -45,44 +43,36 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , encToM0Enc
   ) where
 
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Failure.Internal
+import           Control.Category ((>>>))
+import           Control.Distributed.Process (liftIO)
+import           Data.Foldable (foldl')
+import qualified Data.HashSet as S
+import           Data.List (scanl')
+import           Data.Maybe (listToMaybe)
+import           Data.Proxy
+import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
+import           Data.UUID.V4 (nextRandom)
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Failure.Internal
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
-import HA.Resources (Cluster(..), Has(..), Runs(..))
-import HA.Resources.Castor
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import           HA.Resources.Castor
 import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-
-import Mero.ConfC
+import           Mero.ConfC
   ( Fid
   , PDClustAttr(..)
   , ServiceType(..)
   , Word128(..)
   , bitmapFromArray
   )
-
-import Control.Applicative
-import Control.Category (id, (>>>))
-import Control.Distributed.Process (liftIO)
-
-import Data.Foldable (foldl')
-import qualified Data.HashSet as S
-import Data.List (scanl')
-import Data.Maybe (listToMaybe)
-import Data.Proxy
-import Data.Typeable (Typeable)
-import qualified Data.Set as Set
-import Data.UUID.V4 (nextRandom)
-
-import Network.CEP
-
-import Text.Regex.TDFA ((=~))
-
-import Prelude hiding (id)
+import           Network.CEP
+import           Text.Regex.TDFA ((=~))
 
 -- | Lookup a configuration object by its Mero FID.
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a, Typeable a)
@@ -319,6 +309,8 @@ getFilesystem = getLocalGraph >>= \rg -> do
 getPool :: PhaseM RC l [M0.Pool]
 getPool = rgGetPool <$> getLocalGraph
 
+-- | Find all 'M0.Pool's in the RG that aren't metadata pools. See
+-- also 'getPool'.
 rgGetPool :: G.Graph -> [M0.Pool]
 rgGetPool rg =
   [ pl
@@ -332,6 +324,7 @@ rgGetPool rg =
 getM0ServicesRC :: PhaseM RC l [M0.Service]
 getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 
+-- | Find 'StorageDevice' associated with the given 'M0.SDev'.
 lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
@@ -347,6 +340,7 @@ lookupStorageDeviceSDev sdev = do
     disk <- G.connectedFrom M0.At sdev rg
     G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
 
+-- | Find 'M0.Disk' associated with the given 'M0.SDev'.
 lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)
 lookupSDevDisk sdev =
     G.connectedTo sdev M0.IsOnHardware <$> getLocalGraph
@@ -418,7 +412,7 @@ getPoolSDevsWithState pool st = getPoolSDevs pool >>= \devs -> do
   let sts = (\d -> (M0.getConfObjState d rg, d)) <$> devs
   return . map snd . filter ((== st) . fst) $ sts
 
-
+-- | Find 'M0.Enclosure' object associated with 'Enclosure'.
 lookupEnclosureM0 :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
     G.connectedFrom M0.At enc <$> getLocalGraph
@@ -452,12 +446,16 @@ isPrincipalRM :: M0.Service
 isPrincipalRM svc = getLocalGraph >>=
   return . G.isConnected svc Is M0.PrincipalRM
 
+-- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'.
 getPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 getPrincipalRM = getLocalGraph >>= \rg ->
   return . listToMaybe
     . filter (\x -> M0.getState x rg == M0.SSOnline)
     $ G.connectedFrom Is M0.PrincipalRM rg
 
+-- | Set the given 'M0.Service' to be the 'M0.PrincipalRM' if one is
+-- not yet set. Returns the principal RM which becomes current: old
+-- one if already set, new one otherwise.
 setPrincipalRMIfUnset :: M0.Service
                       -> PhaseM RC l M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case

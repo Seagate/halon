@@ -12,22 +12,19 @@ module HA.RecoveryCoordinator.Mero.Failure.Internal
   , createPoolVersionsInPool
   ) where
 
-import HA.RecoveryCoordinator.Mero.Actions.Core
+import           Control.Category
+import           Control.Monad (unless)
+import qualified Control.Monad.State.Lazy as S
+import           Data.Foldable (for_)
+import           Data.List (foldl')
+import qualified Data.Set as Set
+import           Data.Traversable (for)
+import           Data.Typeable
+import           Data.Word
+import           HA.RecoveryCoordinator.Mero.Actions.Core
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
-import Mero.ConfC (Fid(..), PDClustAttr(..))
-
-import Control.Category
-import Control.Monad (unless)
-import qualified Control.Monad.State.Lazy as S
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Foldable (for_)
-import Data.Traversable (for)
-import Data.List (foldl')
-import Data.Word
-import Data.Typeable
-import Prelude hiding (id, (.))
+import           Mero.ConfC (Fid(..), PDClustAttr(..))
 
 -- | Failure tolerance vector. For a given pool version, the failure
 --   tolerance vector reflects how many objects in each level can be expected
@@ -47,7 +44,7 @@ data Failures = Failures {
 } deriving (Eq, Ord, Show)
 
 -- |  Minimal representation of a pool version for generation.
-data PoolVersion = PoolVersion !(Set Fid) !Failures !PDClustAttr
+data PoolVersion = PoolVersion !(Set.Set Fid) !Failures !PDClustAttr
                   -- ^ @PoolVersion fids fs attrs@ where @fids@ is a set of
                   -- fids, @fs@ are allowable failures in each
                   -- failure domain, and @attrs@ are the parity declustering
@@ -70,11 +67,13 @@ data UpdateType m
     -- Returns all updates in chunks so caller can synchronize and stream
     -- graph updates in chunks of reasonable size.
 
+-- | Create pool versions for the given pool.
 createPoolVersionsInPool :: M0.Filesystem
                          -> M0.Pool
                          -> [PoolVersion]
-                         -> Bool -- If specified, the pool version is assumed to
-                                 -- contain failed devices, rather than working ones.
+                         -> Bool -- ^ If specified, the pool version
+                                 -- is assumed to contain failed
+                                 -- devices, rather than working ones.
                          -> G.Graph
                          -> G.Graph
 createPoolVersionsInPool fs pool pvers invert rg =

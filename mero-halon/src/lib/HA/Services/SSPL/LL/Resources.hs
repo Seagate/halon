@@ -10,7 +10,40 @@
 -- License   : All rights reserved.
 --
 -- Resources used by @halon:sspl-ll@ service.
-module HA.Services.SSPL.LL.Resources where
+module HA.Services.SSPL.LL.Resources
+  ( AckReply(..)
+  , ActuatorChannels(..)
+  , ActuatorConf(..)
+  , Channel(..)
+  , CommandAck(..)
+  , DeclareChannels(..)
+  , ExpanderResetInternal(..)
+  , HA.Services.SSPL.LL.Resources.__remoteTable
+  , IEMChannel(..)
+  , IPMIOp(..)
+  , InterestingEventMessage(..)
+  , LedControlState(..)
+  , LoggerCmd(..)
+  , NodeCmd(..)
+  , RaidCmd(..)
+  , RequestChannels(..)
+  , ResetSSPLService(..)
+  , SSPLConf(..)
+  , SSPLConnectFailure(..)
+  , SSPLServiceTimeout(..)
+  , SensorConf(..)
+  , SystemdCmd(..)
+  , configDictSSPLConf
+  , configDictSSPLConf__static
+  , formatTimeSSPL
+  , makeLoggerMsg
+  , makeNodeMsg
+  , makeSystemdMsg
+  , nodeCmdString
+  , parseNodeCmd
+  , parseTimeSSPL
+  , tryParseAckReply
+  ) where
 
 import           Control.Distributed.Process (NodeId)
 import           Control.Distributed.Process (ProcessId, SendPort)
@@ -120,6 +153,7 @@ raidCmdToText dev RaidRun = T.intercalate " " ["run", dev]
 raidCmdToText dev RaidDetail = T.intercalate " " ["detail", dev]
 raidCmdToText dev RaidStop = T.intercalate " " ["stop", dev]
 
+-- | Possible LED states we can set.
 data LedControlState
       = FaultOn
       | FaultOff
@@ -134,6 +168,7 @@ data LedControlState
 instance Hashable LedControlState
 deriveSafeCopy 0 'base ''LedControlState
 
+-- | Node commands we can request.
 data NodeCmd
   = IPMICmd IPMIOp T.Text -- ^ IP address
   | DriveReset T.Text     -- ^ Reset drive
@@ -175,10 +210,6 @@ parseControlState t
   | t == controlStateToText PulseFastOn  = Right PulseFastOn
   | t == controlStateToText PulseFastOff = Right PulseFastOff
   | otherwise                            = Left "Unknown state"
-
--- | LED color priority.
-halonPriority :: Int
-halonPriority = 7
 
 -- | Convert @NodeCmd@ to text representation.
 nodeCmdString :: NodeCmd -> T.Text
@@ -225,6 +256,7 @@ parseNodeCmd t =
   where
     (cmd:rest) = T.words t
 
+-- | Logger actuator command
 data LoggerCmd = LoggerCmd
        { lcMsg :: T.Text
        , lcLevel :: T.Text
@@ -359,33 +391,30 @@ data IEMChannel = IEMChannel
 instance Hashable IEMChannel
 deriveSafeCopy 0 'base ''IEMChannel
 
-
-data CommandChannel = CommandChannel
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Hashable CommandChannel
-deriveSafeCopy 0 'base ''CommandChannel
-
-
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
 --------------------------------------------------------------------------------
 
+-- | 'Schema' for IEM bind configuration
 iemSchema :: Schema Rabbit.BindConf
 iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
                             ("sspl_ll",  "iem_routingKey")
                             ("sspl_iem", "dcs_queue")
 
+-- | 'Schema' for command bind configuration
 commandSchema :: Schema Rabbit.BindConf
 commandSchema = genericBindConf ("sspl_halon","systemd_exchange")
                                 ("sspl_ll", "systemd_routingKey")
                                 ("sspl_halon", "systemd_queue")
 
+-- | 'Schema' for command ack bind configuration
 commandAckSchema :: Schema Rabbit.BindConf
 commandAckSchema = genericBindConf ("sspl_command_ack", "command_ack_exchange")
                                    ("sspl_ll",      "command_ack_routing_key")
                                    ("sspl_command_ack", "command_ack_queue")
 
+-- | Generic 'Schema' creating 'Rabbit.BindConf' on the given
+-- @genericBindConf exchange route queue@.
 genericBindConf :: (String, String) -> (String,String) -> (String,String)
                 -> Schema Rabbit.BindConf
 {-# INLINE genericBindConf #-}
@@ -420,6 +449,7 @@ instance ToJSON ActuatorConf where
            ]
 deriveSafeCopy 0 'base ''ActuatorConf
 
+-- | 'Schema' for actuator.
 actuatorSchema :: Schema ActuatorConf
 actuatorSchema = compositeOption subOpts
                   $ long "actuator"
@@ -431,6 +461,7 @@ actuatorSchema = compositeOption subOpts
                 <> summary "Timeout to use when declaring channels to the RC."
                 <> metavar "MICROSECONDS"
 
+-- | DCS 'Schema'. See also 'sensorSchema'.
 dcsSchema :: Schema Rabbit.BindConf
 dcsSchema = let
     en = defaultable "sspl_halon" . strOption
@@ -446,14 +477,17 @@ dcsSchema = let
             shortHostName = unsafePerformIO $ readProcess "hostname" ["-s"] ""
   in Rabbit.BindConf <$> en <*> rk <*> qn
 
+-- | Sensor configuration
 data SensorConf = SensorConf {
     scDCS :: Rabbit.BindConf
+    -- ^ Binds to DCS; see 'dcsSchema'.
 } deriving (Eq, Generic, Show, Typeable)
 deriveSafeCopy 0 'base ''SensorConf
 
 instance Hashable SensorConf
 instance ToJSON SensorConf
 
+-- | 'Schema' for 'SensorConf'.
 sensorSchema :: Schema SensorConf
 sensorSchema = compositeOption subOpts
                   $ long "sensor"
@@ -461,11 +495,15 @@ sensorSchema = compositeOption subOpts
   where
     subOpts = SensorConf <$> dcsSchema
 
-data SSPLConf = SSPLConf {
-    scConnectionConf :: Rabbit.ConnectionConf
+-- | SSPL service configuration.
+data SSPLConf = SSPLConf
+  { scConnectionConf :: Rabbit.ConnectionConf
+  -- ^ Connection configuration.
   , scSensorConf :: SensorConf
+  -- ^ Sensor configuration.
   , scActuatorConf :: ActuatorConf
-} deriving (Eq, Generic, Show, Typeable)
+  -- ^ Actuator configuration.
+  } deriving (Eq, Generic, Show, Typeable)
 
 type instance HA.Service.ServiceState SSPLConf = ProcessId
 
@@ -473,6 +511,7 @@ instance Hashable SSPLConf
 instance ToJSON SSPLConf
 deriveSafeCopy 0 'base ''SSPLConf
 
+-- | SSPL configuration 'Schema'.
 ssplSchema :: Schema SSPLConf
 ssplSchema = SSPLConf
             <$> Rabbit.connectionSchema
@@ -482,9 +521,11 @@ ssplSchema = SSPLConf
 ssplTimeFormatString :: String
 ssplTimeFormatString = "%Y-%m-%d %H:%M:%S%Q"
 
+-- | Format 'UTCTime' into SSPL-friendly string.
 formatTimeSSPL :: UTCTime -> T.Text
 formatTimeSSPL = T.pack . formatTime defaultTimeLocale ssplTimeFormatString
 
+-- | Parse time from SSPL into a more usable 'UTCTime'.
 parseTimeSSPL :: Monad m => T.Text -> m UTCTime
 parseTimeSSPL = parseTimeM True defaultTimeLocale ssplTimeFormatString . T.unpack
 

@@ -223,10 +223,9 @@ ruleSyncPing = defineSimple "sync-ping" $
           liftProcess $ sayRC $ "received SyncPing " ++ str
           usend eqPid uuid
 
+-- | A reply used by 'recoverJob' in 'ruleRecoverNode'.
 newtype RecoverNodeFinished = RecoverNodeFinished Node
-  deriving (Eq, Show, Ord, Typeable, Generic)
-
-instance Binary RecoverNodeFinished
+  deriving (Eq, Show, Ord, Typeable, Generic, Binary)
 
 -- | 'Job' used in 'ruleRecoverNode'.
 recoverJob :: Job RecoverNode RecoverNodeFinished

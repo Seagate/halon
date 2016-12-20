@@ -3,19 +3,16 @@
 -- License   : All rights reserved.
 --
 -- Module rules for debugging.
---
 module HA.RecoveryCoordinator.RC.Rules.Debug where
 
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.RC.Events.Debug
-import HA.RecoveryCoordinator.Mero
+import           Control.Distributed.Process (usend)
+import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.RC.Events.Debug
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
+import           Network.CEP
 
-import Control.Distributed.Process (usend)
-
-import Network.CEP
-
+-- | RC debug rules.
 rules :: IgnitionArguments -> Definitions RC ()
 rules argv = sequence_ [
     ruleNodeStatus argv
@@ -23,7 +20,7 @@ rules argv = sequence_ [
   ]
 
 -- | Listen for 'NodeStatusRequest' and send back the
--- 'NodeSTatusResponse' to the interested process.
+-- 'NodeStatusResponse' to the interested process.
 ruleNodeStatus :: IgnitionArguments -> Definitions RC ()
 ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
       \(NodeStatusRequest n@(R.Node nid) lis) -> do

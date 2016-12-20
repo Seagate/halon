@@ -1,7 +1,13 @@
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns    #-}
+-- |
+-- Module    : HA.Services.DecisionLog.Logger
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Various 'Logger' specifications used by the decision-log service.
 module HA.Services.DecisionLog.Logger
   ( -- * Logger
     Logger(..)
@@ -23,38 +29,47 @@ module HA.Services.DecisionLog.Logger
   , dumpBinaryToFile
   ) where
 
+import           Control.Distributed.Process
+import           Control.Lens hiding (Context, Level)
+import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as B
-import Data.ByteString.Lazy (ByteString)
-import Data.Serialize
-import GHC.Generics
-
-import Control.Distributed.Process
-
-import HA.RecoveryCoordinator.Log
-
-import System.IO
-
--- Logger
-import Data.UUID
-import Data.Int
-import Data.Maybe
-import Data.List (insert)
-import Data.Map (Map)
+import           Data.Int
+import           Data.List (insert)
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import HA.RecoveryCoordinator.Log as RC
-import HA.SafeCopy
-import Network.CEP.Log as CEP
-import Control.Lens hiding (Context, Level)
+import           Data.Maybe
+import           Data.Serialize
+import           Data.UUID
+import           GHC.Generics
+import           HA.RecoveryCoordinator.Log
+import           HA.RecoveryCoordinator.Log as RC
+import           HA.SafeCopy
+import           Network.CEP.Log as CEP
+import           System.IO
 
+-- | State machine ID.
 type SmId = Int64
-data RCSrc = RCSrc { _rcSrcRule :: String, _rcSrcPhase :: String } deriving (Show)
 
-data Log = Log RCSrc LogData deriving (Show)
+-- | Source of log within RC.
+data RCSrc = RCSrc
+  { _rcSrcRule :: String
+  -- ^ Rule from which the log originated.
+  , _rcSrcPhase :: String
+  -- ^ Phase within the '_rcSrcRule' from which the log originated.
+  } deriving (Show, Eq, Ord)
 
+-- | A 'Log' is a 'LogData' with a location ('RCSrc').
+data Log = Log RCSrc LogData
+  deriving (Show, Eq, Ord)
+
+-- | Some logged data.
 data LogData = LogSystem SystemEvent
+             -- ^ 'SystemEvent'
              | LogMessage Level String (Maybe SourceLoc)
+             -- ^ Simple message
              | LogEnv Level Environment (Maybe SourceLoc)
-             deriving (Show)
+             -- ^ Information about 'Environment'.
+             deriving (Show, Eq, Ord)
 -----------------------------------------------------------------------------------------
 -- Printers that used to dump raw data to the output.
 -----------------------------------------------------------------------------------------
@@ -64,9 +79,12 @@ data PrinterQuery a where
   PrintMessage :: Log -> [(TagContent, Maybe String)] -> PrinterQuery Printer
   ClosePrinter :: PrinterQuery ()
 
+-- | Tell the 'Printer' to output the given 'Log' with the given
+-- context.
 printMessage :: Printer -> Log -> [(TagContent, Maybe String)] -> Process Printer
 printMessage (Printer runPrinter) l ctx = runPrinter $ PrintMessage l ctx
 
+-- | Instruct 'Printer' to close.
 closePrinter :: Printer -> Process ()
 closePrinter (Printer runPrinter) = runPrinter ClosePrinter
 
@@ -102,15 +120,19 @@ mkBinaryPrinter emit close = self where
     return self
   loop ClosePrinter = close
 
+-- | Append the given 'String' to the given file.
 dumpTextToFile :: FilePath -> String -> Process ()
 dumpTextToFile fp s = liftIO $ withFile fp AppendMode $ \h -> hPutStrLn h s
 
+-- | Write the given 'String' to the given 'Handle'.
 dumpTextToHandle :: Handle -> String -> Process ()
 dumpTextToHandle h s = liftIO $ hPutStrLn h s
 
+-- | Append the given 'ByteString' to the given file.
 dumpBinaryToFile :: FilePath -> ByteString -> Process ()
 dumpBinaryToFile fp s = liftIO $ withFile fp AppendMode $ \h -> B.hPut h s
 
+-- | Send the given 'String' to the local 'Process' (i.e. 'say').
 dumpTextToDp :: String -> Process ()
 dumpTextToDp = say
 
@@ -118,22 +140,27 @@ dumpTextToDp = say
 -- Loggers
 -----------------------------------------------------------------------------------------
 
+-- | 'Logger' commands
 data LoggerQuery a where
   WriteLogger :: CEP.Event RC.Event -> LoggerQuery Logger
   CloseLogger :: LoggerQuery ()
 
+-- | A 'Logger' perform actions based on provided 'LoggerQuery'.
 newtype Logger = Logger (forall a . LoggerQuery a -> Process a)
 
+-- | Instruct logger to write out the 'CEP.Event'.
 writeLogs :: Logger -> CEP.Event RC.Event -> Process Logger
 writeLogs (Logger runLogger) msg =  runLogger $ WriteLogger msg
 
+-- | Instruct 'Logger' to close.
 closeLogger :: Logger -> Process ()
 closeLogger (Logger runLogger) = runLogger CloseLogger
 
-----------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 -- Basic logger
-----------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
+-- | State used by 'Logger'.
 data LoggerState = LS
   { _localContexts      :: !(Map SmId [UUID])
     -- ^ Local contexts opened in SM
@@ -149,12 +176,14 @@ data LoggerState = LS
 
 makeLenses ''LoggerState
 
+-- | Initial 'LoggerState'.
 initState :: LoggerState
 initState = LS Map.empty Map.empty Map.empty Map.empty Map.empty
 
 insertToList :: (Ord k, Ord v) => k -> v -> Map k [v] -> Map k [v]
-insertToList k v = Map.alter (maybe (Just [v]) (Just .insert v)) k
+insertToList k v = Map.alter (maybe (Just [v]) (Just . insert v)) k
 
+-- | Given a 'Printer', create a 'Logger'.
 mkLogger :: Printer -> Logger
 mkLogger printer0 = mk printer0 initState where
   mk p st = Logger $ go p st

@@ -1,65 +1,52 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Module rules for expander card.
---
+module HA.RecoveryCoordinator.Castor.Expander.Rules (rules) where
 
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-module HA.RecoveryCoordinator.Castor.Expander.Rules
-  ( rules ) where
-
-import HA.EventQueue
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.RC.Actions.Dispatch
-import HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
-import HA.RecoveryCoordinator.Mero.Actions.Conf
-import HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
-import HA.RecoveryCoordinator.Mero.Transitions
-import HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
-import HA.RecoveryCoordinator.Castor.Process.Events
-import HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
-import HA.RecoveryCoordinator.Mero.State
-import HA.RecoveryCoordinator.Castor.Node.Events
+import           Control.Distributed.Process (liftIO)
+import           Control.Lens
+import           Control.Monad (forM_)
+import           Control.Monad.Trans.Maybe
+import           Data.List (nub)
+import           Data.Maybe (isJust, listToMaybe, mapMaybe)
+import           Data.Proxy
+import qualified Data.Text as T
+import           Data.UUID.V4 (nextRandom)
+import           Data.Vinyl
+import           HA.EventQueue
+import           HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
+import           HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
+import           HA.RecoveryCoordinator.Castor.Node.Events
+import           HA.RecoveryCoordinator.Castor.Process.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
+import           HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
+import           HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
+import           HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Mero.Transitions
+import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions.Dispatch
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
+import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import qualified HA.ResourceGraph as G
-import HA.Services.SSPL.CEP (sendNodeCmd)
-import HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
-import HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
+import           HA.Services.SSPL.CEP (sendNodeCmd)
+import           HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
+import           HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
+import           Network.CEP
+import           Text.Printf (printf)
 
-import Control.Distributed.Process (liftIO)
-import Control.Lens
-import Control.Monad (forM_)
-import Control.Monad.Trans.Maybe
-
-import Data.List (nub)
-import Data.Maybe (isJust, listToMaybe, mapMaybe)
-import Data.Proxy
-import Data.UUID.V4 (nextRandom)
-import qualified Data.Text as T
-import Data.Vinyl
-
-import Network.CEP
-
-import Text.Printf (printf)
-
--- | How long to wait for notification from Mero/SSPL
-notificationTimeout :: Int
-notificationTimeout = 180 -- seconds
-
--- | How long to wait for the node to come up again
-nodeUpTimeout :: Int
-nodeUpTimeout = 460 -- seconds
-
+-- | Expander reset rules.
 rules :: Definitions RC ()
 rules = sequence_
   [ ruleReassembleRaid ]
@@ -111,16 +98,16 @@ ruleReassembleRaid =
       tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
-      mero_notifier <- mkNotifierAct dispatcher $
+      mero_notifier <- mkNotifierAct dispatcher $ do
         -- We have received mero notification so ramp up the timeout
-        -- in case we're waiting for SSPL. This is a little bit
-        -- awkward but without this we effectively end up waiting up
-        -- to 6 minutes to fail (notificationTimeout for SSPL
-        -- notification then notificationTimeout for mero
-        -- notification) if SSPL notification arrives late but still
-        -- in time. With this, we can set a short timeout first and
-        -- increase it after mero notification is accounted for.
-        onTimeout notificationTimeout notify_failed
+        -- in case we're waiting for SSPL. This is necessary in case
+        -- we're waiting for both mero notification and SSPL ack:
+        -- without this, we would either only wait for a short time
+        -- for each message (wrong) or wait a long time
+        -- ('_hv_expander_sspl_ack_timeout') for mero notification too
+        -- (if not wrong then waste of time).
+        t <- getHalonVar _hv_expander_sspl_ack_timeout
+        onTimeout t notify_failed
 
       let mkProcessesAwait name next = mkLoop name (return [])
             (\result l -> case result of
@@ -170,7 +157,8 @@ ruleReassembleRaid =
 
             -- Set default jump parameters. If no Mero, just stop RAID directly
             onSuccess stop_raid
-            onTimeout notificationTimeout notify_failed
+            t <- getHalonVar _hv_expander_sspl_ack_timeout
+            onTimeout t notify_failed
 
             -- Mark enclosure as transiently failed. This should cascade down to
             -- controllers, disks etc.
@@ -311,7 +299,8 @@ ruleReassembleRaid =
         showLocality
         (Just (_, m0node)) <- gets Local (^. rlens fldM0 . rfield)
         promulgateRC $ StartProcessesOnNodeRequest m0node
-        switch [mero_services_started, timeout nodeUpTimeout failed]
+        t <- getHalonVar _hv_expander_node_up_timeout
+        switch [mero_services_started, timeout t failed]
 
       setPhaseIf mero_services_started onNode $ \nr -> do
         phaseLog "debug" $ show nr

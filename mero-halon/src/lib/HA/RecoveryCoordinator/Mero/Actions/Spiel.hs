@@ -99,6 +99,7 @@ import GHC.Exts
 
 import Prelude hiding (id)
 
+-- | Default HA process endpoint listen address.
 haAddress :: String
 haAddress = ":12345:34:101"
 

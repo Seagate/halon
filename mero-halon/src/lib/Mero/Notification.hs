@@ -264,14 +264,25 @@ instance Monoid Callback where
   mempty = Callback (return ()) (return ())
   Callback a b `mappend` Callback c d = Callback (a>>c) (b>>d)
 
+-- | Notification interface reference; contains references to
+-- necessary information about 'HALink' and process 'Fid'
+-- associations.
 data NIRef = NIRef
-  { _ni_links     :: MVar  (Map HALink (Map Word64 Callback))
-     --  We need to remove possible race conditions here, so we
-     --  have to block.
+  { _ni_links     :: MVar (Map HALink (Map Word64 Callback))
+  -- ^ Stores callbacks that should be ran when a notification to the
+  -- given 'HALink' either fails or succeeds.
+  --
+  -- 'MVar' is needed for synchronisation.
   , _ni_requests  :: IORef (Map ReqId  Fid)
+  -- ^ Stores mapping of 'ReqId's to process 'Fid's.
   , _ni_info      :: IORef (Map HALink Fid)
+  -- ^ Stores mapping of 'HALink's to process 'Fid's. Combine with
+  -- '_ni_requests' we can retrieve association between 'ReqId' and
+  -- 'HALink'.
   , _ni_last_seen :: IORef (Map HALink TimeSpec)
+  -- ^ Last time given 'HALink' has replied to a keepalive request.
   , _ni_worker    :: TChan (IO ())
+  -- ^ Channel of tasks executed by mero worker.
   }
 
 -- | Notify mero using notification interface thread.

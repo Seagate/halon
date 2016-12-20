@@ -26,11 +26,12 @@ instance Application RC where
   type GlobalState RC = LoopState
   type LogType RC = Log.Event
 
+-- | Global machine state used by the 'RC' 'Application'.
 data LoopState = LoopState {
     lsGraph    :: G.Graph -- ^ Graph
   , lsMMChan   :: StoreChan -- ^ Replicated Multimap channel
   , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsRefCount :: Map.Map UUID Int
-    -- ^ Set of HAEvent uuid we've already handled.
+    -- ^ A reference count of replicated events that we're handling.
   , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
 }

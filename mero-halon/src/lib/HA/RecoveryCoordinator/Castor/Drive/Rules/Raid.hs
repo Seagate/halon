@@ -50,11 +50,7 @@ import HA.Services.SSPL.LL.RC.Actions
   ( fldCommandAck
   , mkDispatchAwaitCommandAck
   )
-import HA.Services.SSPL.LL.Resources
-  ( NodeCmd(..)
-  , RaidCmd(..)
-  , InterestingEventMessage(..)
-  )
+import HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..), InterestingEventMessage(..))
 import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)

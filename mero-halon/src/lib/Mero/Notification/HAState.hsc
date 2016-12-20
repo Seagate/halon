@@ -99,15 +99,24 @@ instance Hashable HAMsgMeta
 instance ToJSON HAMsgMeta
 deriveSafeCopy 0 'base ''HAMsgMeta
 
-data HAMsg a = HAMsg { _ha_msg_data :: a, _ha_msg_meta :: HAMsgMeta }
-  deriving (Eq, Show, Ord, Typeable, Generic)
+-- | Represents @m0_ha_msg@.
+data HAMsg a = HAMsg
+  { _ha_msg_data :: a
+  -- ^ @m0_ha_msg_data@
+  , _ha_msg_meta :: HAMsgMeta
+  -- ^ Collection of information from @m0_ha_msg@ that's useful to
+  -- carry around with the content of the message. Often the content
+  -- itself does not duplicate this information.
+  } deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Hashable a => Hashable (HAMsg a)
 instance ToJSON a => ToJSON (HAMsg a)
 deriveSafeCopy 0 'base ''HAMsg
 
+-- | Represents a pointer to @m0_ha_msg@.
 newtype {-# CTYPE "ha/msg.h" "const struct m0_ha_msg" #-} HAMsgPtr = HAMsgPtr (Ptr HAMsgPtr)
 
+-- | @m0_conf_ha_process_type@.
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
   ProcessType = TAG_M0_CONF_HA_PROCESS_OTHER
               | TAG_M0_CONF_HA_PROCESS_KERNEL
@@ -118,6 +127,7 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_type" #-}
 instance Hashable ProcessType
 deriveSafeCopy 0 'base ''ProcessType
 
+-- | @m0_conf_ha_process_event@.
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
   ProcessEventType = TAG_M0_CONF_HA_PROCESS_STARTING
                    | TAG_M0_CONF_HA_PROCESS_STARTED
@@ -128,6 +138,7 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_process_event" #-}
 instance Hashable ProcessEventType
 deriveSafeCopy 0 'base ''ProcessEventType
 
+-- | @m0_conf_ha_process@.
 data ProcessEvent = ProcessEvent
   { _chp_event :: ProcessEventType
   , _chp_type :: ProcessType
@@ -137,6 +148,7 @@ data ProcessEvent = ProcessEvent
 instance Hashable ProcessEvent
 deriveSafeCopy 0 'base ''ProcessEvent
 
+-- | @m0_conf_ha_service_event@.
 data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
   ServiceEventType = TAG_M0_CONF_HA_SERVICE_STARTING
                    | TAG_M0_CONF_HA_SERVICE_STARTED
@@ -148,6 +160,7 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 instance Hashable ServiceEventType
 deriveSafeCopy 0 'base ''ServiceEventType
 
+-- | @m0_conf_ha_service@.
 data ServiceEvent = ServiceEvent
   { _chs_event :: ServiceEventType
   , _chs_type :: ServiceType
@@ -156,6 +169,7 @@ data ServiceEvent = ServiceEvent
 instance Hashable ServiceEvent
 deriveSafeCopy 0 'base ''ServiceEvent
 
+-- | @m0_be_location@.
 data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
   BELocation =
       BE_LOC_NONE
@@ -168,6 +182,7 @@ instance Hashable BELocation
 instance ToJSON BELocation
 deriveSafeCopy 0 'base ''BELocation
 
+-- | @m0_stob_io_opcode@.
 data {-# CTYPE "stob/io.h" "struct m0_stob_io_opcode" #-}
   StobIoOpcode =
       SIO_INVALID
@@ -181,12 +196,10 @@ instance Hashable StobIoOpcode
 instance ToJSON StobIoOpcode
 deriveSafeCopy 0 'base ''StobIoOpcode
 
+-- | @m0_be_io_err@.
 data {-# CTYPE "be/ha.h" "struct m0_be_io_err" #-}
   BEIoErr = BEIoErr {
-    _ber_errcode :: Int
-    -- ^ 'Int' type here is mero bug, change when mero updates this struct
-    --
-    -- <https://seagate.slack.com/archives/mero-halon/p1477646927007353>
+    _ber_errcode :: Word32
   , _ber_location :: BELocation
   , _ber_io_opcode :: StobIoOpcode
   } deriving (Eq, Show, Ord, Typeable, Generic)
@@ -195,6 +208,7 @@ instance Hashable BEIoErr
 instance ToJSON BEIoErr
 deriveSafeCopy 0 'base ''BEIoErr
 
+-- | @m0_stob_id@.
 data {-# CTYPE "stob/stob.h" "struct m0_stob_id" #-}
   StobId = StobId { _si_domain_fid :: Fid
                   , _si_fid :: Fid }
@@ -204,6 +218,7 @@ instance Hashable StobId
 instance ToJSON StobId
 deriveSafeCopy 0 'base ''StobId
 
+-- | @m0_be_ioq_error@.
 data {-# CTYPE "stob/ioq_error.h" "struct m0_be_ioq_error" #-}
   StobIoqError = StobIoqError
     { _sie_conf_sdev :: Fid
@@ -220,6 +235,7 @@ instance Hashable StobIoqError
 instance ToJSON StobIoqError
 deriveSafeCopy 0 'base ''StobIoqError
 
+-- | @m0_ha_msg_rpc@.
 data {-# CTYPE "rpc/ha.h" "struct m0_ha_msg_rpc" #-}
   RpcEvent = RpcEvent
     { _hmr_attempts :: Word64
@@ -495,7 +511,7 @@ instance Storable Note where
       #{poke struct m0_ha_note, no_state} p
           (fromIntegral $ fromEnum s :: Word32)
 
--- Finalizes the hastate interface.
+-- | Finalizes the hastate interface.
 finiHAState :: IO ()
 finiHAState = do
     ha_state_fini
@@ -596,6 +612,7 @@ getRPCMachine = do p <- ha_state_rpc_machine
                    return $ if nullPtr == p then Nothing
                               else Just $ RPCMachine p
 
+-- | Mark the given 'HAMsgPtr' as delivered ('ha_state_delivered').
 delivered :: HALink -> HAMsgPtr -> IO ()
 delivered (HALink hl) (HAMsgPtr msg) = ha_state_delivered hl msg
 

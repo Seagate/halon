@@ -65,6 +65,7 @@ instance UserLoggable (String, String) where
 -- | Hidden type to collect local contexts implicitly.
 newtype LocalContext = LocalContext {unLocalContext :: [UUID]}
 
+-- | 'LocalContext' with no information.
 emptyLocalContext :: LocalContext
 emptyLocalContext = LocalContext []
 
