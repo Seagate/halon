@@ -22,17 +22,21 @@ import HA.Multimap
 import HA.RecoveryCoordinator.CEP
 import HA.RecoveryCoordinator.Mero
 
-recoveryCoordinator :: [NodeId]
-                    -> ProcessId
-                    -> StoreChan
+-- | Start a Recovery Coordinator with 'rcRules'.
+recoveryCoordinator :: [NodeId] -- ^ EQ nodes
+                    -> ProcessId -- ^ Co-located EQ
+                    -> StoreChan -- ^ Multimap information
                     -> Process ()
 recoveryCoordinator eqs eq mm =
     makeRecoveryCoordinator mm eq $ rcRules (IgnitionArguments eqs) []
 
-recoveryCoordinatorEx :: () -> [Definitions RC ()]
-                      -> [NodeId]
-                      -> ProcessId
-                      -> StoreChan
+-- | As 'recoveryCoordinator' but allows the user to specify extra
+-- rules RC should run with.
+recoveryCoordinatorEx :: ()
+                      -> [Definitions RC ()] -- ^ Extra rules (on top of 'rcRules').
+                      -> [NodeId] -- ^ EQ nodes
+                      -> ProcessId -- ^ Co-located EQ
+                      -> StoreChan -- ^ Multimap information
                       -> Process ()
 recoveryCoordinatorEx _ rules eqs eq mm = do
   makeRecoveryCoordinator mm eq $ rcRules (IgnitionArguments eqs) rules

@@ -15,10 +15,8 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules where
+module HA.RecoveryCoordinator.Castor.Rules (castorRules) where
 
-
-import Data.Maybe
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Events.Cluster
@@ -40,14 +38,6 @@ import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
 #endif
-
-lookupStorageDevicePathsInGraph :: StorageDevice -> G.Graph -> [String]
-lookupStorageDevicePathsInGraph sd g =
-    mapMaybe extractPath ids
-  where
-    ids = G.connectedTo sd Has g
-    extractPath (DIPath x) = Just x
-    extractPath _ = Nothing
 
 -- | Collection of Castor rules.
 castorRules :: Definitions RC ()

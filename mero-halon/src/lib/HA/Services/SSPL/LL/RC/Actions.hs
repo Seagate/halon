@@ -44,6 +44,7 @@ import Data.Vinyl
 
 import Network.CEP
 
+-- | Channel for actuator commands.
 type CommandChan = Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
 
 newtype SSPLCmdChannels = SSPLCmdChannels (Map R.Node CommandChan)

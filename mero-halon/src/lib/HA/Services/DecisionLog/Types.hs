@@ -12,21 +12,19 @@
 --
 module HA.Services.DecisionLog.Types where
 
-import Data.Typeable
-import GHC.Generics
-
-import Control.Distributed.Process hiding (bracket)
-import Data.Foldable (asum)
-import Data.Text (Text)
+import           Control.Distributed.Process hiding (bracket)
+import           Data.Foldable (asum)
+import           Data.Hashable
+import           Data.Monoid ((<>))
+import           Data.Text (Text)
 import qualified Data.Text as T
-import Data.Hashable
-import Data.Monoid ((<>))
-import Options.Schema
-import Options.Schema.Builder
-
-import HA.Aeson
-import HA.SafeCopy
-import HA.Service.TH
+import           Data.Typeable
+import           GHC.Generics
+import           HA.Aeson
+import           HA.SafeCopy
+import           HA.Service.TH
+import           Options.Schema
+import           Options.Schema.Builder
 
 
 -- | Old version on 'DecisionLog'
@@ -84,6 +82,7 @@ instance ToJSON DecisionLogOutput where
   toJSON LogStdout = object [ "type" .= ("stdout"::Text)]
   toJSON LogStderr = object [ "type" .= ("stderr"::Text)]
 
+-- | Specify how trace logs should be output.
 data TraceLogOutput
   = TraceText FilePath
     -- ^ Send trace files in text format to the specified file.
@@ -112,12 +111,19 @@ instance ToJSON TraceLogOutput where
 
 deriveSafeCopy 0 'base ''TraceLogOutput
 
+-- | Decision log configuration storing 'DecisionLogOutput'
+-- information. This is a legacy version of 'DecisionLogConf'.
 newtype DecisionLogConf_v0 = DecisionLogConf_v0 DecisionLogOutput
     deriving (Eq, Generic, Show, Typeable)
 
+-- | Decision log configuration storing 'DecisionLogOutput' and
+-- 'TraceLogOutput'. 'DecisionLogConf_v0' exists for backwards
+-- compatibility.
 data DecisionLogConf = DecisionLogConf DecisionLogOutput TraceLogOutput
     deriving (Eq, Generic, Show, Typeable)
 
+-- | Migrate from 'DecisionLogConf_v0' to 'DecisionLogConf' by picking
+-- 'TraceNull' as a default 'TraceLogOutput'.
 instance Migrate DecisionLogConf where
   type MigrateFrom DecisionLogConf = DecisionLogConf_v0
   migrate (DecisionLogConf_v0 f) = DecisionLogConf f TraceNull
@@ -128,6 +134,7 @@ instance ToJSON DecisionLogConf
 deriveSafeCopy 0 'base ''DecisionLogConf_v0
 deriveSafeCopy 1 'base ''DecisionLogConf
 
+-- | 'Schema' for decision-log configuration.
 decisionLogSchema :: Schema DecisionLogConf
 decisionLogSchema =
     let filepath = asum

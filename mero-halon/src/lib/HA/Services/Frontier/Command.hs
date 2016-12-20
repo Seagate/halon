@@ -36,20 +36,24 @@ data ReadResourceGraph = ReadResourceGraph
   deriving (Eq, Show, Typeable, Generic)
 deriveSafeCopy 0 'base ''ReadResourceGraph
 
+-- | Service commands
 data Command
     = CM MultimapGetKeyValuePairs
-    | CR ReadResourceGraph
+    -- ^ Read data from multimap
     | Quit
+    -- ^ Finish work
 
 parseCommand :: B.ByteString -> Maybe Command
 parseCommand "mmvalues\r" = Just $ CM MultimapGetKeyValuePairs
-parseCommand "graph\r"    = Just $ CR ReadResourceGraph
+parseCommand "graph\r"    = Just $ CM MultimapGetKeyValuePairs
 parseCommand "quit\r"     = Just Quit
 parseCommand _            = Nothing
 
+-- | Serialize multimap data
 mmKeyValues :: Maybe ([(Key, [Value])]) -> ByteString
 mmKeyValues = runPut . mmKeyValuesPut
 
+-- | Multimap data serialiser
 mmKeyValuesPut :: Maybe ([(Key, [Value])]) -> Put
 mmKeyValuesPut = traverse_ (traverse_ go)
   where
@@ -60,6 +64,7 @@ mmKeyValuesPut = traverse_ (traverse_ go)
         mmValuesPut vals
         putWord8 0x29 -- )
 
+-- | Serialiser for multimap 'Value's only.
 mmValuesPut :: [Value] -> Put
 mmValuesPut xs = do
     putWord8 0x5b -- [
@@ -74,6 +79,7 @@ mmValuesPut xs = do
         putByteString val
         return x
 
+-- | Serialise graph structure.
 dumpGraph :: [(Res, [Rel])] -> ByteString
 dumpGraph graph = let
     header = "digraph rg {\n"

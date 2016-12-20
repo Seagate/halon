@@ -1,14 +1,13 @@
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-
+-- Actions on hardware entities.
 module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Infrastructure functions
     registerRack
@@ -85,26 +84,23 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , mergeStorageDevices
 ) where
 
-import HA.RecoveryCoordinator.RC.Actions
+import           Control.Category ((>>>))
+import           Control.Distributed.Process (liftIO)
+import           Data.Foldable
+import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Proxy (Proxy(..))
+import           Data.UUID.V4 (nextRandom)
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
-import HA.Resources
-import HA.Resources.Castor
+import           HA.Resources
+import           HA.Resources.Castor
+import           HA.Services.Ekg.RC
+import           Network.CEP
+import           Text.Regex.TDFA ((=~))
+
 #ifdef USE_MERO
 import qualified HA.Resources.Mero as M0
 #endif
-import HA.Services.Ekg.RC
-
-import Control.Category ((>>>))
-import Control.Distributed.Process (liftIO)
-
-import Data.Maybe (listToMaybe, mapMaybe)
-import Data.UUID.V4 (nextRandom)
-import Data.Foldable
-import Data.Proxy (Proxy(..))
-
-import Network.CEP
-
-import Text.Regex.TDFA ((=~))
 
 -- | Register a new rack in the system.
 registerRack :: Rack
@@ -118,6 +114,7 @@ registerRack rack = modifyLocalGraph $ \rg -> do
           $ rg
   return rg'
 
+-- | 'G.connect' the given 'Enclosure' to the 'Rack'.
 registerEnclosure :: Rack
                   -> Enclosure
                   -> PhaseM RC l ()
@@ -130,6 +127,7 @@ registerEnclosure rack enc = modifyLocalGraph $ \rg -> do
         >>> G.connect rack Has enc
           $ rg
 
+-- | 'G.connect' the givne 'BMC' to the 'Enclosure'.
 registerBMC :: Enclosure
             -> BMC
             -> PhaseM RC l ()
@@ -264,6 +262,7 @@ setHostAttr h f = do
       . (G.newResource f
     >>> G.connect h Has f)
 
+-- | Remove the given 'HostAttr' from the 'Host'.
 unsetHostAttr :: Host
               -> HostAttr
               -> PhaseM RC l ()
@@ -704,16 +703,23 @@ getDiskResetAttempts sdev = do
     Just (SDResetAttempts i) -> return i
     _                        -> return 0
 
+-- | Find 'Node's that are in the same 'Enclosure' as the given
+-- 'StorageDevice'.
+--
+-- TODO: Should be @'Maybe' 'Node'@.
+-- TODO: Is this function and are uses of this function correct?
+-- TODO: Same questions for 'getSDevHost'
 getSDevNode :: StorageDevice -> PhaseM RC l [Node]
 getSDevNode sdev = do
   rg <- getLocalGraph
-  let nds = [ node
-            | Just encl <- [G.connectedFrom Has sdev rg :: Maybe Enclosure]
-            , host <- G.connectedTo encl Has rg :: [Host]
-            , node <- G.connectedTo host Runs rg :: [Node]
-            ]
-  return nds
+  hosts <- getSDevHost sdev
+  return [ node | host <- hosts
+                , node <- G.connectedTo host Runs rg ]
 
+-- | Find 'Host's that are in the same 'Enclosure' as the given
+-- 'StorageDevice'.
+--
+-- TODO: See 'getSDevNode' TODOs.
 getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
@@ -722,6 +728,7 @@ getSDevHost sdev = do
          , host <- G.connectedTo encl Has rg :: [Host]
          ]
 
+-- | Mark the given 'StorageDevice' with 'SDReplaced'.
 markStorageDeviceReplaced :: StorageDevice -> PhaseM RC l ()
 markStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
@@ -731,6 +738,8 @@ markStorageDeviceReplaced sdev = do
     Nothing -> setStorageDeviceAttr sdev SDReplaced
     _       -> return ()
 
+-- | Remove 'SDReplaced' attribute from the given 'StorageDevice' if
+-- it's set.
 unmarkStorageDeviceReplaced :: StorageDevice -> PhaseM RC l ()
 unmarkStorageDeviceReplaced sdev = do
   let _F SDReplaced = True
@@ -740,6 +749,7 @@ unmarkStorageDeviceReplaced sdev = do
     Nothing  -> return ()
     Just old -> unsetStorageDeviceAttr sdev old
 
+-- | Does the 'StorageDevice' have 'SDReplaced' attribute?
 isStorageDeviceReplaced :: StorageDevice -> PhaseM RC l Bool
 isStorageDeviceReplaced sdev = do
     not . null <$> findStorageDeviceAttrs go sdev

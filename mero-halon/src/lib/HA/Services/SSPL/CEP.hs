@@ -10,37 +10,21 @@
 -- License   : All rights reserved.
 --
 -- @halon:sspl@ service rules
-module HA.Services.SSPL.CEP where
+module HA.Services.SSPL.CEP
+  ( DriveLedUpdate(..)
+  , initialRule
+  , lookupStorageDevicePaths
+  , lookupStorageDeviceRaidDevice
+  , sendInterestingEvent
+  , sendLedUpdate
+  , sendNodeCmd
+  , sendNodeCmdChan
+  , ssplRules
+  , updateDriveManagerWithFailure
+  ) where
 
 import           Control.Applicative
 import           Control.Distributed.Process
-import qualified HA.Aeson as Aeson
-import           HA.EventQueue (HAEvent(..))
-import           HA.RecoveryCoordinator.Actions.Hardware
-import           HA.RecoveryCoordinator.RC.Application
-import           HA.RecoveryCoordinator.RC.Actions.Core
-import qualified HA.RecoveryCoordinator.Service.Actions as Service
-import           HA.RecoveryCoordinator.Castor.Drive.Events
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.ResourceGraph hiding (null)
-import           HA.Resources (Node(..), Has(..), Cluster(..))
-import           HA.Resources.Castor
-import           HA.Service hiding (configDict)
-import           HA.Services.SSPL.IEM
-import           HA.Services.SSPL.LL.RC.Actions
-import           HA.Services.SSPL.LL.Resources
-import           Network.CEP
-import           SSPL.Bindings
-
-#ifdef USE_MERO
-import           HA.RecoveryCoordinator.Mero.State
-import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources.Mero.Note
-import qualified HA.Resources.Mero as M0
-import           Mero.ConfC (strToFid)
-import           Text.Read (readMaybe)
-#endif
-
 import           Control.Lens ((<&>))
 import           Control.Monad
 import           Control.Monad.Trans
@@ -55,11 +39,37 @@ import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           Data.UUID.V4 (nextRandom)
 import           GHC.Generics
+import qualified HA.Aeson as Aeson
+import           HA.EventQueue (HAEvent(..))
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
+import           HA.ResourceGraph hiding (null)
+import           HA.Resources (Node(..), Has(..), Cluster(..))
+import           HA.Resources.Castor
+import           HA.Service hiding (configDict)
+import           HA.Services.SSPL.IEM
+import           HA.Services.SSPL.LL.RC.Actions
+import           HA.Services.SSPL.LL.Resources
+import           Network.CEP
+import           SSPL.Bindings
+
+#ifdef USE_MERO
+import           HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Mero.Transitions
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note
+import           Mero.ConfC (strToFid)
+import           Text.Read (readMaybe)
+#endif
 
 --------------------------------------------------------------------------------
 -- Primitives
 --------------------------------------------------------------------------------
 
+-- | Send 'InterestingEventMessage' to any IEM channel available.
 sendInterestingEvent :: InterestingEventMessage
                      -> PhaseM RC l ()
 sendInterestingEvent msg = do
@@ -68,23 +78,6 @@ sendInterestingEvent msg = do
   case chanm of
     Just (Channel chan) -> liftProcess $ sendChan chan msg
     _ -> phaseLog "warning" "Cannot find IEM channel!"
-
--- | Send command for system on remove node.
-sendSystemdCmd :: NodeId
-               -> SystemdCmd
-               -> PhaseM RC l ()
-sendSystemdCmd nid req = do
-  phaseLog "action" $ "Sending Systemd request" ++ show req
-  chanm <- getCommandChannel (Node nid)
-  case chanm of
-    Just chan -> sendSystemdCmdChan chan req
-    _ -> phaseLog "warning" "Cannot find systemd channel!"
-
-sendSystemdCmdChan :: Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)
-                   -> SystemdCmd
-                   -> PhaseM RC l ()
-sendSystemdCmdChan (Channel chan) req =
-  liftProcess $ sendChan chan (Nothing, makeSystemdMsg req)
 
 -- | Send command to logger actuator.
 --
@@ -102,6 +95,7 @@ sendLoggingCmd host req = do
     Just (Channel chan) -> liftProcess $ sendChan chan (Nothing, makeLoggerMsg req)
     _ -> phaseLog "error" "Cannot find sspl channel!"
 
+-- | Create a 'LoggerCmd'.
 mkDiskLoggingCmd :: T.Text -- ^ Status
                  -> T.Text -- ^ Serial Number
                  -> T.Text -- ^ Reason
@@ -109,14 +103,19 @@ mkDiskLoggingCmd :: T.Text -- ^ Status
 mkDiskLoggingCmd st serial reason = LoggerCmd message "LOG_WARNING" "HDS" where
   message = "{'status': '" <> st <> "', 'reason': '" <> reason <> "', 'serial_number': '" <> serial <> "'}"
 
-
+-- | Drive states that should be reflected by LED.
 data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
                     | DriveTransientlyFailed -- ^ Drive is beign reset or smart check
                     | DriveRebalancing       -- ^ Rebalance operation is happening on a drive
                     | DriveOk                -- ^ Drive is ok
                     deriving (Show)
 
-sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM RC l Bool
+-- | Send information about 'DriveLedUpdate' to the given 'Host' for
+-- the drive with the given serial number.
+sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
+              -> Host -- ^ Host we want to deal with
+              -> T.Text -- ^ Drive serial number
+              -> PhaseM RC l Bool
 sendLedUpdate status host sn = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
@@ -151,6 +150,7 @@ sendNodeCmd nid muuid req = do
     _ -> do phaseLog "warning" "Cannot find command channel!"
             return False
 
+-- | Like 'sendNodeCmd' but sends to the given channel.
 sendNodeCmdChan :: CommandChan
                 -> Maybe UUID
                 -> NodeCmd
@@ -162,6 +162,7 @@ sendNodeCmdChan (Channel chan) muuid req =
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
 
+-- | SSPL rules.
 ssplRules :: Service SSPLConf -> Definitions RC ()
 ssplRules sspl = sequence_
   [ ruleDeclareChannels

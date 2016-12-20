@@ -4,25 +4,25 @@
 --
 module HA.RecoveryCoordinator.Mero.Failure.Formulaic where
 
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Failure.Internal
+import           Control.Monad.Trans.State (execState, modify, state)
+import           Data.Bifunctor (first)
+import           Data.Foldable (for_)
+import           Data.Maybe (listToMaybe)
+import           Data.Proxy (Proxy(..))
+import qualified Data.Set as Set
+import           Data.Word
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import Mero.ConfC
+import           Mero.ConfC
   ( PDClustAttr(..)
   , Word128(..)
   )
 
-import Control.Monad.Trans.State (execState, modify, state)
-import Data.Bifunctor (first)
-import Data.Maybe (listToMaybe)
-import Data.Foldable (for_)
-import Data.Proxy (Proxy(..))
-import Data.Word
-import qualified Data.Set as Set
-
+-- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
   prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile

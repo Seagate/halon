@@ -157,6 +157,8 @@ mkNotifierSimple :: (FldDispatch ∈ l, FldNotifications AnyStateSet ∈ l)
                  -> RuleM RC (FieldRec l) (Jump PhaseHandle)
 mkNotifierSimple h = mkNotifier' simpleNotificationToPred h (return ())
 
+-- | 'mkNotifierSimpleAct' where notification set is already in
+-- @'AnyStateChange -> 'Bool'@ form.
 mkNotifierAct :: (FldDispatch ∈ l, FldNotifications (AnyStateChange -> Bool) ∈ l)
               => Jump PhaseHandle
               -- ^ Dispatcher handle

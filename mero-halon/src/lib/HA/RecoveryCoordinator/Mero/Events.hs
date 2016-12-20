@@ -1,9 +1,9 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeFamilies              #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -16,7 +16,6 @@ module HA.RecoveryCoordinator.Mero.Events
   , SyncComplete(..)
   , NewMeroClientProcessed(..)
   , NewMeroServer(..)
-  , StopMeroServer(..)
    -- ** Mero kernel.
   , MeroKernelFailed(..)
   , MeroCleanupFailed(..)
@@ -37,38 +36,36 @@ module HA.RecoveryCoordinator.Mero.Events
   , InternalObjectStateChangeMsg(..)
   , stateSet
   -- * Exceptions
- , WorkerIsNotAvailableException(..)
+  , WorkerIsNotAvailableException(..)
   ) where
 
-import HA.Encode (ProcessEncode(..))
-import HA.RecoveryCoordinator.Mero.Transitions
-import HA.Resources
-import HA.Resources.Castor
-import HA.Resources.Mero.Note
-import qualified HA.Resources.Mero as M0
-import HA.SafeCopy
-
-import Control.Applicative (many)
-import Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
-import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
-import Control.Distributed.Static (unstatic)
-import Control.Exception (Exception)
-import Control.Monad.Reader (ask)
-import qualified Mero.ConfC as M0 (Fid)
-import Mero.Notification.HAState (Note(..))
-
-import Data.Binary
-import Data.Binary.Put (runPut)
-import Data.Binary.Get (runGet)
+import           Control.Applicative (many)
+import           Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
+import           Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
+import           Control.Distributed.Static (unstatic)
+import           Control.Exception (Exception)
+import           Control.Monad.Reader (ask)
+import           Data.Binary
+import           Data.Binary.Get (runGet)
+import           Data.Binary.Put (runPut)
 import qualified Data.ByteString.Lazy as BS
-import Data.Constraint (Dict(..))
-import Data.Foldable (traverse_)
-import Data.Serialize.Get (runGetLazy)
-import Data.Serialize.Put (runPutLazy)
-import Data.Typeable
-import Data.Hashable (Hashable)
-import Data.UUID
-import GHC.Generics
+import           Data.Constraint (Dict(..))
+import           Data.Foldable (traverse_)
+import           Data.Hashable (Hashable)
+import           Data.Serialize.Get (runGetLazy)
+import           Data.Serialize.Put (runPutLazy)
+import           Data.Typeable
+import           Data.UUID
+import           GHC.Generics
+import           HA.Encode (ProcessEncode(..))
+import           HA.RecoveryCoordinator.Mero.Transitions
+import           HA.Resources
+import           HA.Resources.Castor
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note
+import           HA.SafeCopy
+import qualified Mero.ConfC as M0 (Fid)
+import           Mero.Notification.HAState (Note(..))
 
 -- | Request force update of the configuration object state.
 data ForceObjectStateUpdateRequest = ForceObjectStateUpdateRequest
@@ -88,21 +85,16 @@ data UpdateResult
 newtype ForceObjectStateUpdateReply = ForceObjectStateUpdateReply [(M0.Fid, UpdateResult)]
   deriving (Generic, Typeable, Show)
 
+-- | Local sync to confd has completed.
 data SyncComplete = SyncComplete UUID
       deriving (Eq, Show, Typeable, Generic)
-
 instance Binary SyncComplete
 
 -- | New mero server was connected.
 data NewMeroServer = NewMeroServer Node
                    | NewMeroServerFailure Node
       deriving (Eq, Show, Typeable, Generic)
-
 instance Binary NewMeroServer
-
-data StopMeroServer = StopMeroServer Node
-       deriving (Eq, Show, Typeable, Generic)
-instance Binary StopMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
 data NewMeroClientProcessed = NewMeroClientProcessed Host
@@ -110,16 +102,16 @@ data NewMeroClientProcessed = NewMeroClientProcessed Host
 
 instance Binary NewMeroClientProcessed
 
+-- | Request for 'SpielAddress'.
 data GetSpielAddress = GetSpielAddress
        { entrypointProcessFid :: M0.Fid
        , entrypointProfileFid :: M0.Fid
        , entrypointRequester  :: ProcessId
        } deriving (Eq, Show, Typeable, Generic)
 
--- | Universally quantified state 'set' request.
---   Typically, one creates a state 'set' request, then
---   resolves it against the graph, which will yield
---   a state change event.
+-- | Universally quantified state transition request. Typically, one
+-- creates a state 'set' request, then resolves it against the graph,
+-- which will yield a state change event.
 data AnyStateSet =
   forall a. HasConfObjectState a => AnyStateSet a (Transition a)
   deriving Typeable
@@ -148,8 +140,8 @@ data AnyStateChange =
 newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
   deriving (Monoid, Typeable)
 
-newtype InternalObjectStateChangeMsg =
-    InternalObjectStateChangeMsg BS.ByteString
+-- | Encoded version of 'InternalObjectStateChange'.
+newtype InternalObjectStateChangeMsg = InternalObjectStateChangeMsg BS.ByteString
   deriving (Typeable, Eq, Show, Ord, Hashable)
 
 instance ProcessEncode InternalObjectStateChange where
@@ -207,29 +199,31 @@ data AbortSNSOperationResult
 
 instance Binary AbortSNSOperationResult
 
+-- | Request SNS quiesce on the given 'M0.Pool'.
 newtype QuiesceSNSOperation = QuiesceSNSOperation M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
 
+-- | Result of SNS quiesce request.
 data QuiesceSNSOperationResult
           = QuiesceSNSOperationOk M0.Pool
           | QuiesceSNSOperationFailure M0.Pool String
           | QuiesceSNSOperationSkip M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
-
 instance Binary QuiesceSNSOperationResult
 
 -- | Request restart of the SNS operation on the given pool.
 data RestartSNSOperationRequest = RestartSNSOperationRequest M0.Pool UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
 
+-- | Result of SNS restart request.
 data RestartSNSOperationResult =
     RestartSNSOperationSuccess M0.Pool
   | RestartSNSOperationFailed M0.Pool String
   | RestartSNSOperationSkip M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
-
 instance Binary RestartSNSOperationResult
 
+-- | Failure vector request.
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 

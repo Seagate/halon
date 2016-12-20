@@ -33,48 +33,43 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules
   , ruleDriveInserted
   , ruleDriveRemoved
   , driveRemovalTimeout
-  , driveInsertionTimeout
   ) where
 
+import           Control.Distributed.Process hiding (catch)
+import           Control.Lens
+import           Control.Monad
+import           Control.Monad.Trans.Maybe
+import           Data.Foldable (for_)
+import           Data.Maybe
+import qualified Data.Text as T
+import qualified Data.UUID as UUID
+import           Data.UUID.V4 (nextRandom)
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Cluster.Events (PoolRebalanceRequest(..))
+import           HA.RecoveryCoordinator.Castor.Drive.Actions
+import           HA.RecoveryCoordinator.Castor.Drive.Events
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
-import HA.RecoveryCoordinator.Castor.Drive.Rules.Reset  as Reset
-import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart  as Smart
-import HA.RecoveryCoordinator.Castor.Drive.Events
-
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Castor.Drive.Actions
-import HA.RecoveryCoordinator.Castor.Cluster.Events (PoolRebalanceRequest(..))
-import HA.RecoveryCoordinator.Job.Actions
-import HA.RecoveryCoordinator.Job.Events
-import HA.Resources
-import HA.Resources.Castor
-import HA.Services.SSPL
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Mero.Notifications
-import HA.RecoveryCoordinator.Mero.State
-import HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
-import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note
-import HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.Castor.Drive.Rules.Reset as Reset
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart as Smart
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.Mero.Notifications
+import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
-
-import Control.Distributed.Process hiding (catch)
-import Control.Lens
-import Control.Monad
-import Control.Monad.Trans.Maybe
-
-import Data.Foldable (for_)
-import Data.Maybe
-import qualified Data.Text as T
-import Data.UUID.V4 (nextRandom)
-import qualified Data.UUID as UUID
-
-import Network.CEP
-
-import Text.Printf (printf)
+import           HA.RecoveryCoordinator.RC.Actions
+import           HA.Resources
+import           HA.Resources.Castor
+import           HA.Resources.HalonVars
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
+import           HA.Resources.Mero.Note
+import           HA.Services.SSPL
+import           Network.CEP
+import           Text.Printf (printf)
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
 -- used at the toplevel castor module.
@@ -300,7 +295,8 @@ ruleDriveRemoved = define "drive-removed" $ do
   let post_process m0sdev = do
         Just (uuid, _, _, _, _) <- get Local
         applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
-        switch [reinsert, timeout driveRemovalTimeout removal]
+        t <- getHalonVar _hv_drive_removal_timeout
+        switch [reinsert, timeout t removal]
         messageProcessed uuid
 
   (device_detached, detachDisk) <- mkDetachDisk
@@ -344,9 +340,6 @@ ruleDriveRemoved = define "drive-removed" $ do
 
   startFork pinit Nothing
 
-driveInsertionTimeout :: Int
-driveInsertionTimeout = 10
-
 -- | Inserting new drive. Drive insertion rule gathers all information about new
 -- drive and prepares drives for Repair/rebalance procedure.
 -- This rule works as following:
@@ -370,10 +363,9 @@ ruleDriveInserted = define "drive-inserted" $ do
 
   setPhase handler $ \di -> do
     put Local $ (Just (UUID.nil, di), Nothing)
-    fork CopyNewerBuffer $
-       switch [ removed
-              , inserted
-              , timeout driveInsertionTimeout main]
+    fork CopyNewerBuffer $ do
+       t <- getHalonVar _hv_drive_insertion_timeout
+       switch [removed, inserted, timeout t main]
 
   setPhaseIf removed
     (\(DriveRemoved _ _ enc _ loc _) _

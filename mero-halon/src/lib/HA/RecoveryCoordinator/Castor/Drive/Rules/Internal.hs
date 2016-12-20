@@ -1,9 +1,9 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Internal structures and template haskell code.
-{-# LANGUAGE TemplateHaskell #-}
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
   ( CheckAndHandleState(..)
   , chsSmartRequest
@@ -13,14 +13,13 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
   ) where
 
 import Control.Lens
+import Data.UUID
 import HA.RecoveryCoordinator.Job.Actions
-
 import HA.Resources
 import HA.Resources.Castor
-import Data.UUID
 
 -- | State of the mkcheck rule.
-data CheckAndHandleState = CheckAndHandleState 
+data CheckAndHandleState = CheckAndHandleState
       { _chsNode          :: Node
          -- ^ Node where disk is located.
       , _chsStorageDevice :: StorageDevice

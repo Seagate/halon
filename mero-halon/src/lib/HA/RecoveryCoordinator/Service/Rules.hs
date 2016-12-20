@@ -1,29 +1,32 @@
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE TypeOperators    #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- CEP Rules pertaining to the management of Halon internal services.
---
-
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE FlexibleContexts          #-}
-
+-- Rules pertaining to the management of Halon internal services.
 module HA.RecoveryCoordinator.Service.Rules
   ( rules ) where
 
-import Prelude hiding ((.), id)
-import Control.Category
-import Control.Lens
-import Data.Foldable (traverse_)
-
 import           Control.Distributed.Process
-import           Network.CEP
-
-import           HA.EventQueue
-import           HA.RecoveryCoordinator.Mero
+import           Control.Lens
+import           Control.Monad (when, unless)
+import           Data.Foldable (for_)
+import           Data.Foldable (traverse_)
+import           Data.Functor (void)
+import           Data.Proxy
+import           Data.Serialize.Put (runPutLazy)
+import           Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
+import           Data.Vinyl hiding ((:~:))
 import           HA.Encode (encodeP)
+import           HA.EventQueue
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Mero
+import qualified HA.RecoveryCoordinator.Service.Actions as Service
+import           HA.RecoveryCoordinator.Service.Events
+import           HA.SafeCopy
 import           HA.Service
   ( ServiceExit(..)
   , ServiceFailed(..)
@@ -35,20 +38,9 @@ import           HA.Service
   , Service(..)
   , serviceLabel
   )
+import           Network.CEP
 
-import HA.RecoveryCoordinator.Service.Events
-import HA.RecoveryCoordinator.Job.Actions
-import qualified HA.RecoveryCoordinator.Service.Actions as Service
-import HA.SafeCopy
-
-import Control.Monad (when, unless)
-import Data.Functor (void)
-import Data.Proxy
-import Data.Vinyl hiding ((:~:))
-import Data.Serialize.Put (runPutLazy)
-import Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
-import Data.Foldable (for_)
-
+-- | Service rules.
 rules :: Definitions RC ()
 rules = sequence_
   [ serviceStart

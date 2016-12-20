@@ -104,11 +104,9 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
   , StartProcessesOnNodeRequest(..)
   , StartProcessesOnNodeResult(..)
     --- *** Stop clients on node
-  , processStartClientsOnNode
   , StartClientsOnNodeRequest(..)
   , StartClientsOnNodeResult(..)
     -- *** Stop processes on node
-  , processStopProcessesOnNode
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
   , ruleStopProcessesOnNode
@@ -382,6 +380,11 @@ requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
 processNodeNew :: Job StartProcessNodeNew NewMeroServer
 processNodeNew = Job "castor::node::process::new"
 
+-- | Ensures that relevant data for the node is in RG; if not, the
+-- info is queried. Waits if initial data is not loaded. In case it's
+-- a new node (i.e. not one in RG), waits for confd to be available
+-- and syncs. Starts processes on the node through
+-- 'retriggerMeroNodeBootstrap'.
 ruleNodeNew :: Definitions RC ()
 ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> do
   confd_running   <- phaseHandle "confd-running"

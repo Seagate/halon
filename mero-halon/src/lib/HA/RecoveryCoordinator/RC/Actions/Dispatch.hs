@@ -20,6 +20,8 @@ import           Network.CEP
 
 -- | Holds dispatching information for complex jumps.
 type FldDispatch = '("dispatch", Dispatch)
+
+-- | An instance of 'FldDispatch'.
 fldDispatch :: Proxy FldDispatch
 fldDispatch = Proxy
 
