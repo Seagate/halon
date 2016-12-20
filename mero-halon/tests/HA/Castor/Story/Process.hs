@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE StandaloneDeriving #-}
 -- |
 -- Module    : HA.Castor.Story.Process
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
@@ -23,12 +22,15 @@ import           Data.Typeable
 import           Data.Vinyl
 import           GHC.Generics (Generic)
 import qualified HA.Castor.Story.Tests as H
-import           HA.RecoveryCoordinator.Actions.Mero (getLabeledProcesses)
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator hiding (getState)
+import qualified HA.ResourceGraph as G
+import           HA.Resources
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           Helper.InitialData
@@ -47,7 +49,9 @@ mkTests pg = do
       closeConnection x
       return $ \t ->
         [ testSuccess "Process stop then start" $ testStopStart t pg
-        , testSuccess "Cluster bootstraps (4 nodes)" $ testClusterBootstrap t pg ]
+        , testSuccess "Cluster bootstraps (4 nodes)" $ testClusterBootstrap t pg
+        , testSuccess "m0t1fs start request completes on any cluster level"
+          $ testClientStartsAnyBootlevel t pg ]
 
 -- | Used to fire internal test rules
 newtype RuleHook = RuleHook ProcessId
@@ -116,6 +120,74 @@ testStopStart transport pg = do
         ourJob (JobFinished ls m) _ l = case getField $ rget fldListener l of
           Nothing -> error "test-process-stop-start: in ourJob without listener set"
           Just lis -> return $ if lis `elem` ls then Just m else Nothing
+
+testClientStartsAnyBootlevel :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testClientStartsAnyBootlevel transport pg = do
+  isettings <- defaultInitialDataSettings
+  tos <- H.mkDefaultTestOptions
+  idata <- initialData $ isettings { _id_servers = 1 }
+  let tos' = tos { H._to_initial_data = idata
+                 , H._to_cluster_setup = H.HalonM0DOnly }
+  H.run' transport pg [rule] tos' test
+  where
+    test :: H.TestSetup -> Process ()
+    test ts = do
+      self <- getSelfPid
+      usend (H._ts_rc ts) $ RuleHook self
+      expect >>= maybe (return ()) fail
+
+    sendToCaller caller m = liftProcess $ usend caller (m :: Maybe String)
+
+    rule = define "test-m0t1fs-starts-any-level" $ do
+      rule_init <- phaseHandle "rule_init"
+      m0t1fs_result <- phaseHandle "m0t1fs_result"
+
+      setPhase rule_init $ \(RuleHook caller) -> do
+        -- For a process to start, cluster disposition has to be
+        -- online. As we only started halon:m0d, set in manually.
+        modifyGraph $ G.connect Cluster Has M0.ONLINE
+        -- Check that we're on level 0 (only halon:m0d start after
+        -- all), find m0t1fs process, request m0t1fs start through
+        -- StartMerClientRequest just like halonctl would
+        rg <- getLocalGraph
+        case getClusterStatus rg of
+          Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> do
+            case getLabeledProcesses M0.PLM0t1fs (\_ _ -> True) rg of
+              p : _ -> do
+                modify Local $ rlens fldCaller . rfield .~ Just caller
+                modify Local $ rlens fldOurProc . rfield .~ Just p
+                promulgateRC $ StartMeroClientRequest (M0.fid p)
+                continue m0t1fs_result
+              [] -> sendToCaller caller $ Just "No m0t1fs processes found"
+          cs -> sendToCaller caller . Just $ "Unexpected cluster status: " ++ show cs
+
+      setPhaseIf m0t1fs_result our_m0t1fs $ \r -> do
+        rg <- getLocalGraph
+        Just caller <- getField . rget fldCaller <$> get Local
+        -- Check that cluster is still on the same boot level and we
+        -- got process started for the m0t1fs process.
+        case getClusterStatus rg of
+          Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> case r of
+            ProcessStarted{} -> sendToCaller caller Nothing
+            _ -> sendToCaller caller . Just $ show r
+          cs -> sendToCaller caller . Just $ "Unexpected cluster status: " ++ show cs
+
+      start rule_init args
+
+      where
+        our_m0t1fs msg _ ls = return $ case getField $ rget fldOurProc ls of
+          Just p -> case msg of
+            ProcessStarted p' | p == p' -> Just msg
+            ProcessStartFailed p' _ | p == p' -> Just msg
+            ProcessStartInvalid p' _ | p == p' -> Just msg
+            _ -> Nothing
+          Nothing -> Nothing
+
+        fldCaller = Proxy :: Proxy '("caller", Maybe ProcessId)
+        fldOurProc = Proxy :: Proxy '("proc", Maybe M0.Process)
+        args = fldCaller =: Nothing
+           <+> fldOurProc =: Nothing
+
 
 -- | Run a bootstrap across 4 nodes
 testClusterBootstrap :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()

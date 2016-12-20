@@ -143,9 +143,9 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         rg <- getLocalGraph
         case runChecks p rg of
           Just chkFailMsg ->
-            Right <$> (defaultReply ProcessStartInvalid) chkFailMsg
+            Right <$> defaultReply ProcessStartInvalid chkFailMsg
           Nothing -> initResources p rg >>= \case
-            Just failMsg -> Right <$> (defaultReply ProcessStartFailed) failMsg
+            Just failMsg -> Right <$> defaultReply ProcessStartFailed failMsg
             Nothing -> do
               forM_ (runWarnings p rg) $ phaseLog "warn"
 
@@ -348,7 +348,8 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       Just (_, M0.MeroClusterState M0.OFFLINE _ _) ->
         (False, "Cluster disposition is offline")
       Just (pl, M0.MeroClusterState M0.ONLINE rl _) ->
-        (rl >= pl, printf "Can't start %s on cluster boot level %s" (showFid p) (show rl))
+        ( rl >= pl || G.isConnected p Has M0.PLM0t1fs rg
+        , printf "Can't start %s on cluster boot level %s" (showFid p) (show rl))
 
     checkIsNotHA p rg =
       let srvs = G.connectedTo p M0.IsParentOf rg
