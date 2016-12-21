@@ -131,6 +131,7 @@ Library
                    HA.RecoveryCoordinator.Job.Internal
 
   Build-Depends:   base,
+                   aeson,
                    amqp,
                    cereal,
                    halon,

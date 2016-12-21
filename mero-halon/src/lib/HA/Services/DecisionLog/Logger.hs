@@ -21,7 +21,6 @@ module HA.Services.DecisionLog.Logger
   , closePrinter
   , mkTextPrinter
   , mkBinaryPrinter
-  , LogRecord(..)
   -- * Dump functions.
   , dumpTextToFile
   , dumpTextToHandle
@@ -29,60 +28,55 @@ module HA.Services.DecisionLog.Logger
   , dumpBinaryToFile
   ) where
 
-import           Control.Distributed.Process
-import           Control.Lens hiding (Context, Level)
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as B
-import           Data.Int
-import           Data.List (insert)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe
-import           Data.Serialize
-import           Data.UUID
-import           GHC.Generics
-import           HA.RecoveryCoordinator.Log
-import           HA.RecoveryCoordinator.Log as RC
-import           HA.SafeCopy
-import           Network.CEP.Log as CEP
-import           System.IO
+import Control.Distributed.Process
+import Control.Lens hiding (Context, Level)
 
--- | State machine ID.
+import Data.Aeson (ToJSON, FromJSON, encode)
+import qualified Data.ByteString.Lazy as B
+import Data.ByteString.Lazy (ByteString)
+import Data.Int
+import Data.List (insert)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe
+import Data.Typeable (Typeable)
+import Data.UUID
+
+import GHC.Generics
+
+import Network.CEP.Log as CEP
+
+import HA.RecoveryCoordinator.Log as RC
+
+import System.IO
+
+import Text.PrettyPrint.Leijen hiding ((<$>))
+
 type SmId = Int64
 
--- | Source of log within RC.
-data RCSrc = RCSrc
-  { _rcSrcRule :: String
-  -- ^ Rule from which the log originated.
-  , _rcSrcPhase :: String
-  -- ^ Phase within the '_rcSrcRule' from which the log originated.
-  } deriving (Show, Eq, Ord)
+type LogEvent = CEP.CEPLog RC.Event
 
--- | A 'Log' is a 'LogData' with a location ('RCSrc').
-data Log = Log RCSrc LogData
-  deriving (Show, Eq, Ord)
+-- | A log collects consecutive events for a given location, along
+--   with any contexts that apply.
+data Log = Log Location [LogEvent] [TagContextInfo]
+  deriving (Generic, Typeable)
 
--- | Some logged data.
-data LogData = LogSystem SystemEvent
-             -- ^ 'SystemEvent'
-             | LogMessage Level String (Maybe SourceLoc)
-             -- ^ Simple message
-             | LogEnv Level Environment (Maybe SourceLoc)
-             -- ^ Information about 'Environment'.
-             deriving (Show, Eq, Ord)
+instance ToJSON Log
+instance FromJSON Log
+
 -----------------------------------------------------------------------------------------
 -- Printers that used to dump raw data to the output.
 -----------------------------------------------------------------------------------------
 
 -- | Query to the printer mechanism.
 data PrinterQuery a where
-  PrintMessage :: Log -> [(TagContent, Maybe String)] -> PrinterQuery Printer
+  PrintMessage :: Log -> PrinterQuery Printer
   ClosePrinter :: PrinterQuery ()
 
 -- | Tell the 'Printer' to output the given 'Log' with the given
 -- context.
-printMessage :: Printer -> Log -> [(TagContent, Maybe String)] -> Process Printer
-printMessage (Printer runPrinter) l ctx = runPrinter $ PrintMessage l ctx
+printMessage :: Printer -> Log -> Process Printer
+printMessage (Printer runPrinter) l = runPrinter $ PrintMessage l
 
 -- | Instruct 'Printer' to close.
 closePrinter :: Printer -> Process ()
@@ -94,29 +88,82 @@ newtype Printer = Printer (forall a . PrinterQuery a -> Process a)
 -- | Record text messages somewhere.
 mkTextPrinter :: (String -> Process ()) -> Process () -> Printer
 mkTextPrinter emit close = self where
- self = Printer loop
- loop :: PrinterQuery a -> Process a
- loop (PrintMessage (Log (RCSrc r p) ls) scopes) = do
-  emit . unlines $
-    [ "======================================"
-    , "Rule/phase: " ++ r ++ "/" ++ p
-    , show ls
-    , "Context: "
-    ] ++ map show scopes
-  return self
- loop ClosePrinter = close
+  self = Printer loop
+  loop :: PrinterQuery a -> Process a
+  loop (PrintMessage msg) = do
+    emit $ displayS (renderPretty 0.4 180 (ppLog msg)) ""
+    return self
+  loop ClosePrinter = close
 
--- | Record to be stored in logs, it's completely uncompressed.
-data LogRecord = LogRecord Log [(TagContent, Maybe String)] deriving (Show, Generic)
-deriveSafeCopy 0 'base ''LogRecord
+-- | A pretty printer for log messages
+ppLog :: Log -> Doc
+ppLog (Log loc evts ctts) =
+    ppLoc loc <$$> indent 4
+      ( (vsep $ ppEvt <$> evts)
+      <$$> text "----------"
+      <$$> (vsep $ ppCtt <$> ctts)
+      )
+  where
+    ppLoc (Location r s p) =
+      text r <> char '/' <> text p <+> parens (text . show $ s)
+    ppEvt PhaseEntry = fillSep [rangle]
+    ppEvt (Fork finfo) = text $ "Fork: " ++ show (f_buffer_type finfo)
+                              ++ " " ++ show (f_sm_child_id finfo)
+    ppEvt (Continue info) = text $ "Continue: " ++ show (c_continue_phase info)
+    ppEvt (Switch info) = text "Switch:" <+> semiBraces (text . show <$> s_switch_phases info)
+    ppEvt Stop = fillSep [langle]
+    ppEvt Suspend = fillSep [char '~']
+    ppEvt (Restart _) = fillSep [char '^']
+    ppEvt (PhaseLog (PhaseLogInfo key val)) = text key <+> equals <> rangle <+> text val
+    ppEvt (StateLog (StateLogInfo env)) = ppEnv env
+    ppEvt (ApplicationLog (ApplicationLogInfo value)) = char '§' <> ppAL value
+
+    ppAL (EvtInContexts ctxs' evt) = ppALC evt <+> ppCtxs ctxs'
+    ppAL _ = empty
+
+    ppALC (CE_SystemEvent (StateChange info)) = text "State Change:"
+      <+> text (lsc_entity info) <> colon
+      <+> text (lsc_oldState info) <+> text "==>" <+> text (lsc_newState info)
+
+    ppALC (CE_SystemEvent (ActionCalled info env)) = text "Invoked:"
+      <+> text info
+      <+> ppEnv env
+
+    ppALC (CE_SystemEvent (RCStarted node)) = text "RC Started on node"
+      <+> text (show node)
+
+    ppALC (CE_SystemEvent (Todo uid)) = text "TODO:" <+> text (show uid)
+    ppALC (CE_SystemEvent (Done uid)) = text "DONE:" <+> text (show uid)
+
+    ppALC (CE_UserEvent lvl _ ue) = text (show lvl) <+> ppUE ue
+      where
+        ppUE (Env env) = ppEnv env
+        ppUE (Message str) = text str
+
+    ppALC _ = empty
+
+    ppCtt (TagContextInfo ctx dat _) = text (show ctx) <> line <> indent 4 (ppDat dat)
+      where
+        ppDat (TagString str) = text str
+        ppDat (TagEnv env) = ppEnv env
+        ppDat (TagScope scopes) = text "Scopes:" <+> sep (text . show <$> scopes)
+
+    ppCtxs ctx = tupled $ text <$> catMaybes (pullLocalCtx <$> ctx)
+      where
+        pullLocalCtx (Local uid) = Just $ show uid
+        pullLocalCtx _ = Nothing
+
+    ppEnv env = sep
+      $   (\(a,b) -> text a <+> equals <> rangle <+> text b)
+      <$> Map.toList env
 
 -- | Create logger that put data to the binary file.
 mkBinaryPrinter :: (ByteString -> Process ()) -> Process () -> Printer
 mkBinaryPrinter emit close = self where
   self = Printer loop
   loop :: PrinterQuery a -> Process a
-  loop (PrintMessage lg scopes) = do
-    emit $ runPutLazy (safePut (LogRecord lg scopes))
+  loop (PrintMessage lg) = do
+    emit $ encode lg
     return self
   loop ClosePrinter = close
 
@@ -164,21 +211,23 @@ closeLogger (Logger runLogger) = runLogger CloseLogger
 data LoggerState = LS
   { _localContexts      :: !(Map SmId [UUID])
     -- ^ Local contexts opened in SM
-  , _rulesScopes        :: !(Map String [(TagContent, Maybe String)])
+  , _rulesScopes        :: !(Map String [TagContextInfo])
     -- ^ Scopes associated with a rule.
-  , _smScopes           :: !(Map SmId [(TagContent, Maybe String)])
+  , _smScopes           :: !(Map SmId [TagContextInfo])
     -- ^ Scopes associated with a state machine.
-  , _currentPhaseScopes :: !(Map SmId [(TagContent, Maybe String)])
+  , _currentPhaseScopes :: !(Map SmId [TagContextInfo])
     -- ^ Scopes associated with a current phase.
-  , _contextScopes      :: !(Map UUID [(TagContent, Maybe String)])
+  , _contextScopes      :: !(Map UUID [TagContextInfo])
     -- ^ Scopes associated with a local scope.
-  } deriving (Show)
+  , _phaseEvents        :: !(Maybe (Location, [LogEvent]))
+    -- ^ Events associated with the current location.
+  }
 
 makeLenses ''LoggerState
 
 -- | Initial 'LoggerState'.
 initState :: LoggerState
-initState = LS Map.empty Map.empty Map.empty Map.empty Map.empty
+initState = LS Map.empty Map.empty Map.empty Map.empty Map.empty Nothing
 
 insertToList :: (Ord k, Ord v) => k -> v -> Map k [v] -> Map k [v]
 insertToList k v = Map.alter (maybe (Just [v]) (Just . insert v)) k
@@ -191,26 +240,16 @@ mkLogger printer0 = mk printer0 initState where
   go p st (WriteLogger msg) = feedLog p st msg
   go p _  CloseLogger = closePrinter p
   feedLog :: Printer -> LoggerState -> CEP.Event RC.Event -> Process Logger
-  feedLog p !st (Event loc msg) = case msg of
-    Fork  _    -> return $ mk p st
-    Switch _   -> return $ mk p $ forgetCurrentPhase st (loc_sm_id loc)
-    Continue _ -> return $ mk p $ forgetCurrentPhase st (loc_sm_id loc)
-    Stop       -> return $ mk p $ forgetSM st (loc_sm_id loc)
-    Suspend    -> return $ mk p $ forgetCurrentPhase st (loc_sm_id loc)
-    Restart _  -> return $ mk p $ forgetSM st (loc_sm_id loc)
-    PhaseEntry -> return $ mk p $ forgetCurrentPhase st (loc_sm_id loc)
-    PhaseLog info -> do
-      let rloc = RCSrc (loc_rule_name loc) (loc_phase_name loc)
-          m    = Log rloc (LogEnv DEBUG  (Map.singleton (pl_key info) (pl_value info)) Nothing)
-          scopes = getCurrentTags st loc
-      p' <- printMessage p m scopes
-      return $! mk p' st
-    StateLog info -> do
-      let rloc = RCSrc (loc_rule_name loc) (loc_phase_name loc)
-          m    = Log rloc (LogEnv DEBUG (sl_state info) Nothing)
-          scopes = getCurrentTags st loc
-      p' <- printMessage p m scopes
-      return $! mk p' st
+  feedLog p !st evt@(Event loc msg) = case msg of
+    Fork  _    -> mkRec evt False p st id
+    Switch _   -> mkRec evt True p st $ forgetCurrentPhase (loc_sm_id loc)
+    Continue _ -> mkRec evt True p st $ forgetCurrentPhase (loc_sm_id loc)
+    Stop       -> mkRec evt True p st $ forgetSM (loc_sm_id loc)
+    Suspend    -> mkRec evt True p st $ forgetCurrentPhase (loc_sm_id loc)
+    Restart _  -> mkRec evt True p st $ forgetSM (loc_sm_id loc)
+    PhaseEntry -> mkRec evt False p st $ forgetCurrentPhase (loc_sm_id loc)
+    PhaseLog _ -> mkRec evt False p st id
+    StateLog _ -> mkRec evt False p st id
     ApplicationLog (ApplicationLogInfo app) -> case app of
       BeginLocalContext uuid ->
          return $! mk p $! st & localContexts %~ insertToList (loc_sm_id loc) uuid
@@ -221,43 +260,79 @@ mkLogger printer0 = mk printer0 initState where
       TagContext info -> do
         let rname = loc_rule_name loc
             smId  = loc_sm_id loc
-            tag   = tc_data info
-            comment = tc_msg info
             ctx = tc_context info
             f = \x -> case ctx of
                         Rule    -> rulesScopes %~ insertToList rname x
                         Phase   -> currentPhaseScopes %~ insertToList smId x
                         SM      -> smScopes %~ insertToList smId x
                         Local u -> contextScopes %~ insertToList u x
-        return $! mk p (st & f (tag, comment))
-      EvtInContexts ctxs event -> do
-         let rloc = RCSrc (loc_rule_name loc) (loc_phase_name loc)
-             scopes = concat $ getTagsByContext st loc <$> ctxs
+        return $! mk p (st & f info)
+      EvtInContexts _ event -> do
          case event of
            CE_SystemEvent se -> do
             let st' = case se of
                         RCStarted{} -> initState
                         _ -> st
-            p' <- printMessage p (Log rloc (LogSystem se)) scopes
-            return $! mk p' st'
-           CE_UserEvent lvl msloc ue ->
-            case ue of
-              Env e -> do
-                p' <- printMessage p (Log rloc (LogEnv lvl e msloc)) scopes
-                return $! mk p' st
-              Message s -> do
-                p' <- printMessage p (Log rloc (LogMessage lvl s msloc)) scopes
-                return $! mk p' st
+            mkRec evt False p st' id
+           CE_UserEvent _ _ _ -> mkRec evt False p st id
+
+  -- Record an event for the current Location, and emit events for either:
+  -- - Current location if 'emit' is set.
+  -- - Old location if new location does not match the state.
+  recordEvent :: CEP.Event RC.Event
+              -> Bool
+              -> Printer
+              -> LoggerState
+              -> Process (Printer, LoggerState)
+  recordEvent (Event loc evt) emit p st = (\(a,b) -> (,b) <$> a) $
+    case (st ^. phaseEvents) of
+      (Just (oldLoc, events)) | loc == oldLoc -> let
+          -- Same location
+          logMsg = Log loc (reverse events') $ getCurrentTags st loc
+          events' = evt : events
+          (p', st') =
+            if emit
+            then (printMessage p logMsg, st & (phaseEvents .~ Nothing))
+            else (return p, st & (phaseEvents .~ Just (loc, events')))
+        in (p', st')
+      Just (oldLoc, events) -> let
+          -- We have a location, but it's different to the old one...
+          oldLogMsg = Log oldLoc (reverse events) $ getCurrentTags st oldLoc
+          (p', st') =
+            if emit
+            then let
+                newLogMsg = Log loc [evt] $ getCurrentTags st loc
+              in  ( printMessage p oldLogMsg >>= flip printMessage newLogMsg
+                  , st & phaseEvents .~ Nothing
+                  )
+            else  ( printMessage p oldLogMsg
+                  , st & (phaseEvents .~ Just (loc, [evt]))
+                  )
+        in (p', st')
+      Nothing -> if emit
+        then let
+            newLogMsg = Log loc [evt] $ getCurrentTags st loc
+          in ( printMessage p newLogMsg, st )
+        else
+          (return p, st & phaseEvents .~ Just (loc, [evt]))
+
+  -- Make a logger recording this event, and taking the specified action
+  -- after doing so.
+  mkRec :: CEP.Event RC.Event -> Bool -> Printer -> LoggerState
+        -> (LoggerState -> LoggerState) -> Process Logger
+  mkRec evt emit p st act = do
+    (p', st') <- recordEvent evt emit p st
+    return $ Logger $ go p' (act st')
 
   -- We have moved from the phase to another, no need to remember the context.
-  forgetCurrentPhase :: LoggerState -> SmId -> LoggerState
-  forgetCurrentPhase st smId = st & currentPhaseScopes %~ Map.delete smId
+  forgetCurrentPhase :: SmId -> LoggerState -> LoggerState
+  forgetCurrentPhase smId st = st & currentPhaseScopes %~ Map.delete smId
   -- Remove state machine from the state, as it's finished execution.
-  forgetSM :: LoggerState -> SmId -> LoggerState
-  forgetSM st smId = st & (localContexts %~ Map.delete smId)
+  forgetSM :: SmId -> LoggerState -> LoggerState
+  forgetSM smId st = st & (localContexts %~ Map.delete smId)
                         . (smScopes      %~ Map.delete smId)
                         . (currentPhaseScopes %~ Map.delete smId)
-  getTagsByContext :: LoggerState -> Location -> Context -> [(TagContent,Maybe String)]
+  getTagsByContext :: LoggerState -> Location -> Context -> [TagContextInfo]
   getTagsByContext st (loc_rule_name -> rname) Rule =
     fromMaybe [] . Map.lookup rname $ st ^. rulesScopes
   getTagsByContext st (loc_sm_id -> smId) Phase =
@@ -266,7 +341,7 @@ mkLogger printer0 = mk printer0 initState where
     fromMaybe [] . Map.lookup smId $ st ^. smScopes
   getTagsByContext st _ (Local u) =
     fromMaybe [] . Map.lookup u $ st ^. contextScopes
-  getCurrentTags :: LoggerState -> Location -> [(TagContent, Maybe String)]
+  getCurrentTags :: LoggerState -> Location -> [TagContextInfo]
   getCurrentTags st loc@(loc_sm_id -> smId) =
     let a  = getTagsByContext st loc Rule
         b  = getTagsByContext st loc Phase
@@ -274,8 +349,3 @@ mkLogger printer0 = mk printer0 initState where
         ds = fmap (getTagsByContext st loc . Local)
                 $ fromMaybe [] . Map.lookup smId $ st ^. localContexts
     in concat (a:b:c:ds)
-
-
-deriveSafeCopy 0 'base ''RCSrc
-deriveSafeCopy 0 'base ''LogData
-deriveSafeCopy 0 'base ''Log

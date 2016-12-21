@@ -19,7 +19,7 @@ import GHC.Generics (Generic)
 data Jump =
     NormalJump String
   | TimeoutJump Int String
-  deriving (Generic, Typeable)
+  deriving (Show, Generic, Typeable)
 
 instance Binary Jump
 instance ToJSON Jump
@@ -30,7 +30,7 @@ data Location = Location {
     loc_rule_name :: String
   , loc_sm_id :: Int64
   , loc_phase_name :: String
-} deriving (Generic, Typeable)
+} deriving (Eq, Show, Generic, Typeable)
 
 instance Binary Location
 instance ToJSON Location
@@ -40,7 +40,7 @@ instance FromJSON Location
 --   expose CEP internal types to the logging framework (and, more prosaically,
 --   it avoids a circular import problem with Network.CEP.Types).
 data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
-  deriving (Generic, Typeable)
+  deriving (Show, Generic, Typeable)
 
 instance Binary ForkType
 instance ToJSON ForkType
