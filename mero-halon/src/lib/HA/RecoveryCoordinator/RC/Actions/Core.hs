@@ -79,7 +79,6 @@ import           Control.Distributed.Process
   , link
   )
 import           Control.Distributed.Process.Serializable
-import           Control.Category ((>>>))
 import           Control.Monad (when, unless, (<=<))
 import           Data.Functor (void)
 import qualified Data.Map.Strict as Map
@@ -166,13 +165,9 @@ knownResource res = fmap (G.memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
 registerNode :: Node -> PhaseM RC l ()
-registerNode node = modifyLocalGraph $ \rg -> do
-    phaseLog "rg" $ "Registering satellite node: " ++ show node
-
-    let rg' = G.newResource node >>>
-              G.connect Cluster Has node $ rg
-
-    return rg'
+registerNode node = do
+  phaseLog "rg" $ "Registering satellite node: " ++ show node
+  modifyGraph $ G.connect Cluster Has node
 
 -- | Retrieve the Resource 'G.Graph' from the 'Global' state.
 getLocalGraph :: PhaseM RC l G.Graph

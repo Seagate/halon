@@ -145,20 +145,16 @@ rGroupTest transport g p =
 --    HasB ·   \ .    ·
 --          \  .::    |
 --           ·        ·
--- NodeB 1       NodeB 2
+--               NodeB 2
 --
+-- NodeB 3 <-- HasA --- NodeA 3
 sampleGraph :: Graph -> Graph
 sampleGraph =
     connect (NodeB 2) HasA (NodeA 1) .
     connect (NodeB 2) HasA (NodeA 2) .
     connect (NodeA 1) HasB (NodeB 2) .
     connect (NodeA 1) HasB (NodeB 2) .
-    newResource (NodeB 2) .
-    newResource (NodeB 1) .
-    newResource (NodeA 1) .
-    newResource (NodeB 1) .
-    newResource (NodeA 2) .
-    newResource (NodeA 1)
+    connect (NodeB 99) HasA (NodeA 99)
 
 syncWait :: Graph -> Process Graph
 syncWait g = do
@@ -184,9 +180,9 @@ tests transport _ = do
       , testSuccess "kv-length" $ rGroupTest transport g $ \mm -> do
           _g <- syncWait . sampleGraph =<< getGraph mm
           kvs <- getKeyValuePairs mm
-          assertBool "there are 4 keys" $ 4 == length kvs
-          assertBool "the values are sane"
-            $ [0, 1, 2, 3] == sort (map (length . snd) kvs)
+          assertEqual "there are 5 keys" 5 (length kvs)
+          assertEqual "the relations are sane"
+            [1, 1, 1, 2, 3] (sort (map (length . snd) kvs))
       , testSuccess "edge-nodeA-1" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
           let es0 = edgesFromSrc (NodeA 1) g1
@@ -237,24 +233,26 @@ tests transport _ = do
 
       , testSuccess "garbage-collection" $ rGroupTest transport g $ \mm -> do
           g1 <- syncWait . sampleGraph =<< getGraph mm
+          -- NodeB 99, NodeA 99 are in RG
+          assertBool "NodeB 99 in RG" $ memberResource (NodeB 99) g1
+          assertBool "NodeA 99 in RG" $ memberResource (NodeA 99) g1
           g2 <- syncWait $ garbageCollect (S.singleton . Res $ NodeB 2) g1
-          -- NodeB 1 never connected to root set
-          assert $ memberResource (NodeB 1) g2 == False
+          -- NodeB 99, NodeA 99 aren't connected to NodeB 2 so got GC'd
+          assertBool "NodeB 99 not in RG" $ memberResource (NodeB 99) g2 == False
+          assertBool "NodeA 99 not in RG" $ memberResource (NodeA 99) g2 == False
           g3 <- syncWait $ garbageCollect (S.singleton . Res $ NodeB 2)
                      . disconnect (NodeB 2) HasA (NodeA 1)
                      . disconnect (NodeB 2) HasA (NodeA 2)
                      $ g2
-          assert $ memberResource (NodeA 1) g3 == True
-          assert $ memberResource (NodeA 2) g3 == False
+          -- NodeA 1 still connected through HasB to NodeB 2
+          assertBool "NodeA 1 in RG" $ memberResource (NodeA 1) g3
+          -- but NodeA 2 had its only link disconnected
+          assertBool "NodeA 2 not in RG" $ memberResource (NodeA 2) g3 == False
           -- Create a cycle
           g4 <- syncWait $ connect (NodeA 3) HasB (NodeB 3)
                      . connect (NodeB 3) HasA (NodeA 4)
                      . connect (NodeA 4) HasB (NodeB 4)
                      . connect (NodeB 4) HasA (NodeA 3)
-                     . newResource (NodeA 3)
-                     . newResource (NodeA 4)
-                     . newResource (NodeB 3)
-                     . newResource (NodeB 4)
                      $ g3
           let g5 = garbageCollect (S.singleton . Res $ NodeB 2) g4
               g6 = garbageCollect (S.singleton . Res $ NodeA 3) g4
@@ -348,4 +346,4 @@ tests transport _ = do
             let res = connectedToList (NodeA 1) HasC g3 :: [NodeC]
             assertEqual "res is [NodeC 2]" [NodeC 2] res
        , Merge.tests
-       ] 
+       ]

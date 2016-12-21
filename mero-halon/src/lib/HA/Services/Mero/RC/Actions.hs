@@ -69,10 +69,7 @@ registerChannel :: ( Resource (TypedChannel a)
                 => R.Node
                 -> TypedChannel a
                 -> PhaseM RC l ()
-registerChannel sp chan =
-  modifyGraph $ G.newResource sp
-            >>> G.newResource chan
-            >>> G.connect sp MeroChannel chan
+registerChannel sp chan = modifyGraph $ G.connect sp MeroChannel chan
 
 -- | Unregister mero channel inside RG.
 unregisterChannel :: forall a l proxy .
@@ -151,9 +148,7 @@ mkStateDiff f msg onCommit = do
   let idx  = StateDiffIndex epoch
       diff = StateDiff epoch msg onCommit
   rc    <- getCurrentRC
-  modifyGraph $ G.newResource diff
-            >>> G.newResource idx
-            >>> G.connect idx R.Is diff
+  modifyGraph $ G.connect idx R.Is diff
             >>> G.connect rc R.Has diff
             >>> f
   return diff

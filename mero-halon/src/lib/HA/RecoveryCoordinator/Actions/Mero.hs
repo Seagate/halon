@@ -90,13 +90,9 @@ rmsAddress = ":12345:41:301"
 createMeroKernelConfig :: Castor.Host
                        -> String -- ^ LNet interface address
                        -> PhaseM RC a ()
-createMeroKernelConfig host lnid = modifyLocalGraph $ \rg -> do
+createMeroKernelConfig host lnid = do
   uuid <- liftIO nextRandom
-  return  $ G.newResource uuid
-        >>> G.newResource (M0.LNid lnid)
-        >>> G.connect host Has (M0.LNid lnid)
-        >>> G.connect host Has uuid
-          $ rg
+  modifyGraph $ G.connect host Has uuid . G.connect host Has (M0.LNid lnid)
 
 -- | Create relevant configuration for a mero client in the RG.
 --
@@ -149,11 +145,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
                             <*> pure [nid ++ haAddress]
                             <*> pure SPUnused
     -- Create graph
-    let rg' = G.newResource m0node
-          >>> G.newResource process
-          >>> G.newResource rmsService
-          >>> G.newResource haService
-          >>> G.connect m0node M0.IsParentOf process
+    let rg' = G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService
           >>> G.connect process M0.IsParentOf haService
           >>> G.connect process Has M0.PLM0t1fs

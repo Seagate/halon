@@ -47,7 +47,6 @@ module HA.ResourceGraph
     , Cardinality(..)
     -- , Quantify(..)
     -- * Operations
-    , newResource
     , insertEdge
     , deleteEdge
     , connect
@@ -369,17 +368,6 @@ outFromEdge Edge{..} = OutRel edgeRelation edgeSrc edgeDst
 
 inFromEdge :: Relation r a b => Edge a r b -> Rel
 inFromEdge Edge{..} = InRel edgeRelation edgeSrc edgeDst
-
--- | Register a new resource. A resource is meant to be immutable: it does not
--- change and lives forever.
-newResource :: Resource a => a -> Graph -> Graph
-newResource x g =
-    g { grChangeLog = updateChangeLog (InsertMany [ (encodeRes (Res x),[]) ])
-                                      (grChangeLog g)
-      , grGraph = M.insertWith combineRes (Res x) S.empty $ grGraph g
-      }
-  where
-    combineRes _ es = es
 
 -- | Connect source and destination resources through a directed edge.
 insertEdge :: Relation r a b => Edge a r b -> Graph -> Graph

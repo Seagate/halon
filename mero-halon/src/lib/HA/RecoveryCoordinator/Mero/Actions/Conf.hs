@@ -97,12 +97,7 @@ initialiseConfInRG = getFilesystem >>= \case
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid mdpool)
       modifyGraph
-          $ G.newResource root
-        >>> G.newResource profile
-        >>> G.newResource fs
-        >>> G.newResource pool
-        >>> G.newResource mdpool
-        >>> G.connect Cluster Has profile
+          $ G.connect Cluster Has profile
         >>> G.connect Cluster Has M0.OFFLINE
         >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
         >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
@@ -124,8 +119,7 @@ initialiseConfInRG = getFilesystem >>= \case
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0e <- mapM mirrorEncl encls
       modifyGraph
-          $ G.newResource m0r
-        >>> G.connect m0r M0.At r
+          $ G.connect m0r M0.At r
         >>> G.connect fs M0.IsParentOf m0r
         >>> ( foldl' (.) id
               $ fmap (G.connect m0r M0.IsParentOf) m0e)
@@ -134,8 +128,7 @@ initialiseConfInRG = getFilesystem >>= \case
       Just k -> return k
       Nothing -> do
          m0r <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
-         modifyLocalGraph $ return
-           . (G.newResource m0r >>> G.connect m0r M0.At r)
+         modifyGraph $ G.connect m0r M0.At r
          return m0r
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
@@ -162,9 +155,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
     in do
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
-      modifyGraph $ G.newResource host
-                >>> G.newResource node
-                >>> G.connect Cluster Has host
+      modifyGraph $ G.connect Cluster Has host
                 >>> G.connect host Has HA_M0SERVER
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect host Runs node
@@ -180,8 +171,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
               e1 <- G.connectedFrom Has host rg :: Maybe Enclosure
               G.connectedFrom M0.At e1 rg :: Maybe M0.Enclosure
 
-        modifyGraph $ G.newResource ctrl
-                  >>> G.connect enc M0.IsParentOf ctrl
+        modifyGraph $ G.connect enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
                   >>> G.connect node M0.IsOnHardware ctrl
       else
@@ -202,10 +192,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services
 
-      modifyGraph $ G.newResource proc
-                >>> G.newResource proc
-                >>> G.newResource procLabel
-                >>> G.connect node M0.IsParentOf proc
+      modifyGraph $ G.connect node M0.IsParentOf proc
                 >>> G.connect proc Has procLabel
 
   goSrv proc devs CI.M0Service{..} = let
@@ -220,11 +207,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         _ -> id
     in do
       svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
-      modifyLocalGraph $ return
-                       . (    G.newResource svc
-                          >>> G.connect proc M0.IsParentOf svc
-                          >>> linkDrives svc
-                         )
+      modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
 
   goDev host ctrl (CI.M0Device{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
@@ -248,9 +231,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         Nothing -> M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
       markDiskPowerOn sdev
       modifyGraph
-          $ G.newResource m0sdev
-        >>> G.newResource m0disk
-        >>> G.connect ctrl M0.IsParentOf m0disk
+          $ G.connect ctrl M0.IsParentOf m0disk
         >>> G.connect m0sdev M0.IsOnHardware m0disk
         >>> G.connect m0disk M0.At sdev
       return m0sdev

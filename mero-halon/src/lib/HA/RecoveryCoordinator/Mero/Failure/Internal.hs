@@ -100,16 +100,13 @@ createPoolVersionsInPool fs pool pvers invert rg =
                         <*> pure (M0.PVerActual (failuresToArray failures)
                                                 (attrs { _pa_P = fromIntegral width }))
         rg0 <- S.get
-        S.modify'
-            $ G.newResource pver
-          >>> G.connect pool M0.IsRealOf pver
+        S.modify' $ G.connect pool M0.IsRealOf pver
         i <- for (filter (test fids)
                  $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack]) $ \rack -> do
                rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
                rg1 <- S.get
                S.modify'
-                   $ G.newResource rackv
-                 >>> G.connect pver M0.IsParentOf rackv
+                   $ G.connect pver M0.IsParentOf rackv
                  >>> G.connect rack M0.IsRealOf rackv
                i <- for (filter (test fids)
                         $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
@@ -117,8 +114,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                       enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
                       rg2 <- S.get
                       S.modify'
-                          $ G.newResource enclv
-                        >>> G.connect rackv M0.IsParentOf enclv
+                          $ G.connect rackv M0.IsParentOf enclv
                         >>> G.connect encl M0.IsRealOf enclv
                       i <- for (filter (test fids)
                                $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
@@ -126,16 +122,14 @@ createPoolVersionsInPool fs pool pvers invert rg =
                              ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
                              rg3 <- S.get
                              S.modify'
-                                 $ G.newResource ctrlv
-                               >>> G.connect enclv M0.IsParentOf ctrlv
+                                 $ G.connect enclv M0.IsParentOf ctrlv
                                >>> G.connect ctrl M0.IsRealOf ctrlv
                              let disks = filter (test fids) $
                                    G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk]
                              for_ disks $ \disk -> do
                                diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
                                S.modify'
-                                    $ G.newResource diskv
-                                  >>> G.connect ctrlv M0.IsParentOf diskv
+                                    $ G.connect ctrlv M0.IsParentOf diskv
                                   >>> G.connect disk M0.IsRealOf diskv
                              return (not $ null disks)
                       unless (or i) $ S.put rg2

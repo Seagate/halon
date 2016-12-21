@@ -73,7 +73,7 @@ findRegisteredOn node = go <$> getLocalGraph
 declare  :: Configuration a
          => Service a
          -> PhaseM RC l ()
-declare svc = modifyGraph $ G.newResource svc >>> G.connect Cluster Supports svc
+declare svc = modifyGraph $ G.connect Cluster Supports svc
 
 -- | Register service on a given node. After this halon will know that it needs
 -- to send information to regular monitor services.

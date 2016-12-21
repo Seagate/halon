@@ -105,42 +105,30 @@ import qualified HA.Resources.Mero as M0
 -- | Register a new rack in the system.
 registerRack :: Rack
              -> PhaseM RC l ()
-registerRack rack = modifyLocalGraph $ \rg -> do
-  phaseLog "rg" $ "Registering rack: "
-              ++ show rack
-
-  let rg' = G.newResource rack
-        >>> G.connect Cluster Has rack
-          $ rg
-  return rg'
+registerRack rack = do
+  phaseLog "rg" $ "Registering rack: " ++ show rack
+  modifyGraph $ G.connect Cluster Has rack
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.
 registerEnclosure :: Rack
                   -> Enclosure
                   -> PhaseM RC l ()
-registerEnclosure rack enc = modifyLocalGraph $ \rg -> do
+registerEnclosure rack enc = do
   phaseLog "rg" $ unwords
-                  [ "Registering enclosure", show enc
-                  , "in rack", show rack
-                  ]
-  return  $ G.newResource enc
-        >>> G.connect rack Has enc
-          $ rg
+    [ "Registering enclosure", show enc
+    , "in rack", show rack ]
+  modifyGraph $ G.connect rack Has enc
 
 -- | 'G.connect' the givne 'BMC' to the 'Enclosure'.
 registerBMC :: Enclosure
             -> BMC
             -> PhaseM RC l ()
-registerBMC enc bmc = modifyLocalGraph $ \rg -> do
+registerBMC enc bmc = do
   phaseLog "rg" $ unwords
                   [ "Registering BMC", show bmc
                   , "for enclosure", show enc
                   ]
-
-  let rg' = G.newResource bmc
-        >>> G.connect enc Has bmc
-          $ rg
-  return rg'
+  modifyGraph $ G.connect enc Has bmc
 
 -- | Find the IP address of the BMC corresponding to this host.
 findBMCAddress :: Host
@@ -202,22 +190,18 @@ registerOnCluster x m = modifyLocalGraph $ \rg ->
   then return rg
   else do
     phaseLog "rg" m
-    let rg' = G.newResource x
-          >>> G.connect Cluster Has x
-            $ rg
-    return rg'
+    return $! G.connect Cluster Has x rg
 
 -- | Record that a host is running in an enclosure.
 locateHostInEnclosure :: Host
                       -> Enclosure
                       -> PhaseM RC l ()
-locateHostInEnclosure host enc = modifyLocalGraph $ \rg -> do
+locateHostInEnclosure host enc = do
   phaseLog "rg" $ "Locating host "
               ++ show host
               ++ " in enclosure "
               ++ show enc
-
-  return $ G.connect enc Has host rg
+  modifyGraph $ G.connect enc Has host
 
 -- | Record that a node is running on a host. Does not re-connect if
 -- the 'Node' is already connected to the given 'Host'.
@@ -257,10 +241,7 @@ setHostAttr :: Host
 setHostAttr h f = do
   phaseLog "rg" $ unwords [ "Setting attribute", show f
                 , "on host", show h ]
-  modifyLocalGraph
-      $ return
-      . (G.newResource f
-    >>> G.connect h Has f)
+  modifyGraph $ G.connect h Has f
 
 -- | Remove the given 'HostAttr' from the 'Host'.
 unsetHostAttr :: Host
@@ -269,9 +250,7 @@ unsetHostAttr :: Host
 unsetHostAttr h f = do
   phaseLog "rg" $ unwords [ "Unsetting attribute", show f
                           , "on host", show h ]
-  modifyLocalGraph
-    $ return
-    . G.disconnect h Has f
+  modifyGraph $ G.disconnect h Has f
 
 -- | Find hosts with attributes satisfying the user supplied predicate
 findHostsByAttributeFilter :: String -- ^ Message to log
@@ -308,14 +287,9 @@ findHostAttrs host = do
 registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
                   -> PhaseM RC l ()
-registerInterface host int = modifyLocalGraph $ \rg -> do
+registerInterface host int = do
   phaseLog "rg" $ "Registering interface on host " ++ show host
-
-  let rg' = G.newResource host
-        >>> G.newResource int
-        >>> G.connect host Has int
-          $ rg
-  return rg'
+  modifyGraph $ G.connect host Has int
 
 ----------------------------------------------------------
 -- Drive related functions                              --
@@ -357,18 +331,12 @@ isStorageDriveRemoved sd = do
 identifyStorageDevice :: StorageDevice
                       -> [DeviceIdentifier]
                       -> PhaseM RC l ()
-identifyStorageDevice ld dis = modifyLocalGraph $ \rg -> do
+identifyStorageDevice ld dis = do
   phaseLog "rg" $ "Adding identifiers "
               ++ show dis
               ++ " to device "
               ++ show ld
-
-  let newRes g di = G.connect ld Has di . G.newResource di $ g
-      rg' = G.newResource ld
-        >>> (\g0 -> foldl' newRes g0 dis)
-          $ rg
-
-  return rg'
+  modifyGraph $ \rg -> foldl' (\g di -> G.connect ld Has di g) rg dis
 
 -- | Lookup filesystem paths for storage devices (e.g. /dev/sda1)
 lookupStorageDevicePaths :: StorageDevice -> PhaseM RC l [String]
@@ -445,18 +413,12 @@ lookupEnclosureOfStorageDevice sd =
 locateStorageDeviceInEnclosure :: Enclosure
                                 -> StorageDevice
                                 -> PhaseM RC l ()
-locateStorageDeviceInEnclosure enc dev = modifyLocalGraph $ \rg -> do
+locateStorageDeviceInEnclosure enc dev = do
   phaseLog "rg" $ "Registering storage device: "
               ++ show dev
               ++ " in enclosure "
               ++ show enc
-
-  let rg' = G.newResource enc
-        >>> G.newResource dev
-        >>> G.connect enc Has dev
-          $ rg
-
-  return rg'
+  modifyGraph $ G.connect enc Has dev
 
 -- | Register a new drive in the system.
 locateStorageDeviceOnHost :: Host
@@ -468,19 +430,11 @@ locateStorageDeviceOnHost host dev = modifyLocalGraph $ \rg -> do
               ++ show dev
               ++ " on host "
               ++ show host
-              ++ (case menc of
-                    Nothing -> ""
-                    Just e  -> " (" ++ show e ++ ")")
+              ++ maybe "" (\e -> " (" ++ show e ++ ")") menc
 
-  let rg' = G.newResource host
-        >>> G.newResource dev
-        >>> G.connect Cluster Has host
-        >>> G.connect host Has dev
-        $ case menc of
-            Nothing -> rg
-            Just e  -> G.connect e Has dev rg
-
-  return rg'
+  return . G.connect host Has dev
+         . G.connect Cluster Has host
+         $ maybe rg (\e -> G.connect e Has dev rg) menc
 
 -- | Merge multiple storage devices into one.
 --   Returns the new (merged) device.
@@ -507,16 +461,13 @@ updateDriveStatus :: StorageDevice
                   -> String -- ^ Status.
                   -> String -- ^ Reason.
                   -> PhaseM RC l ()
-updateDriveStatus dev status reason = modifyLocalGraph $ \rg -> do
+updateDriveStatus dev status reason = do
   ds <- driveStatus dev
   let statusNode = StorageDeviceStatus status reason
   phaseLog "rg" $ "Updating status for device"
   phaseLog "status.old" $ show ds
   phaseLog "status.new" $ show statusNode
-  let rg' = G.newResource statusNode
-        >>> G.connect dev Is statusNode
-          $ rg
-  return rg'
+  modifyGraph $ G.connect dev Is statusNode
 
 updateStorageDeviceSDev :: StorageDevice -> PhaseM RC l ()
 updateStorageDeviceSDev sdev = do
@@ -581,7 +532,7 @@ lookupStorageDeviceReplacement sdev =
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 setStorageDeviceAttr sd attr  = do
     phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
-    modifyGraph (G.newResource attr >>> G.connect sd Has attr)
+    modifyGraph $ G.connect sd Has attr
 
 -- | Unset an attribute on a storage device.
 unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()

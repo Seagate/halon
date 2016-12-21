@@ -159,8 +159,7 @@ testSyncLarge t n = rGroupTest t g $ \pid -> do
     g = undefined :: MC_RG Multimap
 
 buildCompleteGraph :: Int -> Graph -> Graph
-buildCompleteGraph n = addResources . addEdges where
-  addResources = foldl' (.) id $ fmap (newResource . NodeA) range
+buildCompleteGraph n = addEdges where
   addEdges = foldl' (.) id
               $ fmap (\(a,b) -> connect (NodeA a) EdgeA (NodeA b))
               $ pairs range

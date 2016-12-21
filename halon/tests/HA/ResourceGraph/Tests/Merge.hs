@@ -70,14 +70,13 @@ newtype GraphBuilder = GraphBuilder (Graph -> Graph)
 instance Arbitrary GraphBuilder where
   arbitrary = do
     resources <- listOf1 (arbitrary :: Gen Node)
-    relCount <- arbitrary
+    relCount <- suchThat arbitrary (> 0)
     relations <- replicateM relCount $ do
       from <- elements resources
       to <- elements resources
       return (from, to)
     return . GraphBuilder
-      $ (foldl' (.) id (newResource <$> resources))
-      . (foldl' (.) id ((\(f, t) -> connect f Link t) <$> relations))
+      $ foldl' (.) id ((\(f, t) -> connect f Link t) <$> relations)
 
 instance Arbitrary MergeTest where
   arbitrary = do

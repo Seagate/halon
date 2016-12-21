@@ -24,7 +24,6 @@ module HA.RecoveryCoordinator.RC.Actions
   , module HA.RecoveryCoordinator.RC.Actions.Core
   ) where
 
-import           Control.Category ((>>>))
 import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
@@ -82,14 +81,8 @@ makeCurrentRC update = do
          update old currentRC
   return currentRC
   where
-    mkRC = modifyGraph $ \g ->
-      let g' = G.newResource currentRC
-           >>> G.newResource R.Active
-           >>> G.connect R.Cluster R.Has currentRC
-           >>> G.connect currentRC R.Is R.Active
-             $ g
-      in g'
-
+    mkRC = modifyGraph $ G.connect currentRC R.Is R.Active
+                       . G.connect R.Cluster R.Has currentRC
 
 -- | Find currenlty running RC in resource graph.
 tryGetCurrentRC :: PhaseM RC l (Maybe R.RC)
