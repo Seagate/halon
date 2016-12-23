@@ -9,7 +9,7 @@
 
 module HA.ResourceGraph.Tests ( tests ) where
 
-import qualified HA.ResourceGraph.Tests.Merge as Merge
+-- import qualified HA.ResourceGraph.Tests.Merge as Merge
 
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure (mkStatic, remotable)
@@ -81,9 +81,11 @@ resourceDictNodeB = Dict
 
 relationDictHasBNodeANodeB :: Dict (Relation HasB NodeA NodeB)
 relationDictHasANodeBNodeA :: Dict (Relation HasA NodeB NodeA)
+relationDictHasANodeANodeA :: Dict (Relation HasA NodeA NodeA)
 
 relationDictHasBNodeANodeB = Dict
 relationDictHasANodeBNodeA = Dict
+relationDictHasANodeANodeA = Dict
 
 mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
@@ -93,6 +95,7 @@ remotable
   , 'resourceDictNodeB
   , 'relationDictHasBNodeANodeB
   , 'relationDictHasANodeBNodeA
+  , 'relationDictHasANodeANodeA
   , 'mmSDict
   ]
 
@@ -107,6 +110,8 @@ instance Relation HasB NodeA NodeB where
   relationDict = $(mkStatic 'relationDictHasBNodeANodeB)
 instance Relation HasA NodeB NodeA where
   relationDict = $(mkStatic 'relationDictHasANodeBNodeA)
+instance Relation HasA NodeA NodeA where
+  relationDict = $(mkStatic 'relationDictHasANodeANodeA)
 deriveSafeCopy 0 'base ''HasA
 deriveSafeCopy 0 'base ''HasB
 

@@ -18,7 +18,7 @@ module HA.ResourceGraph.Tests.Merge (tests) where
 import HA.Multimap (StoreUpdate(..))
 import HA.ResourceGraph hiding (__remoteTable)
 import HA.Resources.TH
-import HA.SafeCopy
+import Data.SafeCopy
 
 import Control.Monad (replicateM)
 
@@ -47,7 +47,7 @@ $(mkDicts
   [ (''Node, ''Link, ''Node) ])
 $(mkResRel
   [''Node]
-  [ (''Node, Unbounded, ''Link, Unbounded, ''Node) ]
+  [ (''Node, ''Link, ''Node) ]
   []
   )
 
