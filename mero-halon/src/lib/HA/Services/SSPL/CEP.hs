@@ -253,7 +253,6 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
            Just enc'' -> return enc''
        _ -> return enc'
 
-     put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path)
      lookupStorageDeviceInEnclosure enc diidx >>= \case
        Nothing ->
          -- Try to check if we have device with known serial number, just without location.
@@ -277,6 +276,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                locateHostInEnclosure host enc
              identifyStorageDevice disk [diidx, sn, path]
              selfMessage $ RuleDriveManagerDisk disk
+             put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path, disk)
        Just st -> do
          -- is report for the same drive that halon knows.
          b <- hasStorageDeviceIdentifier st sn
@@ -292,11 +292,16 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                  -- in the HPI rule. 
                  void $ attachStorageDeviceReplacement st [path]
                Just dev -> identifyStorageDevice dev [path]
+         put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path, st)
          selfMessage (RuleDriveManagerDisk st)
      continue pcommit
 
-   setPhase pcommit $ \(RuleDriveManagerDisk disk) -> do
-     Just (uuid, nid, enc, _diskNum, srdm, _sn, _path) <- get Local
+   setPhaseIf pcommit (\(RuleDriveManagerDisk disk) _ minfo -> 
+      case minfo of
+        Just (_,_,_,_,_,_,_,d) | d == disk -> return $ Just disk
+        _ -> return Nothing)
+       $ \disk -> do
+     Just (uuid, nid, enc, _diskNum, srdm, _sn, _path, _disk) <- get Local
      phaseLog "disk" $ show disk
      let
       disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
@@ -343,7 +348,7 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
 
    directly finish stop
 
-   start pinit Nothing
+   startFork pinit Nothing
 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions LoopState ()
