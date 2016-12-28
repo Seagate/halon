@@ -24,6 +24,8 @@ import           HA.Encode (encodeP)
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.RC.Actions.Log (rcLog', tagContext)
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.SafeCopy
@@ -108,9 +110,10 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
    directly do_restart $ do
      Just msg <- fromLocal fldReq
      ServiceStartRequest _ node svc a _ <- decodeMsg msg
-     phaseLog "service.node" $ show node
-     phaseLog "service.name" $ serviceName svc
-     phaseLog "service.config" $ show a
+     tagContext Log.SM node (Just "service.node")
+     tagContext Log.SM [ ("service.name", serviceName svc)
+                        , ("service.config", show a)
+                        ] Nothing
      minfo <- Service.lookupInfoMsg node svc
      for_ minfo $ \cfg -> do
        Service.markStopping node cfg
@@ -141,10 +144,10 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
    directly do_register $ do
      Just msg <- fromLocal fldReq
      ServiceStartRequest _ node svc conf _ <- decodeMsg msg
-     phaseLog "info" "service start"
-     phaseLog "service.node"   $ show node
-     phaseLog "service.name"   $ serviceName svc
-     phaseLog "service.config" $ show conf
+     tagContext Log.SM node (Just "service.node")
+     tagContext Log.SM [ ("service.name", serviceName svc)
+                        , ("service.config", show conf)
+                        ] Nothing
      Service.declare svc
      Service.register node svc conf
      continue do_start
@@ -168,8 +171,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
        case eqTT stoppingSvc startingSvc of
          Just Refl -> do
            putLocal fldRep $ ServiceStartRequestCancelled
-           phaseLog "info" "service start was cancelled."
-           phaseLog "end" "service start"
+           rcLog' Log.DEBUG "Service start was cancelled."
            continue finish
          Nothing -> loop
      else loop
@@ -188,9 +190,7 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
             runPutLazy (safePut conf) -- XXX: why not keep encoded?
          then do
            putLocal fldRep $ ServiceStartRequestOk
-           phaseLog "info" "Service started"
-           phaseLog "info" $ "service.pid = " ++ show pid
-           phaseLog "end"  $ "service start"
+           rcLog' Log.DEBUG ("service.pid", show pid)
            continue finish
          else loop
        Nothing -> loop
@@ -238,9 +238,9 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
          mcfg <- node & Service.lookupInfoMsg $ svc
          case mcfg of
            Just cfg -> do
-             phaseLog "info" "service stop"
-             phaseLog "service.name" $ serviceName svc
-             phaseLog "service.node" $ show node
+             tagContext Log.SM [ ("service.name", serviceName svc)
+                                , ("service.node", show node)
+                                ] Nothing
              Service.markStopping node cfg
              return $ Right (ServiceStopRequestCancelled, [do_stop])
            Nothing -> return $ Right (ServiceStopRequestCancelled, [do_stop_only])
@@ -250,8 +250,9 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
    directly do_stop_only $ do
       Just msg <- fromLocal fldReq
       ServiceStopRequest node svc <- decodeMsg msg
-      phaseLog "service.name" $ serviceName svc
-      phaseLog "service.node" $ show node
+      tagContext Log.SM [ ("service.name", serviceName svc)
+                        , ("service.node", show node)
+                        ] Nothing
       Service.stop node svc
       continue finish
 
@@ -271,7 +272,6 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
          then case eqTT died_srv stoppingSrv of
            Just Refl -> do
              putLocal fldRep $ ServiceStopRequestOk
-             phaseLog "end"  $ "service stop"
              continue finish
            Nothing -> loop
          else loop
@@ -300,8 +300,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
        case eqTT stoppingSvc startingSvc of
          Just Refl -> do
            putLocal fldRep $ ServiceStopRequestCancelled
-           phaseLog "info" "service stop was cancelled."
-           phaseLog "end" "service stop"
+           rcLog' Log.DEBUG "service stop was cancelled."
            continue finish
          Nothing -> loop
      else loop
@@ -339,9 +338,10 @@ ruleServiceCouldNotStart :: Definitions RC ()
 ruleServiceCouldNotStart = defineSimpleTask "rc::service::could-not-start" $
   \(ServiceCouldNotStart node info) -> do
     ServiceInfo svc config <- decodeMsg info
-    phaseLog "service.name" $ serviceName svc
-    phaseLog "service.node" $ show node
-    phaseLog "service.config" $ show config
+    rcLog' Log.DEBUG [ ("service.name", serviceName svc)
+                      , ("service.node", show node)
+                      , ("service.config", show config)
+                      ]
     void $ node & Service.unregisterIfStopping $ info
 
 -- | Log service exit.
@@ -349,11 +349,11 @@ ruleServiceExit :: Definitions RC ()
 ruleServiceExit = defineSimpleTask "rc::service::exit" $
   \(ServiceExit node info pid) -> do
     ServiceInfo svc config <- decodeMsg info
-    phaseLog "info" $ "service exit"
-    phaseLog "service.name" $ serviceName svc
-    phaseLog "service.node" $ show node
-    phaseLog "service.pid"  $ show pid
-    phaseLog "service.config" $ show config
+    rcLog' Log.DEBUG [ ("service.name", serviceName svc)
+                      , ("service.node", show node)
+                      , ("service.pid", show pid)
+                      , ("service.config", show config)
+                      ]
     void $ node & Service.unregister $ info
 
 -- | If service have failed - try if it's the one that is registered
@@ -362,11 +362,12 @@ ruleServiceFailed :: Definitions RC ()
 ruleServiceFailed = defineSimpleTask "rc::service::failed" $
   \(ServiceFailed node info pid) -> do
     ServiceInfo svc config <- decodeMsg info
-    phaseLog "warning" $ "service failed"
-    phaseLog "service.name" $ serviceName svc
-    phaseLog "service.node" $ show node
-    phaseLog "service.pid"  $ show pid
-    phaseLog "service.config" $ show config
+    rcLog' Log.WARN "service failed"
+    rcLog' Log.DEBUG [ ("service.name", serviceName svc)
+                      , ("service.node", show node)
+                      , ("service.pid", show pid)
+                      , ("service.config", show config)
+                      ]
     node & Service.unregisterIfStopping $ info
     isCurrent <- node & Service.has $ info
     -- XXX: currently we restart service by default, we may want to be
@@ -379,12 +380,13 @@ ruleServiceUncaughtException :: Definitions RC ()
 ruleServiceUncaughtException = defineSimpleTask "rc::service::uncaught-exception" $
   \(ServiceUncaughtException node info reason pid) -> do
     ServiceInfo svc config <- decodeMsg info
-    phaseLog "error" $ "service failed because of exception"
-    phaseLog "service.name"   $ serviceName svc
-    phaseLog "service.node"   $ show node
-    phaseLog "service.pid"    $ show pid
-    phaseLog "service.config" $ show config
-    phaseLog "exception.text" $ reason
+    rcLog' Log.ERROR "service failed because of exception"
+    rcLog' Log.DEBUG [ ("service.name", serviceName svc)
+                      , ("service.node", show node)
+                      , ("service.pid", show pid)
+                      , ("service.config", show config)
+                      , ("exception.text", reason)
+                      ]
     node & Service.unregister $ info
 
 -- | If service have started - continue execution.
@@ -392,8 +394,9 @@ ruleServiceStarted :: Definitions RC ()
 ruleServiceStarted = defineSimpleTask "rc::service::started" $
   \(ServiceStarted node info pid) -> do
     ServiceInfo svc config <- decodeMsg info
-    phaseLog "service.name"   $ serviceName svc
-    phaseLog "service.node"   $ show node
-    phaseLog "service.pid"    $ show pid
-    phaseLog "service.config" $ show config
+    rcLog' Log.DEBUG [ ("service.name", serviceName svc)
+                      , ("service.node", show node)
+                      , ("service.pid", show pid)
+                      , ("service.config", show config)
+                      ]
     notify (ServiceStartedInternal node config pid)

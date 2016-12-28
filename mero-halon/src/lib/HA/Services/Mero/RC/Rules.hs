@@ -11,6 +11,7 @@ import HA.Services.Mero.RC.Events
 
 -- RC dependencies
 import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions.Log
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
@@ -79,18 +80,18 @@ ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
 -- used.
 ruleGenericNotification :: Definitions RC ()
 ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
-   \(Notified epoch msg _ fails) -> do
-      promulgateRC msg
-      unless (null fails) $ do
-        ps <- (\rg -> filter (\p ->
+  \(Notified epoch msg _ fails) -> do
+    promulgateRC msg
+    unless (null fails) $ do
+      ps <- (\rg -> filter (\p ->
                   case getState p rg of
                     M0.PSOnline -> True
                     _        -> False) fails) <$> getLocalGraph
-        unless (null ps) $ do
-          phaseLog "warning" "some services were marked online but notifications failed to be delivered"
-          phaseLog "warning" $ "epoch = " ++ show epoch
-          for_ ps $ \p -> phaseLog "warning" $ "fid = " ++ show (M0.fid p)
-          promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> ps)
+      unless (null ps) $ do
+        phaseLog "warning" "Some services were marked online but notifications failed to be delivered"
+        phaseLog "warning" $ "epoch = " ++ show epoch
+        for_ ps $ \p -> phaseLog "warning" $ "fid = " ++ show (M0.fid p)
+        promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> ps)
 
 -- | When notification Set was delivered to some process we should mark that
 -- in graph and check if there are some other pending processes, if not -
@@ -108,8 +109,7 @@ ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::
 ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
 ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivery-failed" $
   \(NotificationFailure epoch fid) -> do
-      phaseLog "epoch" $ show epoch
-      phaseLog "fid"   $ show fid
+      tagContext SM [("epoch", show epoch), ("fid", show fid)] Nothing
       mdiff <- getStateDiffByEpoch epoch
       for_ mdiff $ \diff -> do
         mp <- M0.lookupConfObjByFid fid <$> getLocalGraph

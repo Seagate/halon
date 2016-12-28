@@ -39,6 +39,7 @@ import qualified HA.Resources.Mero.Note as M0
 
 -- RC dependencies
 import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import HA.RecoveryCoordinator.Mero.Events
 
 import HA.EventQueue (promulgateWait)
@@ -105,7 +106,7 @@ lookupMeroChannelByNode node = do
 -- | Unregister all channels.
 unregisterMeroChannelsOn :: R.Node -> PhaseM RC l ()
 unregisterMeroChannelsOn node = do
-   phaseLog "info" $ "Unregistering mero channels on " ++ show node
+   actLog "unregisterMeroChannelsOn" [("node", show node)]
    unregisterChannel node (Proxy :: Proxy NotificationMessage)
    unregisterChannel node (Proxy :: Proxy ProcessControlMsg)
 

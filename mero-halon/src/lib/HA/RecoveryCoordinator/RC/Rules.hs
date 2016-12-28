@@ -9,6 +9,7 @@ module HA.RecoveryCoordinator.RC.Rules
   ) where
 
 import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions.Log
 import           HA.RecoveryCoordinator.RC.Events
 import           HA.RecoveryCoordinator.RC.Internal
 import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
@@ -93,8 +94,9 @@ ruleNewSubscription :: Definitions RC ()
 ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
   \(SubscribeToRequest pid bs) -> do
     let fp = decodeFingerprint bs
-    phaseLog "info" $ "process.pid=" ++ show pid
-    phaseLog "info" $ "fingerprint=" ++ show fp
+    rcLog' DEBUG [  ("process.pid", show pid)
+                  , ("fingerprint", show fp)
+                  ]
     liftProcess $ do
       self <- getSelfPid
       _ <- monitor pid
@@ -115,8 +117,9 @@ ruleRemoveSubscription :: Definitions RC ()
 ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
   \(UnsubscribeFromRequest pid bs) -> do
     let fp = decodeFingerprint bs
-    phaseLog "info" $ "process.pid=" ++ show pid
-    phaseLog "info" $ "fingerprint=" ++ show fp
+    rcLog' DEBUG [  ("process.pid", show pid)
+                  , ("fingerprint", show fp)
+                  ]
     liftProcess $ do
       self <- getSelfPid
       rawUnsubscribeThem self fp pid

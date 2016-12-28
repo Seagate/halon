@@ -61,6 +61,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
 
 import           Data.Maybe (listToMaybe, maybeToList)
 import           HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -72,7 +73,7 @@ import           Text.Regex.TDFA ((=~))
 registerRack :: Rack
              -> PhaseM RC l ()
 registerRack rack = do
-  phaseLog "rg" $ "Registering rack: " ++ show rack
+  actLog "registerRack" [("rack", show rack)]
   modifyGraph $ G.connect Cluster Has rack
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.
@@ -80,9 +81,7 @@ registerEnclosure :: Rack
                   -> Enclosure
                   -> PhaseM RC l ()
 registerEnclosure rack enc = do
-  phaseLog "rg" $ unwords
-    [ "Registering enclosure", show enc
-    , "in rack", show rack ]
+  actLog "registerEnclosure" [("rack", show rack), ("enclosure", show enc)]
   modifyGraph $ G.connect rack Has enc
 
 -- | 'G.connect' the givne 'BMC' to the 'Enclosure'.
@@ -90,17 +89,13 @@ registerBMC :: Enclosure
             -> BMC
             -> PhaseM RC l ()
 registerBMC enc bmc = do
-  phaseLog "rg" $ unwords
-                  [ "Registering BMC", show bmc
-                  , "for enclosure", show enc
-                  ]
+  actLog "registerBMC" [("bmc", show bmc), ("enclosure", show enc)]
   modifyGraph $ G.connect enc Has bmc
 
 -- | Find the IP address of the BMC corresponding to this host.
 findBMCAddress :: Host
                -> PhaseM RC l (Maybe String)
 findBMCAddress host = do
-    phaseLog "rg-query" $ "Getting BMC address for host " ++ show host
     g <- getLocalGraph
     return . listToMaybe $
       [ bmc_addr bmc
@@ -128,7 +123,6 @@ findHostEnclosure host =
 findHosts :: String
           -> PhaseM RC l [Host]
 findHosts regex = do
-  phaseLog "rg-query" $ "Looking for hosts matching regex " ++ regex
   g <- getLocalGraph
   return $ [ host | host@(Host hn) <- G.connectedTo Cluster Has g
                   , hn =~ regex]
@@ -163,10 +157,7 @@ locateHostInEnclosure :: Host
                       -> Enclosure
                       -> PhaseM RC l ()
 locateHostInEnclosure host enc = do
-  phaseLog "rg" $ "Locating host "
-              ++ show host
-              ++ " in enclosure "
-              ++ show enc
+  actLog "locateHostInEnclosure" [("host", show host), ("enclosure", show enc)]
   modifyGraph $ G.connect enc Has host
 
 -- | Record that a node is running on a host. Does not re-connect if
@@ -178,8 +169,7 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg ->
   if G.isConnected host Runs node rg
   then return rg
   else do
-    phaseLog "rg" $ "Locating node " ++ show node ++ " on host "
-                 ++ show host
+    actLog "locateHostInEnclosure" [("host", show host), ("node", show node)]
     return $ G.connect host Runs node rg
 
 ----------------------------------------------------------
@@ -192,11 +182,6 @@ hasHostAttr :: HostAttr
             -> PhaseM RC l Bool
 hasHostAttr f h = do
   g <- getLocalGraph
-  let result = G.isConnected h Has f g
-  phaseLog "rg-query" $ "Checking "
-                      ++ show h
-                      ++ " for attribute "
-                      ++ show f ++ ": " ++ show result
   return $ G.isConnected h Has f g
 
 -- | Set an attribute on a host. Note that this will not replace
@@ -205,8 +190,7 @@ setHostAttr :: Host
             -> HostAttr
             -> PhaseM RC l ()
 setHostAttr h f = do
-  phaseLog "rg" $ unwords [ "Setting attribute", show f
-                , "on host", show h ]
+  actLog "setHostAttr" [("host", show h), ("attr", show f)]
   modifyGraph $ G.connect h Has f
 
 -- | Remove the given 'HostAttr' from the 'Host'.
@@ -214,8 +198,7 @@ unsetHostAttr :: Host
               -> HostAttr
               -> PhaseM RC l ()
 unsetHostAttr h f = do
-  phaseLog "rg" $ unwords [ "Unsetting attribute", show f
-                          , "on host", show h ]
+  actLog "unsetHostAttr" [("host", show h), ("attr", show f)]
   modifyGraph $ G.disconnect h Has f
 
 -- | Find hosts with attributes satisfying the user supplied predicate
@@ -242,7 +225,6 @@ findHostsByAttr label =
 findHostAttrs :: Host
               -> PhaseM RC l [HostAttr]
 findHostAttrs host = do
-  phaseLog "rg-query" $ "Getting attributes for host " ++ show host
   G.connectedTo host Has <$> getLocalGraph
 
 ----------------------------------------------------------
@@ -254,7 +236,7 @@ registerInterface :: Host -- ^ Host on which the interface resides.
                   -> Interface
                   -> PhaseM RC l ()
 registerInterface host int = do
-  phaseLog "rg" $ "Registering interface on host " ++ show host
+  actLog "registerInterface" [("host", show host), ("int", show int)]
   modifyGraph $ G.connect host Has int
 
 ----------------------------------------------------------
@@ -328,10 +310,8 @@ locateStorageDeviceInEnclosure :: Enclosure
                                 -> StorageDevice
                                 -> PhaseM RC l ()
 locateStorageDeviceInEnclosure enc dev = do
-  phaseLog "rg" $ "Registering storage device: "
-              ++ show dev
-              ++ " in enclosure "
-              ++ show enc
+  actLog "locateStorageDeviceInEnclosure"
+          [("device", show dev), ("enclosure", show enc)]
   modifyGraph $ G.connect enc Has dev
 
 -- | Update a metric monitoring how many drives are currently
@@ -425,15 +405,14 @@ getSDevHost sdev = do
 -- | Set an attribute on a storage device.
 setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 setStorageDeviceAttr sd attr  = do
-    phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
-    modifyGraph $ G.connect sd Has attr
+  actLog "setStorageDeviceAttr" [("sd", show sd), ("attr", show attr)]
+  modifyGraph $ G.connect sd Has attr
 
 -- | Unset an attribute on a storage device.
 unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 unsetStorageDeviceAttr sd attr = do
-    phaseLog "rg" $ "Unsetting disk attribute "
-                  ++ show attr ++ " on " ++ show sd
-    modifyGraph $ G.disconnect sd Has attr
+  actLog "unsetStorageDeviceAttr" [("sd", show sd), ("attr", show attr)]
+  modifyGraph $ G.disconnect sd Has attr
 
 -- | Find attributes matching the given filter on a storage device.
 findStorageDeviceAttrs :: (StorageDeviceAttr -> Bool)
