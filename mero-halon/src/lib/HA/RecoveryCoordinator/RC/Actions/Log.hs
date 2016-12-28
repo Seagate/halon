@@ -37,9 +37,13 @@ import qualified HA.Resources.Mero.Note as M0 (ShowFidObj(..))
 
 import Control.Distributed.Process (NodeId, liftIO)
 
+import Data.List (isPrefixOf, find)
 import qualified Data.Map.Strict as Map
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
+
+import GHC.SrcLoc
+import GHC.Stack
 
 import Network.CEP hiding (Local)
 import Network.CEP.Log (Environment)
@@ -87,17 +91,22 @@ withLocalContext' :: ((?ctx :: LocalContext) => PhaseM RC l a) -> PhaseM RC l a
 withLocalContext' = let ?ctx = emptyLocalContext in withLocalContext
 
 -- | Log a user loggable event to the decision log framework.
-rcLog :: (UserLoggable a, ?ctx :: LocalContext) => Level -> a -> PhaseM RC l ()
+rcLog :: (UserLoggable a, ?ctx :: LocalContext, ?loc :: CallStack)
+      => Level -> a -> PhaseM RC l ()
 rcLog lvl x = let
+    !cs = ?loc
     contexts = [Rule, SM, Phase] ++ (Local <$> unLocalContext ?ctx)
-    evt = EvtInContexts contexts . CE_UserEvent lvl Nothing $ toUserEvent x
+    evt = EvtInContexts contexts . CE_UserEvent lvl srcLoc $ toUserEvent x
+    srcLoc = extractSrcLoc . snd <$> (find (isPrefixOf "rcLog" . fst)
+                                  $ reverse . getCallStack $ cs)
+    extractSrcLoc !sl = SourceLoc (srcLocModule sl) (srcLocStartLine sl)
   in appLog evt
 
 -- | Log a user loggable event to the decision log framework.
 --   This variant does not attempt to discover local contexts - 'Rule', 'SM'
 --   and 'Phase' contexts will be applied to any log statements made, but
 --   if run within a 'withLocalContext' block, that context will not be found.
-rcLog' :: (UserLoggable a) => Level -> a -> PhaseM RC l ()
+rcLog' :: (UserLoggable a, ?loc :: CallStack) => Level -> a -> PhaseM RC l ()
 rcLog' = let ?ctx = emptyLocalContext in rcLog
 
 -- | Log an action call to the decision log framework.
