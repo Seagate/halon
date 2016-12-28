@@ -138,7 +138,7 @@ instance Taggable NodeId where
   toTagContent nid = TagScope [Node (Res.Node nid)]
 
 instance Taggable Res.StorageDevice where
-  toTagContent (Res.StorageDevice uuid) = TagScope [StorageDevice uuid]
+  toTagContent (Res.StorageDevice serial) = TagScope [StorageDevice serial]
 
 #ifdef USE_MERO
 -- | Note that it's safe to overlap here because we know that none of our

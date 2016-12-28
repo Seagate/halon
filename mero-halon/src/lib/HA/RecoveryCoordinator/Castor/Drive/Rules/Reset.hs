@@ -16,6 +16,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
 
 import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
@@ -131,20 +132,20 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
     Just sdev -> do
       -- Drive reset rule may be triggered if drive is removed, we
       -- can't do anything sane here, so skipping this rule.
-      mstatus <- driveStatus sdev
-      isDrivePowered <- isStorageDevicePowered sdev
+      status <- StorageDevice.status sdev
+      isDrivePowered <- StorageDevice.isPowered sdev
       isDriveRemoved <- isStorageDriveRemoved sdev
       phaseLog "info" $ "Handle reset"
       phaseLog "storage-device" $ show sdev
-      phaseLog "storage-device.status" $ show mstatus
+      phaseLog "storage-device.status" $ show status
       phaseLog "storage-device.powered" $ show isDrivePowered
       phaseLog "storage-device.removed" $ show isDriveRemoved
-      case (\(StorageDeviceStatus s _) -> s) <$> mstatus of
+      case (\(StorageDeviceStatus s _) -> s) status of
         _ | isDriveRemoved ->
           phaseLog "info" "Drive is physically removed, skipping reset."
         _ | not isDrivePowered ->
           phaseLog "info" "Drive is not powered, skipping reset."
-        Just "EMPTY" ->
+        "EMPTY" ->
           phaseLog "info" "Expander reset in progress, skipping reset."
         _ -> do
           st <- getState m0sdev <$> getLocalGraph
@@ -156,18 +157,18 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
             else do
               ratt <- getDiskResetAttempts sdev
               resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
-              let status = if ratt <= resetAttemptThreshold
-                           then M0.sdsFailTransient st
-                           else M0.SDSFailed
+              let m0status = if ratt <= resetAttemptThreshold
+                             then M0.sdsFailTransient st
+                             else M0.SDSFailed
 
-              sdevTransition <- checkDiskFailureWithinTolerance m0sdev status <$> getLocalGraph
+              sdevTransition <- checkDiskFailureWithinTolerance m0sdev m0status <$> getLocalGraph
               when (ratt > resetAttemptThreshold) $ do
                 phaseLog "warning" "drive have failed to reset too many times => making as failed."
                 when (isRight sdevTransition) $
                   updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
               -- Notify rest of system if stat actually changed
-              when (st /= status) $ do
+              when (st /= m0status) $ do
                 either
                   (\failedTransition -> do
                     iemFailureOverTolerance m0sdev
@@ -199,30 +200,22 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
       drive_removed <- phaseHandle "drive-removed"
       finalize      <- phaseHandle "finalize"
 
-      let home (ResetAttempt sdev) = do
-            nodes <- getSDevNode sdev
-            paths <- lookupStorageDeviceSerial sdev
-            case (nodes, paths) of
-              (node : _, serial : _) -> do
-                modify Local $ rlens fldNode . rfield .~ Just node
-                modify Local $ rlens fldRep . rfield .~ Just (ResetFailure sdev)
-                modify Local $ rlens fldDeviceInfo . rfield .~
-                  (Just $ DeviceInfo sdev (pack serial))
+      let home (ResetAttempt sdev@(StorageDevice serial)) = getSDevNode sdev >>= \case
+            (node : _) -> do
+              modify Local $ rlens fldNode . rfield .~ Just node
+              modify Local $ rlens fldRep  . rfield .~ Just (ResetFailure sdev)
+              modify Local $ rlens fldDeviceInfo . rfield .~
+                (Just $ DeviceInfo sdev (pack serial))
 
-                isStorageDriveRemoved sdev >>= \case
-                  True ->
-                    return $ Left $ "Cancelling drive reset as drive is removed." ++ show sdev
-                  False -> do
-                    markOnGoingReset sdev
-                    return $ Right (ResetFailure sdev, [drive_removed, reset])
-              ([], _) -> do
-                 -- XXX: send IEM message
-                 return $ Left $  "Can't perform query to SSPL as node can't be found"
-              (_, []) -> do
-                -- XXX: send IEM message
-                return $ Left $ "Cannot perform reset attempt for drive "
-                                  ++ show sdev
-                                  ++ " as it has no device serial number associated."
+              isStorageDriveRemoved sdev >>= \case
+                True ->
+                  return $ Left $ "Cancelling drive reset as drive is removed." ++ show sdev
+                False -> do
+                  markOnGoingReset sdev
+                  return $ Right (ResetFailure sdev, [drive_removed, reset])
+            [] -> do
+               -- XXX: send IEM message
+               return $ Left $  "Can't perform query to SSPL as node can't be found"
 
       (disk_detached, detachDisk) <- mkDetachDisk
         (\l -> fmap join $ traverse
@@ -244,7 +237,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
           if sent
           then do
             phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
-            markDiskPowerOff sdev
+            StorageDevice.poweroff sdev
             msd <- lookupStorageDeviceSDev sdev
             case msd of
               Nothing -> switch [drive_removed, resetComplete, timeout driveResetTimeout failure]
@@ -259,7 +252,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
         if result
         then do
           phaseLog "debug" $ "Drive reset success for sdev: " ++ show sdev
-          markDiskPowerOn sdev
+          StorageDevice.poweron sdev
           messageProcessed eid
           switch [drive_removed, smart, timeout driveResetTimeout failure]
         else do

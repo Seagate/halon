@@ -30,9 +30,8 @@ import HA.RecoveryCoordinator.RC.Actions
 
 import HA.RecoveryCoordinator.Actions.Hardware
   ( isStorageDriveRemoved
-  , isStorageDevicePowered
-  , lookupStorageDeviceSerial
   )
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( SMARTRequest(..)
@@ -41,7 +40,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
-import HA.Resources.Castor (StorageDevice)
+import HA.Resources.Castor (StorageDevice(..))
 import HA.Services.SSPL.CEP
   ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
@@ -115,7 +114,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
         modify Local $ rlens fldRep . rfield .~
           (Just $ SMARTResponse sdev SRSNotPossible)
         continue finish
-      unlessM (isStorageDevicePowered sdev) $ do
+      unlessM (StorageDevice.isPowered sdev) $ do
         Log.rcLog' Log.DEBUG "Drive is not powered."
         modify Local $ rlens fldRep . rfield .~
           (Just $ SMARTResponse sdev SRSNotPossible)
@@ -159,18 +158,13 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
         (Just $ SMARTResponse sdev SRSTimeout)
       continue finish
 
-    return $ \(SMARTRequest node sdev) -> do
+    return $ \(SMARTRequest node sdev@(StorageDevice (T.pack -> serial))) -> do
       Log.tagContext Log.SM node Nothing
       Log.tagContext Log.SM sdev Nothing
-      lookupStorageDeviceSerial sdev >>= \case
-        (T.pack -> serial):_ -> do
-          modify Local $ rlens fldNode . rfield .~ (Just node)
-          modify Local $ rlens fldDeviceInfo . rfield .~
-            (Just $ DeviceInfo sdev serial)
-          return $ Right (SMARTResponse sdev SRSNotPossible, [smart])
-        [] -> do
-          Log.rcLog' Log.DEBUG ("device.id", show sdev)
-          return $ Left  "Cannot find serial number for sdev."
+      modify Local $ rlens fldNode . rfield .~ (Just node)
+      modify Local $ rlens fldDeviceInfo . rfield .~
+        (Just $ DeviceInfo sdev serial)
+      return $ Right (SMARTResponse sdev SRSNotPossible, [smart])
   where
     fldReq :: Proxy '("request", Maybe SMARTRequest)
     fldReq = Proxy

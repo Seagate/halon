@@ -778,6 +778,14 @@ instance FromJSON FilesystemStats
 
 deriveSafeCopy 0 'base ''FSStats
 deriveSafeCopy 0 'base ''FilesystemStats
+
+data Replaced = Replaced deriving (Eq, Show, Typeable, Generic)
+instance Hashable Replaced
+instance ToJSON Replaced
+instance FromJSON Replaced
+
+deriveSafeCopy 0 'base ''Replaced
+
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
@@ -792,6 +800,7 @@ $(mkDicts
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
+  , ''Replaced
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -825,8 +834,10 @@ $(mkDicts
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
   , (''Disk, ''IsRealOf, ''DiskV)
+  , (''Disk, ''R.Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
+  , (''SDev, ''At, ''R.Slot)
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
@@ -859,6 +870,7 @@ $(mkResRel
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
+  , ''Replaced
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
@@ -871,6 +883,7 @@ $(mkResRel
   , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
@@ -892,6 +905,7 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)
   , (''Disk, AtMostOne, ''IsRealOf, Unbounded, ''DiskV)
+  , (''Disk, Unbounded, ''R.Is, Unbounded, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)

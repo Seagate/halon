@@ -138,16 +138,18 @@ mkHpiMessage :: Text -- ^ Host ID of node
              -> Integer -- ^ Location number of drive
              -> Text -- ^ Drive identifier (UUID)
              -> Text -- ^ wwn of the drive
+             -> Bool -- ^ Is disk installed
+             -> Bool -- ^ Is disk powered
              -> SSPL.SensorResponseMessageSensor_response_typeDisk_status_hpi
-mkHpiMessage hostid enclosure serial location uuid wwn = emptyHPIMessage
+mkHpiMessage hostid enclosure serial location uuid wwn installed powered = emptyHPIMessage
   { SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiHostId = hostid
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum = fromIntegral location
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDeviceId = uuid
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber = serial
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiWwn = wwn
   , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN = enclosure
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled = True
-  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered = True
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled = installed
+  , SSPL.sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered = powered
   }
 
 mkResponseRaidData :: Text -- ^ Host ID of node

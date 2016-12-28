@@ -21,10 +21,9 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
 import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.RC.Actions.Dispatch
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Actions.Hardware
   ( getSDevNode
-  , lookupStorageDevicePaths
-  , lookupStorageDeviceRaidDevice
   )
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Actions
@@ -125,7 +124,7 @@ failed = define "castor::drive::raid::failed" $ do
       let
         (Node nid) = ruNode
         go [] = return ()
-        go ((sdev, path, _sn):xs) = do
+        go ((sdev, path):xs) = do
           fork CopyNewerBuffer $ do
             phaseLog "action" $ "Metadrive drive " ++ show path
                               ++ "failed on " ++ show nid ++ "."
@@ -148,7 +147,6 @@ failed = define "castor::drive::raid::failed" $ do
               phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
           go xs
 
-      phaseLog "eid" $ show eid
       todo eid
       go ruFailedComponents
       done eid
@@ -229,10 +227,9 @@ replacement = define "castor::drive::raid::replaced" $ do
 
   setPhase drive_replaced $ \(HAEvent eid (DriveReady sdev)) -> do
     todo eid
-    lookupStorageDeviceRaidDevice sdev >>= \case
+    StorageDevice.raidDevice sdev >>= \case
       -- Not a raid device so just do nothing.
-      [] -> do
-        done eid
+      [] -> done eid
       -- If we have multiple arrays, just try anyway: probably want to
       -- fail the drive either way because something is wrong. If we
       -- don't, everything is fine.
@@ -282,13 +279,13 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
   sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failure logInfo
 
   let route (RaidAddToArray sdev) = do
-        lookupStorageDeviceRaidDevice sdev >>= \case
+        StorageDevice.raidDevice sdev >>= \case
           [rd] -> do
             removed <- isRemovedFromRAID sdev
             phaseLog "device" $ show sdev
             phaseLog "removed from RAID" $ show removed
             mnode <- listToMaybe <$> getSDevNode sdev
-            mpath <- listToMaybe <$> lookupStorageDevicePaths sdev
+            mpath <- StorageDevice.path sdev
             case (,) <$> mnode <*> mpath of
               Just (node@(Node nid), path) -> do
                 modify Local $ rlens fldNode . rfield .~ (Just node)

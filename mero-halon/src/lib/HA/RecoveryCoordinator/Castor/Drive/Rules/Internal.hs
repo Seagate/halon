@@ -10,6 +10,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
   , chsNode
   , chsStorageDevice
   , chsSyncRequest
+  , chsLocation
   ) where
 
 import Control.Lens
@@ -24,6 +25,8 @@ data CheckAndHandleState = CheckAndHandleState
          -- ^ Node where disk is located.
       , _chsStorageDevice :: StorageDevice
          -- ^ Storage device we work with.
+      , _chsLocation      :: Slot
+         -- ^ Known location of the storage device.
       , _chsSyncRequest   :: Maybe UUID
          -- ^ UUID configuration sync request
       , _chsSmartRequest  :: Maybe ListenerId

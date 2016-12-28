@@ -53,7 +53,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Actions.Hardware
 import qualified HA.ResourceGraph as G
 import HA.Resources (Has(..), Cluster(..))
 import HA.Resources.Castor
@@ -299,12 +298,9 @@ mkRebalanceStartOperation handler = do
              phaseLog "spiel" $ "Starting rebalance on pool"
              phaseLog "pool"  $ show pool
              phaseLog "disks" $ show disks
-             -- XXX: is it really safe to do that here?
              for_ disks $ \d -> do
                mt <- lookupDiskSDev d
-               for_ mt $ \t -> do
-                 msd <- lookupStorageDevice t
-                 for_ msd unmarkStorageDeviceReplaced
+               for_ mt $ unmarkSDevReplaced -- XXX: (qnikst) we should do that when finished rebalance, shouldm't we?
              mkGenericSNSOperationSimple p poolRebalanceStart pool
          )
   where

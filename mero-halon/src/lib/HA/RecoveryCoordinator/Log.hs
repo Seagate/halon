@@ -67,7 +67,7 @@ data Scope =
     Thread UUID -- ^ Tag a "thread" of processing. This could be used to
                      --   group multiple rules all driven from a single message.
   | Node R.Node -- ^ Associated node
-  | StorageDevice UUID -- ^ Associated storage device.
+  | StorageDevice String -- ^ Associated storage device.
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
 

@@ -87,6 +87,7 @@ Library
                    HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
+                   HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
                    HA.RecoveryCoordinator.RC.Events.Debug
                    HA.RecoveryCoordinator.RC.Events.Cluster
                    HA.RecoveryCoordinator.RC.Actions

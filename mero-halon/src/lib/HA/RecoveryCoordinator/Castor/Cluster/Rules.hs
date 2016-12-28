@@ -59,8 +59,9 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Actions.Hardware
-      ( findHostStorageDevices, findStorageDeviceIdentifiers )
+      ( findHostStorageDevices )
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
      ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -211,7 +212,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                     , msdev :: Maybe M0.SDev)
                   = (\sdev -> (sdev, M0.getState sdev rg, hdev, ids)) <$> msdev
             devs <- fmap (sort . mapMaybe go)
-                  . traverse (\x -> (x,,) <$> findStorageDeviceIdentifiers x
+                  . traverse (\x -> (x,,) <$> StorageDevice.getIdentifiers x
                                           <*> lookupStorageDeviceSDev x)
                     =<< findHostStorageDevices host
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs) devs)

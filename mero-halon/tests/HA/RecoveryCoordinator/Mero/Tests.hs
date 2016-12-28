@@ -29,7 +29,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
-import           HA.Resources
+-- import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
@@ -43,7 +43,7 @@ import           Network.CEP
 import           Network.Transport (Transport(..))
 import           Prelude hiding ((<$>), (<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (assertEqual, testCase)
+import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
 import           TestRunner
 
 tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
@@ -91,15 +91,14 @@ testDriveManagerUpdate transport pg = runDefaultTest transport $ do
     sayTest "Sending online message"
     promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
     _ :: DriveOK <- expectPublished
+    -- XXX: remove this delay it's needed because graph is not updated immediately
+    _ <- receiveTimeout 1000000 []
 
     sayTest "Checking drive status sanity"
     graph <- G.getGraph mm
-    let [drive] = [ d | d <- G.connectedTo (Enclosure enc) Has graph :: [StorageDevice]
-                      , DISerialNumber sn <- G.connectedTo d Has graph
-                      , sn == interestingSN
-                  ]
-    assert $ G.memberResource drive graph
-    assert $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
+    let [drive] = [StorageDevice interestingSN]
+    liftIO . assertBool "drive is resource graph member" $ G.memberResource drive graph
+    liftIO . assertBool "status is graph member" $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
 
     sayTest "Sending RunDriveManagerFailure"
     usend rc $ RunDriveManagerFailure drive

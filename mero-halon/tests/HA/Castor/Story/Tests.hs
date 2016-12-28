@@ -23,11 +23,11 @@ import           Control.Monad (foldM, forM_, replicateM_, void, when)
 import           Data.Aeson (decode, encode)
 import qualified Data.Aeson.Types as Aeson
 import           Data.Binary (Binary)
-import qualified Data.ByteString.Char8 as BS8
+-- import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Defaultable
 import           Data.Foldable (for_)
-import           Data.Maybe (isJust, listToMaybe, mapMaybe)
+import           Data.Maybe (isJust, listToMaybe, mapMaybe, maybeToList)
 import           Data.Proxy
 import           Data.Text (pack)
 import           Data.Typeable
@@ -116,7 +116,6 @@ ssplTimeout = 10*1000000
 data ThatWhichWeCallADisk = ADisk {
     aDiskSD :: StorageDevice -- ^ Has a storage device
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
-  , aDiskSN :: String -- ^ Has a serial number
   , aDiskPath :: String -- ^ Has a path
   , aDiskWWN :: String -- ^ Has a WWN
 }
@@ -217,8 +216,8 @@ mkTests pg = do
           testDriveRemovedBySSPL transport pg
         , testSuccess "Metadata drive failure reported by IEM" $
           testMetadataDriveFailed transport pg
-        , testSuccess "Halon sends list of failed drives at SSPL start" $
-          testGreeting transport pg
+        -- , testSuccess "Halon sends list of failed drives at SSPL start" $
+        --   testGreeting transport pg
         , testSuccess "Halon powers down disk on failure" $
           testDrivePoweredDown transport pg
         , testSuccess "RAID reassembles after expander reset" $
@@ -508,13 +507,14 @@ waitState obj mm interval tries p = do
 
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
-  let dvs = [ ADisk storage (Just sdev) serial path wwn
+  let dvs = [ ADisk storage (Just sdev) path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
             , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
             , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
-            , DISerialNumber serial <- G.connectedTo storage Has rg
-            , DIPath path <- G.connectedTo storage Has rg
+            -- , DIPath path <- G.connectedTo storage Has rg
+            , path <- return "path" -- DIPath path <- G.connectedTo storage Has rg
             , DIWWN wwn <- G.connectedTo storage Has rg
+            -- , wwn <- return "wwn" --DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     dv:_ -> return dv
@@ -527,11 +527,10 @@ findDiskEnclosure disk rg = G.connectedFrom Has (aDiskSD disk) rg
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
-  let dvs = [ ADisk storage (Just sdev) serial path wwn
+  let dvs = [ ADisk storage (Just sdev) path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
             , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
             , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
-            , DISerialNumber serial <- G.connectedTo storage Has rg
             , DIPath path <- G.connectedTo storage Has rg
             , DIWWN wwn <- G.connectedTo storage Has rg
             ]
@@ -546,8 +545,8 @@ checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
   [ () | dev  <- G.connectedTo (Enclosure enc) Has rg :: [StorageDevice]
        , any (==(DIIndexInEnclosure idx))
              (G.connectedTo dev Has rg :: [DeviceIdentifier])
-       , any (==SDRemovedAt)
-             (G.connectedTo dev Has rg :: [StorageDeviceAttr])
+       , maybe False (const True) $ 
+             (G.connectedTo dev Has rg :: Maybe Slot)
        ]
 
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
@@ -560,13 +559,14 @@ expectNodeMsgUid = expectActuatorMsg
   . actuatorRequestMessage
   )
 
+{-
 expectLoggingMsg :: Int -> Process (Maybe (Either String ActuatorRequestMessageActuator_request_typeLogging))
 expectLoggingMsg = expectActuatorMsg'
   ( actuatorRequestMessageActuator_request_typeLogging
   . actuatorRequestMessageActuator_request_type
   . actuatorRequestMessage
   )
-
+-}
 
 expectActuatorMsg :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe (Maybe UUID, b))
 expectActuatorMsg f t = do
@@ -587,12 +587,14 @@ expectActuatorMsg f t = do
       UUID.fromText uid_s
     pull2nd x = (,) <$> pure (fst x) <*> snd x
 
+{-
 expectActuatorMsg' :: (ActuatorRequest -> Maybe b) -> Int -> Process (Maybe (Either String b))
 expectActuatorMsg' f t = expectTimeout t >>= return . \case
   Just (MQMessage _ msg) -> Just $ case f =<< (decode . LBS.fromStrict $ msg) of
        Nothing -> Left (BS8.unpack msg)
        Just x  -> Right x
   Nothing -> Nothing
+-}
 
 --------------------------------------------------------------------------------
 -- Test primitives
@@ -621,8 +623,8 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
 
 -- | Fail a drive (via Mero notification)
 failDrive :: TestSetup -> ThatWhichWeCallADisk -> Process ()
-failDrive _ (ADisk _ Nothing _ _ _) = error "Cannot fail a non-Mero disk."
-failDrive ts (ADisk _ (Just sdev) serial _ _) = do
+failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
+failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
   let tserial = pack serial
   sayTest "failDrive"
   -- We a drive failure note to the RC.
@@ -646,7 +648,7 @@ resetComplete :: ProcessId -- ^ RC
               -> ThatWhichWeCallADisk -- ^ Disk thing we're working on
               -> AckReply -- ^ Smart result
               -> Process ()
-resetComplete rc mm adisk@(ADisk stord m0sdev serial _ _) success = do
+resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) success = do
   let tserial = pack serial
       resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
       smartStatus = case success of
@@ -661,10 +663,12 @@ resetComplete rc mm adisk@(ADisk stord m0sdev serial _ _) success = do
   Just enc <- findDiskEnclosure adisk <$> G.getGraph mm
   rg <- G.getGraph mm
   Just node <- return $ do
-    h :: Host <- G.connectedFrom Has (aDiskSD adisk) rg
-    listToMaybe $ G.connectedTo h Runs rg
+    e :: Enclosure <- G.connectedFrom Has (aDiskSD adisk) rg
+    listToMaybe $ do 
+      h :: Host <- G.connectedTo e Has rg
+      G.connectedTo h Runs rg
 
-  _ <- usend rc $ DriveOK uuid node enc stord
+  _ <- usend rc $ DriveOK uuid node (Slot enc 0) stord
   _ <- promulgateEQ [processNodeId rc] resetCmd
   let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                        $ nodeCmdString (SmartTest tserial)
@@ -755,7 +759,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   let devIdx    = 1
       message0 = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
                   (pack host) (pack enclosureName)
-                  (pack $ aDiskSN sdev)
+                  (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
                   (fromIntegral devIdx)
                   (pack $ aDiskPath sdev)
                   (pack $ aDiskWWN sdev)
@@ -764,15 +768,15 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
          $ emptySensorMessage
             { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
               Just $ mkResponseDriveManager (pack enclosureName)
-                                            (pack $ aDiskSN sdev)
+                                            (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
                                             devIdx "EMPTY" "None"
                                             (pack $ aDiskPath sdev) }
   usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message0
   usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
   Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
   _ <- receiveTimeout 1000000 []
-  sayTest "Check drive removed"
-  True <- checkStorageDeviceRemoved enclosureName devIdx <$> G.getGraph (_ts_mm ts)
+  sayTest "Drive is not removed yet."
+  False <- checkStorageDeviceRemoved enclosureName devIdx <$> G.getGraph (_ts_mm ts)
 
   -- XXX: dirty hack: deviceDetach call in mkDetachDisk can't
   -- complete (or even begin) without m0worker. To arrange a mero
@@ -798,10 +802,12 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   disk <- findSDev rg
   let Just enc = findDiskEnclosure disk rg
   Just node <- return $ do
-    h :: Host <- G.connectedFrom Has (aDiskSD disk) rg
-    listToMaybe $ G.connectedTo h Runs rg
+    e :: Enclosure <- G.connectedFrom Has (aDiskSD disk) rg
+    listToMaybe $ do
+       h :: Host <- G.connectedTo e Has rg
+       G.connectedTo h Runs rg
 
-  usend (_ts_rc ts) $ DriveFailed eid node enc (aDiskSD disk)
+  usend (_ts_rc ts) $ DriveFailed eid node (Slot enc 0) (aDiskSD disk)
   -- Need to ack the response to Mero
 
   forM_ (aDiskMero disk) $ \m0disk -> do
@@ -816,7 +822,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
     msg <- expectNodeMsg ssplTimeout
     sayTest $ "sspl_msg(poweroff): " ++ show msg
     let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-              $ nodeCmdString (DrivePowerdown . pack $ aDiskSN disk)
+              $ nodeCmdString (DrivePowerdown . pack $ (\(StorageDevice sn) -> sn) $ aDiskSD disk)
     liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
 
 -- | Test that we respond correctly to a notification that a RAID device
@@ -867,7 +873,8 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
-  let [sd]  = [ d |  d <- G.connectedTo (Host hostname) Has rg
+  let [sd]  = [ d |  e :: Enclosure <- maybeToList $ G.connectedFrom Has (Host hostname) rg 
+                  ,  d :: StorageDevice <- G.connectedTo e Has rg
                   , di <- G.connectedTo d Has rg
                   , di == DIPath "/dev/mddisk2"
                   ]
@@ -875,7 +882,6 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   let disk2 = ADisk {
       aDiskSD = sd
     , aDiskMero = Nothing
-    , aDiskSN = "mdserial2"
     , aDiskPath = "/dev/mddisk2"
     , aDiskWWN = error "WWN not initialised"
   }
@@ -905,6 +911,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 newtype MarkDriveFailed = MarkDriveFailed ProcessId
   deriving (Generic, Typeable, Binary)
 
+{-
 testGreeting :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testGreeting transport pg = run transport pg [rule] $ \ts -> do
   self <- getSelfPid
@@ -936,6 +943,7 @@ testGreeting transport pg = run transport pg [rule] $ \ts -> do
         sd : _ -> updateDriveStatus sd "HALON-FAILED" "MERO-Timeout"
         [] -> return ()
       liftProcess $ usend caller msg
+-}
 
 
 type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)

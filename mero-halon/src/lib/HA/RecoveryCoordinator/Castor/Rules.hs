@@ -15,7 +15,7 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules (castorRules) where
+module HA.RecoveryCoordinator.Castor.Rules (castorRules,goRack) where
 
 import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.RC.Actions

@@ -44,7 +44,9 @@ deriveSafeCopy 0 'base ''Rack
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure
     String -- ^ Enclosure UUID.
-  deriving (Eq, Show, Generic, Typeable, Hashable)
+  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
+instance FromJSON Enclosure
+instance ToJSON   Enclosure
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
@@ -76,7 +78,7 @@ deriveSafeCopy 0 'base ''HostAttr
 
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
-    UUID -- ^ Internal UUID used to refer to the disk
+    String -- ^ Disk serial number. XXX: convert to ShortByteString
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 
 instance FromJSON StorageDevice
@@ -84,12 +86,21 @@ instance ToJSON StorageDevice
 
 deriveSafeCopy 0 'base ''StorageDevice
 
+data Slot = Slot 
+  { slotEnclosure :: Enclosure
+  , slotIndex     :: Int
+  } deriving (Eq, Show, Ord, Generic, Typeable)
+instance Hashable Slot
+instance FromJSON Slot
+instance ToJSON   Slot
+
+deriveSafeCopy 0 'base ''Slot
+
+
 data StorageDeviceAttr
     = SDResetAttempts !Int
     | SDPowered Bool
     | SDOnGoingReset
-    | SDRemovedAt
-    | SDReplaced
     | SDRemovedFromRAID
     deriving (Eq, Ord, Show, Generic)
 
@@ -102,7 +113,6 @@ data DeviceIdentifier =
     | DIIndexInEnclosure Int
     | DIWWN String
     | DIUUID String
-    | DISerialNumber String
     | DIRaidIdx Int -- Index in RAID array
     | DIRaidDevice String -- Device name of RAID device containing this
   deriving (Eq, Show, Ord, Generic, Typeable)
@@ -235,20 +245,22 @@ $(mkDicts
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''Slot
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
   , (''Cluster, ''Has, ''HalonVars)
+  , (''Cluster, ''Has, ''StorageDevice)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
   , (''Enclosure, ''Has, ''StorageDevice)
+  , (''Enclosure, ''Has, ''Slot)
+  , (''StorageDevice, ''Has, ''Slot)
   , (''Enclosure, ''Has, ''Host)
   , (''Enclosure, ''Has, ''MI.BMC)
   , (''Host, ''Runs, ''Node)
   , (''StorageDevice, ''Is, ''StorageDeviceStatus)
-  , (''Host, ''Has, ''StorageDevice)
-  -- , (''StorageDevice, ''Has, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
   , (''StorageDevice, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice, ''ReplacedBy, ''StorageDevice)
@@ -262,10 +274,13 @@ $(mkResRel
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''Slot
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
   , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
   , (''Host, AtMostOne, ''Has, Unbounded, ''MI.Interface)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
@@ -275,8 +290,7 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''MI.BMC)
   , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''StorageDevice, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
-  , (''Host, AtMostOne, ''Has, Unbounded, ''StorageDevice)
-  -- , (''StorageDevice, Unbounded, ''Has, AtMostOne, ''StorageDeviceStatus)
+  , (''StorageDevice, AtMostOne, ''Has, AtMostOne, ''Slot)
   , (''StorageDevice, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)
   , (''StorageDevice, Unbounded, ''Has, Unbounded, ''StorageDeviceAttr)
   , (''StorageDevice, AtMostOne, ''ReplacedBy, AtMostOne, ''StorageDevice)

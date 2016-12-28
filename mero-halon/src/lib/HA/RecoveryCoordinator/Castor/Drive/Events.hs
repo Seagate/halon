@@ -54,12 +54,10 @@ instance Binary ResetAttemptResult
 -- | DrivePowerChange event is sent when the power status of a
 --   drive changes.
 data DrivePowerChange = DrivePowerChange
-  { dpcUUID :: UUID
+  { dpcUUID :: UUID -- ^ Thread UUID
   , dpcNode :: Node
-  , dpcEnclosure :: Enclosure
+  , dpcLocation :: Slot
   , dpcDevice :: StorageDevice
-  , dpcDiskNum :: Int
-  , dpcSerial :: T.Text
   , dpcPowered :: Bool -- Is device now powered?
   } deriving (Eq, Show, Typeable, Generic)
 instance Hashable DrivePowerChange
@@ -68,11 +66,10 @@ instance Binary DrivePowerChange
 -- | DriveRemoved event is emmited when somebody need to trigger
 -- event that should happen when any drive have failed.
 data DriveRemoved = DriveRemoved
-       { drUUID :: UUID -- ^ Event UUID.
+       { drUUID :: UUID -- ^ Threaad UUID.
        , drNode :: Node -- ^ Node where event happens.
-       , drEnclosure :: Enclosure -- ^ Enclosure there event happened.
+       , drLocation :: Slot -- ^ Location where event happened.
        , drDevice    :: StorageDevice -- ^ Removed device
-       , drDiskNum   :: Int -- ^ Unique location of device in enclosure
        , drPowered :: Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 instance Hashable DriveRemoved
@@ -81,12 +78,10 @@ instance Binary DriveRemoved
 -- | 'DriveInserted' event should be emitted in order to trigger
 -- drive insertion rule.
 data DriveInserted = DriveInserted
-       { diUUID :: UUID -- ^ Event UUID.
+       { diUUID :: UUID -- ^ Thread UUID.
        , diNode :: Node -- ^ Node where event happens.
+       , diLocation :: Slot -- ^ Location where event happened.
        , diDevice :: StorageDevice -- ^ Inserted device.
-       , diEnclosure :: Enclosure -- ^ Enclosure where event happened.
-       , diDiskNum :: Int -- ^ Unique location of device in enclosure.
-       , diSerial :: DeviceIdentifier -- ^ Serial drive of device.
        , diPowered :: Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 
@@ -94,7 +89,7 @@ instance Hashable DriveInserted
 instance Binary DriveInserted
 
 -- | 'DriveFailed' event emitted in order to trigger drive failure rule.
-data DriveFailed = DriveFailed UUID Node Enclosure StorageDevice
+data DriveFailed = DriveFailed UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
@@ -102,7 +97,7 @@ instance Binary DriveFailed
 
 -- | Event emitted when we get transient failure indication for the drive
 --   from drive manager.
-data DriveTransient = DriveTransient UUID Node Enclosure StorageDevice
+data DriveTransient = DriveTransient UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveTransient
@@ -110,7 +105,7 @@ instance Binary DriveTransient
 
 -- | Event emitted when we get OK indication for the drive
 --   from drive manager.
-data DriveOK = DriveOK UUID Node Enclosure StorageDevice
+data DriveOK = DriveOK UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveOK
@@ -136,7 +131,7 @@ deriveSafeCopy 0 'base ''ExpanderReset
 data RaidUpdate = RaidUpdate
   { ruNode :: Node
   , ruRaidDevice :: T.Text -- ^ RAID device path
-  , ruFailedComponents :: [(StorageDevice, T.Text, T.Text)] -- ^ sd, path, serial
+  , ruFailedComponents :: [(StorageDevice, T.Text)] -- ^ sd, path
   } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable RaidUpdate

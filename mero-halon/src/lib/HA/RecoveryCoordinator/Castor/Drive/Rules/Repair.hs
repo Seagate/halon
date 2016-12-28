@@ -460,7 +460,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
     -- Is this device ready to be rebalanced onto?
     deviceReadyStatus :: G.Graph -> M0.SDev -> Either String M0.SDev
     deviceReadyStatus rg s = case stats of
-        Just (_, True, False, True, "OK") -> Right s
+        Just (_, True, True, "OK") -> Right s
         Just other -> Left $ "Device not ready: " ++ showFid s
                       ++ " (sdev, Replaced, Removed, Powered, OK): "
                       ++ show other
@@ -471,8 +471,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
           (sd :: StorageDevice) <- G.connectedTo disk At rg
           (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
           return ( sd
-                 , G.isConnected sd Has SDReplaced rg
-                 , G.isConnected sd Has SDRemovedAt rg
+                 , G.isConnected disk Is M0.Replaced rg 
                  , G.isConnected sd Has (SDPowered True) rg
                  , sds
                  )
@@ -1048,11 +1047,12 @@ completeRepair pool prt muid = do
         applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
 
         when (prt == M0.Rebalance) $
-           forM_ repaired_sdevs $ \m0sdev -> void $ runMaybeT $ do
-             sdev   <- MaybeT $ lookupStorageDevice m0sdev
-             host   <- MaybeT $ listToMaybe <$> getSDevHost sdev
-             serial <- MaybeT $ listToMaybe <$> lookupStorageDeviceSerial sdev
-             lift $ sendLedUpdate DriveOk host (T.pack serial)
+           forM_ repaired_sdevs $ \m0sdev -> do
+             unmarkSDevReplaced m0sdev
+             void $ runMaybeT $ do
+               sdev@(StorageDevice serial)   <- MaybeT $ lookupStorageDevice m0sdev
+               host   <- MaybeT $ listToMaybe <$> getSDevHost sdev
+               lift $ sendLedUpdate DriveOk host (T.pack serial)
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool

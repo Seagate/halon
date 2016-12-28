@@ -1,33 +1,34 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
 module HA.RecoveryCoordinator.SSPL.Tests
   ( utTests
   ) where
 
 import Control.Distributed.Process.Closure
-
-import qualified Data.Set as Set
+import Control.Monad (unless)
 
 import Network.Transport (Transport)
 import Network.BSD (getHostName)
 import Network.CEP
 import Network.CEP.Testing (runPhase)
 
+import qualified HA.Aeson as A
+import qualified Data.ByteString.Lazy.Char8 as B8
 import HA.Multimap
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
 import HA.EventQueue.Types
-import HA.RecoveryCoordinator.Actions.Hardware
+import HA.RecoveryCoordinator.Castor.Rules (goRack)
 import HA.RecoveryCoordinator.Actions.Mero
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.Replicator (RGroup(..))
-import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
-import HA.ResourceGraph hiding (__remoteTable)
 import HA.Services.SSPL
 import SSPL.Bindings
 
@@ -37,16 +38,17 @@ import Helper.RC
 
 import RemoteTables (remoteTable)
 import TestRunner
+import Data.Bool (bool)
 import Data.Binary
+import Data.List (intercalate)
 import Data.Typeable
-import Data.Foldable
 import GHC.Generics
 
 import Data.UUID.V4 (nextRandom)
 import Data.Text (Text, pack)
 
 import Test.Tasty
-import Test.Tasty.HUnit (assertEqual)
+import Test.Tasty.HUnit (assertBool)
 import Test.Framework
 import Control.Distributed.Process
 
@@ -78,20 +80,13 @@ rGroupTest transport _ p =
 -- List of unit tests
 utTests :: (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
 utTests transport pg =
-   [ testGroup "hpi-requests"
-       [ testSuccess "hpi request with existing WWN"
-       $ testHpiExistingWWN transport pg
-       , testSuccess "hpi request with new resource"
-       $ testHpiNewWWN transport pg
-       , testSuccess "hpi request with updated WWN"
-       $ testHpiUpdatedWWN transport pg
-       ]
+   [ mkHpiTests transport pg
    , testSuccess "drive-manager-works"
    $ testDMRequest transport pg
    ]
 
 dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
-dmRequest status reason _serial num path = mkResponseDriveManager "enclosure1" "serial1" (fromIntegral num) status reason path
+dmRequest status reason serial num path = mkResponseDriveManager "enclosure_15" serial (fromIntegral num) status reason path
 
 mkHpiTest ::(Typeable g, RGroup g)
           => (ProcessId -> Definitions RC b)
@@ -105,6 +100,7 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     sayTest "load data"
     ls <- emptyLoopState pid self
     iData <- liftIO defaultInitialData
+    sayTest $ show iData
     (ls',_)  <- run ls $ do
             mapM_ goRack (CI.id_racks iData)
             filesystem <- initialiseConfInRG
@@ -113,201 +109,216 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     let testRule = mkTestRule self
     sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do
-            -- setLogger $ \l _ -> sayTest (show l)
+            setLogger $ \l _ -> sayTest (B8.unpack $ A.encode l)
             _ <- testRule
             _ <- ssplRules sspl
             return ()
     sayTest "start HPI test"
     test rc
 
-testHpiExistingWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHpiExistingWWN = mkHpiTest rules test
+-- | Information about HPI related test.
+data HpiTestInfo = HTI
+       { hpiWasInstalled :: Bool -- ^ If drive was installed before test
+       , hpiWasPowered   :: Bool -- ^ If drive was powered before test
+       , hpiIsNew        :: Bool -- ^ If new drive was inserted
+       , hpiIsInstalled  :: Bool -- ^ If drive inserted or removed
+       , hpiIsPowered    :: Bool -- ^ If drive is powered now
+       , hpiUserCallback :: UUID -> Process ()
+       }
+        
+hpiTests :: [HpiTestInfo]
+hpiTests = 
+  --     installed  powered new    powered installed
+  -- nothing changed
+  [ HTI   a         b       False  a       b         $ \_uuid -> no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  -- power changed
+  [ HTI   True      a       False  True    (not a)   $ \_uuid -> do
+     receiveWait $ oneMatch $ matchIf (\(Published (DrivePowerChange _ _ _ _ x) _) -> x == not a)
+                                      (const $ return ())
+     no_other_events
+  | a <- [True, False]] ++
+  -- Remove drive
+  [ HTI   True      a       False  False   b         $ \_uuid -> do
+     receiveWait $ oneMatch  $ matchIf (\(Published (DriveRemoved _ _ _ _ x) _) -> x == b)
+                                       (const $ return ())
+     no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  -- Insert drive
+  [ HTI   False     a       False  True    b         $ \_uuid -> do
+     receiveWait $ oneMatch $ matchIf (\(Published (DriveInserted _ _ _ _ x) _) -> x == b)
+                                      (const $ return ())
+     no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  -- New drive not inserted
+  [ HTI   False     a       True   False   b         $ \_uuid -> no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  [ HTI   False     a       True   True    b         $ \_uuid -> do
+     receiveWait $ oneMatch $ match $ \(_ :: Published DriveInserted) -> return ()
+     no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  -- Require Slot info on the old drive.
+  -- [ HTI   True      a        True  False   b         $ \_uuid -> do
+  --    receiveWait $ oneMatch $ match $ \(_ :: Published DriveRemoved) -> return () 
+  --    no_other_events
+  -- | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
+  [ HTI   True      a        True  True    b         $ \_uuid -> do
+     -- Require slot info on the old drive: receiveWait [match (\(_ :: Published DriveRemoved) -> return ())]
+     receiveWait [match (\(_ :: Published DriveInserted) -> return ())]
+     no_other_events
+  | (a,b) <- (,) <$> [True, False] <*> [True, False]]
   where
-    rules self = define "check-test" $ do
-      ph0 <- phaseHandle "init"
-      ph1 <- phaseHandle "test"
-      setPhase ph0 $ \() -> do
-        g <- getLocalGraph
-        Network.CEP.put Local (Just g)
-        continue ph1
-      setPhase ph1 $ \() -> do
-        Just g <- Network.CEP.get Local
-        g' <- getLocalGraph
-        liftProcess $ usend self (getGraphResources g == getGraphResources g')
-      start ph0 Nothing
-    test rc = do
-      me <- getSelfNode
-      sayTest "prepare"
-      usend rc ()  -- Prepare graph test
-      hostname <- liftIO getHostName
-      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial21" 1 "loop21" "wwn21"
-      uuid <- liftIO $ nextRandom
-      sayTest "send HPI message"
-      usend rc $ HAEvent uuid (me, request) -- send request
-      sayTest "await for reply"
-      receiveWait [ matchIf (\u -> u == uuid) (\_ -> return ()) ] -- check that it was processed
-      usend rc ()
-      -- We may add new field (drive_status)
-      sayTest "check that graph did change"
-      False <- expect
-      usend rc ()  -- Prepare graph test
-      uuid1 <- liftIO $ nextRandom
-      sayTest "send message again"
-      usend rc $ HAEvent uuid1 (me, request) -- send request
-      receiveWait [ matchIf (\u -> u == uuid1) (\_ -> return ()) ] -- check that it was processed
-      usend rc ()
-      sayTest "check that graph didn't change"
-      True <- expect
-      return ()
+  no_other_events = receiveWait
+    [ match $ \(_ ::Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi))) ->
+              return ()
+    , match $ \(_ :: Published DrivePowerChange) -> error "drive power change emitted"
+    , match $ \(_ :: Published DriveInserted) -> error "drive inserted emitted"
+    , match $ \(_ :: Published DriveRemoved) -> error "drive removed emitted"
+    ]
+  oneMatch m = m:
+    [ match $ \(_ ::Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi))) ->
+              error "no intereting event"
+    , match $ \(_ :: Published DrivePowerChange) -> error "drive power change emitted"
+    , match $ \(_ :: Published DriveInserted) -> error "drive inserted emitted"
+    , match $ \(_ :: Published DriveRemoved) -> error "drive removed emitted"
+    ]
+  
+mkHpiTests :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
+mkHpiTests tr p = testGroup "HPI"
+    $ map (\info -> testSuccess (mkTestName info) $ genericHpiTest info tr p) hpiTests
+  where
+    mkTestName :: HpiTestInfo -> String
+    mkTestName (HTI{..}) = 
+      intercalate ";" [bool "was_removed" "was_installed" hpiWasInstalled
+                      ,bool "was_poweredoff" "was_poweredon" hpiWasPowered
+                      ,bool "same" "new" hpiIsNew
+                      ,bool "removed" "installed" hpiIsInstalled
+                      ,bool "poweredoff" "poweredon" hpiIsPowered
+                      ]
 
-testHpiNewWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHpiNewWWN = mkHpiTest rules test
+genericHpiTest :: (Typeable g, RGroup g) => HpiTestInfo -> Transport -> Proxy g -> IO ()
+genericHpiTest HTI{..} = mkHpiTest rules test 
   where
-    rules self = do
-      defineSimple "check-test" $ \() -> do
-        rg <- getLocalGraph
-        let d = DIIndexInEnclosure 10
-        liftProcess $ usend self $ Data.Foldable.null $ (connectedFrom Has d rg :: [StorageDevice])
+    serial = "serial15_1"
+    rules _self = do
+      define "init-drive" $ do
+        ph0 <- phaseHandle "init"
+        ph1 <- phaseHandle "finish"
+        directly ph0 $ do
+           let sdev = StorageDevice serial
+           unless hpiWasInstalled $ do
+             loc <- StorageDevice.mkLocation (Enclosure "enclosure_15") 1
+             _   <- StorageDevice.insertTo sdev loc
+             _   <- StorageDevice.ejectFrom sdev loc
+             return ()
+           unless hpiWasPowered $ do
+             StorageDevice.poweroff sdev
+           continue ph1
+        directly ph1 $ stop
+        start ph0 ()
     test rc = do
-      me <- getSelfNode
+      let (enc, serial', idx, devid, wwn, _sdev) = 
+            if hpiIsNew
+            then ("enclosure_15", serial++"new", 1, "/dev/loop15_new", "wwn15_1new", StorageDevice $ serial++"new")
+            else ("enclosure_15", serial, 1, "/dev/loop15_1", "wwn15_1", StorageDevice serial)
+
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      hostname <- liftIO getHostName
-      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial310" 10 "loop10" "wwn10"
-      uuid <- liftIO $ nextRandom
-      usend rc $ HAEvent uuid (me, request)
-      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      usend rc ()
-      False <- expect
-      return ()
+      subscribe rc (Proxy :: Proxy DrivePowerChange)
+      subscribe rc (Proxy :: Proxy DriveInserted)
+      subscribe rc (Proxy :: Proxy DriveRemoved)
 
-testHpiUpdatedWWN :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHpiUpdatedWWN = mkHpiTest rules test
-  where
-    rules self = do
-      defineSimple "check-test" $ \(enc, l) -> do
-        phaseLog "debug" $ show (enc,l)
-        let d = DIIndexInEnclosure l
-        msd <- lookupStorageDeviceInEnclosure enc d
-        phaseLog "debug" $ show msd
-        forM_ msd $ \sd -> do
-          mc <- lookupStorageDeviceReplacement sd
-          forM_ mc $ \c -> do
-            is <- findStorageDeviceIdentifiers c
-            liftProcess $ usend self is
-      defineSimple "disk-failed" $ \(DriveRemoved uuid _ enc _ _ _) ->
-        liftProcess $ usend self (uuid, enc)
-    test rc = do
+      -- Send HPI message:
       me   <- getSelfNode
-      uuid0 <- liftIO nextRandom
-      subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      hostname <- liftIO getHostName
-      let request0 = mkHpiMessage (pack hostname) "enclosure_2" "serial21" 1 "loop1" "wwn1"
-      usend rc $ HAEvent uuid0 (me, request0)
-      let request = mkHpiMessage (pack hostname) "enclosure_2" "serial31" 1 "loop1" "wwn10"
       uuid <- liftIO $ nextRandom
+      hostname <- liftIO getHostName
+      let request = mkHpiMessage (pack hostname) enc (pack serial') idx devid wwn hpiIsInstalled hpiIsPowered
       usend rc $ HAEvent uuid (me, request)
-      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
-      usend rc (Enclosure "enclosure_2", 1::Int)
-      is   <- expect
-      liftIO $ assertEqual "Identifiers match"
-                 (Set.fromList [ DIWWN "wwn10"
-                               , DISerialNumber "serial31"])
-                 (Set.fromList is)
+      hpiUserCallback uuid
+
 
 testDMRequest :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testDMRequest = mkHpiTest rules test
   where
     rules self = do
       defineSimple "prepare" $ \() -> do
-        Just sd1 <- lookupStorageDeviceInEnclosure (Enclosure "enclosure1") (DIIndexInEnclosure 1)
-        markStorageDeviceRemoved sd1
+        -- Just sd1 <- lookupStorageDeviceInEnclosure (Enclosure "enclosure1") (DIIndexInEnclosure 1)
+        -- markStorageDeviceRemoved sd1
         liftProcess $ usend self ()
-      defineSimple "drive-failed" $ \(DriveFailed uuid _ _ _) ->
-        liftProcess $ usend self (uuid, "drive-failed"::String)
-      defineSimple "drive-ok" $ \(DriveOK uuid _ _ _) ->
-        liftProcess $ usend self (uuid, "drive-ok"::String)
-      defineSimple "drive-transient" $ \(DriveTransient uuid _ _ _) ->
-        liftProcess $ usend self (uuid, "drive-transient"::String)
     test rc = do
+        subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
+        subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager)))
+        subscribe rc (Proxy :: Proxy DriveFailed)
+        subscribe rc (Proxy :: Proxy DriveOK)
+        subscribe rc (Proxy :: Proxy DriveTransient)
         me <- getSelfNode
-        let requestA = mkHpiMessage "primus.example.com" "enclosure1" "serial1" 0 "loop1" "wwn1"
+        let requestA = mkHpiMessage "devvm.seagate.com" "enclosure_15" "serial15_1" 1 "/dev/loop15_1" "wwn15_1" True True
         uuidA <- liftIO $ nextRandom
         usend rc $ HAEvent uuidA (me, requestA)
-        let requestB = mkHpiMessage "primus.example.com" "enclosure1" "serial2" 1 "loop2" "wwn2"
+        _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
+        let requestB = mkHpiMessage "primus.example.com" "enclosure_15" "serial15_2" 2 "/dev/loop15_2" "wwn15_2" True True
         uuidB <- liftIO $ nextRandom
         usend rc $ HAEvent uuidB (me, requestB)
+        _ <- expect :: Process (Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
         --  0  -- active drive
         --  1  -- removed drive
         usend rc ()
         () <- expect
         sayTest "Unused ok for good drive"
-        let request0 = dmRequest "EMPTY" "None" "serial1" 0 "path"
+        let request0 = dmRequest "EMPTY" "None" "serial15_1" 1 "path"
         uuid0 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid0 (me, request0)
-        liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid0
+        liftIO . assertBool "drive become transient" =<< await uuid0
+          (match (\(_ :: Published DriveTransient) -> return True))
+        clean
+
         sayTest "Unused ok for removed drive"
-        let request1 = dmRequest "EMPTY" "None" "serial1" 1 "path"
+        let request1 = dmRequest "EMPTY" "None" "serial15_1" 1 "path"
         uuid1 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid1 (me, request1)
-        liftIO . assertEqual "drive become transient" "drive-transient" =<< await uuid1
-        sayTest "Failed smart for good drive"
-        let request2 = dmRequest "FAILED" "SMART" "serial1" 0 "path"
+        liftIO . assertBool "drive become transient" =<< await uuid1
+          (match (\(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager))) -> return True))
+
+        sayTest "Failed smart"
+        let request2 = dmRequest "FAILED" "SMART" "serial15_1" 1 "path"
         uuid2 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid2 (me, request2)
-        liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid2
-        sayTest "Failed smart for removed drive"
-        let request3 = dmRequest "FAILED" "SMART" "serial1" 1 "path"
+        liftIO . assertBool "drive is failed now" =<< await uuid2
+          (match (\(_ :: Published DriveFailed) -> return True))
+        clean
+
+        sayTest "Failed smart for failed drive"
+        let request3 = dmRequest "FAILED" "SMART" "serial15_1" 1 "path"
         uuid3 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid3 (me, request3)
-        liftIO . assertEqual "drive is failed now" "drive-failed" =<< await uuid3
-        sayTest "OK_None smart for good"
+        liftIO . assertBool "drive become transient" =<< await uuid3
+          (match (\(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager))) -> return True))
+
+        sayTest "OK_None smart for failed"
         let request4 = dmRequest "OK" "None" "serial1" 0 "path"
         uuid4 <- liftIO $ nextRandom
         usend rc $ HAEvent uuid4 (me, request4)
-        liftIO . assertEqual "OK_None smart for good" "drive-ok" =<< await uuid4
-        sayTest "OK_None smart for bad"
-        let request5 = dmRequest "OK" "None" "serial1" 1 "path"
-        uuid5 <- liftIO $ nextRandom
-        usend rc $ HAEvent uuid5 (me, request5)
-        liftIO . assertEqual "OK_None smart for bad" "drive-ok" =<< await uuid5
+        liftIO . assertBool "drive is good now" =<< await uuid4
+          (match (\(_ :: Published DriveOK) -> return True))
+        clean
 
+        sayTest "OK_None smart for ok"
+        let request5 = dmRequest "OK" "None" "serial1" 0 "path"
+        uuid5 <- liftIO $ nextRandom
+        usend rc $ HAEvent uuid4 (me, request5)
+        liftIO . assertBool "drive still ok" =<< await uuid5
+          (match (\(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager))) -> return True))
         _ <- receiveTimeout 2000000 [] -- HALON-590
         return ()
       where
-        await uuid = receiveWait
-           [ matchIf (\(u, _) -> u == uuid) (\(_,info) -> return (info::String))
-           , matchIf (\u -> u == uuid) (\_ -> return ("nothing"::String))
+        await _uuid m = receiveWait 
+           [ m 
+           , match $ \(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager)))
+               -> return False
            ]
-
-
-goRack :: forall l. CI.Rack
-       -> PhaseM RC l ()
-goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
-  registerRack rack
-  mapM_ (goEnc rack) rack_enclosures
-goEnc :: forall l. Rack
-      -> CI.Enclosure
-      -> PhaseM RC l ()
-goEnc rack (CI.Enclosure{..}) = let
-    enclosure = Enclosure enc_id
-  in do
-    registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc
-    mapM_ (goHost enclosure) enc_hosts
-goHost :: forall l. Enclosure
-       -> CI.Host
-       -> PhaseM RC l ()
-goHost enc (CI.Host{..}) = let
-    host = Host h_fqdn
-    mem = fromIntegral h_memsize
-    cpucount = fromIntegral h_cpucount
-    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
-  in do
-    registerHost host
-    locateHostInEnclosure host enc
-    mapM_ (setHostAttr host) attrs
-    mapM_ (registerInterface host) h_interfaces
+        clean = receiveWait
+           [ match $ \(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager)))
+               -> return ()
+           ]
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g
