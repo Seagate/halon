@@ -229,20 +229,20 @@ mkSimpleSNSOperation _ action onFailure onResult = do
 mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
   => Proxy n
   -> (    (M0.Pool -> String -> PhaseM RC l ())
-       -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+       -> (M0.Pool -> [RepRebStatus] -> PhaseM RC l ())
        -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ()))
   -> (Fid -> IO ())
-  -> [SnsCmStatus]
+  -> [CmStatus]
   -> Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> (M0.Pool -> [(Fid, CmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuccess = do
   next_request <- phaseHandle $ symbolVal name ++ "::next request"
   (status_received, statusRequest) <- mk onFailure $ \pool xs -> do
-     if all (`elem` interesting) (map _sss_state xs)
-     then onSuccess pool (map ((,) <$> _sss_fid <*> _sss_state) xs)
+     if all (`elem` interesting) (map _srs_state xs)
+     then onSuccess pool (map ((,) <$> _srs_fid <*> _srs_state) xs)
      else continue (timeout n next_request)
   operation_done <- handleReply onFailure $ \pool _ -> do
     statusRequest pool
@@ -320,7 +320,7 @@ mkRebalanceStartOperation handler = do
 -- | Create a phase to handle pool repair operation start result.
 mkRepairStatusRequestOperation ::
      (M0.Pool -> String -> PhaseM RC l ())
-  -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+  -> (M0.Pool -> [RepRebStatus] -> PhaseM RC l ())
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairStatusRequestOperation =
   mkSimpleSNSOperation  (Proxy :: Proxy "Repair status request") poolRepairStatus
@@ -345,7 +345,7 @@ mkRebalanceContinueOperation = do
 -- | Create a phase to handle pool repair operation start result.
 mkRebalanceStatusRequestOperation ::
      (M0.Pool -> String      -> PhaseM RC l ())
-  -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
+  -> (M0.Pool -> [RepRebStatus] -> PhaseM RC l ())
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceStatusRequestOperation = do
   mkSimpleSNSOperation (Proxy :: Proxy "Rebalance status request") poolRebalanceStatus
@@ -355,16 +355,16 @@ mkRepairQuiesceOperation ::
      Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> (M0.Pool -> [(Fid, CmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairQuiesceOperation =
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Repair quiesce")
     mkRepairStatusRequestOperation
     poolRepairQuiesce
-    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
-    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
-    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_CM_STATUS_FAILED
+    , Mero.Spiel.M0_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_CM_STATUS_IDLE]
 
 -- | Create an action and helper phases that will allow to abort SNS operation
 -- and wait until it will be really aborted.
@@ -372,48 +372,48 @@ mkRepairAbortOperation ::
      Int
   -> (l -> M0.Pool)
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> (M0.Pool -> [(Fid, CmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairAbortOperation =
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Repair abort")
     mkRepairStatusRequestOperation
     poolRepairAbort
-    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
-    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
-    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_CM_STATUS_FAILED
+    , Mero.Spiel.M0_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_CM_STATUS_IDLE]
 
 -- | Create code that allow to quisce repair operation.
 mkRebalanceQuiesceOperation ::
      Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
+  -> (M0.Pool -> [(Fid, CmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceQuiesceOperation = do
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Rebalance quiesce")
     mkRebalanceStatusRequestOperation
     poolRebalanceQuiesce
-    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
-    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
-    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_CM_STATUS_FAILED
+    , Mero.Spiel.M0_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_CM_STATUS_IDLE]
 
 -- | Generate code to call abort operation.
 mkRebalanceAbortOperation ::
      Int
   -> (l -> M0.Pool)
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> (M0.Pool -> [(Fid, CmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceAbortOperation = do
   mkStatusCheckingSNSOperation
     (Proxy :: Proxy "Rebalance abort")
     mkRebalanceStatusRequestOperation
     poolRebalanceAbort
-    [ Mero.Spiel.M0_SNS_CM_STATUS_FAILED
-    , Mero.Spiel.M0_SNS_CM_STATUS_PAUSED
-    , Mero.Spiel.M0_SNS_CM_STATUS_IDLE]
+    [ Mero.Spiel.M0_CM_STATUS_FAILED
+    , Mero.Spiel.M0_CM_STATUS_PAUSED
+    , Mero.Spiel.M0_CM_STATUS_IDLE]
 
 -- | Synchronize graph to confd.
 -- Currently all Exceptions during this operation are caught, this is required in because
@@ -565,7 +565,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   m0synchronously lift $ do
     addProfile t pfid
-    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
+    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]

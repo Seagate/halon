@@ -44,8 +44,8 @@ data Failures = Failures {
 } deriving (Eq, Ord, Show)
 
 -- |  Minimal representation of a pool version for generation.
-data PoolVersion = PoolVersion !(Set.Set Fid) !Failures !PDClustAttr
-                  -- ^ @PoolVersion fids fs attrs@ where @fids@ is a set of
+data PoolVersion = PoolVersion !(Maybe Fid) !(Set.Set Fid) !Failures !PDClustAttr
+                  -- ^ @PoolVersion fid fids fs attrs@ where @fids@ is a set of
                   -- fids, @fs@ are allowable failures in each
                   -- failure domain, and @attrs@ are the parity declustering
                   -- attributes. Note that the value for @_pa_P@ will be
@@ -89,14 +89,17 @@ createPoolVersionsInPool fs pool pvers invert rg =
       ]
 
     createPoolVersion :: PoolVersion -> S.State G.Graph ()
-    createPoolVersion (PoolVersion fids failures attrs) = do
+    createPoolVersion (PoolVersion pverfid fids failures attrs) = do
       let
         fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
                 then totalDrives - Set.size fids_drv -- TODO: check this
                 else Set.size fids_drv
       S.when (width > 0) $ do
-        pver <- M0.PVer <$> S.state (newFid (Proxy :: Proxy M0.PVer))
+        pver <- M0.PVer <$> ( case pverfid of
+                                Just fid -> pure fid
+                                Nothing -> S.state (newFid (Proxy :: Proxy M0.PVer))
+                            )
                         <*> pure (M0.PVerActual (failuresToArray failures)
                                                 (attrs { _pa_P = fromIntegral width }))
         rg0 <- S.get

@@ -133,6 +133,7 @@ foreign import ccall "spiel/spiel.h m0_spiel_filesystem_add"
                          -> CUInt   -- ^ metadata redundancy count
                          -> Ptr Fid -- ^ root's fid of filesystem
                          -> Ptr Fid -- ^ metadata pool
+                         -> Ptr Fid -- ^ imeta pver
                          -> Ptr (Ptr CChar) -- ^ NULL-terminated array of command-line like parameters
                          -> IO CInt
 
@@ -351,55 +352,55 @@ foreign import capi "spiel/spiel.h m0_spiel_process_list_services"
                                 -> Ptr (Ptr RunningService)
                                 -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_repair_start"
+foreign import capi "spiel/spiel.h m0_spiel_sns_repair_start"
   c_spiel_pool_repair_start :: Ptr SpielContextV
                             -> Ptr Fid
                             -> IO CInt
 
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_repair_continue"
+foreign import capi "spiel/spiel.h m0_spiel_sns_repair_continue"
   c_spiel_pool_repair_continue :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_repair_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_sns_repair_quiesce"
   c_spiel_pool_repair_quiesce :: Ptr SpielContextV
                               -> Ptr Fid
                               -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_repair_status"
+foreign import capi "spiel/spiel.h m0_spiel_sns_repair_status"
   c_spiel_pool_repair_status :: Ptr SpielContextV
                              -> Ptr Fid
-                             -> Ptr (Ptr SnsStatus)
+                             -> Ptr (Ptr RepRebStatus)
                              -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_repair_abort"
+foreign import capi "spiel/spiel.h m0_spiel_sns_repair_abort"
   c_spiel_pool_repair_abort :: Ptr SpielContextV
                             -> Ptr Fid
                             -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_start"
+foreign import capi "spiel/spiel.h m0_spiel_sns_rebalance_start"
   c_spiel_pool_rebalance_start :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_continue"
+foreign import capi "spiel/spiel.h m0_spiel_sns_rebalance_continue"
   c_spiel_pool_rebalance_continue :: Ptr SpielContextV
                                   -> Ptr Fid
                                   -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_quiesce"
+foreign import capi "spiel/spiel.h m0_spiel_sns_rebalance_quiesce"
   c_spiel_pool_rebalance_quiesce :: Ptr SpielContextV
                                  -> Ptr Fid
                                  -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_status"
+foreign import capi "spiel/spiel.h m0_spiel_sns_rebalance_status"
   c_spiel_pool_rebalance_status :: Ptr SpielContextV
                                 -> Ptr Fid
-                                -> Ptr (Ptr SnsStatus)
+                                -> Ptr (Ptr RepRebStatus)
                                 -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_abort"
+foreign import capi "spiel/spiel.h m0_spiel_sns_rebalance_abort"
   c_spiel_pool_rebalance_abort :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt

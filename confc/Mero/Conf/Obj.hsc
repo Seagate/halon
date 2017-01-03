@@ -126,6 +126,7 @@ data Filesystem = Filesystem
     , cf_fid      :: Fid
     , cf_rootfid  :: Fid
     , cf_mdpool   :: Fid
+    , cf_imeta_pver :: Fid
     , cf_redundancy :: Word32
     , cf_params   :: [String]
     } deriving (Show)
@@ -136,6 +137,7 @@ getFilesystem po = do
   fid <- #{peek struct m0_conf_obj, co_id} po
   rfid <- #{peek struct m0_conf_filesystem, cf_rootfid} pfs
   mdfid <- #{peek struct m0_conf_filesystem, cf_mdpool} pfs
+  imetafid <- #{peek struct m0_conf_filesystem, cf_imeta_pver} pfs
   redundancy <- #{peek struct m0_conf_filesystem, cf_redundancy} pfs
   params <- #{peek struct m0_conf_filesystem, cf_params} pfs >>= peekStringArray
   return Filesystem
@@ -143,6 +145,7 @@ getFilesystem po = do
            , cf_fid = fid
            , cf_rootfid = rfid
            , cf_mdpool = mdfid
+           , cf_imeta_pver = imetafid
            , cf_redundancy = redundancy
            , cf_params = params
            }

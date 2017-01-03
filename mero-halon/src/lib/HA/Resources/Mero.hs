@@ -212,6 +212,7 @@ deriveSafeCopy 0 'base ''Profile
 data Filesystem = Filesystem {
     f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
+  , f_imeta_fid :: Fid -- ^ Fid of the imeta pver
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable Filesystem

@@ -228,13 +228,14 @@ addFilesystem :: SpielTransaction
               -> Word32
               -> Fid
               -> Fid
+              -> Fid -- ^ imeta_pver
               -> [String]
               -> IO ()
 addFilesystem (SpielTransaction fsc) fid profile mdRedundancy
-                                     rootFid mdfid params =
+                                     rootFid mdfid imeta params =
   withForeignPtr fsc $ \sc ->
-    withMany with [fid, profile, rootFid, mdfid]
-      $ \[fid_ptr, prof_ptr, root_ptr, md_ptr] ->
+    withMany with [fid, profile, rootFid, mdfid, imeta]
+      $ \[fid_ptr, prof_ptr, root_ptr, md_ptr, imeta_ptr] ->
         bracket
           (mapM newCString params)
           (mapM_ free)
@@ -244,6 +245,7 @@ addFilesystem (SpielTransaction fsc) fid profile mdRedundancy
                                        (CUInt mdRedundancy)
                                        root_ptr
                                        md_ptr
+                                       imeta_ptr
                                        c_eps
           )
 
@@ -487,7 +489,8 @@ instance Spliceable Profile where
 instance Spliceable Filesystem where
   splice t p fs = addFilesystem t (cf_fid fs) p
                                   (cf_redundancy fs) (cf_rootfid fs)
-                                  (cf_mdpool fs) (cf_params fs)
+                                  (cf_mdpool fs) (cf_imeta_pver fs)
+                                  (cf_params fs)
   spliceTree t p fs = do
     splice t p fs
     nodes <- children fs :: IO [Node]
@@ -740,7 +743,7 @@ poolRepairAbort fid =
       $ c_spiel >>= \sc -> c_spiel_pool_repair_abort sc fid_ptr
 
 poolRepairStatus :: Fid
-                 -> IO [SnsStatus]
+                 -> IO [RepRebStatus]
 poolRepairStatus fid = mask $ \restore ->
     with fid $ \fid_ptr ->
       alloca $ \arr_ptr -> do
@@ -785,7 +788,7 @@ poolRebalanceAbort fid =
       $ c_spiel >>= \sc -> c_spiel_pool_rebalance_abort sc fid_ptr
 
 poolRebalanceStatus :: Fid
-                    -> IO [SnsStatus]
+                    -> IO [RepRebStatus]
 poolRebalanceStatus fid = mask $ \restore ->
     with fid $ \fid_ptr ->
       alloca $ \arr_ptr -> do

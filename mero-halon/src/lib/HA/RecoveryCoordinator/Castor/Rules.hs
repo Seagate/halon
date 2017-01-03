@@ -62,6 +62,7 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           loadMeroGlobals id_m0_globals
           loadMeroServers filesystem id_m0_servers
           createMDPoolPVer filesystem
+          createIMeta filesystem
           graph <- getLocalGraph
           let runValidateConf = validateTransactionCache >>= \case
                 Left e -> do

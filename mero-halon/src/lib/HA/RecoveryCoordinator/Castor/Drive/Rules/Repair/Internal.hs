@@ -39,18 +39,18 @@ repairingNotificationMsg M0.Failure = M0.M0_NC_REPAIR
 
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.
-filterCompletedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
-filterCompletedRepairs = filter (iosReady . Spiel._sss_state)
+filterCompletedRepairs :: [Spiel.RepRebStatus] -> [Spiel.RepRebStatus]
+filterCompletedRepairs = filter (iosReady . Spiel._srs_state)
 
 -- | Find any 'iosPaused' statuses.
-filterPausedRepairs :: [Spiel.SnsStatus] -> [Spiel.SnsStatus]
-filterPausedRepairs = filter (iosPaused . Spiel._sss_state)
+filterPausedRepairs :: [Spiel.RepRebStatus] -> [Spiel.RepRebStatus]
+filterPausedRepairs = filter (iosPaused . Spiel._srs_state)
 
--- | Check if any 'Spiel.SnsStatus' came back as 'Spiel.M0_SNS_CM_STATUS_FAILED'.
-anyIOSFailed :: [Spiel.SnsStatus] -> Bool
-anyIOSFailed = any (p . Spiel._sss_state)
+-- | Check if any 'Spiel.RepRebStatus' came back as 'Spiel.M0_CM_STATUS_FAILED'.
+anyIOSFailed :: [Spiel.RepRebStatus] -> Bool
+anyIOSFailed = any (p . Spiel._srs_state)
   where
-    p Spiel.M0_SNS_CM_STATUS_FAILED = True
+    p Spiel.M0_CM_STATUS_FAILED = True
     p _                             = False
 
 -- | Find the processes associated with IOS services that have the
@@ -68,16 +68,16 @@ failedNotificationIOS eps rg =
 --  * [IDLE] - SNS is not doing any job
 --  * [FAILED] - SNS failed previous job but cleared up and ready
 --  * [PAUSED] - SNS job has been paused by quiesce, but we can do new things.
-iosReady :: Spiel.SnsCmStatus -> Bool
-iosReady Spiel.M0_SNS_CM_STATUS_IDLE   = True
-iosReady Spiel.M0_SNS_CM_STATUS_FAILED = True
-iosReady Spiel.M0_SNS_CM_STATUS_PAUSED = True
+iosReady :: Spiel.CmStatus -> Bool
+iosReady Spiel.M0_CM_STATUS_IDLE   = True
+iosReady Spiel.M0_CM_STATUS_FAILED = True
+iosReady Spiel.M0_CM_STATUS_PAUSED = True
 iosReady _                             = False
 
 
--- | Check if IOS 'Spiel.M0_SNS_CM_STATUS_PAUSED' SNS operation.
-iosPaused :: Spiel.SnsCmStatus -> Bool
-iosPaused Spiel.M0_SNS_CM_STATUS_PAUSED = True
+-- | Check if IOS 'Spiel.M0_CM_STATUS_PAUSED' SNS operation.
+iosPaused :: Spiel.CmStatus -> Bool
+iosPaused Spiel.M0_CM_STATUS_PAUSED = True
 iosPaused _                             = False
 
 -- | Check if all IOS are alive according to halon.

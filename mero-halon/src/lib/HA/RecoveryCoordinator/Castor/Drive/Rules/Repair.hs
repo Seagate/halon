@@ -165,7 +165,7 @@ processSnsStatusReply ::
       -- In case 'anyIOSFailed', SNS abort message is provided instead
       -- of 'PoolRepairInformation'.
    -> M0.Pool
-   -> [Spiel.SnsStatus]
+   -> [Spiel.RepRebStatus]
    -> PhaseM RC l ()
 processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete pool sts = do
   (muuid, prt, ruuid) <- getUUIDs
@@ -416,7 +416,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
      (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
                  abortRebalanceStart
                  continue finish)
-     (\_ sns -> if all R.iosReady $ Spiel._sss_state <$> sns
+     (\_ sns -> if all R.iosReady $ Spiel._srs_state <$> sns
               then do
                 Just (pool, disks) <- getField . rget fldPoolDisks <$> get Local
                 startRebalance pool disks
@@ -562,7 +562,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
      (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
                  abortRepairStart
                  continue finish)
-     (\pool sns -> if all R.iosReady $ Spiel._sss_state <$> sns
+     (\pool sns -> if all R.iosReady $ Spiel._srs_state <$> sns
               then do
                 startRepairOperation pool
                 continue repair_started
@@ -661,7 +661,7 @@ jobContinueSNS = Job "castor::sns:continue"
 --
 -- The requirements are:
 --   * All IOS should be running.
---   * At least one IO service status should be M0_SNS_CM_STATUS_PAUSED.
+--   * At least one IO service status should be M0_CM_STATUS_PAUSED.
 ruleSNSOperationContinue :: Definitions RC ()
 ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish) -> do
 
@@ -678,8 +678,8 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
        keep_running <- isStillRunning pool
        if keep_running
        then do
-         if any ((Spiel.M0_SNS_CM_STATUS_PAUSED ==) . Spiel._sss_state) sns
-             && all ((Spiel.M0_SNS_CM_STATUS_FAILED /=) . Spiel._sss_state) sns
+         if any ((Spiel.M0_CM_STATUS_PAUSED ==) . Spiel._srs_state) sns
+             && all ((Spiel.M0_CM_STATUS_FAILED /=) . Spiel._srs_state) sns
          then do
            result <- R.allIOSOnline pool
            if result

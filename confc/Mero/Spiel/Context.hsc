@@ -177,71 +177,71 @@ instance Storable ServiceInfo where
                           #{poke struct m0_spiel_service_info, svi_u} p cs
       SPUnused -> return ()
 
--- | @sns/cm/cm.h m0_sns_cm_status@
-data {-# CTYPE "sns/cm/cm.h" "struct m0_sns_cm_status" #-}
-  SnsCmStatus =
-      M0_SNS_CM_STATUS_INVALID
-    | M0_SNS_CM_STATUS_IDLE
-    | M0_SNS_CM_STATUS_STARTED
-    | M0_SNS_CM_STATUS_FAILED
-    | M0_SNS_CM_STATUS_PAUSED
-    | M0_SNS_CM_STATUS_UNKNOWN Int
+-- | @cm/repreb/cm.h m0_cm_status@
+data {-# CTYPE "cm/repreb/cm.h" "struct m0_cm_status" #-}
+  CmStatus =
+      M0_CM_STATUS_INVALID
+    | M0_CM_STATUS_IDLE
+    | M0_CM_STATUS_STARTED
+    | M0_CM_STATUS_FAILED
+    | M0_CM_STATUS_PAUSED
+    | M0_CM_STATUS_UNKNOWN Int
     deriving (Eq, Show)
 
-instance Enum SnsCmStatus where
-  toEnum #{const SNS_CM_STATUS_INVALID} = M0_SNS_CM_STATUS_INVALID
-  toEnum #{const SNS_CM_STATUS_IDLE} = M0_SNS_CM_STATUS_IDLE
-  toEnum #{const SNS_CM_STATUS_STARTED} = M0_SNS_CM_STATUS_STARTED
-  toEnum #{const SNS_CM_STATUS_FAILED} = M0_SNS_CM_STATUS_FAILED
-  toEnum #{const SNS_CM_STATUS_PAUSED} = M0_SNS_CM_STATUS_PAUSED
-  toEnum i = M0_SNS_CM_STATUS_UNKNOWN i
+instance Enum CmStatus where
+  toEnum #{const CM_STATUS_INVALID} = M0_CM_STATUS_INVALID
+  toEnum #{const CM_STATUS_IDLE} = M0_CM_STATUS_IDLE
+  toEnum #{const CM_STATUS_STARTED} = M0_CM_STATUS_STARTED
+  toEnum #{const CM_STATUS_FAILED} = M0_CM_STATUS_FAILED
+  toEnum #{const CM_STATUS_PAUSED} = M0_CM_STATUS_PAUSED
+  toEnum i = M0_CM_STATUS_UNKNOWN i
 
-  fromEnum M0_SNS_CM_STATUS_INVALID = #{const SNS_CM_STATUS_INVALID}
-  fromEnum M0_SNS_CM_STATUS_IDLE = #{const SNS_CM_STATUS_IDLE}
-  fromEnum M0_SNS_CM_STATUS_STARTED = #{const SNS_CM_STATUS_STARTED}
-  fromEnum M0_SNS_CM_STATUS_FAILED = #{const SNS_CM_STATUS_FAILED}
-  fromEnum M0_SNS_CM_STATUS_PAUSED = #{const SNS_CM_STATUS_PAUSED}
-  fromEnum (M0_SNS_CM_STATUS_UNKNOWN i) = i
+  fromEnum M0_CM_STATUS_INVALID = #{const CM_STATUS_INVALID}
+  fromEnum M0_CM_STATUS_IDLE = #{const CM_STATUS_IDLE}
+  fromEnum M0_CM_STATUS_STARTED = #{const CM_STATUS_STARTED}
+  fromEnum M0_CM_STATUS_FAILED = #{const CM_STATUS_FAILED}
+  fromEnum M0_CM_STATUS_PAUSED = #{const CM_STATUS_PAUSED}
+  fromEnum (M0_CM_STATUS_UNKNOWN i) = i
 
-instance Storable SnsCmStatus where
+instance Storable CmStatus where
   sizeOf _ = sizeOf (undefined :: CInt)
   alignment _ = alignment (undefined :: CInt)
   peek p = fmap (toEnum . fromIntegral) $ peek (castPtr p :: Ptr CInt)
   poke p s = poke (castPtr p :: Ptr CInt) . fromIntegral $ fromEnum s
 
 
--- | @spiel.h m0_spiel_sns_status@
-data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_sns_status" #-} SnsStatus =
-  SnsStatus {
-      _sss_fid :: Fid
-    , _sss_state :: SnsCmStatus
-    , _sss_progress :: CUInt
+-- | @spiel.h m0_spiel_repreb_status@
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_repreb_status" #-} RepRebStatus =
+  RepRebStatus {
+      _srs_fid :: Fid
+    , _srs_state :: CmStatus
+    , _srs_progress :: CUInt
   } deriving (Eq, Show)
 
 
-instance Storable SnsStatus where
-  sizeOf _ = #{size struct m0_spiel_sns_status}
-  alignment _ = #{alignment struct m0_spiel_sns_status}
-  peek p = liftM3 SnsStatus
-    (#{peek struct m0_spiel_sns_status, sss_fid} p)
-    (#{peek struct m0_spiel_sns_status, sss_state} p)
-    (#{peek struct m0_spiel_sns_status, sss_progress} p)
+instance Storable RepRebStatus where
+  sizeOf _ = #{size struct m0_spiel_repreb_status}
+  alignment _ = #{alignment struct m0_spiel_repreb_status}
+  peek p = liftM3 RepRebStatus
+    (#{peek struct m0_spiel_repreb_status, srs_fid} p)
+    (#{peek struct m0_spiel_repreb_status, srs_state} p)
+    (#{peek struct m0_spiel_repreb_status, srs_progress} p)
 
-  poke p (SnsStatus f st pr) = do
-    #{poke struct m0_spiel_sns_status, sss_fid} p f
-    #{poke struct m0_spiel_sns_status, sss_state} p st
-    #{poke struct m0_spiel_sns_status, sss_progress} p pr
+  poke p (RepRebStatus f st pr) = do
+    #{poke struct m0_spiel_repreb_status, srs_fid} p f
+    #{poke struct m0_spiel_repreb_status, srs_state} p st
+    #{poke struct m0_spiel_repreb_status, srs_progress} p pr
 
-instance Binary SnsStatus where
-  put (SnsStatus f s u) = put f >> put (fromEnum s) >> put (fromIntegral u :: Word64)
-  get = SnsStatus <$> get <*> fmap toEnum get <*> fmap fromIntegral (get :: Get Word64)
+instance Binary RepRebStatus where
+  put (RepRebStatus f s u) = put f >> put (fromEnum s) >> put (fromIntegral u :: Word64)
+  get = RepRebStatus <$> get <*> fmap toEnum get <*> fmap fromIntegral (get :: Get Word64)
 
 spielCtx :: C.Context
 spielCtx = mempty {
   C.ctxTypesTable = Map.fromList [
       (C.Struct "m0_spiel_running_svc", [t| RunningService |])
     , (C.Struct "m0_spiel_service_info", [t| ServiceInfo |])
-    , (C.Struct "m0_spiel_sns_status", [t| SnsStatus |])
+    , (C.Struct "m0_spiel_repreb_status", [t| RepRebStatus |])
   ]
 }
 
