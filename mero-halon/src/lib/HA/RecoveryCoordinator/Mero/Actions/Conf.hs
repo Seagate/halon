@@ -291,13 +291,13 @@ createIMeta fs = do
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getLocalGraph
   let cas = [ (rack, encl, ctrl, srv)
-            | rack <- G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
-            , encl <- G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]
-            , ctrl <- G.connectedTo encl M0.IsParentOf rg :: [M0.Controller]
-            , node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
+            | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
             , proc <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
             , srv <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
             , M0.s_type srv == CST_CAS
+            , Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
+            , Just encl <- [G.connectedFrom M0.IsParentOf ctrl rg :: Maybe M0.Enclosure]
+            , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
             ]
       attrs = PDClustAttr {
                 _pa_N = fromIntegral $ length cas
