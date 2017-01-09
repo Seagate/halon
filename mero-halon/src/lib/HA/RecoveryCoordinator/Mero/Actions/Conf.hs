@@ -79,6 +79,7 @@ import           Mero.ConfC
   , ServiceType(..)
   , Word128(..)
   , bitmapFromArray
+  , m0_fid0
   )
 import           Network.CEP
 import           Text.Regex.TDFA ((=~))
@@ -322,10 +323,14 @@ createIMeta fs = do
 
   let pver = PoolVersion (Just $ M0.f_imeta_fid fs)
                           (Set.unions $ Set.fromList <$> fids) failures attrs
+      updateGraph = if null cas
+        then G.mergeResources head
+                [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
+        else createPoolVersionsInPool fs pool [pver] False
 
   modifyGraph
       $ G.connect fs M0.IsParentOf pool
-    >>> createPoolVersionsInPool fs pool [pver] False
+    >>> updateGraph
 
 --------------------------------------------------------------------------------
 -- Querying conf in RG
