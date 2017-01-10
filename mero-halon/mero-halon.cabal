@@ -265,6 +265,7 @@ Executable halonctl
                       Handler.Bootstrap.Cluster
                       Handler.Cluster
                       Handler.Debug
+                      Handler.Node
                       Handler.Service
                       Handler.Status
                       Lookup
@@ -606,6 +607,7 @@ Test-Suite scheduler-tests
                     TestRunner
                     HA.RecoveryCoordinator.Helpers
                     HA.RecoveryCoordinator.Tests
+                    HA.Services.Mero.Mock
   Main-Is:          scheduler-tests.hs
 
   Ghc-Options: -threaded -Wall -Werror -eventlog
