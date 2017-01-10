@@ -1,52 +1,39 @@
- -- |
+{-# LANGUAGE TemplateHaskell #-}
+-- |
+-- Module    : HA.Startup
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
-
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+--
+-- Core halon node bootstrap routines.
 module HA.Startup where
 
-import HA.RecoverySupervisor ( recoverySupervisor )
-import HA.EventQueue.Process ( EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue )
-import qualified HA.EQTracker.Process as EQT
-import HA.Logger
-import HA.Multimap ( MetaInfo, defaultMetaInfo, StoreChan )
-import HA.Multimap.Implementation ( Multimap, fromList )
-import HA.Multimap.Process ( startMultimap )
-import HA.Replicator ( RGroup(..), retryRGroup )
-import HA.Replicator.Log ( RLogGroup )
-import qualified HA.Storage as Storage
-
-import Control.Arrow ( (***) )
-import Control.Distributed.Process hiding (mask_, catch)
-import Control.Distributed.Process.Closure
-  ( remotable
-  , remotableDecl
-  , mkClosure
-  , mkStatic
-  )
+import           Control.Arrow ((***))
+import           Control.Distributed.Process hiding (mask_, catch)
+import           Control.Distributed.Process.Closure (remotable, remotableDecl, mkClosure, mkStatic)
 import qualified Control.Distributed.Process.Internal.StrictMVar as StrictMVar
-    ( modifyMVar_ )
-import Control.Distributed.Process.Internal.Types
-import Control.Distributed.Process.Serializable ( SerializableDict(..) )
-import Control.Distributed.Static ( closureApply )
-import Control.Monad.Catch
-
-import Data.Binary ( decode, encode )
-import Data.ByteString.Lazy (ByteString)
-import Data.List ( partition )
-import Data.Maybe ( isJust )
-
+import           Control.Distributed.Process.Internal.Types
+import           Control.Distributed.Process.Serializable (SerializableDict(..))
+import           Control.Distributed.Static (closureApply)
+import           Control.Monad.Catch
+import           Control.Monad.Reader
+import           Data.Binary (decode, encode)
+import           Data.ByteString.Lazy (ByteString)
+import           Data.List (partition)
+import qualified Data.Map as Map
+import           Data.Maybe (isJust)
+import qualified HA.EQTracker.Process as EQT
+import           HA.EventQueue.Process (EventQueue, eventQueueLabel, startEventQueue, emptyEventQueue)
+import           HA.Logger
+import           HA.Multimap (MetaInfo, defaultMetaInfo, StoreChan)
+import           HA.Multimap.Implementation (Multimap, empty)
+import           HA.Multimap.Process (startMultimap)
+import           HA.RecoverySupervisor (recoverySupervisor)
+import           HA.Replicator (RGroup(..), retryRGroup)
+import           HA.Replicator.Log (RLogGroup)
+import qualified HA.Storage as Storage
 import qualified Network.Transport as NT
-import qualified Data.Map as Map ( toList, empty )
-import Control.Monad.Reader
-import System.IO (hPutStrLn, stderr)
-
-
+import           System.IO (hPutStrLn, stderr)
+import           Text.Printf
 
 startupTrace :: String -> Process ()
 startupTrace = mkHalonTracer "startup"
@@ -153,7 +140,7 @@ remotableDecl [ [d|
             , Closure (Process (RLogGroup (MetaInfo, Multimap)))
             , Maybe (Replica RLogGroup, Replica RLogGroup)
             , Closure (ProcessId -> StoreChan -> Process ())
-            , SendPort ()
+            , SendPort ProcessId
             )
             -> Process ()
  startRS (cEQGroup, cMMGroup, mlocalReplicas, rcClosure, sp) = do
@@ -189,7 +176,8 @@ remotableDecl [ [d|
        let refmapper ref | ref == rsref = "Recovery supervisor died"
                          | otherwise = "Unknown subprocess died"
        handleMessages refmapper
-     sendChan sp ()
+     self <- getSelfPid
+     sendChan sp self
      startupTrace "startRS: done"
   where
      handleMessages refmapper =
@@ -231,7 +219,8 @@ remotableDecl [ [d|
  ignition (update, trackers, snapshotThreshold, snapshotTimeout, rcClosure
           , rsLeaderLease
           ) = callLocal $ do
-    say "Ignition!"
+    selfn <- getSelfNode
+    say $ printf "Ignition on %s using %s tracking stations." (show selfn) (show trackers)
     disconnectAllNodeConnections
     if update then do
       (members,newNodes) <- queryMembership trackers
@@ -251,16 +240,72 @@ remotableDecl [ [d|
                             emptyEventQueue
       cMMGroup <- newRGroup $(mkStatic 'mmDict) "mm" snapshotThreshold
                             snapshotTimeout rsLeaderLease trackers
-                            (defaultMetaInfo, fromList [])
+                            (defaultMetaInfo, empty)
       (sp, rp) <- newChan
-      forM_ trackers $ flip spawn $ $(mkClosure 'startRS)
+
+      (mrefs, srefs) <- fmap unzip . forM trackers $ \tnid -> do
+        mref <- monitorNode tnid
+        sref <- spawnAsync tnid $! $(mkClosure 'startRS)
           ( cEQGroup :: Closure (Process (RLogGroup EventQueue))
           , cMMGroup :: Closure (Process (RLogGroup (MetaInfo, Multimap)))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure
-          , sp :: SendPort ()
+          , sp :: SendPort ProcessId
           )
-      forM_ trackers $ \_ -> receiveChan rp
+        return ((tnid, mref), sref)
+
+      -- Finish when we have no monitors (i.e. everything spawned or
+      -- failed) and we're not waiting for spawned processes.
+      let loop mrm _ [] | Map.null mrm = say $ "New tracking station ignited: " ++ show selfn
+          loop mrm srs waits = do
+            say $ printf "Waiting for %s to spawn and %s to complete startRS"
+                         (show $ Map.keys mrm) (show waits)
+            receiveWait [ -- startRS managed to spawn
+                          matchIf (\(DidSpawn ref _) -> ref `elem` srs)
+                                  (\(DidSpawn ref pid) -> do
+                                    let pnid = processNodeId pid
+                                    -- Only add the PID to waiting
+                                    -- list if we have information
+                                    -- that we are trying to spawn it.
+                                    -- Even if we have a spawn ref,
+                                    -- DidSpawn might have come after
+                                    -- the startRS ack was processed
+                                    -- and then node was removed from
+                                    -- mrm.
+                                    newWaits <- case Map.lookup pnid mrm of
+                                      Nothing -> return waits
+                                      Just n -> do
+                                        unmonitor n
+                                        return $ pid : waits
+                                    usend pid ()
+                                    loop (Map.delete pnid mrm) (filter (/= ref) srs) newWaits)
+                        -- Something went wrong with node before
+                        -- spawn. Notify user, but let other nodes
+                        -- proceed. This is in contrast to old
+                        -- behaviour where ignition would hang.
+                        , matchIf (\(NodeMonitorNotification ref nid _) -> Just ref == Map.lookup nid mrm)
+                                  (\(NodeMonitorNotification _ nid r) -> do
+                                    say $ printf "Node %s failed during ignition: %s" (show nid) (show r)
+                                    -- Keep the spawn ref around.
+                                    -- Technically we could map spawn
+                                    -- refs to node if we desired and
+                                    -- remove it immediatelly but it's
+                                    -- not necessary: we'll only leak
+                                    -- SpawnRef per failed node for
+                                    -- duration of ignition
+                                    loop (Map.delete nid mrm) srs waits)
+                        , matchChan rp $ \pid ->
+                            -- Remove any PID from waiting list. Also
+                            -- remove the node from node map: if we
+                            -- process this before DidSpawn and don't
+                            -- remove the node, we will the process to
+                            -- waiting list after we have already
+                            -- processed the message here and we'll
+                            -- just hang forever.
+                            loop (Map.delete (processNodeId pid) mrm) srs (filter (/= pid) waits)
+                        ]
+
+      loop (Map.fromList mrefs) srefs []
       return Nothing
 
   where
@@ -294,10 +339,10 @@ remotableDecl [ [d|
           , cMMGroup :: Closure (Process (RLogGroup (MetaInfo, Multimap)))
           , Nothing :: Maybe (Replica RLogGroup)
           , rcClosure'
-          , sp:: SendPort ()
+          , sp:: SendPort ProcessId
           )
     startupTrace "autoboot: waiting"
-    receiveChan rp
+    _ <- receiveChan rp
     startupTrace "autoboot: done"
 
  |] ]
