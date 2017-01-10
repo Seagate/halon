@@ -49,6 +49,7 @@ mkdir -p %{buildroot}%{_tmpfilesdir}
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
+cp mero-halon/scripts/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
 cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
@@ -71,6 +72,7 @@ rm -rf %{buildroot}
 /usr/bin/halonctl
 /usr/bin/hctl
 /usr/libexec/halon/halon-cleanup
+/usr/libexec/halon/setup-rabbitmq-perms.sh
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /usr/lib/systemd/system/halon-cleanup.service
@@ -79,7 +81,6 @@ rm -rf %{buildroot}
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
-/etc/logrotate.d/halon
 %{_tmpfilesdir}/halond.conf
 
 %post

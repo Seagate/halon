@@ -28,6 +28,7 @@ cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/hctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halon-cleanup $RPM_BUILD_DIR/halon
+cp $RPM_SOURCE_DIR/setup-rabbitmq-perms.sh $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-satellite.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-cleanup.service $RPM_BUILD_DIR/systemd
@@ -50,6 +51,7 @@ cp -a $RPM_BUILD_DIR/halon/halonctl %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/halon-simplelocalcluster %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/hctl %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/halon-cleanup %{buildroot}/usr/libexec/halon
+cp -a $RPM_BUILD_DIR/halon/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
 cp -a $RPM_BUILD_DIR/role_maps/* %{buildroot}/etc/halon/role_maps
 cp -a $RPM_BUILD_DIR/tmpfiles.d/* %{buildroot}%{_tmpfilesdir}
@@ -67,6 +69,7 @@ rm -rf %{buildroot}
 /usr/bin/halon-simplelocalcluster
 /usr/bin/hctl
 /usr/libexec/halon/halon-cleanup
+/usr/libexec/halon/setup-rabbitmq-perms.sh
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /usr/lib/systemd/system/halon-cleanup.service

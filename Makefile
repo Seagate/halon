@@ -41,6 +41,7 @@ rpm-dev:
 	cp systemd/halon-cleanup.service rpmbuild/SOURCES/
 	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
 	cp mero-halon/scripts/hctl rpmbuild/SOURCES/hctl
+	cp mero-halon/scripts/setup-rabbitmq-perms.sh rpmbuild/SOURCES/setup-rabbitmq-perms.sh
 	cp mero-halon/scripts/mero_role_mappings.ede rpmbuild/SOURCES/role_maps/genders.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
 	cp mero-halon/scripts/halon_roles.yaml rpmbuild/SOURCES/role_maps/halon_role_mappings
