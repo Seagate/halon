@@ -39,6 +39,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , pickPrincipalRM
   , markSDevReplaced
   , unmarkSDevReplaced
+  , attachStorageDeviceToSDev
     -- * Low level graph API
   , rgGetPool
   , m0encToEnc
@@ -327,6 +328,15 @@ lookupStorageDeviceSDev sdev = do
   return $ do
     disk <- G.connectedFrom M0.At sdev rg
     G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
+
+-- | Connect 'StorageDevice' with corresponcing 'M0.SDev'.
+attachStorageDeviceToSDev :: StorageDevice -> M0.SDev -> PhaseM RC l ()
+attachStorageDeviceToSDev sdev m0sdev = do
+  rg <- getLocalGraph
+  case G.connectedTo m0sdev M0.IsOnHardware rg of
+    Nothing -> return ()
+    Just disk -> modifyGraph $ G.connect (disk::M0.Disk) M0.At sdev
+  
 
 -- | Find 'M0.Disk' associated with the given 'M0.SDev'.
 lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)

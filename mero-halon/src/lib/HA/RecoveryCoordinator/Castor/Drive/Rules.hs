@@ -164,9 +164,13 @@ mkCheckAndHandleDriveReady smartLens next = do
 
   (device_attached, deviceAttach) <- mkAttachDisk
     (fmap join . traverse (lookupStorageDeviceSDev) . getter)
-    (\sdev e -> do phaseLog "warning" e
-                   post_process sdev)
-    post_process
+    (\sdev e -> do
+       Log.rcLog' Log.ERROR e
+       post_process sdev)
+    (\m0sdev -> do
+       Just sdev <- getter <$> get Local  
+       attachStorageDeviceToSDev sdev m0sdev
+       post_process m0sdev)
 
   setPhaseIf sync_complete
     (\(SyncComplete request) _ l -> return $
@@ -231,8 +235,24 @@ mkCheckAndHandleDriveReady smartLens next = do
 
     StorageDevice.location disk >>= \case
       Just loc | not reset && powered && status == "OK" -> do
-        modify Local $ smartLens .~ Just (CheckAndHandleState node disk loc Nothing Nothing)
-        return [smart_run]
+        current_m0sdev <- lookupStorageDeviceSDev disk
+        disk_path <- StorageDevice.path disk
+        rg <- getLocalGraph
+        case  current_m0sdev of
+          Just sdev | Just (M0.d_path sdev) == disk_path
+                    , SDSUnknown == getState sdev rg
+                    -> do
+            Log.rcLog' Log.DEBUG "Device is already attached."
+            applyStateChanges [ stateSet sdev Tr.sdevReady]
+            onFailure
+          Just sdev | Just (M0.d_path sdev) == disk_path 
+                    , SDSOnline == getState sdev rg
+                    -> do
+            Log.rcLog' Log.DEBUG "Device is already attached and online."
+            onFailure
+          _ -> do
+            modify Local $ smartLens .~ Just (CheckAndHandleState node disk loc Nothing Nothing)
+            return [smart_run]
       Nothing -> do
         Log.rcLog' Log.ERROR $ "Device is not inserted."
         onFailure
