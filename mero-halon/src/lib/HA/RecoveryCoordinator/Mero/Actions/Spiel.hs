@@ -423,9 +423,9 @@ syncAction meid sync =
    flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
        $ do
     case sync of
-      SyncToConfdServersInRG -> flip catch (handler (const $ return ())) $ do
+      SyncToConfdServersInRG f -> flip catch (handler (const $ return ())) $ do
         phaseLog "info" "Syncing RG to confd servers in RG."
-        void syncToConfd
+        void $ syncToConfd f
       SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
         bs <- syncToBS
         liftProcess . DP.usend pid . M0.SyncDumpToBSReply $ Right bs
@@ -458,11 +458,12 @@ syncToBS = loadConfData >>= \case
   Nothing -> error "Cannot load configuration data from graph."
 
 -- | Helper functions for backward compatibility.
-syncToConfd :: PhaseM RC l (Either SomeException ())
-syncToConfd = do
+syncToConfd :: Bool -- ^ Force synchronization.
+            -> PhaseM RC l (Either SomeException ())
+syncToConfd force = do
   withSpielRC $ \lift -> do
      setProfileRC lift
-     loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd lift)
+     loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd force lift)
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
@@ -472,12 +473,12 @@ txOpenContext lift = m0synchronously lift openTransaction
 txOpenLocalContext :: LiftRC -> PhaseM RC l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
-txSyncToConfd :: LiftRC -> SpielTransaction -> PhaseM RC l ()
-txSyncToConfd lift t = do
+txSyncToConfd :: Bool -> LiftRC -> SpielTransaction -> PhaseM RC l ()
+txSyncToConfd f lift t = do
   phaseLog "spiel" "Committing transaction to confd"
   M0.ConfUpdateVersion v h <- getConfUpdateVersion
   h' <- return . hash <$> m0synchronously lift (txToBS t v)
-  if h /= h'
+  if h /= h' || f
   then m0synchronously lift (commitTransactionForced t False v) >>= \case
     Right () -> do
       -- spiel increases conf version here so we should too; alternative

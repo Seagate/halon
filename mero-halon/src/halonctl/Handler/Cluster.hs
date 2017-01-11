@@ -85,7 +85,7 @@ parseCluster =
       ( LoadData <$> Opt.subparser ( Opt.command "load" (Opt.withDesc parseLoadOptions
         "Load initial data into the system." )))
 #ifdef USE_MERO
-  <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc (pure SyncOptions)
+  <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc parseSyncOptions
         "Force synchronisation of RG to confd servers." )))
   <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
         "Dump embedded confd database to file." )))
@@ -127,9 +127,9 @@ cluster nids' opt = do
   where
     cluster' nids (LoadData l) = dataLoad nids l
 #ifdef USE_MERO
-    cluster' nids (Sync _) = do
+    cluster' nids (Sync (SyncOptions f)) = do
       say "Synchonizing cluster to confd."
-      syncToConfd nids
+      syncToConfd nids f
     cluster' nids (Dump s) = dumpConfd nids s
     cluster' nids (Status (StatusOptions m d t)) = clusterCommand nids (Just t) ClusterStatusRequest (liftIO . output m d)
       where output True _ = jsonReport
@@ -236,13 +236,15 @@ dataLoad eqnids (LoadOptions cf maps halonMaps verify _t) = do
 #ifdef USE_MERO
 
 syncToConfd :: [NodeId]
+            -> Bool     -- ^ Force synchoronization.
             -> Process ()
-syncToConfd eqnids = promulgateEQ eqnids SyncToConfdServersInRG
+syncToConfd eqnids f = promulgateEQ eqnids (SyncToConfdServersInRG f)
         >>= \pid -> withMonitor pid wait
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 
 data SyncOptions = SyncOptions
+  { _syncOptForce :: Bool }
   deriving (Eq, Show)
 
 newtype DumpOptions = DumpOptions FilePath
@@ -373,6 +375,13 @@ parseResetOptions = ResetOptions
     ( Opt.long "unstick"
     <> Opt.help "Clear the EQ and reset the RC remotely, in case of a stuck RC."
     )
+
+parseSyncOptions :: Opt.Parser SyncOptions
+parseSyncOptions = SyncOptions 
+  <$> Opt.switch
+    ( Opt.long "force"
+    <> Opt.help "Force transaction sync even if configuration tree didn't change")
+
 
 parseStartOptions :: Opt.Parser StartOptions
 parseStartOptions = StartOptions

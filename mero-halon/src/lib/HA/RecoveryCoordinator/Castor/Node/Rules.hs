@@ -422,7 +422,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     route node >>= switch
 
   setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
-    syncStat <- syncToConfd
+    syncStat <- syncToConfd False
     case syncStat of
       Left err -> do phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
                      continue finish
