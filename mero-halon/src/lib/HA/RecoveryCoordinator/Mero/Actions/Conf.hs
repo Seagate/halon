@@ -286,6 +286,12 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   - A single (actual) pool version in this pool containing all above disks.
 --   Since the disks created here are fake, they will not have an associated
 --   'StorageDevice'.
+--
+--   If there are no CAS services in the graph, then we have a slight
+--   problem, since it is invalid to have a zero-width pver (e.g. a pver with
+--   no associated devices). In this case, we use the special FID 'M0_FID0'
+--   in the 'f_imeta_pver' field. This should validate correctly in Mero iff
+--   there are no CAS services.
 createIMeta :: M0.Filesystem -> PhaseM RC l ()
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
@@ -323,6 +329,10 @@ createIMeta fs = do
 
   let pver = PoolVersion (Just $ M0.f_imeta_fid fs)
                           (Set.unions $ Set.fromList <$> fids) failures attrs
+      -- If there are no CAS services then we need to replace the Filesystem
+      -- entity with one containing the special M0_FID0 value. We can't do this
+      -- before since we create the filesystem before we create services in the
+      -- graph.
       updateGraph = if null cas
         then G.mergeResources head
                 [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
