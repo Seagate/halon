@@ -44,7 +44,7 @@ mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
-    Left (_::AMQPException) -> return $ \_-> []
+    Left (e::AMQPException) -> return $ \_-> [ testSuccess "Process tests" $ error $ "Rabbitmq failure: " ++ show e]
     Right x -> do
       closeConnection x
       return $ \t ->

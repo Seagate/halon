@@ -36,7 +36,7 @@ mkTests pg = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
     Left (e::AMQPException) -> return $ \_->
-      [testSuccess ("InternalStateChange tests disabled (can't connect to rabbitMQ): "++show e)  $ return ()]
+      [testSuccess "InternalStateChange tests" $ error $ "RabbitMQ error: " ++ show e]
     Right x -> do
       closeConnection x
       return $ \t ->

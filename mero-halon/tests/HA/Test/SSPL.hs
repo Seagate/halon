@@ -106,8 +106,8 @@ mkTests :: IO (Transport -> TestTree)
 mkTests = do
   ex <- E.try $ Network.AMQP.openConnection "localhost" "/" "guest" "guest"
   case ex of
-    Left (_::AMQPException) -> return $ \_->
-      testCase "SSPL tests disabled (can't connect to rabbitMQ)"  $ return ()
+    Left (e::AMQPException) -> return $ \_->
+      testCase "SSPL"  $ error $ "RabbitMQ error: " ++ show e
     Right x -> do
       closeConnection x
       return $ \transport ->
