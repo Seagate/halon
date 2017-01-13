@@ -14,6 +14,7 @@ import qualified Data.Set as Set
 import Network.Transport (Transport(..))
 
 import HA.RecoveryCoordinator.Definitions
+import HA.RecoveryCoordinator.Helpers
 import HA.RecoveryCoordinator.Mero
 import HA.Network.RemoteTables (haRemoteTable)
 import Mero.RemoteTables (meroRemoteTable)
@@ -80,20 +81,8 @@ bootupCluster = \(node : nids) -> do
     -- 1. Autoboot cluster
     autobootCluster (node:nids)
     -- 2. Run ignition once
-    (sp, rp) <- Control.Distributed.Process.newChan
-    _ <- liftIO $ forkProcess (head nids) $ ignition args >>= sendChan sp
-    result <- receiveChan rp
-    case result of
-      Just (added, _, members, newNodes) -> liftIO $ do
-        if added then do
-          putStrLn "The following nodes joined successfully:"
-          mapM_ print newNodes
-        else
-          putStrLn "No new node could join the group."
-        putStrLn ""
-        putStrLn "The following nodes were already in the group:"
-        mapM_ print members
-      Nothing -> return ()
+    _ <- ignition args
+    sayTest "bootupCluster finished"
 
 -- | Start dummy recovery coordinator
 rcClosure :: Closure ([NodeId] -> ProcessId -> StoreChan -> Process ())
