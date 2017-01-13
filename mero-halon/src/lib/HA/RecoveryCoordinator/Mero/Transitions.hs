@@ -32,8 +32,10 @@ type CascadeTransition a b = StateCarrier a -> Transition b
 -- * 'M0.Process'
 
 -- | Fail a process with the given reason.
-processFailed :: String -> Transition M0.Process
-processFailed = constTransition . M0.PSFailed
+processFailed :: (?loc :: CallStack) => String -> Transition M0.Process
+processFailed m = Transition $ \case
+  st@M0.PSOffline -> transitionErr ?loc st
+  _ -> TransitionTo $ M0.PSFailed m
 
 -- | HA 'M0.Process' online.
 processHAOnline :: Transition M0.Process
