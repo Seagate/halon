@@ -81,6 +81,7 @@ rm -rf %{buildroot}
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
+/etc/logrotate.d/halon
 %{_tmpfilesdir}/halond.conf
 
 %post
