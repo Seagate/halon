@@ -589,6 +589,9 @@ getSpielAddress :: Bool -- Allow returning dead services
                 -> Maybe SpielAddress
 getSpielAddress b g =
    let svs = M0.getM0Services g
+       qsize = if b
+               then length [ () | Service {s_type = CST_MGS} <- svs ]
+               else length confdsFid
        (confdsFid,confdsEps) = nub *** nub . concat $ unzip
          [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs
                      , b || M0.getState svc g == M0.SSOnline ]
@@ -597,7 +600,7 @@ getSpielAddress b g =
                      , G.isConnected svc R.Is M0.PrincipalRM g]
        mrmFid = listToMaybe $ nub rmFids
        mrmEp  = listToMaybe $ nub $ concat rmEps
-       quorum = ceiling $ fromIntegral (length confdsFid) / (2::Double)
+       quorum = ceiling $ fromIntegral qsize / (2::Double)
 
   in (SpielAddress confdsFid confdsEps) <$> mrmFid <*> mrmEp <*> pure quorum
 

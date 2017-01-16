@@ -130,6 +130,7 @@ import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
+import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Actions (meroChannel, lookupMeroChannelByNode)
 import           HA.Services.SSPL.CEP ( sendInterestingEvent )
@@ -138,6 +139,7 @@ import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import qualified HA.RecoveryCoordinator.RC.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Service.Events as Service
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
+import qualified HA.RecoveryCoordinator.Castor.Node.Events as Event
 
 import           Mero.ConfC (ServiceType(CST_HA))
 import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
@@ -151,7 +153,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 
 import           Control.Applicative
-import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId)
+import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId, sendChan)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
 import           Control.Monad (void, guard, join, when)
@@ -182,6 +184,8 @@ rules = sequence_
   , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
   , ruleFailNodeIfProcessCantRestart
+  , ruleMaintenanceStopNode
+  , requestUserStopsNode
   , requestStartHalonM0d
   , requestStopHalonM0d
   , eventNewHalonNode
@@ -915,7 +919,8 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
              StopProcessTimeout p -> do
                if p `elem` getField (rget fldWaitingProcs l)
                then do
-                 modify Local $ rlens fldRep . rfield .~ Just StopProcessesOnNodeTimeout
+                 StopProcessesOnNodeRequest node <- getRequest
+                 modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeTimeout node)
                  return $ Left finish
                else return $ Right l)
          (getField . rget fldWaitingProcs <$> get Local >>= return . \case
@@ -923,7 +928,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
              _ -> Nothing)
 
    directly teardown $ do
-     Just (StopProcessesOnNodeRequest node) <- getField . rget fldReq <$> get Local
+     StopProcessesOnNodeRequest node <- getRequest
      lvl@(M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
      phaseLog "info" $ "Tearing down " ++ show lvl ++ " on " ++ show node
      cluster_lvl <- getClusterStatus <$> getLocalGraph
@@ -943,7 +948,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
               notifyOnClusterTransition
               switch [ await_barrier, timeout barrierTimeout barrier_timeout ]
        Just st -> do
-         modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeStateChanged st)
+         modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeStateChanged node st)
          continue finish
        Nothing -> continue finish -- should not happen?
 
@@ -976,8 +981,9 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
 
    directly barrier_timeout $ do
      lvl <- getField . rget fldBootLevel <$> get Local
+     StopProcessesOnNodeRequest node <- getRequest
      phaseLog "warning" $ "Timed out waiting for cluster barrier to reach " ++ show lvl
-     modify Local $ rlens fldRep . rfield .~ Just StopProcessesOnNodeTimeout
+     modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeTimeout node)
      continue finish
 
    -- TODO: We don't actually wait for halon:m0d stop result…
@@ -986,10 +992,10 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
      promulgateRC $ StopHalonM0dRequest node
-     modify Local $ rlens fldRep . rfield .~ Just StopProcessesOnNodeOk
+     modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeOk node)
      continue finish
 
-   return $ (\_ -> return $ Right (StopProcessesOnNodeTimeout, [teardown]))
+   return $ (\(StopProcessesOnNodeRequest node) -> return $ Right (StopProcessesOnNodeTimeout node, [teardown]))
   where
     fldReq = Proxy :: Proxy '("request", Maybe StopProcessesOnNodeRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe StopProcessesOnNodeResult)
@@ -1014,3 +1020,77 @@ ruleFailNodeIfProcessCantRestart =
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
       applyStateChanges $ map (`stateSet` nodeFailed) m0ns
     _ -> return ()
+
+processMaintenaceStopNode :: Job MaintenanceStopNode MaintenanceStopNodeResult
+processMaintenaceStopNode = Job "castor::node::maintenance::stop-processes"
+
+ruleMaintenanceStopNode :: Definitions RC ()
+ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle getRequest finish) -> do
+   go <- phaseHandle "go"
+   stop_service <- phaseHandle "stop_service"
+
+   let mkProcessesAwait name next = mkLoop name (return [])
+         (\result l -> case result of
+             StopProcessResult (p, _) -> return .  Right $
+               (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+             StopProcessTimeout p -> do
+               if p `elem` getField (rget fldWaitingProcs l)
+               then return $ Left finish
+               else return $ Right l)
+         (getField . rget fldWaitingProcs <$> get Local >>= return . \case
+             [] -> Just [next]
+             _ -> Nothing)
+
+   await_stopping_processes <- mkProcessesAwait "await_stopping_processes" stop_service
+ 
+   directly go $ do
+      MaintenanceStopNode node <- getRequest
+      ps <- getNodeProcesses node <$> getLocalGraph
+      for_ ps $ promulgateRC . StopProcessRequest
+      modify Local $ rlens fldWaitingProcs . rfield .~ ps
+      continue await_stopping_processes
+
+   directly stop_service $ do
+     MaintenanceStopNode node <- getRequest
+     phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
+                              (show node)
+     promulgateRC $ StopHalonM0dRequest node
+     modify Local $ rlens fldRep . rfield .~ Just (MaintenanceStopNodeOk node)
+     continue finish
+
+   return $ \(MaintenanceStopNode node) ->
+     return $ Right (MaintenanceStopNodeTimeout node, [go])
+  where
+    fldReq = Proxy :: Proxy '("request", Maybe MaintenanceStopNode)
+    fldRep = Proxy :: Proxy '("reply", Maybe MaintenanceStopNodeResult)
+    fldWaitingProcs = Proxy :: Proxy '("waiting-procs", [M0.Process])
+    args = fldUUID =: Nothing
+       <+> fldReq  =: Nothing
+       <+> fldRep  =: Nothing
+       <+> fldWaitingProcs =: []
+
+-- | Request to stop a node.
+requestUserStopsNode :: Definitions RC ()
+requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go where
+  go (Event.StopNodeUserRequest m0fid should_force reply_to) = lookupConfObjByFid m0fid >>= \case
+     Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
+     Just m0node -> M0.m0nodeToNode m0node <$> getLocalGraph >>= \case
+       Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
+       Just node ->
+         if should_force
+         then do
+           rg <- getLocalGraph
+           let (_, DeferredStateChanges f _ _) = createDeferredStateChanges 
+                     [stateSet m0node (TrI.constTransition M0.NSFailed)] rg -- XXX: constTransition?
+           ClusterLiveness havePVers _haveSNS haveQuorum _haveRM <- calculateClusterLiveness (f rg)
+           let errors = (if havePVers then id else ("No writable PVers found":))
+                      $ (if haveQuorum then id else ("Quorum will be lost":))
+                      $ []
+           if null errors
+           then initiateStop node
+           else liftProcess $ sendChan reply_to (Event.CantStop m0fid node errors)
+         else initiateStop node
+    where
+      initiateStop node = do
+        promulgateRC (Event.MaintenanceStopNode node)
+        liftProcess $ sendChan reply_to (StopInitiated m0fid node)

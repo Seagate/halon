@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module HA.Castor.Tests ( tests ) where
 
+import Control.Concurrent (newEmptyMVar, putMVar, takeMVar)
 import Control.Distributed.Process
   ( Process
   , RemoteTable
@@ -36,6 +37,8 @@ import HA.Multimap.Process (startMultimap)
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero.Actions.Failure
 import HA.RecoveryCoordinator.Mero.Failure.Simple
+import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Cluster.Actions
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import Mero.ConfC (PDClustAttr(..))
 import HA.RecoveryCoordinator.Mero
@@ -47,6 +50,7 @@ import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import HA.ResourceGraph hiding (__remoteTable)
+import qualified Mero.ConfC as ConfC
 
 
 import RemoteTables (remoteTable)
@@ -57,6 +61,7 @@ import qualified Test.Tasty.HUnit as Tasty
 
 import Helper.InitialData
 import Helper.RC
+import Data.List  (nub)
 import Data.Maybe (catMaybes)
 import Data.Proxy
 import Data.Typeable
@@ -92,6 +97,7 @@ tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   , testSuccess "failure-sets-formulaic" $ testFailureSetsFormulaic transport pg
   , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
+  , testClusterLiveness transport pg
   ]
 
 fsSize :: (a, Set.Set b) -> Int
@@ -298,6 +304,101 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "All processes should be stopping"
       $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
         length procs
+
+testClusterLiveness :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
+testClusterLiveness transport pg = testGroup "cluster-liveness"
+  [ Tasty.testCase "on-new-cluster"
+       $ genericTest (return ()) 
+       $ Tasty.assertEqual "cluster is alive"
+           ClusterLiveness{clPVers=True,clOngoingSNS=False, clHaveQuorum=True, clPrincipalRM=True}
+  , Tasty.testCase "on-broken-confd-quorum-no-rm"
+       $ genericTest (do 
+           rg <- getLocalGraph
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+                                 , srv <- connectedTo ps M0.IsParentOf rg
+                                 , M0.s_type srv == ConfC.CST_MGS
+                                 ]
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
+           )
+       $ Tasty.assertEqual "cluster is alive"
+           ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
+  , Tasty.testCase "on-broken-confd-quorum"
+       $ genericTest (do 
+           rg <- getLocalGraph
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+                                 , srv <- connectedTo ps M0.IsParentOf rg
+                                 , M0.s_type srv == ConfC.CST_MGS
+                                 ]
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> drop 1 (take 1 confds)
+           )
+       $ Tasty.assertEqual "cluster is alive"
+           ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=True}
+  , Tasty.testCase "on-broken-confd-no-quorum"
+       $ genericTest (do 
+           rg <- getLocalGraph
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+                                 , srv <- connectedTo ps M0.IsParentOf rg
+                                 , M0.s_type srv == ConfC.CST_MGS
+                                 ]
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
+           )
+       $ Tasty.assertEqual "cluster have no quorum"
+            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=False,clPrincipalRM=False}
+  -- , testCase "ongoing-sns" XXX: not yet implemented, I don't know the good way to test that
+  --     without starting proper confd, and just inserting SNS info into the graph will be a fake
+  --     test.
+  , Tasty.testCase "on-ios-failure" 
+       $ genericTest (do 
+           rg <- getLocalGraph
+           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+                                 , srv <- connectedTo ps M0.IsParentOf rg
+                                 , M0.s_type srv == ConfC.CST_IOS
+                                 ]
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
+           )
+       $ Tasty.assertEqual "pvers can be found"
+            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
+  , Tasty.testCase "on-many-ios" 
+       $ genericTest (do 
+           rg <- getLocalGraph
+           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+                                 , srv <- connectedTo ps M0.IsParentOf rg
+                                 , M0.s_type srv == ConfC.CST_IOS
+                                 ]
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
+           )
+       $ Tasty.assertEqual "pvers can't be found"
+            ClusterLiveness{clPVers=False,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
+  ] where
+    genericTest :: (PhaseM RC Int ()) -> (ClusterLiveness -> IO ()) -> IO ()
+    genericTest configure test = rGroupTest transport pg $ \pid -> do
+      me <- getSelfNode
+      ls0 <- emptyLoopState pid (nullProcessId me)
+      settings <- liftIO defaultInitialDataSettings
+      iData' <- liftIO . initialData $ settings { _id_servers = 3, _id_drives = 4 }
+      let iData = iData'{CI.id_m0_globals = (CI.id_m0_globals iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
+                                                                                                         ,[0,0,0,0,1]
+                                                                                                         ,[0,0,0,0,2]]}}
+      (ls1, _) <- run ls0 $ do
+         mapM_ goRack (CI.id_racks iData)
+         filesystem <- initialiseConfInRG
+         loadMeroGlobals (CI.id_m0_globals iData)
+         loadMeroServers filesystem (CI.id_m0_servers iData)
+         Just (Monolithic update) <- getCurrentGraphUpdateType
+         modifyLocalGraph update
+         RC.initialRule (IgnitionArguments [])
+      let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
+      (ls2, _) <- run ls1 $ do
+        applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
+        _ <- pickPrincipalRM
+        return ()
+      (ls3, _) <- run ls2 $ configure
+      box <- liftIO newEmptyMVar
+      _ <- run ls3 $ do
+        rg <- getLocalGraph
+        liftIO . putMVar box =<< calculateClusterLiveness rg
+      liftIO $ test =<< takeMVar box
+
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g

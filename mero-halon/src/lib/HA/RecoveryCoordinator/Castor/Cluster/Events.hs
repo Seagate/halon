@@ -24,6 +24,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Events
   , ReportClusterState(..)
   , ReportClusterHost(..)
   , ReportClusterProcess(..)
+  , ClusterLiveness(..)
   -- * Internal events
   , ClusterStateChange(..)
   -- * Debug
@@ -168,6 +169,14 @@ data ClusterStopDiff = ClusterStopDiff
 
 instance Binary ClusterStopDiff
 
+-- | Calculate
+data ClusterLiveness = ClusterLiveness
+      { clPVers :: Bool
+      , clOngoingSNS :: Bool
+      , clHaveQuorum :: Bool
+      , clPrincipalRM :: Bool
+      } deriving (Show, Eq, Typeable, Generic)
+
 deriveSafeCopy 0 'base ''ClusterResetRequest
 deriveSafeCopy 0 'base ''ClusterStartRequest
 deriveSafeCopy 0 'base ''ClusterStatusRequest
@@ -176,3 +185,4 @@ deriveSafeCopy 0 'base ''MarkProcessesBootstrapped
 deriveSafeCopy 0 'base ''MonitorClusterStop
 deriveSafeCopy 0 'base ''PoolRebalanceRequest
 deriveSafeCopy 0 'base ''PoolRepairRequest
+deriveSafeCopy 0 'base ''ClusterLiveness

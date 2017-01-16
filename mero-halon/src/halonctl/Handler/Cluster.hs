@@ -18,6 +18,7 @@ module Handler.Cluster
 import HA.EventQueue (promulgateEQ)
 import Control.Distributed.Process.Serializable
 import Control.Monad.Fix (fix)
+import Control.Monad.Catch (bracket_)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.Foldable
@@ -50,7 +51,7 @@ import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (bracket_)
 import Control.Monad
 import Data.Yaml (prettyPrintParseException)
 import qualified HA.Resources.Castor.Initial as CI
@@ -72,6 +73,7 @@ data ClusterOptions =
   | MkfsDone MkfsDoneOptions
   | VarsCmd VarsOptions
   | StateUpdate StateUpdateOptions
+  | StopNode StopNodeOptions
   deriving (Eq, Show)
 
 
@@ -101,6 +103,8 @@ parseCluster =
         "Control variable parameters of the halon.")))
   <|> ( StateUpdate <$> Opt.subparser (Opt.command "update" (Opt.withDesc parseStateUpdateOptions
         "Force update state of the mero objects")))
+  <|> ( StopNode <$> Opt.subparser (Opt.command "node-stop" (Opt.withDesc parseStopNodeOptions
+         "Stop m0d processes on the given node")))
 
 -- | Run the specified cluster command over the given nodes. The nodes
 -- are first verified to be EQ nodes: if they aren't, we use EQ node
@@ -141,6 +145,8 @@ cluster nids' opt = do
     cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
     cluster' nids (StateUpdate (StateUpdateOptions s))
       = clusterCommand nids Nothing (ForceObjectStateUpdateRequest s) (liftIO . print)
+    cluster' nids (StopNode options)
+      = clusterStopNode nids options
 
 data LoadOptions = LoadOptions
     FilePath -- ^ Facts file
@@ -303,6 +309,18 @@ parseStateUpdateOptions = StateUpdateOptions <$>
      Nothing -> Left $ "Couldn't parse fid: " ++ show fid'
      Just fid -> Right $ (fid, state)
    updateReader s = Left $ "Could not parse " ++ s
+
+data StopNodeOptions = StopNodeOptions
+       { stopNodeForce :: Bool
+       , stopNodeFid   :: String
+       , stopNodeSync  :: Bool
+       } deriving (Eq, Show)
+
+parseStopNodeOptions :: Opt.Parser StopNodeOptions
+parseStopNodeOptions = StopNodeOptions
+   <$> Opt.switch (Opt.long "force" <> Opt.short 'f' <> Opt.help "force stop, even if it reduces liveness.")
+   <*> Opt.strOption (Opt.long "node" <> Opt.help "Node to shutdown" <>  Opt.metavar "NODE")
+   <*> Opt.switch (Opt.long "sync" <> Opt.short 's' <> Opt.help "exit when operation finished.")
 
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>
@@ -577,6 +595,44 @@ clusterCommand eqnids mt mk output = do
     Just () -> return ()
   where
     wait = void (expect :: Process ProcessMonitorNotification)
+
+clusterStopNode :: [NodeId] -> StopNodeOptions -> Process ()
+clusterStopNode eqnids opts = do
+  case strToFid (stopNodeFid opts) of
+    Nothing -> liftIO $ do
+      hPutStrLn stderr "Not a fid"
+      exitFailure
+    Just fid -> do
+      (schan, rchan) <- newChan
+      subscribing $ do
+         _ <- promulgateEQ eqnids (StopNodeUserRequest fid 
+                                     (stopNodeForce opts)
+                                     schan) 
+         r <- receiveChan rchan
+         case r of
+           NotANode{} ->liftIO $ do
+             hPutStrLn stderr "Requested fid is not a node fid."
+             exitFailure
+           CantStop _ _ results -> liftIO $ do
+             hPutStrLn stderr "Can't stop node because it leads to:"
+             forM_ results $ \result -> hPutStrLn stderr $ "    " ++ result
+             exitFailure
+           StopInitiated _ node -> do
+             liftIO $ putStrLn "Stop initiated."
+             when (stopNodeSync opts) $ do
+                liftIO $ putStrLn "Waiting for completion."
+                fix $ \inner -> do
+                  Published msg _ <- expect :: Process (Published MaintenanceStopNodeResult)
+                  case msg of
+                    MaintenanceStopNodeOk rnode | rnode /= node -> inner
+                    MaintenanceStopNodeTimeout rnode | rnode /= node -> inner
+                    MaintenanceStopNodeOk{} -> liftIO $ putStrLn "Stop node finished."
+                    MaintenanceStopNodeTimeout{} -> liftIO $ putStrLn "Stop node timeout."
+  where
+   subscribing | stopNodeSync opts = bracket_
+     (subscribeOnTo eqnids (Proxy :: Proxy MaintenanceStopNodeResult))
+     (unsubscribeOnFrom eqnids (Proxy :: Proxy MaintenanceStopNodeResult))
+               | otherwise = id
 
 -- | Nicely format 'ClusterStartResult' into something the user can
 -- easily understand.

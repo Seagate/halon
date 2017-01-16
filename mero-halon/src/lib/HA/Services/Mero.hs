@@ -348,7 +348,8 @@ m0dProcess parent conf = do
         [ ("MERO_NODE_UUID", UUID.toString $ mkcNodeUUID (mcKernelConfig conf))
         ]
       SystemD.startService "mero-kernel"
-    stopKernel = liftIO $ SystemD.stopService "mero-kernel"
+    stopKernel =
+       receiveTimeout 2000000 [] `Catch.finally` liftIO (void $ SystemD.stopService "mero-kernel")
 
     -- mainloop
     go c cc = forever $

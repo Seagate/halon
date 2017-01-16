@@ -13,6 +13,7 @@
 module HA.RecoveryCoordinator.Mero.State
   ( DeferredStateChanges(..)
   , applyStateChanges
+  , createDeferredStateChanges
     -- * Re-export for convenience
   , AnyStateSet
   , stateSet

@@ -19,8 +19,13 @@ module HA.RecoveryCoordinator.Castor.Node.Events
   , StopMeroClientRequest(..)
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
+  , StopNodeUserRequest(..)
+  , StopNodeUserReply(..)
+  , MaintenanceStopNode(..)
+  , MaintenanceStopNodeResult(..)
   ) where
 
+import           Control.Distributed.Process (SendPort)
 import           Data.Binary (Binary)
 import           Data.Typeable (Typeable)
 import           GHC.Generics
@@ -57,9 +62,9 @@ newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest R.Node
 -- reason because currently we throw away useful info on process
 -- failure.
 data StopProcessesOnNodeResult
-       = StopProcessesOnNodeOk
-       | StopProcessesOnNodeTimeout
-       | StopProcessesOnNodeStateChanged M0.MeroClusterState
+       = StopProcessesOnNodeOk R.Node
+       | StopProcessesOnNodeTimeout R.Node
+       | StopProcessesOnNodeStateChanged R.Node M0.MeroClusterState
        deriving (Eq, Show, Generic)
 
 instance Binary StopProcessesOnNodeResult
@@ -96,6 +101,23 @@ newtype StopMeroClientRequest = StopMeroClientRequest Fid
 newtype StartMeroClientRequest = StartMeroClientRequest Fid
   deriving (Eq, Show, Generic)
 
+-- | Request RC to stop node.
+data StopNodeUserRequest = StopNodeUserRequest Fid Bool (SendPort StopNodeUserReply)
+  deriving (Eq, Show, Generic)
+
+-- | Reply to 'StopNodeUserRequest'.
+data StopNodeUserReply = CantStop Fid R.Node [String]
+                       | StopInitiated Fid R.Node
+                       | NotANode Fid
+  deriving (Eq, Show, Generic)
+
+data MaintenanceStopNode = MaintenanceStopNode R.Node deriving (Eq, Show, Generic, Ord)
+
+data MaintenanceStopNodeResult
+  = MaintenanceStopNodeOk R.Node
+  | MaintenanceStopNodeTimeout R.Node
+  deriving (Eq, Show, Generic)
+
 deriveSafeCopy 0 'base ''M0KernelResult
 deriveSafeCopy 0 'base ''StartClientsOnNodeRequest
 deriveSafeCopy 0 'base ''StartHalonM0dRequest
@@ -105,3 +127,7 @@ deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
 deriveSafeCopy 0 'base ''StopHalonM0dRequest
 deriveSafeCopy 0 'base ''StopMeroClientRequest
 deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''StopNodeUserRequest
+deriveSafeCopy 0 'base ''StopNodeUserReply
+deriveSafeCopy 0 'base ''MaintenanceStopNode
+deriveSafeCopy 0 'base ''MaintenanceStopNodeResult
