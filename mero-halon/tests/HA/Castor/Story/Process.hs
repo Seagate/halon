@@ -21,7 +21,6 @@ import           Data.Maybe (listToMaybe)
 import           Data.Typeable
 import           Data.Vinyl
 import           GHC.Generics (Generic)
-import qualified HA.Castor.Story.Tests as H
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
@@ -34,6 +33,7 @@ import           HA.Resources
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           Helper.InitialData
+import qualified Helper.Runner as H
 import           Mero.Notification
 import           Network.AMQP
 import           Network.CEP
@@ -127,7 +127,8 @@ testClientStartsAnyBootlevel transport pg = do
   tos <- H.mkDefaultTestOptions
   idata <- initialData $ isettings { _id_servers = 1 }
   let tos' = tos { H._to_initial_data = idata
-                 , H._to_cluster_setup = H.HalonM0DOnly }
+                 , H._to_cluster_setup = H.HalonM0DOnly
+                 , H._to_run_sspl = False }
   H.run' transport pg [rule] tos' test
   where
     test :: H.TestSetup -> Process ()
@@ -196,5 +197,6 @@ testClusterBootstrap transport pg = do
   tos <- H.mkDefaultTestOptions
   idata <- initialData $ isettings { _id_servers = 4 }
   let tos' = tos { H._to_initial_data = idata
-                 , H._to_cluster_setup = H.Bootstrapped }
+                 , H._to_cluster_setup = H.Bootstrapped
+                 , H._to_ts_nodes = 2 }
   H.run' transport pg [] tos' (\_ -> return ())

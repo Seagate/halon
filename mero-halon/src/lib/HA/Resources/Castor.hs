@@ -86,7 +86,7 @@ instance ToJSON StorageDevice
 
 deriveSafeCopy 0 'base ''StorageDevice
 
-data Slot = Slot 
+data Slot = Slot
   { slotEnclosure :: Enclosure
   , slotIndex     :: Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
@@ -163,73 +163,86 @@ deriveSafeCopy 0 'base ''ReplacedBy
 -- these early into the life of the RC to prevent unexpected behaviour
 -- when assumptions about constant values inside rules fail.
 data HalonVars = HalonVars
-  { _hv_recovery_expiry_seconds :: Int
+  { _hv_recovery_expiry_seconds :: !Int
   -- ^ How long we want node recovery to last overall.
-  , _hv_recovery_max_retries :: Int
+  , _hv_recovery_max_retries :: !Int
   -- ^ Number of times to try recovery. Set to negative if you want
   -- recovery to last forever. Even if negative, you should still set
   -- it to a sensible number to make sure that
   -- @'_hv_recovery_expiry_seconds' `div` 'abs' '_hv_recovery_max_retries'@
   -- value used for the frequency of recovery still makes sense.
-  , _hv_keepalive_frequency :: Int
+  , _hv_keepalive_frequency :: !Int
   -- ^ How often should the keepalive check trigger in the mero
   -- process keepalive rule. Seconds.
-  , _hv_keepalive_timeout :: Int
+  , _hv_keepalive_timeout :: !Int
   -- ^ How many seconds to allow for a process to go on without a keepalive
   -- reply coming back.
-  , _hv_drive_reset_max_retries :: Int
+  , _hv_drive_reset_max_retries :: !Int
   -- ^ How many times we want to retry disk reset procedure before giving up.
-  , _hv_process_configure_timeout :: Int
+  , _hv_process_configure_timeout :: !Int
   -- ^ How many seconds until process configuration is considered to
   -- be timed out. This includes time spent waiting on @mero-mkfs@.
-  , _hv_process_start_cmd_timeout :: Int
+  , _hv_process_start_cmd_timeout :: !Int
   -- ^ How many seconds to wait for a process start command to return.
   -- Note that this is not the same as the time we should wait for a
   -- process to successfully start, for that see
   -- '_hv_process_start_timeout'. For configuration timeout
   -- (@mero-mkfs@ &c.) see '_hv_process_configure_timeout'.
-  , _hv_process_start_timeout :: Int
+  , _hv_process_start_timeout :: !Int
   -- ^ How many seconds to wait for the process to start after the
   -- process start command has completed. For the timeout pertaining
   -- to the timeout of the start command itself, see
   -- '_hv_process_start_cmd_timeout'.
-  , _hv_process_stop_timeout :: Int
+  , _hv_process_stop_timeout :: !Int
   -- ^ How many seconds to wait for the process to stop after the
   -- process stop command has been issued.
-  , _hv_process_max_start_attempts :: Int
+  , _hv_process_max_start_attempts :: !Int
   -- ^ How many times to try and start the same process if it fails to
   -- start. Note that if systemctl exits with an unexpected error
   -- code, process start is failed straight away.
-  , _hv_process_restart_retry_interval :: Int
+  , _hv_process_restart_retry_interval :: !Int
   -- ^ How many seconds to wait before we try to start a process again
   -- in case it has failed to start and we haven't met
   -- '_hv_process_max_start_attempts'.
-  , _hv_mero_kernel_start_timeout :: Int
+  , _hv_mero_kernel_start_timeout :: !Int
   -- ^ How many seconds to wait for @halon:m0d@ (and @mero-kernel@) to
   -- come up and declare channels.
-  , _hv_clients_start_timeout :: Int
+  , _hv_clients_start_timeout :: !Int
   -- ^ How many seconds to wait for clients during cluster bootstrap
   -- before giving up on receiving a result.
-  , _hv_node_stop_barrier_timeout :: Int
+  , _hv_node_stop_barrier_timeout :: !Int
   -- ^ How many seconds a node should wait for a cluster to transition
   -- into the desired bootlevel during teardown procedure before
   -- timing out.
-  , _hv_drive_insertion_timeout :: Int
+  , _hv_drive_insertion_timeout :: !Int
   -- ^ How many seconds should we allow for new drive
   -- insertion/removal events in the disk slot before proceeding with
   -- drive insertion procedures.
-  , _hv_drive_removal_timeout :: Int
+  , _hv_drive_removal_timeout :: !Int
   -- ^ How many seconds should we wait for drive re-insertion before
   -- giving up and considering drive as removed.
-  , _hv_expander_node_up_timeout :: Int
+  , _hv_expander_node_up_timeout :: !Int
   -- ^ How many seconds to wait for a node to finish restarting
   -- processes during expander reset.
-  , _hv_expander_sspl_ack_timeout :: Int
+  , _hv_expander_sspl_ack_timeout :: !Int
   -- ^ How many seconds to wait for SSPL to reply during expander reset.
-  , _hv_monitoring_angel_delay :: Int
+  , _hv_monitoring_angel_delay :: !Int
   -- ^ How many seconds should the node monitor angel wait without
   -- receiving any commands and deciding to send heartbeat to
   -- monitored nodes.
+  , _hv_mero_workers_allowed :: !Bool
+  -- ^ Whether to run allow running of mero workers. It may happen
+  -- we're on a system where it's not possible to actually run mero
+  -- but some actions which require it are performed. This flag
+  -- indicates to those functions that they should do ‘something else’
+  -- instead of starting the mero worker and performing the task. What
+  -- this is depends on the function itself: it does not fundamentally
+  -- prevent calls to initialize the workers.
+  --
+  -- This is mainly used for testing of components that don't rely on
+  -- the result of the tasks normally performed by mero workers for
+  -- main functionality. You probably __never__ want to set this on an
+  -- actual deployment.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

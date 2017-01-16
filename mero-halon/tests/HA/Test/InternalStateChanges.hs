@@ -1,8 +1,6 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 -- |
+-- Module    : HA.Test.InternalStateChanges
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -16,7 +14,6 @@ import           Data.List (sort)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import qualified HA.Castor.Story.Tests as H
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
@@ -25,6 +22,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import qualified Helper.Runner as H
 import           Mero.Notification
 import           Network.AMQP
 import           Network.CEP
@@ -68,12 +66,15 @@ newtype RuleHook = RuleHook ProcessId
 --
 -- * Compare the messages we're expecting with the messages actually sent out
 stateCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-stateCascade t pg = H.run t pg [rule] (test' . H._ts_rc)
+stateCascade t pg = do
+  tos <- H.mkDefaultTestOptions
+  let tos' = tos { H._to_run_sspl = False }
+  H.run' t pg [rule] tos' test'
   where
-    test' :: ProcessId -> Process ()
-    test' rc = do
+    test' :: H.TestSetup -> Process ()
+    test' ts = do
       self <- getSelfPid
-      usend rc $ RuleHook self
+      usend (H._ts_rc ts) $ RuleHook self
       True <- expect
       return ()
 
@@ -98,13 +99,17 @@ stateCascade t pg = H.run t pg [rule] (test' . H._ts_rc)
       liftProcess $ usend pid allOK
 
 failvecCascade :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-failvecCascade t pg = H.run t pg [rule] (test' . H._ts_rc)
+failvecCascade t pg = do
+  tos <- H.mkDefaultTestOptions
+  let tos' = tos { H._to_run_sspl = False }
+  H.run' t pg [rule] tos' test'
   where
-    test' :: ProcessId -> Process ()
-    test' rc = do
+    test' :: H.TestSetup -> Process ()
+    test' ts = do
       self <- getSelfPid
-      usend rc $ RuleHook self
+      usend (H._ts_rc ts) $ RuleHook self
       expect >>= maybe (return ()) fail
+
     rule :: Definitions RC ()
     rule = defineSimple "stateCascadeTest" $ \(RuleHook pid) -> do
       phaseLog "info" "Set hooks"

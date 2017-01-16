@@ -46,7 +46,7 @@ tests transport breakConnection = do
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
       , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
-      , testGroup "[require-mero] DriveFailure" $ driveFailureTests transport
+      , testGroup "DriveFailure" $ driveFailureTests transport
       , testGroup "InternalStateChanges" $ internalSCTests transport
       , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests

@@ -4,7 +4,7 @@ machine:
   environment:
       # Use only as many jobs as CPUs are available (via cpuset)
       STACK_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --no-terminal --docker-persist --docker-mount $HOME/halon/vendor/mero:/mero --jobs 2"
-      STACK_TEST_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1):5555 --docker-env DC_HOST_IP=$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1) --docker-env=TASTY_PATTERN='![require-mero]"
+      STACK_TEST_FLAGS: "--docker-env LANG=en_US.utf8 --docker-env PKG_CONFIG_PATH=/mero --docker-env DC_PROVIDER=docker --docker-env DOCKER_HOST=http://$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1):5555 --docker-env DC_HOST_IP=$(ip addr ls docker0 | awk '/inet / {print $2}' | cut -d'/' -f1) --docker-env TASTY_PATTERN=![require-mero]"
       TMPDIR: .
 
 checkout:
