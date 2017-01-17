@@ -39,6 +39,7 @@ import Data.List (insert)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Time
 import Data.Typeable (Typeable)
 import Data.UUID
 
@@ -91,6 +92,8 @@ mkTextPrinter emit close = self where
   self = Printer loop
   loop :: PrinterQuery a -> Process a
   loop (PrintMessage msg) = do
+    now <- liftIO $ getCurrentTime
+    emit $ formatTimeLog now
     emit $ displayS (renderPretty 0.4 180 (ppLog msg)) ""
     return self
   loop ClosePrinter = close
@@ -183,6 +186,8 @@ dumpBinaryToFile fp s = liftIO $ withFile fp AppendMode $ \h -> B.hPut h s
 dumpTextToDp :: String -> Process ()
 dumpTextToDp = say
 
+formatTimeLog :: UTCTime -> String
+formatTimeLog = formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S%Q"
 -----------------------------------------------------------------------------------------
 -- Loggers
 -----------------------------------------------------------------------------------------
