@@ -26,7 +26,7 @@ Requires: pcre
 %description
 Cluster monitoring and recovery for high-availability.
 
-%define stack() stack --no-docker
+%define stack() stack --no-docker --allow-different-user
 
 %prep
 %setup -qn %{name}
