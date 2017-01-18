@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 EnvironmentFile=/etc/sysconfig/halond
-ExecStartPre=systemd-tmpfiles --remove halond.conf
+ExecStartPre=/usr/bin/systemd-tmpfiles --remove halond.conf
 ExecStart=/usr/bin/halond -l $HALOND_LISTEN +RTS -s -A32m -I0 -RTS
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -INT $MAINPID
@@ -18,4 +18,3 @@ Environment=HALON_PERSISTENCE=/var/lib/halon
 
 [Install]
 WantedBy=multi-user.target
-
