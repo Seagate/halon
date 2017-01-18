@@ -21,6 +21,7 @@ module HA.Services.Mero
     , ProcessControlResultStopMsg(..)
     , MeroConf(..)
     , MeroKernelConf(..)
+    , ServiceReconnectRequest(..)
     , ServiceStateRequest(..)
     , m0d_real
     , lookupM0d
@@ -65,6 +66,7 @@ import           Data.Binary
 import qualified Data.Bimap as BM
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
+import           Data.Function (fix)
 import           Data.Maybe (maybeToList)
 import qualified Data.UUID as UUID
 import           System.Directory
@@ -103,6 +105,7 @@ statusProcess niRef pid rp = do
       Mero.Notification.notifyMero niRef ps set
             (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
             (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
+   `catchExit` (\_ reason -> traceM0d $ "statusProcess exiting: " ++ reason)
    `Catch.catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
       Catch.throwM e
@@ -309,25 +312,61 @@ m0dProcess parent conf = do
   traceM0d "starting."
   Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
     traceM0d "Kernel module loaded."
+    nullPid <- DI.nullProcessId <$> getSelfNode
     case rc of
-      Right _ -> flip Catch.catch epHandler . withEp $ \ep -> do
+      Right _ -> flip fix nullPid $ \loop caller -> do
         self <- getSelfPid
-        traceM0d "DEBUG: Pre-withEp"
-        _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
-                                           (mcKeepaliveTimeout conf) ep self
-        c <- spawnChannelLocal (statusProcess ep self)
-        traceM0d "DEBUG: Pre-withEp"
-        cc <- spawnChannelLocal (controlProcess conf self)
-        usend parent (Started (c,cc))
-        sendMeroChannel c cc
-        traceM0d "Starting service m0d on mero client"
-        go c cc
+        flip Catch.catch epHandler . withEp $ \ep -> do
+          traceM0d "Starting helper processes and initialising channels."
+          kaPid <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
+                                                 (mcKeepaliveTimeout conf) ep self
+          (c, crp) <- newChan
+          statusPid <- spawnLocal $ statusProcess ep self crp
+          (cc, ccrp) <- newChan
+          controlPid <- spawnLocal $ controlProcess conf self ccrp
+          -- We're in here because we were asked to reconnect so spare
+          -- ourselves a started and don't send the channels directly;
+          -- instead, send the channels back to the caller and let it
+          -- update the service state first.
+
+          if caller /= nullPid
+          then usend caller $ ServiceReconnectReply c cc
+          else do
+            usend parent (Started (c,cc))
+            sendMeroChannel c cc
+          traceM0d "Starting service m0d on mero client"
+          -- When reconnect is requested (in case of HALON-546 for
+          -- example), kill helper processes and jump out without
+          -- explicit loop. Outer ‘forever’ will retrigger everything,
+          -- respawn helper processes, make new channels and send the
+          -- new channels upstream.
+          receiveWait
+            [ match $ \(ServiceReconnectRequest, (caller' :: ProcessId)) -> do
+                -- TODO: block until exit? Shouldn't really need to…
+                exitWait kaPid
+                exitWait statusPid
+                exitWait controlPid
+                usend self (caller', ())
+            ]
+        -- Jump back into the loop after escaping withEp: this way we
+        -- can connect using fresh endpoint (hopefully).
+        traceM0d "Escaped withEp"
+        expect >>= \(rcaller, ()) -> do
+          traceM0d "Reconnecting to endpoint."
+          loop rcaller
+
       Left i -> do
         traceM0d $ "Kernel module did not load correctly: " ++ show i
         void . promulgate . M0.MeroKernelFailed parent $
           "mero-kernel service failed to start: " ++ show i
         Control.Distributed.Process.die Shutdown
   where
+    exitWait pid = do
+      withMonitor pid $ do
+        exit pid "Restarting."
+        receiveWait [ matchIf (\(ProcessMonitorNotification _ pid' _) -> pid == pid')
+                              (\_ -> return ()) ]
+        traceM0d $ show pid ++ " exited before reconnect."
     profileFid = mcProfile conf
     processFid = mcProcess conf
     rmFid      = mcRM      conf
@@ -350,12 +389,6 @@ m0dProcess parent conf = do
       SystemD.startService "mero-kernel"
     stopKernel =
        receiveTimeout 2000000 [] `Catch.finally` liftIO (void $ SystemD.stopService "mero-kernel")
-
-    -- mainloop
-    go c cc = forever $
-      receiveWait
-        [ match $ \ServiceStateRequest -> sendMeroChannel c cc
-        ]
 
 remotableDecl [ [d|
   m0d :: Service MeroConf
@@ -403,6 +436,12 @@ remotableDecl [ [d|
                    $ \_ -> do
                  void . promulgate . M0.MeroKernelFailed self $ "process exited."
                  return (Failure, s)
+             , match $ \(ServiceReconnectReply c' cc') -> do
+                 sendMeroChannel c' cc'
+                 return (Continue, (pid, c', cc'))
+             , match $ \ServiceReconnectRequest -> do
+                 usend pid (ServiceReconnectRequest, self)
+                 return (Continue, s)
              , match $ \ServiceStateRequest -> do
                  sendMeroChannel c cc
                  return (Continue, s)

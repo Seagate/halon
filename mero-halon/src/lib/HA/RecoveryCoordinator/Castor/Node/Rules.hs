@@ -122,7 +122,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Node.Actions
-import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
+import           HA.RecoveryCoordinator.Service.Actions
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
@@ -153,10 +153,10 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 
 import           Control.Applicative
-import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId, sendChan)
+import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, processNodeId, sendChan, nsendRemote)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
-import           Control.Monad (void, guard, join, when)
+import           Control.Monad (void, guard, join)
 import           Control.Monad.Trans.Maybe
 
 import           Data.Foldable (for_)
@@ -233,19 +233,29 @@ eventNewHalonNode :: Definitions RC ()
 eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNodeConnected node) -> do
   promulgateRC $! StartProcessNodeNew node
 
--- | Handle a case when mero-kernel was started on node. Trigger bootstrap
--- process.
+-- | Handle a case when mero-kernel was started on node. Trigger
+-- bootstrap process.
 --
 -- Listens:         'MeroChannelDeclared'
 -- Emits:           'KernelStarted'
--- State-Changes:   'M0.Node' online
+-- State-Changes:   'M0.Node' online. 'CST_HA' process online.
 eventKernelStarted :: Definitions RC ()
 eventKernelStarted = defineSimpleTask "castor::node::event::kernel-started" $ \(MeroChannelDeclared sp _ _) -> do
   g <- getLocalGraph
-  for_ (M0.nodeToM0Node (R.Node $ processNodeId sp) g) $ \node -> do
-    when (M0.getState node g /= M0.NSOnline) $ do
-      applyStateChanges [stateSet node nodeOnline]
-    notify $ KernelStarted node
+  for_ (M0.nodeToM0Node (R.Node $ processNodeId sp) g) $ \m0node -> do
+    let haprocesses =
+          [ p
+          | (p :: M0.Process) <- G.connectedTo m0node M0.IsParentOf g
+          , any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf g
+          ]
+
+    -- We have to set PSOnline to CST_HA in case we're recovering from
+    -- reconnect but not process restart: if halon:m0d didn't actually
+    -- restart, it won't reconnect to mero and we won't received
+    -- process STARTED event which normally sets this.
+    applyStateChanges ( stateSet m0node nodeOnline
+                       : map (`stateSet` processHAOnline) haprocesses )
+    notify $ KernelStarted m0node
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
 -- Stop halon:m0d service on the node.
@@ -394,6 +404,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   confd_running   <- phaseHandle "confd-running"
   config_created  <- phaseHandle "client-config-created"
   wait_data_load  <- phaseHandle "wait-bootstrap"
+  reconnect_m0d   <- phaseHandle "reconnect_m0d"
+  m0d_declared    <- phaseHandle "m0d_declared"
   announce        <- phaseHandle "announce"
   query_host_info <- mkQueryHostInfo config_created finish
 
@@ -403,7 +415,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
           mnode <- findNodeHost node
           if isJust mnode
           then do phaseLog "info" $ show node ++ " is already in configuration."
-                  return [announce]
+                  return [reconnect_m0d]
           else return [query_host_info]
 
   let check (StartProcessNodeNew node) = do
@@ -431,6 +443,26 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
       Left err -> do phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
                      continue finish
       Right () -> continue announce
+
+  -- If mero service is already running we may have just recovered
+  -- from a disconnect. Request new channels instead of trying to use
+  -- old ones.
+  directly reconnect_m0d $ do
+    StartProcessNodeNew node <- getRequest
+    rg <- getLocalGraph
+    let R.Node nid = node
+    case lookupServiceInfo node (lookupM0d rg) rg of
+      [] -> do
+        phaseLog "info" "No halon:m0d already running."
+        continue announce
+      _ -> do
+        liftProcess $ nsendRemote nid (serviceLabel $ lookupM0d rg) ServiceReconnectRequest
+        continue m0d_declared
+
+  -- We got channel declaration back, likely the reconnect request has
+  -- been processed.
+  setPhase m0d_declared $ \(HAEvent _ MeroChannelDeclared{}) -> do
+    continue announce
 
   directly announce $ do
     StartProcessNodeNew node <- getRequest
@@ -1042,7 +1074,7 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
              _ -> Nothing)
 
    await_stopping_processes <- mkProcessesAwait "await_stopping_processes" stop_service
- 
+
    directly go $ do
       MaintenanceStopNode node <- getRequest
       ps <- getNodeProcesses node <$> getLocalGraph
@@ -1080,7 +1112,7 @@ requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go whe
          if should_force
          then do
            rg <- getLocalGraph
-           let (_, DeferredStateChanges f _ _) = createDeferredStateChanges 
+           let (_, DeferredStateChanges f _ _) = createDeferredStateChanges
                      [stateSet m0node (TrI.constTransition M0.NSFailed)] rg -- XXX: constTransition?
            ClusterLiveness havePVers _haveSNS haveQuorum _haveRM <- calculateClusterLiveness (f rg)
            let errors = (if havePVers then id else ("No writable PVers found":))

@@ -118,6 +118,22 @@ data ServiceStateRequest = ServiceStateRequest
   deriving (Show, Typeable, Generic)
 instance Binary ServiceStateRequest
 
+-- | Request reconnect to the service
+--
+-- This is a workaround that asks the service to provide new
+-- communication channels for use with control/notification processes.
+-- (HALON-546)
+data ServiceReconnectRequest = ServiceReconnectRequest
+  deriving (Show, Typeable, Generic)
+instance Binary ServiceReconnectRequest
+
+-- | Reply to 'ServiceReconnectRequest.
+data ServiceReconnectReply = ServiceReconnectReply
+  (SendPort NotificationMessage)
+  (SendPort ProcessControlMsg)
+  deriving (Show, Typeable, Generic)
+instance Binary ServiceReconnectReply
+
 -- | How to run a particular Mero Process. Processes can be hosted
 --   in three ways:
 --   - As part of the kernel (m0t1fs)

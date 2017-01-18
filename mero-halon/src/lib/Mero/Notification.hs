@@ -531,10 +531,11 @@ getRPCMachine = HAState.getRPCMachine
 -- users. Only to be called when the lock on the lock is already held.
 finalizeInternal :: MVar EndpointRef -> IO ()
 finalizeInternal m = do
-  ref <- swapMVar m emptyEndpointRef
+  ref <- takeMVar m
   for_ (_erFinalizationBarriers ref) $ \(fbarrier, fdone) -> do
     atomically $ putTMVar fbarrier ()
     takeMVar fdone
+  putMVar m emptyEndpointRef
 
 -- | Finalize the Notification subsystem. We make an assumption that
 -- if 'globalEndpointRef' is empty, we have already finalized before

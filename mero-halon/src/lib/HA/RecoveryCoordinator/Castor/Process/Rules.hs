@@ -137,7 +137,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         applyStateChanges [ stateSet p $ Tr.processFailed m ]
         return (c p m, [finish])
 
-  let fail_start m = snd <$> (defaultReply ProcessStartFailed) m
+  let fail_start m = snd <$> defaultReply ProcessStartFailed m
 
   let route (ProcessStartRequest p) = do
         rg <- getLocalGraph
