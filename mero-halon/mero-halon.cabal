@@ -54,8 +54,6 @@ Library
   Default-Language: Haskell2010
   if flag(rpc)
     CPP-Options:    -DUSE_RPC
-  if flag(mero)
-    CPP-Options:    -DUSE_MERO
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -67,7 +65,8 @@ Library
                       TupleSections
 
   Ghc-Options:  -Wall -Werror
-
+                -optc-Wno-attributes -optc-Werror -optc-g -optc-DM0_INTERNAL=
+                -optc-DM0_EXTERN=extern -optc-Wall
   Exposed-Modules: Mero.FakeEpoch
                    Mero.Messages
                    Mero.RemoteTables
@@ -83,46 +82,95 @@ Library
                    HA.Services.SSPLHL
                    HA.Services.SSPL.LL.Resources
                    HA.Services.SSPL.IEM
+                   HA.Services.Mero
+                   HA.Services.Mero.Types
+                   HA.Services.Mero.RC
+                   HA.Services.Mero.RC.Actions
+                   HA.Services.Mero.RC.Events
                    HA.Stats
-                   HA.RecoveryCoordinator.Mero
                    HA.RecoveryCoordinator.CEP
                    HA.RecoveryCoordinator.Definitions
                    HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
-                   HA.RecoveryCoordinator.RC.Events.Debug
-                   HA.RecoveryCoordinator.RC.Events.Cluster
-                   HA.RecoveryCoordinator.RC.Actions
-                   HA.RecoveryCoordinator.RC.Actions.Dispatch
-                   HA.RecoveryCoordinator.RC.Internal.Storage
                    HA.RecoveryCoordinator.Actions.Hardware
-                   HA.RecoveryCoordinator.Service.Actions
+                   HA.RecoveryCoordinator.Actions.Mero
                    HA.RecoveryCoordinator.Actions.Test
-                   HA.RecoveryCoordinator.Job.Actions
-                   HA.RecoveryCoordinator.Job.Events
-                   HA.RecoveryCoordinator.Castor.Rules
-                   HA.RecoveryCoordinator.RC.Rules.Debug
-                   HA.RecoveryCoordinator.RC.Subscription
-                   HA.RecoveryCoordinator.Service.Rules
+                   HA.RecoveryCoordinator.Castor.Cluster.Actions
+                   HA.RecoveryCoordinator.Castor.Cluster.Events
+                   HA.RecoveryCoordinator.Castor.Drive
+                   HA.RecoveryCoordinator.Castor.Drive.Actions
                    HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
+                   HA.RecoveryCoordinator.Castor.Filesystem
+                   HA.RecoveryCoordinator.Castor.Node.Events
+                   HA.RecoveryCoordinator.Castor.Process.Events
+                   HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
+                   HA.RecoveryCoordinator.Castor.Rules
+                   HA.RecoveryCoordinator.Castor.Service
+                   HA.RecoveryCoordinator.Job.Actions
+                   HA.RecoveryCoordinator.Job.Events
+                   HA.RecoveryCoordinator.Service.Actions
+                   HA.RecoveryCoordinator.Service.Rules
                    HA.RecoveryCoordinator.Service.Events
                    HA.RecoveryCoordinator.Log
+                   HA.RecoveryCoordinator.Mero
+                   HA.RecoveryCoordinator.Mero.Actions.Core
+                   HA.RecoveryCoordinator.Mero.Actions.Conf
+                   HA.RecoveryCoordinator.Mero.Actions.Failure
+                   HA.RecoveryCoordinator.Mero.Events
+                   HA.RecoveryCoordinator.Mero.Failure.Simple
+                   HA.RecoveryCoordinator.Mero.Failure.Formulaic
+                   HA.RecoveryCoordinator.Mero.Failure.Internal
+                   HA.RecoveryCoordinator.Mero.Notifications
+                   HA.RecoveryCoordinator.Mero.Rules
+                   HA.RecoveryCoordinator.Mero.State
+                   HA.RecoveryCoordinator.Mero.Transitions
+                   HA.RecoveryCoordinator.Mero.Transitions.Internal
                    -- RC interface modules.
                    HA.RecoveryCoordinator.RC
-                   HA.RecoveryCoordinator.RC.Events
-                   HA.RecoveryCoordinator.RC.Rules
+                   HA.RecoveryCoordinator.RC.Actions
                    HA.RecoveryCoordinator.RC.Actions.Core
                    HA.RecoveryCoordinator.RC.Actions.Log
+                   HA.RecoveryCoordinator.RC.Actions.Dispatch
                    HA.RecoveryCoordinator.RC.Application
+                   HA.RecoveryCoordinator.RC.Events
+                   HA.RecoveryCoordinator.RC.Events.Debug
+                   HA.RecoveryCoordinator.RC.Events.Cluster
+                   HA.RecoveryCoordinator.RC.Internal.Storage
+                   HA.RecoveryCoordinator.RC.Rules
+                   HA.RecoveryCoordinator.RC.Rules.Debug
+                   HA.RecoveryCoordinator.RC.Subscription
                    HA.Resources.RC
+                   HA.Resources.Mero
+                   HA.Resources.Mero.Note
                    -- Other resources
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
                    HA.Resources.HalonVars
+                   Mero.Epoch
+                   Mero.M0Worker
+                   Mero.Notification
+                   Mero.Notification.HAState
                    Version.Read
                    Version
 
   Other-Modules:   HA.RecoveryCoordinator.RC.Internal
+                   HA.RecoveryCoordinator.Mero.Actions.Spiel
+                   HA.RecoveryCoordinator.Castor.Node.Actions
+                   HA.RecoveryCoordinator.Castor.Drive.Internal
+                   HA.RecoveryCoordinator.Castor.Drive.Rules
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
+                   HA.RecoveryCoordinator.Castor.Filesystem.Events
+                   HA.RecoveryCoordinator.Castor.Filesystem.Rules
+                   HA.RecoveryCoordinator.Castor.Service.Rules
+                   HA.RecoveryCoordinator.Castor.Cluster.Rules
+                   HA.RecoveryCoordinator.Castor.Process.Rules
+                   HA.RecoveryCoordinator.Castor.Node.Rules
+                   HA.RecoveryCoordinator.Castor.Expander.Rules
+                   HA.RecoveryCoordinator.Mero.Rules.Maintenance
                    HA.Services.DecisionLog.Logger
                    HA.Services.DecisionLog.Trace
                    HA.Services.DecisionLog.Types
@@ -130,130 +178,72 @@ Library
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions
                    HA.RecoveryCoordinator.Job.Internal
+                   HA.Resources.Mero.Note.TH
+                   HA.Services.Mero.RC.Rules
+                   HA.Services.Mero.RC.Resources
+                   System.Posix.SysInfo
+                   Mero.Engine
 
   Build-Depends:   base,
                    aeson,
                    amqp,
+                   binary,
                    cereal,
-                   halon,
+                   cep,
+                   confc,
+                   bimap,
                    bytestring,
                    constraints,
                    containers,
                    directory,
                    distributed-process-scheduler,
                    distributed-static,
-                   hashable,
-                   halon-instances,
-                   exceptions,
-                   mtl,
-                   options-schema,
-                   process,
-                   regex-tdfa,
-                   scientific,
-                   sspl,
-                   template-haskell,
-                   text,
-                   time,
-                   binary,
-                   network >= 2.4,
-                   network-transport,
-                   replicated-log,
-                   unordered-containers,
-                   cep,
-                   uuid,
-                   random,
-                   yaml,
-                   hostname,
-                   multimap,
-                   wl-pprint,
-                   transformers,
-                   filepath,
                    ede,
                    lens,
-                   vinyl,
+                   hashable,
+                   halon-instances,
+                   hostname,
+                   exceptions,
+                   filepath,
                    gitrev,
+                   halon,
                    inline-c,
-                   bimap
+                   mtl,
+                   multimap,
+                   network >= 2.4,
+                   network-transport,
+                   options-schema,
+                   process,
+                   psqueues,
+                   random,
+                   regex-tdfa,
+                   rpclite,
+                   replicated-log,
+                   scientific,
+                   sspl,
+                   stm,
+                   template-haskell,
+                   text,
+                   transformers,
+                   time,
+                   unordered-containers,
+                   uuid,
+                   yaml,
+                   vector,
+                   vinyl,
+                   wl-pprint
 
-  if flag(mero)
-      c-sources:       src/lib/Version/Read.c
-      Exposed-Modules: Mero.Epoch
-                       Mero.M0Worker
-                       Mero.Notification
-                       Mero.Notification.HAState
-                       HA.RecoveryCoordinator.Actions.Mero
-                       HA.RecoveryCoordinator.Mero.Actions.Conf
-                       HA.RecoveryCoordinator.Castor.Drive
-                       HA.RecoveryCoordinator.Mero.Rules
-                       HA.Resources.Mero
-                       HA.Resources.Mero.Note
-                       HA.Services.Mero
-                       HA.Services.Mero.RC.Actions
-                       HA.Services.Mero.Types
-                       HA.RecoveryCoordinator.Castor.Cluster.Actions
-                       HA.RecoveryCoordinator.Mero.Actions.Failure
-                       HA.RecoveryCoordinator.Mero.Failure.Simple
-                       HA.RecoveryCoordinator.Mero.Failure.Formulaic
-                       HA.RecoveryCoordinator.Mero.Failure.Internal
-                       HA.RecoveryCoordinator.Mero.Actions.Core
-                       HA.RecoveryCoordinator.Castor.Drive.Actions
-                       HA.RecoveryCoordinator.Castor.Filesystem
-                       HA.RecoveryCoordinator.Castor.Service
-                       HA.RecoveryCoordinator.Mero.Events
-                       HA.RecoveryCoordinator.Mero.State
-                       HA.RecoveryCoordinator.Mero.Notifications
-                       HA.RecoveryCoordinator.Mero.Transitions
-                       HA.RecoveryCoordinator.Mero.Transitions.Internal
-                       HA.RecoveryCoordinator.Castor.Cluster.Events
-                       HA.RecoveryCoordinator.Castor.Node.Events
-                       HA.RecoveryCoordinator.Castor.Process.Events
-                       HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
-                       HA.Services.Mero.RC
-                       HA.Services.Mero.RC.Events
-      Other-Modules:
-                      Mero.Engine
-                      HA.RecoveryCoordinator.Mero.Actions.Spiel
-                      HA.RecoveryCoordinator.Castor.Node.Actions
-                      HA.RecoveryCoordinator.Castor.Drive.Internal
-                      HA.RecoveryCoordinator.Castor.Drive.Rules
-                      HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
-                      HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
-                      HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
-                      HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
-                      HA.RecoveryCoordinator.Castor.Filesystem.Events
-                      HA.RecoveryCoordinator.Castor.Filesystem.Rules
-                      HA.RecoveryCoordinator.Castor.Service.Rules
-                      HA.RecoveryCoordinator.Castor.Cluster.Rules
-                      HA.RecoveryCoordinator.Castor.Process.Rules
-                      HA.RecoveryCoordinator.Castor.Node.Rules
-                      HA.RecoveryCoordinator.Castor.Expander.Rules
-                      HA.RecoveryCoordinator.Mero.Rules.Maintenance
-                      HA.Resources.Mero.Note.TH
-                      HA.Services.Mero.RC.Rules
-                      HA.Services.Mero.RC.Resources
-                      System.Posix.SysInfo
-      -- cc-options aren't used when compiling Haskell files, and this is
-      -- necessary for using CApiFFI, thus we need to pass those options here as
-      -- well.
-      ghc-options: -optc-Wno-attributes -optc-Werror -optc-g -optc-DM0_INTERNAL=
-                   -optc-DM0_EXTERN=extern -optc-Wall
-      c-sources: hastate/hastate.c
-      include-dirs: hastate
-                    ../rpclite/rpclite
-      Build-Depends: rpclite,
-                     confc,
-                     template-haskell,
-                     transformers,
-                     vector,
-                     psqueues,
-                     stm
-      pkgconfig-depends: mero >= 0.1.0
+  c-sources:       src/lib/Version/Read.c
+                   hastate/hastate.c
+  include-dirs:    hastate
+                   ../rpclite/rpclite
+  pkgconfig-depends: mero >= 0.1.0
+
   if flag(rpc)
       Build-Depends: rpclite,
                      network-transport-rpc
   else
-      Build-Depends: network >= 2.4,
-                     network-transport-tcp >= 0.3
+      Build-Depends: network-transport-tcp >= 0.3
 
 Executable halonctl
   Hs-Source-Dirs:     src/halonctl
@@ -284,12 +274,10 @@ Executable halonctl
                       TupleSections
                       StandaloneDeriving
   Other-Extensions:   CPP
-  if flag(mero)
-    CPP-Options:    -DUSE_MERO
-    Build-Depends:    confc
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
+                      confc,
                       mero-halon,
                       aeson-pretty,
                       base >= 4.5,
@@ -326,8 +314,6 @@ Executable haloninfo
   default-language:   Haskell2010
   Ghc-Options: -Wall -Werror
 
-  if flag(mero)
-    CPP-Options:    -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      mero-halon,
@@ -354,8 +340,6 @@ Executable halond
                       TupleSections
                       StandaloneDeriving
   Other-Extensions:   CPP
-  if flag(mero)
-    CPP-Options:      -DUSE_MERO
   if flag(rpc)
       CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
@@ -539,6 +523,9 @@ Test-Suite tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
+                    confc,
+                    rpclite,
+                    syb,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -585,12 +572,6 @@ Test-Suite tests
   else
       Build-Depends: network-transport-tcp >= 0.3
 
-  if flag(mero)
-      Build-Depends:  confc,
-                      rpclite,
-                      syb
-      CPP-Options:    -DUSE_MERO
-
 Test-Suite scheduler-tests
   Type:             exitcode-stdio-1.0
   Default-Language: Haskell2010
@@ -622,6 +603,8 @@ Test-Suite scheduler-tests
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,
+                    confc,
+                    rpclite,
                     base >= 4.5,
                     binary >= 0.6.4,
                     bytestring,
@@ -655,11 +638,6 @@ Test-Suite scheduler-tests
                     stm,
                     split,
                     lens
-
-  if flag(mero)
-    CPP-Options:    -DUSE_MERO
-    Build-Depends:  confc,
-                    rpclite
 
 benchmark halonpings
   Type:             exitcode-stdio-1.0
@@ -711,8 +689,7 @@ Benchmark initial-data-gc
                       GeneralizedNewtypeDeriving
                       RecordWildCards NamedFieldPuns
                       ScopedTypeVariables
-  if flag(mero)
-    Build-Depends:  halon,
+  Build-Depends:    halon,
                     mero-halon,
                     base >= 4.5,
                     Cabal >= 1.16,
@@ -738,9 +715,6 @@ Benchmark initial-data-gc
                     tasty-hunit,
                     unix,
                     unordered-containers
-    CPP-Options:   -DUSE_MERO
-  else
-    Buildable:     False
 
 Test-Suite test-bootstrap
   Type:             exitcode-stdio-1.0

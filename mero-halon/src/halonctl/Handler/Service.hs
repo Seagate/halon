@@ -3,7 +3,6 @@
 -- License   : All rights reserved.
 --
 
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -28,9 +27,7 @@ import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Ekg as Ekg
 import qualified HA.Services.Dummy       as Dummy
 import qualified HA.Services.Frontier    as Frontier
-#ifdef USE_MERO
 import qualified HA.Services.Mero        as Mero
-#endif
 import qualified HA.Services.Noisy       as Noisy
 import qualified HA.Services.Ping        as Ping
 import qualified HA.Services.SSPL        as SSPL
@@ -81,9 +78,7 @@ data ServiceCmdOptions =
     | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
     | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
     | EkgServiceCmd (StandardServiceOptions Ekg.EkgConf)
-#ifdef USE_MERO
     | MeroServiceCmd (StandardServiceOptions Mero.MeroConf)
-#endif
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Options for a 'standard' service. This consists of a set of subcommands
@@ -211,11 +206,10 @@ parseService =
     ) <|>
     (EkgServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Ekg.ekg)
+    ) <|>
+    (MeroServiceCmd <$> (O.subparser $
+         mkStandardServiceCmd Mero.m0d_real)
     )
-#ifdef USE_MERO
-    <|> (MeroServiceCmd <$> (O.subparser $
-         mkStandardServiceCmd Mero.m0d_real))
-#endif
 
 -- | Handle the "service" command.
 --   The "service" command is basically a wrapper around a number of commands
@@ -233,9 +227,7 @@ service nids so = case so of
   FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
   EkgServiceCmd sso      ->standardService nids sso Ekg.ekg
-#ifdef USE_MERO
   MeroServiceCmd sso     -> standardService nids sso Mero.m0d_real
-#endif
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a

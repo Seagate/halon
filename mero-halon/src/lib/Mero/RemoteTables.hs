@@ -5,18 +5,15 @@
 -- License   : All rights reserved.
 --
 -- Collection of 'RemoteTable's used for mero functionality.
-{-# LANGUAGE CPP #-}
 module Mero.RemoteTables (meroRemoteTable) where
 
 import HA.Resources.Castor(__remoteTable)
 import HA.Resources.RC(__remoteTable)
-#ifdef USE_MERO
 import HA.Resources.Mero(__remoteTable)
 import HA.Resources.Mero.Note ( __remoteTable )
 import HA.Services.Mero ( __remoteTable, __remoteTableDecl )
 import HA.Services.Mero.RC (__remoteTable)
 import System.Posix.SysInfo ( __remoteTable )
-#endif
 import HA.Services.Ekg ( __remoteTable, __remoteTableDecl )
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl )
 import HA.Services.Frontier ( __remoteTable, __remoteTableDecl )
@@ -32,14 +29,12 @@ meroRemoteTable :: RemoteTable -> RemoteTable
 meroRemoteTable next =
    HA.Resources.Castor.__remoteTable $
    HA.Resources.RC.__remoteTable $
-#ifdef USE_MERO
    HA.Resources.Mero.__remoteTable $
    HA.Resources.Mero.Note.__remoteTable $
    HA.Services.Mero.__remoteTableDecl $
    HA.Services.Mero.__remoteTable $
    HA.Services.Mero.RC.__remoteTable $
    System.Posix.SysInfo.__remoteTable $
-#endif
    HA.Services.SSPL.__remoteTable $
    HA.Services.SSPL.__remoteTableDecl $
    HA.Services.SSPLHL.__remoteTable $

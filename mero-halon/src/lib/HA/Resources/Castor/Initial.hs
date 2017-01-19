@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -13,10 +12,8 @@
 
 module HA.Resources.Castor.Initial where
 
-#ifdef USE_MERO
 import Mero.ConfC (ServiceParams, ServiceType)
 import Control.Monad (forM)
-#endif
 
 import qualified HA.Aeson as A
 import Data.Data
@@ -28,14 +25,11 @@ import SSPL.Bindings.Instances () -- HashMap
 
 import Data.Word
   ( Word32
-#ifdef USE_MERO
   , Word64
-#endif
   )
 
 import GHC.Generics (Generic)
 
-#ifdef USE_MERO
 import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
 import           Data.List (find, intercalate, nub)
@@ -44,7 +38,6 @@ import qualified Data.Text as T (unpack)
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
 
-#endif
 import qualified Data.Yaml as Y
 import           HA.SafeCopy
 
@@ -155,7 +148,6 @@ instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
 
-#ifdef USE_MERO
 
 -- | Failure set schemes. Define how failure sets are determined.
 --
@@ -286,16 +278,13 @@ instance Hashable M0Service
 instance A.FromJSON M0Service
 instance A.ToJSON M0Service
 
-#endif
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
 data InitialData = InitialData {
     id_racks :: [Rack]
-#ifdef USE_MERO
   , id_m0_servers :: [M0Host]
   , id_m0_globals :: M0Globals
-#endif
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable InitialData
@@ -345,7 +334,6 @@ instance Binary RoleSpec where
   put (RoleSpec a _) = B.put a
   get = RoleSpec <$> B.get <*> pure Nothing
 -}
-#ifdef USE_MERO
 
 -- | A single parsed mero role, ready to be used for building
 -- 'InitialData'.
@@ -496,18 +484,13 @@ mkHalonRoles template roles =
                       ++ show role
                       ++ " found in mapping file."
       Just a -> Right [a]
-#endif
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts
                  -> FilePath -- ^ Role map file
                  -> FilePath -- ^ Halon role map file
-#ifdef USE_MERO
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-#else
-                 -> IO (Either Y.ParseException (InitialData, ()))
-#endif
-#ifdef USE_MERO
+
 parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
   Left err -> return $ Left err
   Right initialWithRoles -> EDE.eitherResult <$> EDE.parseFile halonMaps >>= \case
@@ -532,18 +515,13 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
                   "Enclosure without enc_id specified."
          >> check (length ns == length (nub ns))
                   "Enclosures with non-unique enc_id exist."
-#else
-parseInitialData facts _ _ = fmap (\x -> (x, ())) <$> Y.decodeFileEither facts
-#endif
 
-#ifdef USE_MERO
 deriveSafeCopy 0 'base ''FailureSetScheme
 deriveSafeCopy 0 'base ''M0Device
 deriveSafeCopy 0 'base ''M0Globals
 deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
-#endif
 deriveSafeCopy 0 'base ''BMC
 deriveSafeCopy 0 'base ''Enclosure
 deriveSafeCopy 0 'base ''HalonSettings

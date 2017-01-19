@@ -6,7 +6,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
 module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
@@ -15,10 +14,8 @@ import HA.EventQueue
 import HA.Resources
 import HA.Resources.Castor
 import qualified HA.ResourceGraph as G
-#ifdef USE_MERO
 import HA.Resources.Mero
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
-#endif
 
 import HA.RecoveryCoordinator.RC.Actions
 
@@ -58,11 +55,7 @@ clusterStatus _g = CommandResponseMessageStatusResponseItem {
   , commandResponseMessageStatusResponseItemStatus = T.pack status
   } : []
   where
-#ifdef USE_MERO
     status = maybe "No status" id $ prettyStatus <$> getClusterStatus _g
-#else
-    status = "No mero support."
-#endif
 
 
 -- | Calculate the node status for specified nodes from the resource graph.

@@ -67,6 +67,7 @@ test = testCase "RCInsists" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
+    meroPath <- getMeroPath
 
     withHostNames cp 2 $  \ms@[m0, m1] ->
      runProcess n0 $ do
@@ -77,7 +78,9 @@ test = testCase "RCInsists" $
       say "Copying binaries ..."
       -- test copying a folder
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
-                               , (buildPath </> "halond/halond", "halond") ]
+                               , (buildPath </> "halond/halond", "halond")
+                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
+                               ]
 
       say "Running a remote test command ..."
       systemThere ms ("echo can run a remote command")

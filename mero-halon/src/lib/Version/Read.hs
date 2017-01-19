@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -11,14 +10,11 @@
 module Version.Read where
 
 import Data.List (intercalate)
-#ifdef USE_MERO
 import Foreign.C.String (peekCAString)
 import qualified Language.C.Inline as C
-#endif
 import Text.Printf (printf)
 import Version
 
-#ifdef USE_MERO
 C.include "mero/version.h"
 
 -- | Show version information
@@ -53,14 +49,3 @@ versionString = do
     Version.gitDescribe Version.gitCommitHash Version.gitCommitDate
     mero_build_desc mero_build_version mero_build_opts mero_build_build_time
     mero_runtime_desc mero_runtime_version mero_runtime_opts mero_runtime_build_time
-
-#else
-versionString :: IO String
-versionString = do
-  return $ printf (intercalate "\n" [
-        "Halon %s (Git revision: %s)"
-      , "Authored on: %s"
-      , "Built without Mero integration."
-      ])
-    Version.gitDescribe Version.gitCommitHash Version.gitCommitDate
-#endif

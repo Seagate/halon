@@ -8,10 +8,12 @@ module HA.Test.Distributed.Helpers where
 
 import Control.Distributed.Process
 import Data.Proxy
+import Data.Maybe
 import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.RecoveryCoordinator.RC
 import HA.Resources
 import Network.CEP hiding (timeout)
+import System.Environment
 
 -- | Requests 'ProcessId' of the RC. Uses the EQ running on the
 -- given 'NodeId'. Subscribes to events that may be interesting to
@@ -36,3 +38,6 @@ dummyAlreadyLine = "[Service:dummy] already running"
 
 pingStartedLine :: String
 pingStartedLine = "[Service:ping] starting at "
+
+getMeroPath :: IO String
+getMeroPath = fromMaybe "/mero" <$> lookupEnv "MERO_ROOT"

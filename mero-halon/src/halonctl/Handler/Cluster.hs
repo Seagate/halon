@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -17,7 +16,6 @@ module Handler.Cluster
   ) where
 
 import HA.EventQueue (promulgateEQ)
-#ifdef USE_MERO
 import Control.Distributed.Process.Serializable
 import Control.Monad.Fix (fix)
 import qualified Data.ByteString as BS
@@ -51,7 +49,6 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-#endif
 
 import Control.Distributed.Process
 import Control.Monad
@@ -64,7 +61,6 @@ import qualified Options.Applicative.Extras as Opt
 
 data ClusterOptions =
     LoadData LoadOptions
-#ifdef USE_MERO
   | Sync SyncOptions
   | Dump DumpOptions
   | Status StatusOptions
@@ -76,7 +72,6 @@ data ClusterOptions =
   | MkfsDone MkfsDoneOptions
   | VarsCmd VarsOptions
   | StateUpdate StateUpdateOptions
-#endif
   deriving (Eq, Show)
 
 
@@ -84,7 +79,6 @@ parseCluster :: Opt.Parser ClusterOptions
 parseCluster =
       ( LoadData <$> Opt.subparser ( Opt.command "load" (Opt.withDesc parseLoadOptions
         "Load initial data into the system." )))
-#ifdef USE_MERO
   <|> ( Sync <$> Opt.subparser ( Opt.command "sync" (Opt.withDesc parseSyncOptions
         "Force synchronisation of RG to confd servers." )))
   <|> ( Dump <$> Opt.subparser ( Opt.command "dump" (Opt.withDesc parseDumpOptions
@@ -107,7 +101,6 @@ parseCluster =
         "Control variable parameters of the halon.")))
   <|> ( StateUpdate <$> Opt.subparser (Opt.command "update" (Opt.withDesc parseStateUpdateOptions
         "Force update state of the mero objects")))
-#endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
 -- are first verified to be EQ nodes: if they aren't, we use EQ node
@@ -126,7 +119,6 @@ cluster nids' opt = do
 
   where
     cluster' nids (LoadData l) = dataLoad nids l
-#ifdef USE_MERO
     cluster' nids (Sync (SyncOptions f)) = do
       say "Synchonizing cluster to confd."
       syncToConfd nids f
@@ -149,7 +141,6 @@ cluster nids' opt = do
     cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
     cluster' nids (StateUpdate (StateUpdateOptions s))
       = clusterCommand nids Nothing (ForceObjectStateUpdateRequest s) (liftIO . print)
-#endif
 
 data LoadOptions = LoadOptions
     FilePath -- ^ Facts file
@@ -201,7 +192,6 @@ dataLoad :: [NodeId] -- ^ EQ nodes to send data to
 dataLoad eqnids (LoadOptions cf maps halonMaps verify _t) = do
   initData <- liftIO $ CI.parseInitialData cf maps halonMaps
   case initData of
-#ifdef USE_MERO
     Left err -> liftIO $ do
       putStrLn $ prettyPrintParseException err
       exitFailure
@@ -222,18 +212,8 @@ dataLoad eqnids (LoadOptions cf maps halonMaps verify _t) = do
             InitialDataLoadFailed e -> liftIO $ do
               hPutStrLn stderr $ "Initial data load failed: " ++ e
               exitFailure
-#else
-    Left err -> liftIO . putStrLn $ prettyPrintParseException err
-    Right (datum, _) | verify -> liftIO $ do
-      putStrLn "Initial data file parsed successfully."
-      print datum
-    Right ((datum :: CI.InitialData), _) -> promulgateEQ eqnids datum
-        >>= \pid -> withMonitor pid wait
-#endif
       where
         wait = void (expect :: Process ProcessMonitorNotification)
-
-#ifdef USE_MERO
 
 syncToConfd :: [NodeId]
             -> Bool     -- ^ Force synchoronization.
@@ -720,4 +700,3 @@ clusterHVarsUpdate _ VarsGet = return ()
 
 jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . HA.Aeson.encode
-#endif

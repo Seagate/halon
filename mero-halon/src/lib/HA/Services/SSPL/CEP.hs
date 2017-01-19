@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -55,7 +54,6 @@ import           HA.Services.SSPL.LL.Resources
 import           Network.CEP
 import           SSPL.Bindings
 
-#ifdef USE_MERO
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
 import qualified HA.RecoveryCoordinator.Mero.Actions.Conf as M0
@@ -63,7 +61,6 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           Mero.ConfC (strToFid)
 import           Text.Read (readMaybe)
-#endif
 
 --------------------------------------------------------------------------------
 -- Primitives
@@ -174,9 +171,7 @@ ssplRules sspl = sequence_
   , ruleSSPLTimeout sspl
   , ruleSSPLConnectFailure
   , ruleMonitorExpanderReset
-#ifdef USE_MERO
   , ruleMonitorServiceFailed
-#endif
   ]
 
 initialRule :: Service SSPLConf -> PhaseM RC l () -- XXX: remove first argument
@@ -247,9 +242,7 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
   sdev_loc <- StorageDevice.mkLocation enc diskNum
   Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing 
   disk <- populateStorageDevice sn path
-#ifdef USE_MERO
   M0.associateLocationWithSDev sdev_loc
-#endif
   fix $ \next -> do
     eresult <- StorageDevice.insertTo disk sdev_loc
     case eresult of
@@ -381,15 +374,11 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
       -- New drive was installed
       Right () | is_installed -> do
         notify $ DriveInserted uuid (Node nid) sdev_loc sdev is_powered
-#ifdef USE_MERO
         M0.associateLocationWithSDev sdev_loc
-#endif
         -- Same drive but it was removed.
       Right () -> do
           StorageDevice.ejectFrom sdev sdev_loc -- bad
-#ifdef USE_MERO
           M0.associateLocationWithSDev sdev_loc
-#endif
       Left StorageDevice.AlreadyInstalled | not is_installed -> do
         StorageDevice.ejectFrom sdev sdev_loc
         notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
@@ -400,9 +389,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           ("Can't send drive removed event, because another device slot is unknown" :: String)
       Left (StorageDevice.AnotherInSlot asdev) -> do
         Log.withLocalContext' $ do
-#ifdef USE_MERO
           M0.associateLocationWithSDev sdev_loc
-#endif
           Log.tagLocalContext sdev Nothing
           Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
           Log.rcLog Log.ERROR 
@@ -411,9 +398,7 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
         next
       Left (StorageDevice.InAnotherSlot slot) -> do
-#ifdef USE_MERO
         M0.associateLocationWithSDev slot
-#endif
         Log.rcLog' Log.ERROR 
           ("Storage device was associated with another slot.":: String)
         StorageDevice.ejectFrom sdev slot
@@ -422,8 +407,6 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
       _ -> return ()
   done uuid
 
-
-#ifdef USE_MERO
 -- | Handle SSPL message about a service failure.
 ruleMonitorServiceFailed :: Definitions RC ()
 ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: NodeId, watchdogmsg) -> do
@@ -469,7 +452,6 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
             (_, Nothing) -> do
               phaseLog "warning" "Pid of the process is not known - ignoring."
     _ -> return ()
-#endif
 
 -- | Monitor RAID data. We should register the RAID devices in the system,
 --   with no corresponding Mero devices.

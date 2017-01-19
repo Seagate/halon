@@ -2,7 +2,6 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -46,9 +45,7 @@ import           Test.Framework (registerInterceptor, testGroup, TestTree)
 import           Test.Tasty.HUnit (testCase)
 import           TestRunner
 
-#ifdef USE_MERO
 import           Helper.InitialData (defaultInitialData)
-#endif
 
 -- | message used to tell the RC to die, used in 'testRejoinRCDeath'
 data KillRC = KillRC
@@ -236,10 +233,8 @@ testRejoinTimeout baseTransport connectionBreak = do
         nodeUp [localNodeId m1]
       _ :: NewNodeConnected <- expectPublished
 
-#ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished
-#endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
@@ -299,10 +294,8 @@ testRejoinRCDeath baseTransport connectionBreak = do
       _ <- promulgateEQ [localNodeId m1] $ RequestRCPid self
       Just (RequestRCPidAnswer rcPid) <- expectTimeout 10000000
 
-#ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished
-#endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]
@@ -364,10 +357,8 @@ testRejoin baseTransport connectionBreak = do
         nodeUp [localNodeId m1]
 
       _ :: NewNodeConnected <- expectPublished
-#ifdef USE_MERO
       _ <- liftIO defaultInitialData >>= promulgateEQ [localNodeId m1]
       InitialDataLoaded <- expectPublished
-#endif
 
       sayTest $ "isolating TS node " ++ show (localNodeId <$> [m1])
       splitNet [[localNodeId m0], [localNodeId m1]]

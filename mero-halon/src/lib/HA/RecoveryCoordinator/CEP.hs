@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -43,7 +42,6 @@ import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           Network.CEP
 
-#ifdef USE_MERO
 import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
 import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
@@ -58,7 +56,6 @@ import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), Interes
 
 import           Data.Monoid -- XXX: remote ifdef if possible
 import qualified Data.Text as T
-#endif
 
 import           Control.Category
 import           Control.Lens
@@ -140,11 +137,9 @@ rcRules argv additionalRules = do
     frontierRules
     ssplHLRules
     HA.RecoveryCoordinator.RC.Rules.rules
-#ifdef USE_MERO
     HA.Services.Mero.RC.rules
     HA.RecoveryCoordinator.Mero.Rules.meroRules
     HA.RecoveryCoordinator.Castor.Cluster.Rules.clusterRules
-#endif
     sequence_ additionalRules
 
 -- | Job marker used by 'ruleNodeUp'
@@ -260,7 +255,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
               -- notify mero
               False -> do
                 setHostAttr host M0.HA_TRANSIENT
-#ifdef USE_MERO
                 -- ideally we would like to unregister this when
                 -- monitor disconnects and not here: what if node came
                 -- back before recovery fired? unlikely but who knows
@@ -271,7 +265,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 -- Client nodes can run client-software that may not be
                 -- OK with reboots so we only reboot servers.
                 rebootOrLogHost host
-#endif
                 return $ Right ()
               -- Node already marked as down, probably the RC died. Do
               -- the simple thing and start the recovery all over: as
@@ -360,7 +353,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
         <+> fldHost    =: Nothing
         <+> fldRetries =: Nothing
 
-#ifdef USE_MERO
     -- Reboots the node if possible (if it's a server node) or logs an
     -- IEM otherwise.
     rebootOrLogHost :: Host -> PhaseM RC l ()
@@ -382,7 +374,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                                   ++ "cycle command."
           | otherwise ->
               phaseLog "warn" $ show host ++ " not labeled as server or client"
-#endif
 
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId

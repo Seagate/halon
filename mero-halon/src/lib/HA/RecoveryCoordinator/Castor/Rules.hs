@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DoAndIfThenElse       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -26,7 +25,6 @@ import Network.CEP
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor.Initial as CI
 
-#ifdef USE_MERO
 import Data.Foldable (for_)
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
@@ -37,20 +35,17 @@ import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
-#endif
 
 -- | Collection of Castor rules.
 castorRules :: Definitions RC ()
 castorRules = sequence_
   [ ruleInitialDataLoad
-#ifdef USE_MERO
   , Filesystem.rules
   , Process.rules
   , Drive.rules
   , Expander.rules
   , Node.rules
   , Service.rules
-#endif
   ]
 
 -- | Load initial data from facts file into the system.
@@ -63,7 +58,6 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
   if null racks
   then do
       mapM_ goRack id_racks
-#ifdef USE_MERO
       (do filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers filesystem id_m0_servers
@@ -100,10 +94,6 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           `catch` (\e -> do
                       phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
                       notify $ InitialDataLoadFailed (show e))
-#else
-      notify InitialDataLoaded
-      phaseLog "info" "Initial data loaded."
-#endif
   else do
     phaseLog "error" "Initial data is already loaded."
     notify $ InitialDataLoadFailed "Initial data is already loaded."

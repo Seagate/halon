@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE Rank2Types #-}
@@ -31,9 +30,7 @@ import HA.RecoveryCoordinator.Log
 import qualified HA.Resources as Res (Node(..))
 import qualified HA.Resources.Castor as Res (StorageDevice(..))
 
-#ifdef USE_MERO
 import qualified HA.Resources.Mero.Note as M0 (ShowFidObj(..))
-#endif
 
 import Control.Distributed.Process (NodeId, liftIO)
 
@@ -149,13 +146,11 @@ instance Taggable NodeId where
 instance Taggable Res.StorageDevice where
   toTagContent (Res.StorageDevice serial) = TagScope [StorageDevice serial]
 
-#ifdef USE_MERO
 -- | Note that it's safe to overlap here because we know that none of our
 --   other instances can have `M0.ShowFidObj` instances. `Taggable` isn't
 --   exported so new instances are not possible outside of this module.
 instance {-# OVERLAPPABLE #-} M0.ShowFidObj a => Taggable a where
   toTagContent obj = TagScope [MeroConfObj $ M0.showFid obj]
-#endif
 
 -- | Tag a context with some additional information.
 tagContext :: Taggable a => Context -> a -> Maybe String -> PhaseM RC l ()

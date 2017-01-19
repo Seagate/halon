@@ -2,8 +2,6 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
-
 module Main where
 
 import           Control.Concurrent (forkIO)
@@ -27,7 +25,6 @@ import           Test.Framework
 import           Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import           Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 
-#ifdef USE_MERO
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 import qualified HA.Test.InternalStateChanges
 import qualified HA.Test.NotificationSort
@@ -35,31 +32,26 @@ import qualified HA.Castor.Story.Process
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
-#endif
 
 tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 tests transport breakConnection = do
   -- For mock replicator, change to 'Proxy RLocalGroup'
   let pg = Proxy :: Proxy RLogGroup
   ssplTest <- HA.Test.SSPL.mkTests
-#ifdef USE_MERO
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processTests <- HA.Castor.Story.Process.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
-#endif
   return $ testGroup "mero-halon:tests"
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
       , HA.Test.Cluster.tests transport
-#ifdef USE_MERO
       , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
-      , testGroup "DriveFailure" $ driveFailureTests transport
+      , testGroup "[require-mero] DriveFailure" $ driveFailureTests transport
       , testGroup "InternalStateChanges" $ internalSCTests transport
       , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests
       , testGroup "Process" $ processTests transport
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
-#endif
       , HA.Test.Disconnect.tests transport breakConnection
       , ssplTest transport
       ]
@@ -103,8 +95,4 @@ main = prepare $ do
   putStrLn $ "Running tests in " ++ dir
   runTests tests
   where
-#ifdef USE_MERO
     prepare = withTmpDirectory
-#else
-    prepare = id
-#endif
