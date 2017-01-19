@@ -125,6 +125,7 @@ rcRules argv additionalRules = do
       liftProcess $ sayRC $ "unhandled message " ++ show uuid ++ ": " ++ show st
       liftProcess $ usend (lsEQPid s) uuid
 
+    setLogger sendLogs
     initRule $ rcInitRule argv
     sequence_ [ ruleNodeUp argv
               , ruleRecoverNode argv
@@ -132,7 +133,6 @@ rcRules argv additionalRules = do
               , ruleSyncPing
               , rulePidRequest
               ]
-    setLogger sendLogs
     HA.RecoveryCoordinator.Service.Rules.rules
     Debug.rules argv
     HA.Services.SSPL.CEP.ssplRules sspl
