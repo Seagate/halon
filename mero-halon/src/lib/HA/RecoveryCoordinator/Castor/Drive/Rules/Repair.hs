@@ -1079,9 +1079,9 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
      run (PoolInfo pool st m) = do
        phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
        mprs <- getPoolRepairStatus pool
-       forM_ mprs $ \prs@(PoolRepairStatus prt _ mpri) ->
+       forM_ mprs $ \prs@(PoolRepairStatus _prt _ mpri) ->
          forM_ mpri $ \pri -> do
-           let disks = getSDevs m (R.repairedNotificationMsg prt)
+           let disks = getSDevs m st
            let go ls d = case lookup d ls of
                            Just v -> (d,v+1):filter (\(d',_) -> d' /=d) ls
                            Nothing -> (d,1):ls
