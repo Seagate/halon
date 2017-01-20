@@ -28,6 +28,7 @@ import HA.RecoveryCoordinator.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.Replicator (RGroup(..))
 import HA.Resources.Castor
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor.Initial as CI
 import HA.Services.SSPL
 import SSPL.Bindings
@@ -196,18 +197,24 @@ mkHpiTests tr p = testGroup "HPI"
                       ,bool "poweredoff" "poweredon" hpiIsPowered
                       ]
 
+data GiveMeEnclosureName = GiveMeEnclosureName deriving (Typeable, Generic)
+
+instance Binary GiveMeEnclosureName
+
 genericHpiTest :: (Typeable g, RGroup g) => HpiTestInfo -> Transport -> Proxy g -> IO ()
 genericHpiTest HTI{..} = mkHpiTest rules test 
   where
-    serial = "serial15_1"
     rules _self = do
       define "init-drive" $ do
         ph0 <- phaseHandle "init"
         ph1 <- phaseHandle "finish"
         directly ph0 $ do
+           [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
+           let Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
+           let serial = "serial" ++ ide ++ "_1"
            let sdev = StorageDevice serial
            unless hpiWasInstalled $ do
-             loc <- StorageDevice.mkLocation (Enclosure "enclosure_15") 1
+             loc <- StorageDevice.mkLocation e 1
              _   <- StorageDevice.insertTo sdev loc
              _   <- StorageDevice.ejectFrom sdev loc
              return ()
@@ -216,11 +223,18 @@ genericHpiTest HTI{..} = mkHpiTest rules test
            continue ph1
         directly ph1 $ stop
         start ph0 ()
+      defineSimple "enclosure" $ \(GiveMeEnclosureName, pid) -> do
+        [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
+        liftProcess $ usend pid (e::Enclosure)
     test rc = do
+      self <- getSelfPid
+      usend rc (GiveMeEnclosureName, self)
+      Enclosure e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
+      let serial = "serial" ++ ide ++ "_1"
       let (enc, serial', idx, devid, wwn, _sdev) = 
             if hpiIsNew
-            then ("enclosure_15", serial++"new", 1, "/dev/loop15_new", "wwn15_1new", StorageDevice $ serial++"new")
-            else ("enclosure_15", serial, 1, "/dev/loop15_1", "wwn15_1", StorageDevice serial)
+            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", StorageDevice $ serial++"new")
+            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", StorageDevice serial)
 
       subscribe rc (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_hpi)))
       subscribe rc (Proxy :: Proxy DrivePowerChange)
