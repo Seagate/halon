@@ -462,7 +462,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
     deviceReadyStatus rg s = case stats of
         Just (_, True, True, "OK") -> Right s
         Just other -> Left $ "Device not ready: " ++ showFid s
-                      ++ " (sdev, Replaced, Removed, Powered, OK): "
+                      ++ " (sdev, Replaced, Powered, OK): "
                       ++ show other
         Nothing -> Left $ "No storage device or status could be found for " ++ showFid s
       where
@@ -471,7 +471,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
           (sd :: StorageDevice) <- G.connectedTo disk At rg
           (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
           return ( sd
-                 , G.isConnected disk Is M0.Replaced rg 
+                 , G.isConnected disk Is M0.Replaced rg
                  , G.isConnected sd Has (SDPowered True) rg
                  , sds
                  )
