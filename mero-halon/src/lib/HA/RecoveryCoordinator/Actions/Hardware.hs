@@ -60,6 +60,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
 ) where
 
 import           Data.Maybe (listToMaybe, maybeToList)
+import qualified Data.Set as Set
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.ResourceGraph as G
@@ -246,10 +247,16 @@ registerInterface host int = do
 -- | Find logical devices on a host
 findHostStorageDevices :: Host
                        -> PhaseM RC l [StorageDevice]
-findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
-  [sdev  | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
-         , loc  :: Slot <- G.connectedTo enc Has rg
-         , sdev :: StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
+findHostStorageDevices host = flip fmap getLocalGraph $ \rg -> Set.toList $
+  Set.fromList [sdev  | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
+               , loc  :: Slot <- G.connectedTo enc Has rg
+               , sdev :: StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
+  `Set.union` fallback rg
+  where
+    fallback rg = Set.fromList
+      [ sdev | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
+      , sdev :: StorageDevice <- G.connectedTo enc Has rg
+      ]
 
 -- | Find physical devices in an enclosure
 findEnclosureStorageDevices :: Enclosure
