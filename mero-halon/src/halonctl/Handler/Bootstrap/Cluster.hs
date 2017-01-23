@@ -36,6 +36,7 @@ import Control.Monad (unless, when, void)
 import Data.Bifunctor
 import Data.Foldable (for_)
 import Data.List (intercalate)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Proxy
 import Data.Typeable
@@ -43,6 +44,7 @@ import Data.Validation
 import GHC.Generics (Generic)
 
 import System.Exit
+import System.Environment
 
 import Network.CEP (Published(..))
 
@@ -101,8 +103,9 @@ bootstrap Config{..} = do
     Left err -> liftIO . putStrLn $ "Failed to load initial data: " ++ show err
     Right (initialData, halonRoleObj) -> do
       -- Check services config files
+      station_opts <- fmap (fromMaybe "") . liftIO $ lookupEnv "HALOND_STATION_OPTIONS"
       let validateTrackingStationCfg = (text,) <$> parseHelper Station.schema text
-            where text = ""
+            where text = station_opts
           validateSatelliteCfg = (text,) <$> parseHelper Satellite.schema text
             where text = ""
 
