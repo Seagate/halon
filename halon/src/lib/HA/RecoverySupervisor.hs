@@ -11,20 +11,52 @@
 -- quorum so too does the group of supervisors. The leader starts and monitors
 -- the Recovery Coordinator.
 
-module HA.RecoverySupervisor ( recoverySupervisor) where
+module HA.RecoverySupervisor
+  ( RSPing
+  , keepaliveReply
+  , recoverySupervisor
+  ) where
+
+import Control.Distributed.Process hiding (catch)
+import Control.Monad.Catch
+import Control.Monad ( void )
+import Data.Binary
+import Data.Function
+import GHC.Generics
 
 import HA.Debug
 import HA.Logger
 import HA.Replicator ( RGroup, getLeaderReplica, monitorLocalLeader )
 
-import Control.Distributed.Process hiding (catch)
-
-import Control.Monad.Catch
-import Control.Monad ( void )
 
 
 rsTrace :: String -> Process ()
 rsTrace = mkHalonTracer "RS"
+
+-- | Delay between checks if node is already a leader.
+delayLeader :: Int
+delayLeader = 1000000 -- 1s
+
+-- | Timeout between pongs from RC.
+pongTimeout :: Int
+pongTimeout = 300000000 -- 5m
+
+-- | Reply to keepalive message.
+-- This datatype is internal to this module, so nobody can generate
+-- message of this type to trick RS.
+-- 
+-- As there is only one RC in the cluster it's ok to not keep 'ProcessId'
+-- in the message payload.
+data RSPong = RSPong deriving (Eq, Show, Generic)
+instance Binary RSPong
+
+-- | Keepalive request.
+newtype RSPing = RSPing ProcessId deriving (Eq, Show, Generic)
+instance Binary RSPing
+
+-- | Reply to keepalive message.
+keepaliveReply :: RSPing -> Process ()
+keepaliveReply (RSPing p) = usend p RSPong
 
 -- | Runs the recovery supervisor.
 recoverySupervisor :: RGroup g
@@ -52,24 +84,36 @@ recoverySupervisor rg rcP = do
         go ref Nothing
       else do
         rsTrace $ "Waiting " ++ show mLeader
-        receiveTimeout 1000000 [] >> waitToBecomeLeader
+        receiveTimeout delayLeader [] >> waitToBecomeLeader
 
     -- Takes the pid of the recovery coordinator.
     go :: MonitorRef -> Maybe ProcessId -> Process a
     go leaderRef mRC = do
       rc <- maybe spawnRC return mRC
-      pmn@(ProcessMonitorNotification ref pid _) <- expect
-      rsTrace $ show pmn
-      -- Respawn the RC if it died.
-      if rc == pid then do
-        rsTrace "Respawning rc"
-        go leaderRef Nothing
-      -- The leader lost the lease
-      else if ref == leaderRef then do
-        rsTrace "Lost the lease"
-        killRC rc >> waitToBecomeLeader
-      else
-        go leaderRef (Just rc)
+      cleanupPongs
+      usend rc . RSPing =<< getSelfPid
+      maction <- receiveTimeout pongTimeout
+         [ match $ \pmn@(ProcessMonitorNotification ref pid _) -> do
+             rsTrace $ show pmn
+             -- Respawn the RC if it died.
+             if rc == pid then do
+               rsTrace "Respawning rc"
+               return $ go leaderRef Nothing
+             -- The leader lost the lease
+             else if ref == leaderRef then do
+               rsTrace "Lost the lease"
+               return $ killRC rc "lease expired" >> waitToBecomeLeader
+             else
+               return $ go leaderRef (Just rc)
+         , match $ \RSPong ->
+             return $ go leaderRef (Just rc)
+         , matchAny $ \_ ->
+             return $ go leaderRef (Just rc)
+         ]
+      case maction of
+        Just action -> action
+        Nothing -> do killRC rc "RC blocked"
+                      waitToBecomeLeader
 
     spawnRC = do
       say "RS: I'm the new leader, so starting RC ..."
@@ -80,12 +124,18 @@ recoverySupervisor rg rcP = do
       _ <- monitor rc
       return rc
 
-    killRC rc = do
-      say "RS: lease expired, so killing RC ..."
-      exit rc "lease lost"
+    killRC rc reason = do
+      say $ "RS: " ++ reason ++ ", so killing RC ..."
+      exit rc reason
       -- Block until RC actually dies. Otherwise, a new RC may start before
       -- the old one quits.
       receiveWait
         [ matchIf (\(ProcessMonitorNotification _ pid _) -> pid == rc)
                   (const $ return ())
         ]
+
+    cleanupPongs = fix $ \loop -> do
+      mp <- expectTimeout 0
+      case mp of
+        Nothing -> return ()
+        Just RSPong -> loop

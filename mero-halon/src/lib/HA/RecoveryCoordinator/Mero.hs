@@ -35,6 +35,7 @@ import           HA.RecoveryCoordinator.Actions.Test
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
 import qualified HA.ResourceGraph as G
+import qualified HA.RecoverySupervisor as RS
 import           HA.Resources
 import qualified HA.Resources.Castor as M0
 import           Network.CEP
@@ -116,7 +117,8 @@ makeRecoveryCoordinator mm eq rm = do
          (const $ reregister labelRecoveryCoordinator self)
          =<< whereis labelRecoveryCoordinator
    execute init_st $ do
-     rm
+     rm 
+     defineSimple "rs:keepalive-reply" $ liftProcess . RS.keepaliveReply
      setRuleFinalizer $ \ls -> do
        newGraph <- G.sync (lsGraph ls) (return ())
        -- We don't accept message as soon as ref count is zero, but
