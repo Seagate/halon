@@ -267,7 +267,7 @@ findEnclosureStorageDevices enc = do
 isStorageDriveRemoved :: StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
-  return $ (||) (maybe True (\Slot{} -> False)
+  return $ (&&) (maybe True (\Slot{} -> False)
                   $ G.connectedTo sd Has rg)
                 (maybe True (\Enclosure{} -> False)
                   $ G.connectedFrom Has sd rg)
