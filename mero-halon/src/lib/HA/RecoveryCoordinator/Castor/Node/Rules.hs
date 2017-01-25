@@ -470,9 +470,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     rg <- getLocalGraph
     case M0.nodeToM0Node node rg of
       Nothing -> phaseLog "info" $ "No m0node associated, not retriggering mero"
-      Just m0node -> do
-        applyStateChanges [stateSet m0node nodeOnline]
-        retriggerMeroNodeBootstrap m0node
+      Just m0node -> retriggerMeroNodeBootstrap m0node
 
     modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
     continue finish
