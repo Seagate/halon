@@ -318,7 +318,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> drop 1 (take 2 confds)
            )
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
