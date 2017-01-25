@@ -32,9 +32,9 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , mkRebalanceAbortOperation
   , mkRebalanceStatusRequestOperation
     -- * Sync operation
-  , syncAction
+  , mkSyncAction
   , syncToBS
-  , syncToConfd
+  , mkSyncToConfd
   , validateTransactionCache
     -- * Pool repair information
   , getPoolRepairInformation
@@ -73,8 +73,9 @@ import Control.Applicative
 import qualified Control.Distributed.Process as DP
 import Control.Monad (void, join)
 import Control.Monad.Catch
+import Control.Lens
 
-import Data.Binary
+import Data.Binary (Binary)
 import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
 import Data.Typeable
@@ -418,18 +419,24 @@ mkRebalanceAbortOperation = do
 -- Currently all Exceptions during this operation are caught, this is required in because
 -- there is no good exception handling in RC and uncaught exception will lead to RC failure.
 -- Also it's behaviour of RC in case of mero exceptions is not specified.
-syncAction :: Maybe UUID -> SyncToConfd -> PhaseM RC l ()
-syncAction meid sync =
-   flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
-       $ do
-    case sync of
-      SyncToConfdServersInRG f -> flip catch (handler (const $ return ())) $ do
-        phaseLog "info" "Syncing RG to confd servers in RG."
-        void $ syncToConfd f
-      SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
-        bs <- syncToBS
-        liftProcess . DP.usend pid . M0.SyncDumpToBSReply $ Right bs
-    traverse_ messageProcessed meid
+mkSyncAction :: Lens' l (Maybe Int)
+             -> Jump PhaseHandle
+             -> RuleM RC l (SyncToConfd -> PhaseM RC l ())
+mkSyncAction lhash next = do
+   (synchronized, synchronizeToConfd) <- mkSyncToConfd lhash next
+
+   return $ \sync -> do
+     flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
+         $ do
+      case sync of
+        SyncToConfdServersInRG f -> flip catch (handler (const $ return ())) $ do
+          phaseLog "info" "Syncing RG to confd servers in RG."
+          _ <- synchronizeToConfd f
+          continue synchronized
+        SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
+          bs <- syncToBS
+          liftProcess . DP.usend pid . M0.SyncDumpToBSReply $ Right bs
+          continue next
   where
     failToBS :: DP.ProcessId -> SomeException -> DP.Process ()
     failToBS pid = DP.usend pid . M0.SyncDumpToBSReply . Left . show
@@ -457,13 +464,41 @@ syncToBS = loadConfData >>= \case
     return bs
   Nothing -> error "Cannot load configuration data from graph."
 
--- | Helper functions for backward compatibility.
-syncToConfd :: Bool -- ^ Force synchronization.
-            -> PhaseM RC l (Either SomeException ())
-syncToConfd force = do
-  withSpielRC $ \lift -> do
-     setProfileRC lift
-     loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd force lift)
+data Synchronized = Synchronized (Maybe Int) (Either String ()) deriving (Generic, Show)
+instance Binary Synchronized
+
+-- | Create synchronization action.
+-- Returns a @(phase, action)@ pair where action triggers the asynchronous
+-- synchronization and user should jump to @phase@ to wait the end of the
+-- async action.
+mkSyncToConfd :: Lens' l (Maybe Int) -- ^ Accessor to the internal state
+              -> Jump PhaseHandle    -- ^ Phase to jump when sync is complete.
+              -> RuleM RC l (Jump PhaseHandle
+                            , Bool -> PhaseM RC l (Either SomeException ()))
+mkSyncToConfd luuid next = do
+  on_synchronized <- phaseHandle "on-synchronized"
+
+  setPhaseIf on_synchronized (\(Synchronized h r) _ l ->
+     if l ^. luuid == h
+     then return (Just (h, r))
+     else return Nothing
+     ) $ \(h', er) -> do
+     phaseLog "spiel" "Transaction closed."
+     case er of
+       Right () -> do
+         -- spiel increases conf version here so we should too; alternative
+         -- would be querying spiel after transaction for the new version
+         modifyConfUpdateVersion (\(M0.ConfUpdateVersion i _) -> M0.ConfUpdateVersion (succ i) h')
+         phaseLog "spiel" $ "Transaction committed, new hash: " ++ show h'
+       Left err -> do
+         phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
+     continue next
+
+  return (on_synchronized
+         , \force -> withSpielRC $ \lift -> do
+             setProfileRC lift
+             loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd force luuid lift)
+         )
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.
@@ -473,22 +508,19 @@ txOpenContext lift = m0synchronously lift openTransaction
 txOpenLocalContext :: LiftRC -> PhaseM RC l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
-txSyncToConfd :: Bool -> LiftRC -> SpielTransaction -> PhaseM RC l ()
-txSyncToConfd f lift t = do
+txSyncToConfd :: Bool -> Lens' l (Maybe Int) -> LiftRC -> SpielTransaction -> PhaseM RC l ()
+txSyncToConfd f luuid lift t = do
   phaseLog "spiel" "Committing transaction to confd"
   M0.ConfUpdateVersion v h <- getConfUpdateVersion
   h' <- return . hash <$> m0synchronously lift (txToBS t v)
   if h /= h' || f
-  then m0synchronously lift (commitTransactionForced t False v) >>= \case
-    Right () -> do
-      -- spiel increases conf version here so we should too; alternative
-      -- would be querying spiel after transaction for the new version
-      modifyConfUpdateVersion (\(M0.ConfUpdateVersion i _) -> M0.ConfUpdateVersion (succ i) h')
-      phaseLog "spiel" $ "Transaction committed, new hash: " ++ show h'
-    Left err ->
-      phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
+  then do
+     put Local . set luuid h' =<< get Local
+     self <- liftProcess DP.getSelfPid
+     m0asynchronously lift (DP.usend self . Synchronized h' . first show)
+                           (void $ (first (SomeException . userError) <$> commitTransactionForced t False v)
+                                    `finally` closeTransaction t)
   else phaseLog "spiel" $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
-  m0asynchronously_ lift $ closeTransaction t
   phaseLog "spiel" "Transaction closed."
 
 data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem

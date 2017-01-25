@@ -9,6 +9,7 @@
 
 module HA.RecoveryCoordinator.Mero.Rules where
 
+import qualified Data.UUID as UUID
 import HA.EventQueue
 import HA.ResourceGraph as G
 import HA.RecoveryCoordinator.RC.Actions
@@ -24,6 +25,7 @@ import HA.Services.Mero
 import Mero.Notification (Get(..), GetReply(..))
 import Mero.Notification.HAState (Note(..))
 
+import Control.Lens
 import Control.Distributed.Process (usend, sendChan)
 
 import Network.CEP
@@ -81,12 +83,31 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
 
 meroRules :: Definitions RC ()
 meroRules = do
-  defineSimple "Sync-to-confd" $ \(HAEvent eid afterSync) -> do
-    syncAction (Just eid) afterSync
-    messageProcessed eid
-  defineSimple "Sync-to-confd-local" $ \(uuid, afterSync) -> do
-    syncAction Nothing afterSync
-    selfMessage (SyncComplete uuid)
+
+  define "Sync-to-confd" $ do
+    initial <- phaseHandle "initial"
+    reply   <- phaseHandle "reply"
+    synchronize <- mkSyncAction _2 reply
+    setPhase initial $ \(HAEvent eid afterSync) -> do
+      put Local (eid, Nothing)
+      synchronize afterSync
+    directly reply $ do
+      uuid <- fst <$> get Local
+      messageProcessed uuid
+      selfMessage (SyncComplete uuid)
+    start initial (UUID.nil, Nothing)
+
+  define "Sync-to-confd-local" $ do
+    initial <- phaseHandle "initial"
+    reply   <- phaseHandle "reply"
+    synchronize <- mkSyncAction _2 reply
+    setPhase initial $ \(uuid, afterSync) -> do
+      put Local (uuid, Nothing)
+      synchronize afterSync
+    directly reply $ do
+      uuid <- fst <$> get Local
+      selfMessage (SyncComplete uuid)
+    start initial (UUID.nil, Nothing)
 
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.

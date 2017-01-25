@@ -408,6 +408,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   m0d_declared    <- phaseHandle "m0d_declared"
   announce        <- phaseHandle "announce"
   query_host_info <- mkQueryHostInfo config_created finish
+  (synchronized, synchronize) <- mkSyncToConfd (rlens fldHash . rfield) announce
 
   let route node = getFilesystem >>= \case
         Nothing -> return [wait_data_load]
@@ -438,11 +439,11 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     route node >>= switch
 
   setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
-    syncStat <- syncToConfd False
+    syncStat <- synchronize False
     case syncStat of
       Left err -> do phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
                      continue finish
-      Right () -> continue announce
+      Right () -> continue synchronized
 
   -- If mero service is already running we may have just recovered
   -- from a disconnect. Request new channels instead of trying to use
@@ -485,12 +486,15 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe NewMeroServer)
     fldRep = Proxy
+    fldHash :: Proxy '("hash", Maybe Int)
+    fldHash = Proxy
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
        <+> fldHostHardwareInfo =: Nothing
        <+> fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
+       <+> fldHash =: Nothing
 
 -- | Rule fragment: query node hardware information.
 mkQueryHostInfo :: forall l. (FldHostHardwareInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
