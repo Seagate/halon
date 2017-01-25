@@ -210,11 +210,15 @@ mkCheckAndHandleDriveReady smartLens next = do
       Nothing -> promulgateRC $ DriveReady sdev
       Just m0sdev -> do 
         mm0sdev <- lookupStorageDeviceSDev sdev
-        unless (Just m0sdev == mm0sdev) $ do
+        if Just m0sdev == mm0sdev
+        then do
+          deviceAttach m0sdev
+          continue device_attached 
+        else do
           request <- liftIO $ nextRandom
           modify Local $ smartLens . _Just . chsSyncRequest .~ Just request
           registerSyncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG False)
-        continue sync_complete
+          continue sync_complete
     else
       phaseLog "warning" "Unsuccessful SMART test. Drive cannot be used."
 
