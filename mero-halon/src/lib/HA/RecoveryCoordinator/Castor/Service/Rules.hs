@@ -25,6 +25,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+import Mero.ConfC (ServiceType(..))
 import Mero.Notification.HAState
   ( HAMsg(..)
   , HAMsgMeta(..)
@@ -89,10 +90,30 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
         , ("service.state", show st)
         , ("service.type", show typ) -- XXX: remove
         ] Nothing
-      put Local $ Just (eid, Just (service, st), Nothing)
-      let tr = if st == M0.SSOnline then Tr.serviceOnline else Tr.serviceOffline
-      applyStateChanges [stateSet service tr]
-      switch [service_notified, timeout 30 timed_out]
+      rg <- getLocalGraph
+      let haSiblings =
+            [ svc | Just (p :: M0.Process) <- [G.connectedFrom M0.IsParentOf service rg]
+                  , svc <- G.connectedTo p M0.IsParentOf rg
+                  , M0.s_type svc == CST_HA ]
+      case haSiblings of
+        -- This service is not process-co-located with any CST_HA
+        -- service
+        [] -> do
+          put Local $ Just (eid, Just (service, st), Nothing)
+          let tr = if st == M0.SSOnline then Tr.serviceOnline else Tr.serviceOffline
+          applyStateChanges [stateSet service tr]
+          switch [service_notified, timeout 30 timed_out]
+        -- We're working with services for halon process: ignore these
+        -- service message as
+        --
+        -- - we can't tell if the message is current
+        --
+        -- - without abnormal scenario, PROCESS_STOPPED will always be
+        --   sent for this process too
+        --
+        -- - we don't want to fight with PROCESS_STOPPED for no reason
+        --   and be subject to poor ordering
+        _ -> phaseLog "warn" "Ignoring mero notification about a halon:m0d process service."
 
   setPhaseNotified service_notified viewSrv $ \(srv, st) -> do
     rg <- getLocalGraph
