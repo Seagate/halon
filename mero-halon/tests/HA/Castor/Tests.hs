@@ -49,6 +49,7 @@ import HA.Resources
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import HA.ResourceGraph hiding (__remoteTable)
 import qualified Mero.ConfC as ConfC
 
@@ -317,8 +318,10 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
+                                 , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                       (connectedTo ps M0.IsParentOf rg)
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> drop 1 (take 2 confds)
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> confds
            )
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
@@ -328,8 +331,10 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
+                                 , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                             (connectedTo ps M0.IsParentOf rg)
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> drop 1 (take 1 confds)
+           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
            )
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=True}
