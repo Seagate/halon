@@ -11,6 +11,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE LambdaCase                 #-}
 
 module HA.RecoveryCoordinator.Mero.Actions.Spiel
@@ -32,6 +33,8 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , mkRebalanceAbortOperation
   , mkRebalanceStatusRequestOperation
     -- * Sync operation
+  , defaultConfSyncState
+  , fldConfSyncState
   , mkSyncAction
   , syncToBS
   , mkSyncToConfd
@@ -51,8 +54,11 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   ) where
 
 import HA.RecoveryCoordinator.RC.Actions
+import HA.RecoveryCoordinator.Job.Actions
+import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Actions.Core
+import HA.RecoveryCoordinator.Mero.Events
 import qualified HA.ResourceGraph as G
 import HA.Resources (Has(..), Cluster(..))
 import HA.Resources.Castor
@@ -78,10 +84,11 @@ import Control.Lens
 import Data.Binary (Binary)
 import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
+import Data.Traversable (for)
 import Data.Typeable
 import Data.Hashable (hash)
 import Data.IORef (writeIORef)
-import Data.List (sortOn)
+import Data.List (sortOn, (\\))
 import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
@@ -101,6 +108,22 @@ import Prelude hiding (id)
 -- | Default HA process endpoint listen address.
 haAddress :: String
 haAddress = ":12345:34:101"
+
+-- | Confiuration update state.
+data ConfSyncState = ConfSyncState
+      { _cssHash :: Maybe Int -- ^ Hash of the graph sync request.
+      , _cssForce :: Bool     -- ^ Should we force synchronization.
+      , _cssQuiescing :: [ListenerId] -- ^ List of the pending SNS quiece jobs.
+      , _cssAborting :: [ListenerId] -- ^ List of the pending SNS abort jobs.
+      } deriving (Generic, Show)
+
+fldConfSyncState :: Proxy '("hash", ConfSyncState)
+fldConfSyncState = Proxy
+
+defaultConfSyncState :: ConfSyncState
+defaultConfSyncState = ConfSyncState Nothing False [] []  
+
+makeLenses ''ConfSyncState
 
 -- | Try to connect to spiel and run the 'PhaseM' on the
 -- 'SpielContext'.
@@ -419,11 +442,11 @@ mkRebalanceAbortOperation = do
 -- Currently all Exceptions during this operation are caught, this is required in because
 -- there is no good exception handling in RC and uncaught exception will lead to RC failure.
 -- Also it's behaviour of RC in case of mero exceptions is not specified.
-mkSyncAction :: Lens' l (Maybe Int)
+mkSyncAction :: Lens' l ConfSyncState
              -> Jump PhaseHandle
              -> RuleM RC l (SyncToConfd -> PhaseM RC l ())
-mkSyncAction lhash next = do
-   (synchronized, synchronizeToConfd) <- mkSyncToConfd lhash next
+mkSyncAction lstate next = do
+   (synchronized, synchronizeToConfd) <- mkSyncToConfd lstate next
 
    return $ \sync -> do
      flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
@@ -452,6 +475,10 @@ mkSyncAction lhash next = do
 --
 --   Note that this uses a local worker, because it may be invoked before
 --   `ha_interface` is loaded and hence no Spiel context is available.
+--
+--   We need to quiesce or abort spiel SNS operation during sync request,
+--   this way spiel state machines will be able to return all locks to RM,
+--   and take them and resubscribe later.
 syncToBS :: PhaseM RC l BS.ByteString
 syncToBS = loadConfData >>= \case
   Just tx -> do
@@ -471,15 +498,68 @@ instance Binary Synchronized
 -- Returns a @(phase, action)@ pair where action triggers the asynchronous
 -- synchronization and user should jump to @phase@ to wait the end of the
 -- async action.
-mkSyncToConfd :: Lens' l (Maybe Int) -- ^ Accessor to the internal state
-              -> Jump PhaseHandle    -- ^ Phase to jump when sync is complete.
+mkSyncToConfd :: forall l . Lens' l ConfSyncState -- ^ Accessor to the internal state
+              -> Jump PhaseHandle       -- ^ Phase to jump when sync is complete.
               -> RuleM RC l (Jump PhaseHandle
                             , Bool -> PhaseM RC l (Either SomeException ()))
-mkSyncToConfd luuid next = do
+mkSyncToConfd lstate next = do
+  quiesce         <- phaseHandle "quiese-sns"
+  on_quiesced     <- phaseHandle "on-quiesced"
+  on_aborted      <- phaseHandle "on-abort"
   on_synchronized <- phaseHandle "on-synchronized"
 
+  let synchronize = do
+        eresult <- do
+          force <- (\x -> x ^. lstate . cssForce) <$> get Local
+          withSpielRC $ \lift -> do
+            setProfileRC lift
+            loadConfData >>= traverse_ (\x -> do
+              t0 <- txOpenContext lift
+              t1 <- txPopulate lift x t0
+              txSyncToConfd force (lstate.cssHash) lift t1)
+        case eresult of
+          Left ex -> phaseLog "error" $ "Exception during sync: " ++ show ex
+          _ -> return () 
+      clean_and_run :: Lens' ConfSyncState [ListenerId] -> [ListenerId] -> PhaseM RC l ()
+      clean_and_run ls listeners = do
+        state <- get Local
+        let state' = state & lstate . ls %~ (\x -> x \\ listeners)
+        put Local state'
+        if (null $ state' ^. lstate . cssQuiescing) 
+           && (null $ state' ^. lstate . cssAborting)
+        then synchronize
+        else switch [on_quiesced, on_aborted]
+
+  directly quiesce $ do
+     rg <- getLocalGraph
+     let pools = [ pool
+                 | prs :: M0.PoolRepairStatus <- G.getResourcesOfType rg
+                 , Just (pool::M0.Pool) <- [G.connectedFrom Has prs rg]
+                 ]
+     case pools of
+       [] -> synchronize
+       _  -> do lids <- for pools $ startJob . QuiesceSNSOperation
+                modify Local $ \x -> x & lstate . cssQuiescing .~  lids
+                switch [on_quiesced, on_aborted]
+
+  setPhase on_quiesced $ \case
+    JobFinished listeners QuiesceSNSOperationSkip{} ->
+      clean_and_run cssQuiescing listeners
+    JobFinished listeners QuiesceSNSOperationOk{} ->
+      clean_and_run cssQuiescing listeners
+    JobFinished listeners (QuiesceSNSOperationFailure pool _) -> do
+      mprs <- getPoolRepairStatus pool
+      for_ mprs $ \prs -> do
+        lid <- startJob (AbortSNSOperation pool $ M0.prsRepairUUID prs)
+        l <- get Local
+        put Local $ l & lstate . cssAborting %~ (lid:)
+      clean_and_run cssQuiescing listeners
+
+  setPhase on_aborted $ \(JobFinished listeners (_::QuiesceSNSOperationResult)) ->
+    clean_and_run cssAborting listeners
+
   setPhaseIf on_synchronized (\(Synchronized h r) _ l ->
-     if l ^. luuid == h
+     if l ^. lstate . cssHash == h
      then return (Just (h, r))
      else return Nothing
      ) $ \(h', er) -> do
@@ -494,11 +574,10 @@ mkSyncToConfd luuid next = do
          phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
      continue next
 
-  return (on_synchronized
-         , \force -> withSpielRC $ \lift -> do
-             setProfileRC lift
-             loadConfData >>= traverse_ (\x -> txOpenContext lift >>= txPopulate lift x >>= txSyncToConfd force luuid lift)
-         )
+  return ( on_synchronized
+         , \force -> do
+               modify Local $ set (lstate.cssForce) force
+               continue quiesce)
 
 -- | Open a transaction. Ultimately this should not need a
 --   spiel context.

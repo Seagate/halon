@@ -89,25 +89,25 @@ meroRules = do
     reply   <- phaseHandle "reply"
     synchronize <- mkSyncAction _2 reply
     setPhase initial $ \(HAEvent eid afterSync) -> do
-      put Local (eid, Nothing)
+      put Local (eid, defaultConfSyncState)
       synchronize afterSync
     directly reply $ do
       uuid <- fst <$> get Local
       messageProcessed uuid
       selfMessage (SyncComplete uuid)
-    start initial (UUID.nil, Nothing)
+    start initial (UUID.nil, defaultConfSyncState)
 
   define "Sync-to-confd-local" $ do
     initial <- phaseHandle "initial"
     reply   <- phaseHandle "reply"
     synchronize <- mkSyncAction _2 reply
     setPhase initial $ \(uuid, afterSync) -> do
-      put Local (uuid, Nothing)
+      put Local (uuid, defaultConfSyncState)
       synchronize afterSync
     directly reply $ do
       uuid <- fst <$> get Local
       selfMessage (SyncComplete uuid)
-    start initial (UUID.nil, Nothing)
+    start initial (UUID.nil, defaultConfSyncState) 
 
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.

@@ -408,7 +408,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   m0d_declared    <- phaseHandle "m0d_declared"
   announce        <- phaseHandle "announce"
   query_host_info <- mkQueryHostInfo config_created finish
-  (synchronized, synchronize) <- mkSyncToConfd (rlens fldHash . rfield) announce
+  (synchronized, synchronize) <- mkSyncToConfd (rlens fldConfSyncState . rfield) announce
 
   let route node = getFilesystem >>= \case
         Nothing -> return [wait_data_load]
@@ -486,15 +486,13 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe NewMeroServer)
     fldRep = Proxy
-    fldHash :: Proxy '("hash", Maybe Int)
-    fldHash = Proxy
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
        <+> fldHostHardwareInfo =: Nothing
        <+> fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
-       <+> fldHash =: Nothing
+       <+> fldConfSyncState =: defaultConfSyncState
 
 -- | Rule fragment: query node hardware information.
 mkQueryHostInfo :: forall l. (FldHostHardwareInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
