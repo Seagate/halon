@@ -6,6 +6,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
@@ -160,14 +161,26 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 instance Hashable ServiceEventType
 deriveSafeCopy 0 'base ''ServiceEventType
 
+data ServiceEvent_v0 = ServiceEvent_v0
+  { _chs_event0 :: ServiceEventType
+  , _chs_type0 :: ServiceType
+  } deriving (Show, Eq, Ord, Typeable, Generic)
+
 -- | @m0_conf_ha_service@.
 data ServiceEvent = ServiceEvent
   { _chs_event :: ServiceEventType
   , _chs_type :: ServiceType
+  , _chs_pid :: Word64
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable ServiceEvent
-deriveSafeCopy 0 'base ''ServiceEvent
+
+instance Migrate ServiceEvent where
+  type MigrateFrom ServiceEvent = ServiceEvent_v0
+  migrate (ServiceEvent_v0 e t) = ServiceEvent e t (-1)
+
+deriveSafeCopy 0 'base ''ServiceEvent_v0
+deriveSafeCopy 1 'extension ''ServiceEvent
 
 -- | @m0_be_location@.
 data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
@@ -773,13 +786,15 @@ instance Storable ServiceEvent where
   sizeOf _ = #{size struct m0_conf_ha_service}
   alignment _ = #{alignment struct m0_conf_ha_service}
 
-  peek p = liftM2 ServiceEvent
+  peek p = liftM3 ServiceEvent
       (w64ToEnum <$> (#{peek struct m0_conf_ha_service, chs_event} p))
       (w64ToEnum <$> (#{peek struct m0_conf_ha_service, chs_type} p))
+      (#{peek struct m0_conf_ha_service, chs_pid} p)
 
-  poke p (ServiceEvent ev et) = do
+  poke p (ServiceEvent ev et pid) = do
       #{poke struct m0_conf_ha_service, chs_event} p (enumToW64 ev)
       #{poke struct m0_conf_ha_service, chs_type} p (enumToW64 et)
+      #{poke struct m0_conf_ha_service, chs_pid} p pid
 
 instance Storable RpcEvent where
   sizeOf _ = #{size struct m0_ha_msg_rpc}

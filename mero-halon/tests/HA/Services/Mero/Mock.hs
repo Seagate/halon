@@ -226,7 +226,8 @@ sendProcessEvents p petype setype pid = do
     sendServiceEvent s = do
       t <- liftIO $ C.sec <$> C.getTime C.Realtime
       let ev = ServiceEvent { _chs_event = setype
-                            , _chs_type = M0.s_type s }
+                            , _chs_type = M0.s_type s
+                            , _chs_pid = fromIntegral pid }
           meta = HAMsgMeta { _hm_fid = M0.fid s
                            , _hm_source_process = Fid 0 0
                            , _hm_source_service = Fid 0 0

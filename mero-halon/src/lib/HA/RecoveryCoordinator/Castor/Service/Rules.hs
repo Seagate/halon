@@ -25,6 +25,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+import qualified HA.Resources as R
 import Mero.ConfC (ServiceType(..))
 import Mero.Notification.HAState
   ( HAMsg(..)
@@ -34,6 +35,7 @@ import Mero.Notification.HAState
   )
 
 import Data.Foldable (for_)
+import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
 
 import Network.CEP
@@ -64,20 +66,38 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
       -- Check that the service has the given tag (predicate) and
       -- check that it's not in the given state in RG already.
-      serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st) m)) ls =
+      serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st _pid) m)) ls =
         let rg = lsGraph ls
             isStateChanged s = M0.getState s (lsGraph ls) /= typ
         in case M0.lookupConfObjByFid (_hm_fid m) rg of
             Just (s :: M0.Service) | p se && isStateChanged s -> Just (eid, s, typ, st)
             _ -> Nothing
 
+      servicePidMatches (HAEvent _ (HAMsg (ServiceEvent _ _ spid) m)) ls =
+        let rg = lsGraph ls
+            msd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls) :: Maybe M0.Service
+        in case msd of
+             Nothing -> False
+             Just srv -> fromMaybe False $ do
+               p :: M0.Process <- G.connectedFrom M0.IsParentOf srv rg 
+               is_m0t1fs <- Just $ all (\s -> M0.s_type s `notElem` [CST_IOS, CST_MDS, CST_MGS, CST_HA])
+                                       (G.connectedTo p M0.IsParentOf rg)
+               if spid == -1
+               then return True -- if message is old and does not contain pid, we accept message.
+               else if is_m0t1fs
+                    then return (spid == 0)
+                    else do M0.PID pid <- G.connectedTo p R.Has rg
+                            return (spid == fromIntegral pid)
+
       isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
       isServiceStopped = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STOPPED) M0.SSOffline
 
       startOrStop msg@(HAEvent eid _) ls _ = return . Just . maybe (Left eid) Right $
-        case isServiceOnline msg ls of
-          Nothing -> isServiceStopped msg ls
-          Just x -> Just x
+        if servicePidMatches msg ls
+        then case isServiceOnline msg ls of
+               Nothing -> isServiceStopped msg ls
+               Just x -> Just x
+        else Nothing
 
   setPhaseIf start_rule startOrStop $ \case
     Left eid -> todo eid >> done eid -- XXX: just remove this guy?
@@ -88,7 +108,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
       Log.tagContext Log.SM [
           ("transaction.id", show eid)
         , ("service.state", show st)
-        , ("service.type", show typ) -- XXX: remove
+        , ("service.type", show typ)
         ] Nothing
       rg <- getLocalGraph
       let haSiblings =
