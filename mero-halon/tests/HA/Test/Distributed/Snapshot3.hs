@@ -53,7 +53,6 @@ test = testCase "Snapshot3" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 2 $ \ms@[m0, m1] ->
      runProcess n0 $ do
@@ -62,8 +61,8 @@ test = testCase "Snapshot3" $
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond")
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
                                ]
+      copyMeroLibs "localhost" ms
 
       getSelfPid >>= copyLog (\(SayMessage _ _ msg) -> any (`isInfixOf` msg)
                                   [ "New replica started in"

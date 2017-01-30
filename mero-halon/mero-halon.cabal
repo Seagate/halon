@@ -417,7 +417,8 @@ Test-Suite distributed-tests
                    tasty,
                    tasty-files,
                    tasty-hunit,
-                   options-schema
+                   options-schema,
+                   transformers
   if !flag(distributed-tests)
     Buildable:     False
 

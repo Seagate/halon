@@ -20,6 +20,7 @@ module Control.Distributed.Commands.Process
   , expectLog
   , expectTimeoutLog
   , copyFiles
+  , copyFilesMove
   , systemThere
   , systemLocal
   , withHostNames
@@ -244,6 +245,11 @@ expectTimeoutLog t nids p = receiveTimeout t
 -- | Copies files from one host to others.
 copyFiles :: HostName -> [HostName] -> [(FilePath, FilePath)] -> Process ()
 copyFiles from to files = liftIO $ M.copyFiles from to files
+
+-- | Copies files from one host to others through help of @mv@: see
+-- 'M.copyFilesMove'.
+copyFilesMove :: HostName -> [HostName] -> [(FilePath, FilePath, FilePath)] -> Process ()
+copyFilesMove from to files = liftIO $ M.copyFilesMove from to files
 
 -- | @systemThere ms command@ runs @command@ in a shell on hosts @ms@ and waits
 -- until it completes.

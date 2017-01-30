@@ -13,6 +13,7 @@ module Control.Distributed.Commands.Management
   ( Provider(..)
   , Host(..)
   , copyFiles
+  , copyFilesMove
   , systemThere
   , systemThereAsUser
   , systemLocal
@@ -64,6 +65,34 @@ copyFiles from tos paths = do
                   ])
       (mapM_ waitCatch)
       (mapM waitCatch) >>= mapM_ throwIO . lefts
+  where
+    toScpPath h p = if isLocalHost h then LocalPath p
+                           else RemotePath (Just "dev") h p
+
+-- | Just like 'copyFiles' but instead of directly @scp@ing to the
+-- destination location, it uses the default user directory at the
+-- host location and then @mv@s the file. This can be useful in case
+-- of permission issues.
+copyFilesMove :: HostName
+              -- ^ Source host
+              -> [HostName]
+              -- ^ Destination hosts
+              -> [(FilePath, FilePath, FilePath)]
+              -- ^ @[(sourceLocation, destinationLocation, name)]@
+              --
+              -- @ [("/usr/lib64/foo.so", "/lib64/foo.so", "foo.so")]@
+              --
+              -- The @name@ is useful if we're copying whole
+              -- directories as it lets us know what to move out from
+              -- the default directory.
+              -> IO ()
+copyFilesMove from tos paths = do
+  bracket
+    (mapM async [ C.scpMove (toScpPath from pfrom) (toScpPath to pto) name
+                | (pfrom, pto, name) <- paths, to <- tos
+                ])
+    (mapM_ waitCatch)
+    (mapM waitCatch) >>= mapM_ throwIO . lefts
   where
     toScpPath h p = if isLocalHost h then LocalPath p
                            else RemotePath (Just "dev") h p

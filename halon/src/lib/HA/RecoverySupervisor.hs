@@ -44,7 +44,7 @@ pongTimeout = 300000000 -- 5m
 -- | Reply to keepalive message.
 -- This datatype is internal to this module, so nobody can generate
 -- message of this type to trick RS.
--- 
+--
 -- As there is only one RC in the cluster it's ok to not keep 'ProcessId'
 -- in the message payload.
 data RSPong = RSPong deriving (Eq, Show, Generic)
@@ -91,7 +91,10 @@ recoverySupervisor rg rcP = do
     go leaderRef mRC = do
       rc <- maybe spawnRC return mRC
       cleanupPongs
-      usend rc . RSPing =<< getSelfPid
+      -- TODO: Don't flood RC with RSPing; causes test failures in
+      -- distributed tests
+      --
+      -- usend rc . RSPing =<< getSelfPid
       maction <- receiveTimeout pongTimeout
          [ match $ \pmn@(ProcessMonitorNotification ref pid _) -> do
              rsTrace $ show pmn

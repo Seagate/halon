@@ -56,7 +56,6 @@ test = testCase "Autoboot" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 2 $  \ms@[m0, m1] ->
      runProcess n0 $ do
@@ -67,9 +66,9 @@ test = testCase "Autoboot" $
       say "Copying binaries ..."
       -- test copying a folder
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
-                               , (buildPath </> "halond/halond", "halond") 
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
+                               , (buildPath </> "halond/halond", "halond")
                                ]
+      copyMeroLibs "localhost" ms
 
       getSelfPid >>= copyLog (const True)
 

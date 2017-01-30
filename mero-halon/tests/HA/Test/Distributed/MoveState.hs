@@ -57,7 +57,6 @@ test = testCase "MoveState" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 1 $  \ms@[m0] ->
      runProcess n0 $ do
@@ -68,8 +67,8 @@ test = testCase "MoveState" $
       -- test copying a folder
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond")
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
                                ]
+      copyMeroLibs "localhost" ms
 
       getSelfPid >>= copyLog (const True)
 
