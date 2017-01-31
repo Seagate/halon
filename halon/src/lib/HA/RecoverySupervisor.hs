@@ -38,8 +38,12 @@ delayLeader :: Int
 delayLeader = 1000000 -- 1s
 
 -- | Timeout between pongs from RC.
+pingTimeout :: Int
+pingTimeout = 300000000 -- 5m
+
+-- | Timeout between pongs from RC.
 pongTimeout :: Int
-pongTimeout = 300000000 -- 5m
+pongTimeout = 5000000 -- 5s
 
 -- | Reply to keepalive message.
 -- This datatype is internal to this module, so nobody can generate
@@ -90,12 +94,7 @@ recoverySupervisor rg rcP = do
     go :: MonitorRef -> Maybe ProcessId -> Process a
     go leaderRef mRC = do
       rc <- maybe spawnRC return mRC
-      cleanupPongs
-      -- TODO: Don't flood RC with RSPing; causes test failures in
-      -- distributed tests
-      --
-      -- usend rc . RSPing =<< getSelfPid
-      maction <- receiveTimeout pongTimeout
+      maction <- receiveTimeout pingTimeout
          [ match $ \pmn@(ProcessMonitorNotification ref pid _) -> do
              rsTrace $ show pmn
              -- Respawn the RC if it died.
@@ -108,15 +107,17 @@ recoverySupervisor rg rcP = do
                return $ killRC rc "lease expired" >> waitToBecomeLeader
              else
                return $ go leaderRef (Just rc)
-         , match $ \RSPong ->
-             return $ go leaderRef (Just rc)
-         , matchAny $ \_ ->
-             return $ go leaderRef (Just rc)
          ]
       case maction of
         Just action -> action
-        Nothing -> do killRC rc "RC blocked"
-                      waitToBecomeLeader
+        Nothing -> do 
+          cleanupPongs
+          usend rc . RSPing =<< getSelfPid
+          mpong <- expectTimeout pongTimeout
+          case mpong of
+            Just RSPong -> go leaderRef (Just rc)
+            Nothing -> do killRC rc "RC blocked"
+                          waitToBecomeLeader
 
     spawnRC = do
       say "RS: I'm the new leader, so starting RC ..."
