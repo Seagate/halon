@@ -19,7 +19,6 @@ import           Helper.Environment
 import qualified Network.Socket as TCP
 import           Network.Transport (Transport, EndPointAddress)
 import qualified Network.Transport.TCP as TCP
-import           System.Directory (getCurrentDirectory)
 import           System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import           Test.Framework
 import           Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -41,6 +40,7 @@ tests transport breakConnection = do
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processTests <- HA.Castor.Story.Process.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
+  meroTests <- HA.RecoveryCoordinator.Mero.Tests.tests transport pg
   return $ testGroup "mero-halon:tests"
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
@@ -48,7 +48,7 @@ tests transport breakConnection = do
       , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
       , testGroup "DriveFailure" $ driveFailureTests transport
       , testGroup "InternalStateChanges" $ internalSCTests transport
-      , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
+      , testGroup "Mero" meroTests
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests
       , testGroup "Process" $ processTests transport
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
@@ -58,41 +58,32 @@ tests transport breakConnection = do
 
 -- | Set up a 'Transport' and a way to break connections before
 -- passing it off to the given test tree.
-runTests :: (Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree) -> IO ()
-runTests tests' = do
-    -- TODO: Remove threadDelay after RPC transport closes cleanly
-    hSetBuffering stdout LineBuffering
-    hSetBuffering stderr LineBuffering
-    Just (host0, p0)<- getTestListenSplit
-    let addr0 = host0 ++ ":" ++ show p0
-
-    let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
-    hostname <- TCP.inet_ntoa hostaddr
-    (transport, internals) <- either (error . show) id <$>
-                 TCP.createTransportExposeInternals hostname (show port)
-                   TCP.defaultTCPParameters
-                     { TCP.tcpNoDelay = True
-                     , TCP.tcpUserTimeout = Just 2000
-                     , TCP.transportConnectTimeout = Just 2000000
-                     }
-    let -- XXX: Could use enclosed-exceptions here. Note that the worker
-        -- is not killed in case of an exception.
-        ignoreSyncExceptions action = do
-          mv <- newEmptyMVar
-          _ <- forkIO $ action `finally` putMVar mv ()
-          takeMVar mv
-        connectionBreak here there = do
-          ignoreSyncExceptions $
-            TCP.socketBetween internals here there >>= TCP.close
-          ignoreSyncExceptions $
-            TCP.socketBetween internals there here >>= TCP.close
-    defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-      =<< tests' transport connectionBreak
-
 main :: IO ()
-main = prepare $ do
-  dir <- getCurrentDirectory
-  putStrLn $ "Running tests in " ++ dir
-  runTests tests
-  where
-    prepare = withTmpDirectory
+main = do
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
+  Just (host0, p0)<- getTestListenSplit
+  let addr0 = host0 ++ ":" ++ show p0
+
+  let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
+  hostname <- TCP.inet_ntoa hostaddr
+  (transport, internals) <- either (error . show) id <$>
+               TCP.createTransportExposeInternals hostname (show port)
+                 TCP.defaultTCPParameters
+                   { TCP.tcpNoDelay = True
+                   , TCP.tcpUserTimeout = Just 2000
+                   , TCP.transportConnectTimeout = Just 2000000
+                   }
+  let -- XXX: Could use enclosed-exceptions here. Note that the worker
+      -- is not killed in case of an exception.
+      ignoreSyncExceptions action = do
+        mv <- newEmptyMVar
+        _ <- forkIO $ action `finally` putMVar mv ()
+        takeMVar mv
+      connectionBreak here there = do
+        ignoreSyncExceptions $
+          TCP.socketBetween internals here there >>= TCP.close
+        ignoreSyncExceptions $
+          TCP.socketBetween internals there here >>= TCP.close
+  defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+    =<< tests transport connectionBreak

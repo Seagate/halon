@@ -16,9 +16,7 @@ import           HA.Replicator.Log
 import qualified HA.Test.Disconnect
 import           Network.Transport (Transport)
 import           Network.Transport.InMemory
-import           System.Directory (getCurrentDirectory)
 import           System.Posix.Env (setEnv)
-import           Test.Framework (withTmpDirectory)
 import           Test.Tasty (TestTree, defaultMainWithIngredients, testGroup)
 import           Test.Tasty.HUnit (testCase)
 import           Test.Tasty.Ingredients.Basic (consoleTestReporter)
@@ -32,12 +30,9 @@ main = do
     _ <- forkIO $ do threadDelay (30 * 60 * 1000000)
                      forever $ do threadDelay 100000
                                   throwTo tid (ErrorCall "Timeout")
-    withTmpDirectory $ do
-      dir <- getCurrentDirectory
-      putStrLn $ "Running tests in " ++ dir
-      transport <- createTransport
-      defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
-        $ tests transport
+    transport <- createTransport
+    defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+      $ tests transport
   where
     pg = Proxy :: Proxy RLogGroup
 

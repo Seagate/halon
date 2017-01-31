@@ -29,12 +29,12 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
--- import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.Services.SSPL.CEP
+import           HA.Services.SSPL.LL.Resources (LoggerCmd(..))
 import           Helper.InitialData
 import qualified Helper.Runner as H
 import           Helper.SSPL
@@ -47,14 +47,17 @@ import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
 import           TestRunner
 
-tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
-tests transport pg =
-  [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
-  , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
-  , testCase "[require-mero] good-conf-loads" $ testGoodConfLoads transport pg
-  , testCase "[require-mero] bad-conf-does-not-load" $
-      testBadConfDoesNotLoad transport pg
-  ]
+tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> IO [TestTree]
+tests transport pg = do
+  goodConfLoads <- testMero "good-conf-loads" $ testGoodConfLoads transport pg
+  badConfDoesNotLoad <- testMero "bad-conf-does-not-load" $
+    testBadConfDoesNotLoad transport pg
+  return
+    [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
+    , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
+    , goodConfLoads
+    , badConfDoesNotLoad
+    ]
 
 -- | Used by 'testDriveManagerUpdate'
 newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
@@ -183,8 +186,9 @@ testConfLoads :: (Typeable g, RGroup g)
               -> Proxy g -- ^ Replicated group type
               -> (InitialDataLoaded -> Bool) -- ^ Expected load result
               -> IO ()
-testConfLoads iData transport pg expectedResultP =
-  runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+testConfLoads iData transport pg expectedResultP = do
+
+  runDefaultTest transport $ do
     nid <- getSelfNode
     sayTest $ "tests node: " ++ show nid
     withTrackingStation pg [] $ \ta -> do
