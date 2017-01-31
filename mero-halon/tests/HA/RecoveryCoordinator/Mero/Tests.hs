@@ -82,6 +82,7 @@ testDriveManagerUpdate transport pg = do
                 usend self ("OK" :: String)
           | otherwise -> return ()
     subscribe (H._ts_rc ts) (Proxy :: Proxy DriveOK)
+    subscribe (H._ts_rc ts) (Proxy :: Proxy LoggerCmd)
 
     sayTest "Sending online message"
     _ <- promulgateEQ [processNodeId $ H._ts_rc ts] (processNodeId $ H._ts_rc ts, respDM "OK" "NONE" "/path")
@@ -97,7 +98,10 @@ testDriveManagerUpdate transport pg = do
 
     sayTest "Sending RunDriveManagerFailure"
     usend (H._ts_rc ts) $ RunDriveManagerFailure drive
-    liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
+    expectPublished >>= \case
+      LoggerCmd { lcMsg = msg, lcType = "HDS" }
+        | T.pack interestingSN `T.isInfixOf` msg -> return ()
+      lc -> fail $ "Unexpected LoggerCmd: " ++ show lc
   where
     testRule :: Definitions RC ()
     testRule = defineSimple "dmwf-trigger" $ \(RunDriveManagerFailure sd) -> do
