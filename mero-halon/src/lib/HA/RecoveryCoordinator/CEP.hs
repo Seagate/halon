@@ -302,6 +302,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
              phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
              notify $ RecoveryAttempt node i
              modify Local $ rlens fldRetries .~ Field (Just $ i + 1)
+             phaseLog "test" $ "Sending nodeUp on " ++ show nid ++ " using " ++ show (eqNodes argv)
              void . liftProcess . callLocal . spawnAsync nid $
                $(mkClosure 'nodeUp) (eqNodes argv)
              expirySeconds <- getHalonVar _hv_recovery_expiry_seconds

@@ -8,12 +8,12 @@
 {-# LANGUAGE TupleSections #-}
 module TestRunner
   ( TestArgs(..)
-  , runRCEx
   , runTest
   , tryRunProcessLocal
   , withLocalNode
   , withLocalNodes
   , withTrackingStation
+  , withTrackingStations
   , eqDict
   , eqDict__static
   , mmDict
@@ -34,16 +34,18 @@ import HA.Multimap
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Mero
 import HA.Replicator
-import HA.Startup (stopHalonNode)
+import HA.Startup (startupHalonNode, stopHalonNode)
 
 import Control.Distributed.Process hiding (bracket, finally, onException)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
+import Control.Distributed.Static
 import Control.Monad.Catch
 import qualified Control.Distributed.Process.Scheduler as Scheduler
-import Control.Monad (join, void, forever)
+import Control.Monad (forM, join, void, forever)
 
 import Data.Foldable
+import Data.Maybe (catMaybes)
 import Data.Proxy
 import Data.Typeable
 
@@ -68,7 +70,6 @@ remotableDecl [ [d|
 
   emptyRules :: [Definitions RC ()]
   emptyRules = []
-
   |]]
 
 data TestArgs = TestArgs {
@@ -78,11 +79,11 @@ data TestArgs = TestArgs {
 }
 
 runRCEx :: RGroup g
-        => (ProcessId, [NodeId])
+        => (ProcessId, [NodeId], [LocalNode])
         -> [Definitions RC ()]
         -> g (MetaInfo, Multimap)
         -> Process (StoreChan, ProcessId) -- ^ MM, RC
-runRCEx (eq, eqNids) rules rGroup = do
+runRCEx (eq, eqNids, ts) rules rGroup = do
   rec ((mm,cchan), rc) <- (,)
                   <$> (startMultimap rGroup
                                      (\go -> do
@@ -92,8 +93,30 @@ runRCEx (eq, eqNids) rules rGroup = do
                   <*> (spawnLocal $ do
                         () <- expect
                         recoveryCoordinatorEx () rules eqNids eq cchan)
+
+
   usend eq rc
   forM_ [mm::ProcessId, rc] $ \them -> usend them ()
+
+  -- TODO: there's a race here, RC might not be started yet which
+  -- might result on RC on one of the extra TS
+  waits <- fmap catMaybes . forM ts $ \n -> case processNodeId rc == localNodeId n of
+    True -> return Nothing
+    False -> do
+      p <- liftIO . forkProcess n $ do
+        startupHalonNode $ $(mkClosure 'recoveryCoordinatorEx) ()
+        -- TODO: take a closure of rules for RC migrations
+          `closureApply` staticClosure emptyRules__static
+      Just <$> monitor p
+  let loop [] = say "runRCEx => RC and all TS started"
+      loop ws = do
+        say $ "runRCEx => Waiting for " ++ show ws
+        receiveWait [ matchIf (\(ProcessMonitorNotification mref _ _) -> mref `elem` ws)
+                              (\(ProcessMonitorNotification mref _ _) -> do
+                                  unmonitor mref
+                                  loop $ filter (/= mref) ws) ]
+  loop waits
+
   return (cchan, rc)
 
 -- | Wrapper to start a test with a Halon tracking station running. Returns
@@ -103,21 +126,37 @@ withTrackingStation :: forall g. (Typeable g, RGroup g)
                     -> [Definitions RC ()]
                     -> (TestArgs -> Process ())  -- ^ Test contents.
                     -> Process ()
-withTrackingStation _ testRules action = do
+withTrackingStation pg testRules action =
+  withTrackingStations pg testRules [] action
+
+-- | Spawn RC on the current node along with TS on the given nodes.
+withTrackingStations :: forall g. (Typeable g, RGroup g)
+                     => Proxy g
+                     -> [Definitions RC ()]
+                     -> [LocalNode] -- ^ Nodes to use for TS
+                     -> (TestArgs -> Process ())
+                     -> Process ()
+withTrackingStations _ testRules lnids action = do
   nid <- getSelfNode
+  let nids' = filter (/= nid) $ map localNodeId lnids
+      allNids = nid:nids'
   bracket
     (do
-      void $ EQT.startEQTracker [nid]
+      void $ EQT.startEQTracker allNids
       cEQGroup <- newRGroup $(mkStatic 'eqDict) "eqtest" 1000 1000000 4000000
-                         [nid] emptyEventQueue
+                         allNids emptyEventQueue
       cMMGroup <- newRGroup $(mkStatic 'mmDict) "mmtest" 1000 1000000 4000000
-                         [nid] (defaultMetaInfo, fromList [])
+                         allNids (defaultMetaInfo, fromList [])
       (,) <$> join (unClosure cEQGroup) <*> join (unClosure cMMGroup)
     )
-    (\(g0, g1) -> killReplica g0 nid >> killReplica g1 nid)
+    (\(g0, g1) -> forM_ allNids $ \n -> do
+        killReplica g0 n
+        killReplica g1 n)
     (\(eqGroup, mmGroup :: g (MetaInfo, Multimap)) -> do
       eq <- startEventQueue (eqGroup :: g EventQueue)
-      (chan, rc) <- runRCEx (eq, [nid]) testRules mmGroup
+      say $ "withTrackingStations => " ++ show (nid, localNodeId <$> lnids)
+      (chan, rc) <- runRCEx (eq, [nid], lnids) testRules mmGroup
+      say $ "withTrackingStations => " ++ show rc
       action $ TestArgs eq chan rc
     )
 

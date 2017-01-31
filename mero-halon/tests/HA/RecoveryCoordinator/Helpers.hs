@@ -30,11 +30,22 @@ import HA.Services.SSPL.Rabbit
 import Network.CEP (Published(..))
 import Network.Transport (Transport(..))
 import RemoteTables (remoteTable)
+import System.Directory (getCurrentDirectory)
+import Test.Framework (TestTree, withTmpDirectory)
+import Test.Tasty.HUnit (testCase)
 import TestRunner
+import Text.Printf (printf)
 
 -- | Run the test with some common test parameters
 runDefaultTest :: Transport -> Process () -> IO ()
 runDefaultTest transport act = runTest 1 20 15000000 transport testRemoteTable $ \_ -> act
+
+-- | Tag a test with @[require-mero]@ and run it inside a temporary
+-- directory.
+testMero :: String -> IO () -> IO TestTree
+testMero n act = withTmpDirectory $ do
+  dir <- getCurrentDirectory
+  return $ testCase (printf "[require-mero] %s (%s)" n dir) act
 
 testRemoteTable :: RemoteTable
 testRemoteTable = TestRunner.__remoteTableDecl remoteTable

@@ -1,72 +1,56 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
-module HA.Castor.Tests ( tests ) where
+{-# LANGUAGE TypeFamilies    #-}
+-- |
+-- Module    : HA.Castor.Tests
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- General Castor-related tests
+module HA.Castor.Tests (tests) where
 
-import Control.Concurrent (newEmptyMVar, putMVar, takeMVar)
-import Control.Distributed.Process
-  ( Process
-  , RemoteTable
-  , liftIO
-  , getSelfNode
-  , unClosure
-  )
-import Control.Distributed.Process.Internal.Types (nullProcessId)
-import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Node
-import Control.Monad (forM_, join, unless)
-
-import Data.List (partition)
-import Data.Foldable (for_)
+import           Control.Concurrent (newEmptyMVar, putMVar, takeMVar)
+import           Control.Distributed.Process
+  (Process, RemoteTable, liftIO, getSelfNode, unClosure)
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Internal.Types (nullProcessId)
+import           Control.Distributed.Process.Node
+import           Control.Monad (forM_, join, unless)
+import           Data.Foldable (for_)
+import           Data.List (partition, nub)
+import           Data.Maybe (catMaybes)
+import           Data.Proxy
 import qualified Data.Set as Set
-
-import Network.Transport (Transport)
-import Network.CEP
-  ( Application(..)
-  , Buffer
-  , PhaseM
-  , emptyFifoBuffer
-  )
-import Network.CEP.Testing (runPhase, runPhaseGet)
-
-import HA.Multimap
-import HA.Multimap.Implementation (Multimap, fromList)
-import HA.Multimap.Process (startMultimap)
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Mero.Actions.Failure
-import HA.RecoveryCoordinator.Mero.Failure.Simple
-import HA.RecoveryCoordinator.Castor.Cluster.Events
-import HA.RecoveryCoordinator.Castor.Cluster.Actions
+import           Data.Typeable
+import           HA.Multimap
+import           HA.Multimap.Implementation (Multimap, fromList)
+import           HA.Multimap.Process (startMultimap)
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Cluster.Actions
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Mero.Actions.Failure
+import           HA.RecoveryCoordinator.Mero.Failure.Simple
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
-import Mero.ConfC (PDClustAttr(..))
-import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
-import HA.Replicator (RGroup(..))
-import HA.Resources
-import HA.Resources.Castor
+import           HA.Replicator (RGroup(..))
+import           HA.ResourceGraph hiding (__remoteTable)
+import           HA.Resources
+import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import HA.ResourceGraph hiding (__remoteTable)
+import           Helper.InitialData
+import           Helper.RC
+import           Mero.ConfC (PDClustAttr(..))
 import qualified Mero.ConfC as ConfC
-
-
-import RemoteTables (remoteTable)
-import TestRunner
-
-import Test.Framework
+import           Network.CEP (Application(..), Buffer, PhaseM, emptyFifoBuffer)
+import           Network.CEP.Testing (runPhase, runPhaseGet)
+import           Network.Transport (Transport)
+import           RemoteTables (remoteTable)
+import           Test.Framework
 import qualified Test.Tasty.HUnit as Tasty
-
-import Helper.InitialData
-import Helper.RC
-import Data.List  (nub)
-import Data.Maybe (catMaybes)
-import Data.Proxy
-import Data.Typeable
-
+import           TestRunner
 
 mmSDict :: SerializableDict (MetaInfo, Multimap)
 mmSDict = SerializableDict
@@ -309,13 +293,13 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
 testClusterLiveness :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
 testClusterLiveness transport pg = testGroup "cluster-liveness"
   [ Tasty.testCase "on-new-cluster"
-       $ genericTest (return ()) 
+       $ genericTest (return ())
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False, clHaveQuorum=True, clPrincipalRM=True}
   , Tasty.testCase "on-broken-confd-quorum-no-rm"
-       $ genericTest (do 
+       $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
                                  , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
@@ -326,9 +310,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
   , Tasty.testCase "on-broken-confd-quorum"
-       $ genericTest (do 
+       $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
                                  , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
@@ -339,9 +323,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=True}
   , Tasty.testCase "on-broken-confd-no-quorum"
-       $ genericTest (do 
+       $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
                                  ]
@@ -352,10 +336,10 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   -- , testCase "ongoing-sns" XXX: not yet implemented, I don't know the good way to test that
   --     without starting proper confd, and just inserting SNS info into the graph will be a fake
   --     test.
-  , Tasty.testCase "on-ios-failure" 
-       $ genericTest (do 
+  , Tasty.testCase "on-ios-failure"
+       $ genericTest (do
            rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
@@ -363,10 +347,10 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            )
        $ Tasty.assertEqual "pvers can be found"
             ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
-  , Tasty.testCase "on-many-ios" 
-       $ genericTest (do 
+  , Tasty.testCase "on-many-ios"
+       $ genericTest (do
            rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg 
+           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]

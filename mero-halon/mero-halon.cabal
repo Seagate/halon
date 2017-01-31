@@ -417,7 +417,8 @@ Test-Suite distributed-tests
                    tasty,
                    tasty-files,
                    tasty-hunit,
-                   options-schema
+                   options-schema,
+                   transformers
   if !flag(distributed-tests)
     Buildable:     False
 
@@ -502,6 +503,7 @@ Test-Suite tests
                     HA.Test.NotificationSort
                     HA.Test.SSPL
                     Helper.SSPL
+                    Helper.Runner
                     RemoteTables
                     TestRunner
                     HA.Castor.Story.Tests
@@ -581,6 +583,7 @@ Test-Suite scheduler-tests
                     HA.Castor.Tests
                     HA.Test.Disconnect
                     Helper.SSPL
+                    Helper.Runner
                     Helper.Environment
                     Helper.InitialData
                     Helper.RC
@@ -637,7 +640,8 @@ Test-Suite scheduler-tests
                     exceptions,
                     stm,
                     split,
-                    lens
+                    lens,
+                    vinyl
 
 benchmark halonpings
   Type:             exitcode-stdio-1.0

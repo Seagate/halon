@@ -56,7 +56,6 @@ test = testCase "ConfigureServices" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 2 $  \ms@[m0, m1] -> do
      runProcess n0 $ do
@@ -68,8 +67,8 @@ test = testCase "ConfigureServices" $
       -- test copying a folder
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond")
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
                                ]
+      copyMeroLibs "localhost" ms
 
       say "Running a remote test command ..."
       systemThere ms ("echo can run a remote command")
@@ -90,14 +89,11 @@ test = testCase "ConfigureServices" $
       waitForRCAndSubscribe [nid0]
 
       say "Starting satellite nodes ..."
-      -- this runs on one node but it should control both nodes (?)
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
-                     ++ " -a " ++ m0loc
                      ++ " -a " ++ m1loc
                      ++ " bootstrap satellite"
                      ++ " -t " ++ m0loc ++ " 2>&1")
-      Just _ <- waitForNewNode nid0 20000000
       Just _ <- waitForNewNode nid1 20000000
 
       say "Starting dummy service ..."

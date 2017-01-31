@@ -1,9 +1,6 @@
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
-
-{-# LANGUAGE CPP #-}
-
 module Main where
 
 import qualified HA.Test.Distributed.Autoboot

@@ -64,7 +64,6 @@ test = testCase "StressRC" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 2 $  \ms@[m0, m1] ->
      runProcess n0 $ do
@@ -76,8 +75,8 @@ test = testCase "StressRC" $
       -- test copying a folder
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond")
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
                                ]
+      copyMeroLibs "localhost" ms
 
       say "Running a remote test command ..."
       systemThere ms ("echo can run a remote command")
@@ -85,7 +84,7 @@ test = testCase "StressRC" $
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."
-      nid0 <- spawnNode_ m0 ("./halond +RTS -N2 -RTS -l " ++ m0loc ++ " 2>&1")
+      nid0 <- spawnNode_ m0 ("./halond -l " ++ m0loc ++ " 2>&1")
       nid1 <- spawnNode_ m1 ("./halond -l " ++ m1loc ++ " 2>&1")
 
       say "Spawning tracking station ..."
@@ -94,12 +93,10 @@ test = testCase "StressRC" $
                      ++ " -a " ++ m0loc
                      ++ " bootstrap station" ++ " 2>&1"
                      )
-
       expectLog [nid0] (isInfixOf "New replica started in legislature://0")
       waitForRCAndSubscribe [nid0]
 
       say "Starting satellite nodes ..."
-      -- this runs on one node but it should control both nodes (?)
       systemThere [m0] ("./halonctl"
                      ++ " -l " ++ halonctlloc m0
                      ++ " -a " ++ m1loc

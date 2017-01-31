@@ -29,13 +29,14 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
--- import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.Services.SSPL.CEP
+import           HA.Services.SSPL.LL.Resources (LoggerCmd(..))
 import           Helper.InitialData
+import qualified Helper.Runner as H
 import           Helper.SSPL
 import           Mero.Notification
 import           Mero.Notification.HAState
@@ -46,14 +47,17 @@ import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
 import           TestRunner
 
-tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
-tests transport pg =
-  [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
-  , testCase "testConfObjectStateQuery" $
-      testConfObjectStateQuery transport pg
-  , testCase "good-conf-loads" $ testGoodConfLoads transport pg
-  , testCase "bad-conf-does-not-load" $ testBadConfDoesNotLoad transport pg
-  ]
+tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> IO [TestTree]
+tests transport pg = do
+  goodConfLoads <- testMero "good-conf-loads" $ testGoodConfLoads transport pg
+  badConfDoesNotLoad <- testMero "bad-conf-does-not-load" $
+    testBadConfDoesNotLoad transport pg
+  return
+    [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
+    , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
+    , goodConfLoads
+    , badConfDoesNotLoad
+    ]
 
 -- | Used by 'testDriveManagerUpdate'
 newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
@@ -62,53 +66,49 @@ newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
 -- | Update receiving a drive failure from SSPL,
 testDriveManagerUpdate :: (Typeable g, RGroup g)
                        => Transport -> Proxy g -> IO ()
-testDriveManagerUpdate transport pg = runDefaultTest transport $ do
-  nid <- getSelfNode
-  self <- getSelfPid
-  iData <- liftIO defaultInitialData
-  let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
-                                            , d <- CI.m0h_devices s ]
-      enc : _ = [ CI.enc_id enc' | r <- CI.id_racks iData
-                                 , enc' <- CI.rack_enclosures r ]
-      respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
+testDriveManagerUpdate transport pg = do
+  iData <- defaultInitialData
+  tos <- H.mkDefaultTestOptions
+  let tos' = tos { H._to_cluster_setup = H.NoSetup
+                 , H._to_initial_data = iData }
+  H.run' transport pg [testRule] tos' $ \ts -> do
+    self <- getSelfPid
+    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
+                                              , d <- CI.m0h_devices s ]
+        enc : _ = [ CI.enc_id enc' | r <- CI.id_racks iData
+                                   , enc' <- CI.rack_enclosures r ]
+        respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
 
-  registerInterceptor $ \case
-    str | "lcType = \\\"HDS\\\"}" `isInfixOf` str ->
-            when (any (interestingSN `isPrefixOf`) (tails str)) $
-              usend self ("OK" :: String)
-        | otherwise -> return ()
-  withTrackingStation pg [testRule] $ \(TestArgs _ mm rc) -> do
-    subscribe rc (Proxy :: Proxy DriveOK)
-    subscribe rc (Proxy :: Proxy NewNodeConnected)
-    subscribe rc (Proxy :: Proxy InitialDataLoaded)
-    nodeUp [nid]
-
-    _ :: NewNodeConnected <- expectPublished
-
-    void $ promulgateEQ [nid] iData
-    InitialDataLoaded <- expectPublished
+    registerInterceptor $ \case
+      str | "lcType = \"HDS\"" `isInfixOf` str ->
+              when (any (interestingSN `isPrefixOf`) (tails str)) $
+                usend self ("OK" :: String)
+          | otherwise -> return ()
+    subscribe (H._ts_rc ts) (Proxy :: Proxy DriveOK)
+    subscribe (H._ts_rc ts) (Proxy :: Proxy LoggerCmd)
 
     sayTest "Sending online message"
-    promulgateEQ [nid] (nid, respDM "OK" "NONE" "/path") >>= flip withMonitor wait
+    _ <- promulgateEQ [processNodeId $ H._ts_rc ts] (processNodeId $ H._ts_rc ts, respDM "OK" "NONE" "/path")
     _ :: DriveOK <- expectPublished
     -- XXX: remove this delay it's needed because graph is not updated immediately
     _ <- receiveTimeout 1000000 []
 
     sayTest "Checking drive status sanity"
-    graph <- G.getGraph mm
-    let [drive] = [StorageDevice interestingSN]
+    graph <- G.getGraph $ H._ts_mm ts
+    let drive = StorageDevice interestingSN
     liftIO . assertBool "drive is resource graph member" $ G.memberResource drive graph
     liftIO . assertBool "status is graph member" $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
 
     sayTest "Sending RunDriveManagerFailure"
-    usend rc $ RunDriveManagerFailure drive
-    liftIO . assertEqual "Drive should be found" ("OK"::String) =<< expect
+    usend (H._ts_rc ts) $ RunDriveManagerFailure drive
+    expectPublished >>= \case
+      LoggerCmd { lcMsg = msg, lcType = "HDS" }
+        | T.pack interestingSN `T.isInfixOf` msg -> return ()
+      lc -> fail $ "Unexpected LoggerCmd: " ++ show lc
   where
     testRule :: Definitions RC ()
     testRule = defineSimple "dmwf-trigger" $ \(RunDriveManagerFailure sd) -> do
       updateDriveManagerWithFailure sd "FAILED" (Just "injected failure")
-
-    wait = void (expect :: Process ProcessMonitorNotification)
 
 -- | Used by rule in 'testConfObjectStateQuery'
 data WaitFailedSDev = WaitFailedSDev ProcessId M0.SDev M0.SDevState
@@ -123,50 +123,44 @@ instance Binary WaitFailedSDevReply
 -- states.
 testConfObjectStateQuery :: (Typeable g, RGroup g)
                          => Transport -> Proxy g -> IO ()
-testConfObjectStateQuery transport pg =
-    runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
-      nid <- getSelfNode
-      self <- getSelfPid
+testConfObjectStateQuery transport pg = do
+  iData <- defaultInitialData
+  tos <- H.mkDefaultTestOptions
+  let tos' = tos { H._to_cluster_setup = H.NoSetup
+                 , H._to_initial_data = iData }
+  H.run' transport pg [waitFailedSDev] tos' $ \ts -> do
+    sayTest "Loading graph."
+    graph <- G.getGraph $ H._ts_mm ts
+    let sdevs = G.getResourcesOfType graph :: [M0.SDev]
+        sdevFids = fmap M0.fid sdevs
+        otherFids =
+             fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
+        failFid : okSDevFids = sdevFids
+        failSDev : _ = sdevs
+        okayFids = okSDevFids ++ otherFids
 
-      sayTest $ "tests node: " ++ show nid
-      withTrackingStation pg [waitFailedSDev] $ \(TestArgs _ mm rc) -> do
-        subscribe rc (Proxy :: Proxy InitialDataLoaded)
-        nodeUp [nid]
-        sayTest "Loading graph."
-        liftIO defaultInitialData >>= void . promulgateEQ [nid]
-        InitialDataLoaded <- expectPublished
+    self <- getSelfPid
+    sayTest "Set to failed one of the objects"
+    usend (H._ts_rc ts) $ WaitFailedSDev self failSDev (getState failSDev graph)
+    Just rep@WaitFailedSDevReply{} <- expectTimeout 20000000
+    sayTest $ "Got reply of " ++ show rep
 
-        graph <- G.getGraph mm
-        let sdevs = G.getResourcesOfType graph :: [M0.SDev]
-            sdevFids = fmap M0.fid sdevs
-            otherFids =
-                 fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Process])
-              ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Root])
-            failFid : okSDevFids = sdevFids
-            failSDev : _ = sdevs
-            okayFids = okSDevFids ++ otherFids
-
-        self' <- getSelfPid
-        sayTest "Set to failed one of the objects"
-        usend rc $ WaitFailedSDev self' failSDev (getState failSDev graph)
-        Just rep@WaitFailedSDevReply{} <- expectTimeout 20000000
-        sayTest $ "Got reply of " ++ show rep
-
-        sayTest "Send Get message to the RC"
-        void $ promulgateEQ [nid] (Get self (failFid : okayFids))
-        GetReply notes <- expect
-        let resultFids = fmap no_id notes
-        liftIO $ assertEqual "Fids should be equal" (sort $ failFid:okayFids) (sort resultFids)
-        let expected = map (flip Note M0_NC_ONLINE) (okayFids)
-              ++ [Note failFid M0_NC_TRANSIENT]
-        liftIO $ assertEqual "result is expected"
-                   (sortBy (compare `on` no_id) expected)
-                   (sortBy (compare `on` no_id) notes)
+    sayTest "Send Get message to the RC"
+    void $ promulgateEQ [processNodeId $ H._ts_rc ts] (Get self (failFid : okayFids))
+    GetReply notes <- expect
+    let resultFids = fmap no_id notes
+    liftIO $ assertEqual "Fids should be equal" (sort $ failFid:okayFids) (sort resultFids)
+    let expected = map (flip Note M0_NC_ONLINE) (okayFids)
+          ++ [Note failFid M0_NC_TRANSIENT]
+    liftIO $ assertEqual "result is expected"
+               (sortBy (compare `on` no_id) expected)
+               (sortBy (compare `on` no_id) notes)
   where
     waitFailedSDev :: Definitions RC ()
     waitFailedSDev = define "testConfObjectStateQuery::wait-failed-sdev" $ do
@@ -187,17 +181,19 @@ testConfObjectStateQuery transport pg =
 
 -- | Helper for conf validation tests.
 testConfLoads :: (Typeable g, RGroup g)
-                  => CI.InitialData -- ^ Initial data to load
-                  -> Transport -> Proxy g
-                  -> (InitialDataLoaded -> Bool) -- ^ Expected load result
-                  -> IO ()
-testConfLoads iData transport pg expectedResultP =
-  runTest 1 20 15000000 transport testRemoteTable $ \_ -> do
+              => CI.InitialData -- ^ Initial data to load
+              -> Transport -- ^ Transport
+              -> Proxy g -- ^ Replicated group type
+              -> (InitialDataLoaded -> Bool) -- ^ Expected load result
+              -> IO ()
+testConfLoads iData transport pg expectedResultP = do
+
+  runDefaultTest transport $ do
     nid <- getSelfNode
     sayTest $ "tests node: " ++ show nid
-    withTrackingStation pg [] $ \(TestArgs _ _ rc) -> do
+    withTrackingStation pg [] $ \ta -> do
       nodeUp [nid]
-      subscribe rc (Proxy :: Proxy InitialDataLoaded)
+      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded)
       void $ promulgateEQ [nid] iData
       r <- expectPublished
       unless (expectedResultP r) $ do

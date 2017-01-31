@@ -68,6 +68,8 @@ test = testCase "TSRecovers2" $
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond") ]
+      copyMeroLibs "localhost" ms
+
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."

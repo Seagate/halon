@@ -85,6 +85,8 @@ sendLoggingCmd :: Host
                -> PhaseM RC l ()
 sendLoggingCmd host req = do
   phaseLog "action" $ "Sending Logger request" ++ show req
+  -- For test purposes, publish the LoggerCmd sent
+  publish req
   rg <- getLocalGraph
   mchan <- listToMaybe . catMaybes <$>
              for (connectedTo host Runs rg) getCommandChannel
@@ -240,7 +242,7 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
                         ] Nothing
   enc <- populateEnclosure enc' sn diskNum
   sdev_loc <- StorageDevice.mkLocation enc diskNum
-  Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing 
+  Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing
   disk <- populateStorageDevice sn path
   M0.associateLocationWithSDev sdev_loc
   fix $ \next -> do
@@ -288,7 +290,7 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
     -- If SSPL doesn't know which enclosure the drive is in, try to
     -- infer it from the drive serial number and info we may have
     -- gotten previously
-    populateEnclosure enc@(Enclosure "HPI_Data_Not_Available") sn diskNum = 
+    populateEnclosure enc@(Enclosure "HPI_Data_Not_Available") sn diskNum =
       StorageDevice.location (StorageDevice sn) >>= \case
         Nothing -> do
           Log.rcLog' Log.WARN ("No enclosure found for drive"::String)
@@ -392,14 +394,14 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
           M0.associateLocationWithSDev sdev_loc
           Log.tagLocalContext sdev Nothing
           Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
-          Log.rcLog Log.ERROR 
+          Log.rcLog Log.ERROR
             ("Insertion in a slot where previous device was inserted - removing old device.":: String)
           asdev `StorageDevice.ejectFrom` sdev_loc
           notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
         next
       Left (StorageDevice.InAnotherSlot slot) -> do
         M0.associateLocationWithSDev slot
-        Log.rcLog' Log.ERROR 
+        Log.rcLog' Log.ERROR
           ("Storage device was associated with another slot.":: String)
         StorageDevice.ejectFrom sdev slot
         notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered

@@ -6,14 +6,17 @@
 
 module HA.Test.Distributed.Helpers where
 
+import Control.Distributed.Commands.Management (copyFilesMove, HostName)
 import Control.Distributed.Process
-import Data.Proxy
+import Control.Monad.IO.Class (MonadIO)
 import Data.Maybe
-import HA.RecoveryCoordinator.RC.Events.Cluster
+import Data.Proxy
 import HA.RecoveryCoordinator.RC
+import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.Resources
 import Network.CEP hiding (timeout)
 import System.Environment
+import System.FilePath ((</>))
 
 -- | Requests 'ProcessId' of the RC. Uses the EQ running on the
 -- given 'NodeId'. Subscribes to events that may be interesting to
@@ -39,5 +42,16 @@ dummyAlreadyLine = "[Service:dummy] already running"
 pingStartedLine :: String
 pingStartedLine = "[Service:ping] starting at "
 
-getMeroPath :: IO String
-getMeroPath = fromMaybe "/mero" <$> lookupEnv "MERO_ROOT"
+-- | Copy mero system library and its dependencies to the given hosts
+copyMeroLibs :: MonadIO m => HostName -> [HostName] -> m ()
+copyMeroLibs lh ms = liftIO $ do
+  meroPath <- fromMaybe "/mero" <$> lookupEnv "MERO_ROOT"
+  copyFilesMove lh ms
+    [ (meroPath </> "mero/.libs/libmero.so.1", "/usr/lib64/libmero.so.1", "libmero.so.1")
+    , ("/lib64/libaio.so.1", "/usr/lib64/libaio.so.1", "libaio.so.1")
+    , ("/lib64/libyaml-0.so.2", "/usr/lib64/libyaml-0.so.2", "libyaml-0.so.2")
+    , ( meroPath </> "extra-libs/gf-complete/src/.libs/libgf_complete.so.1"
+      , "/usr/lib64/libgf_complete.so.1"
+      , "libgf_complete.so.1"
+      )
+    ]

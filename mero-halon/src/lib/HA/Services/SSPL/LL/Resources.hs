@@ -262,6 +262,7 @@ data LoggerCmd = LoggerCmd
        , lcLevel :: T.Text
        , lcType  :: T.Text
        } deriving (Eq, Show, Generic, Typeable)
+instance Binary LoggerCmd
 
 -- | Actuator reply.
 data AckReply = AckReplyPassed       -- ^ Request succesfully processed.

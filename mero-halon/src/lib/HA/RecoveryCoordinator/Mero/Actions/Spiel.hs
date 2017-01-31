@@ -63,6 +63,7 @@ import qualified HA.ResourceGraph as G
 import HA.Resources (Has(..), Cluster(..))
 import HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
+import HA.Resources.HalonVars
 import HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
@@ -481,14 +482,18 @@ mkSyncAction lstate next = do
 --   and take them and resubscribe later.
 syncToBS :: PhaseM RC l BS.ByteString
 syncToBS = loadConfData >>= \case
-  Just tx -> do
-    M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
-    wrk <- DP.liftIO $ newM0Worker
-    bs <- txOpenLocalContext (mkLiftRC wrk)
-      >>= txPopulate (mkLiftRC wrk) tx
-      >>= m0synchronously (mkLiftRC wrk) .flip txToBS verno
-    DP.liftIO $ terminateM0Worker wrk
-    return bs
+  Just tx -> getHalonVar _hv_mero_workers_allowed >>= \case
+    True -> do
+      M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
+      wrk <- DP.liftIO $ newM0Worker
+      bs <- txOpenLocalContext (mkLiftRC wrk)
+        >>= txPopulate (mkLiftRC wrk) tx
+        >>= m0synchronously (mkLiftRC wrk) . flip txToBS verno
+      DP.liftIO $ terminateM0Worker wrk
+      return bs
+    False -> do
+      phaseLog "warn" "syncToBS: returning empty string due to HalonVars"
+      return $! BS.empty
   Nothing -> error "Cannot load configuration data from graph."
 
 data Synchronized = Synchronized (Maybe Int) (Either String ()) deriving (Generic, Show)
@@ -748,19 +753,25 @@ validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
 validateTransactionCache = loadConfData >>= \case
   Nothing -> do
     phaseLog "spiel" "validateTransactionCache: loadConfData failed"
-    return (Right Nothing)
+    return $! Right Nothing
   Just x -> do
     phaseLog "spiel" "validateTransactionCache: validating context"
-    -- We can use withSpielRC because SpielRC require ha_interface to be started
-    -- in order to read spiel context out of it. However we may not be able to
-    -- start ha_interface because it require configuraion to be loaded. And this
-    -- call can be run on unbootstrapped cluster.
-    wrk <- DP.liftIO $ newM0Worker
-    r <- try $ txOpenLocalContext (mkLiftRC wrk)
-           >>= txPopulate (mkLiftRC wrk) x
-           >>= m0synchronously (mkLiftRC wrk) . txValidateTransactionCache
-    DP.liftIO $ terminateM0Worker wrk
-    return r
+    getHalonVar _hv_mero_workers_allowed >>= \case
+      True -> do
+        -- We can use withSpielRC because SpielRC require ha_interface
+        -- to be started in order to read spiel context out of it.
+        -- However we may not be able to start ha_interface because it
+        -- require configuraion to be loaded. And this call can be run
+        -- on unbootstrapped cluster.
+        wrk <- DP.liftIO newM0Worker
+        r <- try $ txOpenLocalContext (mkLiftRC wrk)
+               >>= txPopulate (mkLiftRC wrk) x
+               >>= m0synchronously (mkLiftRC wrk) . txValidateTransactionCache
+        DP.liftIO $ terminateM0Worker wrk
+        return r
+      False -> do
+        phaseLog "warn" "validateTransactionCache: disabled by HalonVars"
+        return $! Right Nothing
 
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM RC l (Maybe M0.SpielAddress)

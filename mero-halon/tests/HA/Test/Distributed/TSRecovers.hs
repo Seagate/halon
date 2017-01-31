@@ -59,7 +59,6 @@ test = testCase "TSRecovers" $
   withLocalNode nt (__remoteTable initRemoteTable) $ \n0 -> do
     cp <- getProvider
     buildPath <- getBuildPath
-    meroPath <- getMeroPath
 
     withHostNames cp 3 $  \ms@[m0, m1, m2] ->
      runProcess n0 $ do
@@ -71,8 +70,8 @@ test = testCase "TSRecovers" $
       say "Copying binaries ..."
       copyFiles "localhost" ms [ (buildPath </> "halonctl/halonctl", "halonctl")
                                , (buildPath </> "halond/halond", "halond")
-                               , (meroPath </> "mero/.libs/libmero.so", "/usr/lib64/")
                                ]
+      copyMeroLibs "localhost" ms
       getSelfPid >>= copyLog (const True)
 
       say "Spawning halond ..."

@@ -12,6 +12,7 @@ module Control.Distributed.Commands
   , systemThereAsUser
   , systemLocal
   , scp
+  , scpMove
   , ScpPath(..)
   , waitForCommand
   , waitForCommand_
@@ -68,6 +69,39 @@ scp src dst =
   where
     showPath (LocalPath f) = f
     showPath (RemotePath mu h f) = maybe "" (++ "@") mu ++ h ++ ":" ++ f
+
+-- | @sc src dst fileName@
+--
+-- Copies files with @scp@ but instead of using the destination
+-- directly, it @mv@s the file from the default directory. If the
+-- destination is local, falls back to 'scp'.
+scpMove :: ScpPath -> ScpPath -> FilePath -> IO ()
+scpMove src (RemotePath _ host path) name = do
+  (_, _, _, ph) <- createProcess $
+    proc "scp" [ "-r"
+               , "-o", "UserKnownHostsFile=/dev/null"
+               , "-o", "StrictHostKeyChecking=no"
+               , showPath src
+               , host ++ ":"
+               ]
+  ret <- waitForProcess ph
+  case ret of
+    ExitSuccess -> return ()
+    ExitFailure r -> throwIO $ userError $ "scp exit code " ++ show r
+  (_, _, _, ph') <- createProcess $
+    proc "ssh" [ "-o", "UserKnownHostsFile=/dev/null"
+               , "-o", "StrictHostKeyChecking=no"
+               , host
+               , "mv " ++ name ++ " " ++ path
+               ]
+  ret' <- waitForProcess ph'
+  case ret' of
+    ExitSuccess -> return ()
+    ExitFailure r -> throwIO $ userError $ "ssh exit code " ++ show r
+  where
+    showPath (LocalPath f) = f
+    showPath (RemotePath mu h f) = maybe "" (++ "@") mu ++ h ++ ":" ++ f
+scpMove src dst _ = scp src dst
 
 -- | A remote version of 'System.Process.system'.
 --
