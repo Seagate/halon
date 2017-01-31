@@ -47,17 +47,13 @@ import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
 import           TestRunner
 
-tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> IO [TestTree]
-tests transport pg = do
-  goodConfLoads <- testMero "good-conf-loads" $ testGoodConfLoads transport pg
-  badConfDoesNotLoad <- testMero "bad-conf-does-not-load" $
-    testBadConfDoesNotLoad transport pg
-  return
-    [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
-    , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
-    , goodConfLoads
-    , badConfDoesNotLoad
-    ]
+tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
+tests transport pg =
+  [ testCase "testDriveManagerUpdate" $ testDriveManagerUpdate transport pg
+  , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
+  , testMero "good-conf-loads" $ testGoodConfLoads transport pg
+  , testMero "bad-conf-does-not-load" $ testBadConfDoesNotLoad transport pg
+  ]
 
 -- | Used by 'testDriveManagerUpdate'
 newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
