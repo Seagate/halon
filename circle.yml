@@ -61,13 +61,10 @@ test:
         background: true
     # Build with USE_MERO and then without.
     - stack $STACK_FLAGS build --test --no-run-tests --flag mero-halon:mero --haddock --no-haddock-deps
-    - stack $STACK_FLAGS build --flag mero-halon:distributed-tests --test --no-run-tests --haddock --no-haddock-deps
-    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:tests halon:tests mero-halon:tests:
+    - stack $STACK_FLAGS build --test --no-run-tests --haddock --no-haddock-deps
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build  replicated-log:tests halon:tests mero-halon:tests:
         timeout: 3600
-    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build --flag mero-halon:distributed-tests replicated-log:random replicated-log:scheduler-tests halon:scheduler-tests mero-halon:scheduler-tests:
-        timeout: 3600
-    # scp fails in distributed tests unless we restrict permissions on the config file.
-    - chmod 600 .stack-work/docker/_home/.ssh/config; stack $STACK_FLAGS $STACK_TEST_FLAGS build --flag mero-halon:distributed-tests mero-halon:distributed-tests:
+    - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build  replicated-log:random replicated-log:scheduler-tests halon:scheduler-tests mero-halon:scheduler-tests:
         timeout: 3600
     - scripts/copy_artifacts.sh "${CIRCLE_ARTIFACTS}"
 
