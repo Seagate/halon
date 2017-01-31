@@ -137,7 +137,8 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
                       ("wwn" ++ show w ++ "_" ++ show j)
                       ("serial" ++ show w ++ "_" ++ show j)
                       4 64000
-                      ("/dev/loop" ++ show w ++ "_" ++ show j))
+                      ("/dev/loop" ++ show w ++ "_" ++ show j)
+                      j)
               [(1 :: Int) .. _id_drives]
           })
       serverAddrs

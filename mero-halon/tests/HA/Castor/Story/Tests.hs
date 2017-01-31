@@ -22,7 +22,6 @@ import           Control.Lens hiding (to)
 import           Control.Monad (forM_, replicateM_, void)
 import           Data.Aeson (decode, encode)
 import qualified Data.Aeson.Types as Aeson
-import           Data.Binary (Binary)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Maybe (isJust, listToMaybe, maybeToList)
 import           Data.Proxy
@@ -30,7 +29,6 @@ import           Data.Text (pack)
 import           Data.Typeable
 import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
-import           GHC.Generics (Generic)
 import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.Multimap
@@ -51,8 +49,8 @@ import           HA.Resources.Mero.Note
 import           HA.Services.SSPL
 import           HA.Services.SSPL.LL.Resources
 import           HA.Services.SSPL.Rabbit
-import           Helper.SSPL
 import           Helper.Runner
+import           Helper.SSPL
 import           Mero.ConfC (Fid(..))
 import           Mero.Notification.HAState
 import           Network.AMQP
@@ -65,12 +63,12 @@ import           Test.Tasty.HUnit (assertEqual, assertFailure)
 ssplTimeout :: Int
 ssplTimeout = 10*1000000
 
-data ThatWhichWeCallADisk = ADisk {
-    aDiskSD :: StorageDevice -- ^ Has a storage device
+data ThatWhichWeCallADisk = ADisk
+  { aDiskSD :: StorageDevice -- ^ Has a storage device
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
   , aDiskPath :: String -- ^ Has a path
   , aDiskWWN :: String -- ^ Has a WWN
-}
+  } deriving (Show)
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
 mkTests pg = do
@@ -94,8 +92,6 @@ mkTests pg = do
           testDriveRemovedBySSPL transport pg
         , testSuccess "Metadata drive failure reported by IEM" $
           testMetadataDriveFailed transport pg
-        -- , testSuccess "Halon sends list of failed drives at SSPL start" $
-        --   testGreeting transport pg
         , testSuccess "Halon powers down disk on failure" $
           testDrivePoweredDown transport pg
         , testSuccess "RAID reassembles after expander reset" $
@@ -112,23 +108,42 @@ getHostName ts nid = do
     Just (Host hn) -> Just hn
     _ -> Nothing
 
--- | Waits until given object enters state.
+-- | Keep checking RG until the given predicate on it holds. Useful
+-- when notifications from RC don't cut it: for example, a
+-- notification goes out before graph sync. If we rely on notification
+-- and ask for graph, we might still see the old state.
+--
+-- Note that this works on a timeout loop: even if a change in the
+-- graph happened, we're not guaranteed to see it with this. That is,
+-- the graph might update again before we check it and we miss the
+-- update all together therefore this shouldn't be used with
+-- predicates that will only hold momentarily.
+waitUntilGraph :: StoreChan            -- ^ Where to retrieve current RG from.
+               -> Int                  -- ^ Time between retries in seconds.
+               -> Int                  -- ^ Number of retries before giving up.
+               -> (G.Graph -> Maybe a) -- ^ Predicate on the graph.
+               -> Process (Maybe a)
+waitUntilGraph _ _ tries _ | tries <= 0 = return Nothing
+waitUntilGraph mm interval tries p = do
+  rg <- G.getGraph mm
+  case p rg of
+    Nothing -> do
+      _ <- receiveTimeout (interval * 1000000) []
+      waitUntilGraph mm interval (tries - 1) p
+    r -> return r
+
+-- | Waits until given object enters state. Caveats from
+-- 'waitUntilGraph' apply.
 waitState :: HasConfObjectState a
           => a                        -- ^ Object to examine
           -> StoreChan                -- ^ Where to retrieve current RG from.
           -> Int                      -- ^ Time between tries, seconds
-          -> Int                      -- ^ Number of tries
+          -> Int                      -- ^ Number of retries
           -> (StateCarrier a -> Bool) -- ^ Predicate on state
           -> Process (Maybe (StateCarrier a))
-waitState _ _ _ tries _ | tries <= 0 = return Nothing
-waitState obj mm interval tries p = do
-  rg <- G.getGraph mm
+waitState obj mm interval ts p = waitUntilGraph mm interval ts $ \rg ->
   let st = HA.Resources.Mero.Note.getState obj rg
-  if p st
-  then return $ Just st
-  else do
-    _ <- receiveTimeout (interval * 1000000) []
-    waitState obj mm interval (tries - 1) p
+  in if p st then Just st else Nothing
 
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg =
@@ -148,7 +163,7 @@ findSDev rg =
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
 findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe Enclosure
-findDiskEnclosure disk rg = G.connectedFrom Has (aDiskSD disk) rg
+findDiskEnclosure disk rg = slotEnclosure <$> G.connectedTo (aDiskSD disk) Has rg
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
@@ -165,14 +180,45 @@ find2SDev rg =
                error "Unreachable"
 
 -- | Check if specified device have RemovedAt attribute.
-checkStorageDeviceRemoved :: String -> Int -> G.Graph -> Bool
-checkStorageDeviceRemoved enc idx rg = not . Prelude.null $
-  [ () | dev  <- G.connectedTo (Enclosure enc) Has rg :: [StorageDevice]
-       , any (==(DIIndexInEnclosure idx))
-             (G.connectedTo dev Has rg :: [DeviceIdentifier])
-       , maybe False (const True) $
-             (G.connectedTo dev Has rg :: Maybe Slot)
+checkStorageDeviceRemoved :: Enclosure -> Int -> G.Graph -> Bool
+checkStorageDeviceRemoved enc idx rg = Prelude.null $
+  [ () | slot@(Slot enc' idx') <- G.connectedTo enc Has rg
+       , Just{} <- [G.connectedFrom Has slot rg :: Maybe StorageDevice]
+       , enc == enc' && idx == idx'
        ]
+
+-- | Announce a new 'StorageDevice' (through 'ThatWhichWeCallADisk')
+-- to the RC through an HPI message. This is useful when the disk is
+-- not in the initial data to begin with such as in the case of
+-- metadata/RAID drives.
+announceNewSDev :: Enclosure -> ThatWhichWeCallADisk -> TestSetup -> Process ()
+announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
+  rg <- G.getGraph (_ts_mm ts)
+  let Host host : _ = G.connectedTo enc Has rg
+      devIdx = succ . maximum . map slotIndex $ G.connectedTo enc Has rg
+      slot = Slot enc devIdx
+      message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
+        (pack host) (pack enclosureName)
+        ((\(StorageDevice sn) -> pack sn) $ aDiskSD sdev) (fromIntegral devIdx)
+        (pack $ aDiskPath sdev)
+        (pack $ aDiskWWN sdev)
+        True True
+  withSubscription [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveInserted) $ do
+    usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+    let isOurDI (DriveInserted _ _ slot' sdev' True) = slot' == slot && sdev' == aDiskSD sdev
+        isOurDI _ = False
+    r <- receiveTimeout 10000000
+      [ matchIf (\(Published v _) -> isOurDI v) (\_ -> return ()) ]
+    case r of
+      Nothing -> fail "announceNewSDev: timed out waiting for DriveInserted"
+      Just{} -> return ()
+  Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
+    -- Check that the drive is reachable from the enclosure, through
+    -- the slot.
+    let devs = [ d | slot'@Slot{} <- G.connectedTo enc Has rg'
+                   , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
+    in return $! if aDiskSD sdev `elem` devs then Just () else Nothing
+  return ()
 
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
 expectNodeMsg = (fmap (fmap snd)) . expectNodeMsgUid
@@ -270,7 +316,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
   Just enc <- findDiskEnclosure adisk <$> G.getGraph mm
   rg <- G.getGraph mm
   Just node <- return $ do
-    e :: Enclosure <- G.connectedFrom Has (aDiskSD adisk) rg
+    e :: Enclosure <- findDiskEnclosure adisk rg
     listToMaybe $ do
       h :: Host <- G.connectedTo e Has rg
       G.connectedTo h Runs rg
@@ -348,14 +394,16 @@ testSecondReset transport pg = run transport pg [] $ \ts -> do
   resetComplete (_ts_rc ts) (_ts_mm ts) sdev2 AckReplyPassed
   resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
 
--- | SSPL emits EMPTY_None event for one of the drives.
+-- | Test that when a message about a drive marked as not installed
+-- arrives to SSPL, the drive is removed from the slot and eventually
+-- becomes transient.
 testDriveRemovedBySSPL :: (Typeable g, RGroup g)
                        => Transport -> Proxy g -> IO ()
 testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveRemoved)
   rg <- G.getGraph (_ts_mm ts)
   sdev <- findSDev rg
-  let Just (Enclosure enclosureName) = findDiskEnclosure sdev rg
+  let Just enc@(Enclosure enclosureName) = findDiskEnclosure sdev rg
 
   -- Find the host on which this device is actually on
   Just (Host host) <- return $ do
@@ -363,35 +411,27 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
     c :: M0.Controller <- G.connectedFrom M0.IsParentOf d rg
     G.connectedTo c M0.At rg
 
-  let devIdx    = 1
-      message0 = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
+  let Just (Slot _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
+      message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
                   (pack host) (pack enclosureName)
                   (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
                   (fromIntegral devIdx)
                   (pack $ aDiskPath sdev)
                   (pack $ aDiskWWN sdev)
                   False True
-      message = LBS.toStrict $ encode $ mkSensorResponse
-         $ emptySensorMessage
-            { sensorResponseMessageSensor_response_typeDisk_status_drivemanager =
-              Just $ mkResponseDriveManager (pack enclosureName)
-                                            (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
-                                            devIdx "EMPTY" "None"
-                                            (pack $ aDiskPath sdev) }
-  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message0
+  -- For now the device is still in the slot.
+  False <- checkStorageDeviceRemoved enc devIdx <$> G.getGraph (_ts_mm ts)
   usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
   Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
-  _ <- receiveTimeout 1000000 []
-  sayTest "Drive is not removed yet."
-  False <- checkStorageDeviceRemoved enclosureName devIdx <$> G.getGraph (_ts_mm ts)
 
-  -- XXX: dirty hack: deviceDetach call in mkDetachDisk can't
-  -- complete (or even begin) without m0worker. To arrange a mero
-  -- worker, we need a better test that also sets up (and tears
-  -- down) env than this one here. To temporarily unblock this test,
-  -- we "pretend" that the detach went OK by sending the message
-  -- that mkDetachDisk would send on successful detach: this is the
-  -- message the rule is waiting for.
+  -- Wait until drive gets removed from the slot.
+  Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
+    let devs = [ d | slot'@Slot{} <- G.connectedTo enc Has rg'
+                   , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
+    in if aDiskSD sdev `notElem` devs then Just () else Nothing
+
+  -- ruleDriveRemoved.mkDetachDisk.detachDisk can't work without mero
+  -- worker. Simply emit the event as if the device got detached.
   forM_ (aDiskMero sdev) $ \sd -> do
     usend (_ts_rc ts) $ SpielDeviceDetached sd (Right ())
     Just{} <- waitState sd (_ts_mm ts) 2 10 $ \case
@@ -409,7 +449,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   disk <- findSDev rg
   let Just enc = findDiskEnclosure disk rg
   Just node <- return $ do
-    e :: Enclosure <- G.connectedFrom Has (aDiskSD disk) rg
+    e <- findDiskEnclosure disk rg
     listToMaybe $ do
        h :: Host <- G.connectedTo e Has rg
        G.connectedTo h Runs rg
@@ -442,6 +482,14 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just hostname <- getHostName ts $ localNodeId someJoinedNode
+  Just enc <- G.connectedFrom Has (Host hostname) <$> G.getGraph (_ts_mm ts)
+  let sdev1 = ADisk (StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
+      sdev2 = ADisk (StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
+
+  sayTest "Announcing metadata drives through HPI"
+  announceNewSDev enc sdev1 ts
+  announceNewSDev enc sdev2 ts
+
   let raidDevice = "/dev/raid"
       raidData = mkResponseRaidData (pack hostname) raidDevice
                                     [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
@@ -452,6 +500,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
                                $ emptySensorMessage {
                                   sensorResponseMessageSensor_response_typeRaid_data = Just raidData
                                 }
+
   usend (_ts_rmq ts) $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
   usend (_ts_rmq ts) . MQSubscribe "sspl_iem" =<< getSelfPid
 
@@ -481,7 +530,8 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
   let [sd]  = [ d |  e :: Enclosure <- maybeToList $ G.connectedFrom Has (Host hostname) rg
-                  ,  d :: StorageDevice <- G.connectedTo e Has rg
+                  ,  s :: Slot <- G.connectedTo e Has rg
+                  ,  d :: StorageDevice <- maybeToList $ G.connectedFrom Has s rg
                   , di <- G.connectedTo d Has rg
                   , di == DIPath "/dev/mddisk2"
                   ]
@@ -514,10 +564,6 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   sayTest "Raid_data message processed by RC"
 
--- | Message used in 'testGreeting'
-newtype MarkDriveFailed = MarkDriveFailed ProcessId
-  deriving (Generic, Typeable, Binary)
-
 type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)
 
 testExpanderResetRAIDReassemble :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -533,6 +579,14 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   -- alternative would be to pick one from RG.
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just host <- getHostName ts $ localNodeId someJoinedNode
+  Just enc' <- G.connectedFrom Has (Host host) <$> G.getGraph (_ts_mm ts)
+  let sdev1 = ADisk (StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
+      sdev2 = ADisk (StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
+
+  sayTest "Announcing metadata drives through HPI"
+  announceNewSDev enc' sdev1 ts
+  announceNewSDev enc' sdev2 ts
+
   let raidDevice = "/dev/raid"
       raidData = mkResponseRaidData (pack host) raidDevice
                                       [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok

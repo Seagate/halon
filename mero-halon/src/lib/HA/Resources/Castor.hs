@@ -110,7 +110,6 @@ deriveSafeCopy 0 'base ''StorageDeviceAttr
 -- | Arbitrary identifier for a logical or storage device
 data DeviceIdentifier =
       DIPath String
-    | DIIndexInEnclosure Int
     | DIWWN String
     | DIUUID String
     | DIRaidIdx Int -- Index in RAID array
@@ -267,7 +266,6 @@ $(mkDicts
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
-  , (''Enclosure, ''Has, ''StorageDevice)
   , (''Enclosure, ''Has, ''Slot)
   , (''StorageDevice, ''Has, ''Slot)
   , (''Enclosure, ''Has, ''Host)
@@ -298,7 +296,6 @@ $(mkResRel
   , (''Host, AtMostOne, ''Has, Unbounded, ''MI.Interface)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
-  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''StorageDevice)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''MI.BMC)
   , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)

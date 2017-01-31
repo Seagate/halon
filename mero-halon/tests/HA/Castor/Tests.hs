@@ -17,7 +17,7 @@ import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless)
 import           Data.Foldable (for_)
 import           Data.List (partition, nub)
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
 import qualified Data.Set as Set
 import           Data.Typeable
@@ -215,7 +215,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
-    (Just fs) <- runGet ls' getFilesystem
+    Just fs <- runGet ls' getFilesystem
     let mdpool = M0.Pool (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
       $ memberResource mdpool (lsGraph ls')
@@ -235,7 +235,9 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
         ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
         disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
         enc   = catMaybes $ fmap (\r -> connectedFrom Has r g :: Maybe Enclosure) hosts
-        sdevs = join $ fmap (\r -> connectedTo r Has g :: [StorageDevice]) enc
+        sdevs = join $ fmap (\r -> [ d | s <- connectedTo r Has g :: [Slot]
+                                       , d <- maybeToList (connectedFrom Has s g :: Maybe StorageDevice) ])
+                            enc
         disksByHost = catMaybes $ fmap (\r -> connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
 
         disk1 = head disks

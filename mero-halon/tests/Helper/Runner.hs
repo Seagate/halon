@@ -304,9 +304,6 @@ run' transport pg extraRules to test = do
     withTrackingStations pg (testRules:extraRules) ts_nodes $ \ta -> do
       let rcNodeId = processNodeId $ ta_rc ta
       link (ta_rc ta)
-      -- Before we do much of anything, set a mock halon:m0d in the RG
-      -- so that nothing tries to run the real deal.
-
       self <- getSelfPid
 
       -- Start satellites before initial data is loaded as otherwise
@@ -381,6 +378,8 @@ run' transport pg extraRules to test = do
               loopStarted nids
             sayTest "All halon:m0d mock instances populated."
 
+      -- Before we do much of anything, set a mock halon:m0d in the RG
+      -- so that nothing tries to run the real deal.
       let mockMsg = MockM0 self (_to_cluster_setup to == HalonM0DOnly)
       usend (ta_rc ta) mockMsg
       receiveWait [ matchIf (\m -> m == mockMsg) (\_ -> return ()) ]
@@ -402,7 +401,6 @@ run' transport pg extraRules to test = do
           startM0Ds
         NoSetup -> sayTest "No setup requested."
 
-      -- TODO: We should only spawn this when SSPL is spawned.
       rmq <- case _to_run_sspl to of
         True -> do
           rmq <- spawnMockRabbitMQ self
