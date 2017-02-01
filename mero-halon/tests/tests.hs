@@ -40,7 +40,6 @@ tests transport breakConnection = do
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processTests <- HA.Castor.Story.Process.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
-  meroTests <- HA.RecoveryCoordinator.Mero.Tests.tests transport pg
   return $ testGroup "mero-halon:tests"
       [ testGroup "RC" $ HA.RecoveryCoordinator.Tests.tests transport pg
       , testGroup "Autoboot" $ HA.Autoboot.Tests.tests transport
@@ -48,7 +47,7 @@ tests transport breakConnection = do
       , testGroup "Castor" $ HA.Castor.Tests.tests transport pg
       , testGroup "DriveFailure" $ driveFailureTests transport
       , testGroup "InternalStateChanges" $ internalSCTests transport
-      , testGroup "Mero" meroTests
+      , testGroup "Mero" $ HA.RecoveryCoordinator.Mero.Tests.tests transport pg
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests
       , testGroup "Process" $ processTests transport
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
