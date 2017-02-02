@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
     initialiseConfInRG
   , loadMeroServers
   , createMDPoolPVer
+  , createIMeta
     -- ** Get all objects of type
   , getProfile
   , getFilesystem
@@ -57,6 +58,7 @@ import           Data.List (scanl')
 import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
 import           Data.Proxy
 import qualified Data.Set as Set
+import           Data.Traversable (for)
 import           Data.Typeable (Typeable)
 import           HA.RecoveryCoordinator.Actions.Hardware
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
@@ -77,6 +79,7 @@ import           Mero.ConfC
   , ServiceType(..)
   , Word128(..)
   , bitmapFromArray
+  , m0_fid0
   )
 import           Network.CEP
 import           Text.Regex.TDFA ((=~))
@@ -101,8 +104,11 @@ initialiseConfInRG = getFilesystem >>= \case
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+      -- Note that this FID will actually be overwritten by `createIMeta`
+      imeta_fid <- newFidRC (Proxy :: Proxy M0.PVer)
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid mdpool)
+                          <*> return imeta_fid
       modifyGraph
           $ G.connect Cluster Has profile
         >>> G.connect Cluster Has M0.OFFLINE
@@ -267,10 +273,75 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
       , _pa_unit_size = 4096
       , _pa_seed = Word128 101 101
     }
-    pver = PoolVersion fids failures attrs
+    pver = PoolVersion Nothing fids failures attrs
   in do
+    Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
     phaseLog "info" $ "Creating PVer in metadata pool: " ++ show pver
     modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
+
+-- | Create an imeta_pver along with all associated structures. This should
+--   create:
+--   - A (fake) disk entity for each CAS service in the graph.
+--   - A single top-level pool for the imeta service.
+--   - A single (actual) pool version in this pool containing all above disks.
+--   Since the disks created here are fake, they will not have an associated
+--   'StorageDevice'.
+--
+--   If there are no CAS services in the graph, then we have a slight
+--   problem, since it is invalid to have a zero-width pver (e.g. a pver with
+--   no associated devices). In this case, we use the special FID 'M0_FID0'
+--   in the 'f_imeta_pver' field. This should validate correctly in Mero iff
+--   there are no CAS services.
+createIMeta :: M0.Filesystem -> PhaseM RC l ()
+createIMeta fs = do
+  Log.actLog "createIMeta" [("fs", M0.showFid fs)]
+  pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+  rg <- getLocalGraph
+  let cas = [ (rack, encl, ctrl, srv)
+            | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
+            , proc <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
+            , srv <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
+            , M0.s_type srv == CST_CAS
+            , Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
+            , Just encl <- [G.connectedFrom M0.IsParentOf ctrl rg :: Maybe M0.Enclosure]
+            , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
+            ]
+      attrs = PDClustAttr {
+                _pa_N = fromIntegral $ length cas
+              , _pa_K = 0
+              , _pa_P = 0 -- Will be overridden
+              , _pa_unit_size = 4096
+              , _pa_seed = Word128 101 102
+              }
+      failures = Failures 0 0 0 1 0
+  fids <- for (zip cas [0.. length cas]) $ \((rack, encl, ctrl, srv), idx) -> do
+    sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
+                    <*> return (fromIntegral idx)
+                    <*> return 1024
+                    <*> return 1
+                    <*> return "/dev/null"
+    disk <- M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
+    modifyGraph
+        $ G.connect ctrl M0.IsParentOf disk
+      >>> G.connect sdev M0.IsOnHardware disk
+      >>> G.connect srv M0.IsParentOf sdev
+    return [M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
+
+  let pver = PoolVersion (Just $ M0.f_imeta_fid fs)
+                          (Set.unions $ Set.fromList <$> fids) failures attrs
+      -- If there are no CAS services then we need to replace the Filesystem
+      -- entity with one containing the special M0_FID0 value. We can't do this
+      -- before since we create the filesystem before we create services in the
+      -- graph.
+      updateGraph = if null cas
+        then G.mergeResources head
+                [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
+        else createPoolVersionsInPool fs pool [pver] False
+
+  modifyGraph
+      $ G.connect fs M0.IsParentOf pool
+    >>> updateGraph
+
 --------------------------------------------------------------------------------
 -- Querying conf in RG
 --------------------------------------------------------------------------------

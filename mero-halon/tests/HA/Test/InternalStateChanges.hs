@@ -10,7 +10,7 @@ module HA.Test.InternalStateChanges (mkTests) where
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E
 import           Data.Binary (Binary)
-import           Data.List (sort)
+import           Data.List (nub, sort)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -130,12 +130,15 @@ failvecCascade t pg = do
               [ pool | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg'
               , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg'
+              , (pver :: M0.PVer) <- G.connectedTo pool M0.IsRealOf rg'
+              , M0.fid pool /= M0.f_mdpool_fid fs
+              , M0.fid pver /= M0.f_imeta_fid fs
               ]
           mvs :: [M0.Disk]
-          mvs = concat $ mapMaybe
+          mvs = nub . sort . concat $ mapMaybe
                 (\pl -> (\(M0.DiskFailureVector v) -> v) <$> G.connectedTo pl Has rg')
                 pools
-          allOK = sort mvs == sort disks
+          allOK = mvs == sort disks
                   && getState d0 rg' == M0.SDSFailed
                   && getState d1 rg' == M0.SDSFailed
           msg = if allOK

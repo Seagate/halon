@@ -133,6 +133,7 @@ foreign import ccall "spiel/spiel.h m0_spiel_filesystem_add"
                          -> CUInt   -- ^ metadata redundancy count
                          -> Ptr Fid -- ^ root's fid of filesystem
                          -> Ptr Fid -- ^ metadata pool
+                         -> Ptr Fid -- ^ imeta pver
                          -> Ptr (Ptr CChar) -- ^ NULL-terminated array of command-line like parameters
                          -> IO CInt
 

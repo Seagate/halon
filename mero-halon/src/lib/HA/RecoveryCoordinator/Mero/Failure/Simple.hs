@@ -60,7 +60,7 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
        Just (chunks,fs, attrs) -> Just $ \sync ->
          let go g [] = return g
              go g (c:cs) =
-                let pvs = fmap (\(fs', fids) -> PoolVersion fids fs' attrs) c
+                let pvs = fmap (\(fs', fids) -> PoolVersion Nothing fids fs' attrs) c
                 in do g' <- sync $ createPoolVersions fs pvs True g
                       go g' cs
          in go rg chunks

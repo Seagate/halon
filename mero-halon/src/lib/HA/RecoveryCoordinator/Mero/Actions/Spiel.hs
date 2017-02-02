@@ -649,7 +649,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   m0synchronously lift $ do
     addProfile t pfid
-    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid [fsParams]
+    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
   phaseLog "spiel" "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]

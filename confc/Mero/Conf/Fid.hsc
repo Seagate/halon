@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -13,7 +14,7 @@
 -- stored in the filesystem.
 --
 module Mero.Conf.Fid
-  ( Fid(..), fidToStr, strToFid ) where
+  ( Fid(..), fidToStr, strToFid , m0_fid0) where
 
 #include "confc_helpers.h"
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__);}, y__)
@@ -74,3 +75,6 @@ instance Storable Fid where
                             (#{peek struct m0_fid, f_key} p)
   poke      p (Fid c k) = do #{poke struct m0_fid, f_container} p c
                              #{poke struct m0_fid, f_key} p k
+-- | @fid/fid.h M0_FID0@
+m0_fid0 :: Fid
+m0_fid0 = Fid 0 0

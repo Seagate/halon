@@ -85,7 +85,7 @@ test = do
 transaction :: String -> String -> SpielTransaction -> IO ()
 transaction server1_endpoint server2_endpoint tx = do
   addProfile tx (fids "profile")
-  addFilesystem tx (fids "fs") (fids "profile") 10 (fids "profile") (fids "pool") ["4 2 1"]
+  addFilesystem tx (fids "fs") (fids "profile") 10 (fids "profile") (fids "pool") (fids "pver") ["4 2 1"]
   addPool tx (fids "pool") (fids "fs") 2
   addRack tx (fids "rack") (fids "fs")
   addEnclosure tx (fids "encl") (fids "rack")
