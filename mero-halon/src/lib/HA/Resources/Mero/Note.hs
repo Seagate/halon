@@ -90,6 +90,7 @@ instance Hashable ConfObjectState
 instance ToJSON ConfObjectState
 instance FromJSON ConfObjectState
 
+-- | Pretty formatting of 'ConfObjectState'.
 prettyConfObjState :: ConfObjectState -> String
 prettyConfObjState M0_NC_UNKNOWN   = "N/A"
 prettyConfObjState M0_NC_ONLINE    = "online"
@@ -119,14 +120,17 @@ deriveSafeCopy 0 'base ''NotifyFailureEndpoints
 -- Printing objects in a nicer way                                            --
 --------------------------------------------------------------------------------
 
+-- | Pretty-printing for objects, targetted at mero objects.
 class ShowFidObj a where
   showFid :: a -> String
   default showFid :: (Generic a, GShowType (Rep a), M0.ConfObj a) => a -> String
   showFid = genShowFid
 
+-- | Generic pretty-printer for objects with 'Fid's.
 genShowFid :: (M0.ConfObj a, Generic a, GShowType (Rep a)) => a -> String
 genShowFid x = showType (Generics.from x) ++ "{" ++ fidToStr (M0.fid x) ++ "}" where
 
+-- | Generics helper class for type name retrieval.
 class GShowType a where showType :: a b -> String
 
 instance (Generics.Datatype d) => GShowType (M1 D d a) where
@@ -208,7 +212,7 @@ data NoExplicitConfigState = NoExplicitConfigState
   deriving (Eq, Generic, Typeable, Show, Read)
 instance Binary NoExplicitConfigState
 
--- A dictionary wrapper for configuration objects
+-- | A dictionary wrapper for configuration objects.
 data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x)
   => SomeConfObjDict (Proxy x)
 
@@ -369,7 +373,8 @@ instance HasConfObjectState M0.DiskV where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_DiskV
   toConfObjState _ = const M0_NC_ONLINE
 
--- Yields the ConfObj dictionary of the object with the given Fid.
+-- | Yields the 'SomeConfObjDict's of the object with the given 'Fid'.
+-- See 'dictMap'.
 --
 -- TODO: Generate this with TH.
 fidConfObjDict :: Fid -> [SomeConfObjDict]
@@ -402,6 +407,7 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
                => Proxy a -> (Word64, SomeConfObjDict)
     mkTypePair a = (M0.fidType a, SomeConfObjDict (Proxy :: Proxy a))
 
+-- | Find the 'ConfObjectState' of the object with the given 'Fid'.
 lookupConfObjectState :: G.Graph -> Fid -> Maybe ConfObjectState
 lookupConfObjectState g fid = listToMaybe $ mapMaybe go $ fidConfObjDict fid where
   go (SomeConfObjDict (_ :: Proxy ct0)) = do

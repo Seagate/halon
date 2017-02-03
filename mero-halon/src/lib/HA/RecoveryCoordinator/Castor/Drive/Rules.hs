@@ -1,4 +1,9 @@
+{-# LANGUAGE GADTs        #-}
+{-# LANGUAGE LambdaCase   #-}
+{-# LANGUAGE Rank2Types   #-}
+{-# LANGUAGE ViewPatterns #-}
 -- |
+-- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -17,23 +22,11 @@
 --    * Reset - castor specific procedule of drive reset. This procedure
 --       tries to recover disk in case if error appeared on the mero side.
 --       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Reset" for details.
+
 --    * Repair - mero specific procedure of recovering data in case of
 --       disk failure or new drive insertion.
 --       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Repair" for details.
-
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GADTs #-}
-module HA.RecoveryCoordinator.Castor.Drive.Rules
-  ( -- & All rules
-    rules
-    -- * Internal rules (exported for test use)
-  , ruleDriveFailed
-  , ruleDriveInserted
-  , ruleDriveRemoved
-  , driveRemovalTimeout
-  ) where
+module HA.RecoveryCoordinator.Castor.Drive.Rules (rules) where
 
 import           Control.Distributed.Process hiding (catch)
 import           Control.Lens
@@ -54,12 +47,12 @@ import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Reset as Reset
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Smart as Smart
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
-import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -91,10 +84,6 @@ rules = sequence_
   , Raid.rules
   , Smart.rules
   ]
-
-driveRemovalTimeout :: Int
-driveRemovalTimeout = 60
-
 
 -- | Verifies that a drive is in a ready state, and takes appropriate
 --   actions accordingly.
@@ -168,7 +157,7 @@ mkCheckAndHandleDriveReady smartLens next = do
        Log.rcLog' Log.ERROR e
        post_process sdev)
     (\m0sdev -> do
-       Just sdev <- getter <$> get Local  
+       Just sdev <- getter <$> get Local
        attachStorageDeviceToSDev sdev m0sdev
        post_process m0sdev)
 
@@ -208,12 +197,12 @@ mkCheckAndHandleDriveReady smartLens next = do
     if smartSuccess
     then lookupLocationSDev loc >>= \case
       Nothing -> promulgateRC $ DriveReady sdev
-      Just m0sdev -> do 
+      Just m0sdev -> do
         mm0sdev <- lookupStorageDeviceSDev sdev
         if Just m0sdev == mm0sdev
         then do
           deviceAttach m0sdev
-          continue device_attached 
+          continue device_attached
         else do
           request <- liftIO $ nextRandom
           modify Local $ smartLens . _Just . chsSyncRequest .~ Just request
@@ -249,7 +238,7 @@ mkCheckAndHandleDriveReady smartLens next = do
             Log.rcLog' Log.DEBUG "Device is already attached."
             applyStateChanges [ stateSet sdev Tr.sdevReady]
             onFailure
-          Just sdev | Just (M0.d_path sdev) == disk_path 
+          Just sdev | Just (M0.d_path sdev) == disk_path
                     , SDSOnline == getState sdev rg
                     -> do
             Log.rcLog' Log.DEBUG "Device is already attached and online."
@@ -531,7 +520,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
             False -> Log.rcLog' Log.ERROR "Can't find mero drive."
             True  -> do
               Log.tagContext Log.SM sdev Nothing
-              Log.rcLog' Log.DEBUG 
+              Log.rcLog' Log.DEBUG
                 "Failed device with no underlying failure has been repowered. Marking as replaced."
               checked <- checkAndHandleDriveReady dpcNode dpcDevice (return [finish])
               switch checked

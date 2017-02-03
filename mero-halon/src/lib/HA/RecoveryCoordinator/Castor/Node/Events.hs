@@ -7,7 +7,6 @@
 -- Events associated with nodes.
 module HA.RecoveryCoordinator.Castor.Node.Events
   ( M0KernelResult(..)
-  , StartCastorNodeRequest(..)
   , StartClientsOnNodeRequest(..)
   , StartClientsOnNodeResult(..)
   , StartHalonM0dRequest(..)
@@ -38,9 +37,8 @@ import           Mero.ConfC (Fid)
 newtype StartProcessNodeNew = StartProcessNodeNew R.Node
   deriving (Eq, Show, Generic, Ord)
 
-newtype StartCastorNodeRequest = StartCastorNodeRequest R.Node
-  deriving (Eq, Show, Generic, Binary)
-
+-- | Request that @halon:m0d@ service is started on the given
+-- 'M0.Node'.
 newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
   deriving (Eq, Show, Typeable, Generic)
 
@@ -66,56 +64,85 @@ data StopProcessesOnNodeResult
        | StopProcessesOnNodeTimeout R.Node
        | StopProcessesOnNodeStateChanged R.Node M0.MeroClusterState
        deriving (Eq, Show, Generic)
-
 instance Binary StopProcessesOnNodeResult
 
+-- | Start client processes on the given 'M0.Node'. Replied to with
+-- 'StartClientsOnNodeResult'.
 newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
          deriving (Eq, Show, Generic, Ord)
 
+-- | A reply to 'StartClientsOnNodeRequest'.
 data StartClientsOnNodeResult
        = ClientsStartOk M0.Node
+       -- ^ Client processes started fine on the given 'M0.Node'.
        | ClientsStartFailure M0.Node String
+       -- ^ Client processes have failed on the 'M0.Node' with the
+       -- provided reason.
        deriving (Eq, Show, Generic)
 instance Binary StartClientsOnNodeResult
 
-newtype StopClientsOnNodeRequest = StopClientsOnNodeRequest M0.Node
-         deriving (Eq, Show, Generic, Binary, Ord)
-
--- | Result of trying to start the M0 Kernel on a node
-data M0KernelResult
-    = KernelStarted M0.Node
-    | KernelStartFailure M0.Node
+-- | Result of trying to start the M0 Kernel on a node.
+data M0KernelResult =
+  KernelStarted M0.Node
+  -- ^ @mero-kernel@ has managed to start on the 'M0.Node'.
+  | KernelStartFailure M0.Node
+  -- ^ @mero-kernel@ has failed to start on the 'M0.Node'.
   deriving (Eq, Show, Generic)
 
--- | Result of @StartProcessesOnNodeRequest@
-data StartProcessesOnNodeResult
-      = NodeProcessesStarted M0.Node
-      | NodeProcessesStartTimeout M0.Node [(M0.Process, M0.ProcessState)]
-      | NodeProcessesStartFailure M0.Node [(M0.Process, M0.ProcessState)]
+-- | Result of @StartProcessesOnNodeRequest@.
+data StartProcessesOnNodeResult =
+  NodeProcessesStarted M0.Node
+  -- ^ The processes on the 'M0.Node' have started.
+  | NodeProcessesStartTimeout M0.Node [(M0.Process, M0.ProcessState)]
+  -- ^ Processes on the 'M0.Node' didn't manage to start on time.
+  | NodeProcessesStartFailure M0.Node [(M0.Process, M0.ProcessState)]
+  -- ^ Processes on the 'M0.Node' have failed to start.
   deriving (Eq, Show, Generic)
 instance Binary StartProcessesOnNodeResult
 
-newtype StopMeroClientRequest = StopMeroClientRequest Fid
+-- | Stop mero client process request.
+newtype StopMeroClientRequest =
+  StopMeroClientRequest Fid
+  -- ^ @StopMeroClientRequest clientProcessFid@
   deriving (Eq, Show, Generic)
 
-newtype StartMeroClientRequest = StartMeroClientRequest Fid
+-- | Start mero client process request.
+newtype StartMeroClientRequest =
+  StartMeroClientRequest Fid
+  -- ^ @StartMeroClientRequest clientProcessFid@
   deriving (Eq, Show, Generic)
 
--- | Request RC to stop node.
-data StopNodeUserRequest = StopNodeUserRequest Fid Bool (SendPort StopNodeUserReply)
+-- | Request RC to stop node. Replied to by 'StopNodeUserReply' on the
+-- given channel.
+data StopNodeUserRequest =
+  StopNodeUserRequest Fid Bool (SendPort StopNodeUserReply)
+  -- ^ @StopNodeUserRequest m0nodeFid forceStop replyChannel@
   deriving (Eq, Show, Generic)
 
 -- | Reply to 'StopNodeUserRequest'.
-data StopNodeUserReply = CantStop Fid R.Node [String]
-                       | StopInitiated Fid R.Node
-                       | NotANode Fid
+data StopNodeUserReply =
+  CantStop Fid R.Node [String]
+  -- ^ @CantStop m0nodeFid node reasons@
+  --
+  -- Can't stop the node as requested because it would result in the
+  -- given failures of the cluster.
+  | StopInitiated Fid R.Node
+  -- ^ Node stop has been started.
+  | NotANode Fid
+  -- ^ The given 'Fid' does not identify a known node.
   deriving (Eq, Show, Generic)
 
-data MaintenanceStopNode = MaintenanceStopNode R.Node deriving (Eq, Show, Generic, Ord)
+-- | Request that a 'R.Node' is stopped for maintenance. Replied to by
+-- 'MaintenanceStopNodeResult'.
+data MaintenanceStopNode = MaintenanceStopNode R.Node
+  deriving (Eq, Show, Generic, Ord)
 
+-- | A reply to 'MaintenanceStopNode'.
 data MaintenanceStopNodeResult
   = MaintenanceStopNodeOk R.Node
+  -- ^ The 'R.Node' has stopped.
   | MaintenanceStopNodeTimeout R.Node
+  -- ^ Node stop has timed out.
   deriving (Eq, Show, Generic)
 
 deriveSafeCopy 0 'base ''M0KernelResult

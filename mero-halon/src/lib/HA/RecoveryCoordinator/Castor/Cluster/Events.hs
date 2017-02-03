@@ -45,102 +45,152 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.SafeCopy
 
-data ClusterStatusRequest = ClusterStatusRequest (SendPort ReportClusterState) deriving (Eq,Show,Generic)
+-- | Request the status of the cluster.
+newtype ClusterStatusRequest =
+  ClusterStatusRequest (SendPort ReportClusterState)
+  -- ^ Request the status of the cluster. The reply of
+  -- 'ReportClusterState' will be sent on the provided 'SendPort'.
+  deriving (Eq,Show,Generic)
 
-data ClusterStartRequest = ClusterStartRequest deriving (Eq, Show, Generic, Ord)
+-- | Request that the cluster starts. Cluster replies with
+-- 'ClusterStartResult'.
+data ClusterStartRequest = ClusterStartRequest
+  deriving (Eq, Show, Generic, Ord)
 
+-- | A reply to 'ClusterStartResult'.
 data ClusterStartResult
       = ClusterStartOk
+      -- ^ The cluster started OK: no fatal issues were detected
+      -- during bootstrap.
       | ClusterStartTimeout [(M0.Node, [(M0.Process, M0.ProcessState)])]
+      -- ^ Cluster start timed out. Reports the nodes which failed
+      -- along with processes on those nodes which have failed to
+      -- properly start and their state.
       | ClusterStartFailure String [StartProcessesOnNodeResult] [StartClientsOnNodeResult]
+      -- ^ Cluster failed to start. Reports the reason as well as
+      -- process start and client start results back to the user.
       deriving (Eq, Show, Generic, Typeable)
 instance Binary ClusterStartResult
 
-data ClusterStopRequest = ClusterStopRequest (SendPort StateChangeResult) deriving (Eq, Show, Generic)
+-- | Request that the cluster stops.
+data ClusterStopRequest =
+  ClusterStopRequest (SendPort StateChangeResult)
+  -- ^ Request that the cluster stops. The 'StateChangeResult' is sent
+  -- back on the provided 'SendPort'.
+  deriving (Eq, Show, Generic)
 
-data StateChangeResult
-      = StateChangeError String
-      | StateChangeOngoing M0.MeroClusterState
-      | StateChangeStarted ProcessId
-      | StateChangeFinished
-      deriving (Show, Generic, Eq)
-
+-- | A reply on 'ClusterStopRequest' channel.
+data StateChangeResult =
+  StateChangeStarted ProcessId
+  -- ^ The cluster started to shut down.
+  | StateChangeFinished
+  -- ^ The cluster is already in stopped state.
+  deriving (Show, Generic, Eq)
 instance Binary StateChangeResult
 
+-- | Request SNS rebalance on the given pool. Replied to with
+-- 'PoolRebalanceStarted'.
 newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
 
-data PoolRebalanceStarted = PoolRebalanceStarted M0.Pool
-                          | PoolRebalanceFailedToStart M0.Pool
+-- | Reply to 'PoolRebalanceRequest'.
+data PoolRebalanceStarted =
+  PoolRebalanceStarted M0.Pool
+  -- ^ SNS rebalance procedure started on the given 'M0.Pool'.
+  | PoolRebalanceFailedToStart M0.Pool
+  -- ^ SNS rebalance procedure not started on the given 'M0.Pool'.
   deriving (Show, Eq, Ord, Typeable, Generic)
 instance Binary PoolRebalanceStarted
 
+-- | Request SNS repair on the given 'M0.Pool'. Replied to with
+-- 'PoolRepairStartResult'.
 newtype PoolRepairRequest = PoolRepairRequest M0.Pool
   deriving (Eq, Show, Ord, Typeable, Generic)
 
+-- | Reply to 'PoolRepairRequest'.
 data PoolRepairStartResult
   = PoolRepairStarted M0.Pool
+  -- ^ SNS repair has started on the given 'M0.Pool'.
   | PoolRepairFailedToStart M0.Pool String
+  -- ^ SNS repair has failed to start on the given 'M0.Pool' with the
+  -- provided reason.
   deriving (Show, Eq, Ord, Typeable, Generic)
-
 instance Binary PoolRepairStartResult
 
 -- | Internal event sent when the cluster changes state.
 data ClusterStateChange =
-    ClusterStateChange
-      (Maybe M0.MeroClusterState) -- Old state (if it exists)
-      M0.MeroClusterState -- New state
+  ClusterStateChange (Maybe M0.MeroClusterState) M0.MeroClusterState
+  -- ^ @ClusterStateChange oldState newState@
   deriving (Eq, Show, Generic, Typeable)
-
 instance Binary ClusterStateChange
 
--- | Request sent to reset the cluster. This should be done if the cluster
---   gets into a 'stuck' state from which we cannot recover in the regular
---   manner. In general, 'reset' should only be called if the cluster is in
---   a 'steady state' - e.g. there should be no SMs running.
---
---   The optional Bool parameter determines whether to do a deeper reset,
---   which will also purge the EQ and restart the RC.
-newtype ClusterResetRequest = ClusterResetRequest Bool
+-- | Request sent to reset the cluster. This should be done if the
+-- cluster gets into a 'stuck' state from which we cannot recover in
+-- the regular manner. In general, 'reset' should only be called if
+-- the cluster is in a 'steady state' - e.g. there should be no SMs
+-- running.
+data ClusterResetRequest = ClusterResetRequest
+  { _crr_deep_reset :: !Bool
+  -- ^ Request a deeper reset which will purge the EQ and restart RC.
+  }
   deriving (Eq, Show, Typeable, Generic)
 
+-- | Structure containing information about the cluster state.
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
+      -- ^ Current 'M0.MeroClusterState'.
       , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
+      -- ^ 'M0.Pool's and their SNS repair/rebalance status.
       , csrInfo       :: Maybe (M0.Profile, M0.Filesystem)
+      -- ^ 'M0.Profile'' and 'M0.Filesystem' information.
       , csrStats      :: Maybe M0.FilesystemStats
+      -- ^ 'M0.FilesystemStats' information.
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]
+      -- ^ Information about every 'Castor.Host'. See
+      -- 'ReportClusterHost' for details.
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
 instance ToJSON ReportClusterState
 instance FromJSON ReportClusterState
 
+-- | Information about a 'Castor.Host' inside the cluster.
 data ReportClusterHost = ReportClusterHost
       { crnNodeFid    :: Maybe M0.Node
+      -- ^ Associated 'M0.Node'.
       , crnNodeStatus :: M0.StateCarrier M0.Node
+      -- ^ Halon state of 'crnNodeFid'.
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
+      -- ^ Information about processes on the cluster. See
+      -- 'ReportClusterProcess' for details.
       , crpDevices    :: [( M0.SDev
                           , M0.StateCarrier M0.SDev
                           , Castor.StorageDevice
                           , [Castor.DeviceIdentifier]
                           )]
+      -- ^ Information about devices attached at this particular host.
       } deriving (Eq, Show, Typeable, Generic, Ord)
-
 instance Binary ReportClusterHost
 instance ToJSON ReportClusterHost
 instance FromJSON ReportClusterHost
 
+-- | Information about a 'M0.Process'.
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
+      -- ^ 'M0.ProcessState' of the 'M0.Process'.
       , crpServices :: [(M0.Service, M0.ServiceState)]
+      -- ^ 'M0.Service's and their states associated with this
+      -- 'M0.Process'.
       } deriving (Eq, Show, Typeable, Generic, Ord)
-
 instance Binary ReportClusterProcess
 instance ToJSON ReportClusterProcess
 instance FromJSON ReportClusterProcess
 
--- | Request to mark all processes as finished mkfs.
+-- | Request that every process in the cluster as
+-- previously-bootstrapped. This means that the processes will not go
+-- through configure (mkfs) stage. It should be used with great care
+-- during recovery of a cluster after a bad state &c. See
+-- 'ruleMarkProcessesBootstrapped'.
 newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
   deriving (Eq, Show, Generic, Typeable)
 
@@ -151,6 +201,9 @@ newtype MarkProcessesBootstrapped = MarkProcessesBootstrapped (SendPort ())
 newtype MonitorClusterStop = MonitorClusterStop ProcessId
   deriving (Show, Eq, Typeable, Generic)
 
+-- | A structure representing somewhat of a diff between a previous
+-- and ‘current’ cluster state. This allows the consumer to report
+-- progress (or regress) as cluster is stopping.
 data ClusterStopDiff = ClusterStopDiff
   { _csp_procs :: [(M0.Process, M0.ProcessState, M0.ProcessState)]
     -- ^ @(Process, old state, new state)@
@@ -164,17 +217,19 @@ data ClusterStopDiff = ClusterStopDiff
     -- ^ Is cluster considered stopped
   , _csp_warnings :: [String]
     -- ^ Any warnings user could want to see found when calculating the diff.
-  }
-  deriving (Show, Eq, Typeable, Generic)
-
+  } deriving (Show, Eq, Typeable, Generic)
 instance Binary ClusterStopDiff
 
--- | Calculate
+-- | Cluster liveness information.
 data ClusterLiveness = ClusterLiveness
       { clPVers :: Bool
+      -- ^ Do we have PVers?
       , clOngoingSNS :: Bool
+      -- ^ Is SNS on-going?
       , clHaveQuorum :: Bool
+      -- ^ Do we have quorum?
       , clPrincipalRM :: Bool
+      -- ^ Is principal RM chosen?
       } deriving (Show, Eq, Typeable, Generic)
 
 deriveSafeCopy 0 'base ''ClusterResetRequest

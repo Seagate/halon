@@ -118,11 +118,13 @@ data ConfSyncState = ConfSyncState
       , _cssAborting :: [ListenerId] -- ^ List of the pending SNS abort jobs.
       } deriving (Generic, Show)
 
+-- | Field for 'ConfSyncState'.
 fldConfSyncState :: Proxy '("hash", ConfSyncState)
 fldConfSyncState = Proxy
 
+-- | Default 'ConfSyncState'.
 defaultConfSyncState :: ConfSyncState
-defaultConfSyncState = ConfSyncState Nothing False [] []  
+defaultConfSyncState = ConfSyncState Nothing False [] []
 
 makeLenses ''ConfSyncState
 
@@ -524,13 +526,13 @@ mkSyncToConfd lstate next = do
               txSyncToConfd force (lstate.cssHash) lift t1)
         case eresult of
           Left ex -> phaseLog "error" $ "Exception during sync: " ++ show ex
-          _ -> return () 
+          _ -> return ()
       clean_and_run :: Lens' ConfSyncState [ListenerId] -> [ListenerId] -> PhaseM RC l ()
       clean_and_run ls listeners = do
         state <- get Local
         let state' = state & lstate . ls %~ (\x -> x \\ listeners)
         put Local state'
-        if (null $ state' ^. lstate . cssQuiescing) 
+        if (null $ state' ^. lstate . cssQuiescing)
            && (null $ state' ^. lstate . cssAborting)
         then synchronize
         else switch [on_quiesced, on_aborted]

@@ -264,6 +264,8 @@ findEnclosureStorageDevices :: Enclosure
 findEnclosureStorageDevices enc = do
   fmap (G.connectedTo enc Has) getLocalGraph
 
+-- | Check if the 'StorageDevice' is still attached (from halon
+-- perspective).
 isStorageDriveRemoved :: StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
@@ -364,6 +366,8 @@ markResetComplete sdev = do
         unsetStorageDeviceAttr sdev old
         updateDiskResetCount
 
+-- | Increment the number of disk reset attempts the 'StorageDevice'
+-- has gone through.
 incrDiskResetAttempts :: StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
@@ -375,6 +379,8 @@ incrDiskResetAttempts sdev = do
         setStorageDeviceAttr sdev (SDResetAttempts (i+1))
       _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
 
+-- | Number of times the given 'StorageDevice' has been tried to
+-- reset.
 getDiskResetAttempts :: StorageDevice -> PhaseM RC l Int
 getDiskResetAttempts sdev = do
   let _F (SDResetAttempts _) = True

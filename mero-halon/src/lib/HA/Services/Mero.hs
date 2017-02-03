@@ -183,7 +183,7 @@ controlProcess mc pid rp = do
 -- Mero Process control
 --------------------------------------------------------------------------------
 
--- | Default path for @conf.xc@: @"/var/mero/confd/conf.xc"@.
+-- | Default path for @conf.xc@: "/var/mero/confd/conf.xc".
 confXCPath :: FilePath
 confXCPath = "/var/mero/confd/conf.xc"
 
@@ -304,7 +304,10 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
       M0T1FS -> ("m0t1fs", "m0t1fs@")
       M0D -> ("m0d", "m0d@")
 
-newtype Started = Started (SendPort NotificationMessage,SendPort ProcessControlMsg)
+-- | The @halon:m0d@ service has started.
+newtype Started =
+  Started (SendPort NotificationMessage,SendPort ProcessControlMsg)
+  -- ^ @Started (notificationHandlerChan, processControlChan)@
   deriving (Eq, Show, Binary)
 
 m0dProcess :: ProcessId -> MeroConf -> Process ()
@@ -478,6 +481,6 @@ putM0d m = G.connect R.Cluster R.Has (MeroServiceInstance m)
 --
 -- Use-sites:
 --
--- * @halonctl@
+-- - @halonctl@
 m0d_real :: Service MeroConf
 m0d_real = m0d

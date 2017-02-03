@@ -164,27 +164,25 @@ getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
 -- | Mark that notification was delivered to process.
 markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationDelivered diff process = do
-  isWaiting   <- G.isConnected diff WaitingFor process <$> getLocalGraph
   isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
   isNotSent   <- G.isConnected diff ShouldDeliverTo process <$> getLocalGraph
   unless (isDelivered) $ do
-    modifyGraph $ G.disconnect diff WaitingFor process
-              >>> G.disconnect diff ShouldDeliverTo process
+    modifyGraph $ G.disconnect diff ShouldDeliverTo process
               >>> G.disconnect diff DeliveryFailedTo process -- success after failure - counts.
               >>> G.connect    diff DeliveredTo process
-    when (isWaiting || isNotSent) $ tryCompleteStateDiff diff
+    when isNotSent $ tryCompleteStateDiff diff
 
+-- | Mark any notifications that weren't already delivered and haven't
+-- already failed, as failed.
 markNotificationFailed :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationFailed diff process = do
-  isWaiting   <- G.isConnected diff WaitingFor process <$> getLocalGraph
   isFailed    <- G.isConnected diff DeliveryFailedTo process <$> getLocalGraph
   isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
   isNotSent   <- G.isConnected diff ShouldDeliverTo process <$> getLocalGraph
   unless (isDelivered && isFailed) $ do
-    modifyGraph $ G.disconnect diff WaitingFor process
-              >>> G.disconnect diff ShouldDeliverTo process
+    modifyGraph $ G.disconnect diff ShouldDeliverTo process
               >>> G.connect    diff DeliveryFailedTo process
-    when (isWaiting || isNotSent) $ tryCompleteStateDiff diff
+    when isNotSent $ tryCompleteStateDiff diff
 
 -- | Check if 'StateDiff' is already completed, i.e. there are no processes
 -- that we are waiting for. If it's completed, we disconnect 'StateDiff' from
@@ -193,15 +191,13 @@ tryCompleteStateDiff :: StateDiff -> PhaseM RC l ()
 tryCompleteStateDiff diff = do
   rc <- getCurrentRC
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
-  ps <- G.connectedTo diff WaitingFor <$> getLocalGraph
-  when (null (ps :: [M0.Process]) && notSent) $ do
+  when notSent $ do
     modifyGraph $ G.disconnect rc R.Has diff
     okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
-    failProcesses <- G.connectedTo diff WaitingFor  <$> getLocalGraph
     phaseLog "epoch" $ show (stateEpoch diff)
     registerSyncGraph $ do
       for_ (stateDiffOnCommit diff) applyOnCommit
-      promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses failProcesses
+      promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses []
 
 -- | Mark all notifications for processes on the given node as failed.
 --
@@ -219,12 +215,8 @@ failNotificationsOnNode node = do
   -- as failed.
   for_ ps $ \p -> do
     rg <- getLocalGraph
-    let diffs = (++) <$> G.connectedFrom WaitingFor p
-                     <*> G.connectedFrom ShouldDeliverTo p
-                      $ rg
-    for_ diffs $ \diff -> do
-      modifyGraph $ G.disconnect diff WaitingFor p
-                >>> G.disconnect diff ShouldDeliverTo p
+    for_ (G.connectedFrom ShouldDeliverTo p rg) $ \diff -> do
+      modifyGraph $ G.disconnect diff ShouldDeliverTo p
                 >>> G.connect    diff DeliveryFailedTo p
       -- XXX: try all nodes at once in the end. (optimization)
       tryCompleteStateDiff diff

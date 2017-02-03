@@ -176,6 +176,7 @@ ssplRules sspl = sequence_
   , ruleMonitorServiceFailed
   ]
 
+-- | Ask any running SSPL services to their channels ('RequestChannels').
 initialRule :: Service SSPLConf -> PhaseM RC l () -- XXX: remove first argument
 initialRule sspl = do
    rg <- getLocalGraph

@@ -594,8 +594,11 @@ instance FromJSON PoolRepairType
 -- | Information attached to 'PoolRepairStatus'.
 data PoolRepairInformation = PoolRepairInformation
   { priOnlineNotifications :: Int
+  -- ^ Number of online notifications received from IOS.
   , priTimeOfFirstCompletion :: TimeSpec
+  -- ^ Time of completion of the operation by the first IOS.
   , priTimeLastHourlyRan :: TimeSpec
+  -- ^ Time at which the last hourly query has been ran.
   , priStateUpdates      :: [(SDev, Int)]
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
@@ -612,10 +615,15 @@ deriveSafeCopy 0 'base ''PoolRepairInformation
 defaultPoolRepairInformation :: PoolRepairInformation
 defaultPoolRepairInformation = PoolRepairInformation 0 0 0 []
 
+-- | Status of SNS pool repair/rebalance.
 data PoolRepairStatus = PoolRepairStatus
   { prsType :: PoolRepairType
+  -- ^ Repair/rebalance?
   , prsRepairUUID :: UUID
+  -- ^ UUID used to distinguish SNS operations from different runs on
+  -- the same pool.
   , prsPri :: Maybe PoolRepairInformation
+  -- ^ Information about the actual SNS operation.
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Hashable PoolRepairStatus
@@ -632,14 +640,19 @@ newtype DiskFailureVector = DiskFailureVector [Disk]
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 deriveSafeCopy 0 'base ''DiskFailureVector
 
+-- | @lnet@ address associated with a host.
 newtype LNid = LNid String
   deriving (Eq, Generic, Hashable, Show, Typeable)
 deriveSafeCopy 0 'base ''LNid
 
+-- | Hardware information about a host.
 data HostHardwareInfo = HostHardwareInfo
        { hhMemorySize  :: Word64
+       -- ^ Memory size in MiB
        , hhCpuCount    :: Int
+       -- ^ Number of CPUs
        , hhLNidAddress :: String
+       -- ^ @lnet@ address
        }
    deriving (Eq, Show, Typeable, Generic)
 instance Hashable HostHardwareInfo
@@ -669,6 +682,7 @@ instance ToJSON ProcessState
 instance FromJSON ProcessState
 deriveSafeCopy 0 'base ''ProcessState
 
+-- | Pretty printer for 'ProcessState'.
 prettyProcessState :: ProcessState -> String
 prettyProcessState PSUnknown = "N/A"
 prettyProcessState PSOffline = "offline"
@@ -679,6 +693,7 @@ prettyProcessState PSStopping = "stopping"
 prettyProcessState (PSFailed reason) = "failed (" ++ reason ++ ")"
 prettyProcessState (PSInhibited st) = "inhibited (" ++ prettyProcessState st ++ ")"
 
+-- | Pretty-printing preparation for 'ProcessState'.
 displayProcessState :: ProcessState -> (String, Maybe String)
 displayProcessState s@PSFailed{} = ("failed", Just $ prettyProcessState s)
 displayProcessState s@PSInhibited{} = ("inhibited", Just $ prettyProcessState s)
@@ -750,6 +765,7 @@ instance Binary MeroClusterState
 instance FromJSON MeroClusterState
 instance ToJSON MeroClusterState
 
+-- | Pretty-printer for 'MeroClusterState'.
 prettyStatus :: MeroClusterState -> String
 prettyStatus MeroClusterState{..} = unlines [
     "Disposition: " ++ (show _mcs_disposition)
@@ -791,6 +807,7 @@ instance FromJSON FilesystemStats
 deriveSafeCopy 0 'base ''FSStats
 deriveSafeCopy 0 'base ''FilesystemStats
 
+-- | A disk marker for replaced disks.
 data Replaced = Replaced deriving (Eq, Show, Typeable, Generic)
 instance Hashable Replaced
 instance ToJSON Replaced

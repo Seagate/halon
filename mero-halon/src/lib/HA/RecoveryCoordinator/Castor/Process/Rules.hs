@@ -48,6 +48,7 @@ import           Mero.Notification.HAState
 import           Network.CEP
 import           Text.Printf
 
+-- | Set of rules used for mero processes.
 rules :: Definitions RC ()
 rules = sequence_ [
     ruleProcessOnline

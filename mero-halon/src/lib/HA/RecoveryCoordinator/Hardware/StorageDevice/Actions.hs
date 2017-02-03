@@ -1,5 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
+-- |
+-- Module    : HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
+-- Copyright : (C) 2016 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Actions on 'StorageDevice's.
 module HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
   ( exists
     -- * Drive location.
@@ -70,7 +76,7 @@ location sdev = G.connectedTo sdev R.Has <$> getLocalGraph
 enclosure :: StorageDevice -> PhaseM RC l (Maybe Enclosure)
 enclosure sdev = do
  rg <- getLocalGraph
- return $ 
+ return $
    maybe (G.connectedFrom R.Has sdev rg)
          (\(Slot e _) -> Just e) $ G.connectedTo sdev R.Has rg
 
@@ -81,6 +87,7 @@ mkLocation enc num = do
   return loc
   where loc = Slot enc num
 
+-- | Failure to insert a 'StorageDevice' into a 'Slot' has occured.
 data InsertionError
   = AnotherInSlot StorageDevice
   | AlreadyInstalled
@@ -96,7 +103,7 @@ data InsertionError
 -- because this relation is not needed when connection to 'StorageDeviceLocation'
 -- exits.
 insertTo :: StorageDevice
-         -> Slot 
+         -> Slot
          -> PhaseM RC l (Either InsertionError ())
 insertTo sdev sdev_loc@(Slot enc _) = do
   rg <- getLocalGraph
@@ -162,7 +169,7 @@ status :: StorageDevice
 status dev = fromMaybe (StorageDeviceStatus "UNKNOWN" "UNKNOWN") . G.connectedTo dev Is <$> getLocalGraph
 
 -- | Update the status of a storage device.
--- 
+--
 -- XXX: keep in mind that some statuses are final.
 setStatus :: StorageDevice
           -> String -- ^ Status.
@@ -218,6 +225,8 @@ path sd =
     extractPath (DIPath x) = Just x
     extractPath _ = Nothing
 
+-- | Set the path ('DIPath') 'DeviceIdentifier' for the
+-- 'StorageDevice' to the given 'String'.
 setPath :: StorageDevice -> String -> PhaseM RC l ()
 setPath sd path' = do
    old <- mapMaybe extractPath <$> getIdentifiers sd
@@ -226,11 +235,8 @@ setPath sd path' = do
   where
     extractPath x@DIPath{} = Just x
     extractPath _ = Nothing
-   
 
--- setPath :: StorageDevice -> String -> PhaseM RC l ()
--- setPath =
-  
+-- | Get all 'DeviceIdentifier's for the 'StorageDevice'.
 getIdentifiers :: StorageDevice
                -> PhaseM RC l [DeviceIdentifier]
 getIdentifiers sd = G.connectedTo sd R.Has <$> getLocalGraph

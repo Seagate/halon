@@ -126,9 +126,9 @@ data HpiTestInfo = HTI
        , hpiIsPowered    :: Bool -- ^ If drive is powered now
        , hpiUserCallback :: UUID -> Process ()
        }
-        
+
 hpiTests :: [HpiTestInfo]
-hpiTests = 
+hpiTests =
   --     installed  powered new    powered installed
   -- nothing changed
   [ HTI   a         b       False  a       b         $ \_uuid -> no_other_events
@@ -160,7 +160,7 @@ hpiTests =
   | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
   -- Require Slot info on the old drive.
   -- [ HTI   True      a        True  False   b         $ \_uuid -> do
-  --    receiveWait $ oneMatch $ match $ \(_ :: Published DriveRemoved) -> return () 
+  --    receiveWait $ oneMatch $ match $ \(_ :: Published DriveRemoved) -> return ()
   --    no_other_events
   -- | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
   [ HTI   True      a        True  True    b         $ \_uuid -> do
@@ -183,13 +183,13 @@ hpiTests =
     , match $ \(_ :: Published DriveInserted) -> error "drive inserted emitted"
     , match $ \(_ :: Published DriveRemoved) -> error "drive removed emitted"
     ]
-  
+
 mkHpiTests :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
 mkHpiTests tr p = testGroup "HPI"
     $ map (\info -> testSuccess (mkTestName info) $ genericHpiTest info tr p) hpiTests
   where
     mkTestName :: HpiTestInfo -> String
-    mkTestName (HTI{..}) = 
+    mkTestName (HTI{..}) =
       intercalate ";" [bool "was_removed" "was_installed" hpiWasInstalled
                       ,bool "was_poweredoff" "was_poweredon" hpiWasPowered
                       ,bool "same" "new" hpiIsNew
@@ -202,7 +202,7 @@ data GiveMeEnclosureName = GiveMeEnclosureName deriving (Typeable, Generic)
 instance Binary GiveMeEnclosureName
 
 genericHpiTest :: (Typeable g, RGroup g) => HpiTestInfo -> Transport -> Proxy g -> IO ()
-genericHpiTest HTI{..} = mkHpiTest rules test 
+genericHpiTest HTI{..} = mkHpiTest rules test
   where
     rules _self = do
       define "init-drive" $ do
@@ -231,7 +231,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
       usend rc (GiveMeEnclosureName, self)
       Enclosure e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
       let serial = "serial" ++ ide ++ "_1"
-      let (enc, serial', idx, devid, wwn, _sdev) = 
+      let (enc, serial', idx, devid, wwn, _sdev) =
             if hpiIsNew
             then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", StorageDevice $ serial++"new")
             else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", StorageDevice serial)
@@ -324,8 +324,8 @@ testDMRequest = mkHpiTest rules test
         _ <- receiveTimeout 2000000 [] -- HALON-590
         return ()
       where
-        await _uuid m = receiveWait 
-           [ m 
+        await _uuid m = receiveWait
+           [ m
            , match $ \(_ :: Published (HAEvent (NodeId, SensorResponseMessageSensor_response_typeDisk_status_drivemanager)))
                -> return False
            ]

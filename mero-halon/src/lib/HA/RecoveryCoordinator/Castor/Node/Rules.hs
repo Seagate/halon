@@ -920,7 +920,7 @@ processStopProcessesOnNode = Job "castor::node::stop-processes"
 --
 -- * If there are no more processes on this boot level and cluster is
 -- on boot level 0 (last), simply mark the cluster as stopped.
-
+--
 -- * If there are no more processes on this level and it's not the last level:
 --
 --     1. Set global cluster state to the next level
@@ -928,7 +928,6 @@ processStopProcessesOnNode = Job "castor::node::stop-processes"
 --        release, blocked nodes wait for this message and when they
 --        see it, they know cluster progressed onto the given level
 --        and they can start teardown of that level.
---
 ruleStopProcessesOnNode :: Definitions RC ()
 ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandle getRequest finish) -> do
    teardown   <- phaseHandle "teardown"
