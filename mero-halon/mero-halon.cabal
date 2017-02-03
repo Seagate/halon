@@ -17,6 +17,15 @@ source-repository master
   Location:     git@github.com:tweag/halon.git
   Subdir:       mero-halon/
 
+extra-doc-files
+  doc/diagrams/Makefile
+  doc/diagrams/sdev-state-transition.dot
+  doc/diagrams/sns-operation-abort.uml
+  doc/diagrams/sns-operation-failure.uml
+  doc/diagrams/sns-operation-success.uml
+  doc/diagrams/sns-repair.uml
+  doc/diagrams/sns-rebalance.uml
+
 Flag debug
   Description: Enable tracing output so errors are logged.
   Default: False

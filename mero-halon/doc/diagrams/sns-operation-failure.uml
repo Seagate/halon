@@ -1,0 +1,35 @@
+@startuml
+participant halon
+participant ios1
+participant ios2
+participant client
+
+group SNS operation start
+  halon -> client: notify [(pool, repair), (disk, repair)]
+  client --> halon: confirm notification
+  ios1   --> halon: confirm notification
+  ios2   --> halon: confirm notification
+  
+  loop until all ios are ready
+    halon -> ios2: repair status request
+    ios2 -> halon: repair status reply
+  end
+  
+  halon -> ios2: spiel_repair_start
+  activate ios1
+  activate ios2
+end
+... repair process ...
+ios1 -> halon: notify [(pool, repair), (disk, repair)]
+deactivate ios1
+group SNS operation abort
+  halon -> ios2: m0_spiel_repair_abort
+  destroy ios2
+  loop unil all ios are ready
+    halon -> ios2: repair status request
+    ios2 -> halon: repair status reply [IDLE, IDLE]
+  end
+  halon -> client: notify [(pool, FAILED), (disk, FAILED)]
+end
+
+@enduml

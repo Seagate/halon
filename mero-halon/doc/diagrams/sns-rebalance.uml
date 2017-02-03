@@ -1,0 +1,54 @@
+@startuml
+participant halon
+participant ios1
+participant ios2
+participant client
+
+group SNS operation start
+rnote over halon, client
+  notification [(pool, rebalance), (disk, rebalance)]
+end rnote
+
+  loop until all ios are ready
+    halon -> ios2: rebalance status request
+    ios2 -> halon: rebalance status reply
+  end
+
+  halon -> ios2: spiel_rebalance_start
+  activate ios1
+  activate ios2
+end
+
+... repair process ...
+
+alt sucessful case
+  ios1 -> halon: notify [(pool, online), (disk, online)]
+  deactivate ios1
+  group SNS status query
+  ios2 -> halon: notify [(pool, online), (disk, online)]
+  deactivate ios2
+    loop unil all ios are in IDLE
+      halon -> ios2: rebalance status request
+      ios2 -> halon: rebalance status reply [IDLE, IDLE]
+    end
+    halon -> client: notify [(pool, ONLINE), (disk, ONLINE)]
+  end
+else partial repair
+  ios1 -> halon: notify [(pool, rebalance), (disk, rebalance)]
+  deactivate ios1
+rnote over halon, client
+  Abort SNS operation
+end rnote
+else transient disk
+[->halon: notify [(disk, transient)]
+rnote over halon, client
+  Pause SNS operation
+end rnote
+else failed disk
+[->halon: notify [(disk, failed)]
+rnote over halon, client
+  Abort SNS operation
+end rnote
+end
+
+@enduml

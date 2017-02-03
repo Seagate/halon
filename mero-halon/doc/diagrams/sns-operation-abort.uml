@@ -1,0 +1,25 @@
+@startuml
+participant halon
+participant ios1
+participant ios2
+participant client
+
+activate ios1
+activate ios2
+... SNS operation ...
+halon -> ios2: m0_spiel_repair_quiesce
+loop until all IOS are one of [IDLE, PAUSED, FAILED]
+  halon -> ios2: repair status request
+  ios2  -> halon: repair statys reply
+end
+alt all IOS are [IDLE, PAUSED]
+  
+else some IOS are [FAILED]
+rnote over halon, client
+  SNS Operation abort
+  destroy ios1
+  destroy ios2
+end rnote
+end
+
+@enduml

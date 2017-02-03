@@ -1,0 +1,29 @@
+digraph {
+    splines=true;
+    node[shape=ellipse];
+    online;
+    transient;
+    repair;
+    rebalance;
+    
+    edge[label="failure detection/drive removed"];
+    online -> transient;
+    edge[label="successful reset/drive reseat"];
+    transient -> online;
+    edge[label="failed reset/drive remains removed"];
+    transient -> failed;
+
+    edge[label="repair start"];
+    failed -> repair;
+    edge[label="full repair"];
+    repair -> repaired;
+    edge[label="partial repair/repair abort"];
+    repair -> failed;
+
+    edge[label="rebalance start"];
+    repaired -> rebalance;
+    edge[label="rebalance complete"];
+    rebalance -> online;
+    edge[label="failure detection/drive removed"];
+    rebalance -> transient;
+}

@@ -358,6 +358,8 @@ jobRebalanceStart = Job "castor::sns::rebalance::start"
 -- Emits 'PoolRebalanceStarted' if successful.
 --
 -- See 'ruleRepairStart' for some caveats.
+--
+-- See diagram sns-rebalance
 ruleRebalanceStart :: Definitions RC ()
 ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
@@ -510,6 +512,8 @@ jobRepairStart = Job "castor-repair-start"
 -- IOS becoming unavailable. For now we just check IOS status right
 -- before repairing but there is no guarantee we won't try to start
 -- repair on IOS that's down. HALON-403 should help.
+--
+-- see diagram: sns-repair
 ruleRepairStart :: Definitions RC ()
 ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
@@ -662,6 +666,8 @@ jobContinueSNS = Job "castor::sns:continue"
 -- The requirements are:
 --   * All IOS should be running.
 --   * At least one IO service status should be M0_SNS_CM_STATUS_PAUSED.
+--
+-- See diagram sns-operation-continue
 ruleSNSOperationContinue :: Definitions RC ()
 ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish) -> do
 
@@ -735,6 +741,8 @@ jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
 jobSNSAbort = Job "castor::node::sns::abort"
 
 -- | Abort the specified SNS operation. Uses 'jobSNSAbort'.
+--
+-- See diagram: 'sns-operation-abort'
 ruleSNSOperationAbort :: Definitions RC ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
   entry <- phaseHandle "entry"
