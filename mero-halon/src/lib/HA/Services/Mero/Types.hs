@@ -134,11 +134,12 @@ data ServiceReconnectReply = ServiceReconnectReply
   deriving (Show, Typeable, Generic)
 instance Binary ServiceReconnectReply
 
--- | How to run a particular Mero Process. Processes can be hosted
---   in three ways:
---   - As part of the kernel (m0t1fs)
---   - As an ephemeral 'mkfs' process (mkfs)
---   - As a regular user-space m0d process (m0d)
+-- | How to run a particular Mero Process. Processes can be hosted in
+-- three ways:
+--
+-- - As part of the kernel (m0t1fs)
+-- - As an ephemeral 'mkfs' process (mkfs)
+-- - As a regular user-space m0d process (m0d)
 data ProcessRunType =
     M0D -- ^ Run 'm0d' service.
   | M0T1FS -- ^ Run 'm0t1fs' service.
@@ -231,6 +232,11 @@ data MeroChannelDeclared =
     deriving (Generic, Typeable)
 instance Hashable MeroChannelDeclared
 
+-- | A guide for which instance of @halon:m0d@ service to use when
+-- invoking operations on the service.
+--
+-- This exists to allow us to swap-out real @halon:m0d@ implementation
+-- for a mock implementation in tests.
 newtype MeroServiceInstance = MeroServiceInstance { _msi_m0d :: HA.Service.Service MeroConf }
   deriving (Eq, Show, Generic, Typeable)
 instance Hashable MeroServiceInstance

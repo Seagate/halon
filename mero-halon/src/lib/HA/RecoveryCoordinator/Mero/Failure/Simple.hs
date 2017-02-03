@@ -65,6 +65,7 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
                       go g' cs
          in go rg chunks
 
+-- | Given tolerance parameters, generate failure sets.
 generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
                     -> Word32 -- ^ No. of disk failures equivalent to ctrl failure

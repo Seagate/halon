@@ -227,6 +227,8 @@ instance Binary RestartSNSOperationResult
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 
+-- | The endpoint hasn't been initialised yet so the m0 worker is not
+-- available yet.
 data WorkerIsNotAvailableException = WorkerIsNotAvailable
   deriving (Show, Typeable, Generic)
 instance Exception WorkerIsNotAvailableException

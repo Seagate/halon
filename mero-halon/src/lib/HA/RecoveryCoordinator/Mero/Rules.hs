@@ -81,6 +81,7 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
         , ("rm.ep"        , show rm_ep)
         ]
 
+-- | Set of rules dealing with primitive mero operations.
 meroRules :: Definitions RC ()
 meroRules = do
 
@@ -107,7 +108,7 @@ meroRules = do
     directly reply $ do
       uuid <- fst <$> get Local
       selfMessage (SyncComplete uuid)
-    start initial (UUID.nil, defaultConfSyncState) 
+    start initial (UUID.nil, defaultConfSyncState)
 
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.

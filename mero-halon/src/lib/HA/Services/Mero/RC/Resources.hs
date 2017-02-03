@@ -30,6 +30,7 @@ data StateDiff = StateDiff
    } deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable StateDiff
 
+-- | Graph index for 'StateDiff's.
 data StateDiffIndex = StateDiffIndex Word64
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable StateDiffIndex
@@ -42,32 +43,29 @@ deriveSafeCopy 0 'base ''OnCommit
 deriveSafeCopy 0 'base ''StateDiff
 deriveSafeCopy 0 'base ''StateDiffIndex
 
-data WaitingFor = WaitingFor
-  deriving (Eq, Ord, Generic, Typeable, Show)
-instance Hashable WaitingFor
-deriveSafeCopy 0 'base ''WaitingFor
-
+-- | The 'StateDiff' was delivered to the process.
 data DeliveredTo = DeliveredTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveredTo
 deriveSafeCopy 0 'base ''DeliveredTo
 
+-- | The 'StateDiff' is due to be delivered to the process.
 data ShouldDeliverTo = ShouldDeliverTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable ShouldDeliverTo
 deriveSafeCopy 0 'base ''ShouldDeliverTo
 
+-- | Delivery of the 'StateDiff' to the process has failed.
 data DeliveryFailedTo = DeliveryFailedTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveryFailedTo
 deriveSafeCopy 0 'base ''DeliveryFailedTo
 
 $(mkDicts
-  [ ''StateDiff, ''WaitingFor, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
+  [ ''StateDiff, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
   , ''StateDiffIndex
   ]
   [ (''RC.RC, ''R.Has, ''StateDiff)
-  , (''StateDiff, ''WaitingFor, ''M0.Process)
   , (''StateDiff, ''DeliveredTo, ''M0.Process)
   , (''StateDiff, ''ShouldDeliverTo, ''M0.Process)
   , (''StateDiff, ''DeliveryFailedTo, ''M0.Process)
@@ -75,11 +73,10 @@ $(mkDicts
   ])
 
 $(mkResRel
-  [ ''StateDiff, ''WaitingFor, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
+  [ ''StateDiff, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
   , ''StateDiffIndex
   ]
   [ (''RC.RC, AtMostOne, ''R.Has, Unbounded, ''StateDiff)
-  , (''StateDiff, Unbounded, ''WaitingFor, Unbounded, ''M0.Process)
   , (''StateDiff, Unbounded, ''DeliveredTo, Unbounded, ''M0.Process)
   , (''StateDiff, Unbounded, ''ShouldDeliverTo, Unbounded, ''M0.Process)
   , (''StateDiff, Unbounded, ''DeliveryFailedTo, Unbounded, ''M0.Process)

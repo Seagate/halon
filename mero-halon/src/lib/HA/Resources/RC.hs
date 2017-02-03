@@ -1,25 +1,25 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
+-- Module    : HA.Resources.RC
 -- Copyright : (C) 2016 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Contains all resources for RC subsystem of the Recovery coordinator.
 module HA.Resources.RC where
 
-import Control.Distributed.Process (ProcessId)
-import HA.SafeCopy
-import HA.Service (ServiceInfoMsg)
+import           Control.Distributed.Process (ProcessId)
+import           Data.ByteString (ByteString)
+import           Data.Hashable (Hashable(..))
+import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
-import HA.Resources.TH
-
-import Data.ByteString (ByteString)
-import Data.Hashable (Hashable(..))
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
+import           HA.Resources.TH
+import           HA.SafeCopy
+import           HA.Service (ServiceInfoMsg)
 
 -- | Graph node representing current recovery coordinator.
 newtype RC = RC { getRCVersion :: Int }
@@ -56,9 +56,7 @@ data Stopping = Stopping
 instance Hashable Stopping
 deriveSafeCopy 0 'base ''Stopping
 
--- XXX: is used to avoid orphan instances, possibly we need to fix that
--- by adding an instance in the halon package?
-
+-- | Newtype wrapper for 'ProcessId' with 'SafeCopy' instance.
 newtype SubProcessId = SubProcessId ProcessId
   deriving (Eq, Ord, Hashable, Generic, Typeable, Show)
 deriveSafeCopy 0 'base ''SubProcessId

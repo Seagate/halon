@@ -272,7 +272,7 @@ monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan 
 trySome :: MonadCatch m => m a -> m (Either SomeException a)
 trySome = try
 
-
+-- | Main daemon for SSPL halon service
 ssplProcess :: SSPLConf -> Process ()
 ssplProcess (SSPLConf{..}) = let
 

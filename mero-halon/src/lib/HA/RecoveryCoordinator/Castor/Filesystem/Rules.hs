@@ -103,6 +103,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
 
   start stats_fetch Nothing
 
+-- | Set of rules querying filesystem information.
 rules :: Definitions RC ()
 rules = sequence_
   [ periodicQueryStats ]

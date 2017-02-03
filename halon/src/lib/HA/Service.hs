@@ -158,6 +158,7 @@ stopRemoteService node@(Node nid) svc = do
 -- former. However this may simplify API much if we will run conversion on the
 -- lowest level. Operationally this will be the same as providing to functions.
 class HasServiceInfoMsg a where
+  -- | Create a 'ServiceInfoMsg'.
   serviceInfoMsg :: a -> ServiceInfoMsg
 instance HasServiceInfoMsg ServiceInfoMsg where
   serviceInfoMsg = id
