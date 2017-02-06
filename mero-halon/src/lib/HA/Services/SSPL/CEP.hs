@@ -56,7 +56,6 @@ import           SSPL.Bindings
 
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
-import qualified HA.RecoveryCoordinator.Mero.Actions.Conf as M0
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           Mero.ConfC (strToFid)
@@ -224,7 +223,6 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
                        . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                        $ srdm
       diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
-      diidx = DIIndexInEnclosure diskNum
       sn = T.unpack
            . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
            $ srdm
@@ -237,7 +235,7 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
   Log.tagContext Log.SM uuid Nothing
   Log.tagContext Log.SM (StorageDevice sn) $ Just "sspl::monitor-drivemanager"
   Log.tagContext Log.SM [ ("drive.path"   :: String, show path)
-                        , ("drive.idx"    :: String, show diidx)
+                        , ("drive.diskNum" :: String, show diskNum)
                         , ("drive.status" :: String, T.unpack disk_reason)
                         , ("drive.reason" :: String, T.unpack disk_status)
                         ] Nothing
@@ -245,7 +243,6 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
   sdev_loc <- StorageDevice.mkLocation enc diskNum
   Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing
   disk <- populateStorageDevice sn path
-  M0.associateLocationWithSDev sdev_loc
   fix $ \next -> do
     eresult <- StorageDevice.insertTo disk sdev_loc
     case eresult of
@@ -259,9 +256,6 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
         StorageDevice.ejectFrom sdev' sdev_loc
         notify $ DriveRemoved uuid (Node nid) sdev_loc sdev' True
         next
-      Left (StorageDevice.InAnotherEnclosure _) -> do
-        Log.rcLog' Log.ERROR ("Can't deal with another device as se loose information about HPI." :: String)
-        return ()
   next <- shouldContinue disk
   when next $ do
     oldDriveStatus <- StorageDevice.status disk
@@ -376,32 +370,27 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
     case eresult of
       -- New drive was installed
       Right () | is_installed -> do
+        liftProcess . say $ "debug => Sending: " ++ show (DriveInserted uuid (Node nid) sdev_loc sdev is_powered)
         notify $ DriveInserted uuid (Node nid) sdev_loc sdev is_powered
-        M0.associateLocationWithSDev sdev_loc
         -- Same drive but it was removed.
       Right () -> do
           StorageDevice.ejectFrom sdev sdev_loc -- bad
-          M0.associateLocationWithSDev sdev_loc
       Left StorageDevice.AlreadyInstalled | not is_installed -> do
         StorageDevice.ejectFrom sdev sdev_loc
+        Log.rcLog' Log.DEBUG ("Removing no longer installed device from slot" :: String)
         notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
       Left StorageDevice.AlreadyInstalled | was_powered /= is_powered ->
         notify $ DrivePowerChange uuid (Node nid) sdev_loc sdev is_powered
-      Left (StorageDevice.InAnotherEnclosure _) -> do -- FIXME: can we do something here?
-        Log.rcLog' Log.ERROR
-          ("Can't send drive removed event, because another device slot is unknown" :: String)
       Left (StorageDevice.AnotherInSlot asdev) -> do
         Log.withLocalContext' $ do
-          M0.associateLocationWithSDev sdev_loc
           Log.tagLocalContext sdev Nothing
           Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
           Log.rcLog Log.ERROR
             ("Insertion in a slot where previous device was inserted - removing old device.":: String)
-          asdev `StorageDevice.ejectFrom` sdev_loc
-          notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
+          StorageDevice.ejectFrom asdev sdev_loc
+          notify $ DriveRemoved uuid (Node nid) sdev_loc asdev is_powered
         next
       Left (StorageDevice.InAnotherSlot slot) -> do
-        M0.associateLocationWithSDev slot
         Log.rcLog' Log.ERROR
           ("Storage device was associated with another slot.":: String)
         StorageDevice.ejectFrom sdev slot
@@ -477,7 +466,6 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
     in do
       todo uid
       mhost <- findNodeHost (Node nid)
-      menc  <- maybe (return Nothing) findHostEnclosure mhost
       case mhost of
         Nothing -> phaseLog "error" $ "Cannot find host for node " ++ show nid
                                     ++ " resulting from failure of RAID device "
@@ -500,9 +488,16 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                            ]
                 in do Log.rcLog' Log.DEBUG $ "IDs: " ++ show devIds
                       StorageDevice.identify sdev devIds
-                      -- XXX: (qnikst) we may have no HPI information about slot available. So we need to
-                      -- add helper relation
-                      for_ menc $ \enc -> modifyGraph $ connect enc Has sdev
+                      -- We should always have HPI device status
+                      -- information before raid_data which puts the
+                      -- drive into a slot: if not then it's a bug so
+                      -- at least log it.
+                      --
+                      -- https://seagate.slack.com/archives/castor-sspl/p1485959887000303
+                      findHostStorageDevices host >>= \sdevs ->
+                        unless (sdev `elem` sdevs) $ do
+                          Log.rcLog' Log.ERROR $ "Raid device " ++ show sdev
+                                              ++ " was not found on " ++ show host
                       return $ Just (sdev, path)
               Nothing -> do
                 -- We have no device identifiers here
@@ -580,8 +575,7 @@ ruleThreadController = defineSimpleTask "monitor-thread-controller" $ \(nid, art
            Nothing -> phaseLog "error" $ "can't find host for node " ++ show nid
            Just host -> do
              msds <- runMaybeT $ do
-               encl <- MaybeT $ findHostEnclosure host
-               lift $ findEnclosureStorageDevices encl >>=
+               lift $ findHostStorageDevices host >>=
                         traverse (\x -> do
                           liftA (x,) <$> fmap Just (StorageDevice.status x))
              encl' <- findHostEnclosure host
@@ -595,21 +589,6 @@ ruleThreadController = defineSimpleTask "monitor-thread-controller" $ \(nid, art
                                                           (T.pack reason)
                  _ -> return ()
        _ -> return ()
-
-  -- SSPL Monitor interface data
-  -- defineSimpleIf "monitor-if-update" (\(HAEvent _ (_ :: NodeId, hum)) _ ->
-  --     return $ sensorResponseMessageSensor_response_typeIf_data hum
-  --   ) $ \(SensorResponseMessageSensor_response_typeIf_data hn _ ifs') ->
-  --     let
-  --       host = Host . T.unpack $ fromJust hn
-  --       ifs = join $ maybeToList ifs' -- Maybe List, for some reason...
-  --       addIf i = registerInterface host . Interface . T.unpack . fromJust
-  --         $ sensorResponseMessageSensor_response_typeIf_dataInterfacesItemIfId i
-  --     in do
-  --       phaseLog "action" $ "Adding interfaces to host " ++ show host
-  --       forM_ ifs addIf
-
-  -- Dummy rule for handling SSPL HL commands
 
 ruleHlNodeCmd :: Service SSPLConf -> Definitions RC ()
 ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr) _ ->
@@ -645,20 +624,13 @@ updateDriveManagerWithFailure :: StorageDevice
                               -> String
                               -> Maybe String
                               -> PhaseM RC l ()
-updateDriveManagerWithFailure disk@(StorageDevice sn) st reason = do
-   rg <- getLocalGraph
-   withHost rg disk $ \host -> do
-     _ <- sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
-     sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
-                                            (T.pack sn)
-                                            (maybe "unknown reason" T.pack reason)
-  where
-    withHost rg d f =
-      case connectedFrom Has d rg of
-        Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
-        Just e -> case connectedTo (e::Enclosure) Has rg of
-          []    -> phaseLog "error" $ "Unable to find host for " ++ show e
-          h : _ -> f (h::Host)
+updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sdev >>= \case
+  host : _ -> do
+    _ <- sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
+    sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
+                                           (T.pack sn)
+                                           (maybe "unknown reason" T.pack reason)
+  _ -> phaseLog "error" $ "Unable to find host for " ++ show sdev
 
 ruleSSPLTimeout :: Service SSPLConf -> Definitions RC ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $

@@ -28,7 +28,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , lookupConfObjByFid
   , lookupStorageDevice
   , lookupStorageDeviceSDev
-  , lookupStorageDeviceOnHost
   , lookupDiskSDev
   , lookupEnclosureM0
   , lookupHostHAAddress
@@ -46,21 +45,18 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , m0encToEnc
   , encToM0Enc
     -- * Other
-  , associateLocationWithSDev
   , lookupLocationSDev
   ) where
 
 import           Control.Category ((>>>))
-import           Control.Monad (guard)
 import           Data.Foldable (foldl')
 import qualified Data.HashSet as S
 import           Data.List (scanl')
-import           Data.Maybe (listToMaybe, fromMaybe, mapMaybe)
+import           Data.Maybe (listToMaybe, fromMaybe)
 import           Data.Proxy
 import qualified Data.Set as Set
 import           Data.Traversable (for)
 import           Data.Typeable (Typeable)
-import           HA.RecoveryCoordinator.Actions.Hardware
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
@@ -232,11 +228,8 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                ]
     in do
       let sdev = StorageDevice m0d_serial
+          slot = Slot enc m0d_slot
       StorageDevice.identify sdev devIds
-      -- XXX: we can't insert via location, as we don't have enough info for that
-      -- currently, once halon_facts will have that we may move.
-      -- Log.rcLog' Log.DEBUG $ show (enc, sdev)
-      locateStorageDeviceInEnclosure enc sdev
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case
         Just m0sdev -> return m0sdev
         Nothing -> mkSDev <$> newFidRC (Proxy :: Proxy M0.SDev)
@@ -248,6 +241,9 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
           $ G.connect ctrl M0.IsParentOf m0disk
         >>> G.connect m0sdev M0.IsOnHardware m0disk
         >>> G.connect m0disk M0.At sdev
+        >>> G.connect m0sdev M0.At slot
+        >>> G.connect sdev Has slot
+        >>> G.connect enc Has slot
       return m0sdev
 
 -- | Create a pool version for the MDPool. This should have one device in
@@ -407,7 +403,7 @@ attachStorageDeviceToSDev sdev m0sdev = do
   case G.connectedTo m0sdev M0.IsOnHardware rg of
     Nothing -> return ()
     Just disk -> modifyGraph $ G.connect (disk::M0.Disk) M0.At sdev
-  
+
 
 -- | Find 'M0.Disk' associated with the given 'M0.SDev'.
 lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)
@@ -563,24 +559,6 @@ m0encToEnc m0enc rg = G.connectedTo m0enc M0.At rg
 -- | Lookup Mero enclosure corresponding to enclosure.
 encToM0Enc :: R.Enclosure -> G.Graph -> Maybe M0.Enclosure
 encToM0Enc enc rg = G.connectedFrom M0.At enc rg
-
--- | Update link from 'StorageDeviceLocation' to corresponding storage
--- device, this link is needed to properly process drive updates.
---
--- In case if 'M0.SDev' is already attached - this is noop.
-associateLocationWithSDev :: R.Slot -> PhaseM RC l ()
-associateLocationWithSDev loc = modifyGraph $ \g -> case G.connectedFrom M0.At loc g of
-    Just  (_::M0.SDev) -> g
-    Nothing -> fromMaybe g $ do
-      sdev   :: StorageDevice <- G.connectedFrom Has loc g
-      m0disk :: M0.Disk     <- G.connectedFrom M0.At sdev g
-      m0sdev <- G.connectedFrom M0.IsOnHardware m0disk g
-      path   <- listToMaybe . mapMaybe getPath $ G.connectedTo sdev Has g
-      guard  $ path == M0.d_path m0sdev
-      return $ G.connect m0sdev M0.At loc g
-  where
-    getPath (DIPath p) = Just p
-    getPath _ = Nothing
 
 -- | Find 'M0.SDev' that associated with a given location.
 lookupLocationSDev :: R.Slot -> PhaseM RC l (Maybe M0.SDev)

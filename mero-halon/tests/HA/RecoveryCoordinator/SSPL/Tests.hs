@@ -158,13 +158,9 @@ hpiTests =
      receiveWait $ oneMatch $ match $ \(_ :: Published DriveInserted) -> return ()
      no_other_events
   | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
-  -- Require Slot info on the old drive.
-  -- [ HTI   True      a        True  False   b         $ \_uuid -> do
-  --    receiveWait $ oneMatch $ match $ \(_ :: Published DriveRemoved) -> return ()
-  --    no_other_events
-  -- | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
   [ HTI   True      a        True  True    b         $ \_uuid -> do
-     -- Require slot info on the old drive: receiveWait [match (\(_ :: Published DriveRemoved) -> return ())]
+     -- Require slot info on the old drive
+     receiveWait [match (\(_ :: Published DriveRemoved) -> return ())]
      receiveWait [match (\(_ :: Published DriveInserted) -> return ())]
      no_other_events
   | (a,b) <- (,) <$> [True, False] <*> [True, False]]
@@ -243,7 +239,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
 
       -- Send HPI message:
       me   <- getSelfNode
-      uuid <- liftIO $ nextRandom
+      uuid <- liftIO nextRandom
       hostname <- liftIO getHostName
       let request = mkHpiMessage (pack hostname) enc (pack serial') idx devid wwn hpiIsInstalled hpiIsPowered
       usend rc $ HAEvent uuid (me, request)

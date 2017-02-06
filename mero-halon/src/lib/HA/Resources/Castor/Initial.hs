@@ -224,6 +224,7 @@ data M0Device = M0Device {
   , m0d_bsize :: Word32 -- ^ Block size
   , m0d_size :: Word64 -- ^ Size of disk (in MB)
   , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
+  , m0d_slot :: Int -- ^ Slot within the enclosure the device is in
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Device

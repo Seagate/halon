@@ -33,11 +33,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , registerInterface
     -- * Drive related functions
     -- ** Searching devices
-  , findEnclosureStorageDevices
   , findHostStorageDevices
-  , lookupEnclosureOfStorageDevice
-  , lookupStorageDeviceInEnclosure
-  , lookupStorageDeviceOnHost
   , lookupStorageDevicesWithDI
   , lookupStorageDevicesWithAttr
     -- ** Querying device properties
@@ -55,12 +51,9 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , incrDiskResetAttempts
     --- *** Power
   , isStorageDriveRemoved
-    -- ** Creating new devices
-  , locateStorageDeviceInEnclosure
 ) where
 
 import           Data.Maybe (listToMaybe, maybeToList)
-import qualified Data.Set as Set
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.ResourceGraph as G
@@ -247,44 +240,17 @@ registerInterface host int = do
 -- | Find logical devices on a host
 findHostStorageDevices :: Host
                        -> PhaseM RC l [StorageDevice]
-findHostStorageDevices host = flip fmap getLocalGraph $ \rg -> Set.toList $
-  Set.fromList [sdev  | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
-               , loc  :: Slot <- G.connectedTo enc Has rg
-               , sdev :: StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
-  `Set.union` fallback rg
-  where
-    fallback rg = Set.fromList
-      [ sdev | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
-      , sdev :: StorageDevice <- G.connectedTo enc Has rg
-      ]
-
--- | Find physical devices in an enclosure
-findEnclosureStorageDevices :: Enclosure
-                            -> PhaseM RC l [StorageDevice]
-findEnclosureStorageDevices enc = do
-  fmap (G.connectedTo enc Has) getLocalGraph
+findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
+  [ sdev | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
+         , loc  :: Slot <- G.connectedTo enc Has rg
+         , sdev :: StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
 
 -- | Check if the 'StorageDevice' is still attached (from halon
 -- perspective).
 isStorageDriveRemoved :: StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
-  return $ (&&) (maybe True (\Slot{} -> False)
-                  $ G.connectedTo sd Has rg)
-                (maybe True (\Enclosure{} -> False)
-                  $ G.connectedFrom Has sd rg)
-
--- | Lookup a storage device in given enclosure at given position.
-lookupStorageDeviceInEnclosure :: Enclosure
-                               -> DeviceIdentifier
-                               -> PhaseM RC l (Maybe StorageDevice)
-lookupStorageDeviceInEnclosure enc ident = do
-    rg <- getLocalGraph
-    return $ listToMaybe
-          [ device
-          | device <- G.connectedTo enc Has rg :: [StorageDevice]
-          , G.isConnected device Has ident rg :: Bool
-          ]
+  return . maybe True (\Slot{} -> False) $ G.connectedTo sd Has rg
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
 lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM RC l [StorageDevice]
@@ -293,35 +259,6 @@ lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 -- | Find all 'StorageDevice's with the given 'StorageDeviceAttr'.
 lookupStorageDevicesWithAttr :: StorageDeviceAttr -> PhaseM RC l [StorageDevice]
 lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getLocalGraph
-
--- | Lookup 'StorageDevice' on a host if it was not found to a lookup
--- on enclosure that host is on.
-lookupStorageDeviceOnHost :: Host
-                          -> DeviceIdentifier
-                          -> PhaseM RC l (Maybe StorageDevice)
-lookupStorageDeviceOnHost host ident = do
-      rg <- getLocalGraph
-      case G.connectedFrom Has host rg of
-        Nothing -> return Nothing
-        Just enc -> lookupStorageDeviceInEnclosure enc ident
-
--- | Given a 'DeviceIdentifier', try to find the 'Enclosure' that the
--- device with the identifier belongs to. Useful when SSPL is unable
--- to tell us the enclosure of the device but we may have that info
--- already.
-lookupEnclosureOfStorageDevice :: StorageDevice
-                               -> PhaseM RC l (Maybe Enclosure)
-lookupEnclosureOfStorageDevice sd =
-    G.connectedFrom Has sd <$> getLocalGraph
-
--- | Register a new drive in the system.
-locateStorageDeviceInEnclosure :: Enclosure
-                                -> StorageDevice
-                                -> PhaseM RC l ()
-locateStorageDeviceInEnclosure enc dev = do
-  actLog "locateStorageDeviceInEnclosure"
-          [("device", show dev), ("enclosure", show enc)]
-  modifyGraph $ G.connect enc Has dev
 
 -- | Update a metric monitoring how many drives are currently
 -- undergoing reset. Note that increasing when we start reset and
@@ -411,7 +348,7 @@ getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
   return [ host
-         | Just encl <- [G.connectedFrom Has sdev rg :: Maybe Enclosure]
+         | Slot encl _ <- maybeToList $ G.connectedTo sdev Has rg
          , host <- G.connectedTo encl Has rg :: [Host]
          ]
 

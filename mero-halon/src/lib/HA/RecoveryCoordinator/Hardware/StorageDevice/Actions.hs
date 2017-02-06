@@ -72,13 +72,11 @@ location :: StorageDevice -> PhaseM RC l (Maybe Slot)
 location sdev = G.connectedTo sdev R.Has <$> getLocalGraph
 
 -- | Get device enclosure, if there is no connection to location,
--- then thi call tries to find direct connection.
+-- then this call tries to find direct connection.
 enclosure :: StorageDevice -> PhaseM RC l (Maybe Enclosure)
 enclosure sdev = do
  rg <- getLocalGraph
- return $
-   maybe (G.connectedFrom R.Has sdev rg)
-         (\(Slot e _) -> Just e) $ G.connectedTo sdev R.Has rg
+ return $ slotEnclosure <$> G.connectedTo sdev R.Has rg
 
 -- | Register device location in graph.
 mkLocation :: Enclosure -> Int -> PhaseM RC l Slot
@@ -92,39 +90,43 @@ data InsertionError
   = AnotherInSlot StorageDevice
   | AlreadyInstalled
   | InAnotherSlot Slot
-  | InAnotherEnclosure Enclosure
   deriving (Show, Eq)
 
 -- | Insert storage device in location.
 --
 -- Returns previous storage device that were inserted in that slot.
 --
--- This method doesn't create deprecated 'Enclosure'-&gt;'StorageDevice' relation
--- because this relation is not needed when connection to 'StorageDeviceLocation'
--- exits.
+-- This method doesn't create deprecated @'Enclosure' -> 'StorageDevice'@
+-- relation because this relation is not needed when connection to
+-- 'Slot' exits.
 insertTo :: StorageDevice
          -> Slot
          -> PhaseM RC l (Either InsertionError ())
-insertTo sdev sdev_loc@(Slot enc _) = do
+insertTo sdev sdev_loc = do
   rg <- getLocalGraph
   case G.connectedFrom R.Has sdev_loc rg of
     -- No storage device is associated with current location, we
     -- are free to just associate drive with that.
     Nothing -> case G.connectedTo sdev R.Has rg of
-      Just loc -> return $ Left $ InAnotherSlot loc
-      Nothing  -> case G.connectedFrom R.Has sdev rg of
-        Nothing -> do
-          Log.rcLog' Log.DEBUG ("Device inserted in the slot"::String)
-          modifyGraph $ G.connect sdev R.Has sdev_loc
-          return $ Right ()
-        Just enc' | enc == enc' -> do
-          Log.rcLog' Log.WARN ("Populating missing slot device info"::String)
-          modifyGraph $ G.connect sdev R.Has sdev_loc
-          return $ Left $ AlreadyInstalled
-        Just enc' -> return $ Left $ InAnotherEnclosure enc'
+      -- This StorageDevice is already associated with another slot
+      Just loc' -> return $ Left $ InAnotherSlot loc'
+      -- The slot is empty and StorageDevice doesn't belong anywhere,
+      -- put it in the slot
+      Nothing  -> do
+        Log.rcLog' Log.DEBUG ("Device inserted in the slot"::String)
+        modifyGraph $ G.connect sdev R.Has sdev_loc
+                  -- We don't know how many slots there are in the
+                  -- enclosure ahead of time: if we're getting
+                  -- information about a whole new drive (MD/RAID) in
+                  -- some previously unseen slot, we need to connect
+                  -- the slot up to the enclosure too.
+                  >>> G.connect (slotEnclosure sdev_loc) R.Has sdev_loc
+        return $ Right ()
+    -- The slot is already filled by the StorageDevice
     Just sdev' | sdev' == sdev -> do
        Log.rcLog' Log.DEBUG ("Drive is already installed in this slot."::String)
-       return $ Left $ AlreadyInstalled
+       return $ Left AlreadyInstalled
+    -- Some other StorageDevice is filling the slot already.
     Just sdev' -> do
        Log.rcLog' Log.ERROR [("info"::String, "Another drive was inserted in the slot.")
                             ,("sdev", show sdev')]
@@ -135,9 +137,9 @@ insertTo sdev sdev_loc@(Slot enc _) = do
 -- TODO: remove device identifiers what are not applicable now.
 ejectFrom :: StorageDevice -> Slot -> PhaseM RC l ()
 ejectFrom sdev sdev_loc = do
+  Log.rcLog' Log.DEBUG ("Ejecting " ++ show sdev ++ " from " ++ show sdev_loc :: String)
   modifyGraph $ G.disconnect sdev R.Has sdev_loc
             >>> G.disconnectAllFrom sdev R.Has (Proxy :: Proxy StorageDeviceAttr)
-            >>> G.disconnectAllTo (Proxy :: Proxy Enclosure) R.Has sdev
             >>> (\rg -> case G.connectedTo sdev Is rg of
                           Just (StorageDeviceStatus "HALON-FAILED" _) -> rg
                           Just (StorageDeviceStatus "FAILED" _) -> rg

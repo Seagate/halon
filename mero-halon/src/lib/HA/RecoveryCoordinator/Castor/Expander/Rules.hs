@@ -139,7 +139,8 @@ ruleReassembleRaid =
             extractRaidDev (R.DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
           in nub $ mapMaybe extractRaidDev [
-              lbl | d <- G.connectedTo enc R.Has rg :: [R.StorageDevice]
+              lbl | slot <- G.connectedTo enc R.Has rg :: [R.Slot]
+                  , Just d <- [G.connectedFrom R.Has slot rg] :: [Maybe R.StorageDevice]
                   , lbl <- G.connectedTo d R.Has rg :: [R.DeviceIdentifier]
                   ]
 
