@@ -465,10 +465,16 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
 
     stoppedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
-      return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
-        _ -> Nothing
+      case mpd of
+        Just pd -> do
+          let mpid = G.connectedTo pd Has (lsGraph ls)
+          return $ case (t, pt, pd) of
+            (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, p :: M0.Process)
+               | pid /= 0
+               , Just (M0.PID ppid) <- mpid 
+               , ppid == fromIntegral pid -> Just (eid, p, M0.PID $ fromIntegral pid)
+            _ -> Nothing
+        Nothing -> return Nothing
 
 jobProcessStop :: Job StopProcessRequest StopProcessResult
 jobProcessStop = Job "castor::process::stop"
