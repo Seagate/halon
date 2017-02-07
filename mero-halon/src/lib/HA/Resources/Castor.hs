@@ -42,8 +42,7 @@ newtype Rack = Rack
 deriveSafeCopy 0 'base ''Rack
 
 -- | Representation of a physical enclosure.
-newtype Enclosure = Enclosure
-    String -- ^ Enclosure UUID.
+newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 instance FromJSON Enclosure
 instance ToJSON   Enclosure

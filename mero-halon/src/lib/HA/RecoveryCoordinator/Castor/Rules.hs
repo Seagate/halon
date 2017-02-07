@@ -29,6 +29,7 @@ import Data.Foldable (for_)
 import Control.Monad.Catch
 import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Mero.Actions.Failure
+import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
 import qualified HA.RecoveryCoordinator.Castor.Expander.Rules as Expander
 import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
@@ -46,6 +47,7 @@ castorRules = sequence_
   , Expander.rules
   , Node.rules
   , Service.rules
+  , Commands.rules
   ]
 
 -- | Load initial data from facts file into the system.
@@ -99,10 +101,9 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           createMDPoolPVer filesystem
           createIMeta filesystem
           runValidateConf
-        )
-          `catch` (\e -> do
-                      phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
-                      notify $ InitialDataLoadFailed (show e))
+        ) `catch` (\e -> do
+            phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
+            notify $ InitialDataLoadFailed (show e))
   else do
     phaseLog "error" "Initial data is already loaded."
     notify $ InitialDataLoadFailed "Initial data is already loaded."

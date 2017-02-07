@@ -202,6 +202,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         >>> G.connect m0sdev M0.At slot
         >>> G.connect sdev Has slot
         >>> G.connect enc Has slot
+        >>> G.connect Cluster Has sdev
       return m0sdev
 
 -- | Create a pool version for the MDPool. This should have one device in

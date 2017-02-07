@@ -35,6 +35,7 @@ import qualified HA.Resources.HalonVars as Castor
 import qualified HA.Aeson
 import HA.SafeCopy
 import HA.RecoveryCoordinator.Castor.Cluster.Events
+import HA.RecoveryCoordinator.Castor.Commands.Events
 import HA.RecoveryCoordinator.Castor.Node.Events
 import Mero.ConfC ( Fid )
 
@@ -74,6 +75,7 @@ data ClusterOptions =
   | VarsCmd VarsOptions
   | StateUpdate StateUpdateOptions
   | StopNode StopNodeOptions
+  | CastorDriveCommand DriveCommand
   deriving (Eq, Show)
 
 
@@ -105,6 +107,48 @@ parseCluster =
         "Force update state of the mero objects")))
   <|> ( StopNode <$> Opt.subparser (Opt.command "node-stop" (Opt.withDesc parseStopNodeOptions
          "Stop m0d processes on the given node")))
+  <|> ( Opt.subparser $ command "drive" $ Opt.withDesc parseDriveCommand "Commands to drive")
+
+
+data DriveCommand
+  = DrivePresence String Castor.Slot Bool Bool
+  deriving (Eq, Show)
+
+parseDriveCommand :: Parser ClusterOptions
+parseDriveCommand = CastorDriveCommand <$> asum
+     [ Opt.subparser (command "update-presence" 
+        $ Opt.withDesc parseDrivePresence "Update information about drive presence")
+     ]
+   where
+     parseDrivePresence :: Parser DriveCommand
+     parseDrivePresence = DrivePresence
+        <$> optSerial
+        <*> parseSlot
+        <*> Opt.switch (long "is-installed" <>
+                        help "Mark drive as installed")
+        <*> Opt.switch (long "is-powered" <>
+                        help "Mark drive as powered")
+
+parseSlot :: Parser Castor.Slot
+parseSlot = Castor.Slot
+   <$> (Castor.Enclosure <$>
+         strOption (mconcat [ long "slot-enclosure"
+                            , help "index of the drive's enclosure"
+                            , metavar "NAME"
+                            ]))
+   <*> option auto (mconcat [ long "slot-index"
+                            , help "index of the drive's slot"
+                            , metavar "INT"
+                            ])
+
+optSerial :: Parser String
+optSerial = strOption $ mconcat
+   [ long "serial"
+   , short 's'
+   , help "Drive serial number"
+   , metavar "SERIAL"
+   ]
+
 
 -- | Run the specified cluster command over the given nodes. The nodes
 -- are first verified to be EQ nodes: if they aren't, we use EQ node
@@ -147,6 +191,7 @@ cluster nids' opt = do
       = clusterCommand nids Nothing (ForceObjectStateUpdateRequest s) (liftIO . print)
     cluster' nids (StopNode options)
       = clusterStopNode nids options
+    cluster' nids (CastorDriveCommand s) = runDriveCommand nids s
 
 data LoadOptions = LoadOptions
     FilePath -- ^ Facts file
@@ -770,3 +815,16 @@ clusterHVarsUpdate _ VarsGet = return ()
 
 jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . HA.Aeson.encode
+
+runDriveCommand :: [NodeId] -> DriveCommand -> Process ()
+runDriveCommand nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
+  clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
+    StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do
+      putStrLn $ "Unknown drive " ++ serial
+      exitFailure
+    StorageDevicePresenceErrorNoSuchEnclosure -> liftIO $ do
+      putStrLn $ "No enclosure " ++ show enc
+      exitFailure
+    StorageDevicePresenceUpdated -> liftIO $ do
+      putStrLn $ "Command executed."
+

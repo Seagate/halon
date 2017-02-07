@@ -19,14 +19,17 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   -- * SDev state transitions
   , checkDiskFailureWithinTolerance
   , iemFailureOverTolerance
+  , updateStorageDevicePresence
   ) where
 
 import Data.Binary (Binary)
 import Data.Functor (void)
+import Data.Function (fix)
 import Data.Maybe (mapMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Typeable
+import Data.UUID (UUID)
 import Data.Word (Word32)
 import GHC.Generics
 
@@ -37,6 +40,8 @@ import           HA.Resources
 import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
 import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Actions.Hardware
   ( findStorageDeviceAttrs
   , setStorageDeviceAttr
@@ -45,14 +50,16 @@ import HA.RecoveryCoordinator.Actions.Hardware
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Events
+import HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.Resources as Res
+import qualified HA.Resources.Castor as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import HA.Services.SSPL.CEP (sendInterestingEvent)
 import HA.Services.SSPL.IEM (logFailureOverK)
 import HA.Services.SSPL.LL.Resources (InterestingEventMessage(..))
+import HA.Services.SSPL.LL.RC.Actions (sendInterestingEvent)
 import Mero.ConfC
 import qualified Mero.Spiel as Spiel
 
@@ -61,7 +68,6 @@ import Control.Monad.Catch (SomeException, try, fromException)
 import System.IO.Error
 
 import Network.CEP
-
 
 -- | Notification that happens in case if new spiel device is attached.
 data SpielDeviceAttached = SpielDeviceAttached M0.SDev (Either String ())
@@ -289,3 +295,49 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
          in case mapMaybe getK pvers of
               [] -> Nothing
               xs -> Just (fromIntegral $ maximum xs, length failedDisks)
+
+
+-- | Install storage device into the slot.
+updateStorageDevicePresence :: UUID          -- ^ Thread id.
+                            -> Res.Node          -- ^ Node in question.
+                            -> StorageDevice -- ^ Installed storage device.
+                            -> Res.Slot      -- ^ Slot of the device.
+                            -> Bool          -- ^ Is device installed.
+                            -> Bool          -- ^ Is device powered.
+                            -> PhaseM RC l ()
+updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
+  was_powered <- StorageDevice.isPowered sdev
+  fix $ \next -> do
+    eresult <- StorageDevice.insertTo sdev sdev_loc
+    case eresult of
+      -- New drive was installed
+      Right () | is_installed ->
+        notify $ DriveInserted uuid node sdev_loc sdev is_powered
+      -- Same drive but it was removed.
+      Right () -> do -- this is a bad case, as it means that we have missed notifcatio about drive
+                     -- removal 
+        StorageDevice.ejectFrom sdev sdev_loc
+      -- removing device
+      Left StorageDevice.AlreadyInstalled | not is_installed -> do
+        StorageDevice.ejectFrom sdev sdev_loc
+        Log.rcLog' Log.DEBUG ("Removing no longer installed device from slot" :: String)
+        notify $ DriveRemoved uuid node sdev_loc sdev is_powered
+      Left StorageDevice.AlreadyInstalled | was_powered /= is_powered ->
+        notify $ DrivePowerChange uuid node sdev_loc sdev is_powered
+      -- Nothing changed
+      Left StorageDevice.AlreadyInstalled -> return ()
+      Left (StorageDevice.AnotherInSlot asdev) -> do
+        Log.withLocalContext' $ do
+          Log.tagLocalContext asdev Nothing
+          Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
+          Log.rcLog Log.ERROR
+            ("Insertion in a slot where previous device was inserted - removing old device.":: String)
+          StorageDevice.ejectFrom asdev sdev_loc
+          notify $ DriveRemoved uuid node sdev_loc asdev is_powered
+        next
+      Left (StorageDevice.InAnotherSlot slot) -> do
+        Log.rcLog' Log.ERROR
+          ("Storage device was associated with another slot.":: String)
+        StorageDevice.ejectFrom sdev slot
+        notify $ DriveRemoved uuid node sdev_loc sdev is_powered
+        next

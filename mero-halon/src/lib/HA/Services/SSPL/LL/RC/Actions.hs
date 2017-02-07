@@ -12,6 +12,7 @@ module HA.Services.SSPL.LL.RC.Actions
   , getIEMChannel
   , getAllIEMChannels
   , getAllCommandChannels
+  , sendInterestingEvent
   , storeCommandChannel
   , storeIEMChannel
     -- * SSPL Command Acknowledgement
@@ -31,6 +32,7 @@ import SSPL.Bindings
 
 import Control.Lens
 import Control.Monad (when)
+import Control.Distributed.Process (sendChan)
 
 import Data.Map (Map)
 import Data.Maybe (catMaybes, listToMaybe)
@@ -156,3 +158,13 @@ mkDispatchAwaitCommandAck dispatcher failed logAction = do
       case (l ^. rlens fldCommandAck . rfield, commandAckUUID cmd) of
         (xs, Just y) | y `elem` xs -> return $ Just (eid, y, cmd)
         _ -> return Nothing
+
+-- | Send 'InterestingEventMessage' to any IEM channel available.
+sendInterestingEvent :: InterestingEventMessage
+                     -> PhaseM RC l ()
+sendInterestingEvent msg = do
+  phaseLog "action" "Sending InterestingEventMessage."
+  chanm <- listToMaybe <$> getAllIEMChannels
+  case chanm of
+    Just (Channel chan) -> liftProcess $ sendChan chan msg
+    _ -> phaseLog "warning" "Cannot find IEM channel!"

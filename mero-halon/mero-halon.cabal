@@ -103,6 +103,8 @@ Library
                    HA.RecoveryCoordinator.Actions.Hardware
                    HA.RecoveryCoordinator.Actions.Mero
                    HA.RecoveryCoordinator.Actions.Test
+                   HA.RecoveryCoordinator.Castor.Commands
+                   HA.RecoveryCoordinator.Castor.Commands.Events
                    HA.RecoveryCoordinator.Castor.Cluster.Actions
                    HA.RecoveryCoordinator.Castor.Cluster.Events
                    HA.RecoveryCoordinator.Castor.Drive

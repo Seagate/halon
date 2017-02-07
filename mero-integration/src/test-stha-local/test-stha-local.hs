@@ -17,7 +17,8 @@ import Control.Distributed.Commands.Process
   )
 
 import Prelude hiding ((<$>))
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
+import Control.Monad.Catch (catch)
 import Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode

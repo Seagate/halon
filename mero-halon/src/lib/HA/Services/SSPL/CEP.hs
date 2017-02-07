@@ -12,12 +12,12 @@
 module HA.Services.SSPL.CEP
   ( DriveLedUpdate(..)
   , initialRule
-  , sendInterestingEvent
   , sendLedUpdate
   , sendNodeCmd
   , sendNodeCmdChan
   , ssplRules
   , updateDriveManagerWithFailure
+  , sendInterestingEvent
   ) where
 
 import           Control.Applicative
@@ -42,6 +42,8 @@ import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
+import           HA.RecoveryCoordinator.Castor.Drive.Actions
+                 (updateStorageDevicePresence)
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
@@ -65,16 +67,6 @@ import           Text.Read (readMaybe)
 --------------------------------------------------------------------------------
 -- Primitives
 --------------------------------------------------------------------------------
-
--- | Send 'InterestingEventMessage' to any IEM channel available.
-sendInterestingEvent :: InterestingEventMessage
-                     -> PhaseM RC l ()
-sendInterestingEvent msg = do
-  phaseLog "action" "Sending InterestingEventMessage."
-  chanm <- listToMaybe <$> getAllIEMChannels
-  case chanm of
-    Just (Channel chan) -> liftProcess $ sendChan chan msg
-    _ -> phaseLog "warning" "Cannot find IEM channel!"
 
 -- | Send command to logger actuator.
 --
@@ -372,40 +364,10 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
                         ] Nothing
   have_wwn <- StorageDevice.hasIdentifier sdev wwn
   unless have_wwn $ StorageDevice.identify sdev [wwn]
-  was_powered <- StorageDevice.isPowered sdev
   isOngoingReset <- hasOngoingReset sdev
-  unless isOngoingReset $ fix $ \next -> do
-    eresult <- StorageDevice.insertTo sdev sdev_loc
-    case eresult of
-      -- New drive was installed
-      Right () | is_installed -> do
-        liftProcess . say $ "debug => Sending: " ++ show (DriveInserted uuid (Node nid) sdev_loc sdev is_powered)
-        notify $ DriveInserted uuid (Node nid) sdev_loc sdev is_powered
-        -- Same drive but it was removed.
-      Right () -> do
-          StorageDevice.ejectFrom sdev sdev_loc -- bad
-      Left StorageDevice.AlreadyInstalled | not is_installed -> do
-        StorageDevice.ejectFrom sdev sdev_loc
-        Log.rcLog' Log.DEBUG ("Removing no longer installed device from slot" :: String)
-        notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
-      Left StorageDevice.AlreadyInstalled | was_powered /= is_powered ->
-        notify $ DrivePowerChange uuid (Node nid) sdev_loc sdev is_powered
-      Left (StorageDevice.AnotherInSlot asdev) -> do
-        Log.withLocalContext' $ do
-          Log.tagLocalContext sdev Nothing
-          Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
-          Log.rcLog Log.ERROR
-            ("Insertion in a slot where previous device was inserted - removing old device.":: String)
-          StorageDevice.ejectFrom asdev sdev_loc
-          notify $ DriveRemoved uuid (Node nid) sdev_loc asdev is_powered
-        next
-      Left (StorageDevice.InAnotherSlot slot) -> do
-        Log.rcLog' Log.ERROR
-          ("Storage device was associated with another slot.":: String)
-        StorageDevice.ejectFrom sdev slot
-        notify $ DriveRemoved uuid (Node nid) sdev_loc sdev is_powered
-        next
-      _ -> return ()
+  unless isOngoingReset $ 
+    updateStorageDevicePresence uuid (Node nid) sdev sdev_loc
+      is_installed is_powered
   done uuid
 
 -- | Handle SSPL message about a service failure.

@@ -45,4 +45,5 @@ executable test-stha-local
                  distributed-process-test,
                  process,
                  unix,
+                 exceptions,
                  mero-halon
