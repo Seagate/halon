@@ -163,20 +163,26 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
 
               sdevTransition <- checkDiskFailureWithinTolerance m0sdev m0status <$> getLocalGraph
               when (ratt > resetAttemptThreshold) $ do
-                phaseLog "warning" "drive have failed to reset too many times => making as failed."
+                phaseLog "warning" "drive have failed to reset too many times => marking as failed."
                 when (isRight sdevTransition) $
                   updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
-              -- Notify rest of system if stat actually changed
-              when (st /= m0status) $ do
-                either
-                  (\failedTransition -> do
-                    iemFailureOverTolerance m0sdev
-                    applyStateChanges [ failedTransition ])
-                  (\okTransition -> applyStateChanges [ okTransition ])
-                  sdevTransition
+              -- Multiple things can happen here. If we're under reset
+              -- threshold, we'll try to 'M0.sdsFailTransient'. If
+              -- we're over, checkdiskFailureWithinTolerance will
+              -- either move the disk into failure state (if we're
+              -- under allowed failure tolerance) or it will
+              -- 'M0.sdsFailTransient' if we're over, either making
+              -- the disk transient or keeping it in its current
+              -- state.
+              either
+                (\failedTransition -> do
+                  iemFailureOverTolerance m0sdev
+                  applyStateChanges [ failedTransition ])
+                (\okTransition -> applyStateChanges [ okTransition ])
+                sdevTransition
 
-                promulgateRC $ ResetAttempt sdev
+              promulgateRC $ ResetAttempt sdev
 
     _ -> do
       phaseLog "warning" $ "Cannot find all entities attached to M0"
@@ -191,7 +197,7 @@ jobResetAttempt = Job "reset-attempt"
 
 -- | Try to reset a disk.
 ruleResetAttempt :: Definitions RC ()
-ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
+ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finish) -> do
       reset         <- phaseHandle "reset"
       resetComplete <- phaseHandle "reset-complete"
       smart         <- phaseHandle "smart"
@@ -278,11 +284,16 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle _ finish) -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
                applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
-               Just (ResetAttempt sdev) <- gets Local (^. rlens fldReq . rfield)
+               ResetAttempt sdev <- getRequest
                modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
-             x ->
-               phaseLog "info" $ "Cannot bring drive Online from state "
-                               ++ show x
+             -- Drives in repaired/rebalancing state never go into
+             -- transient to begin with, we just keep them in their
+             -- current state throughout reset.
+             st | st == M0.SDSRepaired || st == M0.SDSRebalancing -> do
+                    ResetAttempt sdev <- getRequest
+                    modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
+                | otherwise ->
+                    phaseLog "info" $ "Cannot bring drive Online from state " ++ show st
            continue finalize)
 
       setPhaseIf smartResponse onSameSdev $ \status -> do

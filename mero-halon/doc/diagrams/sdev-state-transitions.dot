@@ -29,7 +29,11 @@ digraph {
     edge[label="rebalance complete"];
     rebalance -> online;
     edge[label="rebalance abort/\npartial rebalance"];
-    rebalance->repaired;
+    rebalance -> repaired;
+    edge[label="disk reset"];
+    repaired -> repaired;
     edge[label="failure detection/\ndrive removed"];
     rebalance -> transient;
+    edge[label="disk reset"];
+    rebalance -> rebalance;
 }

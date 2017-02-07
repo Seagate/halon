@@ -16,11 +16,9 @@ module HA.Castor.Story.Process (mkTests) where
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E hiding (assert)
 import           Control.Lens
-import           Data.Binary (Binary)
 import           Data.Maybe (listToMaybe)
 import           Data.Typeable
 import           Data.Vinyl
-import           GHC.Generics (Generic)
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
@@ -53,10 +51,6 @@ mkTests pg = do
         , testSuccess "m0t1fs start request completes on any cluster level"
           $ testClientStartsAnyBootlevel t pg ]
 
--- | Used to fire internal test rules
-newtype RuleHook = RuleHook ProcessId
-  deriving (Generic, Typeable, Binary)
-
 -- | Stop then start a running process.
 testStopStart :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testStopStart transport pg = do
@@ -64,7 +58,7 @@ testStopStart transport pg = do
     tos { H._to_cluster_setup = H.Bootstrapped }
   H.run' transport pg [rule] tos' $ \ts -> do
     self <- getSelfPid
-    usend (H._ts_rc ts) $ RuleHook self
+    usend (H._ts_rc ts) $ H.RuleHook self
     expect >>= \case
       Nothing -> return ()
       Just err -> fail err
@@ -77,7 +71,7 @@ testStopStart transport pg = do
       process_stopped <- phaseHandle "process_stopped"
       process_started <- phaseHandle "process_started"
 
-      setPhase rule_init $ \(RuleHook caller) -> do
+      setPhase rule_init $ \(H.RuleHook caller) -> do
         rg <- getLocalGraph
         let ps = listToMaybe $
                  getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
@@ -134,7 +128,7 @@ testClientStartsAnyBootlevel transport pg = do
     test :: H.TestSetup -> Process ()
     test ts = do
       self <- getSelfPid
-      usend (H._ts_rc ts) $ RuleHook self
+      usend (H._ts_rc ts) $ H.RuleHook self
       expect >>= maybe (return ()) fail
 
     sendToCaller caller m = liftProcess $ usend caller (m :: Maybe String)
@@ -143,7 +137,7 @@ testClientStartsAnyBootlevel transport pg = do
       rule_init <- phaseHandle "rule_init"
       m0t1fs_result <- phaseHandle "m0t1fs_result"
 
-      setPhase rule_init $ \(RuleHook caller) -> do
+      setPhase rule_init $ \(H.RuleHook caller) -> do
         -- For a process to start, cluster disposition has to be
         -- online. As we only started halon:m0d, set in manually.
         modifyGraph $ G.connect Cluster Has M0.ONLINE

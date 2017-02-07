@@ -9,11 +9,9 @@ module HA.Test.InternalStateChanges (mkTests) where
 
 import           Control.Distributed.Process hiding (bracket)
 import           Control.Exception as E
-import           Data.Binary (Binary)
 import           Data.List (nub, sort)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
-import           GHC.Generics (Generic)
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
@@ -44,10 +42,6 @@ mkTests pg = do
            failvecCascade t pg
         ]
 
--- | Used to fire internal test rules
-newtype RuleHook = RuleHook ProcessId
-  deriving (Generic, Typeable, Binary)
-
 -- | Test that internal object change message is properly sent out
 -- throughout RC for a cascaded event.
 --
@@ -74,12 +68,12 @@ stateCascade t pg = do
     test' :: H.TestSetup -> Process ()
     test' ts = do
       self <- getSelfPid
-      usend (H._ts_rc ts) $ RuleHook self
+      usend (H._ts_rc ts) $ H.RuleHook self
       True <- expect
       return ()
 
     rule :: Definitions RC ()
-    rule = defineSimple "stateCascadeTest" $ \(RuleHook pid) -> do
+    rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       rg <- getLocalGraph
       let Just p = listToMaybe $
               [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
@@ -107,11 +101,11 @@ failvecCascade t pg = do
     test' :: H.TestSetup -> Process ()
     test' ts = do
       self <- getSelfPid
-      usend (H._ts_rc ts) $ RuleHook self
+      usend (H._ts_rc ts) $ H.RuleHook self
       expect >>= maybe (return ()) fail
 
     rule :: Definitions RC ()
-    rule = defineSimple "stateCascadeTest" $ \(RuleHook pid) -> do
+    rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       phaseLog "info" "Set hooks"
       rg <- getLocalGraph
       let d0:d1:_ =

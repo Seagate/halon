@@ -38,6 +38,10 @@ import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc)
+import           HA.RecoveryCoordinator.Mero.State
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
+import           HA.RecoveryCoordinator.RC.Actions.Core (getLocalGraph)
 import           HA.RecoveryCoordinator.RC.Subscription
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
@@ -96,6 +100,10 @@ mkTests pg = do
           testDrivePoweredDown transport pg
         , testSuccess "RAID reassembles after expander reset" $
           testExpanderResetRAIDReassemble transport pg
+        , testSuccess "Repaired drive goes back to repaired after reset" $
+          testRepairedDriveReset transport pg
+        , testSuccess "Rebalancing drive goes back to rebalance after reset" $
+          testRebalanceDriveReset transport pg
         ]
 
 -- | Get system hostname of the given 'NodeId' from RG.
@@ -145,21 +153,25 @@ waitState obj mm interval ts p = waitUntilGraph mm interval ts $ \rg ->
   let st = HA.Resources.Mero.Note.getState obj rg
   in if p st then Just st else Nothing
 
+-- | Construct a 'ThatWhichWeCallADisk' per every 'M0.SDev' found in
+-- RG.
+findSDevs :: G.Graph -> [ThatWhichWeCallADisk]
+findSDevs rg =
+  [ ADisk storage (Just sdev) path wwn
+  | sdev <- G.getResourcesOfType rg :: [M0.SDev]
+  , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+  , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
+  , path <- return "path" -- DIPath path <- G.connectedTo storage Has rg
+  , DIWWN wwn <- G.connectedTo storage Has rg
+  ]
+
+-- | Find some random 'ThatWhichWeCallADisk' in the RG.
 findSDev :: G.Graph -> Process ThatWhichWeCallADisk
-findSDev rg =
-  let dvs = [ ADisk storage (Just sdev) path wwn
-            | sdev <- G.getResourcesOfType rg :: [M0.SDev]
-            , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
-            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
-            -- , DIPath path <- G.connectedTo storage Has rg
-            , path <- return "path" -- DIPath path <- G.connectedTo storage Has rg
-            , DIWWN wwn <- G.connectedTo storage Has rg
-            -- , wwn <- return "wwn" --DIWWN wwn <- G.connectedTo storage Has rg
-            ]
-  in case dvs of
-    dv:_ -> return dv
-    _    -> do liftIO $ assertFailure "Can't find a M0.SDev or its serial number"
-               error "Unreachable"
+findSDev rg = case findSDevs rg of
+  dv : _ -> return dv
+  _ -> do
+    liftIO $ assertFailure "Can't find a M0.SDev or its serial number"
+    error "Unreachable"
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
 findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe Enclosure
@@ -280,14 +292,17 @@ failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
 failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
   let tserial = pack serial
   sayTest "failDrive"
+  preResetSt <- HA.Resources.Mero.Note.getState sdev <$> G.getGraph (_ts_mm ts)
   -- We a drive failure note to the RC.
   _ <- promulgateEQ [processNodeId $ _ts_rc ts] (mkSDevFailedMsg sdev)
 
   -- Mero should be notified that the drive should be transient.
-  Just{} <- waitState sdev (_ts_mm ts) 2 10 $ \case
-    M0.SDSTransient _ -> True
-    _ -> False
-  sayTest "failDrive: Transient state set"
+  Just{} <- waitState sdev (_ts_mm ts) 2 10 $ \st ->
+    case TrI.runTransition Tr.sdevFailTransient preResetSt of
+      TrI.NoTransition -> True
+      TrI.TransitionTo st' -> st == st'
+      TrI.InvalidTransition mkErr -> error $ "failDrive: " ++ mkErr sdev
+  sayTest "failDrive: Drive transitioned"
   -- The RC should issue a 'ResetAttempt' and should be handled.
   _ :: HAEvent ResetAttempt <- expectPublished
   -- We should see `ResetAttempt` from SSPL
@@ -300,28 +315,26 @@ resetComplete :: ProcessId -- ^ RC
               -> StoreChan -- ^ MM
               -> ThatWhichWeCallADisk -- ^ Disk thing we're working on
               -> AckReply -- ^ Smart result
+              -> M0.SDevState -- ^ State of the device after smart completes.
               -> Process ()
-resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) success = do
+resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) success expSt = do
   let tserial = pack serial
       resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
-      smartStatus = case success of
-        AckReplyPassed -> M0.SDSOnline
-        _ -> M0.SDSFailed
       smartComplete = CommandAck Nothing (Just $ SmartTest tserial) success
   sayTest "resetComplete"
   -- Send 'SpielDeviceDetached' to the RC
   forM_ m0sdev $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
   -- Send 'DriveOK'
   uuid <- liftIO nextRandom
-  Just enc <- findDiskEnclosure adisk <$> G.getGraph mm
   rg <- G.getGraph mm
-  Just node <- return $ do
-    e :: Enclosure <- findDiskEnclosure adisk rg
-    listToMaybe $ do
-      h :: Host <- G.connectedTo e Has rg
+  Just (node, slot) <- return $ do
+    slot <- G.connectedTo (aDiskSD adisk) Has rg
+    n <- listToMaybe $ do
+      h :: Host <- G.connectedTo (slotEnclosure slot) Has rg
       G.connectedTo h Runs rg
+    return (n, slot)
 
-  _ <- usend rc $ DriveOK uuid node (Slot enc 0) stord
+  _ <- usend rc $ DriveOK uuid node slot stord
   _ <- promulgateEQ [processNodeId rc] resetCmd
   let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                        $ nodeCmdString (SmartTest tserial)
@@ -342,7 +355,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
     _ <- expectPublishedIf $ \case
       ResetSuccess stord' -> stord == stord' && success == AckReplyPassed
       ResetFailure stord' -> stord == stord' && success /= AckReplyPassed
-    Just{} <- waitState sdev mm 2 10 (== smartStatus)
+    Just{} <- waitState sdev mm 2 10 (== expSt)
     sayTest "Reset finished, device in expected state."
 
 --------------------------------------------------------------------------------
@@ -355,7 +368,7 @@ testDiskFailure transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
   sdev <- G.getGraph (_ts_mm ts) >>= findSDev
   failDrive ts sdev
-  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
 
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHitResetLimit transport pg = run transport pg [] $ \ts -> do
@@ -366,7 +379,7 @@ testHitResetLimit transport pg = run transport pg [] $ \ts -> do
   replicateM_ (resetAttemptThreshold + 1) $ do
     sayTest "============== FAILURE START ================================"
     failDrive ts sdev
-    resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
+    resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
     sayTest "============== FAILURE Finish ================================"
 
   forM_ (aDiskMero sdev) $ \m0sdev -> do
@@ -381,7 +394,7 @@ testFailedSMART transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
   sdev <- G.getGraph (_ts_mm ts) >>= findSDev
   failDrive ts sdev
-  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyFailed
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyFailed M0.SDSFailed
 
 testSecondReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testSecondReset transport pg = run transport pg [] $ \ts -> do
@@ -391,8 +404,8 @@ testSecondReset transport pg = run transport pg [] $ \ts -> do
   sdev2 <- G.getGraph (_ts_mm ts) >>= find2SDev
   failDrive ts sdev
   failDrive ts sdev2
-  resetComplete (_ts_rc ts) (_ts_mm ts) sdev2 AckReplyPassed
-  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev2 AckReplyPassed M0.SDSOnline
+  resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
 
 -- | Test that when a message about a drive marked as not installed
 -- arrives to SSPL, the drive is removed from the slot and eventually
@@ -445,17 +458,15 @@ testDrivePoweredDown :: (Typeable g, RGroup g)
 testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveFailed)
   rg <- G.getGraph (_ts_mm ts)
-  eid <- liftIO $ nextRandom
+  eid <- liftIO nextRandom
   disk <- findSDev rg
-  let Just enc = findDiskEnclosure disk rg
-  Just node <- return $ do
-    e <- findDiskEnclosure disk rg
-    listToMaybe $ do
-       h :: Host <- G.connectedTo e Has rg
-       G.connectedTo h Runs rg
-
-  usend (_ts_rc ts) $ DriveFailed eid node (Slot enc 0) (aDiskSD disk)
-  -- Need to ack the response to Mero
+  Just (node, slot) <- return $ do
+    slot <- G.connectedTo (aDiskSD disk) Has rg
+    n <- listToMaybe $ do
+      h :: Host <- G.connectedTo (slotEnclosure slot) Has rg
+      G.connectedTo h Runs rg
+    return (n, slot)
+  usend (_ts_rc ts) $ DriveFailed eid node slot (aDiskSD disk)
 
   forM_ (aDiskMero disk) $ \m0disk -> do
     Just{} <- waitState m0disk (_ts_mm ts) 2 10 (== M0.SDSFailed)
@@ -471,6 +482,60 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
     let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DrivePowerdown . pack $ (\(StorageDevice sn) -> sn) $ aDiskSD disk)
     liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
+
+-- | Make a test that sets the drive to some starting state,
+-- succesfully resets it and checks that the drive is in given state
+-- after reset.
+mkTestAroundReset :: (Typeable g, RGroup g)
+                  => Transport -> Proxy g
+                  -> M0.SDevState -- ^ Starting and stopping state for the drive
+                  -> IO ()
+mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
+  getSelfPid >>= usend (_ts_rc ts) . RuleHook
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+  sayTest "Waiting for SDev from RC."
+  expect >>= \case
+    Nothing -> fail "No SDev found in RG."
+    Just (sdev :: M0.SDev) -> do
+      sayTest $ "Waiting for SDev to become " ++ show devSt
+      Just{} <- waitState sdev (_ts_mm ts) 2 10 $ \case
+        st -> devSt == st
+      let getOurDisk = filter (\ad -> aDiskMero ad == Just sdev)
+      sayTest "Obtaining disk."
+      adisk <- G.getGraph (_ts_mm ts) >>= \rg -> case getOurDisk $ findSDevs rg of
+        adisk : _ -> return adisk
+        _ -> fail "No ThatWhichWeCallADisk found for SDev."
+      failDrive ts adisk
+      resetComplete (_ts_rc ts) (_ts_mm ts) adisk AckReplyPassed devSt
+  where
+    setupRule = define "mkTestAroundReset-setup" $ do
+      rule_init <- phaseHandle "rule_init"
+      setPhase rule_init $ \(RuleHook caller) -> do
+        rg <- getLocalGraph
+        -- Find a single SDev
+        let msdev = listToMaybe
+              [ sdev | rack :: Rack <- G.connectedTo Cluster Has rg
+                     , enc :: Enclosure <- G.connectedTo rack Has rg
+                     , slot :: Slot <- G.connectedTo enc Has rg
+                     , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
+        case msdev of
+          Nothing -> liftProcess $ usend caller (Nothing :: Maybe M0.SDev)
+          Just sdev -> do
+            applyStateChanges [ stateSet sdev $ TrI.constTransition devSt ]
+            liftProcess . usend caller $ Just sdev
+
+      start rule_init ()
+
+-- | Test that a drive that is in repaired state ends up in repaired
+-- state after it is reset.
+testRepairedDriveReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testRepairedDriveReset t pg = mkTestAroundReset t pg M0.SDSRepaired
+
+-- | Test that a drive that is in rebalancing state ends up in
+-- rebalancing state after it is reset.
+testRebalanceDriveReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
+testRebalanceDriveReset t pg = mkTestAroundReset t pg M0.SDSRebalancing
 
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed.
@@ -553,7 +618,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
     liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
 
   sayTest "Reset command received at SSPL"
-  resetComplete (_ts_rc ts) (_ts_mm ts) disk2 AckReplyPassed
+  resetComplete (_ts_rc ts) (_ts_mm ts) disk2 AckReplyPassed M0.SDSOnline
 
   do
     msg <- expectNodeMsg ssplTimeout
