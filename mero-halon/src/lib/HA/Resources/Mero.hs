@@ -400,6 +400,7 @@ sdsFailTransient :: SDevState -> SDevState
 sdsFailTransient SDSFailed = SDSFailed
 sdsFailTransient SDSRepairing = SDSRepairing
 sdsFailTransient SDSRepaired = SDSRepaired
+sdsFailTransient SDSRebalancing = SDSRebalancing
 sdsFailTransient s@(SDSTransient _) = s
 sdsFailTransient (SDSInhibited x) = SDSInhibited $ sdsFailTransient x
 sdsFailTransient x = SDSTransient x

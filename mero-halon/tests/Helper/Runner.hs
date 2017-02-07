@@ -13,6 +13,7 @@
 -- tests.
 module Helper.Runner
   ( ClusterSetup(..)
+  , RuleHook(..)
   , TestOptions(..)
   , TestSetup(..)
   , mkDefaultTestOptions
@@ -146,6 +147,11 @@ data PopulateMockReply = MockRunning NodeId
   deriving (Show, Eq, Ord, Generic, Typeable)
 instance Binary PopulateMockReply
 
+-- | Used to fire internal test rules. Many tests define a single rule
+-- that they want to fire and reply from: this provides a common type
+-- for that.
+newtype RuleHook = RuleHook ProcessId
+  deriving (Generic, Typeable, Binary)
 
 testRules :: Definitions RC ()
 testRules = do
