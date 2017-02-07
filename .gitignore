@@ -27,3 +27,4 @@ GRTAGS
 GSYMS
 GTAGS
 *.swp
+mero-halon/doc/diagrams/*.png
