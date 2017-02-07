@@ -1,0 +1,24 @@
+digraph {
+    splines=true;
+    node[shape=ellipse];
+    Disk;
+    StorageDevice;
+    Slot;
+    SDev;
+    Enclosure;
+    Controller;
+    Host;
+    m0node [label="Node"];
+
+    Disk -> StorageDevice [label="At"];
+    SDev -> Disk [label="IsOnHardware"];
+    StorageDevice -> Slot [label="Has"];
+    SDev -> Slot [label="At"];
+    Enclosure -> Slot [label="Has"];
+    Enclosure -> Controller [label="IsParentOf"];
+    Controller -> Disk [label="IsParentOf"];
+    m0node -> Controller [label="IsOnHardware"];
+    Controller -> Host [label="At"];
+    Host -> m0node [label="Runs"];
+
+}
