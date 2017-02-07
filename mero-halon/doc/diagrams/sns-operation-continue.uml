@@ -1,0 +1,27 @@
+@startuml
+participant halon
+participant ios1
+participant ios2
+participant client
+
+halon -> ios2: repair status request
+ios2 -> halon: repair status reply
+alt all IOS are [IDLE, PAUSED]
+  halon -> ios2: m0_spiel_repair_continue
+  loop until all ios are [FAILED, STARTED]
+     halon->ios2: m0_spiel_repair_status
+     ios2 ->halon: reply
+  end
+  alt all IOS are [IDLE, RUNNING]
+  else some IOS are [FAILED, STARTED]
+     rnote over halon, client
+       SNS Operation abort
+     end rnote
+  end
+else some IOS are [FAILED]
+rnote over halon, client
+  SNS Operation abort
+end rnote
+end
+
+@enduml

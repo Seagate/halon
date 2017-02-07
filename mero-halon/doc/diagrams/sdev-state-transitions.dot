@@ -6,24 +6,30 @@ digraph {
     repair;
     rebalance;
     
-    edge[label="failure detection/drive removed"];
+    edge[label="failure detection/\ndrive removed"];
     online -> transient;
-    edge[label="successful reset/drive reseat"];
+    edge[label="successful reset/\ndrive reseat"];
     transient -> online;
-    edge[label="failed reset/drive remains removed"];
+    edge[label="failed reset/\ndrive remains removed"];
     transient -> failed;
+    edge[label="successful reset/\ndrive reset\n of Repaired device\n (no running rebalance)"];
+    transient -> repaired;
+    edge[label="successful reset/\ndrive reset\n of Repaired device\n (running rebalance)"];
+    transient -> rebalance;
 
     edge[label="repair start"];
     failed -> repair;
     edge[label="full repair"];
     repair -> repaired;
-    edge[label="partial repair/repair abort"];
+    edge[label="partial repair/\nrepair abort"];
     repair -> failed;
 
     edge[label="rebalance start"];
     repaired -> rebalance;
     edge[label="rebalance complete"];
     rebalance -> online;
-    edge[label="failure detection/drive removed"];
+    edge[label="rebalance abort/\npartial rebalance"];
+    rebalance->repaired;
+    edge[label="failure detection/\ndrive removed"];
     rebalance -> transient;
 }
