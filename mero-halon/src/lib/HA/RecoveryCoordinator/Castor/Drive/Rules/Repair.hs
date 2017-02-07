@@ -213,7 +213,20 @@ querySpiel = define "spiel::sns:query-status" $ do
         (do Just (uuid, _, _, _) <- get Local
             messageProcessed uuid)
         (return ())
-        (return ())
+        (do Just (_, pool, _, ruuid) <- get Local
+            mprs <- getPoolRepairStatus pool
+            case mprs of
+              Just prs | ruuid == prsRepairUUID prs 
+                       , Just pri <- prsPri prs -> do
+                let onlineCnt = priOnlineNotifications pri
+                nios <- length <$> R.getIOServices pool
+                when (onlineCnt <= nios) $ do
+                  switch [ timeout 5 query_status
+                         , abort_on_quiesce
+                         , abort_on_abort
+                         ]
+              _ -> return ()
+        ) 
         (\case
             Left abortMsg -> do
               promulgateRC abortMsg
@@ -669,14 +682,22 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \finish -> do
        keep_running <- isStillRunning pool
        if keep_running
        then do
-         if any ((Spiel.M0_SNS_CM_STATUS_PAUSED ==) . Spiel._sss_state) sns
-             && all ((Spiel.M0_SNS_CM_STATUS_FAILED /=) . Spiel._sss_state) sns
-         then do
-           result <- R.allIOSOnline pool
-           if result
-           then action pool >> continue phase
-           else process_failure pool "Not all IOS are ready"
-         else continue finish -- XXX: should we unregister operation here
+         let havePaused = any ((Spiel.M0_SNS_CM_STATUS_PAUSED ==) . Spiel._sss_state) sns
+             allOk = all ((Spiel.M0_SNS_CM_STATUS_FAILED /=) . Spiel._sss_state) sns
+         case (havePaused, allOk) of
+           (True, True) -> do
+             result <- R.allIOSOnline pool
+             if result
+             then action pool >> continue phase
+             else process_failure pool "Not all IOS are ready"
+           (True, False) -> do
+             Just (ContinueSNS ruuid _ _) <- getField . rget fldReq <$> get Local
+             promulgateRC $ AbortSNSOperation pool ruuid
+             continue finish
+           (False, _) -> do
+             Just (ContinueSNS _ _ prt) <- getField . rget fldReq <$> get Local
+             completeRepair pool prt Nothing
+             continue finish
        else continue finish
       isStillRunning pool = do
         Just (ContinueSNS ruuid _ _) <- getField . rget fldReq <$> get Local
