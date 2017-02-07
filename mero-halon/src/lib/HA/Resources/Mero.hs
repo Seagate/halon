@@ -592,45 +592,54 @@ instance ToJSON PoolRepairType
 instance FromJSON PoolRepairType
 
 -- | Information attached to 'PoolRepairStatus'.
-data PoolRepairInformation = PoolRepairInformation
-  { priOnlineNotifications :: Int
+data PoolRepairInformation_v0 = PoolRepairInformation_v0
+  { priOnlineNotifications_v0 :: Int
   -- ^ Number of online notifications received from IOS.
-  , priTimeOfFirstCompletion :: TimeSpec
+  , priTimeOfFirstCompletion_v0 :: TimeSpec
   -- ^ Time of completion of the operation by the first IOS.
-  , priTimeLastHourlyRan :: TimeSpec
+  , priTimeLastHourlyRan_v0 :: TimeSpec
   -- ^ Time at which the last hourly query has been ran.
-  , priStateUpdates      :: [(SDev, Int)]
+  , priStateUpdates_v0      :: [(SDev, Int)]
+  } deriving (Eq, Show, Generic, Typeable, Ord)
+
+instance Hashable PoolRepairInformation_v0
+instance ToJSON PoolRepairInformation_v0
+instance FromJSON PoolRepairInformation_v0
+deriveSafeCopy 0 'base ''PoolRepairInformation_v0
+
+data PoolRepairInformation = PoolRepairInformation
+  { priTimeOfSnsStart :: !TimeSpec
+  , priTimeLastHourlyRan :: !TimeSpec
+  , priStateUpdates :: ![(SDev, Int)]
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Hashable PoolRepairInformation
 instance ToJSON PoolRepairInformation
 instance FromJSON PoolRepairInformation
-deriveSafeCopy 0 'base ''PoolRepairInformation
+deriveSafeCopy 1 'extension ''PoolRepairInformation
 
--- | Sets default values for 'PoolRepairInformation'.
---
--- Number of received notifications is set to 0. The query times are
--- set to 0 seconds after epoch ensuring they queries actually start
--- on the first invocation.
-defaultPoolRepairInformation :: PoolRepairInformation
-defaultPoolRepairInformation = PoolRepairInformation 0 0 0 []
+instance Migrate PoolRepairInformation where
+  type MigrateFrom PoolRepairInformation = PoolRepairInformation_v0
+  migrate pri_v0 = PoolRepairInformation
+    { priTimeOfSnsStart = priTimeOfFirstCompletion_v0 pri_v0
+    , priTimeLastHourlyRan = priTimeLastHourlyRan_v0 pri_v0
+    , priStateUpdates = priStateUpdates_v0 pri_v0
+    }
 
 -- | Status of SNS pool repair/rebalance.
 data PoolRepairStatus = PoolRepairStatus
-  { prsType :: PoolRepairType
+  { prsType :: !PoolRepairType
   -- ^ Repair/rebalance?
   , prsRepairUUID :: UUID
   -- ^ UUID used to distinguish SNS operations from different runs on
   -- the same pool.
-  , prsPri :: Maybe PoolRepairInformation
+  , prsPri :: !(Maybe PoolRepairInformation)
   -- ^ Information about the actual SNS operation.
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Hashable PoolRepairStatus
 instance ToJSON PoolRepairStatus
 instance FromJSON PoolRepairStatus
-
--- instance FromJSON PoolRepairStatus
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
 -- | Vector of failed devices. We keep the order of failures because
