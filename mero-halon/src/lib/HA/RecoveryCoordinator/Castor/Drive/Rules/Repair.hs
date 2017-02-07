@@ -177,7 +177,7 @@ processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete 
       keepRunning <- maybe False ((ruuid ==) .prsRepairUUID)
                        <$> getPoolRepairStatus pool
       when keepRunning $ do
-        updatePoolRepairStatusTime pool
+        updatePoolRepairQueryTime pool
         nios <- length <$> R.getIOServices pool -- XXX: this is not number of
                                                 --  IOS we started with
         if sts == R.filterCompletedRepairs sts
@@ -235,7 +235,7 @@ querySpiel = define "spiel::sns:query-status" $ do
               continue abort_on_abort
             Right pri -> do
               timeNow <- liftIO getTime
-              let elapsed = timeNow - priTimeOfFirstCompletion pri
+              let elapsed = timeNow - priTimeOfSnsStart pri
                   untilTimeout = M0.mkTimeSpec 300 - elapsed
               switch [ query_status
                      , abort_on_quiesce
@@ -293,20 +293,22 @@ jobHourlyStatus  = Job "castor::sns::hourly-status"
 -- * it runs hourly
 -- * it runs until repairs complete
 querySpielHourly :: Definitions RC ()
-querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle _ finish) -> do
+querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle getRequest finish) -> do
   run_query <- phaseHandle "run status query"
   abort_on_quiesce <- phaseHandle "abort due to SNS operation pause"
   abort_on_abort   <- phaseHandle "abort due to SNS operation abort"
-  let loop = [ timeout 3600 run_query
-             , abort_on_quiesce
-             , abort_on_abort
-             ]
+  let loop t = [ timeout t run_query
+               , abort_on_quiesce
+               , abort_on_abort
+               ]
   let process_info = processSnsStatusReply
-        (do Just (SpielQueryHourly _ prt ruid) <- getField . rget fldReq <$> get Local
+        (do SpielQueryHourly _ prt ruid <- getRequest
             return (Nothing, prt, ruid))
         (return ())
         (continue finish)
-        (switch loop)
+        (do SpielQueryHourly pool _ _ <- getRequest
+            t <- getTimeUntilHourlyQuery pool
+            switch $ loop t)
         (\case
             Left abortMsg -> do
               promulgateRC abortMsg
@@ -316,13 +318,14 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle _ finish) -> do
   let process_failure _pool _str = continue finish
 
   let route (SpielQueryHourly pool prt ruid) = do
-        modify Local $ rlens fldRep .~ Field (Just $ SpielQueryHourlyFinished pool prt ruid)
-        return $ Right (SpielQueryHourlyFinished pool prt ruid, loop)
+        modify Local $ rlens fldRep . rfield .~ Just (SpielQueryHourlyFinished pool prt ruid)
+        t <- getTimeUntilHourlyQuery pool
+        return $ Right (SpielQueryHourlyFinished pool prt ruid, loop t)
 
   setPhase abort_on_quiesce $
-    \(HAEvent _ (QuiesceSNSOperation _pool)) -> continue finish
+    \(HAEvent _ QuiesceSNSOperation{}) -> continue finish
   setPhase abort_on_abort   $
-    \(HAEvent _ (AbortSNSOperation _pool _)) -> continue finish
+    \(HAEvent _ AbortSNSOperation{}) -> continue finish
 
   (repair_status, repairStatus) <-
      mkRepairStatusRequestOperation process_failure process_info
@@ -331,7 +334,7 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle _ finish) -> do
     mkRebalanceStatusRequestOperation process_failure process_info
 
   directly run_query $ do
-    Just (SpielQueryHourly pool prt ruuid) <- getField . rget fldReq <$> get Local
+    SpielQueryHourly pool prt ruuid <- getRequest
     keepRunning <- maybe False ((ruuid ==) . prsRepairUUID) <$> getPoolRepairStatus pool
     unless keepRunning $ continue finish
     case prt of
@@ -409,9 +412,8 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
      case eresult of
        Left _err -> do abortRebalanceStart
                        continue finish
-       Right _uuid -> do modify Local $ rlens fldRep .~ Field (Just $ PoolRebalanceStarted pool)
-                         possiblyInitialisePRI pool
-                         incrementOnlinePRSResponse pool
+       Right _uuid -> do modify Local $ rlens fldRep . rfield .~ Just (PoolRebalanceStarted pool)
+                         updateSnsStartTime pool
                          continue finish
 
   (status_received, statusRebalance) <- mkRebalanceStatusRequestOperation
@@ -553,12 +555,11 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   (repair_started, startRepairOperation) <- mkRepairStartOperation $ \pool er -> do
     case er of
       Left s -> do
-        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairFailedToStart pool s)
+        modify Local $ rlens fldRep . rfield .~ Just (PoolRepairFailedToStart pool s)
         continue finish
       Right _ -> do
-        modify Local $ rlens fldRep .~ Field (Just $ PoolRepairStarted pool)
-        possiblyInitialisePRI pool
-        incrementOnlinePRSResponse pool
+        modify Local $ rlens fldRep . rfield .~ Just (PoolRepairStarted pool)
+        updateSnsStartTime pool
         abort_if_needed pool
         continue finish
 
@@ -676,7 +677,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
         if keepRunning
         then do Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
                 modify Local $
-                  rlens fldRep .~ Field (Just $ SNSFailed ruuid pool prt s)
+                  rlens fldRep . rfield .~ Just (SNSFailed ruuid pool prt s)
         else do
           phaseLog "warning" "SNS continue operation failedm but SNS is no longer registered in RG"
           continue finish
@@ -700,7 +701,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
 
   repair <- mkRepairContinueOperation process_failure $ \pool _ -> do
     Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
-    modify Local $ rlens fldRep .~ Field (Just $ SNSContinued ruuid pool prt)
+    modify Local $ rlens fldRep . rfield .~ Just (SNSContinued ruuid pool prt)
     continue finish
 
   (repair_status, repairStatus) <-
@@ -709,7 +710,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
 
   rebalance <- mkRebalanceContinueOperation process_failure $ \pool _ -> do
     Just (ContinueSNS ruuid _ prt) <- getField . rget fldReq <$> get Local
-    modify Local $ rlens fldRep .~ Field (Just $ SNSContinued ruuid pool prt)
+    modify Local $ rlens fldRep . rfield .~ Just (SNSContinued ruuid pool prt)
     continue finish
 
   (rebalance_status, rebalanceStatus) <-

@@ -375,7 +375,7 @@ parseResetOptions = ResetOptions
     )
 
 parseSyncOptions :: Opt.Parser SyncOptions
-parseSyncOptions = SyncOptions 
+parseSyncOptions = SyncOptions
   <$> Opt.switch
     ( Opt.long "force"
     <> Opt.help "Force transaction sync even if configuration tree didn't change")
@@ -605,9 +605,9 @@ clusterStopNode eqnids opts = do
     Just fid -> do
       (schan, rchan) <- newChan
       subscribing $ do
-         _ <- promulgateEQ eqnids (StopNodeUserRequest fid 
+         _ <- promulgateEQ eqnids (StopNodeUserRequest fid
                                      (stopNodeForce opts)
-                                     schan) 
+                                     schan)
          r <- receiveChan rchan
          case r of
            NotANode{} ->liftIO $ do
@@ -682,7 +682,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
            putStrLn $ "      pool:" ++ fidToStr pool_fid ++ " => " ++ show (M0.prsType s)
            putStrLn $ "      uuid:" ++ show (M0.prsRepairUUID s)
            forM_ (M0.prsPri s) $ \i -> do
-             putStrLn $ "      time of start: " ++ show (M0.priTimeOfFirstCompletion i) --XXX: bad naming?
+             putStrLn $ "      time of start: " ++ show (M0.priTimeOfSnsStart i)
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "\nHosts:"
@@ -692,14 +692,14 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
            let (pst,proc_extSt) = M0.displayProcessState proc_st
-           printf proc_pattern (pst)
+           printf proc_pattern pst
                                (fidToStr rfid)
-                               (endpoint)
+                               endpoint
                                (inferType (map fst srvs)::String)
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
              let (serv_st,serv_extSt) = M0.displayServiceState sst
-             printf serv_pattern (serv_st)
+             printf serv_pattern serv_st
                                  (fidToStr fid')
                                  (show t')
              for_ serv_extSt $ printf serv_pattern_ext (""::String)
@@ -707,7 +707,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
            putStrLn "    Devices:"
            forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, sdi, ids) -> do
              let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
-             printf sdev_pattern (sd_st)
+             printf sdev_pattern sd_st
                                  (fidToStr sdev_fid)
                                  (show sdi)
                                  (sdev_path)

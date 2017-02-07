@@ -42,15 +42,14 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
     -- * Pool repair information
   , getPoolRepairInformation
   , getPoolRepairStatus
-  , getTimeUntilQueryHourlyPRI
-  , incrementOnlinePRSResponse
+  , getTimeUntilHourlyQuery
   , modifyPoolRepairInformation
-  , possiblyInitialisePRI
   , setPoolRepairInformation
   , setPoolRepairStatus
   , unsetPoolRepairStatus
   , unsetPoolRepairStatusWithUUID
-  , updatePoolRepairStatusTime
+  , updatePoolRepairQueryTime
+  , updateSnsStartTime
   ) where
 
 import HA.RecoveryCoordinator.RC.Actions
@@ -848,13 +847,6 @@ setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
     phaseLog "rg" $ "Setting PRR for " ++ show pool ++ " to " ++ show prs
     modifyLocalGraph $ return . G.connect pool Has prs
 
--- | Initialise 'M0.PoolRepairInformation' with some default values.
-possiblyInitialisePRI :: M0.Pool
-                      -> PhaseM RC l ()
-possiblyInitialisePRI pool = getPoolRepairInformation pool >>= \case
-  Nothing -> setPoolRepairInformation pool M0.defaultPoolRepairInformation
-  Just _ -> return ()
-
 -- | Modify the  'PoolRepairInformation' in the graph with the given function.
 -- Any previously connected @PRI@s are disconnected.
 modifyPoolRepairInformation :: M0.Pool
@@ -866,29 +858,26 @@ modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
       return $ G.connect pool Has (M0.PoolRepairStatus prt uuid (Just $ f pri)) g
     _ -> return g
 
+-- | Update time of completion for 'M0.PoolRepairInformation'. If
+-- 'M0.PoolRepairStatus' does not yet exist or
+-- 'M0.PoolRepairInformation' already exists, nothing happens.
+updateSnsStartTime :: M0.Pool -> PhaseM RC l ()
+updateSnsStartTime pool = getPoolRepairInformation pool >>= \case
+  Nothing -> do
+    tnow <- DP.liftIO M0.getTime
+    -- We don't have PRI but we may also not have PRS:
+    -- setPoolRepairInformation does nothing if we don't have PRS, as
+    -- intended. If we *do* have PRS but don't have PRI then it means
+    -- it's the first time PRI is being set: initialise time fields.
+    setPoolRepairInformation pool $ M0.PoolRepairInformation
+      { priTimeOfSnsStart = tnow
+      , priTimeLastHourlyRan = tnow
+      , priStateUpdates = [] }
+  Just{} -> return ()
 
--- | Increment 'priOnlineNotifications' field of the
--- 'PoolRepairInformation' in the graph. Also updates the
--- 'priTimeOfFirstCompletion' if it has not yet been set.
-incrementOnlinePRSResponse :: M0.Pool
-                           -> PhaseM RC l ()
-incrementOnlinePRSResponse pool =
-  DP.liftIO M0.getTime >>= \tnow -> modifyPoolRepairInformation pool (go tnow)
-  where
-    go tnow pr = pr { M0.priOnlineNotifications = succ $ M0.priOnlineNotifications pr
-                    , M0.priTimeOfFirstCompletion =
-                      if M0.priOnlineNotifications pr > 0
-                      then M0.priTimeOfFirstCompletion pr
-                      else tnow
-                    , M0.priTimeLastHourlyRan =
-                      if M0.priTimeLastHourlyRan pr > 0
-                      then M0.priTimeOfFirstCompletion pr
-                      else tnow
-                    }
-
--- | Updates 'priTimeLastHourlyRan' to current time.
-updatePoolRepairStatusTime :: M0.Pool -> PhaseM RC l ()
-updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
+-- | Updates the last time hourly SNS status query has ran.
+updatePoolRepairQueryTime :: M0.Pool -> PhaseM RC l ()
+updatePoolRepairQueryTime pool = getPoolRepairStatus pool >>= \case
   Just (M0.PoolRepairStatus _ _ (Just pr)) -> do
     t <- DP.liftIO M0.getTime
     setPoolRepairInformation pool $ pr { M0.priTimeLastHourlyRan = t }
@@ -896,8 +885,8 @@ updatePoolRepairStatusTime pool = getPoolRepairStatus pool >>= \case
 
 -- | Returns number of seconds until we have to run the hourly PRI
 -- query.
-getTimeUntilQueryHourlyPRI :: M0.Pool -> PhaseM RC l Int
-getTimeUntilQueryHourlyPRI pool = getPoolRepairInformation pool >>= \case
+getTimeUntilHourlyQuery :: M0.Pool -> PhaseM RC l Int
+getTimeUntilHourlyQuery pool = getPoolRepairInformation pool >>= \case
   Nothing -> return 0
   Just pri -> do
     tn <- DP.liftIO M0.getTime
