@@ -14,8 +14,6 @@ module HA.RecoveryCoordinator.RC.Internal
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
-import           Data.Binary (encode)
-import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (for_)
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -31,12 +29,8 @@ data AnyLocalState g a = AnyLocalState
 newtype RegisteredMonitors = RegisteredMonitors (Map MonitorRef (AnyLocalState RC ()))
   deriving (Typeable)
 
--- | A 'Map' of 'encode'd 'SpawnRef's to 'AnyLocalState' callbacks.
---
--- TODO: Once 'SpawnRef' has an 'Ord' instance in
--- @distributed-process@, use it directly instead of encoding
--- (HALON-592).
-newtype RegisteredSpawns = RegisteredSpawns (Map ByteString (AnyLocalState RC ()))
+-- | A 'Map' of 'SpawnRef's to 'AnyLocalState' callbacks.
+newtype RegisteredSpawns = RegisteredSpawns (Map SpawnRef (AnyLocalState RC ()))
   deriving (Typeable)
 
 -- | Run all callbacks for the given 'MonitorRef'. The callbacks are
@@ -57,7 +51,6 @@ runSpawnCallback :: SpawnRef -> PhaseM RC l ()
 runSpawnCallback ref = do
   mmons <- getStorageRC
   for_ mmons $ \(RegisteredSpawns mons) -> do
-    let key = encode ref
-    let (actions, mons') = Map.updateLookupWithKey (\_ _ -> Nothing) key mons
+    let (actions, mons') = Map.updateLookupWithKey (\_ _ -> Nothing) ref mons
     putStorageRC (RegisteredSpawns mons')
     for_ actions $ runAnyLocalState

@@ -28,7 +28,7 @@ import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
 import           Control.Monad.Fix (fix)
-import           Data.Binary (Binary,encode)
+import           Data.Binary (Binary)
 import           Data.Foldable (for_, traverse_)
 import           Data.Functor (void)
 import qualified Data.List as List
@@ -153,20 +153,18 @@ registerSpawnAsync (R.Node nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
   Log.actLog "registerSpawnAsync" [("nid", show nid), ("ref", show ref)]
   msp <- getStorageRC
-  let key = encode ref
   putStorageRC $ RegisteredSpawns $
     case msp of
-      Nothing -> Map.singleton key (AnyLocalState callback)
-      Just (RegisteredSpawns mm) -> Map.insert key (AnyLocalState callback) mm
+      Nothing -> Map.singleton ref (AnyLocalState callback)
+      Just (RegisteredSpawns mm) -> Map.insert ref (AnyLocalState callback) mm
   return ref
 
 unregisterSpawnAsync :: SpawnRef -> PhaseM RC l ()
 unregisterSpawnAsync ref = do
   Log.actLog "unregisterSpawnAsync" [("ref", show ref)]
-  let key = encode ref
   mnmon <- getStorageRC
   for_ mnmon $ \(RegisteredSpawns mons) -> do
-    putStorageRC $ RegisteredSpawns $ Map.delete key mons
+    putStorageRC $ RegisteredSpawns $ Map.delete ref mons
 
 -- | Add new node to the cluster.
 --
