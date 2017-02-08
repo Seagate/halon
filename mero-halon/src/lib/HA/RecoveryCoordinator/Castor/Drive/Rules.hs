@@ -114,7 +114,7 @@ driveRemovalTimeout = 60
 --   - Have a successful SMART test run. This will be checked by this rule.
 mkCheckAndHandleDriveReady ::
      Lens' l (Maybe CheckAndHandleState) -- ^ Simple lens to listener ID for SMART test
-  -> (M0.SDev -> PhaseM LoopState l ())  -- ^ Action to run when drive is handled.
+  -> (M0.SDev -> PhaseM LoopState l ()) -- ^ Action to run when drive is handled.
   -> RuleM LoopState l (Node -> StorageDevice -> PhaseM LoopState l [Jump PhaseHandle] -> PhaseM LoopState l [Jump PhaseHandle])
 mkCheckAndHandleDriveReady smartLens next = do
 
@@ -126,6 +126,7 @@ mkCheckAndHandleDriveReady smartLens next = do
   let getter l = l ^? smartLens . _Just . chsStorageDevice
   let post_process m0sdev = do
         Just sdev <- getter <$> get Local
+        markStorageDeviceReplaced sdev
         promulgateRC $ DriveReady sdev
         oldState <- getLocalGraph <&> getState m0sdev
         case oldState of
@@ -157,7 +158,6 @@ mkCheckAndHandleDriveReady smartLens next = do
             applyStateChanges [ stateSet m0sdev . sdsRecoverTransient $ oldState ]
             next m0sdev
           SDSRebalancing -> next m0sdev
-
 
       onSameSdev (JobFinished listenerIds (SMARTResponse sdev' status)) _ l =
         return $ case (,) <$> ( getter l )
@@ -249,11 +249,10 @@ mkCheckAndHandleDriveReady smartLens next = do
             meroFailure <- maybe False isMeroFailure <$> driveStatus disk
             if meroFailure
                then onFailure
-               else do markStorageDeviceReplaced disk
-                       if status == "OK"
-                       then return [smart_run]
-                       else do phaseLog "info" $ "status is " ++ status ++ " can't run smart check."
-                               onFailure
+               else if status == "OK"
+                    then return [smart_run]
+                    else do phaseLog "info" $ "status is " ++ status ++ " can't run smart check."
+                            onFailure
           else do
             phaseLog "ERROR" "Unseen drive with no replacement candidate."
             onFailure
@@ -273,7 +272,6 @@ mkCheckAndHandleDriveReady smartLens next = do
              -- disk.
              actualizeStorageDeviceReplacement cand
              updateStorageDeviceSDev disk
-             markStorageDeviceReplaced disk
              request <- liftIO $ nextRandom
              modify Local $ smartLens . _Just . chsSyncRequest .~ Just request
              registerSyncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG)
@@ -568,12 +566,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
       unless realFailure $ do
         fdev <- lookupStorageDeviceSDev dpcDevice
                 >>= filterMaybeM (\d -> getLocalGraph <&> m0failed . getState d)
-        forM_ fdev $ \m0sdev -> do
-          phaseLog "info" $ "Failed device with no underlying failure has been "
-                          ++ "repowered. Marking as replaced."
-          phaseLog "info" $ "Storage device: " ++ show dpcDevice
-          phaseLog "info" $ "Mero device: " ++ showFid m0sdev
-          markStorageDeviceReplaced dpcDevice
+        forM_ fdev $ \_ -> do
           (Just (uuid, _), _) <- get Local
           checked <- checkAndHandleDriveReady dpcNode dpcDevice (done uuid >> return [finish])
           switch checked
