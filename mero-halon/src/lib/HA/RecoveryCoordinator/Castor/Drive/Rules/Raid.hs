@@ -25,7 +25,6 @@ import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as Storag
 import HA.RecoveryCoordinator.Actions.Hardware
   ( getSDevNode
   )
-import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Castor.Drive.Events
   ( RaidUpdate(..)
@@ -38,7 +37,6 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import HA.Resources (Node(..))
-import HA.Resources.Mero (SDevState(SDSFailed))
 import HA.Resources.Castor (StorageDevice)
 import HA.Services.SSPL.CEP
   ( sendInterestingEvent
@@ -54,9 +52,6 @@ import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)
 import Control.Lens
-
-import Control.Monad (when)
-import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
@@ -80,17 +75,11 @@ makeLenses ''RaidInfo
 fldRaidInfo :: Proxy '("raidInfo", Maybe RaidInfo)
 fldRaidInfo = Proxy
 
--- | Fail the 'M0.SDev' corresponding to the given 'StorageDevice'.
--- Drive manager is informed it was a @"RAID_FAILURE"@.
-failStorageDevice :: StorageDevice -> PhaseM RC l ()
-failStorageDevice sd = lookupStorageDeviceSDev sd >>= \case
-  Nothing -> phaseLog "warn" $ "No SDev for " ++ show sd
-  Just m0sdev -> do
-    -- We're not actually setting SDSFailed but want to check
-    -- if we could so we know if we should tell DM anything.
-    sdevTransition <- checkDiskFailureWithinTolerance m0sdev SDSFailed <$> getLocalGraph
-    when (isRight sdevTransition) $
-      updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
+-- | Fail the RAID 'StorageDevice'. As RAID devices don't have mero
+-- disks associated with them, this basically resolves to sending
+-- "RAID_FAILURE" to the drive manager.
+failRaidStorageDevice :: StorageDevice -> PhaseM RC l ()
+failRaidStorageDevice sd = updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | Log info about the state of this operation
 logInfo :: forall a l. ( Application a
@@ -186,7 +175,7 @@ failed = define "castor::drive::raid::failed" $ do
            ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
           <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
           <> "}")
-        failStorageDevice (rinfo ^. riCompSDev)
+        failRaidStorageDevice (rinfo ^. riCompSDev)
         continue end
 
     directly failure $ do
@@ -195,7 +184,7 @@ failed = define "castor::drive::raid::failed" $ do
          ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
         <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
         <> "}")
-      failStorageDevice (rinfo ^. riCompSDev)
+      failRaidStorageDevice (rinfo ^. riCompSDev)
       continue end
 
     directly end stop
@@ -332,7 +321,7 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
        ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
       <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
       <> "}")
-    failStorageDevice (rinfo ^. riCompSDev)
+    failRaidStorageDevice (rinfo ^. riCompSDev)
     continue finish
 
   return $! (\req@(RaidAddToArray sd) -> route req <&> \phs ->
