@@ -168,6 +168,7 @@ Library
                    HA.RecoveryCoordinator.Castor.Node.Actions
                    HA.RecoveryCoordinator.Castor.Drive.Internal
                    HA.RecoveryCoordinator.Castor.Drive.Rules
+                   HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal

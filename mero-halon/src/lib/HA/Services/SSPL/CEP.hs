@@ -31,6 +31,7 @@ import           Data.Foldable (for_)
 import           Data.Function (fix)
 import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.Monoid ((<>))
+import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Typeable (Typeable)
@@ -40,9 +41,9 @@ import qualified HA.Aeson as Aeson
 import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Events
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.ResourceGraph hiding (null)
 import           HA.Resources (Node(..), Has(..), Cluster(..))
@@ -112,23 +113,31 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
 -- the drive with the given serial number.
 sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
               -> Host -- ^ Host we want to deal with
-              -> T.Text -- ^ Drive serial number
+              -> StorageDevice -- ^ Drive
               -> PhaseM RC l Bool
-sendLedUpdate status host sn = do
+sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
   phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
   rg <- getLocalGraph
-  let mnode = listToMaybe $
-                connectedTo host Runs rg -- XXX: try all nodes
+  let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
+      modifyLedState mledSt = case connectedTo sd Has rg of
+        Just slot@Slot{} -> modifyGraph $ case mledSt of
+          Just ledSt -> connect slot Has ledSt
+          Nothing -> disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
+        _ -> phaseLog "warn" $ "No slot found for " ++ show sd
   case mnode of
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
+        modifyLedState $ Just FaultOn
         sendNodeCmd nid Nothing (DriveLed sn FaultOn)
-      DriveTransientlyFailed ->
+      DriveTransientlyFailed -> do
+        modifyLedState $ Just PulseFastOn
         sendNodeCmd nid Nothing (DriveLed sn PulseFastOn)
       DriveRebalancing -> do
+        modifyLedState $ Just PulseSlowOn
         sendNodeCmd nid Nothing (DriveLed sn PulseSlowOn)
       DriveOk -> do
-        sendNodeCmd nid Nothing (DriveLed sn PulseSlowOff)
+        modifyLedState Nothing
+        sendNodeCmd nid Nothing (DriveLed sn FaultOff)
     _ -> do phaseLog "error" "Cannot find sspl service on the node!"
             return False
 
@@ -626,7 +635,7 @@ updateDriveManagerWithFailure :: StorageDevice
                               -> PhaseM RC l ()
 updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sdev >>= \case
   host : _ -> do
-    _ <- sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
+    _ <- sendLedUpdate DrivePermanentlyFailed host sdev
     sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
                                            (T.pack sn)
                                            (maybe "unknown reason" T.pack reason)

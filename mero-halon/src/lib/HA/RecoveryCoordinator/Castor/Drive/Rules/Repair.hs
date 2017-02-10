@@ -44,22 +44,13 @@ import           Control.Arrow (second)
 import           Control.Distributed.Process
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.Trans
-import           Control.Monad.Trans.Maybe
 import           Data.Either (partitionEithers)
 import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe
-  ( catMaybes
-  , isJust
-  , fromMaybe
-  , listToMaybe
-  , mapMaybe
-  )
+import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe)
 import           Data.Proxy
-import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
@@ -75,14 +66,12 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
-import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
-import           HA.Services.SSPL.CEP
 import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
@@ -231,7 +220,7 @@ querySpiel = define "spiel::sns:query-status" $ do
         (do Just (_, pool, _, ruuid) <- get Local
             mprs <- getPoolRepairStatus pool
             case mprs of
-              Just prs | ruuid == prsRepairUUID prs 
+              Just prs | ruuid == prsRepairUUID prs
                        , Just pri <- prsPri prs -> do
                 let driveUpdates = priStateUpdates pri
                 nios <- length <$> R.getIOServices pool
@@ -241,7 +230,7 @@ querySpiel = define "spiel::sns:query-status" $ do
                          , abort_on_abort
                          ]
               _ -> return ()
-        ) 
+        )
         (\case
             Left abortMsg -> do
               promulgateRC abortMsg
@@ -1076,13 +1065,7 @@ completeRepair pool prt muid = do
       unless (null repaired_sdevs) $ do
         applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
 
-        when (prt == M0.Rebalance) $
-           forM_ repaired_sdevs $ \m0sdev -> do
-             unmarkSDevReplaced m0sdev
-             void $ runMaybeT $ do
-               sdev@(StorageDevice serial)   <- MaybeT $ lookupStorageDevice m0sdev
-               host   <- MaybeT $ listToMaybe <$> getSDevHost sdev
-               lift $ sendLedUpdate DriveOk host (T.pack serial)
+        when (prt == M0.Rebalance) $ forM_ repaired_sdevs unmarkSDevReplaced
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool

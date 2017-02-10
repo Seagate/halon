@@ -48,21 +48,6 @@ module HA.Services.SSPL.LL.Resources
 import           Control.Distributed.Process (NodeId)
 import           Control.Distributed.Process (ProcessId, SendPort)
 import           Control.Distributed.Process.Closure
-import           HA.Aeson hiding (encode, decode)
-import           HA.ResourceGraph
-import           HA.SafeCopy
-import qualified HA.Service
-import           HA.Service.TH
-import           HA.Services.SSPL.IEM
-import           Options.Schema (Schema)
-import           Options.Schema.Builder hiding (name, desc)
-import qualified HA.Services.SSPL.Rabbit as Rabbit
-import           SSPL.Bindings
-  ( ActuatorRequestMessageActuator_request_type (..)
-  , ActuatorRequestMessageActuator_request_typeService_controller (..)
-  , ActuatorRequestMessageActuator_request_typeNode_controller (..)
-  , ActuatorRequestMessageActuator_request_typeLogging (..)
-  )
 import           Data.Binary (Binary, encode, decode)
 import           Data.Defaultable
 import           Data.Hashable (Hashable)
@@ -73,6 +58,23 @@ import           Data.Time
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics (Generic)
+import           HA.Aeson hiding (encode, decode)
+import           HA.ResourceGraph
+import           HA.Resources (Has)
+import           HA.Resources.Castor (Slot)
+import           HA.SafeCopy
+import qualified HA.Service
+import           HA.Service.TH
+import           HA.Services.SSPL.IEM
+import qualified HA.Services.SSPL.Rabbit as Rabbit
+import           Options.Schema (Schema)
+import           Options.Schema.Builder hiding (name, desc)
+import           SSPL.Bindings
+  ( ActuatorRequestMessageActuator_request_type (..)
+  , ActuatorRequestMessageActuator_request_typeService_controller (..)
+  , ActuatorRequestMessageActuator_request_typeNode_controller (..)
+  , ActuatorRequestMessageActuator_request_typeLogging (..)
+  )
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess)
 
@@ -539,9 +541,17 @@ resourceDictChannelIEM = Dict
 resourceDictChannelSystemd :: Dict (Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
 resourceDictChannelSystemd = Dict
 
+resourceDictLedControlState :: Dict (Resource LedControlState)
+resourceDictLedControlState = Dict
+
+relationDictLedControlStateSlot :: Dict (Relation Has Slot LedControlState)
+relationDictLedControlStateSlot = Dict
+
 $(generateDicts ''SSPLConf)
 $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
                                        , 'resourceDictChannelSystemd
+                                       , 'resourceDictLedControlState
+                                       , 'relationDictLedControlStateSlot
                                        ])
 
 instance Resource (Channel InterestingEventMessage) where
@@ -549,6 +559,14 @@ instance Resource (Channel InterestingEventMessage) where
 
 instance Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   resourceDict = $(mkStatic 'resourceDictChannelSystemd)
+
+instance Resource LedControlState where
+  resourceDict = $(mkStatic 'resourceDictLedControlState)
+
+instance Relation Has Slot LedControlState where
+  type CardinalityFrom Has Slot LedControlState = 'Unbounded
+  type CardinalityTo Has Slot LedControlState = 'AtMostOne
+  relationDict = $(mkStatic 'relationDictLedControlStateSlot)
 
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --

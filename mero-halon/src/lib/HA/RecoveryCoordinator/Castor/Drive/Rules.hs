@@ -43,6 +43,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Events (PoolRebalanceRequ
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl as LedControl
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Reset as Reset
@@ -78,10 +79,11 @@ rules = sequence_
   , ruleDriveBlip
   , ruleDriveOK
   , rulePowerDownDriveOnFailure
+  , LedControl.rules
+  , Raid.rules
   , Repair.rules
   , Reset.ruleResetAttempt
   , Reset.ruleResetInit
-  , Raid.rules
   , Smart.rules
   ]
 

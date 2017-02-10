@@ -232,6 +232,19 @@ announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
     in return $! if aDiskSD sdev `elem` devs then Just () else Nothing
   return ()
 
+-- | Listen for specified messages. Returns any messages we expected
+-- but didn't received before a timeout occured.
+expectNodeMsgCommands :: String -- ^ Caller identifier, for easy debugging
+                      -> [ActuatorRequestMessageActuator_request_typeNode_controller]
+                      -- ^ Messages we're expecting
+                      -> Int -- ^ Timeout between messages in microseconds
+                      -> Process [ActuatorRequestMessageActuator_request_typeNode_controller]
+expectNodeMsgCommands _ [] _ = return []
+expectNodeMsgCommands cname msgs t = expectNodeMsg t >>= \case
+  Nothing -> return msgs
+  Just m | m `elem` msgs -> expectNodeMsgCommands cname (filter (/= m) msgs) t
+         | otherwise -> fail $ cname ++ " received unexpected message: " ++ show m
+
 expectNodeMsg :: Int -> Process (Maybe ActuatorRequestMessageActuator_request_typeNode_controller)
 expectNodeMsg = (fmap (fmap snd)) . expectNodeMsgUid
 
@@ -305,10 +318,12 @@ failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
   sayTest "failDrive: Drive transitioned"
   -- The RC should issue a 'ResetAttempt' and should be handled.
   _ :: HAEvent ResetAttempt <- expectPublished
-  -- We should see `ResetAttempt` from SSPL
+  -- We should see `DriveReset` and LED set messages go out to SSPL
   let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
           $ nodeCmdString (DriveReset tserial)
-  liftIO . assertEqual "drive reset command is issued"  (Just cmd) =<< expectNodeMsg ssplTimeout
+  expectNodeMsgCommands "failDrive" [cmd] ssplTimeout >>= \case
+    [] -> return ()
+    ms -> fail $ "failDrive: SSPL wasn't sent " ++ show ms
   sayTest "failDrive: OK"
 
 resetComplete :: ProcessId -- ^ RC
@@ -355,6 +370,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
     _ <- expectPublishedIf $ \case
       ResetSuccess stord' -> stord == stord' && success == AckReplyPassed
       ResetFailure stord' -> stord == stord' && success /= AckReplyPassed
+
     Just{} <- waitState sdev mm 2 10 (== expSt)
     sayTest "Reset finished, device in expected state."
 
@@ -477,11 +493,14 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
 
   sayTest "SSPL should receive a command to power off the drive"
   do
-    msg <- expectNodeMsg ssplTimeout
-    sayTest $ "sspl_msg(poweroff): " ++ show msg
-    let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-              $ nodeCmdString (DrivePowerdown . pack $ (\(StorageDevice sn) -> sn) $ aDiskSD disk)
-    liftIO $ assertEqual "drive powerdown command is issued"  (Just cmd) msg
+    let sn = pack $ (\(StorageDevice sn') -> sn') (aDiskSD disk)
+        cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (DrivePowerdown sn)
+        cmd1 = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (DriveLed sn FaultOn)
+
+    [] <- expectNodeMsgCommands "testDrivePoweredDown" [cmd, cmd1] ssplTimeout
+    return ()
 
 -- | Make a test that sets the drive to some starting state,
 -- succesfully resets it and checks that the drive is in given state
@@ -506,6 +525,11 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
       adisk <- G.getGraph (_ts_mm ts) >>= \rg -> case getOurDisk $ findSDevs rg of
         adisk : _ -> return adisk
         _ -> fail "No ThatWhichWeCallADisk found for SDev."
+      -- Consume LED FaultOn message caused by the state change.
+      let sn = (\(StorageDevice sn') -> pack sn') (aDiskSD adisk)
+          cmd = ActuatorRequestMessageActuator_request_typeNode_controller
+              $ nodeCmdString (DriveLed sn FaultOn)
+      [] <- expectNodeMsgCommands "mkTestAroundReset" [cmd] ssplTimeout
       failDrive ts adisk
       resetComplete (_ts_rc ts) (_ts_mm ts) adisk AckReplyPassed devSt
   where
@@ -621,12 +645,10 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   resetComplete (_ts_rc ts) (_ts_mm ts) disk2 AckReplyPassed M0.SDSOnline
 
   do
-    msg <- expectNodeMsg ssplTimeout
-    sayTest $ "sspl_msg(raid_add): " ++ show msg
     let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (NodeRaidCmd raidDevice (RaidAdd "/dev/mddisk2"))
-    liftIO $ assertEqual "Drive is added back to raid array" (Just cmd) msg
-
+    [] <- expectNodeMsgCommands "testMetadataDriveFailed" [cmd] ssplTimeout
+    return ()
   sayTest "Raid_data message processed by RC"
 
 type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)
