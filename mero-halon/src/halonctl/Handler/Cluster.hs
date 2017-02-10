@@ -245,10 +245,12 @@ data StartOptions  = StartOptions Bool deriving (Eq, Show)
 data StopOptions   = StopOptions
   { _so_silent :: Bool
   , _so_async :: Bool
-  , _so_timeout :: Int }
+  , _so_timeout :: Int
+  , _so_reason :: String }
   deriving (Eq, Show)
 
-data ClientOptions = ClientStopOption String
+data ClientOptions = ClientStopOption String String
+                   -- ^ @ClientStopOption fid reason@
                    | ClientStartOption String
                    deriving (Eq, Show)
 
@@ -314,6 +316,7 @@ data StopNodeOptions = StopNodeOptions
        { stopNodeForce :: Bool
        , stopNodeFid   :: String
        , stopNodeSync  :: Bool
+       , stopNodeReason :: String
        } deriving (Eq, Show)
 
 parseStopNodeOptions :: Opt.Parser StopNodeOptions
@@ -321,6 +324,7 @@ parseStopNodeOptions = StopNodeOptions
    <$> Opt.switch (Opt.long "force" <> Opt.short 'f' <> Opt.help "force stop, even if it reduces liveness.")
    <*> Opt.strOption (Opt.long "node" <> Opt.help "Node to shutdown" <>  Opt.metavar "NODE")
    <*> Opt.switch (Opt.long "sync" <> Opt.short 's' <> Opt.help "exit when operation finished.")
+   <*> Opt.strOption (Opt.long "reason" <> Opt.help "Reason for stopping the node" <> Opt.value "unspecified" <> Opt.metavar "REASON")
 
 parseDumpOptions :: Opt.Parser DumpOptions
 parseDumpOptions = DumpOptions <$>
@@ -338,13 +342,19 @@ parseClientOptions = Opt.subparser startCmd
     startCmd = Opt.command "start" $
        Opt.withDesc (ClientStartOption <$> fidOption) "Start m0t1fs service"
     stopCmd = Opt.command "stop" $
-       Opt.withDesc (ClientStopOption <$> fidOption) "Stop m0t1fs service"
+       Opt.withDesc (ClientStopOption <$> fidOption <*> reasonOption) "Stop m0t1fs service"
     fidOption =  Opt.strOption
        ( Opt.long "fid"
        <> Opt.short 'f'
        <> Opt.help "Fid of the service"
        <> Opt.metavar "FID"
        )
+    reasonOption = Opt.strOption
+      ( Opt.long "reason"
+      <> Opt.help "Reason for stopping the client"
+      <> Opt.metavar "REASON"
+      <> Opt.value "unspecified" )
+
 
 parseStatusOptions :: Opt.Parser StatusOptions
 parseStatusOptions = StatusOptions
@@ -402,6 +412,11 @@ parseStopOptions = StopOptions
     <> Opt.help "How long to wait for successful cluster stop before halonctl gives up on waiting."
     <> Opt.value 600000000
     <> Opt.showDefault )
+  <*> Opt.strOption
+    ( Opt.long "reason"
+    <> Opt.help "Reason for stopping the cluster"
+    <> Opt.metavar "REASON"
+    <> Opt.value "unspecified" )
 
 parseMkfsDoneOptions :: Opt.Parser MkfsDoneOptions
 parseMkfsDoneOptions = MkfsDoneOptions
@@ -461,11 +476,11 @@ dumpConfd eqnids (DumpOptions fn) = do
 client :: [NodeId]
        -> ClientOptions
        -> Process ()
-client eqnids (ClientStopOption fn) = do
+client eqnids (ClientStopOption fn reason) = do
   say "Trying to stop m0t1fs client."
   case strToFid fn of
     Just fid -> do
-      promulgateEQ eqnids (StopMeroClientRequest fid) >>= flip withMonitor wait
+      promulgateEQ eqnids (StopMeroClientRequest fid reason) >>= flip withMonitor wait
       say "Command was delivered to EQ."
     Nothing -> do
       say "Incorrect Fid format."
@@ -503,10 +518,10 @@ clusterStartCommand eqnids True = do
   liftIO $ putStrLn "Cluster start request sent."
 
 clusterStopCommand :: [NodeId] -> StopOptions -> Process ()
-clusterStopCommand nids (StopOptions silent async stopTimeout) = do
+clusterStopCommand nids (StopOptions silent async stopTimeout reason) = do
   say' "Stopping cluster."
   self <- getSelfPid
-  clusterCommand nids Nothing ClusterStopRequest (say' . show)
+  clusterCommand nids Nothing (ClusterStopRequest reason) (say' . show)
   promulgateEQ nids (MonitorClusterStop self) >>= flip withMonitor wait
   case async of
     True -> return ()
@@ -605,9 +620,8 @@ clusterStopNode eqnids opts = do
     Just fid -> do
       (schan, rchan) <- newChan
       subscribing $ do
-         _ <- promulgateEQ eqnids (StopNodeUserRequest fid
-                                     (stopNodeForce opts)
-                                     schan)
+         _ <- promulgateEQ eqnids $ StopNodeUserRequest
+                fid (stopNodeForce opts) schan (stopNodeReason opts)
          r <- receiveChan rchan
          case r of
            NotANode{} ->liftIO $ do

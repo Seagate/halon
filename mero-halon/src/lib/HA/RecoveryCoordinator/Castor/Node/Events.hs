@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Node.Events
 -- Copyright : (C) 2016 Seagate Technology Limited.
@@ -101,10 +102,20 @@ data StartProcessesOnNodeResult =
 instance Binary StartProcessesOnNodeResult
 
 -- | Stop mero client process request.
-newtype StopMeroClientRequest =
-  StopMeroClientRequest Fid
+newtype StopMeroClientRequest_v0 =
+  StopMeroClientRequest_v0 Fid
   -- ^ @StopMeroClientRequest clientProcessFid@
   deriving (Eq, Show, Generic)
+
+-- | Stop mero client process request.
+data StopMeroClientRequest =
+  StopMeroClientRequest Fid String
+  -- ^ @StopMeroClientRequest clientProcessFid reason@
+  deriving (Eq, Show, Generic)
+
+instance Migrate StopMeroClientRequest where
+  type MigrateFrom StopMeroClientRequest = StopMeroClientRequest_v0
+  migrate (StopMeroClientRequest_v0 fid) = StopMeroClientRequest fid "unspecified"
 
 -- | Start mero client process request.
 newtype StartMeroClientRequest =
@@ -112,12 +123,22 @@ newtype StartMeroClientRequest =
   -- ^ @StartMeroClientRequest clientProcessFid@
   deriving (Eq, Show, Generic)
 
+-- | Legacy version of 'StopNodeUserRequest'.
+data StopNodeUserRequest_v0 =
+  StopNodeUserRequest_v0 Fid Bool (SendPort StopNodeUserReply)
+  -- ^ @StopNodeUserRequest m0nodeFid forceStop replyChannel@
+  deriving (Eq, Show, Generic)
+
 -- | Request RC to stop node. Replied to by 'StopNodeUserReply' on the
 -- given channel.
 data StopNodeUserRequest =
-  StopNodeUserRequest Fid Bool (SendPort StopNodeUserReply)
-  -- ^ @StopNodeUserRequest m0nodeFid forceStop replyChannel@
+  StopNodeUserRequest Fid Bool (SendPort StopNodeUserReply) String
+  -- ^ @StopNodeUserRequest m0nodeFid forceStop replyChannel reason@
   deriving (Eq, Show, Generic)
+
+instance Migrate StopNodeUserRequest where
+  type MigrateFrom StopNodeUserRequest = StopNodeUserRequest_v0
+  migrate (StopNodeUserRequest_v0 f b p) = StopNodeUserRequest f b p "unspecified"
 
 -- | Reply to 'StopNodeUserRequest'.
 data StopNodeUserReply =
@@ -152,9 +173,11 @@ deriveSafeCopy 0 'base ''StartMeroClientRequest
 deriveSafeCopy 0 'base ''StartProcessNodeNew
 deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
 deriveSafeCopy 0 'base ''StopHalonM0dRequest
-deriveSafeCopy 0 'base ''StopMeroClientRequest
+deriveSafeCopy 0 'base ''StopMeroClientRequest_v0
+deriveSafeCopy 1 'extension ''StopMeroClientRequest
 deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
-deriveSafeCopy 0 'base ''StopNodeUserRequest
+deriveSafeCopy 0 'base ''StopNodeUserRequest_v0
+deriveSafeCopy 1 'extension ''StopNodeUserRequest
 deriveSafeCopy 0 'base ''StopNodeUserReply
 deriveSafeCopy 0 'base ''MaintenanceStopNode
 deriveSafeCopy 0 'base ''MaintenanceStopNodeResult

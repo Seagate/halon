@@ -1,12 +1,13 @@
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- |
--- Moduel    : HA.RecoveryCoordinator.Castor.Cluster.Events
+-- Module    : HA.RecoveryCoordinator.Castor.Cluster.Events
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Events pertaining to cluster as a whole.
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell            #-}
 module HA.RecoveryCoordinator.Castor.Cluster.Events
   (
   -- * Requests
@@ -73,11 +74,22 @@ data ClusterStartResult
 instance Binary ClusterStartResult
 
 -- | Request that the cluster stops.
-data ClusterStopRequest =
-  ClusterStopRequest (SendPort StateChangeResult)
+data ClusterStopRequest_v0 =
+  ClusterStopRequest_v0 (SendPort StateChangeResult)
   -- ^ Request that the cluster stops. The 'StateChangeResult' is sent
   -- back on the provided 'SendPort'.
   deriving (Eq, Show, Generic)
+
+-- | Request that the cluster stops.
+data ClusterStopRequest =
+  ClusterStopRequest String (SendPort StateChangeResult)
+  -- ^ Request that the cluster stops with the provided reason. The
+  -- 'StateChangeResult' is sent back on the provided 'SendPort'.
+  deriving (Eq, Show, Generic)
+
+instance Migrate ClusterStopRequest where
+  type MigrateFrom ClusterStopRequest = ClusterStopRequest_v0
+  migrate (ClusterStopRequest_v0 p) = ClusterStopRequest "unspecified" p
 
 -- | A reply on 'ClusterStopRequest' channel.
 data StateChangeResult =
@@ -235,7 +247,8 @@ data ClusterLiveness = ClusterLiveness
 deriveSafeCopy 0 'base ''ClusterResetRequest
 deriveSafeCopy 0 'base ''ClusterStartRequest
 deriveSafeCopy 0 'base ''ClusterStatusRequest
-deriveSafeCopy 0 'base ''ClusterStopRequest
+deriveSafeCopy 0 'base ''ClusterStopRequest_v0
+deriveSafeCopy 1 'extension ''ClusterStopRequest
 deriveSafeCopy 0 'base ''MarkProcessesBootstrapped
 deriveSafeCopy 0 'base ''MonitorClusterStop
 deriveSafeCopy 0 'base ''PoolRebalanceRequest

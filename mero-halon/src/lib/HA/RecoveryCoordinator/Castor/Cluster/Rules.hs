@@ -451,7 +451,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
 --   TODO: Does this include stopping clients on the nodes?
 requestClusterStop :: Definitions RC ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
-  $ \(HAEvent eid (ClusterStopRequest ch)) -> do
+  $ \(HAEvent eid (ClusterStopRequest _reason ch)) -> do
       rg <- getLocalGraph
       let eresult = if isClusterStopped rg
                     then Left StateChangeFinished
@@ -526,8 +526,9 @@ requestClusterReset = defineSimple "castor::cluster::reset"
 -- Does not wait for any sort of reply.
 requestStopMeroClient :: Definitions RC ()
 requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop" $
-  \(StopMeroClientRequest fid) -> do
-    Log.tagContext Log.SM [("client.fid", show fid)] Nothing
+  \(StopMeroClientRequest fid reason) -> do
+    Log.tagContext Log.SM [("client.fid", show fid)
+                          ,("client.stopreason", reason)] Nothing
     phaseLog "info" $ "Stop mero client requested."
     lookupConfObjByFid fid >>= \case
       Nothing -> phaseLog "warn" "Could not find associated process."

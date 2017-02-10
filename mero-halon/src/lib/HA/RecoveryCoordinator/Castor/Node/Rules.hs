@@ -1103,7 +1103,7 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
 -- | Request to stop a node.
 requestUserStopsNode :: Definitions RC ()
 requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go where
-  go (Event.StopNodeUserRequest m0fid should_force reply_to) = lookupConfObjByFid m0fid >>= \case
+  go (Event.StopNodeUserRequest m0fid should_force reply_to _reason) = lookupConfObjByFid m0fid >>= \case
      Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
      Just m0node -> M0.m0nodeToNode m0node <$> getLocalGraph >>= \case
        Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
