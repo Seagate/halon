@@ -749,6 +749,35 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
        <+> fldRep           =: Nothing
        <+> RNil
 
+newtype DelayedAbort = DelayedAbort M0.Pool
+  deriving (Show, Eq, Ord, Generic)
+
+-- | Delay SNS operation abort for some time.
+jobDelayedAbort :: Job DelayedAbort ()
+jobDelayedAbort = Job "castor::node::sns::delyed-abort"
+
+ruleSNSOperationDelayedAbort :: Definitions RC ()
+ruleSNSOperationDelayedAbort = mkJobRule jobDelayedAbort args $ \(JobHandle getRequest finish) -> do
+   delayed <- phaseHandle "delayed"
+   immediate <- phaseHandle "immediate"
+   directly delayed $ do
+     DelayedAbort pool <- getRequest
+     getPoolRepairStatus pool >>= \case
+       Just (M0.PoolRepairStatus _ uuid _) -> do
+         promulgateRC $ AbortSNSOperation pool uuid
+         continue finish
+       Nothing -> continue finish
+   setPhase immediate $ \AbortSNSOperation{} -> continue finish
+   return $ const $ return $ Right ((), [immediate, timeout 30 delayed])
+  where
+    fldReq :: Proxy '("request", Maybe DelayedAbort)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe ())
+    fldRep = Proxy
+    args =  fldReq  =: Nothing
+        <+> fldRep  =: Nothing
+
+
 -- | Abort current SNS operation. Rule requesting SNS operation abort
 -- and waiting for all IOs to be finalized.
 jobSNSAbort :: Job AbortSNSOperation AbortSNSOperationResult
@@ -1243,6 +1272,28 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
     | prt == M0.Failure -> queryStartHandling pool
   _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
+-- Partial repair or problem during repair on a pool, if one of IOS
+-- experienced problem - we abort repair.
+processPoolInfo pool M0_NC_REPAIR _ = getPoolRepairStatus pool >>= \case
+  Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIR for a pool but "
+                               ++ "no pool repair status was found."
+  Just (M0.PoolRepairStatus prt _ _)
+    | prt == M0.Failure -> do
+        phaseLog "repair" $ "Got partial repair -- aborting."
+        promulgateRC $ DelayedAbort pool
+  _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
+
+-- Partial repair or problem during repair on a pool, if one of IOS
+-- experienced problem - we abort repair.
+processPoolInfo pool M0_NC_REBALANCE _ = getPoolRepairStatus pool >>= \case
+  Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIR for a pool but "
+                               ++ "no pool repair status was found."
+  Just (M0.PoolRepairStatus prt _ _)
+    | prt == M0.Rebalance -> do
+        phaseLog "repair" $ "Got partial repair -- aborting."
+        promulgateRC $ DelayedAbort pool
+  _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is repairing now."
+
 -- We got some pool state info but we don't care about what it is as
 -- it seems some devices belonging to the pool failed, abort repair.
 -- It should not hurt to keep around and process any M0_NC_FAILED that
@@ -1397,6 +1448,7 @@ rules = sequence_
   , ruleRebalanceStart
   , ruleStobIoqError
   , ruleSNSOperationAbort
+  , ruleSNSOperationDelayedAbort
   , ruleSNSOperationQuiesce
   , ruleSNSOperationContinue
   , ruleSNSOperationRestart
@@ -1406,3 +1458,5 @@ rules = sequence_
   , querySpiel
   , querySpielHourly
   ]
+
+deriveSafeCopy 0 'base ''DelayedAbort
