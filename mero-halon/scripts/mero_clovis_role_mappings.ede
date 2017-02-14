@@ -142,6 +142,13 @@
           m0s_params:
             tag: SPUnused
             contents: []
+        - m0s_type:
+            tag: CST_CAS
+            contents: []
+          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
+          m0s_params:
+            tag: SPUnused
+            contents: []
 - name: "m0t1fs"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:301"
@@ -161,6 +168,28 @@
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:301"]
+          m0s_params:
+            tag: SPUnused
+            contents: []
+- name: "c0cat"
+  content:
+    - m0p_endpoint: "{{ lnid }}:12345:41:302"
+      m0p_mem_as: {{ host_mem_as }}
+      m0p_mem_rss: {{ host_mem_rss }}
+      m0p_mem_stack: {{ host_mem_stack }}
+      m0p_mem_memlock: {{ host_mem_memlock }}
+      m0p_cores:
+{% for core in host_cores %}
+       - {{ core.value }}
+{% endfor %}
+      m0p_boot_level:
+        tag: PLClovis
+        contents: ["c0cat", True]
+      m0p_services:
+        - m0s_type:
+            tag: CST_RMS
+            contents: []
+          m0s_endpoints: ["{{ lnid }}:12345:41:302"]
           m0s_params:
             tag: SPUnused
             contents: []

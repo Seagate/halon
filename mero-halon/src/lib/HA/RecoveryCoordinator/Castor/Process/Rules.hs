@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ViewPatterns     #-}
 
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Process.Rules
@@ -26,6 +27,7 @@ import           Data.Vinyl
 import           HA.EventQueue
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Mero
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
 import           HA.RecoveryCoordinator.Job.Actions
@@ -51,7 +53,9 @@ import           Text.Printf
 -- | Set of rules used for mero processes.
 rules :: Definitions RC ()
 rules = sequence_ [
-    ruleProcessOnline
+    ruleProcessStarting
+  , ruleProcessOnline
+  , ruleProcessStopping
   , ruleProcessStopped
   , ruleProcessDispatchRestart
   , ruleProcessStart
@@ -176,10 +180,10 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
 
   directly configure $ do
     Just chan <- getField . rget fldChan <$> get Local
-    Just runType <- getField . rget fldRunType <$> get Local
+    Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     ProcessStartRequest p <- getRequest
     phaseLog "info" $ "Configuring " ++ showFid p
-    try (configureMeroProcess chan p runType (runType /= M0T1FS)) >>= \case
+    try (configureMeroProcess chan p runType (runType == M0D)) >>= \case
       Left (e :: SomeException) -> do
         finisher <- fail_start $ "Configuration failed with exception: " ++ show e
         switch finisher
@@ -194,10 +198,19 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       switch finisher
     Right uid -> do
       Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
+      Just label <- getField . rget fldLabel <$> get Local
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
       messageProcessed uid
       phaseLog "info" $ "Configuration successful for " ++ showFid p
-      continue start_process
+      case label of
+        M0.PLClovis _ True -> do
+          Log.rcLog' Log.DEBUG
+                      "Independent CLOVIS process; only writing configuration."
+          modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
+          -- Put the process in unknown state again.
+          applyStateChanges [ stateSet p Tr.processUnknown ]
+          continue finish
+        _ -> continue start_process
 
   directly configure_timeout $ do
     finisher <- fail_start "Configuration timed out"
@@ -207,7 +220,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   -- PSStarting, disposition still in ONLINE
   directly start_process $ do
     Just (TypedChannel chan) <- getField . rget fldChan <$> get Local
-    Just runType <- getField . rget fldRunType <$> get Local
+    Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
     phaseLog "info" $ printf "Starting %s (%s)" (showFid p) (show runType)
     liftProcess . sendChan chan $ StartProcess runType p
@@ -278,14 +291,14 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldRep = Proxy :: Proxy '("reply", Maybe ProcessStartResult)
     fldHost = Proxy :: Proxy '("host", Maybe Host)
     fldChan = Proxy :: Proxy '("chan", Maybe (TypedChannel ProcessControlMsg))
-    fldRunType = Proxy :: Proxy '("label", Maybe ProcessRunType)
     fldRetryCount = Proxy :: Proxy '("retries", Int)
+    fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)
 
     args = fldReq           =: Nothing
        <+> fldRep           =: Nothing
        <+> fldHost          =: Nothing
        <+> fldChan          =: Nothing
-       <+> fldRunType       =: Nothing
+       <+> fldLabel         =: Nothing
        <+> fldRetryCount    =: 0
        <+> fldNotifications =: []
        <+> fldDispatch      =: Dispatch [] (error "ruleProcessStart dispatcher") Nothing
@@ -318,17 +331,15 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
      let mn = G.connectedFrom M0.IsParentOf p rg
          mh = mn >>= \n -> G.connectedFrom Runs n rg
          mchan = mn >>= \n -> M0.m0nodeToNode n rg >>= meroChannel rg
-         mlabel = listToMaybe $ G.connectedTo p Has rg
+         mlabel = G.connectedTo p Has rg
      case (,,) <$> mh <*> mchan <*> mlabel of
        Nothing -> return . Just $
          printf "Could not init resources: Host: %s, Chan: %s, Label: %s"
                 (show mh) (show $ isJust mchan) (show mlabel)
        Just (host, chan, label) -> do
-         let toType M0.PLM0t1fs = M0T1FS
-             toType _           = M0D
          modify Local $ rlens fldHost .~ Field (Just host)
          modify Local $ rlens fldChan .~ Field (Just chan)
-         modify Local $ rlens fldRunType .~ Field (Just $ toType label)
+         modify Local $ rlens fldLabel .~ Field (Just label)
          return Nothing
 
     checks :: [M0.Process -> G.Graph -> (Bool, String)]
@@ -344,13 +355,23 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     runWarnings :: M0.Process -> G.Graph -> [String]
     runWarnings p rg = [ warnMsg | w <- warnings, let (r, warnMsg) = w p rg, r ]
 
-    checkBootlevel p rg = case (,) <$> getProcessBootLevel p rg <*> getClusterStatus rg of
+    checkBootlevel p rg = case (,) <$> Process.getLabel p rg <*> getClusterStatus rg of
       Nothing -> (False, "Can't retrieve process boot level or cluster status")
       Just (_, M0.MeroClusterState M0.OFFLINE _ _) ->
         (False, "Cluster disposition is offline")
-      Just (pl, M0.MeroClusterState M0.ONLINE rl _) ->
-        ( rl >= pl || G.isConnected p Has M0.PLM0t1fs rg
+      Just (M0.PLM0d pl, M0.MeroClusterState M0.ONLINE rl _) ->
+        ( rl >= pl
         , printf "Can't start %s on cluster boot level %s" (showFid p) (show rl))
+      Just (M0.PLM0t1fs, M0.MeroClusterState M0.ONLINE rl _) ->
+        ( True -- Allow starting m0t1fs on any level.
+        , printf "Can't start m0t1fs on cluster boot level %s" (show rl)
+        )
+      Just (M0.PLClovis _ _, M0.MeroClusterState M0.ONLINE rl _) ->
+        ( rl >= m0t1fsBootLevel
+        , printf "Can't start clovis on cluster boot level %s" (show rl)
+        )
+      Just (M0.PLHalon, _) ->
+        (False, "Halon process should be started in halon:m0d.")
 
     checkIsNotHA p rg =
       let srvs = G.connectedTo p M0.IsParentOf rg
@@ -365,12 +386,68 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     warnProcessAlreadyOnline p rg = ( getState p rg == M0.PSOnline
                                     , "Process already online, restart will occur")
 
+    toType M0.PLM0t1fs = M0T1FS
+    toType (M0.PLClovis s _) = CLOVIS s
+    toType _ = M0D
+
+-- | Handle process Starting notifications.
+ruleProcessStarting :: Definitions RC ()
+ruleProcessStarting = define "castor::process::starting" $ do
+  rule_init <- phaseHandle "rule_init"
+
+  setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
+    Log.tagContext Log.SM p $ Just "Process sending M0_CONF_HA_PROCESS_STARTING"
+    Log.tagContext Log.SM [("pid", show processPid)] Nothing
+
+    rg <- getLocalGraph
+    case (getState p rg, G.connectedTo p Has rg) of
+
+      -- We already know the process is starting.
+      (M0.PSStarting, Just pid) | pid == processPid -> do
+        Log.rcLog' Log.DEBUG "Process already STARTING with matching pid."
+
+      -- We already know the process is starting, but have no PID. This
+      -- message has arrived before `ProcessControlResultMsg`. This isn't a
+      -- problem, but we would prefer to trust the PID from there.
+      (M0.PSStarting, Nothing) -> do
+        Log.rcLog' Log.DEBUG "Process already STARTING, but no PID info."
+
+      -- Process is ephemeral. In this case, we allow a bunch of other
+      -- transitions, because we may have not received all status updates.
+      (st, _) | isEphemeral p rg -> do
+        Log.rcLog' Log.DEBUG "Ephemeral process starting."
+        Log.rcLog' Log.DEBUG ("oldState", show st)
+        applyStateChanges [ stateSet p Tr.processStarting ]
+        modifyGraph $ G.connect p Has processPid
+
+      -- Process is not ephemeral, and we are not expecting this transition.
+      -- Log a warning.
+      (st, _) -> do
+        Log.rcLog' Log.WARN "Unexpected STARTING notification for non-ephemeral process."
+        Log.rcLog' Log.WARN ("oldState", show st)
+
+    done eid
+
+  start rule_init Nothing
+  where
+    isEphemeral p rg = case G.connectedTo p Has rg of
+      Just (M0.PLClovis _ True) -> True
+      _ -> False
+    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
+      let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
+      return $ case (t, pt, mpd) of
+        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        _ -> Nothing
+
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions RC ()
 ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
-  setPhaseIfConsume rule_init onlineProc $ \(eid, p, processPid) -> do
+  setPhaseIfConsume rule_init startedProc $ \(eid, p, processPid) -> do
     rg <- getLocalGraph
     case (getState p rg, G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
@@ -394,8 +471,6 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "warn" "Received process online notification for already online process without PID."
         modifyGraph $ G.connect p Has processPid
 
-      -- TODO: We can use TAG_M0_CONF_HA_PROCESS_STARTING notification
-      -- now if we desire.
       (M0.PSStarting, _) -> do
         phaseLog "action" "Process started."
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
@@ -415,13 +490,50 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   start rule_init Nothing
   where
-    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
+    startedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
           Just (eid, p, M0.PID $ fromIntegral pid)
+        _ -> Nothing
+
+-- | Listen for process event notifications about a stopping process.
+--   This is only of particular interest for ephemeral processes,
+--   which may stop gracefully outside of Halon control.
+ruleProcessStopping :: Definitions RC ()
+ruleProcessStopping = define "castor::process::stopping" $ do
+  rule_init <- phaseHandle "rule_init"
+
+  setPhaseIfConsume rule_init stoppingProc $ \(eid, p, processPid) -> do
+    Log.tagContext Log.SM p $ Just "Process sending M0_CONF_HA_PROCESS_STOPPING"
+    Log.tagContext Log.SM [("pid", show processPid)] Nothing
+
+    getLocalGraph >>= \rg -> case getState p rg of
+      M0.PSOnline -> do
+        Log.rcLog' Log.DEBUG "Ephemeral process stopping."
+        applyStateChanges [ stateSet p Tr.processStopping ]
+      (M0.PSInhibited M0.PSOnline) -> do
+        Log.rcLog' Log.DEBUG "Ephemeral process stopping under inhibition."
+        applyStateChanges [ stateSet p Tr.processStopping ]
+      st -> do
+        Log.rcLog' Log.WARN "Ephemeral process unexpectedly reported stopping."
+        Log.rcLog' Log.WARN ("oldState", show st)
+
+    done eid
+
+  startFork rule_init ()
+  where
+    isEphemeral p rg = case G.connectedTo p Has rg of
+      Just (M0.PLClovis _ True) -> True
+      _ -> False
+    stoppingProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
+      let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
+      return $ case (t, pt, mpd) of
+        (TAG_M0_CONF_HA_PROCESS_STOPPING, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process))
+          | pid /= 0 && isEphemeral p (lsGraph ls) ->
+            Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
 -- | Listen for process event notifications about a stopped process
@@ -471,7 +583,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
           return $ case (t, pt, pd) of
             (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, p :: M0.Process)
                | pid /= 0
-               , Just (M0.PID ppid) <- mpid 
+               , Just (M0.PID ppid) <- mpid
                , ppid == fromIntegral pid -> Just (eid, p, M0.PID $ fromIntegral pid)
             _ -> Nothing
         Nothing -> return Nothing
@@ -532,8 +644,9 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     case chan of
       Just (TypedChannel ch) -> do
         let runType = case G.connectedTo p Has rg of
-              [M0.PLM0t1fs] -> M0T1FS
-              _             -> M0D
+              Just M0.PLM0t1fs -> M0T1FS
+              Just (M0.PLClovis s False) -> CLOVIS s
+              _                -> M0D
         let msg = StopProcess runType p
         liftProcess $ sendChan ch msg
         t <- _hv_process_stop_timeout <$> getHalonVars
@@ -578,7 +691,6 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
         setReply $ StopProcessTimeout p
         continue finish
 
-
   return quiesce
   where
     fldReq :: Proxy '("request", Maybe StopProcessRequest)
@@ -619,7 +731,7 @@ ruleFailedNotificationFailsProcess =
     rg <- getLocalGraph
     -- Get procs which have servicess
     let procs = nub $
-          [ p | p <- getAllProcesses rg
+          [ p | p <- Process.getAll rg
               -- Don't consider already failed processes: if a process has
               -- failed and we try to notify about it below and that still
               -- fails, we'll just run ourselves in circles

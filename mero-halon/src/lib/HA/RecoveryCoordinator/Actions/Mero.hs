@@ -12,6 +12,7 @@
 module HA.RecoveryCoordinator.Actions.Mero
   ( module Conf
   , module HA.RecoveryCoordinator.Mero.Actions.Core
+  , module HA.RecoveryCoordinator.Mero.Actions.Initial
   , module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , noteToSDev
   , calculateRunLevel
@@ -21,13 +22,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , getClusterStatus
   , isClusterStopped
   , startMeroService
-  , startNodeProcesses
   , configureMeroProcess
-  , getAllProcesses
-  , getLabeledProcesses
-  , getLabeledNodeProcesses
-  , getProcessBootLevel
-  , getNodeProcesses
   , m0t1fsBootLevel
   , retriggerMeroNodeBootstrap
   )
@@ -35,11 +30,14 @@ where
 
 import           Control.Category ((>>>))
 import           Control.Distributed.Process
+import           Data.Function ((&))
 import           HA.Encode
-import           HA.RecoveryCoordinator.Castor.Process.Events
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
+import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Actions.Initial
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import           HA.RecoveryCoordinator.Service.Events
@@ -59,10 +57,8 @@ import           Network.CEP
 import           System.Posix.SysInfo
 
 import           Control.Lens ((<&>))
-import           Control.Monad (unless)
 import           Data.Foldable (for_)
-import           Data.List (sort)
-import           Data.Maybe (isJust, listToMaybe, mapMaybe)
+import           Data.Maybe (isJust, listToMaybe)
 import           Data.Proxy
 import           Data.UUID.V4 (nextRandom)
 
@@ -77,7 +73,7 @@ noteToSDev :: Note -> PhaseM RC l (Maybe (M0.ConfObjectState, M0.SDev))
 noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
   Just sdev -> return $ Just (stType, sdev)
   Nothing -> Conf.lookupConfObjByFid mfid >>= \case
-    Just disk -> fmap (stType,) <$> Conf.lookupDiskSDev disk
+    Just disk -> fmap (stType,) <$> Drive.lookupDiskSDev disk
     Nothing -> return Nothing
 
 -- | Default RM service address: @":12345:41:301"@.
@@ -169,9 +165,9 @@ calculateRunLevel = do
       -- confd processes have started, where n is the total number, and
       -- where we have a principal RM selected.
       prm <- getPrincipalRM
-      confdprocs <- getLocalGraph <&>
-        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 0)
-          (\p rg -> any
+      confdprocs <- getLocalGraph <&> \rg ->
+        Process.getLabeled (M0.PLM0d $ M0.BootLevel 0) rg & filter
+          (\p -> any
               (\s -> M0.s_type s == CST_MGS)
               [svc | svc <- G.connectedTo p M0.IsParentOf rg]
           )
@@ -188,8 +184,7 @@ calculateRunLevel = do
       -- We allow boot level 2 processes to start when all processes
       -- at level 1 have started.
       lvl1procs <- getLocalGraph <&>
-        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
-                            (const $ const True)
+        Process.getLabeled (M0.PLM0d $ M0.BootLevel 1)
       onlineProcs <- getLocalGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
       return $ length onlineProcs == length lvl1procs
@@ -226,37 +221,30 @@ calculateStopLevel = do
     guard (M0.BootLevel 0) = do
       -- We allow stopping a process on level i if there are no running
       -- processes on level i+1
-      stillUnstopped <- getLocalGraph <&>
-        getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
-          ( \p g -> not . null $
-          [ () | M0.getState p g `elem` [ M0.PSOnline
-                                        , M0.PSQuiescing
-                                        , M0.PSStopping
-                                        , M0.PSStarting
-                                        ]
-              , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
-              , M0.getState n g /= M0.NSFailed
-                && M0.getState n g /= M0.NSFailedUnrecoverable
-          ] )
+      stillUnstopped <- unstoppedWithLabel (== (M0.PLM0d $ M0.BootLevel 1))
       return $ null stillUnstopped
     guard (M0.BootLevel 1) = do
       -- We allow stopping a process on level 1 if there are no running
-      -- PLM0t1fs processes
-      stillUnstopped <- getLocalGraph <&>
-        getLabeledProcesses M0.PLM0t1fs
-          ( \p g -> not . null $
-          [ () | M0.getState p g `elem` [ M0.PSOnline
-                                        , M0.PSQuiescing
-                                        , M0.PSStopping
-                                        , M0.PSStarting
-                                        ]
-              , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
-              , M0.getState n g /= M0.NSFailed
-                && M0.getState n g /= M0.NSFailedUnrecoverable
-          ] )
+      -- PLM0t1fs processes or controlled PLClovis processes
+      stillUnstopped <- unstoppedWithLabel
+                          (\case  (M0.PLClovis _ False) -> True
+                                  M0.PLM0t1fs -> True
+                                  _ -> False)
       return $ null stillUnstopped
     guard (M0.BootLevel 2) = return True
     guard (M0.BootLevel _) = return False
+    unstoppedWithLabel lbl = getLocalGraph <&> \g ->
+      ( Process.getLabeledP lbl g) & filter
+      ( \p -> not . null $
+      [ () | M0.getState p g `elem` [ M0.PSOnline
+                                    , M0.PSQuiescing
+                                    , M0.PSStopping
+                                    , M0.PSStarting
+                                    ]
+          , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
+          , M0.getState n g /= M0.NSFailed
+            && M0.getState n g /= M0.NSFailedUnrecoverable
+      ] )
 
 -- | Get an aggregate cluster status report.
 getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState
@@ -265,7 +253,6 @@ getClusterStatus rg = let
     runLevel = G.connectedTo Res.Cluster M0.RunLevel rg
     stopLevel = G.connectedTo Res.Cluster M0.StopLevel rg
   in M0.MeroClusterState <$> dispo <*> runLevel <*> stopLevel
-
 
 -- | Is the cluster completely stopped?
 --
@@ -289,27 +276,6 @@ isClusterStopped rg = null $
     psDown M0.PSUnknown = True
     psDown _ = False
 
--- | Start all Mero processes labelled with the specified process label on
--- a given node. Returns all the processes which are being started.
-startNodeProcesses :: Castor.Host
-                   -> M0.ProcessLabel
-                   -> PhaseM RC a [M0.Process]
-startNodeProcesses host label = do
-    rg <- getLocalGraph
-    let procs =  [ p
-                 | m0node <- G.connectedTo host Runs rg :: [M0.Node]
-                 , p <- G.connectedTo m0node M0.IsParentOf rg
-                 , G.isConnected p Has label rg
-                 ]
-
-    unless (null procs) $ do
-      phaseLog "info" "Starting processes on mero node."
-      phaseLog "processes" $ show (M0.fid <$> procs)
-      phaseLog "process.label" $ show label
-      phaseLog "process.host" $ show host
-      for_ procs $ promulgateRC . ProcessStartRequest
-    return procs
-
 -- | Send a request to configure the given mero process. Constructs
 -- the appropriate 'ProcessConfig' (which depends on whether the
 -- process in @confd@ or not) and sends it to @halon:m0d@.
@@ -325,79 +291,6 @@ configureMeroProcess (TypedChannel chan) p runType mkfs = do
             then ProcessConfigLocal p <$> syncToBS
             else return $ ProcessConfigRemote p
     liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
-
--- | Get all 'M0.Processes' associated the given 'M0.ProcessLabel'
--- that satisfy the predicate.
-getLabeledProcesses :: M0.ProcessLabel
-                    -> (M0.Process -> G.Graph -> Bool)
-                    -> G.Graph
-                    -> [M0.Process]
-getLabeledProcesses label predicate rg =
-  [ proc
-  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
-  , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
-  , G.isConnected proc Has label rg
-  , predicate proc rg
-  ]
-
--- | Get all 'M0.Processes' associated to the given 'Res.Node' with
--- the given 'M0.ProcessLabel' that satisfy the predicate.
---
--- For processes on any node, see 'getLabeledProcesses'.
-getLabeledNodeProcesses :: Res.Node -> M0.ProcessLabel -> G.Graph
-                        -> (M0.Process -> Bool) -> [M0.Process]
-getLabeledNodeProcesses node label rg predicate =
-   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
-       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
-       , p <- G.connectedTo m0node M0.IsParentOf rg
-       , G.isConnected p Has label rg
-       , predicate p
-   ]
-
--- | Fetch the boot level for the given 'Process'. This is determined as
--- follows:
---
---   * If the process has the 'PLM0t1fs' label, then the returned boot level is
---     'm0t1fsBootLevel'
---
---   * If the process has an explicit 'PLBootLevel x' label, then the returned
---     boot level is x.
---
---   * Otherwise, return 'Nothing'
---
--- If a process has multiple boot levels, then function m0t1fs before others,
--- if it' not present, then this function will return the lowest level.
-getProcessBootLevel :: M0.Process -> G.Graph -> Maybe M0.BootLevel
-getProcessBootLevel proc rg = let
-    pl = G.connectedTo proc Has rg
-    m0t1fs M0.PLM0t1fs = Just m0t1fsBootLevel
-    m0t1fs _ = Nothing
-    bl (M0.PLBootLevel x) = Just x
-    bl _ = Nothing
-  in case (mapMaybe m0t1fs pl, sort $ mapMaybe bl pl) of
-    (x:_, _) -> Just x
-    (_, x:_) -> Just x
-    _ -> Nothing
-
--- | Get all 'M0.Process'es on the given 'Res.Node'.
-getNodeProcesses :: Res.Node -> G.Graph -> [M0.Process]
-getNodeProcesses node rg =
-  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Castor.Host]
-      , m0node <- G.connectedTo host Runs rg :: [M0.Node]
-      , p <- G.connectedTo m0node M0.IsParentOf rg
-  ]
-
--- | Find every 'M0.Process' in the 'Res.Cluster'.
-getAllProcesses :: G.Graph -> [M0.Process]
-getAllProcesses rg =
-  [ p
-  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
-  , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
-  ]
 
 -- | Dispatch a request to start @halon:m0d@ on the given
 -- 'Castor.Host'.

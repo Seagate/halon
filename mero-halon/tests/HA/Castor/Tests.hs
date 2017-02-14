@@ -27,6 +27,7 @@ import           HA.Multimap.Process (startMultimap)
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.Actions.Failure
 import           HA.RecoveryCoordinator.Mero.Failure.Simple
@@ -224,7 +225,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       $ mdpool_byFid == Just mdpool
 
     -- Get the non metadata pool
-    [pool] <- runGet ls' getPool
+    [pool] <- runGet ls' $ Pool.getNonMD <$> getLocalGraph
 
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"

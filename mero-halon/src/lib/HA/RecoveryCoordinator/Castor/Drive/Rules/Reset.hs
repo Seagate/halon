@@ -18,7 +18,6 @@ import HA.EventQueue (HAEvent(..))
 import HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Actions.Mero
 import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
 import HA.RecoveryCoordinator.Mero.Events

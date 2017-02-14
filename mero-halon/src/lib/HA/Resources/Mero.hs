@@ -709,15 +709,6 @@ displayProcessState s@PSFailed{} = ("failed", Just $ prettyProcessState s)
 displayProcessState s@PSInhibited{} = ("inhibited", Just $ prettyProcessState s)
 displayProcessState s = ( prettyProcessState s, Nothing)
 
--- | Label to attach to a Mero process providing extra context about how
---   it should run.
-data ProcessLabel =
-    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
-  | PLBootLevel BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
-  | PLNoBoot  -- ^ Tag processes which should not boot.
-  deriving (Eq, Show, Typeable, Generic)
-instance Hashable ProcessLabel
-
 -- | Process boot level.
 --   This is used both to tag processes (to indicate when they should start/stop)
 --   and to tag the cluster (to indicate which processes it's valid to try to
@@ -728,12 +719,39 @@ instance Hashable ProcessLabel
 -- Currently:
 --   * 0 - confd
 --   * 1 - other
---   * 2 - clients
 newtype BootLevel = BootLevel { unBootLevel :: Int }
   deriving
     (Eq, Show, Typeable, Generic, Hashable, Ord, FromJSON, ToJSON)
 deriveSafeCopy 0 'base ''BootLevel
-deriveSafeCopy 0 'base ''ProcessLabel
+
+data ProcessLabel_0 =
+    PLM0t1fs_0
+  | PLBootLevel_0 BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
+  | PLNoBoot_0  -- ^ Tag processes which should not boot.
+  deriving (Eq, Show, Typeable, Generic)
+instance Hashable ProcessLabel_0
+deriveSafeCopy 0 'base ''ProcessLabel_0
+
+-- | Label to attach to a Mero process providing extra context about how
+--   it should run.
+data ProcessLabel =
+    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
+  | PLClovis String Bool -- ^ Process lives as part of a Clovis client, with
+                         --   given name. If the second parameter is set to
+                         --   'True', then the process is indendently controlled
+                         --   and should not be started/stopped by Halon.
+  | PLM0d BootLevel -- ^ Process runs in m0d at the given boot level.
+                    --   Currently 0 = confd, 1 = other0
+  | PLHalon  -- ^ Process lives inside Halon program space.
+  deriving (Eq, Show, Typeable, Generic)
+instance Hashable ProcessLabel
+deriveSafeCopy 1 'extension ''ProcessLabel
+
+instance Migrate ProcessLabel where
+  type MigrateFrom ProcessLabel = ProcessLabel_0
+  migrate PLM0t1fs_0 = PLM0t1fs
+  migrate (PLBootLevel_0 x) = PLM0d x
+  migrate PLNoBoot_0 = PLHalon
 
 -- | Cluster disposition.
 --   This represents the desired state for the cluster, which is used to
@@ -957,7 +975,7 @@ $(mkResRel
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
   , (''R.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''R.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
-  , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessLabel)
+  , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)

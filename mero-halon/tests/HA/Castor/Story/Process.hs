@@ -21,6 +21,7 @@ import           Data.Typeable
 import           Data.Vinyl
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Node.Events
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
@@ -74,8 +75,8 @@ testStopStart transport pg = do
       setPhase rule_init $ \(H.RuleHook caller) -> do
         rg <- getLocalGraph
         let ps = listToMaybe $
-                 getLabeledProcesses (M0.PLBootLevel $ M0.BootLevel 1)
-                                     (\p rg' -> getState p rg' == M0.PSOnline) rg
+                 Process.getLabeled (M0.PLM0d $ M0.BootLevel 1) rg
+                  & filter (\p -> getState p rg == M0.PSOnline)
         case ps of
           Nothing ->
             notifyFailure caller "Could not find an online process on boot level 1."
@@ -98,6 +99,7 @@ testStopStart transport pg = do
         Just caller <- getField . rget fldCaller <$> get Local
         case m of
           ProcessStarted{} -> liftProcess $ usend caller (Nothing :: Maybe String)
+          ProcessConfiguredOnly{} -> liftProcess $ usend caller (Nothing :: Maybe String)
           ProcessStartFailed p m' -> notifyFailure caller $
             "Process start failed for " ++ showFid p ++ " with: " ++ m'
           ProcessStartInvalid p m' -> notifyFailure caller $
@@ -147,7 +149,7 @@ testClientStartsAnyBootlevel transport pg = do
         rg <- getLocalGraph
         case getClusterStatus rg of
           Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> do
-            case getLabeledProcesses M0.PLM0t1fs (\_ _ -> True) rg of
+            case Process.getLabeled M0.PLM0t1fs rg of
               p : _ -> do
                 modify Local $ rlens fldCaller . rfield .~ Just caller
                 modify Local $ rlens fldOurProc . rfield .~ Just p

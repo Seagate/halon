@@ -247,6 +247,21 @@ instance Hashable M0Host
 instance A.FromJSON M0Host
 instance A.ToJSON M0Host
 
+data M0ProcessType =
+    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
+  | PLClovis String Bool -- ^ Process lives as part of a Clovis client, with
+                         --   given name. If the second parameter is set to
+                         --   'True', then the process is independently
+                         --   controlled and should not be started/stopped
+                         --   by Halon.
+  | PLM0d Word64  -- ^ Process runs in m0d at the given boot level.
+                  --   Currently 0 = confd, 1 = other
+  | PLHalon  -- ^ Process lives inside Halon program space.
+  deriving (Eq, Data, Show, Typeable, Generic)
+instance Hashable M0ProcessType
+instance A.FromJSON M0ProcessType
+instance A.ToJSON M0ProcessType
+
 -- | Information about mero process on the host
 data M0Process = M0Process
   { m0p_endpoint :: String
@@ -259,7 +274,8 @@ data M0Process = M0Process
   -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use
   , m0p_services :: [M0Service]
   -- ^ List of services this process should run.
-  , m0p_boot_level :: Word64
+  , m0p_boot_level :: M0ProcessType
+  -- ^ Type of process, governing how it should run.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Process
@@ -521,6 +537,7 @@ deriveSafeCopy 0 'base ''FailureSetScheme
 deriveSafeCopy 0 'base ''M0Device
 deriveSafeCopy 0 'base ''M0Globals
 deriveSafeCopy 0 'base ''M0Host
+deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC

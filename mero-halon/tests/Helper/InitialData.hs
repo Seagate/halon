@@ -178,7 +178,7 @@ haProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
 haProcess ifaddr = CI.M0Process
   { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:34:101"
   , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = -1
+  , CI.m0p_boot_level = CI.PLHalon
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
@@ -203,7 +203,7 @@ confdProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
 confdProcess ifaddr = CI.M0Process
   { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:44:101"
   , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = 0
+  , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
@@ -228,7 +228,7 @@ mdsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
 mdsProcess ifaddr = CI.M0Process
   { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:201"
   , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = 0
+  , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
@@ -258,7 +258,7 @@ iosProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
 iosProcess ifaddr = CI.M0Process
   { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
   , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = 1
+  , CI.m0p_boot_level = CI.PLM0d 1
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
@@ -299,7 +299,7 @@ m0t1fsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
 m0t1fsProcess ifaddr = CI.M0Process
   { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
   , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = 99
+  , CI.m0p_boot_level = CI.PLM0t1fs
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1

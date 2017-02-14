@@ -23,8 +23,8 @@ import qualified Data.Text as T
 import           Data.UUID.V4 (nextRandom)
 import           Data.Vinyl
 import           HA.EventQueue
-import           HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
+import qualified HA.RecoveryCoordinator.Castor.Node.Actions as Node
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
@@ -210,7 +210,7 @@ ruleReassembleRaid =
 
         rg <- getLocalGraph
         -- TODO What if there are starting services? In other states?
-        let procs = [ p | p <- getNodeProcesses node rg
+        let procs = [ p | p <- Node.getProcesses node rg
                         , G.isConnected p R.Is M0.PSOnline rg
                         ]
 

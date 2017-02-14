@@ -20,6 +20,7 @@ import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero   as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Event
+import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import           Mero.Notification (getSpielAddress)
 
@@ -59,7 +60,7 @@ notifyOnClusterTransition = do
   rg <- getLocalGraph
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
-  let disposition = maybe M0.OFFLINE id $ G.connectedTo R.Cluster R.Has rg
+  let disposition = fromMaybe M0.OFFLINE $ G.connectedTo R.Cluster R.Has rg
       oldState = getClusterStatus rg
       newState = M0.MeroClusterState disposition newRunLevel newStopLevel
   phaseLog "oldState" $ show oldState
@@ -82,8 +83,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
                | srv :: M0.Service <- G.connectedFrom R.Is M0.PrincipalRM rg
                ]
             )
-    pools <- getPool
-    haveOngoingSNS <- fmap (getAll . mconcat) $
+        pools = Pool.getNonMD rg
+    haveOngoingSNS <- fmap (getAll . mconcat) .
       for pools $ \pool -> getPoolRepairInformation pool >>= \case
         Nothing -> return $ All False
         Just _  -> return $ All True
@@ -146,10 +147,10 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
                               M0.M0_NC_ONLINE -> True
                               _ -> False
         ]
-        
+
     mkFailuresSets :: M0.Filesystem -> [Failures]
     mkFailuresSets filesystem = map getFailures $ mkPool M0.NoExplicitConfigState
-      [ mkRack r_state 
+      [ mkRack r_state
          [ mkEnclosure e_state
              [ mkController c_state
                 [ mkDisk d_state

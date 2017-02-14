@@ -67,6 +67,9 @@ import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
+import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
@@ -377,7 +380,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
         Nothing -> R.allIOSOnline pool >>= \case
           True -> do
             rg <- getLocalGraph
-            sdevs <- getPoolSDevs pool
+            sdevs <- liftGraph Pool.getSDevs pool
             let sts = map (\d -> (getConfObjState d rg, d)) sdevs
             -- states that are considered as ‘OK, we can finish
             -- repair/rebalance’ states for the drives
@@ -385,14 +388,14 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
              -- list of devices in OK state
                 sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
                 (sdev_notready, sdev_ready) = partitionEithers $ deviceReadyStatus rg <$> sdev_repaired
-                sdev_broken   = snd <$> filter (\(typ, _) -> not $ typ `elem` okMessages) sts
+                sdev_broken   = snd <$> filter (\(typ, _) -> typ `notElem` okMessages) sts
             for_ sdev_notready $ phaseLog "info"
             if null sdev_broken
             then if null sdev_ready
                   then return $ Left $ "Can't start rebalance, no drive to rebalance on"
                   else do
                     phaseLog "info" "starting rebalance"
-                    disks <- catMaybes <$> mapM lookupSDevDisk sdev_ready
+                    disks <- catMaybes <$> mapM Drive.lookupSDevDisk sdev_ready
                     -- Can ignore K here: disks are in Repaired state
                     -- so moving to rebalancing does not increase
                     -- number of failures.
@@ -457,7 +460,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
     abortRebalanceStart = getField . rget fldPoolDisks <$> get Local >>= \case
       Nothing -> phaseLog "error" "No pool info in local state"
       Just (pool, _) -> do
-        ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
+        ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
         -- Don't need to think about K here as both rebalance and
         -- repaired are failed states.
         applyStateChanges $ map (\d -> stateSet d Tr.sdevRebalanceAbort) ds
@@ -532,8 +535,8 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
         -- to flip them back a second later.
         Nothing -> R.allIOSOnline pool >>= \case
           True -> do
-            tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-            fa <- getPoolSDevsWithState pool M0_NC_FAILED
+            tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
+            fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
             case null tr && not (null fa) of
               True -> do
                 -- OK to just set repairing here without checking K:
@@ -610,7 +613,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
       -- should happen and repair eventually restarted if
       -- everything goes right
       Just pool -> do
-        ds <- getPoolSDevsWithState pool M0_NC_REPAIR
+        ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
         -- There may be a race here: either this notification
         -- tries to go out first or the rule for failed
         -- notification fires first. The race does not matter
@@ -628,8 +631,8 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
     -- repair has already started.
     abort_if_needed pool = getPoolRepairStatus pool >>= \case
       Just (M0.PoolRepairStatus _ uuid _) -> do
-        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-        fa <- getPoolSDevsWithState pool M0_NC_FAILED
+        tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
+        fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
         when (not $ null tr) $
           phaseLog "disks.transient" $ show tr
         when (not $ null fa) $
@@ -822,9 +825,9 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
 
-    ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
+    ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
     applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
-    ds1 <- getPoolSDevsWithState pool M0_NC_REPAIR
+    ds1 <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
     applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
     continue finish
 
@@ -1049,7 +1052,7 @@ completeRepair pool prt muid = do
   case mdrive_updates of
     Nothing -> phaseLog "warning" $ "No pool repair information were found for " ++ show pool
     Just drive_updates -> do
-      sdevs <- getPoolSDevs pool
+      sdevs <- liftGraph Pool.getSDevs pool
       sts <- mapM (\d -> (,d) <$> getSDevState d) sdevs
 
       let -- devices that are under operation
@@ -1140,9 +1143,9 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
       phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
       for_ devices $ \(pool, diskMap) -> do
 
-        tr <- getPoolSDevsWithState pool M0_NC_TRANSIENT
-        fa <- getPoolSDevsWithState pool M0_NC_FAILED
-        repairing <- getPoolSDevsWithState pool M0_NC_REPAIR
+        tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
+        fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
+        repairing <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
 
             -- If no devices are transient and something is failed, begin
             -- repair. It's up to caller to ensure any previous repair has
@@ -1180,10 +1183,10 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
             -- nothing is left transient and continue repair if possible
             | Just ds <- allWithState diskMap M0_NC_ONLINE
             , ds' <- S.toList ds -> do
-                sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
+                sdevs <- filter (`notElem` ds') <$> liftGraph Pool.getSDevs pool
                 sts <- getLocalGraph >>= \rg ->
                   return $ (flip getConfObjState $ rg) <$> sdevs
-                if null $ filter (== M0_NC_TRANSIENT) sts
+                if M0_NC_TRANSIENT `notElem` sts
                 then continueSNS pool prt
                 else phaseLog "repair" $ "Still some drives transient: " ++ show sts
             | otherwise -> phaseLog "repair" $
@@ -1196,7 +1199,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
 --   we have devices that failed during the startup process.
 checkRepairOnClusterStart :: Definitions RC ()
 checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBootLevel2 $ \() -> do
-  pools <- getPool
+  pools <- Pool.getNonMD <$> getLocalGraph
   forM_ pools $ promulgateRC . PoolRepairRequest
   where
     clusterOnBootLevel2 msg ls = barrierPass (\mcs -> _mcs_runlevel mcs >= M0.BootLevel 2) msg ls ()
@@ -1258,7 +1261,7 @@ processPoolInfo pool _ m
   | Just ds <- allWithState m M0_NC_ONLINE
   , ds' <- S.toList ds = getPoolRepairStatus pool >>= \case
       Just (M0.PoolRepairStatus prt _ _) -> do
-        sdevs <- filter (`notElem` ds') <$> getPoolSDevs pool
+        sdevs <- filter (`notElem` ds') <$> liftGraph Pool.getSDevs pool
         sts <- getLocalGraph >>= \rg ->
           return $ (flip getConfObjState $ rg) <$> sdevs
         if null $ filter (== M0_NC_TRANSIENT) sts
@@ -1361,12 +1364,12 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarted" $ do
       todo eid
       rg <- getLocalGraph
       when (isJust $ find (flip isIOSProcess rg) (fst <$> procs)) $ do
-        let failedIOS = [ p | p <- getAllProcesses rg
+        let failedIOS = [ p | p <- Process.getAll rg
                             , M0.PSFailed _ <- [getState p rg]
                             , isIOSProcess p rg ]
         case failedIOS of
           [] -> do
-            pools <- getPool
+            pools <- Pool.getNonMD <$> getLocalGraph
             for_ pools $ \pool -> case getState pool rg of
               -- TODO: we should probably be setting pool to failed too but
               -- after abort we lose information on what kind of repair was

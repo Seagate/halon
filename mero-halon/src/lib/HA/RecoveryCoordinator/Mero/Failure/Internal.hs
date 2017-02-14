@@ -12,7 +12,7 @@ module HA.RecoveryCoordinator.Mero.Failure.Internal
   , createPoolVersionsInPool
   ) where
 
-import           Control.Category
+import           Control.Category hiding ((.))
 import           Control.Monad (unless)
 import qualified Control.Monad.State.Lazy as S
 import           Data.Foldable (for_)
@@ -143,7 +143,8 @@ createPoolVersionsInPool fs pool pvers invert rg =
 
         unless (or i) $ S.put rg0
 
--- | Create specified pool versions in the resource graph.
+-- | Create specified pool versions in the resource graph. These will be
+--   created inside all IO pools (e.g. not mdpool or imeta)
 createPoolVersions :: M0.Filesystem
                    -> [PoolVersion]
                    -> Bool -- If specified, the pool version is assumed to
@@ -154,4 +155,11 @@ createPoolVersions fs pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
   where
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
-    pools = filter (/= mdpool) $ G.connectedTo fs M0.IsParentOf rg
+    imeta_pools =
+      [ pool
+      | Just (pver :: M0.PVer) <- [M0.lookupConfObjByFid (M0.f_imeta_fid fs) rg]
+      , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsRealOf pver rg]
+      ]
+    pools = filter (/= mdpool)
+          . filter (\x -> not $ elem x imeta_pools)
+          $ G.connectedTo fs M0.IsParentOf rg

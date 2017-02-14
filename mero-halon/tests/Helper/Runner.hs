@@ -40,8 +40,9 @@ import           HA.EventQueue.Producer
 import           HA.EventQueue.Types
 import           HA.Multimap
 import           HA.NodeUp (nodeUp')
-import           HA.RecoveryCoordinator.Actions.Mero (getNodeProcesses)
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import qualified HA.RecoveryCoordinator.Castor.Node.Actions as Node
+  (getProcesses)
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Job.Actions
@@ -185,7 +186,7 @@ testRules = do
               return $ Right ( MockPopulateFailure nid $ "No M0.Node associated with " ++ show nid
                              , [finish] )
             Just m0n -> do
-              let procs = getNodeProcesses (Node nid) rg
+              let procs = Node.getProcesses (Node nid) rg
                   pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
               mack <- liftProcess $ Mock.sendMockCmd (Mock.SetProcessMap pmap) m0dPid
               modify Local $ rlens fldM0Node . rfield .~ Just m0n

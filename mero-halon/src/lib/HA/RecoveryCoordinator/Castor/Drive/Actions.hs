@@ -5,7 +5,9 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module  HA.RecoveryCoordinator.Castor.Drive.Actions
-  ( mkAttachDisk
+  ( module HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+    -- * Attach/detach
+  , mkAttachDisk
   , mkDetachDisk
     -- * RAID Drive functions
   , isRemovedFromRAID
@@ -33,13 +35,13 @@ import Data.List (nub)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
+import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import HA.RecoveryCoordinator.RC.Actions.Core
 import HA.RecoveryCoordinator.Actions.Hardware
   ( findStorageDeviceAttrs
   , setStorageDeviceAttr
   , unsetStorageDeviceAttr
   )
-import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Events

@@ -25,6 +25,7 @@ newtype ProcessStartRequest = ProcessStartRequest M0.Process
 data ProcessStartResult = ProcessStarted M0.Process
                         | ProcessStartFailed M0.Process String
                         | ProcessStartInvalid M0.Process String
+                        | ProcessConfiguredOnly M0.Process
   deriving (Show, Eq, Ord, Typeable, Generic)
 
 

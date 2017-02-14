@@ -7,8 +7,8 @@
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal where
 
 import           Data.List (nub)
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.RC.Actions
-import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
@@ -58,7 +58,7 @@ anyIOSFailed = any (p . Spiel._sss_state)
 failedNotificationIOS :: [String] -- ^ List of endpoints to check against
                       -> G.Graph -> [M0.Process]
 failedNotificationIOS eps rg =
-  [ p | p <- getAllProcesses rg
+  [ p | p <- Process.getAll rg
       , s <- G.connectedTo p M0.IsParentOf rg
       , CST_IOS <- [M0.s_type s]
       , any (`elem` M0.s_endpoints s) eps ]

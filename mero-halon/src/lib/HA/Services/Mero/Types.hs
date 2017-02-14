@@ -134,15 +134,15 @@ data ServiceReconnectReply = ServiceReconnectReply
   deriving (Show, Typeable, Generic)
 instance Binary ServiceReconnectReply
 
--- | How to run a particular Mero Process. Processes can be hosted in
--- three ways:
---
--- - As part of the kernel (m0t1fs)
--- - As an ephemeral 'mkfs' process (mkfs)
--- - As a regular user-space m0d process (m0d)
+-- | How to run a particular Mero Process. Processes can be hosted
+--   in three ways:
+--   - As part of the kernel (m0t1fs)
+--   - As a regular user-space m0d process (m0d)
+--   - Inside another process as a Clovis client
 data ProcessRunType =
     M0D -- ^ Run 'm0d' service.
   | M0T1FS -- ^ Run 'm0t1fs' service.
+  | CLOVIS String -- ^ Run 'clovis' service under the given name.
   deriving (Ord, Eq, Show, Typeable, Generic)
 instance Binary ProcessRunType
 instance Hashable ProcessRunType

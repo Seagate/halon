@@ -38,6 +38,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                 }
 
       mdpool = M0.Pool (M0.f_mdpool_fid fs)
+      imeta_pver = M0.f_imeta_fid fs
       n = CI.m0_data_units globs
       k = CI.m0_parity_units globs
       noCtlrs = length
@@ -59,7 +60,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       addFormulas g = flip execState g $ do
         for_ (filter (/= mdpool) $
           G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
-          for_ (G.connectedTo pool M0.IsRealOf g) $
+          for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsRealOf g) $
             \(pver::M0.PVer) -> do
             for_ formulas $ \formula -> do
               pvf <- M0.PVer <$> state (first mkVirtualFid . newFid (Proxy :: Proxy M0.PVer))

@@ -264,6 +264,7 @@ unitString :: ProcessRunType       -- ^ Type of the process.
 unitString run p = case run of
   M0T1FS -> "m0t1fs@" ++ fidToStr (M0.fid p) ++ ".service"
   M0D -> "m0d@" ++ fidToStr (M0.fid p)  ++ ".service"
+  CLOVIS s -> s ++ "@" ++ fidToStr (M0.fid p) ++ ".service"
 
 -- | General failure handler for the process start/stop/restart actions.
 generalProcFailureHandler :: a -> Catch.SomeException
@@ -296,6 +297,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
       , ("MERO_HA_EP", mcHAAddress)
       , ("MERO_PROFILE_FID", fidToStr mcProfile)
+      , ("MERO_PROCESS_FID", fidToStr procFid)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
     return unit
   where
@@ -303,6 +305,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
     (prefix, unit) = case run of
       M0T1FS -> ("m0t1fs", "m0t1fs@")
       M0D -> ("m0d", "m0d@")
+      CLOVIS s -> (s, s ++ "@")
 
 -- | The @halon:m0d@ service has started.
 newtype Started =

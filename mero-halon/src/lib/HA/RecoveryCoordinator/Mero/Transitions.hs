@@ -77,6 +77,10 @@ processOffline = Transition $ \case
 processQuiescing :: Transition M0.Process
 processQuiescing = constTransition M0.PSQuiescing
 
+-- | We do not know the state of this process.
+processUnknown :: Transition M0.Process
+processUnknown = constTransition M0.PSUnknown
+
 -- | Node has failed so inhibit the processes. See also
 -- 'nodeUnfailsProcess'.
 nodeFailsProcess :: CascadeTransition M0.Node M0.Process

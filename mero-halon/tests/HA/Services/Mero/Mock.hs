@@ -352,7 +352,10 @@ controlProcess conf master pcChan = do
       promulgateWait . ProcessControlResultStopMsg nid
   where
     writeSysconfig runType pfid m0addr confdPath = do
-      let prefix = case runType of { M0T1FS -> "m0t1fs" ; M0D -> "m0d" }
+      let prefix = case runType of { M0T1FS -> "m0t1fs"
+                                   ; M0D -> "m0d"
+                                   ; CLOVIS s -> s
+                                   }
           fileName = prefix ++ "-" ++ fidToStr pfid
       _ <- mockRunSysconfig fileName $
         [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)

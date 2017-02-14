@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Internal
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
-import HA.RecoveryCoordinator.Mero.Actions.Conf (rgGetPool)
+import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool (getNonMD)
 
 import Data.Foldable (foldl')
 import Data.List (nub, intersect)
@@ -61,7 +61,7 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
     , Just pool  <- [G.connectedFrom     M0.IsRealOf   pver  graph :: Maybe M0.Pool]
     ]
   -- Get all pools, except metadata pools.
-  allPools = rgGetPool graph
+  allPools = Pool.getNonMD graph
   apply rg pool =
     case G.connectedTo pool R.Has rg of
       Nothing -> df pool rg

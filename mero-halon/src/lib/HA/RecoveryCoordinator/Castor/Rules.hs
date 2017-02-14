@@ -55,27 +55,25 @@ ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
   rg  <- getLocalGraph
   let racks  = G.connectedTo Cluster Has rg :: [Rack]
+      runValidateConf = validateTransactionCache >>= \case
+        Left e -> do
+          phaseLog "error" $ "Exception during conf validation: " ++ show e
+          putLocalGraph rg
+          notify $ InitialDataLoadFailed (show e)
+        Right Nothing -> do
+          phaseLog "info" "Initial data loaded."
+          notify InitialDataLoaded
+        Right (Just e) -> do
+          phaseLog "error" $ "Conf failed to validate: " ++ e
+          putLocalGraph rg
+          notify $ InitialDataLoadFailed e
   if null racks
   then do
       mapM_ goRack id_racks
       (do filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers filesystem id_m0_servers
-          createMDPoolPVer filesystem
-          createIMeta filesystem
           graph <- getLocalGraph
-          let runValidateConf = validateTransactionCache >>= \case
-                Left e -> do
-                  phaseLog "error" $ "Exception during conf validation: " ++ show e
-                  putLocalGraph rg
-                  notify $ InitialDataLoadFailed (show e)
-                Right Nothing -> do
-                  phaseLog "info" "Initial data loaded."
-                  notify InitialDataLoaded
-                Right (Just e) -> do
-                  phaseLog "error" $ "Conf failed to validate: " ++ e
-                  putLocalGraph rg
-                  notify $ InitialDataLoadFailed e
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
             Iterative update -> do
@@ -88,10 +86,20 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
                   getLocalGraph
                 putLocalGraph graph'
                 syncGraphBlocking
-                runValidateConf
-            Monolithic update -> do
-              modifyLocalGraph update
-              runValidateConf)
+            Monolithic update -> modifyLocalGraph update
+          -- Note that we call these after doing the 'update', which creates
+          -- pool versions for the IO pools. The reason for this is that
+          -- 'createIMeta', at least, generates additional disks for use in the
+          -- imeta pool. Currently there is no marker on disks to distinguish
+          -- which pool they should be in, however, so if these are created
+          -- before the update then they get added to the IO pool. The correct
+          -- solution will involve proper support for multiple pools and
+          -- multiple types of pools. In the meantime, creating these fake
+          -- devices later works.
+          createMDPoolPVer filesystem
+          createIMeta filesystem
+          runValidateConf
+        )
           `catch` (\e -> do
                       phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
                       notify $ InitialDataLoadFailed (show e))

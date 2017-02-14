@@ -65,9 +65,11 @@ import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
      ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Actions.Mero
+import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
+import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Job.Actions
@@ -194,9 +196,10 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       rg <- getLocalGraph
       profile <- getProfile
       filesystem <- getFilesystem
-      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) =<< getPool
       let status = getClusterStatus rg
           stats = filesystem >>= \fs -> G.connectedTo fs R.Has rg
+          pools = Pool.getNonMD rg
+      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) pools
       hosts <- forM (sort $ G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = sort $ G.connectedTo host R.Runs rg :: [M0.Node]
             let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
@@ -213,10 +216,10 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                   = (\sdev -> (sdev, M0.getState sdev rg, hdev, ids)) <$> msdev
             devs <- fmap (sort . mapMaybe go)
                   . traverse (\x -> (x,,) <$> StorageDevice.getIdentifiers x
-                                          <*> lookupStorageDeviceSDev x)
+                                          <*> Drive.lookupStorageDeviceSDev x)
                     =<< findHostStorageDevices host
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs) devs)
-      liftProcess $ sendChan ch $ ReportClusterState
+      liftProcess . sendChan ch $ ReportClusterState
         { csrStatus = status
         , csrSNS    = sort repairs
         , csrInfo   = (liftA2 (,) profile filesystem)

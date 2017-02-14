@@ -121,8 +121,8 @@ import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
-import           HA.RecoveryCoordinator.Castor.Node.Actions
-import           HA.RecoveryCoordinator.Service.Actions
+import           HA.RecoveryCoordinator.Castor.Node.Actions as Node
+import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
@@ -643,8 +643,10 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     let mkProcessesAwait name next = mkLoop name (return [])
           (\result l ->
             case result of
-              ProcessStarted p -> return $
-                Right $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+              ProcessStarted p -> return . Right
+                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+              ProcessConfiguredOnly p -> return . Right
+                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
               ProcessStartFailed p _ -> do
                 --  Alternatively, instead of checking for the
                 --  process, we could check if it's our job that
@@ -694,7 +696,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     directly boot_level_0 $ do
       Just host <- getField . rget fldHost <$> get Local
-      startNodeProcesses host (M0.PLBootLevel (M0.BootLevel 0)) >>= \case
+      startProcesses host (== M0.PLM0d (M0.BootLevel 0)) >>= \case
         [] -> do
           notifyOnClusterTransition
           continue boot_level_1
@@ -708,7 +710,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
       Just host <- getField . rget fldHost <$> get Local
       StartProcessesOnNodeRequest m0node <- getRequest
       modify Local $ rlens fldRep .~ Field (Just $ NodeProcessesStarted m0node)
-      startNodeProcesses host (M0.PLBootLevel (M0.BootLevel 1)) >>= \case
+      startProcesses host (== M0.PLM0d (M0.BootLevel 1)) >>= \case
         [] -> do
           notifyOnClusterTransition
           continue finish
@@ -749,8 +751,10 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
     let mkProcessesAwait name next = mkLoop name (return [])
           (\result l ->
              case result of
-               ProcessStarted p -> return $
-                 Right $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+               ProcessStarted p -> return . Right
+                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+               ProcessConfiguredOnly p -> return . Right 
+                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
                ProcessStartFailed p r -> do
                  Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
                  modify Local $ rlens fldRep . rfield .~
@@ -804,6 +808,11 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
             Nothing -> error "ruleStartClientsOnNode: ‘impossible’ happened"
             Just n -> void $ listToMaybe $ lookupServiceInfo n (lookupM0d $ lsGraph g) (lsGraph g)
 
+        -- Filter for client processes
+        clientProcess M0.PLM0t1fs = True
+        clientProcess (M0.PLClovis _ _) = True
+        clientProcess _ = False
+
     setPhaseIf await_barrier
         (nodeRunning (\mcs -> M0._mcs_runlevel mcs >= m0t1fsBootLevel)) $ \() -> do
       Just node <- getField . rget fldNode <$> get Local
@@ -845,7 +854,7 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle 
       Just m0node <- getField . rget fldM0Node <$> get Local
       Just host <- getField . rget fldHost <$> get Local
       phaseLog "info" $ "Starting mero client on " ++ show host
-      startNodeProcesses host M0.PLM0t1fs >>= \case
+      startProcesses host clientProcess >>= \case
         [] -> do
           phaseLog "warn" "No client processes found on the host"
           modify Local $ rlens fldRep . rfield .~
@@ -990,11 +999,17 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
      lvl  <- getField . rget fldBootLevel <$> get Local
      rg <- getLocalGraph
 
-     let pLabel = if lvl == m0t1fsBootLevel then M0.PLM0t1fs else M0.PLBootLevel lvl
+     let pLabel = if lvl == m0t1fsBootLevel
+                  then (\case M0.PLM0t1fs -> True
+                              M0.PLClovis _ False -> True
+                              _ -> False )
+                  else (== (M0.PLM0d lvl))
 
-         stillUnstopped = getLabeledNodeProcesses node pLabel rg $ \p ->
-           M0.getState p rg `elem` [ M0.PSOnline, M0.PSQuiescing
-                                   , M0.PSStopping, M0.PSStarting ]
+         stillUnstopped = Node.getLabeledProcessesP node pLabel rg & filter
+          (\p ->
+            M0.getState p rg `elem` [ M0.PSOnline, M0.PSQuiescing
+                                    , M0.PSStopping, M0.PSStarting ]
+          )
      case stillUnstopped of
        [] -> do phaseLog "info" $ printf "%s R.Has no services on level %s - skipping to the next level"
                                           (show node) (show lvl)
@@ -1076,7 +1091,7 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
 
    directly go $ do
       MaintenanceStopNode node <- getRequest
-      ps <- getNodeProcesses node <$> getLocalGraph
+      ps <- Node.getProcesses node <$> getLocalGraph
       for_ ps $ promulgateRC . StopProcessRequest
       modify Local $ rlens fldWaitingProcs . rfield .~ ps
       continue await_stopping_processes

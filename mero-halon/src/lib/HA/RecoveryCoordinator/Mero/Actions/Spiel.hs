@@ -52,6 +52,8 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , updateSnsStartTime
   ) where
 
+import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+  ( lookupDiskSDev )
 import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
