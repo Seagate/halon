@@ -118,7 +118,7 @@ ruleResetInit = define "rule-reset-init" $ do
     mkTransientDisk rg (Note fid' M0_NC_TRANSIENT) = M0.lookupConfObjByFid fid' rg
     mkTransientDisk _ _ = Nothing
 
-    nvecTransients (HAEvent eid (Set nvec)) ls _ =
+    nvecTransients (HAEvent eid (Set nvec _)) ls _ =
       return $ case mapMaybe (mkTransientDisk (lsGraph ls)) nvec of
         xs@(_ : _) -> Just (eid, xs)
         _ -> Nothing

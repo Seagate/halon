@@ -1351,7 +1351,7 @@ data PoolInfo = PoolInfo M0.Pool ConfObjectState SDevStateMap deriving (Show)
 -- TODO: this function do not support processing more than one set in one
 -- message.
 getPoolInfo :: Set -> PhaseM RC l (Maybe PoolInfo)
-getPoolInfo (Set ns) =
+getPoolInfo (Set ns _) =
   mapMaybeM (\(Note fid' typ) -> fmap (typ,) <$> lookupConfObjByFid fid') ns >>= \case
     [(typ, pool)] -> do
       disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns

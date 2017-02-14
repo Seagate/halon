@@ -241,7 +241,7 @@ notifyMeroAsync diff s = do
 -- inside the NVec. We impose the ordering by the first argument. See
 -- 'notifyOrdering' for an example.
 orderSet :: [Word64] -> Mero.Notification.Set -> Mero.Notification.Set
-orderSet ordering (Mero.Notification.Set nvec) = Mero.Notification.Set $ sortBy (sorter `on` no_id) nvec
+orderSet ordering (Mero.Notification.Set nvec q) = Mero.Notification.Set (sortBy (sorter `on` no_id) nvec) q
   where
     sorter :: Fid -> Fid -> Ordering
     sorter f1 f2

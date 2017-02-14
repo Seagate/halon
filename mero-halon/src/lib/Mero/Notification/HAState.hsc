@@ -302,7 +302,7 @@ data HAStateCallbacks = HSC
     -- ^ Called when service event notification is received
   , hscBeError :: HAMsgMeta -> BEIoErr -> IO ()
     -- ^ Called when error is thrown from metadata BE.
-  , hscStateSet :: NVec -> IO ()
+  , hscStateSet :: NVec -> HAMsgMeta -> IO ()
     -- ^ Called when a request to update the state of some objects is
     -- received.
   , hscFailureVector :: HALink -> Cookie -> Fid -> IO ()
@@ -409,7 +409,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
              nts   <- peekNote pl
              if vtype > 0
              then hscStateGet hsc hl xid nts
-             else hscStateSet hsc nts
+             else hscStateSet hsc nts meta
              delivered hl p
         #{const M0_HA_MSG_FAILURE_VEC_REQ} -> do
              let pl = #{ptr struct m0_ha_msg_data, u.hed_fvec_req} payload :: Ptr ()

@@ -66,10 +66,10 @@ data DeferredStateChanges =
     InternalObjectStateChange -- Internal notification to send
 
 instance Monoid DeferredStateChanges where
-  mempty = DeferredStateChanges id (Set []) mempty
-  (DeferredStateChanges f (Set s) i)
-    `mappend` (DeferredStateChanges f' (Set s') i') =
-      DeferredStateChanges (f >>> f') (Set $ s ++ s') (i <> i')
+  mempty = DeferredStateChanges id (Set [] Nothing) mempty
+  (DeferredStateChanges f (Set s _) i)
+    `mappend` (DeferredStateChanges f' (Set s' _) i') =
+      DeferredStateChanges (f >>> f') (Set (s ++ s') Nothing) (i <> i')
 
 -- | Responsible for 'cascading' a single state set into a `DeferredStateChanges`
 --   object. Thus this should be responsible for:
@@ -135,7 +135,7 @@ cascadeStateChange asc rg = go [asc] [asc] id
 -- Returns a list of warnings (if any) along with 'DeferredStateChanges'.
 createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> ([String], DeferredStateChanges)
 createDeferredStateChanges stateSets rg =
-    (wrns, DeferredStateChanges (fn>>>trigger_fn) (Set nvec) (InternalObjectStateChange iosc))
+    (wrns, DeferredStateChanges (fn>>>trigger_fn) (Set nvec Nothing) (InternalObjectStateChange iosc))
   where
     (trigger_fn, stateChanges) = fmap join $
         mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges

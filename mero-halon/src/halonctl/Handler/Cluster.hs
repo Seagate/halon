@@ -291,7 +291,7 @@ noteReader = Opt.eitherReader readNote
 notifyHalon :: [NodeId] -> [M0.Note] -> Process ()
 notifyHalon eqnids notes = do
   say $ "Sending " ++ show notes ++ " to halon."
-  promulgateEQ eqnids (M0.Set notes) >>= flip withMonitor wait
+  promulgateEQ eqnids (M0.Set notes Nothing) >>= flip withMonitor wait
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 

@@ -22,7 +22,7 @@ tests = [ testSuccess "sortsInteresting" sortsInteresting
         ]
 
 mkN :: [Fid] -> Set
-mkN = Set . map (\fid' -> Note fid' M0_NC_ONLINE)
+mkN fs = Set (map (\fid' -> Note fid' M0_NC_ONLINE) fs) Nothing
 
 -- | Sorts interesting things in correct order and puts un-interesting
 -- thing in the back

@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Copyright : (C) 2014-2016 Seagate Technology Limited.
@@ -98,9 +99,19 @@ import Debug.Trace (traceEventIO)
 -- This message may be also sent by te RC when the state of an object changes
 -- and the change has to be communicated to Mero.
 --
-newtype Set = Set NVec
+newtype Set_v0 = Set_v0 NVec
   deriving (Generic, Typeable, Hashable, Show, Eq)
-deriveSafeCopy 0 'base ''Set
+
+data Set = Set NVec (Maybe HAMsgMeta)
+  deriving (Generic, Typeable, Show, Eq)
+instance Hashable Set
+
+instance Migrate Set where
+     type MigrateFrom Set = Set_v0
+     migrate (Set_v0 nvec) = Set nvec Nothing
+ 
+deriveSafeCopy 0 'base ''Set_v0
+deriveSafeCopy 1 'extension ''Set
 
 -- | This message is sent to the RC when Mero requests state data for some
 -- objects.
@@ -390,8 +401,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     ha_be_error :: HAMsgMeta -> BEIoErr -> IO ()
     ha_be_error m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
 
-    ha_state_set :: NVec -> IO ()
-    ha_state_set nvec = void . CH.forkProcess lnode . promulgateWait $ Set nvec
+    ha_state_set :: NVec -> HAMsgMeta -> IO ()
+    ha_state_set nvec meta = void . CH.forkProcess lnode . promulgateWait $ Set nvec (Just meta)
 
     ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
     ha_entrypoint ni reqId procFid profFid = void $ CH.forkProcess lnode $ do
@@ -556,7 +567,7 @@ notifyMero :: NIRef -- ^ Internal storage with information about connections.
            -> (Fid -> IO ()) -- ^ What to do when all messages are delivered.
            -> (Fid -> IO ()) -- ^ What to do when any of messages failed to be delivered.
            -> Process ()
-notifyMero ref fids (Set nvec) onOk onFail = liftIO $ do
+notifyMero ref fids (Set nvec _) onOk onFail = liftIO $ do
    known <- sendM0Task $ modifyMVar (_ni_links ref) $ \links -> do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
