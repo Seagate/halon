@@ -48,13 +48,14 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
 import qualified Data.Aeson as Aeson
-import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import Data.UUID (UUID)
 import Data.Binary (Binary)
 import Data.Foldable (for_)
+import Data.Proxy (Proxy(..))
 import Data.Traversable (for)
 import Data.Typeable (Typeable)
 
@@ -122,21 +123,34 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
                     | DriveOk                -- ^ Drive is ok
                     deriving (Show)
 
-sendLedUpdate :: DriveLedUpdate -> Host -> T.Text -> PhaseM LoopState l Bool
-sendLedUpdate status host sn = do
-  phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
+-- | Send information about 'DriveLedUpdate' to the given 'Host' for
+-- the drive with the given serial number.
+sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
+              -> Host -- ^ Host we want to deal with
+              -> StorageDevice -- ^ Drive
+              -> PhaseM LoopState l Bool
+sendLedUpdate status host sd = do
+  phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sd ++ " on " ++ show host
   rg <- getLocalGraph
+  mserial <- listToMaybe <$> lookupStorageDeviceSerial sd
   let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
-  case mnode of
-    Just (Node nid) -> case status of
+      modifyLedState mledSt = modifyGraph $ case mledSt of
+          Just ledSt -> connect sd Has ledSt
+          Nothing -> disconnectAllFrom sd Has (Proxy :: Proxy LedControlState)
+  case (,) <$> mnode <*> mserial of
+    Just (Node nid, T.pack -> sn) -> case status of
       DrivePermanentlyFailed -> do
+        modifyLedState $ Just FaultOn
         sendNodeCmd nid Nothing (DriveLed sn FaultOn)
-      DriveTransientlyFailed ->
+      DriveTransientlyFailed -> do
+        modifyLedState $ Just PulseFastOn
         sendNodeCmd nid Nothing (DriveLed sn PulseFastOn)
       DriveRebalancing -> do
+        modifyLedState $ Just PulseSlowOn
         sendNodeCmd nid Nothing (DriveLed sn PulseSlowOn)
       DriveOk -> do
-        sendNodeCmd nid Nothing (DriveLed sn PulseSlowOff)
+        modifyLedState Nothing
+        sendNodeCmd nid Nothing (DriveLed sn FaultOff)
     _ -> do phaseLog "error" "Cannot find sspl service on the node!"
             return False
 
@@ -289,14 +303,14 @@ ruleMonitorDriveManager = define "sspl::monitor-drivemanager" $ do
                Nothing  -> do
                  -- We are attaching only path, but not all parameters, that
                  -- allow to get into the create new storage device replacement
-                 -- in the HPI rule. 
+                 -- in the HPI rule.
                  void $ attachStorageDeviceReplacement st [path]
                Just dev -> identifyStorageDevice dev [path]
          put Local $ Just (uuid, nid, enc, diskNum, srdm, sn, path, st)
          selfMessage (RuleDriveManagerDisk st)
      continue pcommit
 
-   setPhaseIf pcommit (\(RuleDriveManagerDisk disk) _ minfo -> 
+   setPhaseIf pcommit (\(RuleDriveManagerDisk disk) _ minfo ->
       case minfo of
         Just (_,_,_,_,_,_,_,d) | d == disk -> return $ Just disk
         _ -> return Nothing)
@@ -703,25 +717,16 @@ updateDriveManagerWithFailure :: StorageDevice
                               -> String
                               -> Maybe String
                               -> PhaseM LoopState l ()
-updateDriveManagerWithFailure disk st reason = do
-  updateDriveStatus disk st (fromMaybe "NONE" reason)
-  dis <- findStorageDeviceIdentifiers disk
-  case listToMaybe [ sn' | DISerialNumber sn' <- dis ] of
-    Nothing -> phaseLog "error" $ "Unable to find serial number for " ++ show disk
-    Just sn -> do
-      rg <- getLocalGraph
-      withHost rg disk $ \host -> do
-        _ <- sendLedUpdate DrivePermanentlyFailed host (T.pack sn)
-        sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
-                                               (T.pack sn)
-                                               (maybe "unknown reason" T.pack reason)
-  where
-    withHost rg d f =
-      case listToMaybe $ connectedFrom Has d rg of
-        Nothing -> phaseLog "error" $ "Unable to find enclosure for " ++ show d
-        Just e -> case listToMaybe $ connectedTo (e::Enclosure) Has rg of
-          Nothing -> phaseLog "error" $ "Unable to find host for " ++ show e
-          Just h -> f (h::Host)
+updateDriveManagerWithFailure sdev st reason = do
+  mhost <- listToMaybe <$> getSDevHost sdev
+  mserial <- listToMaybe <$> lookupStorageDeviceSerial sdev
+  case (,) <$> mhost <*> mserial of
+    Just (host, sn) -> do
+      _ <- sendLedUpdate DrivePermanentlyFailed host sdev
+      sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
+                                             (T.pack sn)
+                                             (maybe "unknown reason" T.pack reason)
+    _ -> phaseLog "error" $ "Unable to find host for " ++ show sdev
 
 ruleSSPLTimeout :: Service SSPLConf -> Definitions LoopState ()
 ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $

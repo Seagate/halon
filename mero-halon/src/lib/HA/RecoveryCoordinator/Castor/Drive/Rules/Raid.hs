@@ -55,7 +55,6 @@ import HA.Services.SSPL.IEM
 
 import Control.Distributed.Process (liftIO)
 import Control.Lens
-
 import Data.Foldable (for_)
 import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
@@ -78,6 +77,12 @@ makeLenses ''RaidInfo
 
 fldRaidInfo :: Proxy '("raidInfo", Maybe RaidInfo)
 fldRaidInfo = Proxy
+
+-- | Fail the RAID 'StorageDevice'. As RAID devices don't have mero
+-- disks associated with them, this basically resolves to sending
+-- "RAID_FAILURE" to the drive manager.
+failRaidStorageDevice :: StorageDevice -> PhaseM LoopState l ()
+failRaidStorageDevice sd = updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | Log info about the state of this operation
 logInfo :: forall a l. ( '("node", Maybe Node) ∈ l
@@ -194,8 +199,7 @@ failed = define "castor::drive::raid::failed" $ do
            ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
           <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
           <> "}")
-        updateDriveManagerWithFailure (rinfo ^. riCompSDev)
-          "HALON-FAILED" (Just "RAID_FAILURE")
+        failRaidStorageDevice (rinfo ^. riCompSDev)
         done eid
         continue end
 
@@ -205,8 +209,7 @@ failed = define "castor::drive::raid::failed" $ do
          ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
         <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
         <> "}")
-      updateDriveManagerWithFailure (rinfo ^. riCompSDev)
-        "HALON-FAILED" (Just "RAID_FAILURE")
+      failRaidStorageDevice (rinfo ^. riCompSDev)
       continue end
 
     directly end stop
@@ -284,8 +287,14 @@ replacement = define "castor::drive::raid::replaced" $ do
       continue tidyup
 
     directly failure $ do
+      Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
       phaseLog "error" $ "RAID device could not be added."
       logInfo
+      sendInterestingEvent . InterestingEventMessage $ logRaidArrayFailure
+         ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)
+        <> ", 'failedDevice': " <> (rinfo ^. riCompPath)
+        <> "}")
+      failRaidStorageDevice (rinfo ^. riCompSDev)
       continue tidyup
 
     -- Tidy up phase, runs after either a successful or unsuccessful

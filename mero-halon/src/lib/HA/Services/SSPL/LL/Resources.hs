@@ -17,6 +17,7 @@ import HA.Service.TH
 import HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
 import HA.ResourceGraph
 
 import Prelude
@@ -154,6 +155,8 @@ data LedControlState
 
 instance Binary LedControlState
 instance Hashable LedControlState
+deriveSafeCopy 0 'base ''LedControlState
+
 
 -- | Convert control state to text.
 controlStateToText :: LedControlState -> T.Text
@@ -512,11 +515,19 @@ relationDictCommandChannelServiceProcessChannel :: Dict (
   )
 relationDictCommandChannelServiceProcessChannel = Dict
 
+resourceDictLedControlState :: Dict (Resource LedControlState)
+resourceDictLedControlState = Dict
+
+relationDictLedControlStateStorageDevice :: Dict (Relation R.Has R.StorageDevice LedControlState)
+relationDictLedControlStateStorageDevice = Dict
+
 $(generateDicts ''SSPLConf)
 $(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
                                        , 'relationDictIEMChannelServiceProcessChannel
                                        , 'resourceDictChannelSystemd
                                        , 'relationDictCommandChannelServiceProcessChannel
+                                       , 'resourceDictLedControlState
+                                       , 'relationDictLedControlStateStorageDevice
                                        ])
 
 instance Resource (Channel InterestingEventMessage) where
@@ -534,6 +545,12 @@ instance Relation CommandChannel
                   R.Node
                   (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
   relationDict = $(mkStatic 'relationDictCommandChannelServiceProcessChannel)
+
+instance Resource LedControlState where
+  resourceDict = $(mkStatic 'resourceDictLedControlState)
+
+instance Relation R.Has R.StorageDevice LedControlState where
+  relationDict = $(mkStatic 'relationDictLedControlStateStorageDevice)
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
