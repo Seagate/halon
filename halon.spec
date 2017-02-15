@@ -53,8 +53,8 @@ cp mero-halon/scripts/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
 cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
-cp mero-halon/scripts/mero_role_mappings.ede \
-   %{buildroot}/etc/halon/role_maps/genders.ede
+cp mero-halon/scripts/mero_clovis_role_mappings.ede \
+   %{buildroot}/etc/halon/role_maps/clovis.ede
 cp mero-halon/scripts/mero_provisioner_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/prov.ede
 cp mero-halon/scripts/halon_roles.yaml \
@@ -76,7 +76,7 @@ rm -rf %{buildroot}
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /usr/lib/systemd/system/halon-cleanup.service
-/etc/halon/role_maps/genders.ede
+/etc/halon/role_maps/clovis.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
