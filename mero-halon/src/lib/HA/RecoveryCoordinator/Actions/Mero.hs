@@ -60,6 +60,7 @@ import           Control.Lens ((<&>))
 import           Data.Foldable (for_)
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Proxy
+import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
 
 -- | At what boot level do we start M0t1fs processes?
@@ -283,14 +284,16 @@ configureMeroProcess :: TypedChannel ProcessControlMsg
                      -> M0.Process
                      -> ProcessRunType
                      -> Bool
-                     -> PhaseM RC a ()
+                     -> PhaseM RC a UUID.UUID
 configureMeroProcess (TypedChannel chan) p runType mkfs = do
     rg <- getLocalGraph
+    uid <- liftIO nextRandom
     conf <- if any (\s -> M0.s_type s == CST_MGS)
                  $ G.connectedTo p M0.IsParentOf rg
             then ProcessConfigLocal p <$> syncToBS
             else return $ ProcessConfigRemote p
-    liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs
+    liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs uid
+    return uid
 
 -- | Dispatch a request to start @halon:m0d@ on the given
 -- 'Castor.Host'.

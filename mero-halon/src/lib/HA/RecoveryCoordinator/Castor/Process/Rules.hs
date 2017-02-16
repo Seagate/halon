@@ -15,17 +15,17 @@ module HA.RecoveryCoordinator.Castor.Process.Rules
   ( rules ) where
 
 import           Control.Distributed.Process (sendChan)
-import           Control.Exception (SomeException)
 import           Control.Lens
 import           Control.Monad (unless)
-import           Control.Monad.Catch (try)
+import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.List (nub)
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Typeable
+import qualified Data.UUID as UUID
 import           Data.Vinyl
+import           GHC.Generics (Generic)
 import           HA.EventQueue
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
@@ -37,6 +37,7 @@ import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Runs(..))
 import           HA.Resources.Castor (Host(..), Is(..))
@@ -183,20 +184,30 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     ProcessStartRequest p <- getRequest
     phaseLog "info" $ "Configuring " ++ showFid p
-    try (configureMeroProcess chan p runType (runType == M0D)) >>= \case
-      Left (e :: SomeException) -> do
-        finisher <- fail_start $ "Configuration failed with exception: " ++ show e
-        switch finisher
-      Right _ -> return ()
-    t <- _hv_process_configure_timeout <$> getHalonVars
+    confUUID <- configureMeroProcess chan p runType (runType == M0D)
+    modify Local $ rlens fldConfigureUUID . rfield .~ Just confUUID
+    t <- getHalonVar _hv_process_configure_timeout
     switch [configure_result, timeout t configure_timeout]
 
   setPhaseIf configure_result configureResult $ \case
-    Left (uid, failMsg) -> do
+    -- HALON-635: RC might have restarted before we received a
+    -- configure result from the service which can result in multiple
+    -- messages coming in. With unfortunate timing, this can mean we
+    -- quickly go over configure_result and try to start the process
+    -- while the configure command from this rule invocation is
+    -- actually still on-going. Instead, identify the message with
+    -- UUID and only listen to results from the invocation from this
+    -- rule run.
+    WrongUUID uid -> do
+      phaseLog "warn" "Received process configure result from different invocation."
+      messageProcessed uid
+      t <- getHalonVar _hv_process_configure_timeout
+      switch [configure_result, timeout t configure_timeout]
+    ConfigureFailure uid failMsg -> do
       messageProcessed uid
       finisher <- fail_start $ "Configuration failed: " ++ failMsg
       switch finisher
-    Right uid -> do
+    ConfigureSuccess uid -> do
       Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
       Just label <- getField . rget fldLabel <$> get Local
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
@@ -293,22 +304,26 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldChan = Proxy :: Proxy '("chan", Maybe (TypedChannel ProcessControlMsg))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
     fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)
+    fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
 
     args = fldReq           =: Nothing
        <+> fldRep           =: Nothing
        <+> fldHost          =: Nothing
        <+> fldChan          =: Nothing
        <+> fldLabel         =: Nothing
+       <+> fldConfigureUUID =: Nothing
        <+> fldRetryCount    =: 0
        <+> fldNotifications =: []
        <+> fldDispatch      =: Dispatch [] (error "ruleProcessStart dispatcher") Nothing
 
-    configureResult (HAEvent uid (ProcessControlResultConfigureMsg _ result)) _ l = do
-      let Just (ProcessStartRequest p) = getField . rget fldReq $ l
-      case result of
-        Left (p', failMsg) | p == p' -> return . Just $ Left (uid, failMsg)
-        Right p' | p == p' -> return . Just $ Right uid
-        _ -> return Nothing
+    configureResult (HAEvent uid (ProcessControlResultConfigureMsg _ reqUid result)) _ l = do
+      let Just (ProcessStartRequest p) = getField $ rget fldReq l
+          Just confUid = getField $ rget fldConfigureUUID l
+          whenUUIDMatches v = Just $ if confUid == reqUid then v else WrongUUID uid
+      return $! case result of
+        Left (p', failMsg) | p == p' -> whenUUIDMatches $ ConfigureFailure uid failMsg
+        Right p' | p == p' -> whenUUIDMatches $ ConfigureSuccess uid
+        _ -> Nothing
 
     startCmdResult (HAEvent uid (ProcessControlResultMsg _ result)) _ l = do
       let Just (ProcessStartRequest p) = getField . rget fldReq $ l
@@ -649,7 +664,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
               _                -> M0D
         let msg = StopProcess runType p
         liftProcess $ sendChan ch msg
-        t <- _hv_process_stop_timeout <$> getHalonVars
+        t <- getHalonVar _hv_process_stop_timeout
         switch [services_stopped, timeout t no_response]
       Nothing -> do
         showContext
@@ -756,3 +771,20 @@ ruleRpcEvent = defineSimpleTask "rpc-event" $ \(HAMsg (rpc :: RpcEvent) meta) ->
     [ ("rpc-event" , show rpc)
     , ("meta", show meta)
     ]
+
+-- * Utils
+
+-- | Union for possible process configuration results
+data ConfigureResult
+  = WrongUUID UUID.UUID
+  -- ^ The UUID of the reply was not the same as the UUID of request.
+  -- Note that this is not the UUID that's presented here: this UUID
+  -- is the 'HAEvent' UUID that needs to be processed
+  -- ('messageProcessed').
+  | ConfigureFailure UUID.UUID String
+  -- ^ Process configuration has failed with the given reason. The
+  -- UUID is the 'HAEvent' UUID.
+  | ConfigureSuccess UUID.UUID
+  -- ^ Process configuration succeeded. UUID is the 'HAEVent' UUID.
+  deriving (Show, Eq, Ord, Typeable, Generic)
+instance Binary ConfigureResult

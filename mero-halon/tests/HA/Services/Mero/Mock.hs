@@ -343,9 +343,9 @@ controlProcess conf master pcChan = do
   link master
   nid <- getSelfNode
   forever $ receiveChan pcChan >>= \case
-    ConfigureProcess runType pconf mkfs ->
+    ConfigureProcess runType pconf mkfs uid ->
       configureProcess runType pconf mkfs >>=
-        promulgateWait . ProcessControlResultConfigureMsg nid
+        promulgateWait . ProcessControlResultConfigureMsg nid uid
     StartProcess runType p -> startProcess runType p >>=
       promulgateWait . ProcessControlResultMsg nid
     StopProcess runType p -> stopProcess runType p >>=
