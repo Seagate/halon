@@ -73,7 +73,7 @@ rm -rf %{buildroot}
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /usr/lib/systemd/system/halon-cleanup.service
-/etc/halon/role_maps/genders.ede
+/etc/halon/role_maps/clovis.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
