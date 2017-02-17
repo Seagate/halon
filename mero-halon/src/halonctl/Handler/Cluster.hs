@@ -700,7 +700,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn $ "\nHosts:"
-      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps sdevs) -> do
+      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
          printf node_pattern nst (showNodeFid m0fid) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
@@ -709,24 +709,24 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
            printf proc_pattern pst
                                (fidToStr rfid)
                                endpoint
-                               (inferType (map fst srvs)::String)
+                               (inferType (map crsService srvs)::String)
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
-           for_ srvs $ \(M0.Service fid' t' _ _, sst) -> do
+           for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _ _) sdevs) -> do
              let (serv_st,serv_extSt) = M0.displayServiceState sst
              printf serv_pattern serv_st
                                  (fidToStr fid')
                                  (show t')
              for_ serv_extSt $ printf serv_pattern_ext (""::String)
-         when (showDevices && (not . null) sdevs) $ do
-           putStrLn "    Devices:"
-           forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, sdi, ids) -> do
-             let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
-             printf sdev_pattern sd_st
-                                 (fidToStr sdev_fid)
-                                 (show sdi)
-                                 (sdev_path)
-             for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
-             for_ ids $ printf sdev_patterni (""::String) . show
+             when (showDevices && (not . null) sdevs) $ do
+               putStrLn "    Devices:"
+               forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, mslot, msdev) -> do
+                 let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
+                 printf sdev_pattern sd_st
+                                     (fidToStr sdev_fid)
+                                     (maybe "No StorageDevice" show msdev)
+                                     (sdev_path)
+                 for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
+                 for_ mslot $ printf sdev_patterni (""::String) . show
    where
      inferType srvs
        | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
@@ -744,7 +744,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
      serv_pattern_ext  = "  %13s Extended state: %s\n"
      sdev_pattern  = "  [%9s] %-24s        %s %s\n"
      sdev_pattern_ext  = "  %13s Extended state: %s\n"
-     sdev_patterni = "  %46s %s\n"
+     sdev_patterni = "  %13s %s\n"
 
 clusterHVarsUpdate :: [NodeId] -> VarsOptions -> Process ()
 clusterHVarsUpdate eqnids (VarsSet{..}) = do

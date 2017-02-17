@@ -25,6 +25,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Events
   , ReportClusterState(..)
   , ReportClusterHost(..)
   , ReportClusterProcess(..)
+  , ReportClusterService(..)
   , ClusterLiveness(..)
   -- * Internal events
   , ClusterStateChange(..)
@@ -175,12 +176,6 @@ data ReportClusterHost = ReportClusterHost
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       -- ^ Information about processes on the cluster. See
       -- 'ReportClusterProcess' for details.
-      , crpDevices    :: [( M0.SDev
-                          , M0.StateCarrier M0.SDev
-                          , Castor.StorageDevice
-                          , [Castor.DeviceIdentifier]
-                          )]
-      -- ^ Information about devices attached at this particular host.
       } deriving (Eq, Show, Typeable, Generic, Ord)
 instance Binary ReportClusterHost
 instance ToJSON ReportClusterHost
@@ -190,10 +185,29 @@ instance FromJSON ReportClusterHost
 data ReportClusterProcess = ReportClusterProcess
       { crpState    :: M0.ProcessState
       -- ^ 'M0.ProcessState' of the 'M0.Process'.
-      , crpServices :: [(M0.Service, M0.ServiceState)]
+      , crpServices :: [ReportClusterService]
       -- ^ 'M0.Service's and their states associated with this
       -- 'M0.Process'.
       } deriving (Eq, Show, Typeable, Generic, Ord)
+
+instance Binary ReportClusterService
+instance ToJSON ReportClusterService
+instance FromJSON ReportClusterService
+
+-- | Information about a 'M0.Service'.
+data ReportClusterService = ReportClusterService
+      { crsState      :: M0.ServiceState
+      -- ^ 'M0.ServiceState' of the 'M0.Service'
+      , crsService    :: M0.Service
+      -- ^ 'M0.Service' 
+      , crsDevices    :: [( M0.SDev
+                          , M0.StateCarrier M0.SDev
+                          , Maybe Castor.Slot
+                          , Maybe Castor.StorageDevice
+                          )]
+      -- ^ Information about devices attached at this particular service.
+      } deriving (Eq, Show, Typeable, Generic, Ord)
+
 instance Binary ReportClusterProcess
 instance ToJSON ReportClusterProcess
 instance FromJSON ReportClusterProcess
