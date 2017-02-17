@@ -30,6 +30,9 @@ import Database.LevelDB.Internal (unsafeClose)
 import qualified Database.LevelDB.Streaming as S
 import System.Directory (createDirectoryIfMissing)
 
+import Control.Exception (bracket_)
+import Debug.Trace (traceEventIO)
+
 newtype Key a = Key { fromKey :: a }
 
 instance Binary (Key Int) where
@@ -54,12 +57,17 @@ openPersistentStore fp = do
     createDirectoryIfMissing True fp
     db <- open fp defaultOptions { createIfMissing = True }
     return $ PersistentStore
-      { atomically = write db defaultWriteOptions { sync = True } .
+      { atomically = write' db defaultWriteOptions { sync = True } .
                        Prelude.concatMap translate
       , getMap = getMapImp db
       , close = unsafeClose db
       }
   where
+    write' d v b = bracket_
+      (traceEventIO $ "START persistentStore.write")
+      (traceEventIO $ "STOP persistentStore.write")
+      (write d v b)
+
     getMapImp :: forall k . IsKey k => DB -> ByteString -> IO (PersistentMap k)
     getMapImp db bs =
       if C8.elem '/' bs then
