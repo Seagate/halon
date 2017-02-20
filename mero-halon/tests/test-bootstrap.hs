@@ -116,7 +116,7 @@ main = withMeroRoot $ \mero_root -> do
                       | (_, host) <- csrHosts cs
                       , (_, proc') <- crnProcesses host
                         -- filter halon process from checks
-                      , all (/= CST_HA) $ map (s_type . fst) $ crpServices proc'
+                      , all (/= CST_HA) $ map (s_type . crsService) $ crpServices proc'
                       ]
                  in if valid then Right ()
                     else Left "Some process state is not valid."

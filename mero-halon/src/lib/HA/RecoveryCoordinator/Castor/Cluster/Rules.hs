@@ -59,13 +59,9 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import           HA.RecoveryCoordinator.Actions.Hardware
-      ( findHostStorageDevices )
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
      ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Actions.Mero
-import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
@@ -207,18 +203,19 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                      processes <- getChildren node
                      forM processes $ \process -> do
                        let st = M0.getState process rg
-                       services <- sort <$> getChildren process
-                       let services' = map (\srv -> (srv, M0.getState srv rg)) services
+                       services  <- sort <$> getChildren process
+                       services' <- forM services $ \service -> do
+                          sdevs  <- sort <$> getChildren service
+                          sdevs' <- forM sdevs $ \sdev -> do
+                            let msd   = do disk :: M0.Disk <- G.connectedTo (sdev::M0.SDev) M0.IsOnHardware rg
+                                           sd :: R.StorageDevice <- G.connectedTo disk M0.At rg
+                                           return sd
+                                slot  = G.connectedTo sdev M0.At rg :: Maybe R.Slot
+                                state = M0.getState sdev rg
+                            return (sdev, state, slot, msd)
+                          return (ReportClusterService (M0.getState service rg) service sdevs')
                        return (process, ReportClusterProcess st services')
-            let go ( hdev :: R.StorageDevice
-                    , ids :: [R.DeviceIdentifier]
-                    , msdev :: Maybe M0.SDev)
-                  = (\sdev -> (sdev, M0.getState sdev rg, hdev, ids)) <$> msdev
-            devs <- fmap (sort . mapMaybe go)
-                  . traverse (\x -> (x,,) <$> StorageDevice.getIdentifiers x
-                                          <*> Drive.lookupStorageDeviceSDev x)
-                    =<< findHostStorageDevices host
-            return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs) devs)
+            return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus = status
         , csrSNS    = sort repairs
