@@ -846,6 +846,13 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
     modify Local $ rlens fldRep .~ (Field . Just $ AbortSNSOperationOk pool)
+    -- It appeared that HALON *should* put disk and pool back to the failed state
+    -- After abort.
+    -- https://seagate.slack.com/archives/mero-halon/p1487363284005215
+    ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
+    applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
+    ds1 <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
+    applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
     continue finish
 
   directly failure $ do
