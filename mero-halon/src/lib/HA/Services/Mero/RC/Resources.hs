@@ -22,7 +22,7 @@ import GHC.Generics (Generic)
 import HA.RecoveryCoordinator.Mero.Events
 import Data.Word
 
--- | Peninding notification to mero services.
+-- | Pending notification to mero services.
 data StateDiff = StateDiff
    { stateEpoch   :: Word64
    , stateDiffMsg :: InternalObjectStateChangeMsg

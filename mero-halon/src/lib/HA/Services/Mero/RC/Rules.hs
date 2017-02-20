@@ -82,15 +82,32 @@ ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
 
 -- | Rule that allow old interface that was listening to internal message to be
 -- used.
+--
+-- This rule unconditionally sends out 'InternalStateChangeMsg' around
+-- the RC, even if the notification failed to deliver to every
+-- involved process. 'tryCompleteStateDiff' is what guards the entry
+-- into this rule.
+--
+-- Any rules that depend on a state transition should wait for the
+-- internal state change notification: if they do not, we expose a
+-- possible race. Consider 'ruleProcessStart': if it did not wait for
+-- 'PSStarting' internal notification and 'Notified' was delayed,
+-- following could happen.
+--
+-- * 'PSStarting' notification fails (as the process is not started yet)
+--
+-- * Rule continues and starts the process, process gets into 'PSOnline'
+--
+-- * 'ruleGenericNotification' for the failed 'PSStarting' fires
+--
+-- * The process is 'PSOnline' so we 'NotifyFailureEndpoints' and fail
+--   the process.
 ruleGenericNotification :: Definitions RC ()
 ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
   \(Notified epoch msg _ fails) -> do
     promulgateRC msg
     unless (null fails) $ do
-      ps <- (\rg -> filter (\p ->
-                  case getState p rg of
-                    M0.PSOnline -> True
-                    _        -> False) fails) <$> getLocalGraph
+      ps <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getLocalGraph
       unless (null ps) $ do
         phaseLog "warning" "Some services were marked online but notifications failed to be delivered"
         phaseLog "warning" $ "epoch = " ++ show epoch
@@ -108,8 +125,24 @@ ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::
         mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
         for_ mp $ markNotificationDelivered diff
 
--- | When notification was failed to be delivered to mero we mark it as not
--- delivered, so other services who rely on that notification could see that.
+-- | When notification was failed to be delivered to mero we mark it
+-- as not delivered, so other services who rely on that notification
+-- could see that. The flow from here to the relevant process actually
+-- being failed is as follows:
+--
+-- * 'markNotificationFailed' marks the notification as failed to
+--   deliver to the process
+--
+-- * 'tryCompleteStateDiff' sends a 'Notified' message with list of
+--   processes that have so far delivered or failed to deliver
+--
+-- * 'ruleGenericNotification' receives the message and examines the
+--   failed processes. Inf any of the failed processes are in
+--   'PSOnline' state, 'NotifyFailureEndpoints' is sent out for that
+--   process endpoint
+--
+-- * 'ruleFailedNotificationFailsProcess' fails every process that
+--   shares the endpoint
 ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
 ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivery-failed" $
   \(NotificationFailure epoch fid) -> do

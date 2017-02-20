@@ -112,6 +112,10 @@ unregisterMeroChannelsOn node = do
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.
+--
+-- Only 'PSOnline' processes are used as recepients for notifications:
+-- starting processes should request state themselves. Stopping
+-- processes shouldn't need any further updates.
 getNotificationChannels :: PhaseM RC l [(SendPort NotificationMessage, [M0.Process])]
 getNotificationChannels = do
   rg <- getLocalGraph
@@ -122,12 +126,9 @@ getNotificationChannels = do
               ]
   things <- for nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
-     let procs = filter (\p -> case M0.getState p rg of
-                                 M0.PSOnline  -> True
-                                 M0.PSStarting -> True
-                                 M0.PSStopping -> True
-                                 _ -> False)
-               $ (G.connectedTo m0node M0.IsParentOf rg :: [M0.Process])
+
+     let procs = [ p | p <- G.connectedTo m0node M0.IsParentOf rg
+                     , M0.getState p rg == M0.PSOnline ]
      case (mchan, procs) of
        (_, []) -> return Nothing
        (Nothing, r) -> do
@@ -187,17 +188,29 @@ markNotificationFailed diff process = do
 -- | Check if 'StateDiff' is already completed, i.e. there are no processes
 -- that we are waiting for. If it's completed, we disconnect 'StateDiff' from
 -- RG and announce it to halon.
+--
+-- Note that 'Notified' ('ruleGenericNotification') and therefore
+-- 'InternalStateChangesMsg' is sent out once we have no more
+-- processes to send the notification set to: this means that even if
+-- we failed to send the notifications to every process, the internal
+-- state change is still sent out throughout RC.
 tryCompleteStateDiff :: StateDiff -> PhaseM RC l ()
 tryCompleteStateDiff diff = do
   rc <- getCurrentRC
+  -- If the diff is connected it means we haven't entered past the
+  -- guard below yet: this ensures we only send result of
+  -- notifications once.
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
-  when notSent $ do
+  -- Processes we haven't heard success/failure from yet
+  pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
+  when (notSent && null (pendingPs :: [M0.Process])) $ do
     modifyGraph $ G.disconnect rc R.Has diff
     okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
-    phaseLog "epoch" $ show (stateEpoch diff)
+    failProcesses <- G.connectedTo diff DeliveryFailedTo <$> getLocalGraph
+    phaseLog "tryCompleteStateDiff.epoch" $ show (stateEpoch diff)
     registerSyncGraph $ do
       for_ (stateDiffOnCommit diff) applyOnCommit
-      promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses []
+      promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses failProcesses
 
 -- | Mark all notifications for processes on the given node as failed.
 --
