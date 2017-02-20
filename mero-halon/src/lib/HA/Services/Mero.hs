@@ -132,19 +132,40 @@ keepaliveProcess kaFreq kaTimeout niRef pid = do
 -- time. That is, sending the same command to the control process will
 -- have no effect if we don't have a result from previous run yet.
 --
--- TODO: usend: RC restarts then we want probably *do* want to lose
--- these messages as the job that caused them is going to restart and
--- receiving old results isn't fun.
+-- Notes:
 --
--- TODO2: tag these with UUID so that we know that we're getting the
--- right reply to the right message, then it won't matter either way
+-- * 'usend' does not solve a problem of sending potentially stale
+--   replies to the RC. Unless the service itself dies, RC can happily
+--   restart before the reply is sent, 'usend' happens, RC gets stale
+--   information and we have the same issue as in HALON-635.
 --
--- TODO2.5: really do TODO2; especially with stop, if we kill the
--- process through different means then old running command may become
--- unblocked and we may deliver old result! Or use some other solution
--- that kills old call when a new one comes in. This works assuming
--- jobs are only dispatchers of these control messages but also solves
--- TODO3.
+-- * UUID is used in messages that we do not want to possibly
+--   duplicate. This is only needed for configuration currently: stop
+--   and start messages are tagged with PID and duplicating these will
+--   not harm us.
+--
+-- * Unfortunately tagging configure message with UUID means that
+--   same-command filtering mechanism no longer works. If we want to
+--   avoid potentially running multiple mkfs commands concurrently, we
+--   have 3 options, only first of which seem acceptable:
+--
+--     * Only allow single mkfs to run at once. When it completes,
+--       send the result as a reply to any requests that have come in
+--       while it was running. This should be OK as only single rule
+--       invocation will care about one of the replies.
+--
+--     * Only send the reply to latest configure request that came in.
+--       This is unreliable because last message service receives does
+--       not mean it's the message from currently invoked rule.
+--
+--     * Queue configure requests and execute them sequentially,
+--       replying to each one with the result. This prevents
+--       concurrent mkfs runs but means we can have multiple mkfs
+--       invocations. In principle this should be OK but beyond being
+--       a waste of time and resources, many queued up requests could
+--       make recovery difficult to perform without waiting it out.
+--       Worse, it can result in HALON-635 if message reordering
+--       happens.
 controlProcess :: MeroConf
                -> ProcessId -- ^ Parent process to link to
                -> ReceivePort ProcessControlMsg
@@ -167,9 +188,9 @@ controlProcess mc pid rp = do
                   loop $ BM.insert mref m slaves
             nid <- getSelfNode
             case m of
-              ConfigureProcess runType conf mkfs -> forkIOInProcess
+              ConfigureProcess runType conf mkfs uid -> forkIOInProcess
                 (configureProcess mc runType conf mkfs)
-                (promulgateWait . ProcessControlResultConfigureMsg nid)
+                (promulgateWait . ProcessControlResultConfigureMsg nid uid)
               StartProcess runType p -> forkIOInProcess
                 (startProcess runType p)
                 (promulgateWait . ProcessControlResultMsg nid)

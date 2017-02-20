@@ -165,7 +165,11 @@ instance Hashable ProcessConfig
 data ProcessControlMsg =
     StartProcess ProcessRunType M0.Process
   | StopProcess ProcessRunType M0.Process
-  | ConfigureProcess ProcessRunType ProcessConfig Bool
+  | ConfigureProcess ProcessRunType ProcessConfig Bool UUID.UUID
+  -- ^ @ConfigureProcess runType config runMkfs requestUUID@
+  --
+  -- 'ProcessControlResultConfigureMsg' which is used as the reply
+  -- should include the @requestUUID@.
   deriving (Ord, Eq, Show, Typeable, Generic)
 instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
@@ -183,11 +187,31 @@ data ProcessControlResultStopMsg =
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultStopMsg
 
+-- | Base version of 'ProcessControlResultConfigureMsg'.
+data ProcessControlResultConfigureMsg_v0 =
+      ProcessControlResultConfigureMsg_v0 NodeId (Either (M0.Process, String) M0.Process)
+  deriving (Eq, Generic, Show, Typeable)
+instance Hashable ProcessControlResultConfigureMsg_v0
+
 -- | Results of @mero-mkfs@ @systemctl@ invocations.
 data ProcessControlResultConfigureMsg =
-      ProcessControlResultConfigureMsg NodeId (Either (M0.Process, String) M0.Process)
+      ProcessControlResultConfigureMsg NodeId UUID.UUID (Either (M0.Process, String) M0.Process)
+      -- ^ @ProcessControlResultConfigureMsg nid requestUUID result@
+      --
+      -- @requestUUID@ should come from 'ConfigureProcess' so the
+      -- caller can identify its reply.
   deriving (Eq, Generic, Show, Typeable)
 instance Hashable ProcessControlResultConfigureMsg
+
+-- | We use 'UUID.nil' for the 'UUID.UUID' that's missing in
+-- 'ProcessControlResultConfigureMsg_v0': no configure request will
+-- have such UUID and RC will discard it. This is desired because if
+-- RC has restarted and we have mid-flight configure result, it's
+-- stale and RC will restart the rule anyway.
+instance Migrate ProcessControlResultConfigureMsg where
+  type MigrateFrom ProcessControlResultConfigureMsg = ProcessControlResultConfigureMsg_v0
+  migrate (ProcessControlResultConfigureMsg_v0 n r) =
+    ProcessControlResultConfigureMsg n UUID.nil r
 
 -- | The process hasn't replied to keepalive request for a too long.
 -- Carry this information to RC.
@@ -374,6 +398,7 @@ deriveSafeCopy 0 'base ''MeroKernelConf
 deriveSafeCopy 0 'base ''MeroServiceInstance
 deriveSafeCopy 0 'base ''NotificationAck
 deriveSafeCopy 0 'base ''NotificationFailure
-deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg
+deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg_v0
+deriveSafeCopy 1 'extension ''ProcessControlResultConfigureMsg
 deriveSafeCopy 0 'base ''ProcessControlResultMsg
 deriveSafeCopy 0 'base ''ProcessControlResultStopMsg
