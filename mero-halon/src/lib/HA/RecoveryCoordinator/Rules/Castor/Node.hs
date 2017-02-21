@@ -143,6 +143,8 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
+  ( NotifyFailureEndpoints(..) )
 import qualified HA.ResourceGraph as G
 
 import           Control.Applicative
@@ -150,7 +152,7 @@ import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, pr
 import           Control.Distributed.Process.Closure
 import           Control.Exception (SomeException)
 import           Control.Lens
-import           Control.Monad (void, guard, join, when)
+import           Control.Monad (void, guard, join, unless, when)
 import           Control.Monad.Catch (try)
 import           Control.Monad.Trans.Maybe
 
@@ -378,6 +380,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
   config_created  <- phaseHandle "client-config-created"
   wait_data_load  <- phaseHandle "wait-bootstrap"
   announce        <- phaseHandle "announce"
+  announced       <- phaseHandle "announced"
+  notify_failed   <- phaseHandle "notify_failed"
+  notify_timeout  <- phaseHandle "notify_timeout"
   query_host_info <- mkQueryHostInfo config_created finish
 
   let route node = getFilesystem >>= \case
@@ -421,7 +426,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
       -- TOOD: shuffle retrigger around a bit
       rg <- getLocalGraph
       let m0nodes = nodeToM0Node node rg
-      applyStateChanges $ flip stateSet M0.NSOnline <$> m0nodes
+          messages = flip stateSet M0.NSOnline <$> m0nodes
+      modify Local $ rlens fldNotifications .~ Field (Just messages)
+      applyStateChanges messages
       case m0nodes of
         [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
         [m0node] -> retriggerMeroNodeBootstrap m0node
@@ -431,6 +438,21 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
           mapM_ retriggerMeroNodeBootstrap m0ns
 
       modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
+    switch [announced, notify_failed, timeout 10 notify_timeout]
+
+  setPhaseAllNotified announced (rlens fldNotifications . rfield) $ do
+    phaseLog "debug" "Notifications sent."
+    continue finish
+
+  setPhase notify_failed $ \(HAEvent uuid (M0.NotifyFailureEndpoints eps) _) -> do
+    todo uuid
+    unless (null eps) $ do
+      phaseLog "warn" $ "Failed to notify " ++ show eps
+    done uuid
+    continue finish
+
+  directly notify_timeout $ do
+    phaseLog "warn" $ "Timeout notifying NSOnline"
     continue finish
 
   return check
@@ -439,9 +461,11 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe NewMeroServer)
     fldRep = Proxy
+    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
        <+> fldHostHardwareInfo =: Nothing
+       <+> fldNotifications =: Nothing
        <+> fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
