@@ -78,7 +78,7 @@ import qualified System.Timeout as ST
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
 
--- | Store information about communication channel in resource graph.
+-- | Send information about communication channels to RC.
 sendMeroChannel :: SendPort NotificationMessage
                 -> SendPort ProcessControlMsg
                 -> Process ()
@@ -88,6 +88,8 @@ sendMeroChannel cn cc = do
               pid (TypedChannel cn) (TypedChannel cc)
   void $ promulgate chan
 
+-- | Process handling object status updates: it dispatches
+-- notifications ('NotificationMessage') to local mero processes.
 statusProcess :: NIRef
               -> ProcessId
               -> ReceivePort NotificationMessage

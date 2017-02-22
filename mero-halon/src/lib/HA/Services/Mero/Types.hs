@@ -376,14 +376,14 @@ instance Relation MeroChannel R.Node (TypedChannel NotificationMessage) where
     type CardinalityFrom MeroChannel R.Node (TypedChannel NotificationMessage)
       = 'AtMostOne
     type CardinalityTo MeroChannel R.Node (TypedChannel NotificationMessage)
-      = 'Unbounded
+      = 'AtMostOne
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
 
 instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
     type CardinalityFrom MeroChannel R.Node (TypedChannel ProcessControlMsg)
       = 'AtMostOne
     type CardinalityTo MeroChannel R.Node (TypedChannel ProcessControlMsg)
-      = 'Unbounded
+      = 'AtMostOne
     relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
 
 type instance HA.Service.ServiceState MeroConf =

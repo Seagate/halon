@@ -8,7 +8,6 @@ module HA.Services.Mero.RC
   ( Actions.notifyMeroAsync
   , Actions.mkStateDiff
   , Actions.meroChannel
-  , Actions.meroChannels
   , Rules.rules
   , Resources.__remoteTable
   ) where

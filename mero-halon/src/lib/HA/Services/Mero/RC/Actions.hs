@@ -9,7 +9,6 @@ module HA.Services.Mero.RC.Actions
      registerChannel
    , unregisterChannel
    , meroChannel
-   , meroChannels
    , unregisterMeroChannelsOn
    , lookupMeroChannelByNode
      -- * Notifications system
@@ -56,7 +55,7 @@ import Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import Data.Traversable (for)
 import Data.List (sortBy)
-import Data.Maybe (listToMaybe, catMaybes)
+import Data.Maybe (catMaybes)
 import Data.Function (on)
 import Data.Foldable (for_)
 import Data.Word (Word64)
@@ -75,35 +74,29 @@ registerChannel node chan = modifyGraph $ G.connect node MeroChannel chan
 -- | Unregister mero channel inside RG.
 unregisterChannel :: forall a l proxy .
    ( Resource (TypedChannel a)
-   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
+   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.AtMostOne
    , Relation MeroChannel R.Node (TypedChannel a)
    ) => R.Node -> proxy a -> PhaseM RC l ()
-unregisterChannel node _ = modifyGraph $ \rg ->
-  let res = G.connectedTo node MeroChannel rg :: [TypedChannel a]
-  in foldr (G.disconnect node MeroChannel) rg res
+unregisterChannel node _ = modifyGraph $
+  G.disconnectAllFrom node MeroChannel (Proxy :: Proxy (TypedChannel a))
 
 -- | Find mero channel.
 meroChannel :: ( Resource (TypedChannel a)
-               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.Unbounded
+               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.AtMostOne
                , Relation MeroChannel R.Node (TypedChannel a)
                )
             => Graph
             -> R.Node
             -> Maybe (TypedChannel a)
-meroChannel rg sp = listToMaybe $ G.connectedTo sp MeroChannel rg
-
-
--- | Fetch all Mero notification channels.
-meroChannels :: R.Node -> Graph -> [TypedChannel NotificationMessage]
-meroChannels node rg = G.connectedTo node MeroChannel rg
+meroChannel rg sp = G.connectedTo sp MeroChannel rg
 
 -- | Find mero channel registered on the given node.
 lookupMeroChannelByNode :: R.Node -> PhaseM RC l (Maybe (TypedChannel NotificationMessage))
 lookupMeroChannelByNode node = do
    rg <- getLocalGraph
-   return $ listToMaybe $ G.connectedTo node MeroChannel rg
+   return $ G.connectedTo node MeroChannel rg
 
--- | Unregister all channels.
+-- | Unregister mero channels on the given 'R.Node'.
 unregisterMeroChannelsOn :: R.Node -> PhaseM RC l ()
 unregisterMeroChannelsOn node = do
    actLog "unregisterMeroChannelsOn" [("node", show node)]
