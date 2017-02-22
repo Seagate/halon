@@ -256,6 +256,9 @@ data HalonVars = HalonVars
   , _hv_disable_smart_checks :: !Bool
   -- ^ Disable smart tests of the disks. If smart test is disabled
   -- all calls to smart test automatically successful.
+  , _hv_service_stop_timeout :: !Int
+  -- ^ How long to wait for a service to stop (perform teardown and
+  -- exit) before the calling rule decides to stop waiting for result.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

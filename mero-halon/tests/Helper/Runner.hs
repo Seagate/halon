@@ -259,7 +259,7 @@ mkDefaultTestOptions = do
   idata <- defaultInitialData
   return $ TestOptions
     { _to_initial_data = idata
-    , _to_run_decision_log = False
+    , _to_run_decision_log = True
     , _to_run_sspl = True
     , _to_cluster_setup = NoSetup
     , _to_remote_table = TestRunner.__remoteTableDecl remoteTable
@@ -301,6 +301,8 @@ run' transport pg extraRules to test = do
       rt = _to_remote_table to
       runs = _to_scheduler_runs to
   runTest (numNodes + 1) runs 15000000 transport rt $ \lnodes -> do
+    -- Wipe the halon:m0d state from any previous test runs.
+    liftIO Mock.clearMockState
     sayTest $ "Starting setup for a " ++ show numNodes ++ " node test."
     let lnWithHosts = zip lnodes $ map CI.m0h_fqdn (CI.id_m0_servers idata)
         nids = map localNodeId lnodes
@@ -316,6 +318,10 @@ run' transport pg extraRules to test = do
       -- We want a potential clean bootstrap.
       startSatellites [rcNodeId] lnWithHosts
 
+      when (_to_run_decision_log to) $ do
+        _ <- serviceStartOnNodes [rcNodeId] DL.decisionLog (DL.processOutput self) nids
+        sayTest "Started decision log services."
+
       withSubscription [rcNodeId] (Proxy :: Proxy HalonVarsUpdated) $ do
         let hvars = _to_modify_halon_vars to $
               defaultHalonVars { _hv_mero_workers_allowed = False }
@@ -328,10 +334,6 @@ run' transport pg extraRules to test = do
         expectPublished >>= \case
           InitialDataLoaded -> return ()
           InitialDataLoadFailed e -> fail e
-
-      when (_to_run_decision_log to) $ do
-        _ <- serviceStartOnNodes [rcNodeId] DL.decisionLog (DL.processOutput self) nids
-        sayTest "Started decision log services."
 
       when (_to_run_sspl to) $ do
         _ <- serviceStartOnNodes [rcNodeId] sspl ssplConf nids

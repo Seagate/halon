@@ -31,6 +31,7 @@ import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
 import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
@@ -93,6 +94,10 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
     isProcFailed (M0.PSInhibited _) (M0.PSFailed _) = False
     -- Don't restart if we change reason for failure
     isProcFailed (M0.PSFailed _) (M0.PSFailed _) = False
+    -- Don't restart when we were stopping the process
+    isProcFailed M0.PSStopping _ = False
+    isProcFailed M0.PSQuiescing _ = False
+
     isProcFailed _ (M0.PSFailed _) = True
     isProcFailed _ _ = False
 
@@ -129,6 +134,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   configure_timeout <- phaseHandle "configure_timeout"
   start_process <- phaseHandle "start_process"
   start_process_cmd_result <- phaseHandle "start_process_result"
+  stop_finished <- phaseHandle "stop_finished"
   start_process_complete <- phaseHandle "start_process_complete"
   start_process_timeout <- phaseHandle "start_process_timeout"
   start_process_failure <- phaseHandle "start_process_failure"
@@ -232,27 +238,49 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
-    phaseLog "info" $ printf "Starting %s (%s)" (showFid p) (show runType)
+    phaseLog "info" $ printf "Requesting start of %s (%s)" (showFid p) (show runType)
     liftProcess . sender . ProcessMsg $! StartProcess runType p
     t <- _hv_process_start_cmd_timeout <$> getHalonVars
     switch [start_process_cmd_result, timeout t start_process_timeout]
 
-  setPhaseIf start_process_cmd_result startCmdResult $ \case
-    Left (uid, failMsg) -> do
-      finisher <- fail_start $ "Process start command failed: " ++ failMsg
-      messageProcessed uid
-      switch finisher
-    Right (uid, mpid) -> do
-      Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
-      phaseLog "info" $ "systemctl OK for " ++ showFid p
-      phaseLog "PID" $ show mpid
-      messageProcessed uid
-      -- Don't set PID for m0t1fs responses (PID 0)
-      unless (mpid == Just 0) $ do
-        forM_ mpid $ modifyGraph . G.connect p Has . M0.PID
-      t <- _hv_process_start_timeout <$> getHalonVars
-      switch [ start_process_complete, start_process_failure
-             , timeout t start_process_timeout ]
+  setPhaseIf start_process_cmd_result startCmdResult $ \(uid, r) -> do
+    messageProcessed uid
+    case r of
+      StartFailure _ failMsg -> do
+        finisher <- fail_start $ "Process start command failed: " ++ failMsg
+        messageProcessed uid
+        switch finisher
+      Started p pid -> do
+        phaseLog "info" $ "systemctl OK for " ++ showFid p
+        phaseLog "PID" $ show pid
+        messageProcessed uid
+        modifyGraph . G.connect p Has $ M0.PID pid
+        t <- _hv_process_start_timeout <$> getHalonVars
+        switch [ start_process_complete, start_process_failure
+               , timeout t start_process_timeout ]
+      RequiresStop p -> do
+        phaseLog "info" $ printf "Process %s already running, stopping first." (showFid p)
+        l <- startJob $! StopProcessRequest p
+        modify Local $ rlens fldStopJob . rfield .~ Just l
+        -- ruleProcessStop should always reply
+        continue stop_finished
+
+  -- After we have received the result of stop job, try to restart the
+  -- job from the beginning. This way we re-run all the checks and
+  -- even if we get in a cycle of failed stop jobs, we'll eventually
+  -- terminate the job. We do this for every possible stop result:
+  -- this job itself should decide what to do with the process.
+  setPhaseIf stop_finished ourStopJob $ \case
+    StopProcessResult (p, M0.PSOffline) -> do
+      phaseLog "info" $ printf "%s stopped successfully, retrying start." (showFid p)
+      continue start_process_retry
+    StopProcessResult (p, pst) -> do
+      phaseLog "warn" $ printf "%s ended up in %s, trying to start again anyway."
+                               (showFid p) (show pst)
+      continue start_process_retry
+    StopProcessTimeout p -> do
+      phaseLog "warn" $ printf "%s didn't stop in timely manner, retrying start." (showFid p)
+      continue start_process_retry
 
   -- Wait for the process to come online - sent out by `ruleProcessOnline`
   setPhaseNotified start_process_complete (processState (== M0.PSOnline)) $ \_ -> do
@@ -304,6 +332,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldRetryCount = Proxy :: Proxy '("retries", Int)
     fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)
     fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
+    fldStopJob = Proxy :: Proxy '("stop-listener", Maybe ListenerId)
 
     args = fldReq           =: Nothing
        <+> fldRep           =: Nothing
@@ -311,11 +340,12 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
        <+> fldSender        =: Nothing
        <+> fldLabel         =: Nothing
        <+> fldConfigureUUID =: Nothing
+       <+> fldStopJob       =: Nothing
        <+> fldRetryCount    =: 0
        <+> fldNotifications =: []
        <+> fldDispatch      =: Dispatch [] (error "ruleProcessStart dispatcher") Nothing
 
-    configureResult (HAEvent uid (ProcessControlResultConfigureMsg _ reqUid result)) _ l = do
+    configureResult (HAEvent uid (ProcessControlResultConfigureMsg reqUid result)) _ l = do
       let Just (ProcessStartRequest p) = getField $ rget fldReq l
           Just confUid = getField $ rget fldConfigureUUID l
           whenUUIDMatches v = Just $ if confUid == reqUid then v else WrongUUID uid
@@ -325,12 +355,18 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         _ -> Nothing
     configureResult _ _ _ = return Nothing
 
-    startCmdResult (HAEvent uid (ProcessControlResultMsg _ result)) _ l = do
-      let Just (ProcessStartRequest p) = getField . rget fldReq $ l
-      return $ case result of
-        Left (p', failMsg) | p == p' -> Just $ Left (uid, failMsg)
-        Right (p', mpid) | p == p' -> Just $ Right (uid, mpid)
+    ourStopJob (JobFinished lis r) _ l = return $!
+      case getField $ rget fldStopJob l of
+        Just l' | l' `elem` lis -> Just r
         _ -> Nothing
+
+    startCmdResult (HAEvent uid (ProcessControlResultMsg res)) _ l = return $!
+      let Just (ProcessStartRequest p) = getField $ rget fldReq l
+      in case res of
+           r@(StartFailure p' _) | p == p' -> Just (uid, r)
+           r@(Started p' _) | p == p' -> Just (uid, r)
+           r@(RequiresStop p') | p == p' -> Just (uid, r)
+           _ -> Nothing
     startCmdResult _ _ _ = return Nothing
 
     processState state l = case getField . rget fldReq $ l of
@@ -597,6 +633,10 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
           -- notification from systemd should be sufficient to mark it
           -- as stopped.
           applyStateChanges [stateSet p Tr.processOffline]
+        -- Harmless case, we have probably just stopped the process
+        -- through ruleProcessStop already.
+        M0.PSOffline ->
+          phaseLog "info" $ "PROCESS_STOPPED for already-offline process"
         _ -> applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
     done eid
 
@@ -629,7 +669,8 @@ ruleProcessStop :: Definitions RC ()
 ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish) -> do
   run_stopping <- phaseHandle "run_stopping"
   stop_process <- phaseHandle "stop_process"
-  services_stopped <- phaseHandle "services_stopped"
+  system_process_stopped <- phaseHandle "system_process_stopped"
+  process_services_offline <- phaseHandle "process_services_offline"
   no_response <- phaseHandle "no_response"
   dispatch <- mkDispatcher
   notifier <- mkNotifierSimple dispatch
@@ -685,30 +726,65 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
               _                -> M0D
         sender . ProcessMsg $! StopProcess runType p
         t <- getHalonVar _hv_process_stop_timeout
-        switch [services_stopped, timeout t no_response]
+        switch [system_process_stopped, timeout t no_response]
       Nothing -> do
         showContext
         phaseLog "error" "No process node found. Failing processes."
         let failMsg = "No process control channel found during stop."
         notifyProcessFailed p failMsg
 
-  setPhaseIf services_stopped ourProcess $ \(eid, mFailure) -> do
+  -- We have received the result of @systemctl stop@ command. Before
+  -- failing the process itself, wait for any stopping services for
+  -- that process to go to offline state: this should be caused by
+  -- 'ruleNotificationHandler'.
+  setPhaseIf system_process_stopped ourProcess $ \(eid, mFailure) -> do
     StopProcessRequest p <- getRequest
     messageProcessed eid
     case mFailure of
       Nothing -> do
-        let notifications = [stateSet p Tr.processOffline]
-        setReply $ StopProcessResult (p, M0.PSOffline)
+        rg <- getLocalGraph
+        let svcs = [ s | s :: M0.Service <- G.connectedTo p M0.IsParentOf rg
+                       , getState s rg == M0.SSStopping
+                       ]
+        let notifications = map (`stateSet` Tr.serviceOffline) svcs
         waitClear
         waitFor notifier
-        onSuccess finish
-        onTimeout 10 finish
+        onSuccess process_services_offline
+        onTimeout 60 no_response
         setExpectedNotifications notifications
-        applyStateChanges notifications
         continue dispatch
       Just e -> do
         let failMsg = "Failed to stop: " ++ e
         notifyProcessFailed p failMsg
+
+  -- All services have been stopped, set process to offline. We could
+  -- wait for process STOPPED event (or ruleProcessStopped) but it's
+  -- not necessary:
+  --
+  -- - Those messages contain PID of the process: we don't run a
+  --   (real) risk of doing something bad there if we mark process
+  --   offline early.
+  --
+  -- - ruleProcessStopped disallows any PID 0 messages which would
+  --   force us to either allow those (and risk bad delayed messages)
+  --   or run the following phase for client processes anyway.
+  directly process_services_offline $ do
+    StopProcessRequest p <- getRequest
+    rg <- getLocalGraph
+    setReply $ StopProcessResult (p, M0.PSOffline)
+    -- It may bee that the process STOPPED has already arrived in
+    -- meantime and the process is offline. Finish straight away.
+    if getState p rg == M0.PSOffline
+    then continue finish
+    else do
+      let notifications = [stateSet p Tr.processOffline]
+      waitClear
+      waitFor notifier
+      onSuccess finish
+      onTimeout 20 no_response
+      setExpectedNotifications notifications
+      applyStateChanges notifications
+      continue dispatch
 
   directly no_response $ do
     StopProcessRequest p <- getRequest

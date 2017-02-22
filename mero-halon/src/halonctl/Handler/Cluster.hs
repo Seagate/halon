@@ -702,8 +702,10 @@ clusterStopNode eqnids opts = do
                   case msg of
                     MaintenanceStopNodeOk rnode | rnode /= node -> inner
                     MaintenanceStopNodeTimeout rnode | rnode /= node -> inner
+                    MaintenanceStopNodeFailed rnode _ | rnode /= node -> inner
                     MaintenanceStopNodeOk{} -> liftIO $ putStrLn "Stop node finished."
                     MaintenanceStopNodeTimeout{} -> liftIO $ putStrLn "Stop node timeout."
+                    MaintenanceStopNodeFailed _ err -> liftIO . putStrLn $ "Stop node failed: " ++ err
   where
    subscribing | stopNodeSync opts = bracket_
      (subscribeOnTo eqnids (Proxy :: Proxy MaintenanceStopNodeResult))

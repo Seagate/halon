@@ -141,6 +141,7 @@ import qualified HA.RecoveryCoordinator.Castor.Node.Events as Event
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
@@ -163,6 +164,7 @@ import           HA.Services.Mero
 import           HA.Services.SSPL.CEP ( sendInterestingEvent )
 import           HA.Services.SSPL.IEM ( logMeroBEError )
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
+import           Mero.ConfC (ServiceType(..))
 import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
 import           Network.CEP
 import           System.Posix.SysInfo
@@ -348,15 +350,43 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                  Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show node
              Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
 
+halonM0dStopJob :: Job StopHalonM0dRequest StopHalonM0dResult
+halonM0dStopJob = Job "castor::node::request::stop-halon-m0d"
+
 -- | Request to stop halon node.
 requestStopHalonM0d :: Definitions RC ()
-requestStopHalonM0d = defineSimpleTask "castor::node::request::stop-halon-m0d" $
-  \(StopHalonM0dRequest node) -> do
-     rg <- getLocalGraph
-     let mhp = M0.nodeToM0Node node rg >>= \m0n -> Process.getHA m0n rg
-     for_ mhp $ \hp -> do
-       applyStateChanges [stateSet hp processHAStopping]
-     promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d rg)
+requestStopHalonM0d = mkJobRule halonM0dStopJob args $ \(JobHandle _ finish) -> do
+  service_stop_result <- phaseHandle "service_stop_result"
+
+  let route (StopHalonM0dRequest node) = do
+        rg <- getLocalGraph
+        let mhp = M0.nodeToM0Node node rg >>= \m0n -> Process.getHA m0n rg
+        case mhp of
+          Nothing -> do
+            return $ Right (HalonM0dNotFound, [finish])
+          Just hp -> do
+            applyStateChanges [stateSet hp processHAStopping]
+            j <- startJob . encodeP $ ServiceStopRequest node (lookupM0d rg)
+            modify Local $ rlens fldJob . rfield .~ Just j
+            return $ Right ( HalonM0dStopResult ServiceStopTimedOut
+                           , [service_stop_result])
+
+  setPhaseIf service_stop_result ourJob $ \r -> do
+    modify Local $ rlens fldRep . rfield .~ Just (HalonM0dStopResult r)
+    continue finish
+
+  return route
+  where
+    ourJob (JobFinished lis v) _ ls = case getField $ rget fldJob ls of
+      Just l | l `elem` lis -> return $ Just v
+      _ -> return Nothing
+
+    fldReq = Proxy :: Proxy '("request", Maybe StopHalonM0dRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe StopHalonM0dResult)
+    fldJob = Proxy :: Proxy '("job", Maybe ListenerId)
+    args = fldReq =: Nothing
+       <+> fldRep =: Nothing
+       <+> fldJob =: Nothing
 
 -------------------------------------------------------------------------------
 -- Processes
@@ -924,6 +954,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
    await_barrier <- phaseHandle "await-barrier"
    barrier_timeout <- phaseHandle "barrier-timeout"
    stop_service <- phaseHandle "stop-service"
+   halon_m0d_stop_result <- phaseHandle "halon_m0d_stop_result"
    lower_boot_level <- phaseHandle "next-boot-level"
 
    -- Continue process on the next boot level. This method include only
@@ -1008,27 +1039,54 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
    directly barrier_timeout $ do
      lvl <- getField . rget fldBootLevel <$> get Local
      StopProcessesOnNodeRequest node <- getRequest
-     phaseLog "warning" $ "Timed out waiting for cluster barrier to reach " ++ show lvl
-     modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeTimeout node)
+     let msg = "Timed out waiting for cluster barrier to reach " ++ show lvl
+     modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeFailed node msg)
      continue finish
 
-   -- TODO: We don't actually wait for halon:m0d stop result…
    directly stop_service $ do
      StopProcessesOnNodeRequest node <- getRequest
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
-     promulgateRC $ StopHalonM0dRequest node
-     modify Local $ rlens fldRep . rfield .~ Just (StopProcessesOnNodeOk node)
+     l <- startJob $ StopHalonM0dRequest node
+     modify Local $ rlens fldJob . rfield .~ Just l
+     continue halon_m0d_stop_result
+
+   setPhaseIf halon_m0d_stop_result ourJob $ \r -> do
+     StopProcessesOnNodeRequest node <- getRequest
+     let setReply v = modify Local $ rlens fldRep . rfield .~ Just v
+     case r of
+       -- No halon:m0d on node: suspicious but doesn't fail node stop.
+       HalonM0dNotFound -> do
+         setReply $ StopProcessesOnNodeOk node
+       -- The service stop was cancelled, something tried to start
+       -- halon:m0d again. Fail node stop.
+       HalonM0dStopResult ServiceStopRequestCancelled -> do
+         let msg = "halon:m0d service stop request was cancelled"
+         setReply $ StopProcessesOnNodeFailed node msg
+       -- Everything OK.
+       HalonM0dStopResult ServiceStopRequestOk -> do
+         setReply $ StopProcessesOnNodeOk node
+       -- Took to long to stop halon:m0d, fail node stop with explicit
+       -- message.
+       HalonM0dStopResult ServiceStopTimedOut -> do
+         let msg = "halon:m0d service stop timed out"
+         setReply $ StopProcessesOnNodeFailed node msg
      continue finish
 
    return $ (\(StopProcessesOnNodeRequest node) -> return $ Right (StopProcessesOnNodeTimeout node, [teardown]))
   where
+    ourJob (JobFinished lis v) _ ls = case getField $ rget fldJob ls of
+      Just l | l `elem` lis -> return $ Just v
+      _ -> return Nothing
+
+    fldJob = Proxy :: Proxy '("job", Maybe ListenerId)
     fldReq = Proxy :: Proxy '("request", Maybe StopProcessesOnNodeRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe StopProcessesOnNodeResult)
     fldWaitingProcs = Proxy :: Proxy '("waiting-procs", [M0.Process])
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
+       <+> fldJob  =: Nothing
        <+> fldHost =: Nothing
        <+> fldBootLevel =: M0.BootLevel maxTeardownLevel
        <+> fldWaitingProcs =: []
@@ -1054,6 +1112,7 @@ ruleMaintenanceStopNode :: Definitions RC ()
 ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle getRequest finish) -> do
    go <- phaseHandle "go"
    stop_service <- phaseHandle "stop_service"
+   halon_m0d_stop_result <- phaseHandle "halon_m0d_stop_result"
 
    let mkProcessesAwait name next = mkLoop name (return [])
          (\result l -> case result of
@@ -1071,7 +1130,14 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
 
    directly go $ do
       MaintenanceStopNode node <- getRequest
-      ps <- Node.getProcesses node <$> getLocalGraph
+      -- Get all processes except CST_HA.
+      rg <- getLocalGraph
+      ps <- do
+        allProcs <- Node.getProcesses node <$> getLocalGraph
+        return [ p | p <- allProcs
+                   , let srvs = G.connectedTo p M0.IsParentOf rg
+                   , not $ any (\s -> M0.s_type s == CST_HA) srvs
+                   , M0.getState p rg == M0.PSOnline ]
       for_ ps $ promulgateRC . StopProcessRequest
       modify Local $ rlens fldWaitingProcs . rfield .~ ps
       continue await_stopping_processes
@@ -1080,19 +1146,41 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
      MaintenanceStopNode node <- getRequest
      phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
                               (show node)
-     promulgateRC $ StopHalonM0dRequest node
-     modify Local $ rlens fldRep . rfield .~ Just (MaintenanceStopNodeOk node)
+     j <- startJob $ StopHalonM0dRequest node
+     modify Local $ rlens fldJob . rfield .~ Just j
+     continue halon_m0d_stop_result
+
+   setPhaseIf halon_m0d_stop_result ourJob $ \r -> do
+     MaintenanceStopNode node <- getRequest
+     let setReply v = modify Local $ rlens fldRep . rfield .~ Just v
+     case r of
+       HalonM0dNotFound -> do
+         setReply $ MaintenanceStopNodeOk node
+       HalonM0dStopResult ServiceStopRequestCancelled -> do
+         let msg = "halon:m0d service stop request was cancelled"
+         setReply $ MaintenanceStopNodeFailed node msg
+       HalonM0dStopResult ServiceStopRequestOk -> do
+         setReply $ MaintenanceStopNodeOk node
+       HalonM0dStopResult ServiceStopTimedOut -> do
+         let msg = "halon:m0d service stop timed out"
+         setReply $ MaintenanceStopNodeFailed node msg
      continue finish
 
    return $ \(MaintenanceStopNode node) ->
      return $ Right (MaintenanceStopNodeTimeout node, [go])
   where
+    ourJob (JobFinished lis v) _ ls = case getField $ rget fldJob ls of
+      Just l | l `elem` lis -> return $ Just v
+      _ -> return Nothing
+
     fldReq = Proxy :: Proxy '("request", Maybe MaintenanceStopNode)
     fldRep = Proxy :: Proxy '("reply", Maybe MaintenanceStopNodeResult)
+    fldJob = Proxy :: Proxy '("job", Maybe ListenerId)
     fldWaitingProcs = Proxy :: Proxy '("waiting-procs", [M0.Process])
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
+       <+> fldJob  =: Nothing
        <+> fldWaitingProcs =: []
 
 -- | Request to stop a node.

@@ -202,6 +202,10 @@ newtype Logger = Logger (forall a . LoggerQuery a -> Process a)
 
 -- | Instruct logger to write out the 'CEP.Event'.
 writeLogs :: Logger -> CEP.Event RC.Event -> Process Logger
+writeLogs logger msg | isWrapper = return logger
+  where
+    isWrapper = let n = CEP.loc_phase_name $ CEP.evt_loc msg
+                in n `elem` ["wrapper_init", "wrapper_clear", "wrapper_end"]
 writeLogs (Logger runLogger) msg =  runLogger $ WriteLogger msg
 
 -- | Instruct 'Logger' to close.

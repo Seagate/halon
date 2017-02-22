@@ -16,6 +16,7 @@ module HA.RecoveryCoordinator.Castor.Node.Events
   , StartProcessesOnNodeRequest(..)
   , StartProcessesOnNodeResult(..)
   , StopHalonM0dRequest(..)
+  , StopHalonM0dResult(..)
   , StopMeroClientRequest(..)
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
@@ -29,6 +30,7 @@ import           Control.Distributed.Process (SendPort)
 import           Data.Binary (Binary)
 import           Data.Typeable (Typeable)
 import           GHC.Generics
+import           HA.RecoveryCoordinator.Service.Events (ServiceStopRequestResult)
 import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
@@ -45,7 +47,16 @@ newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
 
 -- | Trigger 'requestStopHalonM0d'.
 newtype StopHalonM0dRequest = StopHalonM0dRequest R.Node
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic, Ord)
+
+-- | Reply in 'requestStopHalonM0d'.
+data StopHalonM0dResult =
+  HalonM0dStopResult ServiceStopRequestResult
+  -- ^ Service stop rule gave us a result.
+  | HalonM0dNotFound
+  -- ^ Service not found on the node.
+  deriving (Eq, Show, Generic, Ord)
+instance Binary StopHalonM0dResult
 
 -- | Request start of the 'ruleNewNode'.
 newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
@@ -56,14 +67,11 @@ newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest R.Node
   deriving (Eq, Show, Generic, Ord)
 
 -- | Results to 'StopProcessesOnNodeRequest'.
---
--- TODO: We should have @StopProcessesOnNodeFailed@ with failure
--- reason because currently we throw away useful info on process
--- failure.
 data StopProcessesOnNodeResult
        = StopProcessesOnNodeOk R.Node
        | StopProcessesOnNodeTimeout R.Node
        | StopProcessesOnNodeStateChanged R.Node M0.MeroClusterState
+       | StopProcessesOnNodeFailed R.Node String
        deriving (Eq, Show, Generic)
 instance Binary StopProcessesOnNodeResult
 
@@ -160,6 +168,8 @@ data MaintenanceStopNodeResult
   -- ^ The 'R.Node' has stopped.
   | MaintenanceStopNodeTimeout R.Node
   -- ^ Node stop has timed out.
+  | MaintenanceStopNodeFailed R.Node String
+  -- ^ Node failed to stop for some reason.
   deriving (Eq, Show, Generic)
 
 deriveSafeCopy 0 'base ''KernelStartFailure

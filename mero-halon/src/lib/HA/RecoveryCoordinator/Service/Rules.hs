@@ -29,6 +29,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Log (rcLog', tagContext)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.RecoveryCoordinator.Service.Events
+import           HA.Resources.HalonVars
 import           HA.SafeCopy
 import           HA.Service
   ( ServiceExit(..)
@@ -245,6 +246,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
    wait_fail   <- phaseHandle "wait_fail"
    wait_exc    <- phaseHandle "wait_exception"
    wait_not_running <- phaseHandle "wait_not_running"
+   wait_timed_out <- phaseHandle "wait_timed_out"
 
    let route msg = do
          (ServiceStopRequest node svc) <- decodeMsg msg
@@ -258,7 +260,10 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
              return $ Right (ServiceStopRequestCancelled, [do_stop])
            Nothing -> return $ Right (ServiceStopRequestCancelled, [do_stop_only])
 
-   let loop = switch [wait_cancel, wait_exit, wait_fail, wait_exc, wait_not_running]
+   let loop = do
+         t <- getHalonVar _hv_service_stop_timeout
+         switch [ wait_cancel, wait_exit, wait_fail, wait_exc, wait_not_running
+                , timeout t wait_timed_out ]
 
    directly do_stop_only $ do
       Just msg <- fromLocal fldReq
@@ -284,12 +289,12 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
          if node == stoppingNode
          then case eqTT died_srv stoppingSrv of
            Just Refl -> do
-             putLocal fldRep $ ServiceStopRequestOk
+             putLocal fldRep ServiceStopRequestOk
              continue finish
            Nothing -> loop
          else loop
    setPhase wait_exit $ \(HAEvent _ (ServiceExit node info _)) ->
-     service_died  node info
+     service_died node info
    setPhase wait_fail $ \(HAEvent _ (ServiceFailed node info _)) ->
      service_died node info
    setPhase wait_exc  $ \(HAEvent _ (ServiceUncaughtException node info _ _)) ->
@@ -312,11 +317,16 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
      then do
        case eqTT stoppingSvc startingSvc of
          Just Refl -> do
-           putLocal fldRep $ ServiceStopRequestCancelled
+           putLocal fldRep ServiceStopRequestCancelled
            rcLog' Log.DEBUG "service stop was cancelled."
            continue finish
          Nothing -> loop
      else loop
+
+   directly wait_timed_out $ do
+     putLocal fldRep ServiceStopTimedOut
+     rcLog' Log.WARN "service stop timed out"
+     continue finish
 
    return route
    where

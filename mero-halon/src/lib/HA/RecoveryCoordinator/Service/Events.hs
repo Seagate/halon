@@ -1,9 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE StrictData                #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Service.Events
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- XXX: module documentation
@@ -146,7 +147,8 @@ instance ProcessEncode ServiceStopRequest where
 data ServiceStopRequestResult
         = ServiceStopRequestCancelled
         | ServiceStopRequestOk
-        deriving (Eq, Show, Generic, Typeable)
+        | ServiceStopTimedOut
+        deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Binary ServiceStopRequestResult
 

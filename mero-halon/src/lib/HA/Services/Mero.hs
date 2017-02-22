@@ -7,15 +7,16 @@
 --                 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.Services.Mero
-    ( MeroConf(..)
+    ( InternalStarted(..)
+    , MeroConf(..)
     , MeroFromSvc(..)
     , MeroKernelConf(..)
     , MeroToSvc(..)
     , NotificationMessage(..)
     , ProcessConfig(..)
     , ProcessControlMsg(..)
+    , ProcessControlStartResult(..)
     , ProcessRunType(..)
-    , Started(..)
     , HA.Services.Mero.Types.__remoteTable
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.__resourcesTable
@@ -177,10 +178,10 @@ controlProcess mc pid rp = do
             case m of
               ConfigureProcess runType conf env mkfs uid -> forkIOInProcess
                 (configureProcess mc runType conf env mkfs)
-                (sendRC interface . ProcessControlResultConfigureMsg nid uid)
+                (sendRC interface . ProcessControlResultConfigureMsg uid)
               StartProcess runType p -> forkIOInProcess
                 (startProcess runType p)
-                (sendRC interface . ProcessControlResultMsg nid)
+                (sendRC interface . ProcessControlResultMsg)
               StopProcess runType p -> forkIOInProcess
                 (stopProcess runType p)
                 (sendRC interface . ProcessControlResultStopMsg nid)
@@ -226,21 +227,37 @@ configureProcess mc run conf env needsMkfs = do
       ProcessConfigLocal p' _ -> p'
       ProcessConfigRemote p' -> p'
 
--- | Start mero process.
+-- | Check the status of m0d service and possibly start it.
 --
--- We use 'SystemD.restartService' instead of 'SystemD.startService':
--- it's not harmful (except perhaps slightly confusing to anyone
--- reading logs) and prevents the scenario where for some reason the
--- service is still/already up and 'SystemD.startService' does nothing
--- meaningful.
+-- The service is only started if @systemctl status@ doesn't say it's
+-- already running. If it's running, 'RequiresStop' is returned.
 startProcess :: ProcessRunType -- ^ Run type of the process.
              -> M0.Process     -- ^ Process itself.
-             -> IO (Either (M0.Process, String) (M0.Process, Maybe Int))
-startProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
-  putStrLn $ "m0d: startProcess: " ++ fidToStr (M0.fid p) ++ " with type(s) " ++ show run
-  SystemD.restartService (unitString run p) >>= return . \case
-    Right mpid -> Right (p, mpid)
-    Left x -> Left (p, "Unit failed to restart with exit code " ++ show x)
+             -> IO ProcessControlStartResult
+startProcess run p = do
+  let svc = unitString run p
+  do SystemD.statusService (unitString run p) >>= \case
+       -- Service running
+       ExitSuccess -> return $! RequiresStop p
+       -- All other failures should indicate some sort of
+       -- dead/inexistent service: try to start it and just report the
+       -- issue from there.
+       _ -> do
+         putStrLn $ "m0d: startProcess: " ++ fidToStr (M0.fid p) ++ " with type(s) " ++ show run
+         -- Now that we check service status, use
+         -- 'SystemD.startService' and not restart: this way we'll
+         -- know sooner if we have some bugs with stop still instead
+         -- of hiding them.
+         --
+         -- TODO: For an actual release it might be smarter to restart
+         -- still; probably better to do restart in some weird case
+         -- than not permit start at all.
+         SystemD.startService svc >>= return . \case
+           Right (Just pid) -> Started p pid
+           Right Nothing -> StartFailure p "Service started but no PID found."
+           Left rc -> StartFailure p ("Unit failed to start with exit code " ++ show rc)
+  `Catch.catch` \e -> do
+    return . StartFailure p $ show (e :: Catch.SomeException)
 
 -- | Stop mero process.
 --
@@ -249,7 +266,7 @@ startProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
 stopProcess :: ProcessRunType        -- ^ Type of the process.
             -> M0.Process            -- ^ 'M0.Process' to stop.
             -> IO (Either (M0.Process, String) M0.Process)
-stopProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
+stopProcess run p = flip Catch.catch handler $ do
   let unit = unitString run p
   putStrLn $ "m0d: stopProcess: " ++ unit ++ " with type(s) " ++ show run
   ec <- ST.timeout ptimeout $ SystemD.stopService unit
@@ -264,6 +281,7 @@ stopProcess run p = flip Catch.catch (generalProcFailureHandler p) $ do
       putStrLn $ "m0d: stopProcess failed."
       return $ Left (p, "Unit failed to stop with exit code " ++ show x)
   where
+    handler e = return $ Left (p, show (e :: Catch.SomeException))
     ptimeoutSec = 60
     ptimeout = ptimeoutSec * 1000000
 
@@ -276,11 +294,6 @@ unitString run p = case run of
   M0T1FS -> "m0t1fs@" ++ fidToStr (M0.fid p) ++ ".service"
   M0D -> "m0d@" ++ fidToStr (M0.fid p)  ++ ".service"
   CLOVIS s -> s ++ "@" ++ fidToStr (M0.fid p) ++ ".service"
-
--- | General failure handler for the process start/stop/restart actions.
-generalProcFailureHandler :: a -> Catch.SomeException
-                          -> IO (Either (a, String) b)
-generalProcFailureHandler obj e = return $ Left (obj, show e)
 
 -- | Write out the @conf.xc@ file for a confd server. See also
 -- 'confXCPath'. Creates parent directories if missing.
@@ -321,8 +334,8 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
       CLOVIS s -> (s, s ++ "@")
 
 -- | The @halon:m0d@ service has started.
-newtype Started =
-  Started (SendPort NotificationMessage,SendPort ProcessControlMsg)
+newtype InternalStarted =
+  InternalStarted (SendPort NotificationMessage,SendPort ProcessControlMsg)
   -- ^ @Started (notificationHandlerChan, processControlChan)@
   deriving (Eq, Show, Binary)
 
@@ -354,7 +367,7 @@ m0dProcess parent conf = do
           if caller /= nullPid
           then usend caller $ InternalServiceReconnectReply c cc
           else do
-            usend parent (Started (c,cc))
+            usend parent (InternalStarted (c,cc))
           traceM0d "Starting service m0d on mero client"
           -- When reconnect is requested (in case of HALON-546 for
           -- example), kill helper processes and jump out without
@@ -453,7 +466,7 @@ remotableDecl [ [d|
                 $ \_ -> do
           sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
           return (Left "failure during start")
-        , match $ \(Started (c,cc)) -> do
+        , match $ \(InternalStarted (c,cc)) -> do
           return (Right (pid,c,cc))
         ]
     mainloop _ s@(pid,c,cc) = do

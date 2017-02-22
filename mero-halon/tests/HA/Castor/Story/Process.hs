@@ -56,7 +56,8 @@ mkTests pg = do
 testStopStart :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testStopStart transport pg = do
   tos' <- H.mkDefaultTestOptions <&> \tos ->
-    tos { H._to_cluster_setup = H.Bootstrapped }
+    tos { H._to_cluster_setup = H.Bootstrapped
+        , H._to_run_sspl = False }
   H.run' transport pg [rule] tos' $ \ts -> do
     self <- getSelfPid
     usend (H._ts_rc ts) $ H.RuleHook self

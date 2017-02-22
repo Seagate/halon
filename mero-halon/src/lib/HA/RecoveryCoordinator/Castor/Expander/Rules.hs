@@ -24,9 +24,9 @@ import           Data.UUID.V4 (nextRandom)
 import           Data.Vinyl
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Castor.Drive.Events (ExpanderReset(..))
-import qualified HA.RecoveryCoordinator.Castor.Node.Actions as Node
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import           HA.RecoveryCoordinator.Castor.Process.Events
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
 import           HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
 import           HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
@@ -96,6 +96,7 @@ ruleReassembleRaid =
       finish <- phaseHandle "finish"
       tidyup <- phaseHandle "tidyup"
       dispatcher <- mkDispatcher
+      node_stop_result <- phaseHandle "node_stop_result"
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
       mero_notifier <- mkNotifierAct dispatcher $ do
         -- We have received mero notification so ramp up the timeout
@@ -107,17 +108,6 @@ ruleReassembleRaid =
         -- (if not wrong then waste of time).
         t <- getHalonVar _hv_expander_sspl_ack_timeout
         onTimeout t notify_failed
-
-      let mkProcessesAwait name next = mkLoop name (return [])
-            (\result l -> case result of
-                StopProcessResult (p, _) -> return . Right $
-                  (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
-                -- Consider dead even if it timed out
-                StopProcessTimeout p -> return . Right $
-                  (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l)
-            (getField . rget fldWaitingProcs <$> get Local >>= return . \case
-                [] -> Just [next]
-                _ -> Nothing)
 
       setPhase expander_reset_evt $ \(HAEvent eid (ExpanderReset enc)) -> do
         todo eid
@@ -201,29 +191,19 @@ ruleReassembleRaid =
                               ++ "but there was no corresponding node."
             done eid
 
-      mero_processes_stop_wait <- mkProcessesAwait "mero-processes_stop_wait" dispatcher
-
       directly stop_mero_services $ do
         showLocality
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
+        j <- startJob $ MaintenanceStopNode node
+        modify Local $ rlens fldNodeJob . rfield .~ Just j
+        phaseLog "info" $ "Stopping node " ++ show node
+        continue node_stop_result
 
-        rg <- getLocalGraph
-        -- TODO What if there are starting services? In other states?
-        let procs = [ p | p <- Node.getProcesses node rg
-                        , G.isConnected p R.Is M0.PSOnline rg
-                        ]
-
-        case procs of
-          [] -> do
-            phaseLog "info" $ "No mero processes on node."
-            continue unmount
-          _ -> do
-            phaseLog "info" $ "Stopping the following processes: "
-                            ++ (show procs)
-            forM_ procs $ promulgateRC . StopProcessRequest
-            modify Local $ rlens fldWaitingProcs . rfield .~ procs
-            onSuccess unmount
-            continue mero_processes_stop_wait
+      setPhaseIf node_stop_result ourJob $ \case
+        MaintenanceStopNodeOk{} -> continue unmount
+        failure -> do
+          phaseLog "error" $ "Failure in expander reset: " ++ show failure
+          continue failed
 
       directly unmount $ do
         showLocality
@@ -298,20 +278,19 @@ ruleReassembleRaid =
       directly start_mero_services $ do
         showLocality
         (Just (_, m0node)) <- gets Local (^. rlens fldM0 . rfield)
-        promulgateRC $ StartProcessesOnNodeRequest m0node
+        j <- startJob $ StartProcessesOnNodeRequest m0node
+        modify Local $ rlens fldNodeJob . rfield .~ Just j
         t <- getHalonVar _hv_expander_node_up_timeout
         switch [mero_services_started, timeout t failed]
 
-      setPhaseIf mero_services_started onNode $ \nr -> do
-        phaseLog "debug" $ show nr
-        case nr of
-          NodeProcessesStarted{} -> continue mark_mero_healthy
-          NodeProcessesStartTimeout{} -> continue nodeup_timeout
-          NodeProcessesStartFailure{} -> do
-            showLocality
-            phaseLog "error" $ "Cannot start kernel, although it was never "
-                            ++ "stopped."
-            continue failed
+      setPhaseIf mero_services_started ourJob $ \case
+        NodeProcessesStarted{} -> continue mark_mero_healthy
+        NodeProcessesStartTimeout{} -> continue nodeup_timeout
+        NodeProcessesStartFailure{} -> do
+          showLocality
+          phaseLog "error" $ "Cannot start kernel, although it was never "
+                          ++ "stopped."
+          continue failed
 
       -- Mark the enclosure as healthy again
       directly mark_mero_healthy $ do
@@ -366,20 +345,15 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
-    fldHardware = Proxy
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     -- Notifications to wait for
-    fldNotifications :: Proxy '("notifications", [AnyStateChange -> Bool])
-    fldNotifications = Proxy
+    fldNotifications = Proxy :: Proxy '("notifications", [AnyStateChange -> Bool])
     -- RAID devices
-    fldRaidDevices :: Proxy '("raidDevices", [String])
-    fldRaidDevices = Proxy
+    fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?
-    fldM0 :: Proxy '("meroStuff", Maybe (M0.Enclosure, M0.Node))
-    fldM0 = Proxy
-    -- We're waiting for some processes to stop, which ones?
-    fldWaitingProcs :: Proxy '("waiting-procs", [M0.Process])
-    fldWaitingProcs = Proxy
+    fldM0 = Proxy :: Proxy '("meroStuff", Maybe (M0.Enclosure, M0.Node))
+    -- We're waiting for processes on node to stop
+    fldNodeJob = Proxy :: Proxy '("node-job", Maybe ListenerId)
 
     args st = fldHardware =: Nothing
        <+> fldNotifications =: []
@@ -388,7 +362,7 @@ ruleReassembleRaid =
        <+> fldDispatch =: Dispatch [] st Nothing
        <+> fldRaidDevices =: []
        <+> fldM0 =: Nothing
-       <+> fldWaitingProcs =: []
+       <+> fldNodeJob =: Nothing
 
     showLocality = do
       hardware <- gets Local (^. rlens fldHardware . rfield)
@@ -399,10 +373,6 @@ ruleReassembleRaid =
             (show hardware) (show raidDevs)
             (show $ (\(a,b) -> (M0.showFid a, M0.showFid b)) <$> m0)
 
-    onNode x _ l = case (l ^. rlens fldM0 . rfield) of
-        Just (_, m0node) | nodeOf x == m0node -> return $ Just x
-          where
-            nodeOf (NodeProcessesStarted n) = n
-            nodeOf (NodeProcessesStartTimeout n _) = n
-            nodeOf (NodeProcessesStartFailure n _) = n
-        _ -> return Nothing
+    ourJob (JobFinished lis v) _ ls = case getField $ rget fldNodeJob ls of
+      Just l | l `elem` lis -> return $ Just v
+      _ -> return Nothing

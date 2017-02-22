@@ -21,6 +21,7 @@ module HA.Services.Mero.Types
   , NotificationMessage(..)
   , ProcessConfig(..)
   , ProcessControlMsg(..)
+  , ProcessControlStartResult(..)
   , ProcessRunType(..)
   , interface
   , myResourcesTable
@@ -108,10 +109,18 @@ data MeroFromSvc
   | MeroCleanupFailed !NodeId String
   | NotificationAck !Word64 !Fid
   | NotificationFailure !Word64 !Fid
-  | ProcessControlResultConfigureMsg !NodeId !UUID.UUID (Either (M0.Process, String) M0.Process)
-  | ProcessControlResultMsg !NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
+  | ProcessControlResultConfigureMsg !UUID.UUID (Either (M0.Process, String) M0.Process)
+  -- ^ Results of @mero-mkfs@ @systemctl@ invocations.
+  --
+  -- @ProcessControlResultConfigureMsg requestUUID result@
+  --
+  -- @requestUUID@ should come from 'ConfigureProcess' so the caller
+  -- can identify its reply.
+  | ProcessControlResultMsg !ProcessControlStartResult
   | ProcessControlResultStopMsg !NodeId (Either (M0.Process, String) M0.Process)
+  -- ^ Results of @systemctl stop@ operations.
   | CheckCleanup !NodeId
+  -- ^ Check with RC if mero-cleanup service should be ran.
   deriving (Eq, Generic, Show, Typeable)
 
 -- | halon:m0d 'Interface'
@@ -202,6 +211,18 @@ data ProcessControlMsg =
   -- should include the @requestUUID@.
   deriving (Ord, Eq, Show, Typeable, Generic)
 instance Hashable ProcessControlMsg
+
+-- | Result of a process control invocation. Either it succeeded, or
+--   it failed with a message.
+data ProcessControlStartResult
+  = RequiresStop !M0.Process
+  -- ^ The process is not currently stopped according to systemd.
+  | Started !M0.Process !Int
+  -- ^ The process started fine with the given PID.
+  | StartFailure !M0.Process !String
+  -- ^ The process failed to start with the given reason.
+  deriving (Eq, Generic, Show, Typeable)
+instance Hashable ProcessControlStartResult
 
 -- | A guide for which instance of @halon:m0d@ service to use when
 -- invoking operations on the service.
@@ -319,3 +340,4 @@ deriveSafeCopy 0 'base ''NotificationMessage
 deriveSafeCopy 0 'base ''ProcessConfig
 deriveSafeCopy 0 'base ''ProcessControlMsg
 deriveSafeCopy 0 'base ''ProcessRunType
+deriveSafeCopy 0 'base ''ProcessControlStartResult

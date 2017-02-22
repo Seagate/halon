@@ -422,8 +422,16 @@ mkLoop :: Serializable a
        -- ^ Check if loop is finished.
        -> RuleM RC l (Jump PhaseHandle)
 mkLoop name extraPhases update check = do
+  check_init <- phaseHandle $ "_loop:precheck:" ++ name
   loop <- phaseHandle $ "_loop:entry:" ++ name
   inner <- phaseHandle $ "_loop:inner:" ++ name
+
+  -- Run a check at very first invocation: maybe we're finished
+  -- straight away and no messages will actually come. Don't want to
+  -- get stuck in that scenario so just finish early.
+  directly check_init $ do
+    check >>= maybe (continue loop) switch
+
   directly loop $ do
     phs <- extraPhases
     switch $ inner : phs
@@ -435,7 +443,7 @@ mkLoop name extraPhases update check = do
                      mph <- check
                      maybe (continue loop) switch mph
       Left e -> continue e
-  return loop
+  return check_init
 
 -- | Field containing Message UUID.
 type FldUUID = '("uuid", Maybe UUID)

@@ -48,6 +48,7 @@ module HA.Services.Mero.Mock
   , m0dMock
   , m0dMockWorkerLabel
   , sendMockCmd
+  , clearMockState
   ) where
 
 import           Control.Distributed.Process
@@ -76,7 +77,7 @@ import           HA.EventQueue.Producer
 import qualified HA.Resources.Mero as M0
 import           HA.Service
 import           HA.Service.Interface
-import           HA.Services.Mero ( confXCPath, Started(..), unitString )
+import           HA.Services.Mero ( confXCPath, InternalStarted(..), unitString )
 import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid(..), fidToStr, ServiceType(..))
 import           Mero.Notification.HAState
@@ -239,6 +240,18 @@ mockLocalState :: IORef MockLocalState
 {-# NOINLINE mockLocalState #-}
 mockLocalState = unsafePerformIO $ newIORef defaultMockLocalState
 
+-- | Set 'mockLocalState' to 'defaultMockLocalState'. This is useful
+-- for cases where we run multiple tests in a single executable
+-- invocation: the state doesn't get cleared automatically because the
+-- program doesn't restart.
+--
+-- Note that it's up to the caller to invoke this because only the
+-- caller knows when new test starts: the service can't decide when it
+-- should drop state as it has no information about any other mock
+-- services using it.
+clearMockState :: IO ()
+clearMockState = writeIORef mockLocalState defaultMockLocalState
+
 -- | Pretend to run a systemctl command and return the PID of the
 -- started process. Succeeds unless previously requested to
 -- fail through 'FailCmd'.
@@ -261,19 +274,27 @@ mockRunCmd cmd svcN mp = do
     Nothing -> liftIO retrievePID >>= \pid -> do
       case mp of
         Just{} ->
-          sayMock $ printf "systemctl %s %s.service; fake PID => %d" cmd svcN pid
+          sayMock $ printf "systemctl %s %s; fake PID => %d" cmd svcN pid
         Nothing -> do
-          sayMock $ printf "systemctl %s %s.service" cmd svcN
+          sayMock $ printf "systemctl %s %s" cmd svcN
       return $! Right pid
     Just rc -> do
-      sayMock $ printf "systemctl %s %s.service, failing with %d" cmd svcN rc
+      sayMock $ printf "systemctl %s %s, failing with %d" cmd svcN rc
       return $! Left rc
   where
     retrievePID :: IO Int
     retrievePID = atomicModifyIORef' mockLocalState $ \mls ->
-      case mp >>= \p' -> Map.lookup p' (_m_process_map mls) >>= _ps_pid of
-        Nothing -> swap $ mls & m_last_pid <+~ 1
-        Just pid -> (mls, pid)
+      case mp >>= \p' -> Map.lookup p' (_m_process_map mls) of
+        -- We already have some PID for this process, just return it.
+        Just (ProcessState { _ps_pid = Just pid }) -> (mls, pid)
+        -- We don't have a PID but before assigning one, check if it's
+        -- m0t1fs. If yes, PID 0.
+        Just (ProcessState { _ps_svcs = svcs })
+          | all (\s -> M0.s_type s `notElem`
+                  [CST_IOS, CST_MDS, CST_MGS, CST_HA]) svcs -> (mls, 0)
+        -- We don't have a PID for this process (or have process
+        -- without state), just assign next available PID.
+        _ -> swap $ mls & m_last_pid <+~ 1
 
 -- | Report what sysconfig info was requested to be written and where.
 -- Does not actually write any data. Always succeeds ('Nothing').
@@ -345,9 +366,9 @@ controlProcess conf master pcChan = do
   forever $ receiveChan pcChan >>= \case
     ConfigureProcess runType pconf _env mkfs uid ->
       configureProcess runType pconf mkfs >>=
-        sendRC interface . ProcessControlResultConfigureMsg nid uid
+        sendRC interface . ProcessControlResultConfigureMsg uid
     StartProcess runType p -> startProcess runType p >>=
-      sendRC interface . ProcessControlResultMsg nid
+      sendRC interface . ProcessControlResultMsg
     StopProcess runType p -> stopProcess runType p >>=
       sendRC interface . ProcessControlResultStopMsg nid
   where
@@ -382,31 +403,28 @@ controlProcess conf master pcChan = do
       else return $! Right p
 
     startProcess :: ProcessRunType -> M0.Process
-                 -> Process (Either (M0.Process, String) (M0.Process, Maybe Int))
+                 -> Process ProcessControlStartResult
     startProcess runType p = do
       -- Get old PID if any: after we mock restart, we should send
       -- STOPPED messages first with old PID before sending new ones.
       mop <- liftIO (readIORef mockLocalState) <&> \mls ->
         Map.lookup p (_m_process_map mls) >>= _ps_pid
 
-      mockRunCmd "restart" (unitString runType p) (Just p) >>= \case
-        Right pid -> do
-          for_ mop $ \oldPid ->
-            sendProcessEvents p TAG_M0_CONF_HA_PROCESS_STOPPED
-                                TAG_M0_CONF_HA_SERVICE_STOPPED
-                                oldPid
-
-          -- Update process with new PID
-          liftIO . atomicModifyIORef' mockLocalState $ \mls ->
-            let f (Just ops) = Just $ ops { _ps_pid = Just pid }
-                f _          = Nothing
-            in (mls & m_process_map %~ Map.alter f p, ())
-          sendProcessEvents p TAG_M0_CONF_HA_PROCESS_STARTED
-                              TAG_M0_CONF_HA_SERVICE_STARTED
-                              pid
-          return $! Right (p, Just pid)
-        Left rc ->
-          return $! Left (p, "Unit falied to restart with exit code " ++ show rc)
+      case mop of
+        Just{} -> return $! RequiresStop p
+        Nothing -> mockRunCmd "start" (unitString runType p) (Just p) >>= \case
+          Right pid -> do
+            -- Update process with new PID
+            liftIO . atomicModifyIORef' mockLocalState $ \mls ->
+              let f (Just ops) = Just $ ops { _ps_pid = Just pid }
+                  f _          = Nothing
+              in (mls & m_process_map %~ Map.alter f p, ())
+            sendProcessEvents p TAG_M0_CONF_HA_PROCESS_STARTED
+                                TAG_M0_CONF_HA_SERVICE_STARTED
+                                pid
+            return $! Started p pid
+          Left rc ->
+            return . StartFailure p $ "Unit falied to restart with exit code " ++ show rc
 
     stopProcess :: ProcessRunType -> M0.Process
                 -> Process (Either (M0.Process, String) M0.Process)
@@ -463,9 +481,17 @@ m0dMockWorkerLabel = "service::m0d::process"
 m0dMockProcess :: ProcessId -> MeroConf -> Process ()
 m0dMockProcess parent conf = do
   sayMock "Welcome to halon:m0d mock, initialising…"
-  mockWaiter $ \_ -> [ match $ \(caller, u, MockInitialiseFinished) -> do
-                         usend caller $! MockCmdAck u
-                         sayMock "Initialise finished." ]
+
+  -- If we have CST_HA for this service in state already, assume
+  -- service restarted (or has been restarted on purpose) and don't go
+  -- through second initialise.
+  pmap <- liftIO $ Map.keys . _m_process_map <$> readIORef mockLocalState
+  if mcProcess conf `elem` map M0.fid pmap
+  then sayMock $ "Service seems to have been initialised already."
+  else mockWaiter $ \_ ->
+    [ match $ \(caller, u, MockInitialiseFinished) -> do
+        usend caller $! MockCmdAck u
+        sayMock "Initialise finished." ]
   sayMock "Starting main process."
   Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
     sayMock "Kernel module ’loaded’."
@@ -484,7 +510,7 @@ m0dMockProcess parent conf = do
         c <- spawnChannelLocal $ statusProcess self
         sayMock $ "Spawning control process"
         cc <- spawnChannelLocal $ controlProcess conf self
-        usend parent $ Started (c, cc)
+        usend parent $ InternalStarted (c, cc)
         sayMock "Starting service m0d:mock on mero client."
         mockWaiter $ \_ -> []
       Left i -> do
@@ -548,7 +574,7 @@ remotableDecl [ [d|
             unregister m0dMockWorkerLabel
             sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
             return (Left "failure during start")
-        , match $ \(Started (c, cc)) -> return $! Right (m0dPid, c, cc)
+        , match $ \(InternalStarted (c, cc)) -> return $! Right (m0dPid, c, cc)
         ]
     mainloop _ s@(pid,c,cc) = do
       nid <- getSelfNode

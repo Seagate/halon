@@ -35,7 +35,6 @@ import           HA.Multimap
 import           HA.RecoveryCoordinator.Castor.Drive
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc)
 import           HA.RecoveryCoordinator.Mero.State
@@ -659,7 +658,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   let rcNodeId = processNodeId $ _ts_rc ts
   subscribeOnTo [rcNodeId] (Proxy :: Proxy (HAEvent ExpanderReset))
   subscribeOnTo [rcNodeId] (Proxy :: Proxy RaidMsg)
-  subscribeOnTo [rcNodeId] (Proxy :: Proxy StopProcessResult)
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy MaintenanceStopNodeResult)
   subscribeOnTo [rcNodeId] (Proxy :: Proxy StartProcessesOnNodeResult)
 
   -- We need to send info about raid device with a host that is in the
@@ -729,10 +728,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
     sendRC (getInterface sspl) . CAck $
       CommandAck uid (Just nc) AckReplyPassed
 
-  -- TODO: Maybe expander code should use StopProcessesOnNodeRequest
-  -- or similar? Right now it just blindly tries to shut everything
-  -- down.
-  StopProcessResult{} <- expectPublished
+  MaintenanceStopNodeOk{} <- expectPublished
   sayTest "Mero process stop finished"
 
   -- Should see unmount message
@@ -771,7 +767,6 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
     sendRC (getInterface sspl) . CAck $
       CommandAck uid (Just nc) AckReplyPassed
 
-  -- TODO: Expand to all processes we would expect
   NodeProcessesStarted{} <- expectPublished
   sayTest "Mero process start result sent"
 
