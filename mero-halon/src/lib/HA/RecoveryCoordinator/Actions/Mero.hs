@@ -538,7 +538,7 @@ getAllProcesses rg =
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   ]
 
-startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a ()
+startMeroService :: Castor.Host -> Res.Node -> PhaseM LoopState a (Maybe M0.Process)
 startMeroService host node = do
   phaseLog "action" $ "Trying to start mero service on "
                     ++ show (host, node)
@@ -554,26 +554,29 @@ startMeroService host node = do
     Nothing -> case listToMaybe . G.connectedTo host Has $ rg of
       Just (M0.LNid lnid) -> return . Just $ lnid ++ haAddress
       Nothing -> return Nothing
-  mapM_ promulgateRC $ do
-    profile <- mprofile
-    haAddr <- mHaAddr
-    uuid <- listToMaybe $ G.connectedTo host Has rg
-    let mconf = listToMaybe
-                  [ (proc, srvHA, srvRM)
-                  | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
-                  , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-                  , srvHA  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
-                  , M0.s_type srvHA  == CST_HA
-                  , srvRM  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
-                  , M0.s_type srvRM == CST_RMS
-                  ]
-    mconf <&> \(proc, srvHA,srvRM) ->
-      let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
-                                 (M0.fid srvHA)
-                                 (M0.fid srvRM)
-                                 kaFreq kaTimeout
-                                 (MeroKernelConf uuid)
-      in encodeP $ ServiceStartRequest Start node m0d conf []
+  let
+    mmsg = do
+      profile <- mprofile
+      haAddr <- mHaAddr
+      uuid <- listToMaybe $ G.connectedTo host Has rg
+      let mconf = listToMaybe
+                    [ (proc, srvHA, srvRM)
+                    | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
+                    , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+                    , srvHA  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                    , M0.s_type srvHA  == CST_HA
+                    , srvRM  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                    , M0.s_type srvRM == CST_RMS
+                    ]
+      mconf <&> \(proc, srvHA,srvRM) ->
+        let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
+                                   (M0.fid srvHA)
+                                   (M0.fid srvRM)
+                                   kaFreq kaTimeout
+                                   (MeroKernelConf uuid)
+        in (proc, encodeP $ ServiceStartRequest Start node m0d conf [])
+  mapM_ (promulgateRC . snd) $ mmsg
+  return (fst <$> mmsg)
 
 
 -- | It may happen that a node reboots (either through halon or

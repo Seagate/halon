@@ -25,6 +25,7 @@ module HA.RecoveryCoordinator.Events.Castor.Cluster
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
   , StartHalonM0dRequest(..)
+  , StartHalonM0dResult(..)
   , StopHalonM0dRequest(..)
   , StartClientsOnNodeRequest(..)
   , StartClientsOnNodeResult(..)
@@ -162,7 +163,13 @@ instance FromJSON ReportClusterProcess
 newtype StartCastorNodeRequest = StartCastorNodeRequest R.Node deriving (Eq, Show, Generic, Binary)
 
 newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
-  deriving (Eq, Show, Typeable, Generic, Binary)
+  deriving (Eq, Ord, Show, Typeable, Generic, Binary)
+
+data StartHalonM0dResult =
+    StartHalonM0dOK M0.Node
+  | StartHalonM0dFailed M0.Node String
+  deriving (Eq, Show, Generic)
+instance Binary StartHalonM0dResult
 
 newtype StopHalonM0dRequest = StopHalonM0dRequest M0.Node
   deriving (Eq, Show, Typeable, Generic, Binary)
