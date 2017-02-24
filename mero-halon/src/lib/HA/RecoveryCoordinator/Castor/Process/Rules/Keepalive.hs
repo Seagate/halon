@@ -30,7 +30,7 @@ ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \(Keepa
     ct <- liftIO M0.getTime
     applyStateChanges $ map (\(p, t) -> stateSet p $ mkTr ct t) ps
   where
-    mkTr ct t = Tr.processFailed $ "No keepalive for " ++ show (ct - t)
+    mkTr ct t = Tr.processKeepaliveTimeout (ct - t)
     getProcs fids rg = [ (p, t) | (fid, t) <- fids
                                 , Just (p :: M0.Process) <- [M0.lookupConfObjByFid fid rg]
                                 ]

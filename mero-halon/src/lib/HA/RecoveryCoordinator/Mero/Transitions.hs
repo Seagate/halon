@@ -31,6 +31,15 @@ type CascadeTransition a b = StateCarrier a -> Transition b
 
 -- * 'M0.Process'
 
+-- | Keepalive timeout for a process.
+processKeepaliveTimeout :: (?loc :: CallStack)
+                        => M0.TimeSpec -- ^ Elapsed time
+                        -> Transition M0.Process
+processKeepaliveTimeout ts = Transition $ \case
+  M0.PSOnline -> TransitionTo
+    . M0.PSFailed $ "Keepalive timed out after " ++ show ts
+  st -> transitionErr ?loc st
+
 -- | Fail a process with the given reason.
 processFailed :: (?loc :: CallStack) => String -> Transition M0.Process
 processFailed m = Transition $ \case
