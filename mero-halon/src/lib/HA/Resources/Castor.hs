@@ -241,6 +241,9 @@ data HalonVars = HalonVars
   -- the result of the tasks normally performed by mero workers for
   -- main functionality. You probably __never__ want to set this on an
   -- actual deployment.
+  , _hv_disable_smart_checks :: !Bool
+  -- ^ Disable smart tests of the disks. If smart test is disabled
+  -- all calls to smart test automatically successful.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

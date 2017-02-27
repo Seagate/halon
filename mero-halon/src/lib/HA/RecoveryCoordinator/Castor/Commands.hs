@@ -25,6 +25,7 @@ rules :: Definitions RC ()
 rules = sequence_ 
   [ driveNew
   , drivePresence
+  , driveStatus
   ]
 
 -- | Update drive presence, this command is completely analogus to the
@@ -45,6 +46,28 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
                  Drive.updateStorageDevicePresence uuid node sd slot isInstalled isPowered
                  liftProcess $ sendChan chan StorageDevicePresenceUpdated
      else liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchDevice
+
+
+-- | Update status of the storage device. This command is analogus to
+-- the SSPL Drive-Manager request but run from the developer console.
+driveStatus :: Definitions RC ()
+driveStatus = defineSimpleTask "castor::command::update-drive-status" $
+  \(CommandStorageDeviceStatus serial slot status reason chan) -> do
+      let sd = StorageDevice serial
+      let Slot enc _idx = slot
+      rg <- getLocalGraph
+      if isConnected Cluster Has sd rg
+      then let nodes = do host :: Host <- G.connectedTo enc Has rg
+                          G.connectedTo host Runs rg
+           in case listToMaybe nodes of
+                Nothing -> liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchEnclosure
+                Just node -> do
+                  uuid <- liftIO nextRandom
+                  _ <- Drive.updateStorageDeviceStatus uuid node sd slot status reason
+                  liftProcess $ sendChan chan StorageDeviceStatusUpdated
+      else liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchDevice
+ 
+
 
 -- | Create new drive and store that in RG.
 driveNew :: Definitions RC ()

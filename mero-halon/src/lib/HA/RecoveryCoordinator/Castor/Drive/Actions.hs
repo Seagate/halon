@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -20,9 +21,11 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , checkDiskFailureWithinTolerance
   , iemFailureOverTolerance
   , updateStorageDevicePresence
+  , updateStorageDeviceStatus
   ) where
 
 import Data.Binary (Binary)
+import Data.Char (toUpper)
 import Data.Functor (void)
 import Data.Function (fix)
 import Data.Maybe (mapMaybe)
@@ -341,3 +344,35 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
         StorageDevice.ejectFrom sdev slot
         notify $ DriveRemoved uuid node sdev_loc sdev is_powered
         next
+
+-- | Update status of the storage device.
+updateStorageDeviceStatus ::
+     UUID  -- ^ Thread UUID.
+  -> Res.Node -- ^ Node in question.
+  -> Res.StorageDevice -- ^ Updated storage device.
+  -> Res.Slot -- ^ Storage device location.
+  -> String -- ^ Storage device status.
+  -> String -- ^ Status reason.
+  -> PhaseM RC l Bool
+updateStorageDeviceStatus uuid node disk slot status reason = do
+    oldDriveStatus <- StorageDevice.status disk
+    case (status, reason) of
+     (s, r) | oldDriveStatus == Res.StorageDeviceStatus s r -> do
+       Log.rcLog' Log.DEBUG $ "status unchanged: " ++ show oldDriveStatus
+       return True
+     (map toUpper -> "FAILED", _) -> do
+       StorageDevice.setStatus disk status reason
+       notify $ DriveFailed uuid node slot disk
+       return True
+     (map toUpper -> "EMPTY", map toUpper -> "NONE") -> do
+       -- This is probably indicative of expander reset, or some other error.
+       StorageDevice.setStatus disk status reason
+       notify $ DriveTransient uuid node slot disk
+       return True
+     (map toUpper -> "OK", map toUpper -> "NONE") -> do
+       -- Disk has returned to normal after some failure.
+       StorageDevice.setStatus disk status reason
+       notify $ DriveOK uuid node slot disk
+       return True
+     _ -> return False
+

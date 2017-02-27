@@ -43,7 +43,8 @@ import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
-                 (updateStorageDevicePresence)
+                 ( updateStorageDevicePresence
+                 , updateStorageDeviceStatus)
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
@@ -259,26 +260,14 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
         next
   next <- shouldContinue disk
   when next $ do
-    oldDriveStatus <- StorageDevice.status disk
-    case (disk_status, disk_reason) of
-     (s, r) | oldDriveStatus == StorageDeviceStatus (T.unpack s) (T.unpack r) -> do
-       Log.rcLog' Log.DEBUG $ "status unchanged: " ++ show oldDriveStatus
-     (T.toUpper -> "FAILED", _) -> do
-       StorageDevice.setStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-       notify $ DriveFailed uuid (Node nid) sdev_loc disk
-     (T.toUpper -> "EMPTY", T.toUpper -> "NONE") -> do
-       -- This is probably indicative of expander reset, or some other error.
-       StorageDevice.setStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-       notify $ DriveTransient uuid (Node nid) sdev_loc disk
-     (T.toUpper -> "OK", T.toUpper -> "NONE") -> do
-       -- Disk has returned to normal after some failure.
-       StorageDevice.setStatus disk (T.unpack disk_status) (T.unpack disk_reason)
-       notify $ DriveOK uuid (Node nid) sdev_loc disk
-     (s, r) ->
+    result <- updateStorageDeviceStatus uuid (Node nid) disk sdev_loc
+                (T.unpack disk_status)
+                (T.unpack disk_reason)
+    unless result $
        let msg = InterestingEventMessage $ logSSPLUnknownMessage
                ( "{'type': 'actuatorRequest.manager_status', "
-              <> "'reason': 'Error processing drive manager response: drive status "
-               <> s <> " reason " <> r <> " is not known'}"
+               <> "'reason': 'Error processing drive manager response: drive status "
+               <> disk_status <> " reason " <> disk_reason <> " is not known'}"
                )
        in sendInterestingEvent msg
   done uuid

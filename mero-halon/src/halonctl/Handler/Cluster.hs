@@ -112,12 +112,15 @@ parseCluster =
 
 data DriveCommand
   = DrivePresence String Castor.Slot Bool Bool
+  | DriveStatus   String Castor.Slot String
   deriving (Eq, Show)
 
 parseDriveCommand :: Parser ClusterOptions
 parseDriveCommand = CastorDriveCommand <$> asum
      [ Opt.subparser (command "update-presence" 
         $ Opt.withDesc parseDrivePresence "Update information about drive presence")
+     , Opt.subparser (command "update-status"
+        $ Opt.withDesc parseDriveStatus "Update drive status")
      ]
    where
      parseDrivePresence :: Parser DriveCommand
@@ -128,6 +131,13 @@ parseDriveCommand = CastorDriveCommand <$> asum
                         help "Mark drive as installed")
         <*> Opt.switch (long "is-powered" <>
                         help "Mark drive as powered")
+     parseDriveStatus :: Parser DriveCommand
+     parseDriveStatus = DriveStatus
+        <$> optSerial
+        <*> parseSlot
+        <*> strOption (long "status"
+                      <> metavar "[EMPTY|OK]"
+                      <> help "Set drive status")
 
 parseSlot :: Parser Castor.Slot
 parseSlot = Castor.Slot
@@ -313,6 +323,7 @@ data VarsOptions
           , keepaliveFrequency    :: Maybe Int
           , keepaliveTimeout      :: Maybe Int
           , driveResetMaxRetries  :: Maybe Int
+          , disableSmartCheck     :: Maybe Bool
           }
        deriving (Show, Eq)
 
@@ -481,6 +492,7 @@ parseVarsOptions
                      <*> keepaliveFreq
                      <*> keepaliveTimeout
                      <*> driveResetMax
+                     <*> disableSmartCheck
      recoveryExpiry = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "recovery-expiry"
        <> Opt.metavar "[SECONDS]"
@@ -501,6 +513,10 @@ parseVarsOptions
        ( Opt.long "drive-reset-max-retries"
        <> Opt.metavar "[NUMBER]"
        <> Opt.help "Number of times we could try to reset drive.")
+     disableSmartCheck = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "disable-smart-check"
+       <>  Opt.metavar "[TRUE|FALSE]"
+       <>  Opt.help "Disable smart check by sspl.")
 
 dumpConfd :: [NodeId]
           -> DumpOptions
@@ -807,6 +823,7 @@ clusterHVarsUpdate eqnids (VarsSet{..}) = do
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_frequency = s}) keepaliveFrequency
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_timeout = s}) keepaliveTimeout
                  , maybe id (\s -> \x -> x{Castor._hv_drive_reset_max_retries = s}) driveResetMaxRetries
+                 , maybe id (\s -> \x -> x{Castor._hv_disable_smart_checks = s}) disableSmartCheck
                  ]
       in promulgateEQ eqnids (Castor.SetHalonVars hv) >>= flip withMonitor wait
   where
@@ -817,6 +834,14 @@ jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . HA.Aeson.encode
 
 runDriveCommand :: [NodeId] -> DriveCommand -> Process ()
+runDriveCommand nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
+  clusterCommand nids Nothing (CommandStorageDeviceStatus serial slot status "NONE") $ \case
+    StorageDeviceStatusErrorNoSuchDevice -> liftIO $ do
+      putStrLn $ "Unkown drive " ++ serial
+    StorageDeviceStatusErrorNoSuchEnclosure -> liftIO $ do
+      putStrLn $ "can't find an enclosure " ++ show enc ++ " or node associated with it"
+    StorageDeviceStatusUpdated -> liftIO $ do
+      putStrLn $ "Command executed."
 runDriveCommand nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
   clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
     StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do

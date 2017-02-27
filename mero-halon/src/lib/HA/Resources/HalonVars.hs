@@ -46,6 +46,7 @@ defaultHalonVars = HalonVars
   , _hv_expander_sspl_ack_timeout = 180
   , _hv_monitoring_angel_delay = 2
   , _hv_mero_workers_allowed = True
+  , _hv_disable_smart_checks = False
   }
 
 -- | Get 'HalonVars' from RG

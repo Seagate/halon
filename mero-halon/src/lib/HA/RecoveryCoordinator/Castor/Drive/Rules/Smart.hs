@@ -40,6 +40,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
+import HA.Resources.HalonVars
 import HA.Resources.Castor (StorageDevice(..))
 import HA.Services.SSPL.CEP
   ( sendNodeCmd )
@@ -159,12 +160,16 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
       continue finish
 
     return $ \(SMARTRequest node sdev@(StorageDevice (T.pack -> serial))) -> do
+      isDisabled <- getHalonVar _hv_disable_smart_checks
       Log.tagContext Log.SM node Nothing
       Log.tagContext Log.SM sdev Nothing
       modify Local $ rlens fldNode . rfield .~ (Just node)
       modify Local $ rlens fldDeviceInfo . rfield .~
         (Just $ DeviceInfo sdev serial)
-      return $ Right (SMARTResponse sdev SRSNotPossible, [smart])
+      return . Right $ 
+        if isDisabled
+        then (SMARTResponse sdev SRSSuccess, [finish])
+        else (SMARTResponse sdev SRSNotPossible, [smart])
   where
     fldReq :: Proxy '("request", Maybe SMARTRequest)
     fldReq = Proxy

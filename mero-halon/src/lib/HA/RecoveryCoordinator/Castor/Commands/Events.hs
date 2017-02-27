@@ -9,8 +9,8 @@ module HA.RecoveryCoordinator.Castor.Commands.Events
   , CommandStorageDeviceCreateResult(..)
   , CommandStorageDevicePresence(..)
   , CommandStorageDevicePresenceResult(..)
-  , CommandSSPLSmartCheck(..)
-  , CommandSSPLSmartCheckResult(..)
+  , CommandStorageDeviceStatus(..)
+  , CommandStorageDeviceStatusResult(..)
   ) where
 
 import           Data.Binary
@@ -44,6 +44,7 @@ data CommandStorageDevicePresence = CommandStorageDevicePresence
       , csdpReplyTo :: SendPort CommandStorageDevicePresenceResult
       } deriving (Eq, Show, Generic, Ord)
 
+
 -- | Result of the 'CommandStorageDevicePresence'.
 data CommandStorageDevicePresenceResult
        = StorageDevicePresenceUpdated
@@ -53,12 +54,23 @@ data CommandStorageDevicePresenceResult
 
 instance Binary CommandStorageDevicePresenceResult
 
-data CommandSSPLSmartCheck = CommandSSPLSmartCheck
-       { csscEnabled :: Bool
-       } deriving (Eq, Show, Generic, Ord)
+-- | Update status of the known drive.
+data CommandStorageDeviceStatus = CommandStorageDeviceStatus
+      { csdsSerial :: String
+      , csdsSlot :: Slot
+      , csdsStatus :: String
+      , csdsReason :: String
+      , csdsReplyTo :: SendPort CommandStorageDeviceStatusResult
+      } deriving (Eq, Show, Generic, Ord)
 
-data CommandSSPLSmartCheckResult = CommandSSPLSmartCheckResult
+-- | Result of the 'CommandStorageDeviceStatus'.
+data CommandStorageDeviceStatusResult
+       = StorageDeviceStatusUpdated
+       | StorageDeviceStatusErrorNoSuchDevice
+       | StorageDeviceStatusErrorNoSuchEnclosure
        deriving (Eq, Show, Generic, Ord)
+instance Binary CommandStorageDeviceStatusResult
 
 deriveSafeCopy 0 'base ''CommandStorageDeviceCreate
 deriveSafeCopy 0 'base ''CommandStorageDevicePresence
+deriveSafeCopy 0 'base ''CommandStorageDeviceStatus
