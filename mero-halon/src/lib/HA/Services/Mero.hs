@@ -91,10 +91,12 @@ sendMeroChannel cn cc = do
 -- | Process handling object status updates: it dispatches
 -- notifications ('NotificationMessage') to local mero processes.
 statusProcess :: NIRef
+              -> Fid -- ^ HA process 'Fid'
+              -> Fid -- ^ HA service 'Fid'
               -> ProcessId
               -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess niRef pid rp = do
+statusProcess niRef ha_pfid ha_sfid pid rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     forever $ do
@@ -104,7 +106,7 @@ statusProcess niRef pid rp = do
       -- to do receive read calls. also this thread will not be killed when
       -- status process is killed.
       lproc <- DI.Process ask
-      Mero.Notification.notifyMero niRef ps set
+      Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid
             (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
             (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
    `catchExit` (\_ reason -> traceM0d $ "statusProcess exiting: " ++ reason)
@@ -115,15 +117,17 @@ statusProcess niRef pid rp = do
 -- | Run keep-alive when channel receives a message to do so
 keepaliveProcess :: Int -- ^ Keepalive frequency (seconds)
                  -> Int -- ^ Keepalive timeout (seconds)
+                 -> Fid -- ^ HA process 'Fid'
+                 -> Fid -- ^ HA service 'Fid'
                  -> NIRef
-                 -> ProcessId
+                 -> ProcessId -- ^ Caller process (for 'link')
                  -> Process ()
-keepaliveProcess kaFreq kaTimeout niRef pid = do
+keepaliveProcess kaFreq kaTimeout ha_pfid ha_sfid niRef pid = do
   link pid
   forever $ do
     _ <- receiveTimeout (kaFreq * 1000000) []
     pruned <- liftIO $ Mero.Notification.pruneLinks niRef kaTimeout
-    liftIO $ Mero.Notification.runPing niRef
+    liftIO $ Mero.Notification.runPing niRef ha_pfid ha_sfid
     unless (null pruned) $ do
       promulgateWait $ KeepaliveTimedOut pruned
 
@@ -348,9 +352,12 @@ m0dProcess parent conf = do
         flip Catch.catch epHandler . withEp $ \ep -> do
           traceM0d "Starting helper processes and initialising channels."
           kaPid <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
-                                                 (mcKeepaliveTimeout conf) ep self
+                                                 (mcKeepaliveTimeout conf)
+                                                 (mcProcess conf) (mcHA conf)
+                                                 ep self
           (c, crp) <- newChan
-          statusPid <- spawnLocal $ statusProcess ep self crp
+          statusPid <- spawnLocal $ statusProcess ep (mcProcess conf)
+                                                  (mcHA conf) self crp
           (cc, ccrp) <- newChan
           controlPid <- spawnLocal $ controlProcess conf self ccrp
           -- We're in here because we were asked to reconnect so spare

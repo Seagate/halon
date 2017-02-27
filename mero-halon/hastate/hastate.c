@@ -108,12 +108,17 @@ void ha_state_fini() {
 }
 
 /// Notifies mero through the given link that the state of some objects has changed.
-uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note) {
+uint64_t ha_state_notify( struct m0_ha_link *hl, struct m0_ha_msg_nvec *note
+                        , const struct m0_fid *src_process_fid
+                        , const struct m0_fid *src_service_fid
+                        ) {
     uint64_t tag;
     struct m0_ha_msg msg = (struct m0_ha_msg){
+        /* We don't include hm_fid because we're (usually) not talking
+           about any one object in particular */
         .hm_fid            = M0_FID_INIT(0, 0),
-        .hm_source_process = M0_FID_INIT(0, 0),
-        .hm_source_service = M0_FID_INIT(0, 0),
+        .hm_source_process = *src_process_fid,
+        .hm_source_service = *src_service_fid,
         .hm_time           = m0_time_now(),
         .hm_data = { .hed_type = M0_HA_MSG_NVEC
                    , .u.hed_nvec = *note
@@ -126,12 +131,14 @@ uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note) {
 
 
 // Sends a failure vector reply back to mero.
-uint64_t ha_state_failure_vec_reply(struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec) {
+uint64_t ha_state_failure_vec_reply( struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec
+                                   , const struct m0_fid *src_process_fid
+                                   , const struct m0_fid *src_service_fid ) {
     uint64_t tag;
     struct m0_ha_msg msg = (struct m0_ha_msg){
-        .hm_fid            = M0_FID_INIT(0, 0),
-        .hm_source_process = M0_FID_INIT(0, 0),
-        .hm_source_service = M0_FID_INIT(0, 0),
+        .hm_fid            = fvec->mfp_pool,
+        .hm_source_process = *src_process_fid,
+        .hm_source_service = *src_service_fid,
         .hm_time           = m0_time_now(),
         .hm_data = { .hed_type = M0_HA_MSG_FAILURE_VEC_REP
                    , .u.hed_fvec_rep = *fvec
@@ -142,12 +149,15 @@ uint64_t ha_state_failure_vec_reply(struct m0_ha_link *hl, struct m0_ha_msg_fail
     return tag;
 }
 
-uint64_t ha_state_ping_process(struct m0_ha_link *hl, struct m0_uint128 *req_id) {
+uint64_t ha_state_ping_process( struct m0_ha_link *hl, struct m0_uint128 *req_id
+                              , const struct m0_fid *process_fid
+                              , const struct m0_fid *src_process_fid
+                              , const struct m0_fid *src_service_fid ) {
   uint64_t tag;
   struct m0_ha_msg msg = (struct m0_ha_msg){
-    .hm_fid            = M0_FID_INIT(0, 0),
-    .hm_source_process = M0_FID_INIT(0, 0),
-    .hm_source_service = M0_FID_INIT(0, 0),
+    .hm_fid            = *process_fid,
+    .hm_source_process = *src_process_fid,
+    .hm_source_service = *src_service_fid,
     .hm_time           = m0_time_now(),
     .hm_data = { .hed_type = M0_HA_MSG_KEEPALIVE_REQ
                , .u.hed_keepalive_req.kaq_id = *req_id

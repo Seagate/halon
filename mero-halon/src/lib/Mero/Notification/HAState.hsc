@@ -536,8 +536,8 @@ foreign import capi safe ha_state_fini :: IO ()
 
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
-notify :: HALink -> Word64 -> NVec -> IO Word64
-notify (HALink hl) idx nvec =
+notify :: HALink -> Word64 -> NVec -> Fid -> Fid -> IO Word64
+notify (HALink hl) idx nvec ha_pfid ha_sfid =
   allocaBytesAligned #{size struct m0_ha_msg_nvec}
                      #{alignment struct m0_ha_msg_nvec} $ \pnvec -> do
     #{poke struct m0_ha_msg_nvec, hmnv_type} pnvec (0 :: Word64)
@@ -545,23 +545,31 @@ notify (HALink hl) idx nvec =
     #{poke struct m0_ha_msg_nvec, hmnv_nr} pnvec
         (fromIntegral $ length nvec :: Word64)
     pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_arr} pnvec) nvec
-    ha_state_notify hl pnvec
+    with ha_pfid $ \ha_pfid_ptr -> with ha_sfid $ \ha_sfid_ptr -> do
+      ha_state_notify hl pnvec ha_pfid_ptr ha_sfid_ptr
 
-foreign import capi safe ha_state_notify :: Ptr HALink -> Ptr NVec -> IO Word64
+foreign import capi safe "hastate.h ha_state_notify"
+  ha_state_notify :: Ptr HALink -> Ptr NVec -> Ptr Fid -> Ptr Fid -> IO Word64
 
 -- | Disconnects a link.
 disconnect :: HALink -> IO ()
 disconnect (HALink hl) = ha_state_disconnect hl
 
-foreign import capi ha_state_disconnect :: Ptr HALink -> IO ()
+foreign import capi "hastate.h ha_state_disconnect"
+  ha_state_disconnect :: Ptr HALink -> IO ()
 
 -- | Sends keepalive request to process on the given link
-pingProcess :: Word128 -> HALink -> IO Word64
-pingProcess req_id (HALink hl) = alloca $ \req_id_p -> do
+pingProcess :: Word128 -> HALink -> Fid -> Fid -> Fid -> IO Word64
+pingProcess req_id (HALink hl) pingfid pfid sfid = alloca $ \req_id_p -> do
   poke req_id_p req_id
-  ha_state_ping_process hl req_id_p
+  with pingfid $ \pingfid_ptr ->
+    with pfid $ \pfid_ptr ->
+      with sfid $ \sfid_ptr -> do
+        ha_state_ping_process hl req_id_p pingfid_ptr pfid_ptr sfid_ptr
 
-foreign import capi safe ha_state_ping_process :: Ptr HALink -> Ptr Word128 -> IO Word64
+foreign import capi safe "hastate.h ha_state_ping_process"
+  ha_state_ping_process :: Ptr HALink -> Ptr Word128 -> Ptr Fid -> Ptr Fid
+                        -> Ptr Fid -> IO Word64
 
 -- | Type of exceptions that HAState calls can produce.
 data HAStateException = HAStateException String Int
@@ -604,8 +612,8 @@ entrypointNoReply (ReqId reqId) = with reqId $ \reqId_ptr ->
   ha_entrypoint_reply reqId_ptr (-1) 0 nullPtr nullPtr 0 nullPtr nullPtr
 
 -- | Replies to failure vector request
-failureVectorReply :: HALink -> Cookie -> Fid -> NVec -> IO ()
-failureVectorReply (HALink hl) cookie pool fvec =
+failureVectorReply :: HALink -> Cookie -> Fid -> Fid -> Fid -> NVec -> IO ()
+failureVectorReply (HALink hl) cookie pool pfid sfid fvec =
   allocaBytesAligned #{size struct m0_ha_msg_failure_vec_rep}
                      #{alignment struct m0_ha_msg_failure_vec_rep} $ \ffvec -> do
     #{poke struct m0_ha_msg_failure_vec_rep, mfp_cookie} ffvec cookie
@@ -613,11 +621,15 @@ failureVectorReply (HALink hl) cookie pool fvec =
     #{poke struct m0_ha_msg_failure_vec_rep, mfp_nr} ffvec
        (fromIntegral $ length fvec :: Word64)
     pokeArray (#{ptr struct m0_ha_msg_failure_vec_rep, mfp_vec} ffvec) fvec
-    void $ ha_state_failure_vec_reply hl ffvec
+    with pfid $ \pfid_ptr ->
+      with sfid $ \sfid_ptr -> do
+        void $ ha_state_failure_vec_reply hl ffvec pfid_ptr sfid_ptr
 
-foreign import capi ha_state_failure_vec_reply :: Ptr HALink -> Ptr () -> IO Word64
+foreign import capi "hastate.h ha_state_failure_vec_reply"
+  ha_state_failure_vec_reply :: Ptr HALink -> Ptr () -> Ptr Fid -> Ptr Fid -> IO Word64
 
-foreign import capi "hastate.h ha_state_rpc_machine" ha_state_rpc_machine :: IO (Ptr RPCMachineV)
+foreign import capi "hastate.h ha_state_rpc_machine"
+  ha_state_rpc_machine :: IO (Ptr RPCMachineV)
 
 -- | Yields the 'RPCMachine' created with 'initHAState'.
 getRPCMachine :: IO (Maybe RPCMachine)
@@ -629,12 +641,14 @@ getRPCMachine = do p <- ha_state_rpc_machine
 delivered :: HALink -> HAMsgPtr -> IO ()
 delivered (HALink hl) (HAMsgPtr msg) = ha_state_delivered hl msg
 
-foreign import capi "hastate.h ha_state_delivered" ha_state_delivered :: Ptr HALink -> Ptr HAMsgPtr -> IO ()
+foreign import capi "hastate.h ha_state_delivered"
+  ha_state_delivered :: Ptr HALink -> Ptr HAMsgPtr -> IO ()
 
 ha_msg_debug_print :: HAMsgPtr -> String -> IO ()
 ha_msg_debug_print (HAMsgPtr msg) s = withCString s $ m0_ha_msg_debug_print msg
 
-foreign import capi "ha/msg.h m0_ha_msg_debug_print" m0_ha_msg_debug_print :: Ptr HAMsgPtr -> CString -> IO ()
+foreign import capi "ha/msg.h m0_ha_msg_debug_print"
+  m0_ha_msg_debug_print :: Ptr HAMsgPtr -> CString -> IO ()
 
 -- * Boilerplate instances
 
