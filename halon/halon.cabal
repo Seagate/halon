@@ -54,6 +54,7 @@ Library
                    HA.EQTracker
                    HA.EQTracker.Process
                    HA.ResourceGraph
+                   HA.ResourceGraph.GraphLike
                    HA.Resources.TH
                    HA.Multimap
                    HA.Multimap.Implementation
@@ -95,6 +96,7 @@ Library
                    ekg-core,
                    filepath >= 1.3,
                    free,
+                   lens,
                    network,
                    distributed-commands >= 0.1,
                    distributed-process-scheduler,
