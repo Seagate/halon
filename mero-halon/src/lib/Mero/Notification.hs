@@ -42,7 +42,7 @@ import Control.Distributed.Process
 import Network.CEP (liftProcess, MonadProcess)
 
 import Mero
-import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..))
+import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
 import Mero.Notification.HAState hiding (getRPCMachine)
 import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
@@ -109,7 +109,7 @@ instance Hashable Set
 instance Migrate Set where
      type MigrateFrom Set = Set_v0
      migrate (Set_v0 nvec) = Set nvec Nothing
- 
+
 deriveSafeCopy 0 'base ''Set_v0
 deriveSafeCopy 1 'extension ''Set
 
@@ -298,9 +298,9 @@ data NIRef = NIRef
 
 -- | Notify mero using notification interface thread.
 -- Action is executed asynchronously.
-notifyNi :: NIRef -> HALink -> Word64 -> NVec -> Process ()
-notifyNi ref hl w v = liftIO
-  $ atomically $ writeTChan (_ni_worker ref) $ void $ notify hl w v
+notifyNi :: NIRef -> HALink -> Word64 -> NVec -> Fid -> Fid -> Process ()
+notifyNi ref hl w v ha_pfid ha_sfid = liftIO
+  $ atomically $ writeTChan (_ni_worker ref) $ void $ notify hl w v ha_pfid ha_sfid
 
 -- | Run generic action on notification interface. Use with great care
 -- as this code may heavily impact performance, as notificaion interface
@@ -371,11 +371,11 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
       let fids = map no_id nvec
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
-               Just nvec' -> notifyNi ni hl idx nvec'
+               Just nvec' -> notifyNi ni hl idx nvec' processFid haFid
                Nothing   -> do
                  _ <- promulgate (Get self fids)
                  GetReply nvec' <- expect
-                 notifyNi ni hl idx nvec'
+                 notifyNi ni hl idx nvec' processFid haFid
 
     ha_process_event_set :: NIRef -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
     ha_process_event_set ni hlink meta pe = do
@@ -461,7 +461,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
         (send, recv) <- newChan
         promulgateWait (GetFailureVector pool send)
         mr <- receiveChan recv
-        liftIO $ actionOnNi ni $ failureVectorReply hl cookie pool $ fromMaybe [] mr
+        liftIO $ actionOnNi ni $ failureVectorReply hl cookie pool processFid haFid $ fromMaybe [] mr
         liftIO $ traceEventIO "STOP ha_request_failure_vector"
 
     ha_disconnecting :: NIRef -> HALink -> IO ()
@@ -564,10 +564,12 @@ finalize = liftIO $ takeMVar globalEndpointRef >>= \case
 notifyMero :: NIRef -- ^ Internal storage with information about connections.
            -> [Fid] -- ^ Fids that halon thinks notification should go to.
            -> Set   -- ^ Set of notifications to be send.
+           -> Fid   -- ^ HA process 'Fid'
+           -> Fid   -- ^ HA service 'Fid'
            -> (Fid -> IO ()) -- ^ What to do when all messages are delivered.
            -> (Fid -> IO ()) -- ^ What to do when any of messages failed to be delivered.
            -> Process ()
-notifyMero ref fids (Set nvec _) onOk onFail = liftIO $ do
+notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
    known <- sendM0Task $ modifyMVar (_ni_links ref) $ \links -> do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
@@ -575,7 +577,7 @@ notifyMero ref fids (Set nvec _) onOk onFail = liftIO $ do
           fail' l = do r <- readIORef (_ni_info ref)
                        for_ (Map.lookup l r) onFail
       tags <- ifor links $ \l _ ->
-        Map.singleton <$> notify l 0 nvec
+        Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid
                       <*> pure (mkCallback l)
       -- send failed notification for all processes that have no connection
       -- to the interface.
@@ -586,14 +588,14 @@ notifyMero ref fids (Set nvec _) onOk onFail = liftIO $ do
 
 
 -- | Send a ping on every known 'HALink': we should have at least one
--- known 'HALink' per process. Each link can in turn have muliple
--- 'ReqId's associated with it (if for some reason process sends
--- entrypoint request multiple times): we just send it to most
--- recently known 'ReqId' for the link.
-runPing :: NIRef -> IO ()
-runPing ni = actionOnNi ni $ do
+-- known 'HALink' per process.
+runPing :: NIRef -> Fid -> Fid -> IO ()
+runPing ni ha_pfid ha_sfid  = actionOnNi ni $ do
     links <- Map.keys <$> readMVar (_ni_links ni)
-    for_ links $ pingProcess (Word128 4 2)
+    info <- readIORef (_ni_info ni)
+    for_ links $ \l -> do
+      let !fid' = fromMaybe m0_fid0 $! Map.lookup l info
+      pingProcess (Word128 4 2) l fid' ha_pfid ha_sfid
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: Bool -- Allow returning dead services

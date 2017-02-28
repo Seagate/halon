@@ -113,17 +113,24 @@ void ha_state_fini();
 
 /// Notifies mero through the given link that the state of some objects has
 /// changed. Returns the tag of the message.
-uint64_t ha_state_notify(struct m0_ha_link *hl, struct m0_ha_msg_nvec *note);
+uint64_t ha_state_notify( struct m0_ha_link *hl, struct m0_ha_msg_nvec *note
+                        , const struct m0_fid *src_process_fid
+                        , const struct m0_fid *src_service_fid);
 
 /// Notifies mero through the given link that the state of some objects has
 /// changed. Returns the tag of the message.
-uint64_t ha_state_failure_vec_reply(struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec);
+uint64_t ha_state_failure_vec_reply( struct m0_ha_link *hl, struct m0_ha_msg_failure_vec_rep *fvec
+                                   , const struct m0_fid *src_process_fid
+                                   , const struct m0_fid *src_service_fid );
 
 /// Send a keepalive request on the given link with the given req_id.
 /// The req_id is sent back by mero in keepalive reply but unused in
 /// halon as we don't care about which particular request on the link
 /// the reply is for.
-uint64_t ha_state_ping_process(struct m0_ha_link *hl, struct m0_uint128 *req_id);
+uint64_t ha_state_ping_process(struct m0_ha_link *hl, struct m0_uint128 *req_id
+                              , const struct m0_fid *process_fid
+                              , const struct m0_fid *src_process_fid
+                              , const struct m0_fid *src_service_fid );
 
 
 /// Disconnects a link. It is only safe to call after a ha_state_disconnecting
