@@ -23,6 +23,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -43,7 +44,7 @@ module HA.ResourceGraph
       Resource(..)
     , Relation(..)
     , Graph
-    , Edge(..)
+    , GL.Edge(..)
     , Dict(..)
     , Res(..)
     , Rel(..)
@@ -51,12 +52,12 @@ module HA.ResourceGraph
     -- , Quantify(..)
     -- * Operations
     , insertEdge
-    , deleteEdge
+    , GL.deleteEdge
     , connect
-    , disconnect
-    , disconnectAllFrom
-    , disconnectAllTo
-    , removeResource
+    , GL.disconnect
+    , GL.disconnectAllFrom
+    , GL.disconnectAllTo
+    , GL.removeResource
     , mergeResources
     , sync
     , emptyGraph
@@ -64,18 +65,18 @@ module HA.ResourceGraph
     , garbageCollect
     , garbageCollectRoot
     -- * Queries
-    , null
-    , memberResource
-    , memberEdge
-    , memberEdgeBack
-    , edgesFromSrc
-    , edgesToDst
+    , GL.null
+    , GL.memberResource
+    , GL.memberEdge
+    , GL.memberEdgeBack
+    , GL.edgesFromSrc
+    , GL.edgesToDst
     , asUnbounded
     , connectedFrom
     , connectedTo
-    , anyConnectedFrom
-    , anyConnectedTo
-    , isConnected
+    , GL.anyConnectedFrom
+    , GL.anyConnectedTo
+    , GL.isConnected
     , HA.ResourceGraph.__remoteTable
     , getGraphResources
     , getResourcesOfType
@@ -105,7 +106,14 @@ import HA.Multimap
   , getStoreValue
   , defaultMetaInfo
   )
-import HA.Multimap.Implementation
+import HA.ResourceGraph.GraphLike
+  ( ChangeLog(..)
+  , Edge(..)
+  , emptyChangeLog
+  , fromChangeLog
+  , updateChangeLog
+  )
+import qualified HA.ResourceGraph.GraphLike as GL
 
 import Control.Distributed.Process ( Process )
 import Control.Distributed.Process.Internal.Types
@@ -122,6 +130,7 @@ import Data.Constraint ( Dict(..) )
 import Prelude hiding (null)
 import Control.Arrow ( (***), (>>>), second )
 import Control.Monad ( liftM3 )
+import Control.Lens (makeLenses)
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary(..), encode )
 import Data.Binary.Get ( runGetOrFail )
@@ -263,19 +272,14 @@ someRelationDict = SomeRelationDict
 
 remotable ['someResourceDict, 'someRelationDict]
 
--- | Predicate to select 'in' edges.
-isIn :: Rel -> Bool
-isIn (InRel _ _ _) = True
-isIn (OutRel _ _ _) = False
+instance GL.DirectedEdge Rel where
 
--- | Predicate to select 'out' edges.
-isOut :: Rel -> Bool
-isOut = not . isIn
+  direction (InRel _ _ _) = GL.In
+  direction (OutRel _ _ _) = GL.Out
 
--- | Invert a relation
-inverse :: Rel -> Rel
-inverse (OutRel a b c) = InRel a b c
-inverse (InRel a b c) = OutRel a b c
+  -- | Invert a relation
+  invert (OutRel a b c) = InRel a b c
+  invert (InRel a b c) = OutRel a b c
 
 -- | Treat a relationship as unbounded, regardless of whether it is or not.
 asUnbounded :: forall card c. (SingI card)
@@ -285,205 +289,114 @@ asUnbounded = case (sing :: Sing card) of
   SAtMostOne -> maybeToList
   SUnbounded -> id
 
--- | A change log for graph updates.
---
--- Has a multimap with insertions of nodes and edges, a multimap with removals
--- of edges and a set of removals of nodes.
---
--- The structure must preserve the following invariants:
--- * Edges in the insertion multimap are not present in the removal multimap.
--- * Nodes in the insertion multimap are not present in the removal set.
--- * Nodes in the removal multimap are not present in removal set.
-data ChangeLog = ChangeLog !Multimap !Multimap !(HashSet Key) (Maybe MetaInfo)
-  deriving Typeable
-
--- | Gets a list of updates and produces a possibly shorter equivalent list.
---
--- The updates are compressed by merging the multiple updates that could be
--- found for a given key.
-updateChangeLog :: StoreUpdate -> ChangeLog -> ChangeLog
-updateChangeLog x (ChangeLog is dvs dks mi) = case x of
-    InsertMany kvs ->
-       ChangeLog (insertMany kvs is) (deleteValues kvs dvs)
-                 (foldr S.delete dks $ map fst kvs) mi
-    DeleteValues kvs ->
-      let kvs' = filter (not . flip S.member dks . fst) kvs
-      in ChangeLog (deleteValues kvs is) (insertMany kvs' dvs) dks mi
-    DeleteKeys ks ->
-      ChangeLog (deleteKeys ks is) (deleteKeys ks dvs) (foldr S.insert dks ks) mi
-    SetMetaInfo mi' -> ChangeLog is dvs dks (Just mi')
-
--- | Gets the list of updates from the changelog.
-fromChangeLog :: ChangeLog -> [StoreUpdate]
-fromChangeLog (ChangeLog is dvs dks mi) =
-    [ InsertMany   $ toList is
-    , DeleteValues $ toList dvs
-    , DeleteKeys   $ S.toList dks
-    ] ++ maybeToList (SetMetaInfo <$> mi)
-
--- | An empty changelog
-emptyChangeLog :: ChangeLog
-emptyChangeLog = ChangeLog empty empty S.empty Nothing
-
 -- | The graph
 data Graph = Graph
   { -- | Channel used to communicate with the multimap which replicates the
     -- graph.
-    grMMChan :: StoreChan
+    _grMMChan :: StoreChan
     -- | Changes in the graph with respect to the version stored in the multimap.
-  , grChangeLog :: !ChangeLog
+  , _grChangeLog :: !GL.ChangeLog
     -- | The graph.
-  , grGraph :: HashMap Res (HashSet Rel)
+  , _grGraph :: HashMap Res (HashSet Rel)
     -- | Metadata about the graph GC
   , grGraphGCInfo :: GraphGCInfo
   } deriving (Typeable)
 
+makeLenses ''Graph
+
 instance Show Graph where
-  show g = show $ grGraph g
+  show g = show $ _grGraph g
 
--- | Edges between resources. Edge types are called relations. An edge is an
--- element of some relation. The order of the fields matches that of
--- subject-verb-object triples in RDF.
-data Edge a r b =
-    Edge { edgeSrc      :: !a
-         , edgeRelation :: !r
-         , edgeDst      :: !b }
-  deriving Eq
+instance GL.GraphLike Graph where
+  type InsertableRes Graph = Resource
+  type InsertableRel Graph = Relation
 
--- | Returns @True@ iff the graph is empty, with the exception of
--- 'GraphGCInfo' resources which are filtered out before making the
--- check.
-null :: Graph -> Bool
-null = M.null . grGraph
+  type Resource Graph = Resource
+  type Relation Graph = Relation
 
--- | Tests whether a given resource is a vertex in a given graph.
-memberResource :: Resource a => a -> Graph -> Bool
-memberResource a g = M.member (Res a) $ grGraph g
+  type UniversalResource Graph = Res
+  type UniversalRelation Graph = Rel
 
--- | Test whether two resources are connected through the given relation.
-memberEdge :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
-memberEdge e g =
-    (outFromEdge e) `S.member` maybe S.empty (S.filter isOut) (M.lookup (Res (edgeSrc e)) (grGraph g))
+  encodeUniversalResource (Res (r :: r)) =
+    toStrict $ encode ($(mkStatic 'someResourceDict) `staticApply`
+                       (resourceDict :: Static (Dict (Resource r)))) `append`
+    runPutLazy (safePut r)
 
--- | Test whether two resources are connected through the given relation.
---   Compared to 'memberEdge', looks up the relation from the remote endpoint.
---   This is mostly useful for testing, since 'memberEdge' and 'memgerEdgeBack'
---   should give identical results all of the time.
-memberEdgeBack :: forall a r b. Relation r a b => Edge a r b -> Graph -> Bool
-memberEdgeBack e g =
-    (inFromEdge e) `S.member` maybe S.empty (S.filter isIn) (M.lookup (Res (edgeDst e)) (grGraph g))
+  encodeUniversalRelation (InRel (r :: r) (x :: a) (y :: b)) =
+    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
+                  (relationDict :: Static (Dict (Relation r a b))))
+              `append` runPutLazy (safePut (0 :: Word8, r, x, y))
+  encodeUniversalRelation (OutRel (r :: r) (x :: a) (y :: b)) =
+    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
+                  (relationDict :: Static (Dict (Relation r a b))))
+              `append` runPutLazy (safePut (1 :: Word8, r, x, y))
+  -- | Decodes a Res from a 'Lazy.ByteString'.
+  decodeUniversalResource rt bs =
+    case runGetOrFail get $ fromStrict bs of
+      Right (rest,_,d) -> case unstatic rt d of
+        Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
+          case runGetLazy safeGet rest of
+            Right r -> Res (r :: s)
+            Left err -> error $ "decodeRes: runGetLazy: " ++ err
+        Left err -> error $ "decodeRes: " ++ err
+      Left (_,_,err) -> error $ "decodeRes: " ++ err
+  decodeUniversalRelation rt bs = case runGetOrFail get $ fromStrict bs of
+    Right (rest,_,d) -> case unstatic rt d of
+      Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
+        case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+          Right (b, r, x, y) -> case b of
+            (0 :: Word8) -> InRel r x y
+            (1 :: Word8) -> OutRel r x y
+            _ -> error $ "decodeRel: Invalid direction bit."
+          Left err -> error $ "decodeRel: runGetLazy: " ++ err
+      Left err -> error $ "decodeRel: " ++ err
+    Left (_,_,err) -> error $ "decodeRel: " ++ err
 
-outFromEdge :: Relation r a b => Edge a r b -> Rel
-outFromEdge Edge{..} = OutRel edgeRelation edgeSrc edgeDst
+  decodeRes :: forall a. Resource a => Res -> Maybe a
+  decodeRes (Res a) = cast a :: Maybe a
+  decodeRel :: forall r a b. Relation r a b => Rel -> Maybe (Edge a r b)
+  decodeRel (OutRel r s d) = liftM3 Edge (cast s) (cast r) (cast d)
+  decodeRel (InRel r s d) = liftM3 Edge (cast s) (cast r) (cast d)
 
-inFromEdge :: Relation r a b => Edge a r b -> Rel
-inFromEdge Edge{..} = InRel edgeRelation edgeSrc edgeDst
+  encodeIRes = Res
+  encodeIRelIn (Edge s r d) = InRel r s d
+  encodeIRelOut (Edge s r d) = OutRel r s d
+
+  explodeRel :: Rel -> (Res, GL.Any, Res)
+  explodeRel (OutRel r s d) = (Res s, GL.Any r, Res d)
+  explodeRel (InRel r s d) = (Res s, GL.Any r, Res d)
+
+  queryRes r g =
+    let res = Res r
+    in if res `M.member` (_grGraph g) then Just res else Nothing
+  queryRel e GL.In hs =
+    let rel = GL.encodeIRelIn e
+    in if rel `S.member` hs then Just rel else Nothing
+  queryRel e GL.Out hs =
+    let rel = GL.encodeIRelOut e
+    in if rel `S.member` hs then Just rel else Nothing
+
+  incrementGC = modifySinceGC (+ 1)
+
+  graph = grGraph
+
+  storeChan = grMMChan
+
+  changeLog = grChangeLog
 
 -- | Connect source and destination resources through a directed edge.
 insertEdge :: Relation r a b => Edge a r b -> Graph -> Graph
 insertEdge Edge{..} = connect edgeSrc edgeRelation edgeDst
-
--- | Delete an edge from the graph.
-deleteEdge :: Relation r a b => Edge a r b -> Graph -> Graph
-deleteEdge e@Edge{..} g = modifySinceGC (+ 1) $
-    g { grChangeLog = flip updateChangeLog (grChangeLog g) $
-            DeleteValues [ (encodeRes (Res edgeSrc), [ encodeRel $ outFromEdge e ])
-                         , (encodeRes (Res edgeDst), [ encodeRel $ inFromEdge e ])
-                         ]
-      , grGraph = M.adjust (S.delete $ outFromEdge e) (Res edgeSrc)
-                . M.adjust (S.delete $ inFromEdge e) (Res edgeDst)
-                $ grGraph g
-      }
 
 -- | Adds a relation without making a conversion from 'Edge'.
 connect :: forall r a b. Relation r a b => a -> r -> b -> Graph -> Graph
 connect = case ( sing :: Sing (CardinalityFrom r a b)
                , sing :: Sing (CardinalityTo r a b)
                ) of
-    (SAtMostOne, SAtMostOne) -> connectUnique
-    (SAtMostOne, SUnbounded) -> connectUniqueTo
-    (SUnbounded, SAtMostOne) -> connectUniqueFrom
-    (SUnbounded, SUnbounded) -> connectUnbounded
-
--- | Adds a relation without making a conversion from 'Edge'.
---
--- Unlike 'connect', it doesn't check cardinalities.
-connectUnbounded :: Relation r a b => a -> r -> b -> Graph -> Graph
-connectUnbounded x r y g =
-   g { grChangeLog = flip updateChangeLog (grChangeLog g) $
-         InsertMany [ (encodeRes (Res x),[ encodeRel $ OutRel r x y ])
-                    , (encodeRes (Res y),[ encodeRel $ InRel r x y ])
-                    ]
-     , grGraph = M.insertWith S.union (Res x) (S.singleton $ OutRel r x y)
-               . M.insertWith S.union (Res y) (S.singleton $ InRel r x y)
-               $ grGraph g
-     }
-
--- | Connect uniquely between two given resources - e.g. make this relation
---   uniquely determining from either side.
-connectUnique :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
-connectUnique x r y = connectUnbounded x r y
-                    . disconnectAllFrom x r (Proxy :: Proxy b)
-                    . disconnectAllTo (Proxy :: Proxy a) r y
-
--- | Connect uniquely from a given resource - e.g. remove all existing outgoing
---   edges of the same type first.
-connectUniqueFrom :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
-connectUniqueFrom x r y = connectUnbounded x r y
-                        . disconnectAllFrom x r (Proxy :: Proxy b)
-
--- | Connect uniquely to a given resource - e.g. remove all existing incoming
---   edges of the same type first.
-connectUniqueTo :: forall a r b. Relation r a b => a -> r -> b -> Graph -> Graph
-connectUniqueTo x r y = connectUnbounded x r y
-                      . disconnectAllTo (Proxy :: Proxy a) r y
-
--- | Removes a relation.
-disconnect :: Relation r a b => a -> r -> b -> Graph -> Graph
-disconnect x r y g = modifySinceGC (+ 1) $
-    g { grChangeLog = flip updateChangeLog (grChangeLog g) $
-            DeleteValues [ (encodeRes (Res x), [ encodeRel $ OutRel r x y ])
-                         , (encodeRes (Res y), [ encodeRel $ InRel r x y ])
-                         ]
-      , grGraph = M.adjust (S.delete $ OutRel r x y) (Res x)
-                . M.adjust (S.delete $ InRel r x y) (Res y)
-                $ grGraph g
-      }
-
--- | Remove all outgoing edges of the given relation type.
-disconnectAllFrom :: forall a r b. Relation r a b
-                  => a -> r -> Proxy b -> Graph -> Graph
-disconnectAllFrom a _ _ g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
-  where
-    oldEdges = edgesFromSrc a g :: [Edge a r b]
-
--- | Remove all incoming edges of the given relation type.
-disconnectAllTo :: forall a r b. Relation r a b
-                => Proxy a -> r -> b -> Graph -> Graph
-disconnectAllTo _ _ b g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
-  where
-    oldEdges = edgesToDst b g :: [Edge a r b]
-
--- | Isolate a resource from the rest of the graph. This removes
---   all relations from the node, regardless of type.
-removeResource :: Resource a => a -> Graph -> Graph
-removeResource r g@Graph{..} = g {
-      grGraph = M.delete (Res r)
-              . foldl' (.) id (fmap unhookG rels)
-              $ grGraph
-    , grChangeLog = updateChangeLog
-                    ( DeleteKeys [encodeRes (Res r)] )
-                  . updateChangeLog
-                    ( DeleteValues (fmap unhookCL rels))
-                  $ grChangeLog
-    }
-  where
-    rels = maybe [] S.toList $ M.lookup (Res r) grGraph
-    unhookCL rel@(InRel _ x _) = (encodeRes (Res x), [ encodeRel (inverse rel) ])
-    unhookCL rel@(OutRel _ _ y) = (encodeRes (Res y), [ encodeRel (inverse rel) ])
-    unhookG rel@(InRel _ x _) = M.adjust (S.delete (inverse rel)) (Res x)
-    unhookG rel@(OutRel _ _ y) = M.adjust (S.delete (inverse rel)) (Res y)
-
+    (SAtMostOne, SAtMostOne) -> GL.connectUnique
+    (SAtMostOne, SUnbounded) -> GL.connectUniqueTo
+    (SUnbounded, SAtMostOne) -> GL.connectUniqueFrom
+    (SUnbounded, SUnbounded) -> GL.connectUnbounded
 
 -- | Merge a number of homogenously typed resources into a single
 --   resource. Incoming and outgoing edge sets are merged, whilst
@@ -492,20 +405,20 @@ removeResource r g@Graph{..} = g {
 mergeResources :: forall a. Resource a => ([a] -> a) -> [a] -> Graph -> Graph
 mergeResources _ [] g = g
 mergeResources f xs g@Graph{..} = g
-    { grChangeLog = mkAction InsertMany insertValuesMap
-                  . updateChangeLog (DeleteKeys $ map (encodeRes . Res) xs)
+    { _grChangeLog = mkAction InsertMany insertValuesMap
+                  . updateChangeLog (DeleteKeys $ map (GL.encodeUniversalResource . Res) xs)
                   . mkAction DeleteValues deleteValuesMap
-                  $ grChangeLog
-    , grGraph = mkAdjustements insertNodes insertValuesMap
+                  $ _grChangeLog
+    , _grGraph = mkAdjustements insertNodes insertValuesMap
               . mkAdjustements removeNodes deleteValuesMap
-              $ grGraph
+              $ _grGraph
     }
   where
     -- new node that is a combination of the other nodes.
     newX = f xs
     -- Gather all old relations from nodes that will be merged.
     oldRels = foldl' S.union S.empty
-            . mapMaybe (\r -> M.lookup (Res r) grGraph)
+            . mapMaybe (\r -> M.lookup (Res r) _grGraph)
             $ xs
     -- New relations that should be inserted, we update local end in all
     -- old relations.
@@ -521,15 +434,17 @@ mergeResources f xs g@Graph{..} = g
     mkUpdateMap :: HashSet Rel -> M.HashMap Res (S.HashSet Rel)
     mkUpdateMap = M.fromListWith (<>)
        . concatMap (\r -> case r of
-           InRel  _ a b -> [ (Res a, S.singleton $ inverse r)
+           InRel  _ a b -> [ (Res a, S.singleton $ GL.invert r)
                            , (Res b, S.singleton r)]
            OutRel _ a b -> [ (Res a, S.singleton r)
-                           , (Res b, S.singleton $ inverse r)]
+                           , (Res b, S.singleton $ GL.invert r)]
            )
        . S.toList
     -- Create update changelog action based on the update map.
     mkAction action = updateChangeLog . action
-      . fmap (\(k,vs) -> (encodeRes k, map encodeRel $ S.toList vs)) . M.toList
+      . fmap (\(k,vs) -> ( GL.encodeUniversalResource k
+                          , map GL.encodeUniversalRelation $ S.toList vs))
+      . M.toList
     -- Update local end in the relation.
     updateLocalEnd :: forall q. Resource q => q -> Rel -> Rel
     updateLocalEnd y' rel@(InRel r x (_::b)) = case eqT :: Maybe (q :~: b) of
@@ -555,68 +470,15 @@ mergeResources f xs g@Graph{..} = g
         Just v  -> M.insert k v m
     {-# INLINE alter #-}
 
--- | Remove all resources that are not connected to the rest of the graph,
--- starting from the given root set. This cleans up resources that are no
--- longer participating in the graph since they are not connected to the rest
--- and can hence safely be discarded.
---
--- This does __not__ reset garbage collection counter: if you are
--- manually invoking 'garbageCollect' with your own set of nodes, you
--- may not want to stop the major GC from happening anyway.
-garbageCollect :: HashSet Res -> Graph -> Graph
-garbageCollect initGrey g@Graph{..} = go initWhite initGrey
-  where
-    initWhite = S.fromList (M.keys grGraph) `S.difference` initGrey
-    go white (S.null -> True) = g {
-        grChangeLog = updateChangeLog (DeleteKeys $ map encodeRes whiteList) grChangeLog
-      , grGraph = foldl' (>>>) id adjustments grGraph
-    } where
-      adjustments = map M.delete whiteList
-      whiteList = S.toList white
-    go white grey = go white' grey' where
-      white' = white `S.difference` grey'
-      grey' = white `S.intersection` S.unions (catMaybes nextGreys)
-
-      nextGreys :: [Maybe (HashSet Res)]
-      nextGreys = map (fmap (S.map f) . flip M.lookup grGraph) (S.toList grey)
-
-      f (OutRel _ _ y) = Res y
-      f (InRel _ x _) =  Res x
-
--- | Runs 'garbageCollect' preserving anything connected to root nodes
--- ('getRootNodes').
-garbageCollectRoot :: Graph -> Graph
-garbageCollectRoot g = setSinceGC 0 $ garbageCollect (S.fromList roots) g
-  where
-    roots = grRootNodes $ grGraphGCInfo g
-
--- | List of all edges of a given relation stemming from the provided source
--- resource to destination resources of the given type.
-edgesFromSrc :: Relation r a b => a -> Graph -> [Edge a r b]
-edgesFromSrc x0 g =
-    let f (OutRel r x y) = liftM3 Edge (cast x) (cast r) (cast y)
-        f _ = Nothing
-    in maybe [] (catMaybes . map f . S.toList)
-        $ M.lookup (Res x0) $ grGraph g
-
--- | List of all edges of a given relation incoming at the provided destination
--- resource from source resources of the given type.
-edgesToDst :: Relation r a b => b -> Graph -> [Edge a r b]
-edgesToDst x0 g =
-    let f (InRel r x y) = liftM3 Edge (cast x) (cast r) (cast y)
-        f _ = Nothing
-    in maybe [] (catMaybes . map f . S.toList)
-        $ M.lookup (Res x0) $ grGraph g
-
 -- | Fetch nodes connected through a given relation with a provided source
 -- resource.
 connectedTo :: forall a r b. Relation r a b
             => a -> r -> Graph -> Quantify (CardinalityTo r a b) b
 connectedTo a r g =
-    let rs = mapMaybe (\(Res x) -> cast x :: Maybe b) $ anyConnectedTo a r g
-     in case sing :: Sing (CardinalityTo r a b) of
-          SAtMostOne -> listToMaybe rs
-          SUnbounded -> rs
+    let rs = mapMaybe (\(Res x) -> cast x :: Maybe b) $ GL.anyConnectedTo a r g
+    in case sing :: Sing (CardinalityTo r a b) of
+      SAtMostOne -> listToMaybe rs
+      SUnbounded -> rs
   where
     -- Get rid of unused warnings
     _ = undefined :: (SCardinality c, Proxy AtMostOneSym0, Proxy UnboundedSym0)
@@ -626,38 +488,16 @@ connectedTo a r g =
 connectedFrom :: forall a r b . Relation r a b
               => r -> b -> Graph -> Quantify (CardinalityFrom r a b) a
 connectedFrom r b g =
-    let rs = mapMaybe (\(Res x) -> cast x :: Maybe a) $ anyConnectedFrom r b g
-     in case sing :: Sing (CardinalityFrom r a b) of
-          SAtMostOne -> listToMaybe rs
-          SUnbounded -> rs
-
--- | List of all nodes connected through a given relation with a provided source
--- resource.
-anyConnectedTo :: forall a r . (Resource a, Typeable r) => a -> r -> Graph -> [Res]
-anyConnectedTo x0 _ g =
-    let f (OutRel r _ y) = Just (Res y) <* (cast r :: Maybe r)
-        f _ = Nothing
-    in maybe [] (catMaybes . map f . S.toList)
-        $ M.lookup (Res x0) $ grGraph g
-
--- | List of all nodes connected through a given relation with a provided
---   destination resource.
-anyConnectedFrom :: forall r b . (Typeable r, Resource b) => r -> b -> Graph -> [Res]
-anyConnectedFrom _ x0 g =
-    let f (InRel r x _) = Just (Res x) <* (cast r :: Maybe r)
-        f _ = Nothing
-    in maybe [] (catMaybes . map f . S.toList)
-        $ M.lookup (Res x0) $ grGraph g
-
--- | More convenient version of 'memberEdge'.
-isConnected :: Relation r a b => a -> r -> b -> Graph -> Bool
-isConnected x r y g = memberEdge (Edge x r y) g
+  let rs = mapMaybe (\(Res x) -> cast x :: Maybe a) $ GL.anyConnectedFrom r b g
+  in case sing :: Sing (CardinalityFrom r a b) of
+    SAtMostOne -> listToMaybe rs
+    SUnbounded -> rs
 
 -- | Yields the change log of modifications done to the graph, and the graph
 -- with the change log removed.
 takeChangeLog :: Graph -> (ChangeLog, Graph)
-takeChangeLog g = ( grChangeLog g
-                  , g { grChangeLog = emptyChangeLog }
+takeChangeLog g = ( _grChangeLog g
+                  , g { _grChangeLog = emptyChangeLog }
                   )
 
 -- | Creates a graph from key value pairs.
@@ -665,12 +505,13 @@ takeChangeLog g = ( grChangeLog g
 buildGraph :: StoreChan -> RemoteTable -> (MetaInfo, [(Key,[Value])]) -> Graph
 buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
     . M.fromList
-    . map (decodeRes rt *** S.fromList . map (decodeRel rt))
+    . map ( GL.decodeUniversalResource rt *** S.fromList
+          . map (GL.decodeUniversalRelation rt))
     $ kvs
   where
     gcInfo = GraphGCInfo (_miSinceGC mi)
                          (_miGCThreshold mi)
-                         (map (decodeRes rt) (_miRootNodes mi))
+                         (map (GL.decodeUniversalResource rt) (_miRootNodes mi))
 
 -- | Builds an empty 'Graph' with the given 'StoreChan'.
 emptyGraph :: StoreChan -> Graph
@@ -687,7 +528,7 @@ emptyGraph mmchan = Graph mmchan emptyChangeLog M.empty defaultGraphGCInfo
 sync :: Graph -> Process () -> Process Graph
 sync g cb = do
     (cl, g') <- takeChangeLog <$> runGCIfThresholdMet g
-    updateStore (grMMChan g) (fromChangeLog cl) cb
+    updateStore (_grMMChan g) (fromChangeLog cl) cb
     return g'
   where
     shouldGC :: Graph -> Bool
@@ -698,10 +539,10 @@ sync g cb = do
     runGCIfThresholdMet gr =
       if shouldGC gr then do
         let gr' = garbageCollectRoot gr
-            beforeGCSize = M.size (grGraph gr)
+            beforeGCSize = M.size (_grGraph gr)
         seq beforeGCSize $ rgTrace $ "Garbage collecting " ++ show beforeGCSize
                                      ++ " nodes ..."
-        let afterGCSize = M.size (grGraph gr')
+        let afterGCSize = M.size (_grGraph gr')
         seq afterGCSize $ rgTrace $ "After GC, " ++ show afterGCSize
                                     ++ " nodes remain."
         return gr'
@@ -719,50 +560,8 @@ fromStrict = fromChunks . (:[])
 toStrict :: Lazy.ByteString -> ByteString
 toStrict = Strict.concat . toChunks
 
--- | Encodes a Res into a 'Lazy.ByteString'.
-encodeRes :: Res -> ByteString
-encodeRes (Res (r :: r)) =
-    toStrict $ encode ($(mkStatic 'someResourceDict) `staticApply`
-                       (resourceDict :: Static (Dict (Resource r)))) `append`
-    runPutLazy (safePut r)
-
--- | Decodes a Res from a 'Lazy.ByteString'.
-decodeRes :: RemoteTable -> ByteString -> Res
-decodeRes rt bs =
-    case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d) -> case unstatic rt d of
-        Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
-          case runGetLazy safeGet rest of
-            Right r -> Res (r :: s)
-            Left err -> error $ "decodeRes: runGetLazy: " ++ err
-        Left err -> error $ "decodeRes: " ++ err
-      Left (_,_,err) -> error $ "decodeRes: " ++ err
-
-encodeRel :: Rel -> ByteString
-encodeRel (InRel (r :: r) (x :: a) (y :: b)) =
-  toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
-                (relationDict :: Static (Dict (Relation r a b))))
-            `append` runPutLazy (safePut (0 :: Word8, r, x, y))
-encodeRel (OutRel (r :: r) (x :: a) (y :: b)) =
-  toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
-                (relationDict :: Static (Dict (Relation r a b))))
-            `append` runPutLazy (safePut (1 :: Word8, r, x, y))
-
-decodeRel :: RemoteTable -> ByteString -> Rel
-decodeRel rt bs = case runGetOrFail get $ fromStrict bs of
-  Right (rest,_,d) -> case unstatic rt d of
-    Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-      case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
-        Right (b, r, x, y) -> case b of
-          (0 :: Word8) -> InRel r x y
-          (1 :: Word8) -> OutRel r x y
-          _ -> error $ "decodeRel: Invalid direction bit."
-        Left err -> error $ "decodeRel: runGetLazy: " ++ err
-    Left err -> error $ "decodeRel: " ++ err
-  Left (_,_,err) -> error $ "decodeRel: " ++ err
-
 getGraphResources :: Graph -> [(Res, [Rel])]
-getGraphResources = fmap (second S.toList) . M.toList . grGraph
+getGraphResources = fmap (second S.toList) . M.toList . _grGraph
 
 -- | Get all resources in the graph of a particular type.
 getResourcesOfType :: forall a. Resource a
@@ -775,18 +574,55 @@ getResourcesOfType =
 
 -- * GC control
 
+-- | Remove all resources that are not connected to the rest of the graph,
+-- starting from the given root set. This cleans up resources that are no
+-- longer participating in the graph since they are not connected to the rest
+-- and can hence safely be discarded.
+--
+-- This does __not__ reset garbage collection counter: if you are
+-- manually invoking 'garbageCollect' with your own set of nodes, you
+-- may not want to stop the major GC from happening anyway.
+garbageCollect :: HashSet Res -> Graph -> Graph
+garbageCollect initGrey g@Graph{..} = go initWhite initGrey
+  where
+    initWhite = S.fromList (M.keys _grGraph) `S.difference` initGrey
+    go white (S.null -> True) = g {
+        _grChangeLog = updateChangeLog
+          (DeleteKeys $ map GL.encodeUniversalResource whiteList) _grChangeLog
+      , _grGraph = foldl' (>>>) id adjustments _grGraph
+    } where
+      adjustments = map M.delete whiteList
+      whiteList = S.toList white
+    go white grey = go white' grey' where
+      white' = white `S.difference` grey'
+      grey' = white `S.intersection` S.unions (catMaybes nextGreys)
+
+      nextGreys :: [Maybe (HashSet Res)]
+      nextGreys = map (fmap (S.map f) . flip M.lookup _grGraph) (S.toList grey)
+
+      f (OutRel _ _ y) = Res y
+      f (InRel _ x _) =  Res x
+
+-- | Runs 'garbageCollect' preserving anything connected to root nodes
+-- ('getRootNodes').
+garbageCollectRoot :: Graph -> Graph
+garbageCollectRoot g = setSinceGC 0 $ garbageCollect (S.fromList roots) g
+  where
+    roots = grRootNodes $ grGraphGCInfo g
+
+
 -- | Modify the 'GraphGCInfo' in the given graph.
 modifyGCInfo :: (GraphGCInfo -> GraphGCInfo) -> Graph -> Graph
 modifyGCInfo f g = g
   { grGraphGCInfo = newGI
-  , grChangeLog = updateChangeLog (SetMetaInfo mi) (grChangeLog g) }
+  , _grChangeLog = updateChangeLog (SetMetaInfo mi) (_grChangeLog g) }
   where
     newGI = f $ grGraphGCInfo g
 
     mi :: MetaInfo
     mi = MetaInfo (grSinceGC newGI)
                   (grGCThreshold newGI)
-                  (map encodeRes $ grRootNodes newGI)
+                  (map GL.encodeUniversalResource $ grRootNodes newGI)
 
 -- | Modifies the count of disconnects since the last time automatic
 -- major GC was ran.
@@ -848,4 +684,4 @@ defaultGraphGCInfo = GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) []
 -- * Tools for testing
 
 getStoreUpdates :: Graph -> [StoreUpdate]
-getStoreUpdates = fromChangeLog . grChangeLog
+getStoreUpdates = fromChangeLog . _grChangeLog
