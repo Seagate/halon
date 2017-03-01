@@ -292,12 +292,12 @@ storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
 data Process = Process {
-    r_fid :: Fid
-  , r_mem_as :: Word64
-  , r_mem_rss :: Word64
-  , r_mem_stack :: Word64
-  , r_mem_memlock :: Word64
-  , r_cores :: Bitmap
+    r_fid :: !Fid
+  , r_mem_as :: !Word64
+  , r_mem_rss :: !Word64
+  , r_mem_stack :: !Word64
+  , r_mem_memlock :: !Word64
+  , r_cores :: !Bitmap
   , r_endpoint :: String
 } deriving (Eq, Generic, Show, Typeable)
 

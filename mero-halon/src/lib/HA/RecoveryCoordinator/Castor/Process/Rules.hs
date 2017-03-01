@@ -14,7 +14,7 @@
 module HA.RecoveryCoordinator.Castor.Process.Rules
   ( rules ) where
 
-import           Control.Distributed.Process (sendChan)
+import           Control.Distributed.Process (Process)
 import           Control.Lens
 import           Control.Monad (unless)
 import           Data.Binary (Binary)
@@ -36,15 +36,14 @@ import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
-import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Runs(..))
+import           HA.Resources (Has(..), Runs(..), Node(..))
 import           HA.Resources.Castor (Host(..), Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
-import           HA.Services.Mero.RC.Actions (meroChannel)
+import           HA.Service.Interface
 import           HA.Services.Mero.Types
 import           Mero.ConfC (ServiceType(..))
 import           Mero.Notification.HAState
@@ -180,11 +179,11 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fail_start "Notification about PSStarting failed" >>= switch
 
   directly configure $ do
-    Just chan <- getField . rget fldChan <$> get Local
+    Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     ProcessStartRequest p <- getRequest
     phaseLog "info" $ "Configuring " ++ showFid p
-    confUUID <- configureMeroProcess chan p runType (runType == M0D)
+    confUUID <- configureMeroProcess sender p runType
     modify Local $ rlens fldConfigureUUID . rfield .~ Just confUUID
     t <- getHalonVar _hv_process_configure_timeout
     switch [configure_result, timeout t configure_timeout]
@@ -230,11 +229,11 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   -- XXX: Be more defensive; check invariants: ProcessBootstrapped,
   -- PSStarting, disposition still in ONLINE
   directly start_process $ do
-    Just (TypedChannel chan) <- getField . rget fldChan <$> get Local
+    Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
     phaseLog "info" $ printf "Starting %s (%s)" (showFid p) (show runType)
-    liftProcess . sendChan chan $ StartProcess runType p
+    liftProcess . sender . ProcessMsg $! StartProcess runType p
     t <- _hv_process_start_cmd_timeout <$> getHalonVars
     switch [start_process_cmd_result, timeout t start_process_timeout]
 
@@ -301,7 +300,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldReq = Proxy :: Proxy '("request", Maybe ProcessStartRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe ProcessStartResult)
     fldHost = Proxy :: Proxy '("host", Maybe Host)
-    fldChan = Proxy :: Proxy '("chan", Maybe (TypedChannel ProcessControlMsg))
+    fldSender = Proxy :: Proxy '("sender", Maybe (MeroToSvc -> Process ()))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
     fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)
     fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
@@ -309,7 +308,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     args = fldReq           =: Nothing
        <+> fldRep           =: Nothing
        <+> fldHost          =: Nothing
-       <+> fldChan          =: Nothing
+       <+> fldSender        =: Nothing
        <+> fldLabel         =: Nothing
        <+> fldConfigureUUID =: Nothing
        <+> fldRetryCount    =: 0
@@ -324,6 +323,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         Left (p', failMsg) | p == p' -> whenUUIDMatches $ ConfigureFailure uid failMsg
         Right p' | p == p' -> whenUUIDMatches $ ConfigureSuccess uid
         _ -> Nothing
+    configureResult _ _ _ = return Nothing
 
     startCmdResult (HAEvent uid (ProcessControlResultMsg _ result)) _ l = do
       let Just (ProcessStartRequest p) = getField . rget fldReq $ l
@@ -331,6 +331,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         Left (p', failMsg) | p == p' -> Just $ Left (uid, failMsg)
         Right (p', mpid) | p == p' -> Just $ Right (uid, mpid)
         _ -> Nothing
+    startCmdResult _ _ _ = return Nothing
 
     processState state l = case getField . rget fldReq $ l of
       Just (ProcessStartRequest p) -> Just (p, state)
@@ -345,15 +346,19 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     initResources p rg = do
      let mn = G.connectedFrom M0.IsParentOf p rg
          mh = mn >>= \n -> G.connectedFrom Runs n rg
-         mchan = mn >>= \n -> M0.m0nodeToNode n rg >>= meroChannel rg
+         msender = do
+           m0node <- mn
+           iface <- getRunningMeroInterface m0node rg
+           Node nid <- M0.m0nodeToNode m0node rg
+           return $ liftProcess . sendSvc iface nid
          mlabel = G.connectedTo p Has rg
-     case (,,) <$> mh <*> mchan <*> mlabel of
+     case (,,) <$> mh <*> msender <*> mlabel of
        Nothing -> return . Just $
-         printf "Could not init resources: Host: %s, Chan: %s, Label: %s"
-                (show mh) (show $ isJust mchan) (show mlabel)
-       Just (host, chan, label) -> do
+         printf "Could not init resources: Host: %s, Sender: %s, Label: %s"
+                (show mh) (show $ isJust msender) (show mlabel)
+       Just (host, sender, label) -> do
          modify Local $ rlens fldHost .~ Field (Just host)
-         modify Local $ rlens fldChan .~ Field (Just chan)
+         modify Local $ rlens fldSender .~ Field (Just sender)
          modify Local $ rlens fldLabel .~ Field (Just label)
          return Nothing
 
@@ -491,14 +496,27 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        applyStateChanges [ stateSet p Tr.processOnline ]
+        let nodeNotif = if any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg)
+                        then case G.connectedFrom M0.IsParentOf p rg of
+                               Nothing -> []
+                               Just n -> [stateSet n Tr.nodeOnline]
+                        else []
+        applyStateChanges $ stateSet p Tr.processOnline : nodeNotif
+
+      -- TODO: Now that we set PSStarting for HA, we may not need this case.
+      -- Think about it.
       (_, _)
         | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
         phaseLog "action" "HA Process started."
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        applyStateChanges [ stateSet p Tr.processHAOnline ]
+        case G.connectedFrom M0.IsParentOf p rg of
+          Nothing -> do
+            phaseLog "warn" $ "No node associated with " ++ show (M0.fid p)
+            applyStateChanges [ stateSet p Tr.processHAOnline ]
+          Just n -> applyStateChanges [ stateSet p Tr.processHAOnline
+                                      , stateSet n Tr.nodeOnline ]
       st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
@@ -654,21 +672,23 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
   directly stop_process $ do
     StopProcessRequest p <- getRequest
     rg <- getLocalGraph
-    let chan = G.connectedFrom M0.IsParentOf p rg
-               >>= \m0n -> M0.m0nodeToNode m0n rg >>= meroChannel rg
-    case chan of
-      Just (TypedChannel ch) -> do
+    let msender = do
+          m0n <- G.connectedFrom M0.IsParentOf p rg
+          Node nid <- M0.m0nodeToNode m0n rg
+          iface <- getRunningMeroInterface m0n rg
+          return $ liftProcess . sendSvc iface nid
+    case msender of
+      Just sender -> do
         let runType = case G.connectedTo p Has rg of
               Just M0.PLM0t1fs -> M0T1FS
               Just (M0.PLClovis s False) -> CLOVIS s
               _                -> M0D
-        let msg = StopProcess runType p
-        liftProcess $ sendChan ch msg
+        sender . ProcessMsg $! StopProcess runType p
         t <- getHalonVar _hv_process_stop_timeout
         switch [services_stopped, timeout t no_response]
       Nothing -> do
         showContext
-        phaseLog "error" "No process control channel found. Failing processes."
+        phaseLog "error" "No process node found. Failing processes."
         let failMsg = "No process control channel found during stop."
         notifyProcessFailed p failMsg
 
@@ -734,6 +754,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
           Right p' | p == p' -> Just (eid, Nothing)
           _ -> Nothing
         _ -> Nothing
+    ourProcess _ _ _ = return Nothing
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
+{-# LANGUAGE MultiWayIf       #-}
 {-# LANGUAGE TypeOperators    #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
@@ -39,8 +40,19 @@ import           HA.Service
   , ServiceInfoMsg
   , Service(..)
   , serviceLabel
+  , serviceName
   )
+import           HA.Service.Interface
+import qualified HA.Services.DecisionLog as DLog
+import qualified HA.Services.Ekg as Ekg
+import qualified HA.Services.Frontier as Frontier
+import qualified HA.Services.Noisy as Noisy
+import qualified HA.Services.Ping as Ping
+import qualified HA.Services.SSPL as SSPL
+import qualified HA.Services.SSPLHL as SSPLHL
+import qualified HA.Services.Mero as Mero
 import           Network.CEP
+import           Text.Printf (printf)
 
 -- | Service rules.
 rules :: Definitions RC ()
@@ -53,6 +65,7 @@ rules = sequence_
   , ruleServiceUncaughtException
   , ruleServiceStarted
   , ruleServiceCouldNotStart
+  , ruleServiceMessageReceived
   ]
 
 serviceStartJob :: Job ServiceStartRequestMsg ServiceStartRequestResult
@@ -400,3 +413,44 @@ ruleServiceStarted = defineSimpleTask "rc::service::started" $
                       , ("service.config", show config)
                       ]
     notify (ServiceStartedInternal node config pid)
+
+ruleServiceMessageReceived :: Definitions RC ()
+ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
+  \(HAEvent uid wf) -> do
+    rg <- getLocalGraph
+    case lookupIfaceAndSend wf uid rg of
+      Left err -> do
+        phaseLog "error" err
+        messageProcessed uid
+      Right act -> act
+  where
+    -- Technically we could just find the interface without going
+    -- through typeclass here.
+    lookupIfaceAndSend wf uid rg = if
+      | serviceName (Mero.lookupM0d rg) == wfServiceName wf ->
+          decodeAndSend wf (Mero.lookupM0d rg) uid
+      | serviceName DLog.decisionLog == wfServiceName wf ->
+          decodeAndSend wf DLog.decisionLog uid
+      | serviceName SSPL.sspl == wfServiceName wf ->
+          decodeAndSend wf SSPL.sspl uid
+      | serviceName Frontier.frontier == wfServiceName wf ->
+          decodeAndSend wf Frontier.frontier uid
+      | serviceName Ekg.ekg == wfServiceName wf ->
+          decodeAndSend wf Ekg.ekg uid
+      | serviceName Ping.ping == wfServiceName wf ->
+          decodeAndSend wf Ping.ping uid
+      | serviceName Noisy.noisy == wfServiceName wf ->
+          decodeAndSend wf Noisy.noisy uid
+      | serviceName SSPLHL.sspl == wfServiceName wf ->
+          decodeAndSend wf SSPLHL.sspl uid
+      | otherwise -> Left $ printf "No interface found for %s" (wfServiceName wf)
+
+    decodeAndSend wf svc uid = case ifDecodeFromSvc (getInterface svc) wf of
+      Nothing -> Left $ printf "%s interface failed to decode %s"
+                               (wfServiceName wf) (show wf)
+      -- We send an non-persisted HAEvent. This is okay because it
+      -- uses the UUID of persisted HAEvent WireFormat: if RC
+      -- restarts, this rule will re-run and we'll resend service
+      -- message. If message gets processed, the WireFormat gets
+      -- processed.
+      Just msg -> Right . selfMessage $! HAEvent uid msg

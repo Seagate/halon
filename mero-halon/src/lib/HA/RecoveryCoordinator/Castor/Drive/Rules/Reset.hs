@@ -1,11 +1,12 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE ViewPatterns          #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Module containing some reset bits that multiple rules may want access to
@@ -33,14 +34,18 @@ import HA.Resources.HalonVars
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
   , updateDriveManagerWithFailure
+  , sendInterestingEvent
   )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)
   , NodeCmd(..)
   , commandAck
+  , SsplLlFromSvc(..)
   )
-
+import HA.Services.SSPL.IEM (logFailureOverK)
+import HA.Services.SSPL.LL.Resources (InterestingEventMessage(..))
+import Mero.ConfC (fidToStr)
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 
@@ -57,15 +62,16 @@ import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Proxy (Proxy(..))
 import Data.Maybe (mapMaybe)
-import Data.Text (Text, pack)
+import Data.Monoid ((<>))
+import qualified Data.Text as T
 import Data.Vinyl
 import Data.UUID (UUID)
 
 import Network.CEP
 
 data DeviceInfo = DeviceInfo {
-    _diSDev :: StorageDevice
-  , _diSerial :: Text
+    _diSDev :: !StorageDevice
+  , _diSerial :: !T.Text
 }
 
 fldNode :: Proxy '("node", Maybe Node)
@@ -210,7 +216,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
               modify Local $ rlens fldNode . rfield .~ Just node
               modify Local $ rlens fldRep  . rfield .~ Just (ResetFailure sdev)
               modify Local $ rlens fldDeviceInfo . rfield .~
-                (Just $ DeviceInfo sdev (pack serial))
+                Just (DeviceInfo sdev (T.pack serial))
 
               isStorageDriveRemoved sdev >>= \case
                 True ->
@@ -231,14 +237,14 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
 
       directly reset $ do
         Just (DeviceInfo sdev serial) <- gets Local (^. rlens fldDeviceInfo . rfield)
-        Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
+        Just node <- gets Local (^. rlens fldNode . rfield)
         i <- getDiskResetAttempts sdev
         phaseLog "debug" $ "Current reset attempts: " ++ show i
         resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
         if i <= resetAttemptThreshold
         then do
           incrDiskResetAttempts sdev
-          sent <- sendNodeCmd nid Nothing (DriveReset serial)
+          sent <- sendNodeCmd [node] Nothing (DriveReset serial)
           if sent
           then do
             phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
@@ -361,12 +367,12 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
 --------------------------------------------------------------------------------
 
 onCommandAck :: forall g l. (FldDeviceInfo ∈ l)
-             => (Text -> NodeCmd)
-             -> HAEvent CommandAck
+             => (T.Text -> NodeCmd)
+             -> HAEvent SsplLlFromSvc
              -> g
              -> FieldRec l
              -> Process (Maybe (Bool, UUID))
-onCommandAck k (HAEvent eid cmd) _
+onCommandAck k (HAEvent eid (CAck cmd)) _
                ((view $ rlens fldDeviceInfo . rfield)
                 -> Just (DeviceInfo _ serial)) =
   case commandAckType cmd of
@@ -410,3 +416,10 @@ driveOKSdev (DriveOK _ _ _ x) _ l =
   return $ case l ^. rlens fldDeviceInfo . rfield of
     Just (DeviceInfo sdev _) | sdev == x -> Just ()
     _ -> Nothing
+
+-- | Send an IEM about 'M0.SDev' failure transition being prevented by
+-- maximum allowed failure tolerance.
+iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
+iemFailureOverTolerance sdev =
+  sendInterestingEvent . InterestingEventMessage $ logFailureOverK
+      (" {'failedDevice':" <> T.pack (fidToStr $ M0.fid sdev) <> "}")

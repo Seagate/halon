@@ -6,7 +6,7 @@
 {-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module    : Helper.Runner
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Configurable test runner providing the environment requested by the
@@ -37,15 +37,14 @@ import           GHC.Word (Word8)
 import qualified HA.EQTracker.Process as EQT
 import           HA.Encode
 import           HA.EventQueue.Producer
-import           HA.EventQueue.Types
 import           HA.Multimap
 import           HA.NodeUp (nodeUp')
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.RecoveryCoordinator.Castor.Node.Actions as Node
-  (getProcesses)
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Service.Events
@@ -63,6 +62,7 @@ import           HA.Services.SSPL
 import           HA.Services.SSPL.LL.Resources
 import           HA.Services.SSPL.Rabbit
 import           Helper.InitialData
+import           Mero.ConfC (ServiceType(CST_HA))
 import           Network.CEP
 import           Network.Transport
 import           RemoteTables (remoteTable)
@@ -171,31 +171,33 @@ testRules = do
     mock_up <- phaseHandle "mock_up"
     mock_timed_out <- phaseHandle "mock_timed_out"
 
-    let ourNode km _ l = return $ case (km, getField $ rget fldM0Node l) of
-          (KernelStarted m0n, Just m0n') | m0n == m0n' -> Just km
-          (KernelStartFailure m0n, Just m0n') | m0n == m0n' -> Just km
-          _ -> Nothing
+    let ourProc l = return $! case getField $ rget fldProc l of
+          Nothing -> error "testRules.ourProc: no HA process in local state"
+          Just p -> (p, \s -> s == M0.PSOnline)
         cmdAck m _ l = return $ case (m, getField $ rget fldMockAck l) of
           (u :: Mock.MockCmdAck, Just u') | u == u' -> Just ()
           _ -> Nothing
 
         route (PopulateMock m0dPid nid) = do
           rg <- getLocalGraph
-          case M0.nodeToM0Node (Node nid) rg of
-            Nothing -> do
-              return $ Right ( MockPopulateFailure nid $ "No M0.Node associated with " ++ show nid
-                             , [finish] )
-            Just m0n -> do
-              let procs = Node.getProcesses (Node nid) rg
-                  pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
+          let procs = Node.getProcesses (Node nid) rg
+              pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
+              ha = [ p | (p, _) <- pmap
+                       , s <- G.connectedTo p M0.IsParentOf rg
+                       , M0.s_type s == CST_HA ]
+          case ha of
+            [ha_p] -> do
               mack <- liftProcess $ Mock.sendMockCmd (Mock.SetProcessMap pmap) m0dPid
-              modify Local $ rlens fldM0Node . rfield .~ Just m0n
+              modify Local $ rlens fldProc . rfield .~ Just ha_p
               modify Local $ rlens fldMockAck . rfield .~ Just mack
               return $ Right ( MockPopulateFailure nid $ "default: " ++ show nid
                              , [process_map_set, timeout 10 mock_timed_out] )
+            _ -> do
+              return $ Right ( MockPopulateFailure nid $ "didn't find unique HA: " ++ show ha
+                             , [finish] )
 
     setPhaseIf process_map_set cmdAck $ \() -> do
-      PopulateMock m0dPid _ <-  getRequest
+      PopulateMock m0dPid _ <- getRequest
       mack <- liftProcess $ Mock.sendMockCmd Mock.MockInitialiseFinished m0dPid
       modify Local $ rlens fldMockAck . rfield .~ Just mack
       switch [mock_initialise_done, timeout 10 mock_timed_out]
@@ -203,17 +205,13 @@ testRules = do
     setPhaseIf mock_initialise_done cmdAck $ \() -> do
       switch [mock_up, timeout 20 mock_timed_out]
 
-    setPhaseIf mock_up ourNode $ \ks -> do
+    setPhaseNotified mock_up ourProc $ \_ -> do
       PopulateMock _ nid <-  getRequest
-      case ks of
-        KernelStarted{} ->
-          modify Local $ rlens fldRep . rfield .~ Just (MockRunning nid)
-        KernelStartFailure{} -> modify Local $ rlens fldRep . rfield .~ Just
-          (MockPopulateFailure nid $ "KernelStartFailure reported on " ++ show nid)
+      modify Local $ rlens fldRep . rfield .~ Just (MockRunning nid)
       continue finish
 
     directly mock_timed_out $ do
-      PopulateMock _ nid <-  getRequest
+      PopulateMock _ nid <- getRequest
       modify Local $ rlens fldRep . rfield .~ Just
         (MockPopulateFailure nid $ "Timed out waiting for mock on " ++ show nid)
       continue finish
@@ -222,9 +220,9 @@ testRules = do
     where
       fldReq = Proxy :: Proxy '("request", Maybe PopulateMock)
       fldRep = Proxy :: Proxy '("reply", Maybe PopulateMockReply)
-      fldM0Node = Proxy :: Proxy '("m0node", Maybe M0.Node)
+      fldProc = Proxy :: Proxy '("process", Maybe M0.Process)
       fldMockAck = Proxy :: Proxy '("mock-ack", Maybe Mock.MockCmdAck)
-      args = fldM0Node  =: Nothing
+      args = fldProc    =: Nothing
          <+> fldMockAck =: Nothing
          <+> fldReq     =: Nothing
          <+> fldRep     =: Nothing
@@ -332,17 +330,11 @@ run' transport pg extraRules to test = do
           InitialDataLoadFailed e -> fail e
 
       when (_to_run_decision_log to) $ do
-        _ <- serviceStartOnNodes [rcNodeId] DL.decisionLog
-               (DL.processOutput self) nids (\_ _ -> return ())
+        _ <- serviceStartOnNodes [rcNodeId] DL.decisionLog (DL.processOutput self) nids
         sayTest "Started decision log services."
 
       when (_to_run_sspl to) $ do
-        withSubscription [rcNodeId] (Proxy :: Proxy (HAEvent DeclareChannels)) $ do
-          void . serviceStartOnNodes [rcNodeId] sspl ssplConf nids $ \_ pid -> do
-            -- Wait for DeclareChannels for each service.
-            receiveWait
-             [ matchIf (\(eventPayload . pubValue -> DeclareChannels pid' _) -> const True $ pid == pid')
-                       (\_ -> return ()) ]
+        _ <- serviceStartOnNodes [rcNodeId] sspl ssplConf nids
         sayTest "Started SSPL services."
 
       let startM0Ds = do

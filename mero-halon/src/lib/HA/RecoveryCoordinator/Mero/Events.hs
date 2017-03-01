@@ -16,9 +16,6 @@ module HA.RecoveryCoordinator.Mero.Events
   , SyncComplete(..)
   , NewMeroClientProcessed(..)
   , NewMeroServer(..)
-   -- ** Mero kernel.
-  , MeroKernelFailed(..)
-  , MeroCleanupFailed(..)
   -- * Requests
   , GetSpielAddress(..)
   -- * Jobs
@@ -134,11 +131,13 @@ data AnyStateChange =
       }
   deriving (Typeable)
 
+deriving instance Show AnyStateChange
+
 -- | Event sent when the state of an object changes internally to Halon.
 --   This event should be sent *after* the state of the references objects
 --   has changed in the resource graph.
 newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
-  deriving (Monoid, Typeable)
+  deriving (Monoid, Typeable, Show)
 
 -- | Encoded version of 'InternalObjectStateChange'.
 newtype InternalObjectStateChangeMsg = InternalObjectStateChangeMsg BS.ByteString
@@ -175,16 +174,6 @@ instance ProcessEncode InternalObjectStateChange where
     where
       go (AnyStateChange obj old new dict) =
         put dict >> put (runPutLazy $ safePut obj) >> put (old, new)
-
--- | A message we can use to notify bootstrap that mero-kernel failed
--- to start.
-data MeroCleanupFailed = MeroCleanupFailed ProcessId String
-  deriving(Eq, Show, Typeable, Generic)
-
--- | A message we can use to notify bootstrap that mero-kernel failed
--- to start.
-data MeroKernelFailed = MeroKernelFailed ProcessId String
-  deriving (Eq, Show, Typeable, Generic)
 
 -- | Request abort on the given pool.
 data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
@@ -240,8 +229,6 @@ deriveSafeCopy 0 'base ''ForceObjectStateUpdateRequest
 deriveSafeCopy 0 'base ''GetFailureVector
 deriveSafeCopy 0 'base ''GetSpielAddress
 deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
-deriveSafeCopy 0 'base ''MeroCleanupFailed
-deriveSafeCopy 0 'base ''MeroKernelFailed
 deriveSafeCopy 0 'base ''QuiesceSNSOperation
 deriveSafeCopy 0 'base ''RestartSNSOperationRequest
 deriveSafeCopy 0 'base ''UpdateResult

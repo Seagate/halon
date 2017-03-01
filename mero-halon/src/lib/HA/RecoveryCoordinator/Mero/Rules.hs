@@ -9,28 +9,23 @@
 
 module HA.RecoveryCoordinator.Mero.Rules where
 
+import           Control.Distributed.Process (usend, sendChan)
+import           Control.Lens
 import qualified Data.UUID as UUID
-import HA.EventQueue
-import HA.ResourceGraph as G
-import HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.Service.Events
+import           HA.EventQueue
+import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
-import HA.Resources.Mero.Note
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import           HA.ResourceGraph as G
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources        as R
-import HA.Services.Mero
-import Mero.Notification (Get(..), GetReply(..))
-import Mero.Notification.HAState (Note(..))
-
-import Control.Lens
-import Control.Distributed.Process (usend, sendChan)
-
-import Network.CEP
-
-import Prelude hiding (id)
+import           HA.Resources.Mero.Note
+import           Mero.Notification (Get(..), GetReply(..))
+import           Mero.Notification.HAState (Note(..))
+import           Network.CEP
+import           Prelude hiding (id)
 
 -- | Timeout between entrypoint retry.
 entryPointTimeout :: Int
@@ -123,11 +118,6 @@ meroRules = do
            <$> G.connectedTo (M0.Pool pool) R.Has rg
     phaseLog "debug" $ "FailureVector="++show mv
     liftProcess $ sendChan port mv
-
-  defineSimple "mero:service-started" $ \(ServiceStartedInternal _node (_::MeroConf) pid) -> do
-    phaseLog "info" "request mero channel"
-    phaseLog "service.pid" $ show pid
-    liftProcess $ usend pid ServiceStateRequest
 
   ruleGetEntryPoint
 

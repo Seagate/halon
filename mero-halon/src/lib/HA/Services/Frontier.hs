@@ -16,6 +16,7 @@ module HA.Services.Frontier
     , HA.Services.Frontier.__resourcesTable
     , HA.Services.Frontier.__remoteTableDecl
     , frontier__static
+    , module HA.Services.Frontier.Interface
     ) where
 
 import qualified Data.ByteString      as B
@@ -37,11 +38,11 @@ import Network hiding (Service)
 
 import HA.Aeson
 import HA.Debug
-import HA.EventQueue (promulgate)
 import HA.SafeCopy
 import HA.Service hiding (configDict)
 import HA.Service.TH
 import HA.Services.Frontier.Command
+import HA.Services.Frontier.Interface
 
 data FrontierConf =
     FrontierConf { _fcPort :: Int }
@@ -67,7 +68,7 @@ $(generateDicts ''FrontierConf)
 $(deriveService ''FrontierConf 'frontierSchema [])
 
 createServerSocket :: Int -> Process Socket
-createServerSocket port = liftIO $ listenOn (PortNumber $ fromIntegral port)
+createServerSocket port = liftIO $ listenOn (PortNumber $! fromIntegral port)
 
 tcpServerLoop :: Socket -> Process ()
 tcpServerLoop sock = forever $ do
@@ -82,14 +83,14 @@ dialog h = loop
   where
     loop = hReadCommand h >>= \case
         CM r -> do
-          self <- getSelfPid
-          _ <- promulgate (r, self)
+          sendRC interface r
           fix $ \go -> receiveWait
-            [ match $ \resp -> do
-                liftIO $ B.hPut h resp >> hFlush h
-                go
-            , match return
-            ] :: Process ()
+            [ receiveSvc interface $ \case
+                FrontierChunk resp -> do
+                  liftIO $ B.hPut h resp >> hFlush h
+                  go
+                FrontierDone -> return ()
+            ]
           loop
         Quit -> return ()
 
@@ -99,7 +100,8 @@ cleanupHandle h = liftIO $ hClose h
 hReadCommand :: Handle -> Process Command
 hReadCommand h = do
     ln <- liftIO $ B.hGetLine h
-    case parseCommand ln of
+    nid <- getSelfNode
+    case parseCommand ln nid of
       Just cmd -> return cmd
       _        -> hReadCommand h
 
@@ -125,8 +127,11 @@ remotableDecl [ [d|
       confirm  _ pid = usend pid ()
 
     frontier :: Service FrontierConf
-    frontier = Service "frontier"
+    frontier = Service (ifServiceName interface)
                $(mkStaticClosure 'frontierFunctions)
                ($(mkStatic 'someConfigDict)
                  `staticApply` $(mkStatic 'configDictFrontierConf))
     |] ]
+
+instance HasInterface FrontierConf FrontierReply FrontierCmd where
+  getInterface _ = HA.Services.Frontier.Interface.interface

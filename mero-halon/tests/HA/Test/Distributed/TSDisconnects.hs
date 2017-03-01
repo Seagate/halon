@@ -130,16 +130,16 @@ test = testCase "TSDisconnects" $
 
       whereisRemoteAsync nid3 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
       forM_ (zip [1,3..] [m0, m1, m2]) $ \(i, m) -> do
         say $ "Isolating ts node " ++ m ++ " ..."
         liftIO $ isolateHostsAsUser "root" [m] ms
-        send pingPid $ show (i :: Int)
+        send pingPid $! Ping.DummyEvent (show (i :: Int))
         expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show i
 
         say $ "Rejoining ts node " ++ m ++ " ..."
         liftIO $ rejoinHostsAsUser "root" [m] ms
-        send pingPid $ show (i + 1)
+        send pingPid $! Ping.DummyEvent (show (i + 1 :: Int))
         expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show (i + 1)

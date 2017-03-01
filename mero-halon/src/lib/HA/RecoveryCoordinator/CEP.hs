@@ -1,30 +1,46 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeOperators     #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.CEP
--- Copyright : (C) 2013-2016 Xyratex Technology Limited.
+-- Copyright : (C) 2013-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Recovery coordinator CEP rules
 module HA.RecoveryCoordinator.CEP where
 
+import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
+import           Control.Lens
+import           Control.Monad (void, when)
+import           Data.Binary (Binary)
+import           Data.Foldable (for_)
+import           Data.Monoid
+import           Data.Proxy
+import qualified Data.Text as T
+import           Data.Typeable (Typeable)
+import           Data.Vinyl hiding ((:~:))
+import           GHC.Generics
 import qualified HA.EQTracker as EQT
 import           HA.EventQueue
 import           HA.NodeUp
+import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
+import           HA.RecoveryCoordinator.Castor.Rules
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Mero.Events
+import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
+import           HA.RecoveryCoordinator.Mero.Transitions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 import qualified HA.RecoveryCoordinator.RC.Actions.Update as Update
-import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
-import           HA.RecoveryCoordinator.Castor.Rules
+import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import qualified HA.RecoveryCoordinator.RC.Rules.Debug as Debug (rules)
 import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.ResourceGraph as G
@@ -32,43 +48,21 @@ import           HA.Resources
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor as M0
 import           HA.Resources.HalonVars
+import           HA.Resources.Mero (nodeToM0Node)
 import           HA.SafeCopy
 import           HA.Service
+import           HA.Service.Interface
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
-import           HA.Services.Dummy
 import           HA.Services.Frontier.CEP (frontierRules)
-import           HA.Services.Ping
-import           HA.Services.SSPL (sspl)
-import qualified HA.Services.SSPL.CEP (ssplRules, initialRule)
-import           HA.Services.SSPL.HL.CEP (ssplHLRules)
-import           Network.CEP
-
-import           HA.RecoveryCoordinator.Castor.Cluster.Rules (clusterRules)
-import           HA.RecoveryCoordinator.Mero.Events
-import qualified HA.RecoveryCoordinator.Mero.Rules (meroRules)
-import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
-import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources.Mero (nodeToM0Node)
 import           HA.Services.Mero.RC (rules)
-import           HA.Services.SSPL (sendInterestingEvent, sendNodeCmdChan)
+import           HA.Services.Ping
+import qualified HA.Services.SSPL.CEP (sendInterestingEvent, sendNodeCmd, ssplRules)
+import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
-import           HA.Services.SSPL.LL.RC.Actions (findActiveSSPLChannel)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
-
-import           Data.Monoid -- XXX: remote ifdef if possible
-import qualified Data.Text as T
-
-import           Control.Category
-import           Control.Lens
-import           Control.Monad (void, when)
-import           Data.Binary (Binary)
-import           Data.Foldable (for_)
-import           Data.Proxy
-import           Data.Typeable (Typeable)
-import           Data.Vinyl hiding ((:~:))
-import           GHC.Generics
-import           Network.HostName
+import           Network.CEP
 import qualified Network.CEP.Log as Log
+import           Network.HostName
 import           Prelude hiding ((.), id)
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
@@ -99,8 +93,6 @@ rcInitRule argv = do
       Update.applyTodoNode
       liftProcess $ sayRC "RC.initialRule"
       HA.RecoveryCoordinator.RC.Rules.initialRule argv
-      liftProcess $ sayRC "CEP.initialRule"
-      HA.Services.SSPL.CEP.initialRule sspl
       -- guarantee that we could make progress
       liftProcess $ sayRC "sync"
       syncGraphBlocking
@@ -129,13 +121,12 @@ rcRules argv additionalRules = do
     initRule $ rcInitRule argv
     sequence_ [ ruleNodeUp argv
               , ruleRecoverNode argv
-              , ruleDummyEvent
-              , ruleSyncPing
+              , rulePingSvcEvent
               , rulePidRequest
               ]
     HA.RecoveryCoordinator.Service.Rules.rules
     Debug.rules argv
-    HA.Services.SSPL.CEP.ssplRules sspl
+    HA.Services.SSPL.CEP.ssplRules
     castorRules
     frontierRules
     ssplHLRules
@@ -202,24 +193,23 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
        <+> fldReq     =: Nothing
        <+> fldRep     =: Nothing
 
--- | Print a noisy ('say') message when RC receives 'DummyEvent'. Used
--- in testing.
+-- | Handle 'PingSvcEvent'
 --
--- TODO: Port tests to subscription and remove use of 'sayRC'
-ruleDummyEvent :: Definitions RC () -- XXX: move to rules file
-ruleDummyEvent = defineSimpleTask "dummy-event" $ \(DummyEvent str) -> do
-  i <- getNoisyPingCount
-  liftProcess $ sayRC $ "received DummyEvent " ++ str
-  liftProcess $ sayRC $ "Noisy ping count: " ++ show i
-
--- | Request an explicit graph sync with 'SyncPing'.
-ruleSyncPing :: Definitions RC () -- XXX: move to rules file
-ruleSyncPing = defineSimple "sync-ping" $
-      \(HAEvent uuid (SyncPing str)) -> do
-        eqPid <- lsEQPid <$> get Global
-        registerSyncGraph $ do
-          liftProcess $ sayRC $ "received SyncPing " ++ str
-          usend eqPid uuid
+-- TODO: This is only really used for testing, we should rewrite those
+-- and remove these rules from here completely.
+rulePingSvcEvent :: Definitions RC ()
+rulePingSvcEvent = defineSimple "ping-svc-event" $ \case
+  HAEvent uuid (DummyEvent str) -> do
+    todo uuid
+    i <- getNoisyPingCount
+    liftProcess $ sayRC $ "received DummyEvent " ++ str
+    liftProcess $ sayRC $ "Noisy ping count: " ++ show i
+    done uuid
+  HAEvent uuid (SyncPing str) -> do
+    eqPid <- lsEQPid <$> get Global
+    registerSyncGraph $ do
+      liftProcess $ sayRC $ "received SyncPing " ++ str
+      usend eqPid uuid
 
 -- | A reply used by 'recoverJob' in 'ruleRecoverNode'.
 newtype RecoverNodeFinished = RecoverNodeFinished Node
@@ -367,15 +357,14 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
         _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed
                                   ( "{ 'hostname': \"" <> T.pack hst <> "\", "
                                   <> " 'reason': \"Lost connection to RC\" }")
-                        in sendInterestingEvent msg
+                        in HA.Services.SSPL.CEP.sendInterestingEvent msg
           | isServer -> do
-              mchan <- findActiveSSPLChannel
-              case mchan of
-                Just chan ->
-                  sendNodeCmdChan chan Nothing (IPMICmd IPMI_CYCLE (T.pack hst))
-                Nothing ->
-                  phaseLog "warn" $ "Cannot find SSPL channel to send power "
-                                  ++ "cycle command."
+              nodesOnHost host >>= \case
+                [] -> do
+                  phaseLog "warn" $ "Cannot find nodes corresponding to " ++ show host
+                nodes -> void $ do
+                  HA.Services.SSPL.CEP.sendNodeCmd nodes Nothing $
+                    IPMICmd IPMI_CYCLE (T.pack hst)
           | otherwise ->
               phaseLog "warn" $ show host ++ " not labeled as server or client"
 
@@ -402,8 +391,7 @@ sendLogs :: Log.Event (LogType RC) -> LoopState -> Process ()
 sendLogs logs ls = do
    if null nodes
    then traceLogs logs
-   else for_ nodes $ \(Node nid) ->
-          nsendRemote nid (serviceLabel decisionLog) logs
+   else for_ nodes $ \(Node nid) -> sendSvc (getInterface decisionLog) nid logs
   where
    rg = lsGraph ls
    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]

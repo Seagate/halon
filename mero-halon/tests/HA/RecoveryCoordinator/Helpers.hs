@@ -8,7 +8,7 @@
 -- Collection of helper functions used by the HA.RecoveryCoordinator
 -- family of tests.
 --
--- TODO: Fold into other helpers and only have one module (or 2, for mero).
+-- TODO: Fold into other helpers and only have one module.
 module HA.RecoveryCoordinator.Helpers where
 
 import Control.Distributed.Process
@@ -82,15 +82,8 @@ serviceStartOnNodes :: Configuration a
                     -- ^ Service 'Configuration'
                     -> [NodeId]
                     -- ^ Nodes to start the service on.
-                    -> (NodeId -> ProcessId -> Process ())
-                    -- ^ An action to perform once we hear that
-                    -- service has been registered. This can be used
-                    -- to wait for any additional ‘ready’ messages
-                    -- from the service for example. 'NodeId' for
-                    -- which we he started a service on and
-                    -- 'ProcessId' of the service are provided.
                     -> Process [(NodeId, ProcessId)]
-serviceStartOnNodes eqs svc conf nids act = withSubscription eqs startedEvent $ do
+serviceStartOnNodes eqs svc conf nids = withSubscription eqs startedEvent $ do
   for_ nids $ \nid -> do
     void . promulgateEQ eqs . encodeP $ ServiceStartRequest Start (Node nid) svc conf []
 
@@ -102,7 +95,6 @@ serviceStartOnNodes eqs svc conf nids act = withSubscription eqs startedEvent $ 
             ServiceInfo svci _ <- decodeP msg
             case maybe False (svc ==) (cast svci) of
               True -> do
-                act nid pid
                 loop (filter (/= nid) waits) ((nid, pid) : results)
               False -> loop waits results
           False -> loop waits results

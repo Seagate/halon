@@ -117,7 +117,7 @@ test = testCase "TSRecovers" $
 
       whereisRemoteAsync nid2 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
       forM_ (zip [1,3..] [m0, m1]) $ \(i, m) -> do

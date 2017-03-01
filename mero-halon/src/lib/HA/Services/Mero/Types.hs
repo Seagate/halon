@@ -11,12 +11,37 @@
 --
 -- Types used by @halon:m0d@ service.
 module HA.Services.Mero.Types
-  ( module HA.Services.Mero.Types
-  , KeepaliveTimedOut(..)
+  ( InternalServiceReconnectReply(..)
+  , InternalServiceReconnectRequest(..)
+  , MeroConf(..)
+  , MeroFromSvc(..)
+  , MeroKernelConf(..)
+  , MeroServiceInstance(..)
+  , MeroToSvc(..)
+  , NotificationMessage(..)
+  , ProcessConfig(..)
+  , ProcessControlMsg(..)
+  , ProcessRunType(..)
+  , interface
+  , myResourcesTable
+    -- * Generated stuff
+  , configDictMeroConf
+  , configDictMeroConf__static
+  , HA.Services.Mero.Types.__remoteTable
   ) where
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
+import           Data.Binary (Binary)
+import           Data.ByteString (ByteString)
+import           Data.Hashable (Hashable)
+import           Data.Monoid ((<>))
+import           Data.Serialize.Get (runGet)
+import           Data.Serialize.Put (runPut)
+import           Data.Typeable (Typeable)
+import           Data.UUID as UUID
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
 import           HA.Aeson hiding (encode, decode)
 import           HA.ResourceGraph
 import qualified HA.Resources as R
@@ -24,19 +49,10 @@ import           HA.Resources.HalonVars
 import           HA.Resources.Mero as M0
 import           HA.SafeCopy
 import qualified HA.Service
+import           HA.Service.Interface
 import           HA.Service.TH
 import           Mero.ConfC (Fid, strToFid)
 import           Mero.Notification (Set)
-
-import           Data.Binary (Binary, encode, decode)
-import           Data.ByteString (ByteString)
-import           Data.Hashable (Hashable)
-import           Data.Monoid ((<>))
-import           Data.Serialize (Serialize(..))
-import           Data.Typeable (Typeable)
-import           Data.UUID as UUID
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
 import           Options.Schema
 import           Options.Schema.Builder
 import           Language.Haskell.TH (mkName)
@@ -65,7 +81,6 @@ data MeroConf = MeroConf
    deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroConf
 
-
 instance ToJSON MeroConf where
   toJSON (MeroConf haAddress profile process ha rm kaf kat kernel) =
     object [ "endpoint_address" .= haAddress
@@ -78,62 +93,78 @@ instance ToJSON MeroConf where
            , "kernel_config"    .= kernel
            ]
 
--- | 'SendPort' with 'SafeCopy' instance.
-newtype TypedChannel a = TypedChannel (SendPort a)
-    deriving (Eq, Show, Typeable, Binary, Hashable)
+-- | Values that can be sent from RC to the halon:m0d service.
+data MeroToSvc
+  = ServiceReconnectRequest
+  | Cleanup !Bool
+  | PerformNotification !NotificationMessage
+  | ProcessMsg !ProcessControlMsg
+  deriving (Eq, Show, Generic, Typeable)
 
-instance (Binary a, Typeable a) => SafeCopy (TypedChannel a) where
-  getCopy = contain $ TypedChannel . decode <$> get
-  putCopy  (TypedChannel p) = contain $ put $ encode p
+-- | Values that can be sent from the halon:m0d service to RC.
+data MeroFromSvc
+  = KeepaliveTimedOut [(Fid, M0.TimeSpec)]
+  | MeroKernelFailed !NodeId String
+  | MeroCleanupFailed !NodeId String
+  | NotificationAck !Word64 !Fid
+  | NotificationFailure !Word64 !Fid
+  | ProcessControlResultConfigureMsg !NodeId !UUID.UUID (Either (M0.Process, String) M0.Process)
+  | ProcessControlResultMsg !NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
+  | ProcessControlResultStopMsg !NodeId (Either (M0.Process, String) M0.Process)
+  | CheckCleanup !NodeId
+  deriving (Eq, Generic, Show, Typeable)
 
--- | Relation index connecting channels used by @halon:m0d@ service
--- and the corresponding 'R.Node'.
-data MeroChannel = MeroChannel deriving (Eq, Show, Typeable, Generic)
-instance Hashable MeroChannel
+-- | halon:m0d 'Interface'
+interface :: Interface MeroToSvc MeroFromSvc
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "m0d"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
 
--- | Acknowledgement sent upon successfully calling m0_ha_state_set.
-data NotificationAck = NotificationAck Word64 Fid
-  deriving (Eq, Generic, Typeable)
-instance Hashable NotificationAck
-
--- | Acknowledgement that delivery for cetrain procedd definitely failed.
-data NotificationFailure = NotificationFailure Word64 Fid
-  deriving (Eq, Generic, Typeable)
-instance Hashable NotificationFailure
+instance HasInterface MeroConf MeroToSvc MeroFromSvc where
+  getInterface _ = interface
 
 -- | A 'Set' of outgoing notifications from @halon:m0d@ to mero
 -- processes along with epoch information.
 data NotificationMessage = NotificationMessage
-  { notificationEpoch   :: Word64
+  { notificationEpoch   :: !Word64
   -- ^ Current epoch
   , notificationMessage :: Set
   -- ^ Notification 'Set'
   , notificationRecipients :: [Fid]
   -- ^ 'Fid's of the recepient mero processes.
-  } deriving (Typeable, Generic, Show)
-instance Binary NotificationMessage
+  } deriving (Eq, Typeable, Generic, Show)
 instance Hashable NotificationMessage
-
--- | Request information about service
-data ServiceStateRequest = ServiceStateRequest
-  deriving (Show, Typeable, Generic)
-instance Binary ServiceStateRequest
 
 -- | Request reconnect to the service
 --
 -- This is a workaround that asks the service to provide new
 -- communication channels for use with control/notification processes.
 -- (HALON-546)
-data ServiceReconnectRequest = ServiceReconnectRequest
+newtype InternalServiceReconnectRequest = InternalServiceReconnectRequest ProcessId
   deriving (Show, Typeable, Generic)
-instance Binary ServiceReconnectRequest
+instance Binary InternalServiceReconnectRequest
 
 -- | Reply to 'ServiceReconnectRequest.
-data ServiceReconnectReply = ServiceReconnectReply
+data InternalServiceReconnectReply = InternalServiceReconnectReply
   (SendPort NotificationMessage)
   (SendPort ProcessControlMsg)
   deriving (Show, Typeable, Generic)
-instance Binary ServiceReconnectReply
+instance Binary InternalServiceReconnectReply
 
 -- | How to run a particular Mero Process. Processes can be hosted
 --   in three ways:
@@ -145,7 +176,6 @@ data ProcessRunType =
   | M0T1FS -- ^ Run 'm0t1fs' service.
   | CLOVIS String -- ^ Run 'clovis' service under the given name.
   deriving (Ord, Eq, Show, Typeable, Generic)
-instance Binary ProcessRunType
 instance Hashable ProcessRunType
 
 -- | m0d process configuration type.
@@ -153,109 +183,25 @@ instance Hashable ProcessRunType
 -- A process may either fetch its configuration from local conf.xc
 -- file, or it may connect to a confd server.
 data ProcessConfig =
-  ProcessConfigLocal M0.Process ByteString
+  ProcessConfigLocal !M0.Process !ByteString
   -- ^ Process should store and use local configuration. Provide
   -- @conf.xc@ content.
-  | ProcessConfigRemote M0.Process
+  | ProcessConfigRemote !M0.Process
   -- ^ Process will will fetch configuration from remote location.
   deriving (Ord, Eq, Show, Typeable, Generic)
-instance Binary ProcessConfig
 instance Hashable ProcessConfig
 
 -- | Control system level m0d processes.
 data ProcessControlMsg =
-    StartProcess ProcessRunType M0.Process
-  | StopProcess ProcessRunType M0.Process
-  | ConfigureProcess ProcessRunType ProcessConfig Bool UUID.UUID
+    StartProcess !ProcessRunType !M0.Process
+  | StopProcess !ProcessRunType !M0.Process
+  | ConfigureProcess !ProcessRunType !ProcessConfig !Bool !UUID.UUID
   -- ^ @ConfigureProcess runType config runMkfs requestUUID@
   --
   -- 'ProcessControlResultConfigureMsg' which is used as the reply
   -- should include the @requestUUID@.
   deriving (Ord, Eq, Show, Typeable, Generic)
-instance Binary ProcessControlMsg
 instance Hashable ProcessControlMsg
-
--- | Result of a process control invocation. Either it succeeded, or
---   it failed with a message.
-data ProcessControlResultMsg =
-    ProcessControlResultMsg NodeId (Either (M0.Process, String) (M0.Process, Maybe Int))
-  deriving (Eq, Generic, Show, Typeable)
-instance Hashable ProcessControlResultMsg
-
--- | Results of @systemctl stop@ operations.
-data ProcessControlResultStopMsg =
-      ProcessControlResultStopMsg NodeId (Either (M0.Process, String) M0.Process)
-  deriving (Eq, Generic, Show, Typeable)
-instance Hashable ProcessControlResultStopMsg
-
--- | Base version of 'ProcessControlResultConfigureMsg'.
-data ProcessControlResultConfigureMsg_v0 =
-      ProcessControlResultConfigureMsg_v0 NodeId (Either (M0.Process, String) M0.Process)
-  deriving (Eq, Generic, Show, Typeable)
-instance Hashable ProcessControlResultConfigureMsg_v0
-
--- | Results of @mero-mkfs@ @systemctl@ invocations.
-data ProcessControlResultConfigureMsg =
-      ProcessControlResultConfigureMsg NodeId UUID.UUID (Either (M0.Process, String) M0.Process)
-      -- ^ @ProcessControlResultConfigureMsg nid requestUUID result@
-      --
-      -- @requestUUID@ should come from 'ConfigureProcess' so the
-      -- caller can identify its reply.
-  deriving (Eq, Generic, Show, Typeable)
-instance Hashable ProcessControlResultConfigureMsg
-
--- | We use 'UUID.nil' for the 'UUID.UUID' that's missing in
--- 'ProcessControlResultConfigureMsg_v0': no configure request will
--- have such UUID and RC will discard it. This is desired because if
--- RC has restarted and we have mid-flight configure result, it's
--- stale and RC will restart the rule anyway.
-instance Migrate ProcessControlResultConfigureMsg where
-  type MigrateFrom ProcessControlResultConfigureMsg = ProcessControlResultConfigureMsg_v0
-  migrate (ProcessControlResultConfigureMsg_v0 n r) =
-    ProcessControlResultConfigureMsg n UUID.nil r
-
--- | The process hasn't replied to keepalive request for a too long.
--- Carry this information to RC.
-data KeepaliveTimedOut =
-  KeepaliveTimedOut [(Fid, M0.TimeSpec)]
-  -- ^ List of processes that we have not replied to keepalive fast
-  -- enough when we last checked along with the time we have lasts
-  -- heard from them.
-  --
-  -- TODO: Use NonEmpty
-  deriving (Eq, Generic, Show, Typeable)
-instance Hashable KeepaliveTimedOut
-
--- | Information about the @halon:m0d@ process as along with
--- communication channels used by the service.
-data DeclareMeroChannel =
-    DeclareMeroChannel
-    { dmcPid     :: !ProcessId
-    -- ^ @halon:m0d@ 'ProcessId'
-    , dmcChannel :: !(TypedChannel NotificationMessage)
-    -- ^ Notification message channel
-    , dmcCtrlChannel :: !(TypedChannel ProcessControlMsg)
-    -- ^ Channel used to request various process control actions on
-    -- the hosting node.
-    }
-    deriving (Generic, Typeable)
-instance Hashable DeclareMeroChannel
-
--- | 'DeclareMeroChannel' has been acted upon and registered in the
--- RG. 'MeroChannelDeclared' is used to inform the rest of the system
--- that the service is ready to be communicated with.
-data MeroChannelDeclared =
-    MeroChannelDeclared
-    { mcdPid     :: !ProcessId
-    -- ^ @halon:m0d@ 'ProcessId'
-    , mcdChannel :: !(TypedChannel NotificationMessage)
-    -- ^ Notification message channel
-    , mcdCtrlChannel :: !(TypedChannel ProcessControlMsg)
-    -- ^ Channel used to request various process control actions on
-    -- the hosting node.
-    }
-    deriving (Generic, Typeable)
-instance Hashable MeroChannelDeclared
 
 -- | A guide for which instance of @halon:m0d@ service to use when
 -- invoking operations on the service.
@@ -265,7 +211,6 @@ instance Hashable MeroChannelDeclared
 newtype MeroServiceInstance = MeroServiceInstance { _msi_m0d :: HA.Service.Service MeroConf }
   deriving (Eq, Show, Generic, Typeable)
 instance Hashable MeroServiceInstance
-
 
 -- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf
@@ -320,122 +265,57 @@ kernelSchema = MeroKernelConf <$> uuid
             <> metavar "UUID"
 
 storageIndex ''MeroConf                               "c6625352-ee65-486d-922c-843a5e1b6063"
-storageIndex ''MeroChannel                            "998366fa-dc24-4325-83b1-32f27b146d03"
 storageIndex ''MeroServiceInstance                    "ef91ea04-a66e-434e-bfbd-e4449c5d947e"
-storageIndexQ [t| TypedChannel NotificationMessage |] "5adbe0dc-f0d6-44c4-81e9-5d5accd3bf4a"
-storageIndexQ [t| TypedChannel ProcessControlMsg |]   "1c924292-d246-46e9-8a24-79b7daa4e346"
 serviceStorageIndex ''MeroConf                        "9ea7007a-51a8-4e2b-9208-a4e0944c54b2"
-mkDictsQ 
+mkDictsQ
   [ (mkName "resourceDictMeroServiceInstance", [t| MeroServiceInstance |])
-  , (mkName "storageDictMeroChannel_1",        [t| MeroChannel |])
-  , (mkName "resourceDictMeroChannel",         [t| TypedChannel NotificationMessage |])
-  , (mkName "resourceDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
   ]
   [ (mkName "relationDictMeroServiceInstance"
       , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
-    , (mkName "relationDictMeroChanelServiceProcessChannel"
-      , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage |]))
-    , (mkName "relationDictMeroChanelServiceProcessControlChannel" 
-      , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg |]))
   ]
 mkStorageDictsQ
-  [ (mkName "storageDictMeroChannel_",        [t| MeroChannel |])
-  , (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
-  , (mkName "storageDictMeroChannel",         [t| TypedChannel NotificationMessage |])
-  , (mkName "storageDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
+  [ (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
   ]
   [ (mkName "storageRelationDictMeroServiceInstance"
     , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
-  , (mkName "storageDictMeroChanelServiceProcessChannel"
-    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage|]))
-  , (mkName "storageDictMeroChanelServiceProcessControlChannel"
-    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg|]))
   ]
 generateDicts       ''MeroConf
-deriveService        ''MeroConf 'meroSchema
+deriveService       ''MeroConf 'meroSchema
   [ 'resourceDictMeroServiceInstance
-  , 'resourceDictMeroChannel
-  , 'resourceDictControlChannel
   , 'relationDictMeroServiceInstance
-  , 'relationDictMeroChanelServiceProcessChannel
-  , 'relationDictMeroChanelServiceProcessControlChannel
   , 'storageDictMeroServiceInstance
-  , 'storageDictMeroChannel
-  , 'storageDictMeroChannel_
-  , 'storageDictMeroChannel_1
-  , 'storageDictControlChannel
   , 'storageRelationDictMeroServiceInstance
-  , 'storageDictMeroChanelServiceProcessChannel
-  , 'storageDictMeroChanelServiceProcessControlChannel
   ]
 mkStorageResRelQ
-  [ (mkName "storageDictMeroChannel_",        [t| MeroChannel |])
-  , (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
-  , (mkName "storageDictMeroChannel",         [t| TypedChannel NotificationMessage |])
-  , (mkName "storageDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
+  [ (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
   ]
   [ (mkName "storageRelationDictMeroServiceInstance"
     , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
-  , (mkName "storageDictMeroChanelServiceProcessChannel"
-    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage|]))
-  , (mkName "storageDictMeroChanelServiceProcessControlChannel"
-    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg|]))
   ]
-
-instance Resource MeroChannel where
-  resourceDict = $(mkStatic 'storageDictMeroChannel_1)
 
 instance Resource MeroServiceInstance where
   resourceDict = $(mkStatic 'resourceDictMeroServiceInstance)
-
-instance Resource (TypedChannel NotificationMessage) where
-  resourceDict = $(mkStatic 'resourceDictMeroChannel)
-
-instance Resource (TypedChannel ProcessControlMsg) where
-  resourceDict = $(mkStatic 'resourceDictControlChannel)
 
 instance Relation R.Has R.Cluster MeroServiceInstance where
   type CardinalityFrom R.Has R.Cluster MeroServiceInstance = 'AtMostOne
   type CardinalityTo R.Has R.Cluster MeroServiceInstance   = 'AtMostOne
   relationDict = $(mkStatic 'relationDictMeroServiceInstance)
 
-instance Relation MeroChannel R.Node (TypedChannel NotificationMessage) where
-    type CardinalityFrom MeroChannel R.Node (TypedChannel NotificationMessage)
-      = 'AtMostOne
-    type CardinalityTo MeroChannel R.Node (TypedChannel NotificationMessage)
-      = 'AtMostOne
-    relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessChannel)
-
-instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
-    type CardinalityFrom MeroChannel R.Node (TypedChannel ProcessControlMsg)
-      = 'AtMostOne
-    type CardinalityTo MeroChannel R.Node (TypedChannel ProcessControlMsg)
-      = 'AtMostOne
-    relationDict = $(mkStatic 'relationDictMeroChanelServiceProcessControlChannel)
-
 type instance HA.Service.ServiceState MeroConf =
   (ProcessId, SendPort NotificationMessage, SendPort ProcessControlMsg)
 
 myResourcesTable :: RemoteTable -> RemoteTable
 myResourcesTable
-  = $(makeResource [t| TypedChannel ProcessControlMsg |])
-  . $(makeResource [t| TypedChannel NotificationMessage |])
-  . $(makeResource [t| MeroServiceInstance |])
-  . $(makeRelation [t| R.Node |] [t| MeroChannel |] [t| TypedChannel NotificationMessage |])
-  . $(makeRelation [t| R.Node |] [t| MeroChannel |] [t| TypedChannel ProcessControlMsg |])
+  = $(makeResource [t| MeroServiceInstance |])
   . $(makeRelation [t| R.Cluster |] [t| R.Has |] [t| MeroServiceInstance |])
   . HA.Services.Mero.Types.__resourcesTable
 
-deriveSafeCopy 0 'base ''DeclareMeroChannel
-deriveSafeCopy 0 'base ''KeepaliveTimedOut
-deriveSafeCopy 0 'base ''MeroChannel
-deriveSafeCopy 0 'base ''MeroChannelDeclared
 deriveSafeCopy 0 'base ''MeroConf
+deriveSafeCopy 0 'base ''MeroFromSvc
 deriveSafeCopy 0 'base ''MeroKernelConf
 deriveSafeCopy 0 'base ''MeroServiceInstance
-deriveSafeCopy 0 'base ''NotificationAck
-deriveSafeCopy 0 'base ''NotificationFailure
-deriveSafeCopy 0 'base ''ProcessControlResultConfigureMsg_v0
-deriveSafeCopy 1 'extension ''ProcessControlResultConfigureMsg
-deriveSafeCopy 0 'base ''ProcessControlResultMsg
-deriveSafeCopy 0 'base ''ProcessControlResultStopMsg
+deriveSafeCopy 0 'base ''MeroToSvc
+deriveSafeCopy 0 'base ''NotificationMessage
+deriveSafeCopy 0 'base ''ProcessConfig
+deriveSafeCopy 0 'base ''ProcessControlMsg
+deriveSafeCopy 0 'base ''ProcessRunType

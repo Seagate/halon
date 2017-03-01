@@ -58,7 +58,7 @@ import qualified Language.C.Types as C
 #endif
 
 -- @bitmap.h m0_bitmap@
-data Bitmap = Bitmap Int [Word64]
+data Bitmap = Bitmap !Int [Word64]
   deriving (Eq, Show, Generic)
 
 instance Binary Bitmap

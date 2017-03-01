@@ -108,7 +108,7 @@ test = testCase "TSTotalIsolation2" $
 
       whereisRemoteAsync nid3 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
       forM_ (zip [m0, m1, m2] nhs) $ \(m, nh) -> do
@@ -116,7 +116,7 @@ test = testCase "TSTotalIsolation2" $
         systemThere [m] "pkill halond; true"
         void $ liftIO $ waitForCommand_ $ handleGetInput nh
 
-      send pingPid "1"
+      send pingPid $! Ping.DummyEvent "1"
       -- TS shouldn't be able to process the event
       False <- expectTimeoutLog 1000000 tsNodes $ isInfixOf $
         "received DummyEvent 1"
@@ -125,5 +125,5 @@ test = testCase "TSTotalIsolation2" $
         say $ "Restarting ts node " ++ m ++ " ..."
         spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
 
-      send pingPid "2"
+      send pingPid $! Ping.DummyEvent "2"
       expectLog tsNodes $ isInfixOf $ "received DummyEvent 2"

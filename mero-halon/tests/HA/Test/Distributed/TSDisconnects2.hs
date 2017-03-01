@@ -119,17 +119,17 @@ test = testCase "TSDisconnects2" $
       whereisRemoteAsync nid3 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       say "Testing ping service ..."
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
       forM_ (zip3 [1,3..] [m0, m1, m2] nhs) $ \(i, m, nh) -> do
         say $ "killing ts node " ++ m ++ " ..."
         systemThere [m] "pkill halond; true"
         _ <- liftIO $ waitForCommand_ $ handleGetInput nh
-        send pingPid $ show (i :: Int)
+        send pingPid $! Ping.DummyEvent (show (i :: Int))
         expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show i
 
         say $ "Restarting ts node " ++ m ++ " ..."
         _ <- spawnNode_ m ("./halond -l " ++ m ++ ":9000" ++ " 2>&1")
-        send pingPid $ show (i + 1)
+        send pingPid $! Ping.DummyEvent (show (i + 1 :: Int))
         expectLog tsNodes $ isSuffixOf $ "received DummyEvent " ++ show (i + 1)

@@ -1,74 +1,52 @@
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies #-}
-
+-- SSPLHL service implementation
 module HA.Services.SSPLHL where
 
-import Prelude hiding ((<$>), (<*>), id, mapM_)
-import HA.Aeson (ToJSON, decode, encode)
-import HA.EventQueue (promulgate)
-import HA.Debug
-import HA.Logger
-import HA.SafeCopy
-import HA.Service
-import HA.Service.TH
-import qualified HA.Services.SSPL.HL.StatusHandler as StatusHandler
-import qualified HA.Services.SSPL.Rabbit as Rabbit
-
-import SSPL.Bindings
-
-import Control.Applicative ((<$>), (<*>))
-
-import Control.Concurrent.MVar
-import Control.Distributed.Process
-  ( Process
-  , ProcessId
-  , ProcessMonitorNotification(..)
-  , SendPort
-  , match
-  , monitor
-  , receiveChan
-  , receiveTimeout
-  , getSelfPid
-  , say
-  , usend
-  , sendChan
-  , spawnChannelLocal
-  , spawnLocal
-  , link
-  , unmonitor
-  , expect
-  )
-import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-  ( staticApply )
-import Control.Monad.State.Strict hiding (mapM_)
-import Control.Monad.Catch (bracket)
-
-import Data.Binary (Binary)
+import           Control.Applicative ((<$>), (<*>))
+import           Control.Concurrent.MVar
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Static ( staticApply )
+import           Control.Monad (forever)
+import qualified Control.Monad.Catch as C
+import           Control.Monad.State.Strict hiding (mapM_)
+import           Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Defaultable
-import Data.Hashable (Hashable)
-import Data.Maybe (isJust)
-import Data.Monoid ((<>))
+import           Data.Defaultable
+import           Data.Foldable (forM_)
+import           Data.Hashable (Hashable)
+import           Data.Maybe (isJust)
+import           Data.Monoid ((<>))
+import           Data.Serialize.Get (runGet)
+import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
-import Data.Typeable (Typeable)
-import Data.UUID (toString)
-import Data.UUID.V4 (nextRandom)
-import GHC.Generics (Generic)
-
-import Network.AMQP
-
-import Options.Schema (Schema)
-import Options.Schema.Builder hiding (name, desc)
+import           Data.Typeable (Typeable)
+import           Data.UUID (toString)
+import           Data.UUID.V4 (nextRandom)
+import           GHC.Generics (Generic)
+import           HA.Aeson (ToJSON, decode, encode)
+import           HA.Debug
+import           HA.Logger
+import           HA.SafeCopy
+import           HA.Service
+import           HA.Service.Interface
+import           HA.Service.TH
+import qualified HA.Services.SSPL.Rabbit as Rabbit
+import           Network.AMQP
+import           Options.Schema (Schema)
+import           Options.Schema.Builder hiding (name, desc)
+import           Prelude hiding ((<$>), (<*>), id, mapM_)
+import           SSPL.Bindings
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -113,6 +91,7 @@ type instance ServiceState SSPLHLConf = ProcessId
 
 instance Hashable SSPLHLConf
 instance ToJSON SSPLHLConf
+
 deriveSafeCopy 0 'base ''SSPLHLConf
 
 ssplhlSchema :: Schema SSPLHLConf
@@ -134,8 +113,43 @@ $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 --------------------------------------------------------------------------------
 
 data KeepAlive = KeepAlive deriving (Eq, Show, Generic, Typeable)
-
 instance Binary KeepAlive
+
+newtype StatusHandlerUp = StatusHandlerUp ProcessId
+  deriving (Eq, Show, Generic, Typeable, Binary)
+
+-- | Values that can be sent from SSPL-HL service to the RC.
+data SsplHlToSvc =
+  SResponse !CommandResponseMessage
+  deriving (Show, Eq, Generic, Typeable)
+
+-- | Values that can be sent from RC to the SSPL-HL service.
+data SsplHlFromSvc
+  = CRequest !CommandRequest
+  | SRequest !CommandRequestMessageStatusRequest !(Maybe T.Text) !NodeId
+  deriving (Show, Eq, Generic, Typeable)
+
+-- | SSPL-HL 'Interface'
+interface :: Interface SsplHlToSvc SsplHlFromSvc
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "sspl-hl"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
+
 
 traceSSPLHL :: String -> Process ()
 traceSSPLHL = mkHalonTracer "ssplhl-service"
@@ -153,7 +167,7 @@ cmdHandler statusHandler responseChan supervisor msg = case decode (msgBody msg)
     | isJust . commandRequestMessageServiceRequest
              . commandRequestMessage $ cr -> do
       traceSSPLHL $ "Received: " ++ show cr
-      _ <- promulgate cr
+      sendRC interface $ CRequest cr
       let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
       uuid <- liftIO nextRandom
       sendChan responseChan $ CommandResponseMessage
@@ -173,6 +187,19 @@ cmdHandler statusHandler responseChan supervisor msg = case decode (msgBody msg)
     | otherwise -> say $ "Unable to decode command request: "
                       ++ (BL.unpack $ msgBody msg)
 
+-- | Spawn a process waiting for 'CommandRequestMessage's and
+-- forwarding their content to RC.
+startStatusHandler :: SendPort CommandResponseMessage
+                   -> Process ProcessId
+startStatusHandler sp = spawnLocal $ forever $ do
+  cr <- expect
+  let CommandRequestMessage _ _ msr msgId = commandRequestMessage cr
+  nid <- getSelfNode
+  forM_ msr $ \req -> do
+    sendRC interface $! SRequest req msgId nid
+    -- We expect the RC to reply to service, and service to forward
+    -- the reply to us.
+    expect >>= sendChan sp
 
 -- | Time when at least one keepalive message should be delivered
 ssplHlTimeout :: Int
@@ -187,21 +214,27 @@ remotableDecl [ [d|
         self <- getSelfPid
         pid <- spawnLocal $ connectSSPL lock self
         mref <- monitor pid
-        fix $ \next -> do
+        flip fix Nothing $ \next msh -> do
           mx <- receiveTimeout ssplHlTimeout [
               match $ \(ProcessMonitorNotification _ _ r) -> do
                 say $ "SSPL Process died:\n\t" ++ show r
                 connectRetry lock
             , match $ \() -> unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
-            , match $ \KeepAlive -> next
+            , match $ \KeepAlive -> next msh
+            , match $ \(StatusHandlerUp pid') -> do
+                next $! Just pid'
+            , match $ \case
+                SResponse crm -> do
+                  maybe (return ()) (\p -> usend p crm) msh
+                  next msh
             ]
           case mx of
             Nothing -> unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
             Just x  -> return x
       connectSSPL lock parent = do
-        bracket (liftIO $ Rabbit.openConnection scConnectionConf)
-                (\conn -> do liftIO $ closeConnection conn
-                             say "Connection closed.")
+        C.bracket (liftIO $ Rabbit.openConnection scConnectionConf)
+                  (\conn -> do liftIO $ closeConnection conn
+                               say "Connection closed.")
           $ \conn -> do
           self <- getSelfPid
           chan <- liftIO $ do
@@ -224,7 +257,7 @@ remotableDecl [ [d|
                 (T.pack $ fromDefault $ Rabbit.bcRoutingKey scCommandConf)
                 newMsg{msgBody="keepalive"}
           responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
-          statusHandler <- StatusHandler.start responseChan
+          statusHandler <- startStatusHandler responseChan
           Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan parent)
           liftIO $ takeMVar lock :: Process ()
 
@@ -259,14 +292,22 @@ remotableDecl [ [d|
         () <- expect
         ssplProcess conf
       return (Right pid)
-    mainloop _ _ = return []
+    mainloop _ pid = return
+      [ receiveSvc interface $ \msg -> do
+          usend pid msg
+          return (Continue, pid) ]
     teardown _ _ = return ()
     confirm  _ pid = usend pid ()
 
   sspl :: Service SSPLHLConf
-  sspl = Service "sspl-hl"
+  sspl = Service (ifServiceName interface)
           $(mkStaticClosure 'ssplFunctions)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLHLConf))
-
   |] ]
+
+instance HasInterface SSPLHLConf SsplHlToSvc SsplHlFromSvc where
+  getInterface _ = interface
+
+deriveSafeCopy 0 'base ''SsplHlFromSvc
+deriveSafeCopy 0 'base ''SsplHlToSvc

@@ -177,12 +177,12 @@ getLocalGraph = fmap lsGraph $ get Global
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
-liftGraph :: (a -> G.Graph -> b) -> (a -> PhaseM RC l b)
+liftGraph :: (a -> G.Graph -> b) -> a -> PhaseM RC l b
 liftGraph op = \a -> op a <$> getLocalGraph
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
-liftGraph2 :: (a -> c -> G.Graph -> b) -> (a -> c -> PhaseM RC l b)
+liftGraph2 :: (a -> c -> G.Graph -> b) -> a -> c -> PhaseM RC l b
 liftGraph2 op = \a c -> op a c <$> getLocalGraph
 
 -- | Update the RG in the global state.

@@ -44,6 +44,8 @@ instance SafeCopy Todo where
        len <- fromIntegral <$> remaining
        decode <$> getLazyByteString len
 
+storageIndex ''Todo "8a82ed41-563d-490c-a457-7e43924cd52b"
+
 $(mkDicts
   [''Todo]
   [ (''Cluster, ''Has, ''Todo) ])

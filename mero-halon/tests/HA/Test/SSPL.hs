@@ -1,5 +1,11 @@
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TupleSections       #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.Test.SSPL
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Tests creates a dummy instance of SSPL and allow to
@@ -11,85 +17,77 @@
 --   -- send reply from SSPL-LL and check that it was received by
 --        RC
 --   -- sensor receives message from sspl-ll
---
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE FlexibleContexts #-}
 module HA.Test.SSPL where
 
-import Test.Framework
-import Test.Tasty.HUnit
-
-import HA.Aeson
-import qualified HA.Aeson as Aeson
-import HA.EventQueue.Producer (promulgateEQ)
-import HA.EventQueue.Types (HAEvent(..))
-import HA.Encode
-import HA.Multimap
-import HA.Services.SSPL hiding (header)
-import HA.Services.SSPL.Rabbit
-import HA.Services.SSPL.LL.Resources
-import HA.Resources
-import HA.RecoveryCoordinator.Definitions
-import HA.RecoveryCoordinator.Helpers
-import HA.RecoveryCoordinator.Mero
-import HA.RecoveryCoordinator.Service.Events
-import HA.SafeCopy
-import HA.Startup (startupHalonNode, ignition)
-import HA.NodeUp  (nodeUp)
-import Network.CEP (subscribe, Definitions, defineSimple, liftProcess, Published)
-import SSPL.Bindings
-
-import RemoteTables ( remoteTable )
-
-import Control.Exception as E
-import Control.Monad (void)
-import Control.Distributed.Process
-import Control.Distributed.Process.Node
-import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-import Network.Transport (Transport)
-
-import Data.Defaultable
-import Data.Binary (Binary)
-import Data.ByteString (ByteString)
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Node
+import           Control.Distributed.Static
+import           Control.Exception as E
+import           Control.Monad (void)
+import           Data.Binary (Binary)
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Defaultable
 import qualified Data.HashMap.Strict as M (fromList)
+import           Data.List (isInfixOf)
+import           Data.Maybe (fromJust)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Data.List (isInfixOf)
-import Data.Maybe (fromJust)
-import Data.Time
-import Data.Typeable
+import           Data.Time
+import           Data.Typeable
 import qualified Data.UUID as UUID
-import Network.AMQP
-import GHC.Generics
+import           GHC.Generics
+import           HA.Aeson
+import qualified HA.Aeson as Aeson
+import           HA.Encode
+import           HA.EventQueue.Producer (promulgateEQ)
+import           HA.EventQueue.Types (HAEvent(..))
+import           HA.Multimap
+import           HA.NodeUp  (nodeUp)
+import           HA.RecoveryCoordinator.Definitions
+import           HA.RecoveryCoordinator.Helpers
+import           HA.RecoveryCoordinator.Mero
+import           HA.RecoveryCoordinator.Service.Events
+import           HA.Resources
+import           HA.SafeCopy
+import           HA.Services.SSPL hiding (header)
+import           HA.Services.SSPL.CEP (sendNodeCmd)
+import           HA.Services.SSPL.LL.Resources
+import           HA.Services.SSPL.Rabbit
+import           HA.Startup (startupHalonNode, ignition)
+import           Network.AMQP
+import           Network.CEP
+import           Network.Transport (Transport)
+import           RemoteTables ( remoteTable )
+import           SSPL.Bindings
+import           Test.Framework
+import           Test.Tasty.HUnit
+import           TestRunner
 
-import TestRunner
-
-data SChan = SChan SensorResponseMessageSensor_response_typeDisk_status_drivemanager deriving (Generic, Typeable)
-
+newtype SChan = SChan SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+  deriving (Generic, Typeable)
 instance Binary SChan
 
-data TestSmartCmd = TestSmartCmd NodeId ByteString deriving (Generic, Typeable)
-
-data WhoAmI = WhoAmI deriving (Generic, Typeable)
+data TestSmartCmd = TestSmartCmd !NodeId !ByteString deriving (Generic, Typeable)
 
 testRules :: ProcessId ->  [Definitions RC ()]
 testRules pid =
-  [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t)) ->
-      void $ sendNodeCmd nid Nothing (SmartTest $ T.decodeUtf8 t)
-  , defineSimple "sspl-test-reply" $ \(HAEvent _ s@CommandAck{}) ->
+  [ defineSimple "sspl-test-send" $ \(HAEvent _ (TestSmartCmd nid t)) -> do
+      void $ sendNodeCmd [Node nid] Nothing (SmartTest $ T.decodeUtf8 t)
+  , defineSimpleIf "sspl-test-reply" cAck $ \s -> do
       liftProcess $ say $ "TEST-CA " ++ show s
-  , defineSimple "sspl-test-sensor" $ \(HAEvent _ (_::NodeId, s)) ->
+  , defineSimpleIf "sspl-test-sensor" statusDm $ \s -> do
       liftProcess $ usend pid (SChan s)
-  , defineSimple "who-am-i" $ \(HAEvent _ WhoAmI) ->
-      liftProcess $ usend pid =<< getSelfPid
   ]
+  where
+    cAck (HAEvent _ (CAck s)) _ = return $! Just s
+    cAck _ _ = return Nothing
+
+    statusDm (HAEvent _ (DiskStatusDm _ s)) _ = return $! Just s
+    statusDm _ _ = return Nothing
 
 unit :: ()
 unit = ()
@@ -161,15 +159,8 @@ runSSPLTest transport interseptor test =
             nodeUp [localNodeId n]
             usend self ()
     () <- expect
-    _ <- liftIO $ forkProcess n $ registerInterceptor $ \string ->
-      case string of
-        str@"Starting service sspl"   -> usend self str
-        x -> interseptor self x
-    _ <- promulgateEQ [localNodeId n] WhoAmI
-    rc <- expect
-    subscribe rc (Proxy :: Proxy (HAEvent DeclareChannels))
-    _ <- promulgateEQ [localNodeId n] $ encodeP $
-      ServiceStartRequest Start (Node (localNodeId n)) sspl
+    _ <- liftIO $ forkProcess n $ registerInterceptor $ interseptor self
+    let ssplConf =
           (SSPLConf (ConnectionConf (Configured "127.0.0.1")
                                     (Configured "/")
                                     ("guest")
@@ -187,9 +178,7 @@ runSSPLTest transport interseptor test =
                                             (Configured "halon_ack")
                                             (Configured "sspl_command_ack"))
                                   (Configured 1000000)))
-          []
-    ("Starting service sspl" :: String) <- expect
-    _ <- expect :: Process (Published (HAEvent DeclareChannels))
+    _ <- serviceStartOnNodes [localNodeId n] sspl ssplConf [localNodeId n]
     pid <- spawnLocal $ do
       link self
       rabbitMQProxy $ ConnectionConf (Configured "localhost")
@@ -231,7 +220,7 @@ testSensor transport = runSSPLTest transport interseptor test
             . sensorResponseMessage <$> decodeStrict rawmsg
       sayTest "sending command"
       usend pid $ MQPublish "sspl_halon" "sspl_ll" rawmsg
-      (SChan s) <- expect
+      SChan s <- expect
       liftIO $ assertEqual "Correct command received" msg s
 
 testDelivery :: Transport -> IO ()
@@ -293,4 +282,3 @@ testDelivery transport = runSSPLTest transport interseptor test
       return ()
 
 deriveSafeCopy 0 'base ''TestSmartCmd
-deriveSafeCopy 0 'base ''WhoAmI

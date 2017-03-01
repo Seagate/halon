@@ -7,7 +7,6 @@
 module HA.Services.Mero.RC
   ( Actions.notifyMeroAsync
   , Actions.mkStateDiff
-  , Actions.meroChannel
   , Rules.rules
   , Resources.__remoteTable
   , Resources.__resourcesTable

@@ -1,23 +1,18 @@
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
--- Copyright : (C) 2014 Seagate Technology Limited.
+-- Copyright : (C) 2014-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Service responsible for communication with a local SSPL instance on a node.
 -- This service is used to collect low-level sensor data and to carry out
 -- SSPL-mediated actions.
---
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
 module HA.Services.SSPL
   ( sspl
   , ssplProcess
-  , ssplRules
-  , ActuatorChannels(..)
-  , DeclareChannels(..)
   , InterestingEventMessage(..)
   , SSPLConf(..)
-  , IEMChannel(..)
   , NodeCmd(..)
   , CommandAck(..)
   , AckReply(..)
@@ -25,77 +20,39 @@ module HA.Services.SSPL
   , HA.Services.SSPL.LL.Resources.__remoteTable
   , HA.Services.SSPL.__resourcesTable
   , HA.Services.SSPL.__remoteTableDecl
-  , sendNodeCmd
-  , sendNodeCmdChan
   , header
-  , sendInterestingEvent
     -- * Unused but defined
   , sspl__static
   ) where
 
-import HA.Aeson (decode, encode)
-import qualified HA.Aeson as Aeson
-import HA.EventQueue (promulgate, promulgateWait)
-import HA.Debug
-import HA.Logger (mkHalonTracer)
-import HA.Service
-import HA.Services.SSPL.CEP
-import HA.Services.SSPL.IEM
-import qualified HA.Services.SSPL.Rabbit as Rabbit
-import HA.Services.SSPL.LL.Resources
-import qualified System.SystemD.API as SystemD
-
-import SSPL.Bindings
-
-import Control.Concurrent.MVar
-import Control.Distributed.Process
-  ( Process
-  , ProcessId
-  , ProcessMonitorNotification(..)
-  , getSelfPid
-  , getSelfNode
-  , expect
-  , match
-  , matchIf
-  , monitor
-  , SendPort
-  , ReceivePort
-  , newChan
-  , receiveChan
-  , receiveChanTimeout
-  , receiveTimeout
-  , receiveWait
-  , say
-  , sendChan
-  , spawnChannelLocal
-  , spawnLocal
-  , unmonitor
-  , link
-  , usend
-  , kill
-  )
-import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-  ( staticApply, RemoteTable )
-import Control.Monad.State.Strict hiding (mapM_)
-import Control.Monad.Trans.Maybe
-import Control.Monad.Catch (onException, try, SomeException, MonadCatch)
-import Data.Foldable (for_)
-
-
+import           Control.Concurrent.MVar
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Static ( staticApply, RemoteTable )
+import qualified Control.Monad.Catch as C
+import           Control.Monad.State.Strict hiding (mapM_)
+import           Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Defaultable
+import           Data.Defaultable
+import           Data.Foldable (for_)
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import           Data.Time (getCurrentTime, addUTCTime)
 import qualified Data.UUID as UID
-import qualified Data.HashMap.Strict as HM
-import Data.Time (getCurrentTime, addUTCTime)
-
-import Network.AMQP
-
-import Prelude hiding (id, mapM_)
-
-import System.Random (randomIO)
+import qualified HA.Aeson as Aeson
+import           HA.Debug
+import           HA.Logger (mkHalonTracer)
+import           HA.Service
+import           HA.Service.Interface
+import           HA.Services.SSPL.IEM
+import           HA.Services.SSPL.LL.Resources
+import qualified HA.Services.SSPL.Rabbit as Rabbit
+import           Network.AMQP
+import           Prelude hiding (id, mapM_)
+import           SSPL.Bindings
+import           System.Random (randomIO)
+import qualified System.SystemD.API as SystemD
 
 __resourcesTable :: RemoteTable -> RemoteTable
 __resourcesTable = HA.Services.SSPL.LL.Resources.myResourcesTable
@@ -115,7 +72,7 @@ saySSPL :: String -> Process ()
 saySSPL msg = say $ "[Service:SSPL] " ++ msg
 
 -- | Trace messages, output only in case if debug mode is set.
-traceSSPL:: String -> Process ()
+traceSSPL :: String -> Process ()
 traceSSPL = mkHalonTracer "service:sspl"
 
 -- | Messages that are always logged.
@@ -134,43 +91,43 @@ msgHandler :: SendPort () -- ^ Monitor channel.
 msgHandler chan msg = do
   sendChan chan ()
   nid <- getSelfNode
-  case decode (msgBody msg) :: Maybe SensorResponse of
+  case Aeson.decode (msgBody msg) :: Maybe SensorResponse of
     Just mr -> whenNotExpired mr $ do
       -- XXX: check that message was sent by sspl service
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
           sendMessage s f = forM_ (f srms) $ \x -> do
             traceSSPL $ "[SSPL-Service] received " ++ s
-            promulgate (nid, x)
+            sendRC interface x
           ignoreMessage s f = forM_ (f srms) $ \_ -> do
             traceSSPL $ s ++ " is not used by RC, ignoring."
-      sendMessage "SensorResponse.HPI"
-        sensorResponseMessageSensor_response_typeDisk_status_hpi
+      sendMessage "SensorResponse.HPI" $
+        fmap (DiskHpi nid) . sensorResponseMessageSensor_response_typeDisk_status_hpi
       ignoreMessage "SensorResponse.IF"
         sensorResponseMessageSensor_response_typeIf_data
       ignoreMessage "SensorResponse.Host"
         sensorResponseMessageSensor_response_typeHost_update
-      sendMessage "SensorResponse.DriveManager"
-        sensorResponseMessageSensor_response_typeDisk_status_drivemanager
-      sendMessage "SensorResponse.Watchdog"
-        sensorResponseMessageSensor_response_typeService_watchdog
+      sendMessage "SensorResponse.DriveManager" $
+        fmap (DiskStatusDm nid) . sensorResponseMessageSensor_response_typeDisk_status_drivemanager
+      sendMessage "SensorResponse.Watchdog" $
+        fmap ServiceWatchdog . sensorResponseMessageSensor_response_typeService_watchdog
       ignoreMessage "SensorResponse.MountData"
         sensorResponseMessageSensor_response_typeLocal_mount_data
       ignoreMessage "SensorResponse.CPU"
         sensorResponseMessageSensor_response_typeCpu_data
-      sendMessage "SensorResponse.Raid"
-        sensorResponseMessageSensor_response_typeRaid_data
+      sendMessage "SensorResponse.Raid" $
+        fmap (RaidData nid) . sensorResponseMessageSensor_response_typeRaid_data
       sendMessage "SensorResponse.ExpanderReset" $
-        (fmap $ const ExpanderResetInternal) . sensorResponseMessageSensor_response_typeExpander_reset
+        fmap (const (ExpanderResetInternal nid)) . sensorResponseMessageSensor_response_typeExpander_reset
 
-    Nothing -> case decode (msgBody msg) :: Maybe ActuatorResponse of
+    Nothing -> case Aeson.decode (msgBody msg) :: Maybe ActuatorResponse of
       Just ar -> do
         let arms = actuatorResponseMessageActuator_response_type . actuatorResponseMessage $ ar
             sendMessage s f = forM_ (f arms) $ \x -> do
               traceSSPL $ "received " ++ s
-              promulgate (nid, x)
-        sendMessage "ActuatorResponse.ThreadController"
-          actuatorResponseMessageActuator_response_typeThread_controller
-      Nothing -> saySSPL $ "Unable to decode JSON message: " ++ (BL.unpack $ msgBody msg)
+              sendRC interface x
+        sendMessage "ActuatorResponse.ThreadController" $
+          fmap (ThreadController nid) . actuatorResponseMessageActuator_response_typeThread_controller
+      Nothing -> saySSPL $ "Unable to decode JSON message: " ++ BL.unpack (msgBody msg)
    where
      whenNotExpired s f = do
       mte <- runMaybeT $ (,) <$> (parseTimeSSPL $ sensorResponseTime s)
@@ -193,15 +150,12 @@ startActuators :: Network.AMQP.Channel
                -> ActuatorConf
                -> ProcessId -- ^ ProcessID of SSPL main process.
                -> SendPort ()
-               -> Process DeclareChannels
+               -> Process ActuatorChannels
 startActuators chan ac pid monitorChan = do
     iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
     systemdChan <- spawnChannelLocal $ \ch -> link pid >> commandProcess (acSystemd ac) ch
     _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
-    mypid <- getSelfPid
-    let decl = DeclareChannels mypid (ActuatorChannels iemChan systemdChan)
-    promulgateWait decl
-    return decl
+    return $! ActuatorChannels iemChan systemdChan
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
     iemProcess Rabbit.BindConf{..} rp = forever $ do
@@ -218,7 +172,7 @@ startActuators chan ac pid monitorChan = do
       (muuid, cmd) <- receiveChan rp
       uuid <- liftIO $ maybe randomIO return muuid
       msgTime <- liftIO getCurrentTime
-      let msg = encode $ ActuatorRequest {
+      let msg = Aeson.encode $ ActuatorRequest {
           actuatorRequestSignature = "Signature-is-not-implemented-yet"
         , actuatorRequestTime = formatTimeSSPL msgTime
         , actuatorRequestExpires = Nothing
@@ -242,8 +196,8 @@ startActuators chan ac pid monitorChan = do
       (T.pack . fromDefault $ bcExchangeName)
       (cmdAckQueueName)
       (T.pack . fromDefault $ bcRoutingKey)
-      (\msg -> for_ (decode $ msgBody msg) $ \response -> do
-          uuid <- case (actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response) of
+      (\msg -> for_ (Aeson.decode $ msgBody msg) $ \response -> do
+          uuid <- case actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response of
              Aeson.Object hm ->  case "uuid" `HM.lookup` hm of
                                    Just (Aeson.String s) -> return (Just s)
                                    Just Aeson.Null -> return Nothing
@@ -259,22 +213,19 @@ startActuators chan ac pid monitorChan = do
           case tryParseAckReply mmsg of
             Left t -> saySSPL $ "Failed to parse SSPL reply (" ++ t ++ ") in " ++ T.unpack mmsg
             Right reply -> do
-               let ca =  CommandAck (UID.fromString =<< T.unpack <$> uuid)
-                                               (parseNodeCmd  mtype)
-                                               reply
+               let ca = CommandAck (UID.fromString =<< T.unpack <$> uuid)
+                                              (parseNodeCmd  mtype)
+                                              reply
                traceSSPL $ "Sending reply: " ++ show ca
-               _ <- promulgateWait ca
+               sendRC interface $! CAck ca
                sendChan monitorChan ())
 
 -- | Test that messages are sent on a timely manner.
 monitorProcess :: ReceivePort () -> Process()
 monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan >>= \case
       Nothing -> do node <- getSelfNode
-                    promulgateWait (SSPLServiceTimeout node)
+                    sendRC interface $ SSPLServiceTimeout node
       _ -> return ()
-
-trySome :: MonadCatch m => m a -> m (Either SomeException a)
-trySome = try
 
 -- | Main daemon for SSPL halon service
 ssplProcess :: SSPLConf -> Process ()
@@ -283,7 +234,7 @@ ssplProcess (SSPLConf{..}) = let
   connectRetry lock = do
     me <- getSelfPid
     pid <- spawnLocal $ connectSSPL lock me
-    decl <- expect :: Process DeclareChannels
+    ActuatorChannels iemCh sysCh <- expect :: Process ActuatorChannels
     mref <- monitor pid
     fix $ \loop -> do
       receiveWait [
@@ -291,16 +242,20 @@ ssplProcess (SSPLConf{..}) = let
             saySSPL $ "Process died:" ++ show r
             _ <- receiveTimeout 2000000 []
             connectRetry lock
-        , match $ \ResetSSPLService -> do
-            saySSPL "restarting RabbitMQ and sspl-ll."
-            liftIO $ do
-              void $ SystemD.restartService "rabbitmq-server.service"
-              void $ SystemD.restartService "sspl-ll.service"
-              void $ tryPutMVar lock ()
-            loop
-        , match $ \RequestChannels -> do
-            promulgateWait decl
-            loop
+        , match $ \case
+            ResetSSPLService -> do
+              saySSPL "restarting RabbitMQ and sspl-ll."
+              liftIO $ do
+                void $ SystemD.restartService "rabbitmq-server.service"
+                void $ SystemD.restartService "sspl-ll.service"
+                void $ tryPutMVar lock ()
+              loop
+            SsplIem iem -> do
+              sendChan iemCh iem
+              loop
+            SystemdMessage muid arma -> do
+              sendChan sysCh (muid, arma)
+              loop
         , match $ \() -> do
             saySSPL $ "tearing server down"
             unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
@@ -311,13 +266,12 @@ ssplProcess (SSPLConf{..}) = let
     -- just exits.
     let failure = do saySSPL "Failed to connect to RabbitMQ"
                      usend pid ()
-                     promulgateWait $ SSPLConnectFailure node
-    let retry 0 action = action `onException` failure
+                     sendRC interface $ SSPLConnectFailure node
+    let retry 0 action = action `C.onException` failure
         retry n action = do
-          ex <- trySome action
-          case ex of
+          C.try action >>= \case
             Right x -> return x
-            Left _ -> do
+            Left (_ :: C.SomeException) -> do
               _ <- receiveTimeout 1000000 []
               retry (n-1 :: Int) action
     conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
@@ -350,7 +304,7 @@ ssplProcess (SSPLConf{..}) = let
 remotableDecl [ [d|
 
   sspl :: Service SSPLConf
-  sspl = Service "sspl"
+  sspl = Service (ifServiceName interface)
           $(mkStaticClosure 'ssplFunctions)
           ($(mkStatic 'someConfigDict)
               `staticApply` $(mkStatic 'configDictSSPLConf))
@@ -363,14 +317,28 @@ remotableDecl [ [d|
         link self
         () <- expect
         ssplProcess conf
+      -- TODO: We no longer store or declare channels in RG. We should
+      -- therefore not mark the service as running until the channels
+      -- are ready or fail the service if we can not connect to them.
+      -- It's the right thing to do.
+      --
+      -- Not all is lost if channels aren't ready however: the process
+      -- will not start consuming the messages until it has created
+      -- the channels. This is a double-edged sword: on one side, we
+      -- will not lose any messages that we send before the channels
+      -- are up. On the other side however, we will just indefinitely
+      -- accumulate messages if the channels never come up. We should
+      -- only declare service as started once we have channels and we
+      -- should only send messages to it after it has started.
       return (Right pid)
     mainloop _ pid = return
       [ matchIf (\(ProcessMonitorNotification _ p _) -> p == pid) $ \_ ->
           return (Teardown, pid)
       , match $ \x@(ProcessMonitorNotification _ _ _) -> do
           usend pid x >> return (Continue, pid)
-      , match $ \x@ResetSSPLService -> usend pid x >> return (Continue, pid)
-      , match $ \x@RequestChannels -> usend pid x >> return (Continue, pid)
+      , receiveSvc interface $ \msg -> do
+          usend pid msg
+          return (Continue, pid)
       , match $ \() -> usend pid () >> return (Continue, pid)
       ]
     teardown _ _ = return ()

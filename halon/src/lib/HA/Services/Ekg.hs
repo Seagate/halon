@@ -1,6 +1,7 @@
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Module    : HA.Services.Ekg
 -- Copryight : (C) 2016 Seagate Technology Limited.
@@ -30,6 +31,7 @@ module HA.Services.Ekg
     ekg
   , EkgConf(..)
   , EkgState(..)
+  , interface
     -- * Metrics
   , CounterCmd(..)
   , CounterContent(..)
@@ -58,6 +60,7 @@ import Data.ByteString.Char8 (pack)
 import Data.Map (empty)
 import GHC.Stats (getGCStatsEnabled)
 import HA.Service
+import HA.Service.Interface
 import HA.Services.Ekg.Types
 import System.Remote.Monitoring
 
@@ -74,7 +77,7 @@ remotableDecl [ [d|
           s <- liftIO $ forkServer (pack host) port
           return . Right $ EkgState s Data.Map.empty
     mainloop _ st = return
-      [ match $ \mm -> do
+      [ receiveSvc interface $ \mm -> do
           say $ "metrics => Received " ++ show mm
           st' <- runModifyMetric st mm
           return (Continue, st')
@@ -85,7 +88,7 @@ remotableDecl [ [d|
     confirm _ _ = return ()
 
   ekg :: Service EkgConf
-  ekg = Service "ekg"
+  ekg = Service (ifServiceName interface)
         $(mkStaticClosure 'ekgFunctions)
         ($(mkStatic 'someConfigDict)
           `staticApply` $(mkStatic 'configDictEkgConf))
