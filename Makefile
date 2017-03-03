@@ -33,9 +33,9 @@ rpm-dev:
 	mkdir -p rpmbuild/SOURCES/role_maps
 	mkdir -p rpmbuild/SOURCES/systemd
 	mkdir -p rpmbuild/SOURCES/tmpfiles.d
-	cp .stack-work/install/x86_64-linux/lts-5.17/7.10.3/bin/halond rpmbuild/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-5.17/7.10.3/bin/halonctl rpmbuild/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-5.17/7.10.3/bin/halon-cleanup rpmbuild/SOURCES/
+	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halond rpmbuild/SOURCES/
+	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halonctl rpmbuild/SOURCES/
+	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halon-cleanup rpmbuild/SOURCES/
 	cp systemd/halond.service rpmbuild/SOURCES/
 	cp systemd/halon-satellite.service rpmbuild/SOURCES/
 	cp systemd/halon-cleanup.service rpmbuild/SOURCES/
