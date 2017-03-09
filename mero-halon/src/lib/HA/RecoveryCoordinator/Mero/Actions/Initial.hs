@@ -292,8 +292,7 @@ createIMeta fs = do
       updateGraph = if null cas
         then G.mergeResources head
                 [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
-        else createPoolVersionsInPool fs pool [pver] False
+        else G.connect fs M0.IsParentOf pool
+          >>> createPoolVersionsInPool fs pool [pver] False
 
-  modifyGraph
-      $ G.connect fs M0.IsParentOf pool
-    >>> updateGraph
+  modifyGraph updateGraph
