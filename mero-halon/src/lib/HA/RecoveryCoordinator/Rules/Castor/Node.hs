@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
@@ -119,6 +120,7 @@ import           HA.Encode
 import           HA.Service
 import           HA.EventQueue.Types
 import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Dispatch
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Actions.Service (lookupInfoMsg)
@@ -143,6 +145,8 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
+  ( NotifyFailureEndpoints(..), getState )
 import qualified HA.ResourceGraph as G
 
 import           Control.Applicative
@@ -150,7 +154,7 @@ import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, pr
 import           Control.Distributed.Process.Closure
 import           Control.Exception (SomeException)
 import           Control.Lens
-import           Control.Monad (void, guard, join, when)
+import           Control.Monad (void, guard, join, unless, when)
 import           Control.Monad.Catch (try)
 import           Control.Monad.Trans.Maybe
 
@@ -158,7 +162,7 @@ import qualified Data.Aeson as Aeson
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.List (nub)
-import           Data.Maybe (listToMaybe, isNothing, isJust)
+import           Data.Maybe (catMaybes, listToMaybe, isNothing, isJust)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Encoding as TL
@@ -378,6 +382,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
   config_created  <- phaseHandle "client-config-created"
   wait_data_load  <- phaseHandle "wait-bootstrap"
   announce        <- phaseHandle "announce"
+  announced       <- phaseHandle "announced"
+  notify_failed   <- phaseHandle "notify_failed"
+  notify_timeout  <- phaseHandle "notify_timeout"
   query_host_info <- mkQueryHostInfo config_created finish
 
   let route node = getFilesystem >>= \case
@@ -421,7 +428,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
       -- TOOD: shuffle retrigger around a bit
       rg <- getLocalGraph
       let m0nodes = nodeToM0Node node rg
-      applyStateChanges $ flip stateSet M0.NSOnline <$> m0nodes
+          messages = flip stateSet M0.NSOnline <$> m0nodes
+      modify Local $ rlens fldNotifications .~ Field (Just messages)
+      applyStateChanges messages
       case m0nodes of
         [] -> phaseLog "info" $ "No m0node associated, not retriggering mero"
         [m0node] -> retriggerMeroNodeBootstrap m0node
@@ -431,6 +440,21 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
           mapM_ retriggerMeroNodeBootstrap m0ns
 
       modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
+    switch [announced, notify_failed, timeout 10 notify_timeout]
+
+  setPhaseAllNotified announced (rlens fldNotifications . rfield) $ do
+    phaseLog "debug" "Notifications sent."
+    continue finish
+
+  setPhase notify_failed $ \(HAEvent uuid (M0.NotifyFailureEndpoints eps) _) -> do
+    todo uuid
+    unless (null eps) $ do
+      phaseLog "warn" $ "Failed to notify " ++ show eps
+    done uuid
+    continue finish
+
+  directly notify_timeout $ do
+    phaseLog "warn" $ "Timeout notifying NSOnline"
     continue finish
 
   return check
@@ -439,9 +463,11 @@ ruleNodeNew = mkJobRule processNodeNew args $ \finish -> do
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe NewMeroServer)
     fldRep = Proxy
+    fldNotifications = Proxy :: Proxy '("notifications", Maybe [AnyStateSet])
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
        <+> fldHostHardwareInfo =: Nothing
+       <+> fldNotifications =: Nothing
        <+> fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
@@ -549,17 +575,19 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 --
 ruleStartProcessesOnNode :: Definitions LoopState ()
 ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish -> do
-    kernel_up         <- phaseHandle "kernel_up"
-    kernel_failed     <- phaseHandle "kernel_failed"
+    service_running   <- phaseHandle "service_running"
     boot_level_0      <- phaseHandle "boot_level_0"
     boot_level_0_conf <- phaseHandle "boot_level_0_conf"
     boot_level_1      <- phaseHandle "boot_level_1"
     boot_level_1_conf <- phaseHandle "boot_level_1_conf"
-    complete          <- phaseHandle "complete"
     bootstrap_timeout <- phaseHandle "bootstrap_timeout"
+    dispatcher        <- mkDispatcher
+    mero_notify_done <- phaseHandle "mero_notify_done"
 
     let route (StartProcessesOnNodeRequest m0node) = do
           phaseLog "debug" $ show m0node
+          modify Local $ rlens fldDispatch . rfield .~
+            (Dispatch [] (error "onSuccess must be set") Nothing)
           modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStarted m0node)
           runMaybeT $ do
             node <- MaybeT $ listToMaybe . m0nodeToNode m0node <$> getLocalGraph -- XXX: list
@@ -570,19 +598,40 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
               modify Local $ rlens fldHost .~ (Field $ host)
               modify Local $ rlens fldNode .~ (Field $ Just node)
               if isJust chan
-              then return $ Just [boot_level_0_conf]
-              else do phaseLog "info" $ "starting mero processes on node " ++ show m0node
-                      lookupMeroChannelByNode node >>= \case
-                        Nothing -> do
-                          lookupInfoMsg node m0d >>= \case
-                            Nothing -> promulgateRC $ StartHalonM0dRequest m0node
-                            Just _ -> phaseLog "info" "halon:m0d info in RG, waiting for it to come up through monitor"
-                          -- TODO: kernel may already be up or starting, check
-                          return $ Just [kernel_up, kernel_failed, timeout startProcTimeout bootstrap_timeout]
-                        Just _ -> return $ Just [boot_level_0_conf]
+              then return $ Just [service_running]
+              else do
+                phaseLog "info" $ "starting mero processes on node " ++ show m0node
+                lookupInfoMsg node m0d >>= \case
+                  Nothing -> promulgateRC $ StartHalonM0dRequest m0node
+                  Just _ -> phaseLog "info" "halon:m0d info in RG, waiting for it to come up through monitor"
+                -- We need to wait for the service to come fully up.
+                -- This means both that kernel started has been
+                -- received and that the CST_HA process is online.
+                let procs =
+                      [ (proc :: M0.Process, state)
+                      | proc <- G.connectedTo m0node M0.IsParentOf rg
+                      , srv <- G.connectedTo proc M0.IsParentOf rg
+                      , M0.s_type srv == CST_HA
+                      , let state = M0.getState proc rg
+                      ]
+                    nodeState = M0.getState m0node rg
+                    nodeStateAwait =
+                      if nodeState == M0.NSOnline
+                      then Nothing
+                      else Just $ stateSet m0node M0.NSOnline
+                    procStateAwait (proc, st) = case st of
+                      M0.PSOnline -> Nothing
+                      _ -> Just $ stateSet proc M0.PSOnline
+                    notifications = catMaybes $
+                      nodeStateAwait : (procStateAwait <$> procs)
+                modify Local $ rlens fldNotifications . rfield .~
+                  (Just notifications)
+                waitFor mero_notify_done
+                onSuccess service_running
+                onTimeout startProcTimeout bootstrap_timeout
+                return $ Just [dispatcher]
 
         -- Wait for all process configured notifications.
-    let
         mkConfigurationAwait name next = mkLoop name startProcTimeout bootstrap_timeout
           (\result l ->
              case result of
@@ -604,23 +653,23 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
       modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartTimeout m0node)
       continue finish
 
-    setPhaseIf kernel_up (\ks _ l ->  -- XXX: HA event?
-       case (ks, getField $ rget fldReq l) of
-         (  (KernelStarted node)
-            , Just (StartProcessesOnNodeRequest m0node))
-            | node == m0node -> return $ Just ()
-         _ -> return Nothing
-      ) $ \() -> continue boot_level_0_conf
-
-    setPhaseIf kernel_failed (\ksf _ l ->
-       case (ksf, getField $ rget fldReq l) of
-         (  (KernelStartFailure node)
-            , Just (StartProcessesOnNodeRequest m0node))
-            | node == m0node -> return $ Just m0node
-         _  -> return Nothing
-       ) $ \ m0node -> do
-      modify Local $ rlens fldRep .~ (Field . Just $ NodeProcessesStartFailure m0node)
-      continue finish
+    directly service_running $ do
+      Just (StartProcessesOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
+      -- Re-announce the status of processes running on this node to the
+      -- newly incarnated halon:m0d
+      rg <- getLocalGraph
+      let procs = [ (proc :: M0.Process, state)
+                 | proc <- G.connectedTo m0node M0.IsParentOf rg
+                 , let state = M0.getState proc rg
+                 ]
+          notifications = uncurry stateSet <$> procs
+      modify Local $ rlens fldNotifications .~
+        Field (Just notifications)
+      applyStateChanges notifications
+      waitFor mero_notify_done
+      onSuccess boot_level_0_conf
+      onTimeout startProcTimeout bootstrap_timeout
+      continue dispatcher
 
     await_configure_0 <- mkConfigurationAwait "configure::0" boot_level_0
 
@@ -695,13 +744,20 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
           procs <- startNodeProcesses host chan (M0.PLBootLevel (M0.BootLevel 1))
           let notifications = (\p -> stateSet p M0.PSOnline) <$> procs
           modify Local $ rlens fldNotifications . rfield .~ (Just notifications)
-          switch [complete, timeout startProcTimeout bootstrap_timeout]
+          waitFor mero_notify_done
+          onTimeout startProcTimeout bootstrap_timeout
+          onSuccess finish
+          continue dispatcher
         Nothing -> do
           phaseLog "error" $ "Can't find service for node " ++ show node
           continue finish
 
-    setPhaseAllNotified complete (rlens fldNotifications . rfield) $ do
-      continue finish
+    setPhaseAllNotified mero_notify_done
+                          (rlens fldNotifications . rfield) $ do
+      phaseLog "debug" "Mero notification complete"
+      modify Local $ rlens fldNotifications . rfield .~ Nothing
+      waitDone mero_notify_done
+      continue dispatcher
 
     return route
   where
@@ -721,6 +777,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \finish 
        <+> fldHost =: Nothing
        <+> fldNotifications =: Nothing
        <+> fldProcessConfig =: Nothing
+       <+> fldDispatch =: Dispatch [] (error "onSuccess must be set") Nothing
        <+> RNil
 
 
@@ -878,8 +935,8 @@ ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \finish -> d
         <+> fldHost    =: Nothing
         <+> fldProcessConfig =: Nothing
         <+> RNil
-    mkConfigurationAwait name next onTimeout onFailure
-      = mkLoop name startProcTimeout onTimeout
+    mkConfigurationAwait name next onTimeout' onFailure
+      = mkLoop name startProcTimeout onTimeout'
         (\result l ->
            case result of
              ProcessConfigured fid -> return $

@@ -18,6 +18,7 @@ import           Control.Monad (unless)
 import           HA.RecoveryCoordinator.Actions.Core
 import           HA.RecoveryCoordinator.Rules.Mero.Conf
 import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import           HA.Services.Mero.Types
 import           Network.CEP
 
@@ -32,4 +33,5 @@ ruleProcessKeepaliveReply = defineSimpleTask "process-keepalive-reply" $ \(Keepa
     mkMsg ct t = M0.PSFailed $ "No keepalive for " ++ show (ct - t)
     getProcs fids rg = [ (p, t) | (fid, t) <- fids
                                 , Just (p :: M0.Process) <- [M0.lookupConfObjByFid fid rg]
+                                , M0.getState p rg == M0.PSOnline
                                 ]

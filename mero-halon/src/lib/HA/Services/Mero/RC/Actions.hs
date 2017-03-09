@@ -123,11 +123,7 @@ getNotificationChannels = do
               ]
   things <- for nodes $ \(node, m0node) -> do
      mchan <- lookupMeroChannelByNode node
-     let procs = filter (\p -> case M0.getState p rg of
-                                 M0.PSOnline  -> True
-                                 M0.PSStarting -> True
-                                 M0.PSStopping -> True
-                                 _ -> False)
+     let procs = filter (\p -> M0.getState p rg == M0.PSOnline )
                $ (G.connectedTo m0node M0.IsParentOf rg :: [M0.Process])
      case (mchan, procs) of
        (_, []) -> return Nothing
