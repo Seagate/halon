@@ -62,6 +62,8 @@ import           HA.EventQueue.Types
 import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Actions.Castor.Cluster (barrierPass)
 import           HA.RecoveryCoordinator.Actions.Core
+import           HA.RecoveryCoordinator.Actions.Hardware
+  ( markStorageDeviceReplaced )
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Events.Castor.Cluster
@@ -847,6 +849,10 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \finish -> do
 
     ds <- getPoolSDevsWithState pool M0_NC_REBALANCE
     applyStateChanges $ map (\d -> stateSet d M0.SDSRepaired) ds
+    -- All drives that were rebalancing are known to be replaced.
+    for_ ds $ \m0sdev -> do
+      msdev <- lookupStorageDevice m0sdev
+      for_ msdev $ markStorageDeviceReplaced
     ds1 <- getPoolSDevsWithState pool M0_NC_REPAIR
     applyStateChanges $ map (\d -> stateSet d M0.SDSFailed) ds1
     continue finish
