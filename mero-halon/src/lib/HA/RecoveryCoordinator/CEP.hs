@@ -21,6 +21,7 @@ import           HA.NodeUp
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
+import qualified HA.RecoveryCoordinator.RC.Actions.Update as Update
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Castor.Rules
@@ -94,6 +95,8 @@ rcInitRule argv = do
          -- TS may not be a node, so it needs to known EQ addresses in other to
          -- call promulgate
          EQT.updateEQNodes (eqNodes argv)
+      liftProcess $ sayRC "RC.applyTodoNode"
+      Update.applyTodoNode
       liftProcess $ sayRC "RC.initialRule"
       HA.RecoveryCoordinator.RC.Rules.initialRule argv
       liftProcess $ sayRC "CEP.initialRule"

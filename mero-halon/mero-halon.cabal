@@ -147,6 +147,7 @@ Library
                    HA.RecoveryCoordinator.RC.Actions.Core
                    HA.RecoveryCoordinator.RC.Actions.Log
                    HA.RecoveryCoordinator.RC.Actions.Dispatch
+                   HA.RecoveryCoordinator.RC.Actions.Update
                    HA.RecoveryCoordinator.RC.Application
                    HA.RecoveryCoordinator.RC.Events
                    HA.RecoveryCoordinator.RC.Events.Debug
@@ -162,6 +163,7 @@ Library
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
                    HA.Resources.HalonVars
+                   HA.Resources.Update
                    Mero.Epoch
                    Mero.M0Worker
                    Mero.Notification
