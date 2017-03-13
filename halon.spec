@@ -42,6 +42,7 @@ Cluster monitoring and recovery for high-availability.
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
+mkdir -p %{buildroot}/etc/sysconfig
 mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/etc/logrotate.d
 mkdir -p %{buildroot}/usr/libexec/halon
@@ -51,6 +52,7 @@ cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
 cp mero-halon/scripts/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
+cp systemd/sysconfig/halond.example %{buildroot}/etc/sysconfig
 cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
 cp mero-halon/scripts/mero_clovis_role_mappings.ede \

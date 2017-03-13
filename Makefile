@@ -39,6 +39,7 @@ rpm-dev:
 	cp systemd/halond.service rpmbuild/SOURCES/
 	cp systemd/halon-satellite.service rpmbuild/SOURCES/
 	cp systemd/halon-cleanup.service rpmbuild/SOURCES/
+	cp systemd/sysconfig/halond.example rpmbuild/SOURCES/
 	cp mero-halon/scripts/localcluster rpmbuild/SOURCES/halon-simplelocalcluster
 	cp mero-halon/scripts/hctl rpmbuild/SOURCES/hctl
 	cp mero-halon/scripts/setup-rabbitmq-perms.sh rpmbuild/SOURCES/setup-rabbitmq-perms.sh

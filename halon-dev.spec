@@ -19,10 +19,12 @@ rm -rf $RPM_BUILD_DIR/halon
 rm -rf $RPM_BUILD_DIR/systemd
 rm -rf $RPM_BUILD_DIR/role_maps
 rm -rf $RPM_BUILD_DIR/tmpfiles.d
+rm -rf $RPM_BUILD_DIR/sysconfig
 mkdir halon
 mkdir systemd
 mkdir role_maps
 mkdir tmpfiles.d
+mkdir sysconfig
 cp $RPM_SOURCE_DIR/halonctl $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halon-simplelocalcluster $RPM_BUILD_DIR/halon
@@ -32,6 +34,7 @@ cp $RPM_SOURCE_DIR/setup-rabbitmq-perms.sh $RPM_BUILD_DIR/halon
 cp $RPM_SOURCE_DIR/halond.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-satellite.service $RPM_BUILD_DIR/systemd
 cp $RPM_SOURCE_DIR/halon-cleanup.service $RPM_BUILD_DIR/systemd
+cp $RPM_SOURCE_DIR/halond.example $RPM_BUILD_DIR/sysconfig
 cp $RPM_SOURCE_DIR/role_maps/* $RPM_BUILD_DIR/role_maps
 cp $RPM_SOURCE_DIR/tmpfiles.d/* $RPM_BUILD_DIR/tmpfiles.d
 
@@ -45,6 +48,7 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/systemd/system
 mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/usr/libexec/halon
+mkdir -p %{buildroot}/etc/sysconfig
 mkdir -p %{buildroot}%{_tmpfilesdir}
 cp -a $RPM_BUILD_DIR/halon/halond %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/halonctl %{buildroot}/usr/bin
@@ -54,6 +58,7 @@ cp -a $RPM_BUILD_DIR/halon/halon-cleanup %{buildroot}/usr/libexec/halon
 cp -a $RPM_BUILD_DIR/halon/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
 cp -a $RPM_BUILD_DIR/role_maps/* %{buildroot}/etc/halon/role_maps
+cp -a $RPM_BUILD_DIR/sysconfig/* %{buildroot}/etc/sysconfig
 cp -a $RPM_BUILD_DIR/tmpfiles.d/* %{buildroot}%{_tmpfilesdir}
 ln -s /etc/halon/role_maps/prov.ede %{buildroot}/etc/halon/mero_role_mappings
 ln -s /etc/halon/role_maps/halon_role_mappings %{buildroot}/etc/halon/halon_role_mappings
@@ -73,6 +78,7 @@ rm -rf %{buildroot}
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
 /usr/lib/systemd/system/halon-cleanup.service
+/etc/sysconfig/halond.example
 /etc/halon/role_maps/clovis.ede
 /etc/halon/role_maps/prov.ede
 /etc/halon/mero_role_mappings
