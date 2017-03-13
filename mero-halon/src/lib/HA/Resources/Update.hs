@@ -33,6 +33,8 @@ import Network.CEP hiding (get, put)
 newtype Todo = Todo (Static (PhaseM RC (Maybe ProcessId) ()))
   deriving (Binary, Eq, Ord, Show, Typeable)
 
+storageIndex ''Todo "7e5426fb-7b6f-464b-be12-061f2f7b10ee"
+
 instance Hashable Todo where
   hashWithSalt s (Todo ph) = s `hashWithSalt` (encode ph)
 

@@ -290,28 +290,28 @@ cbRefs = unsafePerformIO $ newIORef []
 
 -- | List of callbacks beign used by notification interface
 data HAStateCallbacks = HSC
-  { hscStateGet :: HALink -> Word64 -> NVec -> IO ()
+  { hscStateGet :: HAMsgPtr -> HALink -> Word64 -> NVec -> IO ()
     -- ^ Called when a request to get the state of some objects is
     -- received.
     --
     -- When the requested state is available, 'notify' must
     -- be called by passing the given link.
-  , hscProcessEvent :: HALink -> HAMsgMeta -> ProcessEvent -> IO ()
+  , hscProcessEvent :: HAMsgPtr -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
     -- ^ Called when process event notification is received
-  , hscStobIoqError :: HAMsgMeta -> StobIoqError -> IO ()
+  , hscStobIoqError :: HAMsgPtr -> HALink -> HAMsgMeta -> StobIoqError -> IO ()
     -- ^ Called when @m0_stob_ioq_error@ is received
-  , hscServiceEvent :: HAMsgMeta -> ServiceEvent -> IO ()
+  , hscServiceEvent :: HAMsgPtr -> HALink -> HAMsgMeta -> ServiceEvent -> IO ()
     -- ^ Called when service event notification is received
-  , hscBeError :: HAMsgMeta -> BEIoErr -> IO ()
+  , hscBeError :: HAMsgPtr -> HALink -> HAMsgMeta -> BEIoErr -> IO ()
     -- ^ Called when error is thrown from metadata BE.
-  , hscStateSet :: NVec -> HAMsgMeta -> IO ()
+  , hscStateSet :: HAMsgPtr -> HALink -> NVec -> HAMsgMeta -> IO ()
     -- ^ Called when a request to update the state of some objects is
     -- received.
-  , hscFailureVector :: HALink -> Cookie -> Fid -> IO ()
+  , hscFailureVector :: HAMsgPtr -> HALink -> Cookie -> Fid -> IO ()
     -- ^ Failure vector request.
   , hscKeepalive :: HALink -> IO ()
     -- ^ Process keepalive reply
-  , hscRPCEvent :: HAMsgMeta -> RpcEvent -> IO ()
+  , hscRPCEvent :: HAMsgPtr -> HALink -> HAMsgMeta -> RpcEvent -> IO ()
   }
 
 
@@ -402,42 +402,35 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
       case mtype of
         #{const M0_HA_MSG_STOB_IOQ} -> do
              ioq <- #{peek struct m0_ha_msg_data, u.hed_stob_ioq} payload
-             hscStobIoqError hsc meta ioq
-             delivered hl p
+             hscStobIoqError hsc p hl meta ioq
         #{const M0_HA_MSG_NVEC} -> do
              let pl = #{ptr struct m0_ha_msg_data, u.hed_nvec} payload :: Ptr NVec
              vtype <- #{peek struct m0_ha_msg_nvec, hmnv_type} pl :: IO Word64
              xid   <- #{peek struct m0_ha_msg_nvec, hmnv_id_of_get} pl :: IO Word64
              nts   <- peekNote pl
              if vtype > 0
-             then hscStateGet hsc hl xid nts
-             else hscStateSet hsc nts meta
-             delivered hl p
+             then hscStateGet hsc p hl xid nts
+             else hscStateSet hsc p hl nts meta
         #{const M0_HA_MSG_FAILURE_VEC_REQ} -> do
              let pl = #{ptr struct m0_ha_msg_data, u.hed_fvec_req} payload :: Ptr ()
              pool   <- #{peek struct m0_ha_msg_failure_vec_req, mfq_pool} pl
              cookie <- #{peek struct m0_ha_msg_failure_vec_req, mfq_cookie} pl
-             hscFailureVector hsc hl cookie pool
-             delivered hl p
+             hscFailureVector hsc p hl cookie pool
         #{const M0_HA_MSG_KEEPALIVE_REP} -> do
              hscKeepalive hsc hl
              delivered hl p
         #{const M0_HA_MSG_EVENT_PROCESS} -> do
              pevent <- #{peek struct m0_ha_msg_data, u.hed_event_process} payload
-             hscProcessEvent hsc hl meta pevent
-             delivered hl p
+             hscProcessEvent hsc p hl meta pevent
         #{const M0_HA_MSG_EVENT_SERVICE} -> do
              sevent <- #{peek struct m0_ha_msg_data, u.hed_event_service} payload
-             hscServiceEvent hsc meta sevent
-             delivered hl p
+             hscServiceEvent hsc p hl meta sevent
         #{const M0_HA_MSG_EVENT_RPC} -> do
              revent <- #{peek struct m0_ha_msg_data, u.hed_event_rpc} payload
-             hscRPCEvent hsc meta revent
-             delivered hl p
+             hscRPCEvent hsc p hl meta revent
         #{const M0_HA_MSG_BE_IO_ERR} -> do
              sevent <- #{peek struct m0_ha_msg_data, u.hed_be_io_err} payload
-             hscBeError hsc meta sevent
-             delivered hl p
+             hscBeError hsc p hl meta sevent
         _ | otherwise -> do
              ha_msg_debug_print p "unsupported message"
              delivered hl p

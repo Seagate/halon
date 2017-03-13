@@ -48,7 +48,7 @@ import Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
 import Mero.Engine
 import Mero.M0Worker
-import HA.EventQueue (promulgate, promulgateWait)
+import HA.EventQueue (promulgateWait)
 import HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
@@ -331,13 +331,13 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
     let hsc = HSC
          { hscStateGet = ha_state_get niRef
          , hscProcessEvent  = ha_process_event_set niRef
-         , hscStobIoqError  = ha_stob_ioq_error
-         , hscServiceEvent  = ha_service_event_set
-         , hscBeError       = ha_be_error
-         , hscStateSet      = ha_state_set
+         , hscStobIoqError  = ha_stob_ioq_error niRef
+         , hscServiceEvent  = ha_service_event_set niRef
+         , hscBeError       = ha_be_error niRef
+         , hscStateSet      = ha_state_set niRef
          , hscFailureVector = ha_request_failure_vector niRef
          , hscKeepalive     = ha_keepalive_reply niRef
-         , hscRPCEvent      = ha_rpc_event
+         , hscRPCEvent      = ha_rpc_event niRef
          }
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
@@ -365,20 +365,23 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                Left e -> putMVar barrier (Left e)
     return (barrier, niRef)
   where
-    ha_state_get :: NIRef -> HALink -> Word64 -> NVec -> IO ()
-    ha_state_get ni hl idx nvec = void $ CH.forkProcess lnode $ do
+    ha_state_get :: NIRef -> HAMsgPtr -> HALink -> Word64 -> NVec -> IO ()
+    ha_state_get ni p hl idx nvec = void $ CH.forkProcess lnode $ do
       self <- getSelfPid
       let fids = map no_id nvec
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
-               Just nvec' -> notifyNi ni hl idx nvec' processFid haFid
+               Just nvec' -> do
+                 liftIO $ actionOnNi ni $ delivered hl p
+                 notifyNi ni hl idx nvec' processFid haFid
                Nothing   -> do
-                 _ <- promulgate (Get self fids)
+                 _ <- promulgateWait (Get self fids)
+                 liftIO $ actionOnNi ni $ delivered hl p
                  GetReply nvec' <- expect
                  notifyNi ni hl idx nvec' processFid haFid
 
-    ha_process_event_set :: NIRef -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
-    ha_process_event_set ni hlink meta pe = do
+    ha_process_event_set :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
+    ha_process_event_set ni p hlink meta pe = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
       when  (_chp_event pe == TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
@@ -391,18 +394,27 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
         for_ mv $ traverse_ onDelivered . Map.elems
       void . CH.forkProcess lnode $ do
         promulgateWait $ HAMsg pe meta
+        liftIO $ actionOnNi ni $ delivered hlink p
 
-    ha_stob_ioq_error :: HAMsgMeta -> StobIoqError -> IO ()
-    ha_stob_ioq_error m sie = void . CH.forkProcess lnode . promulgateWait $ HAMsg sie m
+    ha_stob_ioq_error :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> StobIoqError -> IO ()
+    ha_stob_ioq_error ni p hlink m sie = void . CH.forkProcess lnode $ do
+      promulgateWait $ HAMsg sie m
+      liftIO $ actionOnNi ni $ delivered hlink p
 
-    ha_service_event_set :: HAMsgMeta -> ServiceEvent -> IO ()
-    ha_service_event_set m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
+    ha_service_event_set :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> ServiceEvent -> IO ()
+    ha_service_event_set ni p hlink m e = void . CH.forkProcess lnode $ do
+      promulgateWait $ HAMsg e m
+      liftIO $ actionOnNi ni $ delivered hlink p
 
-    ha_be_error :: HAMsgMeta -> BEIoErr -> IO ()
-    ha_be_error m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
+    ha_be_error :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> BEIoErr -> IO ()
+    ha_be_error ni p hlink m e = void . CH.forkProcess lnode $ do
+      promulgateWait $ HAMsg e m
+      liftIO $ actionOnNi ni $ delivered hlink p
 
-    ha_state_set :: NVec -> HAMsgMeta -> IO ()
-    ha_state_set nvec meta = void . CH.forkProcess lnode . promulgateWait $ Set nvec (Just meta)
+    ha_state_set :: NIRef -> HAMsgPtr -> HALink -> NVec -> HAMsgMeta -> IO ()
+    ha_state_set ni p hlink nvec meta = void . CH.forkProcess lnode $ do
+      promulgateWait $ Set nvec (Just meta)
+      liftIO $ actionOnNi ni $ delivered hlink p
 
     ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
     ha_entrypoint ni reqId procFid profFid = void $ CH.forkProcess lnode $ do
@@ -452,14 +464,15 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
          currentTime <- getTime Monotonic
          atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
 
-    ha_request_failure_vector :: NIRef -> HALink -> Cookie -> Fid -> IO ()
-    ha_request_failure_vector ni hl cookie pool = do
+    ha_request_failure_vector :: NIRef -> HAMsgPtr -> HALink -> Cookie -> Fid -> IO ()
+    ha_request_failure_vector ni p hl cookie pool = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
       void $ CH.forkProcess lnode $ do
         liftIO $ traceEventIO "START ha_request_failure_vector"
         (send, recv) <- newChan
         promulgateWait (GetFailureVector pool send)
+        liftIO $ actionOnNi ni $ delivered hl p
         mr <- receiveChan recv
         liftIO $ actionOnNi ni $ failureVectorReply hl cookie pool processFid haFid $ fromMaybe [] mr
         liftIO $ traceEventIO "STOP ha_request_failure_vector"
@@ -498,8 +511,10 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
-    ha_rpc_event :: HAMsgMeta -> RpcEvent -> IO ()
-    ha_rpc_event m e = void . CH.forkProcess lnode . promulgateWait $ HAMsg e m
+    ha_rpc_event :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> RpcEvent -> IO ()
+    ha_rpc_event ni p hl m e = void . CH.forkProcess lnode $ do
+      promulgateWait $ HAMsg e m
+      liftIO $ actionOnNi ni $ delivered hl p
 
 -- | Find processes with "dead" links and fail them. Do not disconnect
 -- the links manually: mero will invoke a callback we set in
