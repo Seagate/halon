@@ -17,6 +17,7 @@ module HA.Services.Ping
   , SyncPing(..)
   , HA.Services.Ping.__remoteTable
   , HA.Services.Ping.__remoteTableDecl
+  , HA.Services.Ping.__resourcesTable
   , ping__static
   ) where
 
@@ -55,6 +56,10 @@ pingSchema = pure PingConf
 
 type instance ServiceState PingConf = ()
 
+instance StorageIndex PingConf where
+  typeKey _ = $(mkUUID "3f63d148-37a3-4dd5-a2af-74aff8f2805b")
+instance StorageIndex (Service PingConf) where
+  typeKey _ = $(mkUUID "1d1787a9-3dce-4131-bb44-e7090cd864e6")
 $(generateDicts ''PingConf)
 $(deriveService ''PingConf 'pingSchema [])
 deriveSafeCopy 0 'base ''PingConf

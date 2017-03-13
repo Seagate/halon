@@ -14,6 +14,7 @@
 module HA.Services.Empty
   ( EmptyConf(..)
   , HA.Services.Empty.__remoteTable
+  , HA.Services.Empty.__resourcesTable
   , configDictEmptyConf
   , configDictEmptyConf__static
   ) where
@@ -24,6 +25,8 @@ import GHC.Generics
 
 import HA.Aeson
 import HA.SafeCopy
+import HA.ResourceGraph
+import HA.Service
 import HA.Service.TH
 
 
@@ -41,6 +44,10 @@ instance ToJSON EmptyConf
 emptySchema :: Schema EmptyConf
 emptySchema = pure EmptyConf
 
+instance StorageIndex EmptyConf where
+  typeKey _ = $(mkUUID "06073e0c-f4b8-4131-8d7d-eb402bd93451")
+instance StorageIndex (Service EmptyConf) where
+  typeKey _ = $(mkUUID "8356ffc4-99ee-4c77-a3f1-6423bd8d79ab")
 $(generateDicts ''EmptyConf)
 $(deriveService ''EmptyConf 'emptySchema [])
 deriveSafeCopy 0 'base ''EmptyConf

@@ -52,6 +52,7 @@ module HA.Service
   , ExitReason(..)
    -- * CH Paraphenalia
   , HA.Service.Internal.__remoteTable
+  , HA.Service.Internal.__resourcesTable
   , someConfigDict__static
 ) where
 

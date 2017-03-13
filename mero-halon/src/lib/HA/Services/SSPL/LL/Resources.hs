@@ -19,6 +19,7 @@ module HA.Services.SSPL.LL.Resources
   , DeclareChannels(..)
   , ExpanderResetInternal(..)
   , HA.Services.SSPL.LL.Resources.__remoteTable
+  , myResourcesTable
   , IEMChannel(..)
   , IPMIOp(..)
   , InterestingEventMessage(..)
@@ -48,6 +49,7 @@ module HA.Services.SSPL.LL.Resources
 import           Control.Distributed.Process (NodeId)
 import           Control.Distributed.Process (ProcessId, SendPort)
 import           Control.Distributed.Process.Closure
+import           Control.Distributed.Static (RemoteTable)
 import           Data.Binary (Binary, encode, decode)
 import           Data.Defaultable
 import           Data.Hashable (Hashable)
@@ -67,6 +69,7 @@ import qualified HA.Service
 import           HA.Service.TH
 import           HA.Services.SSPL.IEM
 import qualified HA.Services.SSPL.Rabbit as Rabbit
+import           Language.Haskell.TH (mkName)
 import           Options.Schema (Schema)
 import           Options.Schema.Builder hiding (name, desc)
 import           SSPL.Bindings
@@ -168,6 +171,7 @@ data LedControlState
       deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable LedControlState
+storageIndex ''LedControlState "4689d3b3-1597-4a79-a68a-8a20a06f4fe0"
 deriveSafeCopy 0 'base ''LedControlState
 
 -- | Node commands we can request.
@@ -512,6 +516,8 @@ type instance HA.Service.ServiceState SSPLConf = ProcessId
 
 instance Hashable SSPLConf
 instance ToJSON SSPLConf
+storageIndex ''SSPLConf "2f3e5559-c3f2-4e02-9ce5-3e5d2d231ea6"
+serviceStorageIndex ''SSPLConf "d54e9eaf-c1a5-4ea7-96d6-7fbdb29bd277"
 deriveSafeCopy 0 'base ''SSPLConf
 
 -- | SSPL configuration 'Schema'.
@@ -535,24 +541,48 @@ parseTimeSSPL = parseTimeM True defaultTimeLocale ssplTimeFormatString . T.unpac
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
-resourceDictChannelIEM :: Dict (Resource (Channel InterestingEventMessage))
-resourceDictChannelIEM = Dict
 
-resourceDictChannelSystemd :: Dict (Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)))
-resourceDictChannelSystemd = Dict
-
-resourceDictLedControlState :: Dict (Resource LedControlState)
-resourceDictLedControlState = Dict
-
-relationDictLedControlStateSlot :: Dict (Relation Has Slot LedControlState)
-relationDictLedControlStateSlot = Dict
-
-$(generateDicts ''SSPLConf)
-$(deriveService ''SSPLConf 'ssplSchema [ 'resourceDictChannelIEM
-                                       , 'resourceDictChannelSystemd
-                                       , 'resourceDictLedControlState
-                                       , 'relationDictLedControlStateSlot
-                                       ])
+storageIndexQ
+  [t| Channel InterestingEventMessage |]
+  "67b795e0-75fb-4a41-9a21-14cc41e8d7dc"
+storageIndexQ
+  [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |]
+  "f68d2a18-6e8b-45a9-a99c-dc174223ff1a"
+mkDictsQ
+  [ (mkName "resourceDictChannelIEM", [t| Channel InterestingEventMessage |])
+  , (mkName "resourceDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
+  , (mkName "resourceDictLedControlState", [t| LedControlState |])
+  ]
+  [ (mkName "relationDictLedControlStateSlot"
+    ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
+  ]
+mkStorageDictsQ
+  [ (mkName "storageDictChannelIEM", [t| Channel InterestingEventMessage |])
+  , (mkName "storageDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
+  , (mkName "storageDictLedControlState", [t| LedControlState |])
+  ]
+  [ (mkName "storageDictLedControlStateSlot"
+    ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
+  ]
+generateDicts ''SSPLConf
+deriveService ''SSPLConf 'ssplSchema
+  [ 'resourceDictChannelIEM
+  , 'resourceDictChannelSystemd
+  , 'resourceDictLedControlState
+  , 'relationDictLedControlStateSlot
+  , 'storageDictChannelIEM
+  , 'storageDictChannelSystemd
+  , 'storageDictLedControlState
+  , 'storageDictLedControlStateSlot
+  ]
+mkStorageResRelQ
+  [ (mkName "storageDictChannelIEM", [t| Channel InterestingEventMessage |])
+  , (mkName "storageDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
+  , (mkName "storageDictLedControlState", [t| LedControlState |])
+  ]
+  [ (mkName "storageDictLedControlStateSlot"
+    ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
+  ]
 
 instance Resource (Channel InterestingEventMessage) where
   resourceDict = $(mkStatic 'resourceDictChannelIEM)
@@ -567,6 +597,14 @@ instance Relation Has Slot LedControlState where
   type CardinalityFrom Has Slot LedControlState = 'Unbounded
   type CardinalityTo Has Slot LedControlState = 'AtMostOne
   relationDict = $(mkStatic 'relationDictLedControlStateSlot)
+
+myResourcesTable :: RemoteTable -> RemoteTable
+myResourcesTable
+  = $(makeResource [t| Channel InterestingEventMessage |])
+  . $(makeResource [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
+  . $(makeResource [t| LedControlState |])
+  . $(makeRelation [t| Slot |] [t| Has |] [t| LedControlState |])
+  . HA.Services.SSPL.LL.Resources.__resourcesTable
 
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --

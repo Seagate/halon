@@ -10,6 +10,7 @@ module HA.Services.Mero.RC
   , Actions.meroChannel
   , Rules.rules
   , Resources.__remoteTable
+  , Resources.__resourcesTable
   ) where
 
 import qualified HA.Services.Mero.RC.Actions as Actions

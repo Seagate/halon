@@ -29,6 +29,7 @@ module HA.Services.Mero
     , traceM0d
     , HA.Services.Mero.__remoteTableDecl
     , HA.Services.Mero.Types.__remoteTable
+    , HA.Services.Mero.__resourcesTable
     , m0d__static
     , Mero.Notification.getM0Worker
     , sendMeroChannel
@@ -73,6 +74,9 @@ import           System.Directory
 import           System.Exit
 import           System.FilePath
 import qualified System.Timeout as ST
+
+__resourcesTable :: RemoteTable -> RemoteTable
+__resourcesTable = HA.Services.Mero.Types.myResourcesTable
 
 -- | Tracer for @halon:m0d@ with value @"halon:m0d"@. See 'mkHalonTracer'.
 traceM0d :: String -> Process ()

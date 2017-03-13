@@ -18,6 +18,7 @@ module HA.Services.Dummy
   -- * D-P specific functions
   , HA.Services.Dummy.__remoteTable
   , HA.Services.Dummy.__remoteTableDecl
+  , HA.Services.Dummy.__resourcesTable
   , dummy__static
   ) where
 
@@ -58,6 +59,10 @@ dummySchema = let
 
 type instance ServiceState DummyConf = ()
 
+instance StorageIndex DummyConf where
+  typeKey _ = $(mkUUID "a2911b98-81c8-469d-acff-6ee4f428ce6b")
+instance StorageIndex (Service DummyConf) where
+  typeKey _ = $(mkUUID "50cfc6db-0e74-4c84-bef9-3dc2fec6854b")
 $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
 deriveSafeCopy 0 'base ''DummyConf

@@ -107,6 +107,7 @@ Library
                    ghc-prim,
                    mtl >= 2.0,
                    process >= 1.1,
+                   rank1dynamic,
                    replicated-log,
                    halon-instances,
                    singletons,

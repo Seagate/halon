@@ -66,6 +66,7 @@ typMask = 0x00ffffffffffffff
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
   deriving (Eq, Generic, Hashable, Show, Typeable)
+storageIndex ''FidSeq "64e86424-83b3-49f6-91b9-47fa4597a98a"
 deriveSafeCopy 0 'base ''FidSeq
 
 -- | Couple of utility methods for conf objects. Minimal implementation:
@@ -145,6 +146,7 @@ instance Migrate SyncToConfd where
   migrate (SyncDumpToBS_0 p) = SyncDumpToBS p
 
 instance Hashable SyncToConfd
+storageIndex ''SyncToConfd "6990a155-7db8-48a9-91e8-d49b75d16b25"
 deriveSafeCopy 0 'base ''SyncToConfd_0
 deriveSafeCopy 1 'extension ''SyncToConfd
 
@@ -166,6 +168,7 @@ data At = At
     deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable At
+storageIndex ''At "faa2ba1b-b989-468b-98f2-d38859a6b566"
 deriveSafeCopy 0 'base ''At
 
 -- | Relationship between parent and child entities in confd
@@ -174,6 +177,7 @@ data IsParentOf = IsParentOf
    deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsParentOf
+storageIndex ''IsParentOf "5e8df2ad-26c9-4614-8f66-4c9a31f044eb"
 deriveSafeCopy 0 'base ''IsParentOf
 
 -- | Relationship between virtual and real entities in confd.
@@ -182,6 +186,7 @@ data IsRealOf = IsRealOf
    deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsRealOf
+storageIndex ''IsRealOf "5be580c1-5dfa-4e01-ae27-ccf6739746c9"
 deriveSafeCopy 0 'base ''IsRealOf
 
 -- | Relationship between conceptual and hardware entities in confd
@@ -191,6 +196,7 @@ data IsOnHardware = IsOnHardware
    deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsOnHardware
+storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
 
 newtype Root = Root Fid
@@ -199,6 +205,7 @@ newtype Root = Root Fid
 instance ConfObj Root where
    fidType _ = fromIntegral . ord $ 't'
    fid (Root f) = f
+storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
 deriveSafeCopy 0 'base ''Root
 
 newtype Profile = Profile Fid
@@ -207,6 +214,7 @@ newtype Profile = Profile Fid
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
   fid (Profile f) = f
+storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
 data Filesystem = Filesystem {
@@ -222,6 +230,7 @@ instance FromJSON Filesystem
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
+storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
 deriveSafeCopy 0 'base ''Filesystem
 
 newtype Node = Node Fid
@@ -233,6 +242,7 @@ instance ConfObj Node where
 
 instance FromJSON Node
 instance ToJSON   Node
+storageIndex ''Node "ad7ccb0d-546a-41d0-a332-6a4f3d842a15"
 deriveSafeCopy 0 'base ''Node
 
 -- | Node state. This is a generalization of what might be reported to Mero.
@@ -247,6 +257,7 @@ data NodeState
 instance Hashable NodeState
 instance ToJSON NodeState
 instance FromJSON NodeState
+storageIndex ''NodeState "20e7c791-34ab-48b0-87d5-0ad9a7931f3a"
 deriveSafeCopy 0 'base ''NodeState
 
 prettyNodeState :: NodeState -> String
@@ -267,6 +278,7 @@ newtype Rack = Rack Fid
 instance ConfObj Rack where
   fidType _ = fromIntegral . ord $ 'a'
   fid (Rack f) = f
+storageIndex ''Rack "967502a2-03df-4750-a4de-b1d9c1be20fa"
 deriveSafeCopy 0 'base ''Rack
 
 newtype Pool = Pool Fid
@@ -276,6 +288,7 @@ newtype Pool = Pool Fid
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
   fid (Pool f) = f
+storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
 data Process = Process {
@@ -296,6 +309,7 @@ instance ConfObj Process where
   fid = r_fid
 instance Ord Process where
   compare = comparing r_fid
+storageIndex ''Process "7d76bc51-c2ee-4cbf-bbfc-19276403e500"
 deriveSafeCopy 0 'base ''Process
 
 data Service = Service {
@@ -314,6 +328,7 @@ instance FromJSON Service
 instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
+storageIndex ''Service "2f7bd43d-767a-4c6d-9586-ef369528f2e2"
 deriveSafeCopy 0 'base ''Service
 
 -- | Service state. This is a generalisation of what might be reported to Mero.
@@ -330,6 +345,7 @@ data ServiceState =
 instance Hashable ServiceState
 instance ToJSON ServiceState
 instance FromJSON ServiceState
+storageIndex ''ServiceState "59f1f98a-bcf8-4707-8652-3ab10ed78ecb"
 deriveSafeCopy 0 'base ''ServiceState
 
 prettyServiceState :: ServiceState -> String
@@ -352,6 +368,7 @@ data SDev = SDev {
   , d_bsize :: Word32 -- ^ Block size in mb
   , d_path :: String -- ^ Path to logical device
 } deriving (Eq, Generic, Show, Typeable, Ord)
+storageIndex ''SDev "3b07bf77-c5f9-4a42-bae9-6c658272b3a1"
 deriveSafeCopy 0 'base ''SDev
 
 instance Hashable SDev
@@ -376,6 +393,7 @@ data SDevState =
 instance Hashable SDevState
 instance ToJSON SDevState
 instance FromJSON SDevState
+storageIndex ''SDevState "9b261aec-81d9-42a7-a0f5-0e6463c9789a"
 deriveSafeCopy 0 'base ''SDevState
 
 prettySDevState :: SDevState -> String
@@ -428,6 +446,7 @@ newtype Enclosure = Enclosure Fid
 instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
   fid (Enclosure f) = f
+storageIndex ''Enclosure "c532aff7-0a81-4949-9f52-3963c7871250"
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | A controller represents an entity which allows access to a number of
@@ -437,6 +456,7 @@ newtype Controller = Controller Fid
 
 instance ToJSON Controller
 instance FromJSON Controller
+storageIndex ''Controller "e0b49549-5ba5-4e2a-9440-81fbfd1b0253"
 deriveSafeCopy 0 'base ''Controller
 
 -- | Controller state type. Note that:
@@ -450,6 +470,7 @@ data ControllerState
   | CSOnline -- ^ Controller is fine.
   | CSTransient -- ^ Controller is experiencing a failure.
   deriving (Eq, Show, Typeable, Generic, Read)
+storageIndex ''ControllerState "83139b83-4170-47e2-be95-8a726c8159a6"
 deriveSafeCopy 0 'base ''ControllerState
 
 instance Hashable ControllerState
@@ -460,6 +481,7 @@ instance ConfObj Controller where
 
 newtype Disk = Disk Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
+storageIndex ''Disk "ab1e2612-33cb-436c-8a37-d6763212db27"
 deriveSafeCopy 0 'base ''Disk
 
 instance ConfObj Disk where
@@ -476,6 +498,7 @@ data PVerType = PVerActual {
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable PVerType
+storageIndex ''PVerType "eb620a23-ffd8-4705-871f-c0674ad84cb7"
 deriveSafeCopy 0 'base ''PVerType
 
 data PVer = PVer {
@@ -484,6 +507,7 @@ data PVer = PVer {
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable PVer
+storageIndex ''PVer "055c3f88-4bdd-419a-837b-a029c7f4effd"
 deriveSafeCopy 0 'base ''PVer
 
 newtype PVerCounter = PVerCounter Word32
@@ -492,6 +516,7 @@ newtype PVerCounter = PVerCounter Word32
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
   fid = v_fid
+storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter
 
 newtype RackV = RackV Fid
@@ -500,6 +525,7 @@ newtype RackV = RackV Fid
 instance ConfObj RackV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (RackV f) = f
+storageIndex ''RackV "23dd6e71-7a5b-48e1-9d1e-9aa2ef6a6994"
 deriveSafeCopy 0 'base ''RackV
 
 newtype EnclosureV = EnclosureV Fid
@@ -508,6 +534,7 @@ newtype EnclosureV = EnclosureV Fid
 instance ConfObj EnclosureV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (EnclosureV f) = f
+storageIndex ''EnclosureV "f63ac45b-7a36-483c-84c8-739f028b04ed"
 deriveSafeCopy 0 'base ''EnclosureV
 
 newtype ControllerV = ControllerV Fid
@@ -516,6 +543,7 @@ newtype ControllerV = ControllerV Fid
 instance ConfObj ControllerV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (ControllerV f) = f
+storageIndex ''ControllerV "d3ab3c01-198d-4612-9281-ddf8ce217910"
 deriveSafeCopy 0 'base ''ControllerV
 
 newtype DiskV = DiskV Fid
@@ -524,6 +552,7 @@ newtype DiskV = DiskV Fid
 instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
+storageIndex ''DiskV "31526120-34c9-47c8-b63e-8668ee6add27"
 deriveSafeCopy 0 'base ''DiskV
 
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
@@ -535,6 +564,7 @@ deriveSafeCopy 0 'base ''DiskV
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
   deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
 
+storageIndex ''TimeSpec "fb1d3f0b-5761-41a3-b14a-ca5f458180b6"
 deriveSafeCopy 0 'base ''TimeSpec
 
 -- | Create a 'TimeSpec' with the given number of seconds.
@@ -587,6 +617,7 @@ secondsSince oldSpec = do
 data PoolRepairType = Failure | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
+storageIndex ''PoolRepairType "e26504dd-3dfd-4989-872f-180097e755d0"
 deriveSafeCopy 0 'base ''PoolRepairType
 instance Hashable PoolRepairType
 instance ToJSON PoolRepairType
@@ -617,6 +648,7 @@ data PoolRepairInformation = PoolRepairInformation
 instance Hashable PoolRepairInformation
 instance ToJSON PoolRepairInformation
 instance FromJSON PoolRepairInformation
+storageIndex ''PoolRepairInformation "2ef9e93c-5351-45e9-8a7d-82caa99bc4e6"
 deriveSafeCopy 1 'extension ''PoolRepairInformation
 
 instance Migrate PoolRepairInformation where
@@ -641,6 +673,7 @@ data PoolRepairStatus = PoolRepairStatus
 instance Hashable PoolRepairStatus
 instance ToJSON PoolRepairStatus
 instance FromJSON PoolRepairStatus
+storageIndex ''PoolRepairStatus "a238bffa-4a36-457d-95e8-2947ed8f45e5"
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
 -- | Vector of failed devices. We keep the order of failures because
@@ -648,11 +681,13 @@ deriveSafeCopy 0 'base ''PoolRepairStatus
 -- order.
 newtype DiskFailureVector = DiskFailureVector [Disk]
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
+storageIndex ''DiskFailureVector "00b766c3-3740-4c9c-afb4-e485fa52b433"
 deriveSafeCopy 0 'base ''DiskFailureVector
 
 -- | @lnet@ address associated with a host.
 newtype LNid = LNid String
   deriving (Eq, Generic, Hashable, Show, Typeable)
+storageIndex ''LNid "c46ca6b1-e84a-4981-8aa9-ed2223c91bff"
 deriveSafeCopy 0 'base ''LNid
 
 -- | Hardware information about a host.
@@ -666,6 +701,7 @@ data HostHardwareInfo = HostHardwareInfo
        }
    deriving (Eq, Show, Typeable, Generic)
 instance Hashable HostHardwareInfo
+storageIndex ''HostHardwareInfo "7b81d801-ff8f-4364-b635-6648fc8614b2"
 deriveSafeCopy 0 'base ''HostHardwareInfo
 
 -- | Alias for process ID. In glibc @pid_t = int@.
@@ -673,6 +709,7 @@ newtype PID = PID Int
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable PID
+storageIndex ''PID "a28fae4e-054b-4442-b81b-9dea98312d3a"
 deriveSafeCopy 0 'base ''PID
 
 -- | Process state. This is a generalisation of what might be reported to Mero.
@@ -690,6 +727,7 @@ data ProcessState =
 instance Hashable ProcessState
 instance ToJSON ProcessState
 instance FromJSON ProcessState
+storageIndex ''ProcessState "8bdf4695-22d6-4f21-88a9-27445ad29252"
 deriveSafeCopy 0 'base ''ProcessState
 
 -- | Pretty printer for 'ProcessState'.
@@ -722,6 +760,7 @@ displayProcessState s = ( prettyProcessState s, Nothing)
 newtype BootLevel = BootLevel { unBootLevel :: Int }
   deriving
     (Eq, Show, Typeable, Generic, Hashable, Ord, FromJSON, ToJSON)
+storageIndex ''BootLevel "1d4cb2fc-6dbf-4dd9-ae3e-e48bb7accce7"
 deriveSafeCopy 0 'base ''BootLevel
 
 data ProcessLabel_0 =
@@ -745,6 +784,7 @@ data ProcessLabel =
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Show, Typeable, Generic)
 instance Hashable ProcessLabel
+storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
 deriveSafeCopy 1 'extension ''ProcessLabel
 
 instance Migrate ProcessLabel where
@@ -764,6 +804,7 @@ data Disposition =
 instance Hashable Disposition
 instance ToJSON Disposition
 instance FromJSON Disposition
+storageIndex ''Disposition "c84234bf-5d6a-4918-a3fd-82f16b012cb7"
 deriveSafeCopy 0 'base ''Disposition
 
 -- | Marker to tag the cluster run level
@@ -771,6 +812,7 @@ data RunLevel = RunLevel
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable RunLevel
+storageIndex ''RunLevel "534ecce0-42bf-4618-ae24-dbb235ce5dec"
 deriveSafeCopy 0 'base ''RunLevel
 
 -- | Marker to tag the cluster stop level
@@ -778,6 +820,7 @@ data StopLevel = StopLevel
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable StopLevel
+storageIndex ''StopLevel "65ff0e97-9a9f-47f8-8d80-b5ddce912985"
 deriveSafeCopy 0 'base ''StopLevel
 
 -- | Cluster state.
@@ -811,6 +854,7 @@ data ConfUpdateVersion = ConfUpdateVersion Word64 (Maybe Int)
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ConfUpdateVersion
+storageIndex ''ConfUpdateVersion "0792089d-38c7-4993-8e7b-fcc30dd2ca33"
 deriveSafeCopy 0 'base ''ConfUpdateVersion
 
 
@@ -820,6 +864,7 @@ data ProcessBootstrapped = ProcessBootstrapped
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ProcessBootstrapped
+storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
 deriveSafeCopy 0 'base ''ProcessBootstrapped
 
 -- | Filesystem statistics
@@ -832,7 +877,9 @@ instance Hashable FilesystemStats
 instance ToJSON FilesystemStats
 instance FromJSON FilesystemStats
 
+storageIndex ''FSStats "914ee8ee-e8fb-453c-893c-5e386cdb28e3"
 deriveSafeCopy 0 'base ''FSStats
+storageIndex ''FilesystemStats "cc95cff6-abb5-474a-aad9-44acdf1d5e4a"
 deriveSafeCopy 0 'base ''FilesystemStats
 
 -- | A disk marker for replaced disks.
@@ -841,6 +888,7 @@ instance Hashable Replaced
 instance ToJSON Replaced
 instance FromJSON Replaced
 
+storageIndex ''Replaced "c2bd97c3-c84f-42a2-b14c-0e0240a61b7e"
 deriveSafeCopy 0 'base ''Replaced
 
 --------------------------------------------------------------------------------
@@ -857,7 +905,7 @@ $(mkDicts
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
-  , ''Replaced
+  , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -927,7 +975,7 @@ $(mkResRel
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
-  , ''Replaced
+  , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)

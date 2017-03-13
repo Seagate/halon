@@ -49,6 +49,9 @@ module HA.ResourceGraph
     , Res(..)
     , Rel(..)
     , Cardinality(..)
+    , StorageIndex(..)
+    , StorageResource(..)
+    , StorageRelation(..)
     -- , Quantify(..)
     -- * Operations
     , insertEdge
@@ -93,6 +96,18 @@ module HA.ResourceGraph
     , setSinceGC
     -- * Testing
     , getStoreUpdates
+    , mkStorageResourceKeyName
+    , mkStorageRelationKeyName
+    , mkResourceKeyName
+    , mkRelationKeyName
+    , SomeStorageResourceDict(..)
+    , SomeStorageRelationDict(..)
+    , someStorageResourceDict
+    , someStorageRelationDict
+    , someResourceDict
+    , someRelationDict
+    , someResourceDict__static
+    , someRelationDict__static
     ) where
 
 import HA.Logger
@@ -122,7 +137,7 @@ import Control.Distributed.Static
   ( RemoteTable
   , Static
   , unstatic
-  , staticApply
+  , staticLabel
   )
 import Control.Distributed.Process.Closure
 import Data.Constraint ( Dict(..) )
@@ -136,14 +151,16 @@ import Data.Binary ( Binary(..), encode )
 import Data.Binary.Get ( runGetOrFail )
 import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks, append )
+import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
-import Data.List (foldl', delete)
+import Data.List (foldl', delete, intercalate)
+import Data.UUID (UUID, fromString)
+import qualified Data.UUID as UUID
 import Data.Maybe
 import Data.Monoid
 import Data.Proxy
@@ -158,12 +175,76 @@ import HA.SafeCopy
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
 
+-- | The index of the type inside a graph. Each type that persists
+-- in a graph should have this constraint. So we could lookup dictionaries
+-- for this type.
+--
+-- This is needed because when schema changes some types may completely
+-- change but we stil need to be able to work with them. See 'StorageResource'
+-- for more details.
+class StorageIndex a where typeKey :: proxy a -> UUID
+
+instance StorageIndex UUID where
+  typeKey _ = fromJust $ fromString "d2947f30-2858-4bce-b71f-0fa9b6ca64f1"
+
+-- | 
+-- This type class denotes that value of this type may present in resource
+-- graph storage. Such values may be there if schema changes, and application
+-- should know how to work with them.
+--
+-- Examples:
+--
+--   * If resources uses safe copy for an update it can just provide all
+--     required instances and 'StorageIndex' of the type remains unchanged.
+--     Then application can load required instances and update record using
+--     safe copy methods.
+--   * If one resource is exchanged to a completely different resource, e.g.
+--     older version had:
+--     .
+--     >>> data Device = Device UUID
+--     .
+--     and newever version uses:
+--     .
+--     >>> data Device = Device Path
+--     .
+--     It's impossible to use safecopy to update here. Instead following strategy
+--     should be used.
+--     1. Old type should be moved to a special module and new one introduced.
+--     2. We load unrestricted graph and can work with valus of this type, but
+--     it will not allow us to store such values.
+--
+-- It's important that 'StorageMember' instance should not be removed for a
+-- type even if type is no longer a part of the schema.
+class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a, StorageIndex a)
+  => StorageResource a where
+  storageResourceDict :: Static (Dict (StorageResource a))
+
+deriving instance Typeable StorageResource
+
+mkStorageResourceKeyName :: StorageResource a => proxy a -> String
+mkStorageResourceKeyName p = genStorageResourceKeyName (typeKey p)
+
+genStorageResourceKeyName :: UUID -> String
+genStorageResourceKeyName u = "storage:" ++ (UUID.toString u)
+
 -- | A type can be declared as modeling a resource by making it an instance of
 -- this class.
-class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a) => Resource a where
+--
+-- The only difference with the 'StorageMember' is that 'Resource' class
+-- denotes that Resource is a part of the schema for the current version.
+-- Only values with 'Resource' constraint can be used in Restricted (Typed) graph.
+class StorageResource a => Resource a where
   resourceDict :: Static (Dict (Resource a))
 
 deriving instance Typeable Resource
+
+-- | Make resource key for the given type.
+mkResourceKeyName :: Resource a => proxy a -> String
+mkResourceKeyName p = genResourceKeyName (typeKey p)
+
+-- | Generate dictionariy key for the resource.
+genResourceKeyName :: UUID -> String
+genResourceKeyName u = "resource:" ++ (UUID.toString u)
 
 -- The cardinalities of relations allow for at most one element
 -- or any amount of elements.
@@ -178,10 +259,28 @@ type family Quantify (c :: Cardinality) = (r :: * -> *) | r -> c where
   Quantify 'AtMostOne = Maybe
   Quantify 'Unbounded = []
 
+-- | A relation that can exist in the storage of the ResourceGraph.
+-- See examples of use in 'StorageResource' type class
+class (StorageResource r, StorageResource a, StorageResource b) => StorageRelation r a b where
+  storageRelationDict :: Static (Dict (StorageRelation r a b))
+
+-- | Make storage relation name for the given type.
+mkStorageRelationKeyName :: StorageRelation r a b => (proxy r, proxy a, proxy b) -> String
+mkStorageRelationKeyName (pr, pa, pb) = genStorageRelationKeyName (typeKey pr) (typeKey pa) (typeKey pb)
+
+-- | Generate storage relation name in the database.
+genStorageRelationKeyName :: UUID -> UUID -> UUID -> String
+genStorageRelationKeyName ur ua ub =  "storage:" ++
+  intercalate "_" 
+    [ UUID.toString ur
+    , UUID.toString ua
+    , UUID.toString ub
+    ]
+
 -- | A relation on resources specifies what relationships can exist between
 -- any two given types of resources. Two resources of type @a@, @b@, cannot be
 -- related through @r@ if an @Relation r a b@ instance does not exist.
-class ( Hashable r, Typeable r, SafeCopy r, Resource a, Resource b, Show r
+class ( StorageRelation r a b, Resource a, Resource b
       , SingI (CardinalityFrom r a b), SingI (CardinalityTo r a b))
       => Relation r a b where
   type CardinalityFrom r a b :: Cardinality
@@ -189,6 +288,20 @@ class ( Hashable r, Typeable r, SafeCopy r, Resource a, Resource b, Show r
   relationDict :: Static (Dict (Relation r a b))
 
 deriving instance Typeable Relation
+
+-- | Make relation name for the given type.
+mkRelationKeyName :: Relation r a b => (proxy r, proxy a, proxy b) -> String
+mkRelationKeyName (pr, pa, pb) = genRelationKeyName (typeKey pr) (typeKey pa) (typeKey pb)
+
+-- | Generate relation name in the database.
+genRelationKeyName :: UUID -> UUID -> UUID -> String
+genRelationKeyName ur ua ub = "relation:" ++ 
+  intercalate "_"
+    [ UUID.toString ur 
+    , UUID.toString ua
+    , UUID.toString ub
+    ]
+
 
 -- | An internal wrapper for resources to have one universal type of resources.
 data Res = forall a. Resource a => Res !a
@@ -238,7 +351,11 @@ instance Show Res where
 -- XXX Specialized existential datatypes required because 'remotable' does not
 -- yet support higher kinded type variables.
 
+data SomeStorageResourceDict = forall a. SomeStorageResourceDict (Dict (StorageResource a))
+    deriving Typeable
 data SomeResourceDict = forall a. SomeResourceDict (Dict (Resource a))
+    deriving Typeable
+data SomeStorageRelationDict = forall r a b. SomeStorageRelationDict (Dict (StorageRelation r a b))
     deriving Typeable
 data SomeRelationDict = forall r a b. SomeRelationDict (Dict (Relation r a b))
     deriving Typeable
@@ -269,6 +386,12 @@ someResourceDict = SomeResourceDict
 
 someRelationDict :: Dict (Relation r a b) -> SomeRelationDict
 someRelationDict = SomeRelationDict
+
+someStorageResourceDict :: Dict (StorageResource a) -> SomeStorageResourceDict
+someStorageResourceDict = SomeStorageResourceDict 
+
+someStorageRelationDict :: Dict (StorageRelation r a b) -> SomeStorageRelationDict
+someStorageRelationDict = SomeStorageRelationDict 
 
 remotable ['someResourceDict, 'someRelationDict]
 
@@ -307,6 +430,36 @@ makeLenses ''Graph
 instance Show Graph where
   show g = show $ _grGraph g
 
+-- | Create a proxy out of value.
+proxy :: r -> Proxy r
+proxy _ = Proxy
+
+-- Update plan, because graph is not covered by the safecopy we need to be able 
+-- to distinguish with old and new states, this is done in the following way:
+--
+-- Version1: message is started with Static (Dict SomeRelation)
+-- Version2: message is started with Static (Dict SomeRelation) with value ""
+--   such value is not legal for version1.
+-- Version3: staticLabel "" :: Static (Dict SomeRelation) is removed from the
+--   message.
+--
+-- Algorithm is the following:
+-- Version1->Version2: we can check if we have staticLabel "" in the beginning
+-- if so we decode Version2 otherwise Version1 and always store that as Version2.
+--
+-- Version2->Version3: we can check if we have staticLabel "" in the beginning
+-- then we decode as Version2 otherwise as Version3 and always store that as
+-- Version3.
+--
+-- Update path:
+-- 1. Version1
+-- 2. Version1->Version2
+-- 3. Version2->Version3 (store as V2)
+-- 4. Version2->Version3 (store as V3)
+-- 5. Version3
+--
+-- Downgrades are possible only between 2 consequent versions (non transitive).
+
 instance GL.GraphLike Graph where
   type InsertableRes Graph = Resource
   type InsertableRel Graph = Relation
@@ -317,40 +470,75 @@ instance GL.GraphLike Graph where
   type UniversalResource Graph = Res
   type UniversalRelation Graph = Rel
 
-  encodeUniversalResource (Res (r :: r)) =
-    toStrict $ encode ($(mkStatic 'someResourceDict) `staticApply`
-                       (resourceDict :: Static (Dict (Resource r)))) `append`
-    runPutLazy (safePut r)
+  encodeUniversalResource (Res (r :: r)) = toStrict $
+    encode (staticLabel "" :: Static SomeResourceDict)
+    <> encode (typeKey (Proxy :: Proxy r))
+    <> runPutLazy (safePut r)
 
-  encodeUniversalRelation (InRel (r :: r) (x :: a) (y :: b)) =
-    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
-                  (relationDict :: Static (Dict (Relation r a b))))
-              `append` runPutLazy (safePut (0 :: Word8, r, x, y))
-  encodeUniversalRelation (OutRel (r :: r) (x :: a) (y :: b)) =
-    toStrict $ encode ($(mkStatic 'someRelationDict) `staticApply`
-                  (relationDict :: Static (Dict (Relation r a b))))
-              `append` runPutLazy (safePut (1 :: Word8, r, x, y))
+  encodeUniversalRelation (InRel (r :: r) (x :: a) (y :: b)) = toStrict $
+    encode (staticLabel "" :: Static SomeRelationDict)
+    <> encode ( typeKey (proxy r)
+              , typeKey (proxy x)
+              , typeKey (proxy y))
+    <> runPutLazy (safePut (0 :: Word8, r, x, y))
+  encodeUniversalRelation (OutRel (r :: r) (x :: a) (y :: b)) = toStrict $
+    encode (staticLabel "" :: Static SomeRelationDict)
+    <> encode ( typeKey (proxy r)
+              , typeKey (proxy x)
+              , typeKey (proxy y))
+    <> runPutLazy (safePut (1 :: Word8, r, x, y))
+
   -- | Decodes a Res from a 'Lazy.ByteString'.
   decodeUniversalResource rt bs =
     case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d) -> case unstatic rt d of
+      Right (rest,_,d) 
+       | d == staticLabel "" -> new rest
+       | otherwise -> old rest d
+      Left (_,_,err) -> error $ "decodeRes: " ++ err
+    where
+      new rest0 = case runGetOrFail get rest0 of
+        Right (rest,_,uuid) ->
+           case unstatic rt (staticLabel $ genResourceKeyName uuid) of
+             Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
+               case runGetLazy safeGet rest of
+                 Right r -> Res (r :: s)
+                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
+             Left err -> error $ "decodeRes: " ++ err
+        _ -> error $ "decodeRes: can't decode."
+      old rest d = case unstatic rt d of
         Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
           case runGetLazy safeGet rest of
             Right r -> Res (r :: s)
             Left err -> error $ "decodeRes: runGetLazy: " ++ err
         Left err -> error $ "decodeRes: " ++ err
-      Left (_,_,err) -> error $ "decodeRes: " ++ err
   decodeUniversalRelation rt bs = case runGetOrFail get $ fromStrict bs of
-    Right (rest,_,d) -> case unstatic rt d of
-      Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-        case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
-          Right (b, r, x, y) -> case b of
-            (0 :: Word8) -> InRel r x y
-            (1 :: Word8) -> OutRel r x y
-            _ -> error $ "decodeRel: Invalid direction bit."
-          Left err -> error $ "decodeRel: runGetLazy: " ++ err
-      Left err -> error $ "decodeRel: " ++ err
+    Right (rest,_,d)
+      | d == staticLabel "" -> new rest
+      | otherwise -> old rest d
     Left (_,_,err) -> error $ "decodeRel: " ++ err
+    where
+      new rest0 = case runGetOrFail get rest0 of
+        Right (rest,_,(ur,ua,ub)) ->
+           case unstatic rt (staticLabel $ genRelationKeyName ur ua ub) of
+             Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
+               case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+                 Right (b, r, x, y) -> case b of
+                   0 -> InRel r x y
+                   1 -> OutRel r x y
+                   _ -> error $ "decodeRel: Invalid direction bit."
+                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
+             Left err -> error $ "decodeRes: " ++ err
+        _ -> error $ "decodeRes: can't decode."
+      old rest d = case unstatic rt d of
+        Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
+          case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+            Right (b, r, x, y) -> case b of
+              (0 :: Word8) -> InRel r x y
+              (1 :: Word8) -> OutRel r x y
+              _ -> error $ "decodeRel: Invalid direction bit."
+            Left err -> error $ "decodeRel: runGetLazy: " ++ err
+        Left err -> error $ "decodeRel: " ++ err
+
 
   decodeRes :: forall a. Resource a => Res -> Maybe a
   decodeRes (Res a) = cast a :: Maybe a

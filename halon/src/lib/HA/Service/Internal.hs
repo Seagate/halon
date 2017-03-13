@@ -39,6 +39,7 @@ module HA.Service.Internal
   , ServiceUncaughtException(..)
   , ServiceStopNotRunning(..)
   , HA.Service.Internal.__remoteTable
+  , HA.Service.Internal.__resourcesTable
   ) where
 
 import HA.Aeson
@@ -172,8 +173,9 @@ data NextStep = Continue
 
 -- | A relation connecting the cluster to the services it supports.
 data Supports = Supports
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Ord, Typeable, Generic)
 instance Hashable Supports
+storageIndex ''Supports "330e72d2-746a-418d-a824-23afd7f54f95"
 deriveSafeCopy 0 'base ''Supports
 
 -- | Information about a service. 'ServiceInfo' describes all information that
@@ -186,6 +188,7 @@ data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
 -- See 'ProcessEncode' for additional details.
 newtype ServiceInfoMsg = ServiceInfoMsg BS.ByteString -- XXX: memoize StaticSomeConfigurationDict
   deriving (Typeable, Eq, Hashable, Show)
+storageIndex ''ServiceInfoMsg "c935f0fc-064e-4c75-be10-106b9ff3da43"
 deriveSafeCopy 0 'base ''ServiceInfoMsg
 
 instance ProcessEncode ServiceInfo where
@@ -366,11 +369,11 @@ remoteStopService (caller, label) = do
 
 
 $(mkDicts
-   [ ''ServiceInfoMsg]
+   [ ''ServiceInfoMsg, ''Supports]
    [ (''Node, ''Has, ''ServiceInfoMsg)
    ])
 $(mkResRel
-   [ ''ServiceInfoMsg ]
+   [ ''ServiceInfoMsg, ''Supports ]
    [ (''Node, Unbounded, ''Has, Unbounded, ''ServiceInfoMsg)
    ]
    [ 'someConfigDict

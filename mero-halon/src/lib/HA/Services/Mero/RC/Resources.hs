@@ -39,6 +39,9 @@ instance Hashable StateDiffIndex
 data OnCommit = DoSyncGraph
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable OnCommit
+storageIndex ''StateDiff "9e9b93cb-babc-4a57-803f-ede59406f817"
+storageIndex ''StateDiffIndex "f8e1b7e0-aedd-4783-a10f-af4cdf85652a"
+storageIndex ''OnCommit "1ca007a0-181a-4d35-a6e9-bde3295b9941"
 deriveSafeCopy 0 'base ''OnCommit
 deriveSafeCopy 0 'base ''StateDiff
 deriveSafeCopy 0 'base ''StateDiffIndex
@@ -47,18 +50,21 @@ deriveSafeCopy 0 'base ''StateDiffIndex
 data DeliveredTo = DeliveredTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveredTo
+storageIndex ''DeliveredTo "4a3b04c2-0b21-49a4-a6a0-d078298f97fa"
 deriveSafeCopy 0 'base ''DeliveredTo
 
 -- | The 'StateDiff' is due to be delivered to the process.
 data ShouldDeliverTo = ShouldDeliverTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable ShouldDeliverTo
+storageIndex ''ShouldDeliverTo "b82e8c35-df8c-4a97-b1cb-dba3fe4a27a3"
 deriveSafeCopy 0 'base ''ShouldDeliverTo
 
 -- | Delivery of the 'StateDiff' to the process has failed.
 data DeliveryFailedTo = DeliveryFailedTo
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable DeliveryFailedTo
+storageIndex ''DeliveryFailedTo "759a77f6-0994-4fc7-86e7-e4e73b41478a"
 deriveSafeCopy 0 'base ''DeliveryFailedTo
 
 $(mkDicts

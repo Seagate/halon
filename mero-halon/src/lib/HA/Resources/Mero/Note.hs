@@ -84,6 +84,7 @@ data ConfObjectState
       -- reconstructed data is being copied from spare space to the
       -- replacement storage.
     deriving (Eq, Show, Enum, Typeable, Generic, Ord, Read)
+storageIndex ''ConfObjectState "f0d27472-7f24-479f-b1f9-35a368492383"
 deriveSafeCopy 0 'base ''ConfObjectState
 
 instance Hashable ConfObjectState
@@ -105,6 +106,7 @@ data PrincipalRM = PrincipalRM
   deriving (Eq, Show, Enum, Typeable, Generic)
 
 instance Hashable PrincipalRM
+storageIndex ''PrincipalRM "255f8652-9723-4f12-83b7-696800afed77"
 deriveSafeCopy 0 'base ''PrincipalRM
 
 -- | A notification for the following end-points has failed. We use
@@ -114,6 +116,7 @@ newtype NotifyFailureEndpoints = NotifyFailureEndpoints [String]
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable NotifyFailureEndpoints
+storageIndex ''NotifyFailureEndpoints "b87496c2-8d09-48b5-b699-f84bc5e6cb06"
 deriveSafeCopy 0 'base ''NotifyFailureEndpoints
 
 --------------------------------------------------------------------------------

@@ -23,6 +23,7 @@ module HA.Services.SSPL
   , AckReply(..)
   , HA.Services.SSPL.LL.Resources.Channel(..)
   , HA.Services.SSPL.LL.Resources.__remoteTable
+  , HA.Services.SSPL.__resourcesTable
   , HA.Services.SSPL.__remoteTableDecl
   , sendNodeCmd
   , sendNodeCmdChan
@@ -75,7 +76,7 @@ import Control.Distributed.Process
   )
 import Control.Distributed.Process.Closure
 import Control.Distributed.Static
-  ( staticApply )
+  ( staticApply, RemoteTable )
 import Control.Monad.State.Strict hiding (mapM_)
 import Control.Monad.Trans.Maybe
 import Control.Monad.Catch (onException, try, SomeException, MonadCatch)
@@ -95,6 +96,9 @@ import Network.AMQP
 import Prelude hiding (id, mapM_)
 
 import System.Random (randomIO)
+
+__resourcesTable :: RemoteTable -> RemoteTable
+__resourcesTable = HA.Services.SSPL.LL.Resources.myResourcesTable
 
 header :: UID.UUID -> ActuatorRequestMessageSspl_ll_msg_header
 header uuid = ActuatorRequestMessageSspl_ll_msg_header {

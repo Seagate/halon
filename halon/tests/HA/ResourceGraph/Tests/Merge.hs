@@ -34,8 +34,12 @@ import Test.Tasty.QuickCheck
 newtype Node = Node Integer
   deriving (Eq, Hashable, Ord, Typeable, Generic, Show)
 
+storageIndex ''Node "c0fff54b-453a-4321-9464-2e196843e1fc"
+
 data Link = Link
   deriving (Eq, Ord, Typeable, Generic, Show)
+
+storageIndex ''Link "eda392bb-93ec-4c3e-b7bc-7e35cba9c910"
 
 instance Hashable Link
 
@@ -43,10 +47,10 @@ deriveSafeCopy 0 'base ''Node
 deriveSafeCopy 0 'base ''Link
 
 $(mkDicts
-  [''Node]
+  [''Node, ''Link]
   [ (''Node, ''Link, ''Node) ])
 $(mkResRel
-  [''Node]
+  [''Node, ''Link]
   [ (''Node, Unbounded, ''Link, Unbounded, ''Node) ]
   []
   )

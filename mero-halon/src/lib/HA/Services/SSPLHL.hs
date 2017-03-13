@@ -124,6 +124,8 @@ ssplhlSchema = SSPLHLConf <$> Rabbit.connectionSchema
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
+storageIndex ''SSPLHLConf "235a6c98-7405-4909-9407-35f61c905e02"
+serviceStorageIndex ''SSPLHLConf "62d727bc-3f65-40c2-b8a9-a469623cb33f"
 $(generateDicts ''SSPLHLConf)
 $(deriveService ''SSPLHLConf 'ssplhlSchema [])
 

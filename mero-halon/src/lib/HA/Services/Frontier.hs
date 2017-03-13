@@ -13,6 +13,7 @@ module HA.Services.Frontier
     , frontier
     , frontierService
     , HA.Services.Frontier.__remoteTable
+    , HA.Services.Frontier.__resourcesTable
     , HA.Services.Frontier.__remoteTableDecl
     , frontier__static
     ) where
@@ -60,6 +61,8 @@ frontierSchema =
                <> metavar "FRONTIER_PORT" in
     FrontierConf <$> port
 
+storageIndex ''FrontierConf "b8ed9f06-3f81-4860-84ba-81d8e20d39c4"
+serviceStorageIndex ''FrontierConf "67172603-0b38-4df4-b507-583894d71e4d"
 $(generateDicts ''FrontierConf)
 $(deriveService ''FrontierConf 'frontierSchema [])
 

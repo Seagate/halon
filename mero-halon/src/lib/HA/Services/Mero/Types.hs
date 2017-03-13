@@ -39,6 +39,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Options.Schema
 import           Options.Schema.Builder
+import           Language.Haskell.TH (mkName)
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
@@ -265,37 +266,6 @@ newtype MeroServiceInstance = MeroServiceInstance { _msi_m0d :: HA.Service.Servi
   deriving (Eq, Show, Generic, Typeable)
 instance Hashable MeroServiceInstance
 
-resourceDictMeroServiceInstance :: Dict (Resource MeroServiceInstance)
-resourceDictMeroServiceInstance = Dict
-
--- | Explicit 'NotificationMessage' channel dictionary used for
--- 'Binary' instance.
-resourceDictMeroChannel :: Dict (Resource (TypedChannel NotificationMessage))
-resourceDictMeroChannel = Dict
-
--- | Explicit 'ProcessControlMsg' channel dictionary used for 'Binary'
--- instance.
-resourceDictControlChannel :: Dict (Resource (TypedChannel ProcessControlMsg))
-resourceDictControlChannel = Dict
-
--- | Explicit 'MeroServiceInstances' relation dictionary used for
--- 'Binary' instance.
-relationDictMeroServiceInstance :: Dict (Relation R.Has R.Cluster MeroServiceInstance)
-relationDictMeroServiceInstance = Dict
-
--- | Explicit 'NotificationMessage' channel relation dictionary used for
--- 'Binary' instance.
-relationDictMeroChanelServiceProcessChannel :: Dict (
-    Relation MeroChannel R.Node (TypedChannel NotificationMessage)
-  )
-relationDictMeroChanelServiceProcessChannel = Dict
-
--- | Explicit 'ProcessControlMsg' channel relation dictionary used for
--- 'Binary' instance.
-relationDictMeroChanelServiceProcessControlChannel :: Dict (
-    Relation MeroChannel R.Node (TypedChannel ProcessControlMsg)
-  )
-relationDictMeroChanelServiceProcessControlChannel = Dict
 
 -- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf
@@ -349,23 +319,80 @@ kernelSchema = MeroKernelConf <$> uuid
             <> short 'u'
             <> metavar "UUID"
 
-$(generateDicts ''MeroConf)
-$(deriveService ''MeroConf 'meroSchema [ 'resourceDictMeroServiceInstance
-                                       , 'resourceDictMeroChannel
-                                       , 'resourceDictControlChannel
-                                       , 'relationDictMeroServiceInstance
-                                       , 'relationDictMeroChanelServiceProcessChannel
-                                       , 'relationDictMeroChanelServiceProcessControlChannel
-                                       ])
+storageIndex ''MeroConf                               "c6625352-ee65-486d-922c-843a5e1b6063"
+storageIndex ''MeroChannel                            "998366fa-dc24-4325-83b1-32f27b146d03"
+storageIndex ''MeroServiceInstance                    "ef91ea04-a66e-434e-bfbd-e4449c5d947e"
+storageIndexQ [t| TypedChannel NotificationMessage |] "5adbe0dc-f0d6-44c4-81e9-5d5accd3bf4a"
+storageIndexQ [t| TypedChannel ProcessControlMsg |]   "1c924292-d246-46e9-8a24-79b7daa4e346"
+serviceStorageIndex ''MeroConf                        "9ea7007a-51a8-4e2b-9208-a4e0944c54b2"
+mkDictsQ 
+  [ (mkName "resourceDictMeroServiceInstance", [t| MeroServiceInstance |])
+  , (mkName "storageDictMeroChannel_1",        [t| MeroChannel |])
+  , (mkName "resourceDictMeroChannel",         [t| TypedChannel NotificationMessage |])
+  , (mkName "resourceDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
+  ]
+  [ (mkName "relationDictMeroServiceInstance"
+      , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+    , (mkName "relationDictMeroChanelServiceProcessChannel"
+      , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage |]))
+    , (mkName "relationDictMeroChanelServiceProcessControlChannel" 
+      , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg |]))
+  ]
+mkStorageDictsQ
+  [ (mkName "storageDictMeroChannel_",        [t| MeroChannel |])
+  , (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
+  , (mkName "storageDictMeroChannel",         [t| TypedChannel NotificationMessage |])
+  , (mkName "storageDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
+  ]
+  [ (mkName "storageRelationDictMeroServiceInstance"
+    , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+  , (mkName "storageDictMeroChanelServiceProcessChannel"
+    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage|]))
+  , (mkName "storageDictMeroChanelServiceProcessControlChannel"
+    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg|]))
+  ]
+generateDicts       ''MeroConf
+deriveService        ''MeroConf 'meroSchema
+  [ 'resourceDictMeroServiceInstance
+  , 'resourceDictMeroChannel
+  , 'resourceDictControlChannel
+  , 'relationDictMeroServiceInstance
+  , 'relationDictMeroChanelServiceProcessChannel
+  , 'relationDictMeroChanelServiceProcessControlChannel
+  , 'storageDictMeroServiceInstance
+  , 'storageDictMeroChannel
+  , 'storageDictMeroChannel_
+  , 'storageDictMeroChannel_1
+  , 'storageDictControlChannel
+  , 'storageRelationDictMeroServiceInstance
+  , 'storageDictMeroChanelServiceProcessChannel
+  , 'storageDictMeroChanelServiceProcessControlChannel
+  ]
+mkStorageResRelQ
+  [ (mkName "storageDictMeroChannel_",        [t| MeroChannel |])
+  , (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
+  , (mkName "storageDictMeroChannel",         [t| TypedChannel NotificationMessage |])
+  , (mkName "storageDictControlChannel",      [t| TypedChannel ProcessControlMsg |])
+  ]
+  [ (mkName "storageRelationDictMeroServiceInstance"
+    , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+  , (mkName "storageDictMeroChanelServiceProcessChannel"
+    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel NotificationMessage|]))
+  , (mkName "storageDictMeroChanelServiceProcessControlChannel"
+    , ([t| R.Node |], [t| MeroChannel |], [t| TypedChannel ProcessControlMsg|]))
+  ]
+
+instance Resource MeroChannel where
+  resourceDict = $(mkStatic 'storageDictMeroChannel_1)
 
 instance Resource MeroServiceInstance where
   resourceDict = $(mkStatic 'resourceDictMeroServiceInstance)
 
 instance Resource (TypedChannel NotificationMessage) where
-    resourceDict = $(mkStatic 'resourceDictMeroChannel)
+  resourceDict = $(mkStatic 'resourceDictMeroChannel)
 
 instance Resource (TypedChannel ProcessControlMsg) where
-    resourceDict = $(mkStatic 'resourceDictControlChannel)
+  resourceDict = $(mkStatic 'resourceDictControlChannel)
 
 instance Relation R.Has R.Cluster MeroServiceInstance where
   type CardinalityFrom R.Has R.Cluster MeroServiceInstance = 'AtMostOne
@@ -388,6 +415,16 @@ instance Relation MeroChannel R.Node (TypedChannel ProcessControlMsg) where
 
 type instance HA.Service.ServiceState MeroConf =
   (ProcessId, SendPort NotificationMessage, SendPort ProcessControlMsg)
+
+myResourcesTable :: RemoteTable -> RemoteTable
+myResourcesTable
+  = $(makeResource [t| TypedChannel ProcessControlMsg |])
+  . $(makeResource [t| TypedChannel NotificationMessage |])
+  . $(makeResource [t| MeroServiceInstance |])
+  . $(makeRelation [t| R.Node |] [t| MeroChannel |] [t| TypedChannel NotificationMessage |])
+  . $(makeRelation [t| R.Node |] [t| MeroChannel |] [t| TypedChannel ProcessControlMsg |])
+  . $(makeRelation [t| R.Cluster |] [t| R.Has |] [t| MeroServiceInstance |])
+  . HA.Services.Mero.Types.__resourcesTable
 
 deriveSafeCopy 0 'base ''DeclareMeroChannel
 deriveSafeCopy 0 'base ''KeepaliveTimedOut

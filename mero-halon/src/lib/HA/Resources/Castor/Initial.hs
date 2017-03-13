@@ -39,6 +39,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
 
 import qualified Data.Yaml as Y
+import           HA.Resources.TH
 import           HA.SafeCopy
 
 -- | Type of network 'Interface'.
@@ -57,6 +58,7 @@ data Interface = Interface {
   , if_ipAddrs :: [String]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
+storageIndex ''Interface "9d4812ee-d1c9-455b-9e27-e146bb1c17e5"
 deriveSafeCopy 0 'base ''Interface
 instance Hashable Interface
 instance A.FromJSON Interface
@@ -534,16 +536,22 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
                   "Enclosures with non-unique enc_id exist."
 
 deriveSafeCopy 0 'base ''FailureSetScheme
+storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device
+storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals
+storageIndex           ''M0Globals "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC
+storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
 deriveSafeCopy 0 'base ''Enclosure
 deriveSafeCopy 0 'base ''HalonSettings
 deriveSafeCopy 0 'base ''Host
 deriveSafeCopy 0 'base ''InitialData
 deriveSafeCopy 0 'base ''Rack
+storageIndex           ''Rack "fe43cf82-adcd-40b5-bf74-134902424229"
 deriveSafeCopy 0 'base ''RoleSpec
+storageIndex           ''RoleSpec "495818cc-ec20-4159-ab91-37fe449af3e0"

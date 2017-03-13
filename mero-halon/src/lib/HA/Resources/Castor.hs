@@ -39,6 +39,7 @@ import GHC.Generics (Generic)
 newtype Rack = Rack
   Int -- ^ Rack index
   deriving (Eq, Show, Generic, Typeable, Hashable)
+storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
 deriveSafeCopy 0 'base ''Rack
 
 -- | Representation of a physical enclosure.
@@ -46,12 +47,14 @@ newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 instance FromJSON Enclosure
 instance ToJSON   Enclosure
+storageIndex ''Enclosure "4e78e1a1-8d02-4f42-a325-a4685aa44595"
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
 newtype Host = Host
     String -- ^ Hostname
   deriving (Eq, Show, Generic, Typeable, Hashable, FromJSON, ToJSON, Ord)
+storageIndex ''Host "8a9fb3e8-5400-45d4-85a3-e7d5128e504b"
 deriveSafeCopy 0 'base ''Host
 
 -- | Generic 'host attribute'.
@@ -73,6 +76,7 @@ data HostAttr =
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Hashable HostAttr
+storageIndex ''HostAttr "7a3def57-d9d2-41e1-9024-a72803916b6b"
 deriveSafeCopy 0 'base ''HostAttr
 
 -- | Representation of a storage device
@@ -83,6 +87,7 @@ newtype StorageDevice = StorageDevice
 instance FromJSON StorageDevice
 instance ToJSON StorageDevice
 
+storageIndex ''StorageDevice "6f7915aa-645c-42b4-b3e0-a8222c764730"
 deriveSafeCopy 0 'base ''StorageDevice
 
 data Slot = Slot
@@ -93,6 +98,7 @@ instance Hashable Slot
 instance FromJSON Slot
 instance ToJSON   Slot
 
+storageIndex ''Slot "b0561c97-63ed-4f16-a27a-10ef04f9a023"
 deriveSafeCopy 0 'base ''Slot
 
 
@@ -104,6 +110,7 @@ data StorageDeviceAttr
     deriving (Eq, Ord, Show, Generic)
 
 instance Hashable StorageDeviceAttr
+storageIndex ''StorageDeviceAttr "0a27839d-7e0c-4dda-96b8-034d640e6503"
 deriveSafeCopy 0 'base ''StorageDeviceAttr
 
 -- | Arbitrary identifier for a logical or storage device
@@ -118,6 +125,7 @@ data DeviceIdentifier =
 instance Hashable DeviceIdentifier
 instance ToJSON DeviceIdentifier
 instance FromJSON DeviceIdentifier
+storageIndex ''DeviceIdentifier "d4b502aa-e1d3-421a-8082-f3837aef3fdc"
 deriveSafeCopy 0 'base ''DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
@@ -129,6 +137,7 @@ data StorageDeviceStatus = StorageDeviceStatus
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable StorageDeviceStatus
+storageIndex ''StorageDeviceStatus "893b1410-6aff-4694-a6fd-19509a12d715"
 deriveSafeCopy 0 'base ''StorageDeviceStatus
 
 -- | Marker used to indicate that a host is undergoing RAID reassembly.
@@ -136,6 +145,7 @@ data ReassemblingRaid = ReassemblingRaid
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReassemblingRaid
+storageIndex ''ReassemblingRaid "e82259ce-5ae8-4117-85ca-6593e3856a89"
 deriveSafeCopy 0 'base ''ReassemblingRaid
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -146,12 +156,14 @@ data Is = Is
     deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable Is
+storageIndex ''Is "72d44ab5-4a22-4dbf-9cf1-170ed8518f3e"
 deriveSafeCopy 0 'base ''Is
 
 -- | The relation between a storage device and it's new version.
 data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReplacedBy
+storageIndex ''ReplacedBy "5db0c0d7-59d0-4750-84f6-c4b140a190df"
 deriveSafeCopy 0 'base ''ReplacedBy
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
@@ -247,6 +259,7 @@ data HalonVars = HalonVars
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars
+storageIndex ''HalonVars "46828e80-3122-45e1-88b9-1ba3edea13ae"
 deriveSafeCopy 0 'base ''HalonVars
 
 --------------------------------------------------------------------------------
@@ -259,7 +272,7 @@ $(mkDicts
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot
+  , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
@@ -287,7 +300,7 @@ $(mkResRel
   , ''Enclosure, ''MI.Interface, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot
+  , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)

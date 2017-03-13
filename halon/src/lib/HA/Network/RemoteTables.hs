@@ -5,19 +5,19 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module HA.Network.RemoteTables (haRemoteTable) where
 
-import HA.NodeUp ( __remoteTable )
-import HA.Logger ( __remoteTable )
-import HA.ResourceGraph ( __remoteTable )
-import HA.Resources ( __remoteTable )
-import HA.Services.Dummy ( __remoteTable, __remoteTableDecl )
-import HA.Services.Empty ( __remoteTable )
-import HA.Services.Noisy ( __remoteTable, __remoteTableDecl )
-import HA.Services.Ping ( __remoteTable, __remoteTableDecl )
-import HA.Service ( __remoteTable )
-import HA.Startup ( __remoteTable, __remoteTableDecl )
-import HA.EventQueue.Process ( __remoteTable )
-import HA.EQTracker.Process ( __remoteTable )
-import HA.Multimap.Process ( __remoteTable )
+import HA.NodeUp ( __remoteTable)
+import HA.Logger ( __remoteTable)
+import HA.ResourceGraph ( __remoteTable)
+import HA.Resources ( __remoteTable, __resourcesTable )
+import HA.Services.Dummy ( __remoteTable, __remoteTableDecl, __resourcesTable )
+import HA.Services.Empty ( __remoteTable, __resourcesTable )
+import HA.Services.Noisy ( __remoteTable, __remoteTableDecl, __resourcesTable )
+import HA.Services.Ping ( __remoteTable, __remoteTableDecl, __resourcesTable )
+import HA.Service ( __remoteTable, __resourcesTable )
+import HA.Startup ( __remoteTable, __remoteTableDecl)
+import HA.EventQueue.Process ( __remoteTable)
+import HA.EQTracker.Process ( __remoteTable)
+import HA.Multimap.Process ( __remoteTable)
 import HA.Replicator.Log (__remoteTable, __remoteTableDecl)
 
 import Control.Distributed.Log ( __remoteTable )
@@ -33,6 +33,12 @@ import Control.Distributed.Process.Consensus.BasicPaxos ( __remoteTable )
 -- collect their remote tables here.
 haRemoteTable :: RemoteTable -> RemoteTable
 haRemoteTable next =
+   HA.Service.__resourcesTable $
+   HA.Services.Ping.__resourcesTable $
+   HA.Services.Noisy.__resourcesTable $
+   HA.Services.Empty.__resourcesTable $
+   HA.Services.Dummy.__resourcesTable $
+   HA.Resources.__resourcesTable $
    HA.NodeUp.__remoteTable $
    HA.Logger.__remoteTable $
    HA.ResourceGraph.__remoteTable $

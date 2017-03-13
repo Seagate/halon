@@ -45,6 +45,7 @@ module HA.Services.Ekg
   , runEkgMetricCmdOnNode
     -- * Generated things
   , HA.Services.Ekg.Types.__remoteTable
+  , HA.Services.Ekg.Types.__resourcesTable
   , __remoteTableDecl
   , ekg__static
   ) where

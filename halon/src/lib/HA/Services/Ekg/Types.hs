@@ -1,11 +1,10 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ViewPatterns          #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE DataKinds #-}
 -- |
 -- Module    : HA.Services.Ekg.Types
 -- Copryight : (C) 2016 Seagate Technology Limited.
@@ -34,6 +33,7 @@ module HA.Services.Ekg.Types
   , configDictEkgConf
   , configDictEkgConf__static
   , __remoteTable
+  , HA.Services.Ekg.Types.__resourcesTable
   ) where
 
 import           Control.Distributed.Process
@@ -48,6 +48,7 @@ import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
 import           HA.SafeCopy
+import           HA.Service hiding (__remoteTable)
 import           HA.Service.TH
 import           Options.Schema
 import           Options.Schema.Builder
@@ -84,6 +85,10 @@ ekgSchema = EkgConf <$> host <*> port
         <> summary "Port to listen on"
         <> value 8000
 
+instance StorageIndex EkgConf where
+   typeKey _ = $(mkUUID "727a2a2d-9582-4bef-8051-8e153fe57642")
+instance StorageIndex (Service EkgConf) where
+   typeKey _ = $(mkUUID "11aec90e-c247-4bca-9d7d-240670ea544a")
 $(generateDicts ''EkgConf)
 $(deriveService ''EkgConf 'ekgSchema [])
 deriveSafeCopy 0 'base ''EkgConf

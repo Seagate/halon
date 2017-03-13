@@ -131,6 +131,9 @@ instance Migrate DecisionLogConf where
 instance Hashable DecisionLogConf
 instance ToJSON DecisionLogConf
 
+storageIndex ''DecisionLogConf "5c471fad-d1b2-498f-8f59-2cb89733d4a1"
+serviceStorageIndex ''DecisionLogConf "1c0fbe2b-470f-48e5-95e0-b1a748b29748"
+
 deriveSafeCopy 0 'base ''DecisionLogConf_v0
 deriveSafeCopy 1 'base ''DecisionLogConf
 

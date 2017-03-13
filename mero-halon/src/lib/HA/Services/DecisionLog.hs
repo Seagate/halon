@@ -11,6 +11,7 @@ module HA.Services.DecisionLog
     , processOutput
     , decisionLog__static
     , HA.Services.DecisionLog.Types.__remoteTable
+    , HA.Services.DecisionLog.Types.__resourcesTable
     , __remoteTableDecl
     ) where
 

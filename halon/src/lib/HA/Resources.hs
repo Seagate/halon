@@ -10,7 +10,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module HA.Resources where
+module HA.Resources
+  ( Cluster(..)
+  , Has(..)
+  , Runs(..)
+  , Node(..)
+  , EpochId(..)
+  , RecoverNode(..)
+  , HA.Resources.__remoteTable
+  , HA.Resources.__resourcesTable
+  ) where
 
 import Control.Distributed.Process
 import Data.Binary
@@ -30,6 +39,7 @@ import HA.SafeCopy
 data Cluster = Cluster
   deriving (Eq, Ord, Show, Typeable, Generic)
 instance Hashable Cluster
+storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
 deriveSafeCopy 0 'base ''Cluster
 
 
@@ -39,12 +49,14 @@ data Node = Node NodeId
 instance Hashable Node
 instance ToJSON Node
 instance FromJSON Node
+storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"
 deriveSafeCopy 0 'base ''Node
 
 
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
   deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
+storageIndex ''EpochId "8c4d4b29-0c24-4bc8-8ab5-e6b3a1f2cc96"
 deriveSafeCopy 0 'base ''EpochId
 
 --------------------------------------------------------------------------------
@@ -54,15 +66,16 @@ deriveSafeCopy 0 'base ''EpochId
 -- | A relation connecting the cluster to global resources, such as nodes and
 -- epochs.
 data Has = Has
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Ord, Show, Typeable, Generic)
 
 instance Hashable Has
+storageIndex ''Has "c912f510-1829-4df0-873d-4a960ff1ff4e"
 deriveSafeCopy 0 'base ''Has
 
 -- | A relation connecting a node to the services it runs.
 data Runs = Runs
   deriving (Eq, Show, Typeable, Generic)
-
+storageIndex ''Runs "8a53e367-8746-4814-aa3e-fb29c5432119"
 deriveSafeCopy 0 'base ''Runs
 instance Hashable Runs
 
@@ -74,47 +87,17 @@ instance Hashable Runs
 -- type EpochByteString = Epoch ByteString
 
 $(mkDicts
-  [''Cluster, ''Node, ''EpochId]
+  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
   [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochId)
   ])
 $(mkResRel
-  [''Cluster, ''Node, ''EpochId]
+  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
   ]
   []
   )
-
---------------------------------------------------------------------------------
--- Epoch messages                                                             --
---------------------------------------------------------------------------------
-
--- | Sent when a service requests the id of the latest epoch.
-newtype EpochRequest = EpochRequest ProcessId
-  deriving (Typeable, Binary, Generic)
-
--- | Sent by the RC to communicate the most recent epoch.
-newtype EpochResponse = EpochResponse EpochId
-  deriving (Binary, Typeable, Generic)
-
--- | Sent when a service requests an epoch transition.
-data EpochTransitionRequest = EpochTransitionRequest
-  { etrSource  :: ProcessId  -- ^ Service instance process sending request.
-  , etrCurrent :: EpochId    -- ^ Starting epoch.
-  , etrTarget  :: EpochId    -- ^ Destination epoch.
-  } deriving (Typeable, Generic)
-
-instance Binary EpochTransitionRequest
-
--- | Sent when the RC communicates an epoch transition.
-data EpochTransition a = EpochTransition
-  { etCurrent :: EpochId  -- ^ Starting epoch.
-  , etTarget  :: EpochId  -- ^ Destination epoch.
-  , etHow     :: a        -- ^ Instructions to reach destination.
-  } deriving (Typeable, Generic)
-
-instance Binary a => Binary (EpochTransition a)
 
 -- | Sent when a node goes down and we need to try to recover it
 newtype RecoverNode = RecoverNode Node
