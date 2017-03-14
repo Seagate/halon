@@ -8,21 +8,29 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 -- |
--- Copyright: (C) 2015 Tweag I/O Limited
+-- Module    : HA.Services.DecisionLog
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
 --
+-- Types used throughout the decision log service.
 module HA.Services.DecisionLog.Types where
 
 import           Control.Distributed.Process hiding (bracket)
 import           Data.Foldable (asum)
 import           Data.Hashable
 import           Data.Monoid ((<>))
+import           Data.Serialize.Get (runGet)
+import           Data.Serialize.Put (runPut)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
+import qualified HA.RecoveryCoordinator.Log as RC
 import           HA.SafeCopy
+import           HA.Service.Interface
 import           HA.Service.TH
+import qualified Network.CEP.Log as CEP
 import           Options.Schema
 import           Options.Schema.Builder
 
@@ -121,6 +129,28 @@ newtype DecisionLogConf_v0 = DecisionLogConf_v0 DecisionLogOutput
 -- compatibility.
 data DecisionLogConf = DecisionLogConf DecisionLogOutput TraceLogOutput
     deriving (Eq, Generic, Show, Typeable)
+
+-- | Decision log 'Interface'.
+interface :: Interface (CEP.Event RC.Event) ()
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "decision-log"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_ _ -> Nothing
+  , ifDecodeFromSvc = \_ -> Nothing
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
+
+instance HasInterface DecisionLogConf (CEP.Event RC.Event) () where
+  getInterface _ = interface
 
 -- | Migrate from 'DecisionLogConf_v0' to 'DecisionLogConf' by picking
 -- 'TraceNull' as a default 'TraceLogOutput'.

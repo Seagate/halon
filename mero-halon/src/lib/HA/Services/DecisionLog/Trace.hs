@@ -23,6 +23,10 @@ import           Network.CEP.Log as CL
 import           System.IO
 
 -- | Create new logger that will dump raw traces.
+--
+-- No fancy sends are needed here: logger processes are co-located and
+-- linked to main process so they are guaranteed to be the same
+-- version.
 newTracer :: TraceLogOutput -> Logger
 newTracer TraceNull = self where
   self = Logger loop

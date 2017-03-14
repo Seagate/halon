@@ -327,11 +327,7 @@ remoteStartService (caller, msg) = do
         runMainloop mainloop a b = do
           userEvents <- mainloop a b
           release $ (receiveWait $
-            [ {- -- match $ \(ServiceStatus pid) -> do
-              --  usend pid (Running a b)
-              --  return $ Continue b
-              -- match $ \(GracefulExit pid) -> return $ Teardown b -}
-            ] ++ userEvents ++
+            userEvents ++
             [matchAny $ \s -> do
                serviceLog $ "unhandled mesage" ++ show s
                return (Continue, b)

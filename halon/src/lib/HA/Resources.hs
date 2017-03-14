@@ -44,9 +44,8 @@ deriveSafeCopy 0 'base ''Cluster
 
 
 -- | A resource graph representation for nodes.
-data Node = Node NodeId
-  deriving (Eq, Ord, Show, Typeable, Generic)
-instance Hashable Node
+newtype Node = Node NodeId
+  deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
 instance ToJSON Node
 instance FromJSON Node
 storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"

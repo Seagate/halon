@@ -91,7 +91,6 @@ import           Data.Traversable (forM)
 import           Data.Typeable
 import           Data.Vinyl hiding ((:~:))
 import qualified Data.Set as Set
-import           Text.Printf (printf)
 
 import           Prelude hiding ((.), id)
 
@@ -118,15 +117,13 @@ clusterRules = sequence_
 -- | Fix we failed to load kernel modules on any server, then
 -- we need to put cluster into a failed state.
 eventNodeFailedStart :: Definitions RC ()
-eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $
-  \result -> do
-    case result of
-      KernelStarted{} -> return ()
-      _ -> phaseLog "error" $ "Kernel module failed to start."
-      -- _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
-      -- XXX: notify $ MeroClusterFailed
-      -- XXX: check if it's a client node, in that case such failure should not
-      -- be a panic
+eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $ \case
+  KernelStartFailure{} -> do
+    phaseLog "error" $ "Kernel module failed to start."
+    -- _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+    -- XXX: notify $ MeroClusterFailed
+    -- XXX: check if it's a client node, in that case such failure
+    -- should not be a panic
 
 -- | This is a rule which interprets state change events and is responsible for
 -- changing the state of the cluster accordingly'
@@ -140,19 +137,14 @@ eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" 
 eventAdjustClusterState :: Definitions RC ()
 eventAdjustClusterState = defineSimpleTask "castor::cluster::event::update-cluster-state"
   $ \msg -> do
-    let findChanges = do -- XXX: move to the common place
-          InternalObjectStateChange chs <- liftProcess $ decodeP msg
-          return $ mapMaybe (\(AnyStateChange (a :: a) old new _) ->
+    let findChanges :: Process [()]
+        findChanges = do -- XXX: move to the common place
+          InternalObjectStateChange chs <- decodeP msg
+          return $ mapMaybe (\(AnyStateChange (_ :: a) _ _ _) ->
                        case eqT :: Maybe (a Data.Typeable.:~: M0.Process) of
-                         Just Refl -> Just (a, old, new)
+                         Just Refl -> Just ()
                          Nothing   -> Nothing) chs
-        formatProcess :: (M0.Process, M0.ProcessState, M0.ProcessState) -> String
-        formatProcess (p, o, n) = printf "%s: %s -> %s" (show $ M0.fid p) (show o) (show n)
-    procChanges <- findChanges
-    unless (null procChanges) $ do
-      phaseLog "debug" $ "Process changes: " ++ show (map formatProcess procChanges)
-      notifyOnClusterTransition
-
+    unlessM (null <$> liftProcess findChanges) notifyOnClusterTransition
 
 -- | This is a rule catches death of the Principal RM and elects new one.
 --

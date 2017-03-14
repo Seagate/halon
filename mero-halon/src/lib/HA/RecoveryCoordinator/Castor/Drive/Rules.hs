@@ -4,7 +4,7 @@
 {-# LANGUAGE ViewPatterns #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Module rules for Disk entity.
@@ -64,6 +64,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import           HA.Resources.Mero.Note
 import           HA.Services.SSPL
+import           HA.Services.SSPL.CEP (sendNodeCmd)
 import           Network.CEP
 import           Text.Printf (printf)
 
@@ -452,7 +453,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   directly post_power_removed $ do
       (Just (_, _, nid, serial), _) <- get Local
       -- Attempt to power the disk back on
-      sent <- sendNodeCmd nid Nothing (DrivePoweron serial)
+      sent <- sendNodeCmd [Node nid] Nothing (DrivePoweron serial)
       if sent
       then switch [ power_returned
                   , timeout power_down_timeout power_removed_duration
@@ -592,8 +593,8 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
         sdev@(StorageDevice serial) <- MaybeT $ lookupStorageDevice m0sdev
         node <- MaybeT $ listToMaybe <$> getSDevNode sdev
         return (node, serial)
-      forM_ mdiskinfo $ \(node@(Node nid), serial) -> do
-        sent <- sendNodeCmd nid Nothing (DrivePowerdown . T.pack $ serial)
+      forM_ mdiskinfo $ \(node, serial) -> do
+        sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)
         if sent
         then phaseLog "info"
               $ printf "Powering off failed device %s on node %s"

@@ -73,12 +73,10 @@ import qualified Debug.Trace as D
 import           GHC.Generics (Generic)
 import           HA.Debug
 import           HA.EventQueue.Producer
-import qualified HA.RecoveryCoordinator.Mero.Events as M0
 import qualified HA.Resources.Mero as M0
 import           HA.Service
-import           HA.Services.Mero ( confXCPath, sendMeroChannel
-                                  , Started(..), unitString )
-import           HA.Services.Mero.RC.Events
+import           HA.Service.Interface
+import           HA.Services.Mero ( confXCPath, Started(..), unitString )
 import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid(..), fidToStr, ServiceType(..))
 import           Mero.Notification.HAState
@@ -99,7 +97,7 @@ data ProcessState = ProcessState
 -- separate mock instances won't source from each-other's data and we
 -- can catch bugs that interact with wrong halon:m0d instance.
 data MockLocalState = MockLocalState
-  { _m_last_pid :: Int
+  { _m_last_pid :: !Int
   -- ^ Last PID we assigned in 'mockRunSvc'.
   , _m_cmd_failures :: Map.Map (String, String) [Int]
   -- ^ A 'Map.Map' of @(command, service) -> [exitcodes]@. It informs
@@ -133,6 +131,8 @@ defaultMockLocalState = MockLocalState
 -- attaching UUID and own 'ProcessId'. When the service processes the
 -- message, it sends back 'MockCmdAck' provided here. User can then
 -- wait for this ack.
+--
+-- These mock commands bypass the interface.
 sendMockCmd :: (Show a, Eq a, Serializable a)
                  => a -- ^ Message
                  -> ProcessId -- ^ @halon:m0d:mock@ service 'ProcessId'
@@ -300,7 +300,7 @@ keepaliveProcess kaFreq kaTimeout master = do
       , mls ^. m_keepalive_failures )
     case S.toList fs of
       [] -> return ()
-      ps -> promulgateWait . KeepaliveTimedOut
+      ps -> sendRC interface . KeepaliveTimedOut
         $ map (\p -> (M0.fid p, M0.mkTimeSpec $ fromIntegral kaTimeout)) ps
 
 -- | Mock process handling 'NotificationMessage's comming in on a
@@ -322,8 +322,8 @@ statusProcess master nmChan = do
     sayMock $ "statusProcess: Received " ++ show msg
     fps <- liftIO $ _m_not_notifiable <$> readIORef mockLocalState
     for_ ps $ \case
-      p | p `S.member` fps -> promulgateWait $ NotificationFailure epoch p
-        | otherwise -> promulgateWait $ NotificationAck epoch p
+      p | p `S.member` fps -> sendRC interface $ NotificationFailure epoch p
+        | otherwise -> sendRC interface $ NotificationAck epoch p
     liftIO $ D.traceEventIO "STOP statusProcess"
 
 -- | A mock process for 'ProcessControlMsg' handler.
@@ -345,11 +345,11 @@ controlProcess conf master pcChan = do
   forever $ receiveChan pcChan >>= \case
     ConfigureProcess runType pconf mkfs uid ->
       configureProcess runType pconf mkfs >>=
-        promulgateWait . ProcessControlResultConfigureMsg nid uid
+        sendRC interface . ProcessControlResultConfigureMsg nid uid
     StartProcess runType p -> startProcess runType p >>=
-      promulgateWait . ProcessControlResultMsg nid
+      sendRC interface . ProcessControlResultMsg nid
     StopProcess runType p -> stopProcess runType p >>=
-      promulgateWait . ProcessControlResultStopMsg nid
+      sendRC interface . ProcessControlResultStopMsg nid
   where
     writeSysconfig runType pfid m0addr confdPath = do
       let prefix = case runType of { M0T1FS -> "m0t1fs"
@@ -471,6 +471,7 @@ m0dMockProcess parent conf = do
     sayMock "Kernel module ’loaded’."
     case rc of
       Right (haProc, haPid) -> do
+        sayMock $ printf "HA: %s, PID => %s" (show $ M0.fid haProc) (show haPid)
         sendProcessEvents haProc TAG_M0_CONF_HA_PROCESS_STARTED
                                  TAG_M0_CONF_HA_SERVICE_STARTED
                                  haPid
@@ -484,13 +485,11 @@ m0dMockProcess parent conf = do
         sayMock $ "Spawning control process"
         cc <- spawnChannelLocal $ controlProcess conf self
         usend parent $ Started (c, cc)
-        sendMeroChannel c cc
         sayMock "Starting service m0d:mock on mero client."
-        mockWaiter $ \waitForMore ->
-          [ match $ \ServiceStateRequest -> sendMeroChannel c cc >> waitForMore ]
+        mockWaiter $ \_ -> []
       Left i -> do
         sayMock $ "Kernel module did not load correctly: " ++ show i
-        promulgateWait . M0.MeroKernelFailed parent $
+        sendRC interface . MeroKernelFailed (processNodeId parent) $
           "mero-kernel service failed to start: " ++ show i
         Control.Distributed.Process.die Shutdown
   where
@@ -511,7 +510,7 @@ m0dMockProcess parent conf = do
 
 remotableDecl [ [d|
   m0dMock :: Service MeroConf
-  m0dMock = Service "m0d:mock"
+  m0dMock = Service (ifServiceName interface)
               $(mkStaticClosure 'm0dFunctions)
               ($(mkStatic 'someConfigDict)
                   `staticApply` $(mkStatic 'configDictMeroConf))
@@ -520,13 +519,20 @@ remotableDecl [ [d|
   m0dFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
     bootstrap conf = do
       self <- getSelfPid
-      promulgateWait $ CheckCleanup self
-      expectTimeout (10 * 1000000) >>= \case
+      sendRC interface $ CheckCleanup (processNodeId self)
+      cleanup <- receiveTimeout (10 * 1000000)
+        [ receiveSvcIf interface
+            (\case Cleanup{} -> True
+                   _ -> False)
+            (\case Cleanup b -> return b
+                   -- ‘impossible’
+                   _ -> return False) ]
+      case cleanup of
         Just True -> mockRunCmd "start" "mero-cleanup" Nothing >>= \case
           Right _ -> return ()
           Left i -> do
             sayMock $ "mero-cleanup did not run correctly: " ++ show i
-            promulgateWait . M0.MeroCleanupFailed self $ do
+            sendRC interface . MeroCleanupFailed (processNodeId self) $ do
               "mero-cleanup service failed to start: " ++ show i
             Control.Distributed.Process.die Shutdown
         Nothing -> sayMock "Could not ascertain whether to run mero-cleanup."
@@ -540,19 +546,26 @@ remotableDecl [ [d|
         [ matchIf (\(ProcessMonitorNotification _ p _) -> m0dPid == p)
               $ \_ -> do
             unregister m0dMockWorkerLabel
-            promulgateWait . M0.MeroKernelFailed self $ "process exited."
+            sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
             return (Left "failure during start")
         , match $ \(Started (c, cc)) -> return $! Right (m0dPid, c, cc)
         ]
     mainloop _ s@(pid,c,cc) = do
-      self <- getSelfPid
+      nid <- getSelfNode
       return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                    $ \_ -> do
-                 promulgateWait $ M0.MeroKernelFailed self "process exited."
+                 sendRC interface $ MeroKernelFailed nid "process exited."
                  return (Failure, s)
-             , match $ \ServiceStateRequest -> do
-                 sendMeroChannel c cc
-                 return (Continue, s)
+             , receiveSvc interface $ \case
+                 ServiceReconnectRequest -> do
+                   -- We're not actually connected to anything so quest do nothing
+                   return (Continue, s)
+                 PerformNotification nm -> do
+                   sendChan c nm
+                   return (Continue, s)
+                 ProcessMsg pm -> do
+                   sendChan cc pm
+                   return (Continue, s)
              ]
     teardown _ (pid, _, _) = do
       mref <- monitor pid

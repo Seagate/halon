@@ -111,18 +111,17 @@ failed = define "castor::drive::raid::failed" $ do
 
     setPhase raid_update $ \(HAEvent eid RaidUpdate{..}) -> do
       let
-        (Node nid) = ruNode
         go [] = return ()
         go ((sdev, path):xs) = do
           fork CopyNewerBuffer $ do
             phaseLog "action" $ "Metadrive drive " ++ show path
-                              ++ "failed on " ++ show nid ++ "."
+                              ++ "failed on " ++ show ruNode ++ "."
             msgUuid <- liftIO $ nextRandom
-            modify Local $ rlens fldNode . rfield .~ (Just ruNode)
+            modify Local $ rlens fldNode . rfield .~ Just ruNode
             modify Local $ rlens fldRaidInfo . rfield .~
               (Just $ RaidInfo ruRaidDevice sdev path)
             -- Tell SSPL to remove the drive from the array
-            sent <- sendNodeCmd nid (Just msgUuid)
+            sent <- sendNodeCmd [ruNode] (Just msgUuid)
                         (NodeRaidCmd ruRaidDevice (RaidRemove path))
             -- Start the reset operation for this disk
             if sent
@@ -276,12 +275,12 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
             mnode <- listToMaybe <$> getSDevNode sdev
             mpath <- StorageDevice.path sdev
             case (,) <$> mnode <*> mpath of
-              Just (node@(Node nid), path) -> do
+              Just (node, path) -> do
                 modify Local $ rlens fldNode . rfield .~ (Just node)
                 modify Local $ rlens fldRaidInfo . rfield .~
                   (Just $ RaidInfo (T.pack rd) sdev (T.pack path))
                 cmdUUID <- liftIO $ nextRandom
-                sent <- sendNodeCmd nid (Just cmdUUID)
+                sent <- sendNodeCmd [node] (Just cmdUUID)
                          (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
                 if sent
                 then do

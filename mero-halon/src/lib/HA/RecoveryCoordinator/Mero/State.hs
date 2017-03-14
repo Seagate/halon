@@ -164,8 +164,7 @@ applyStateChanges ass = getLocalGraph >>= \rg -> do
 -- | Apply deferred state changes in the standard order.
 applyDeferredStateChanges :: DeferredStateChanges -> PhaseM RC l ()
 applyDeferredStateChanges (DeferredStateChanges f s i) = do
-  let ioscMsg = encodeP i
-  diff <- mkStateDiff f ioscMsg []
+  diff <- mkStateDiff f (encodeP i) []
   notifyMeroAsync diff s
   let (InternalObjectStateChange iosc) = i
   for_ iosc $ \(AnyStateChange a o n _) -> do

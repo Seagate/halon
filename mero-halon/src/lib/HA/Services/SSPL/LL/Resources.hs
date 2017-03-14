@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Module    : HA.Services.SSPL.LL.Resources
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Resources used by @halon:sspl-ll@ service.
@@ -16,38 +16,33 @@ module HA.Services.SSPL.LL.Resources
   , ActuatorConf(..)
   , Channel(..)
   , CommandAck(..)
-  , DeclareChannels(..)
-  , ExpanderResetInternal(..)
   , HA.Services.SSPL.LL.Resources.__remoteTable
-  , myResourcesTable
-  , IEMChannel(..)
   , IPMIOp(..)
   , InterestingEventMessage(..)
   , LedControlState(..)
   , LoggerCmd(..)
   , NodeCmd(..)
   , RaidCmd(..)
-  , RequestChannels(..)
-  , ResetSSPLService(..)
   , SSPLConf(..)
-  , SSPLConnectFailure(..)
-  , SSPLServiceTimeout(..)
   , SensorConf(..)
+  , SsplLlFromSvc(..)
+  , SsplLlToSvc(..)
   , SystemdCmd(..)
   , configDictSSPLConf
   , configDictSSPLConf__static
   , formatTimeSSPL
+  , interface
   , makeLoggerMsg
   , makeNodeMsg
   , makeSystemdMsg
+  , myResourcesTable
   , nodeCmdString
   , parseNodeCmd
   , parseTimeSSPL
   , tryParseAckReply
   ) where
 
-import           Control.Distributed.Process (NodeId)
-import           Control.Distributed.Process (ProcessId, SendPort)
+import           Control.Distributed.Process (NodeId, ProcessId, SendPort)
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static (RemoteTable)
 import           Data.Binary (Binary, encode, decode)
@@ -55,6 +50,8 @@ import           Data.Defaultable
 import           Data.Hashable (Hashable)
 import           Data.Monoid ((<>))
 import           Data.Serialize hiding (encode, decode)
+import           Data.Serialize.Get (runGet)
+import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
 import           Data.Time
 import           Data.Typeable (Typeable)
@@ -66,20 +63,29 @@ import           HA.Resources (Has)
 import           HA.Resources.Castor (Slot)
 import           HA.SafeCopy
 import qualified HA.Service
+import           HA.Service.Interface
 import           HA.Service.TH
-import           HA.Services.SSPL.IEM
+import           HA.Services.SSPL.IEM (IEM)
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import           Language.Haskell.TH (mkName)
 import           Options.Schema (Schema)
 import           Options.Schema.Builder hiding (name, desc)
 import           SSPL.Bindings
   ( ActuatorRequestMessageActuator_request_type (..)
-  , ActuatorRequestMessageActuator_request_typeService_controller (..)
-  , ActuatorRequestMessageActuator_request_typeNode_controller (..)
   , ActuatorRequestMessageActuator_request_typeLogging (..)
+  , ActuatorRequestMessageActuator_request_typeNode_controller (..)
+  , ActuatorRequestMessageActuator_request_typeService_controller (..)
+  , ActuatorResponseMessageActuator_response_typeThread_controller
+  , SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+  , SensorResponseMessageSensor_response_typeDisk_status_hpi
+  , SensorResponseMessageSensor_response_typeRaid_data
+  , SensorResponseMessageSensor_response_typeService_watchdog
   )
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess)
+
+
+
 
 --------------------------------------------------------------------------------
 -- SSPL Control messages                                                      --
@@ -88,7 +94,7 @@ import           System.Process (readProcess)
 -- | Interesting Event Message.
 --   TODO Make this more interesting.
 newtype InterestingEventMessage = InterestingEventMessage IEM
-  deriving (Binary, Hashable, Typeable)
+  deriving (Hashable, Typeable, Show, Eq)
 
 -- | Possible operations to run on a service.
 data ServiceOp = SERVICE_START | SERVICE_STOP | SERVICE_RESTART | SERVICE_STATUS
@@ -116,7 +122,6 @@ data IPMIOp = IPMI_ON | IPMI_OFF | IPMI_CYCLE | IPMI_STATUS
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable IPMIOp
-deriveSafeCopy 0 'base ''IPMIOp
 
 -- | Convert 'IPMIOp' to a string IPMI system can understand.
 ipmiOpString :: IPMIOp -> T.Text
@@ -127,7 +132,7 @@ ipmiOpString IPMI_STATUS = "status"
 
 -- | Parse IPMI operation from upstream into 'IPMIOp'.
 parseIPMIOp :: T.Text -> Maybe IPMIOp
-parseIPMIOp t = case (T.toLower t) of
+parseIPMIOp t = case T.toLower t of
   "on"     -> Just IPMI_ON
   "off"    -> Just IPMI_OFF
   "cycle"  -> Just IPMI_CYCLE
@@ -136,9 +141,9 @@ parseIPMIOp t = case (T.toLower t) of
 
 -- | RAID related commands.
 data RaidCmd =
-    RaidFail T.Text
-  | RaidRemove T.Text
-  | RaidAdd T.Text
+    RaidFail !T.Text
+  | RaidRemove !T.Text
+  | RaidAdd !T.Text
   | RaidAssemble [T.Text]
   | RaidRun
   | RaidDetail
@@ -146,7 +151,6 @@ data RaidCmd =
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable RaidCmd
-deriveSafeCopy 0 'base ''RaidCmd
 
 -- | Convert raid command into format system can understand.
 raidCmdToText :: T.Text -> RaidCmd -> T.Text
@@ -172,26 +176,22 @@ data LedControlState
 
 instance Hashable LedControlState
 storageIndex ''LedControlState "4689d3b3-1597-4a79-a68a-8a20a06f4fe0"
-deriveSafeCopy 0 'base ''LedControlState
 
 -- | Node commands we can request.
 data NodeCmd
-  = IPMICmd IPMIOp T.Text -- ^ IP address
-  | DriveReset T.Text     -- ^ Reset drive
-  | DrivePowerdown T.Text -- ^ Powerdown drive
-  | DrivePoweron T.Text   -- ^ Poweron drive
-  | SmartTest  T.Text     -- ^ SMART drive test
-  | DriveLed T.Text LedControlState -- ^ Set led style
-  | DriveLedColor T.Text (Int, Int, Int) -- ^ Set led color
-  | NodeRaidCmd T.Text RaidCmd -- ^ RAID device, command
-  | SwapEnable Bool -- ^ Enable/disable swap on the node
-  | Mount T.Text -- ^ Mount the mountpoint
-  | Unmount T.Text -- ^ Unmount
+  = IPMICmd !IPMIOp !T.Text -- ^ IP address
+  | DriveReset !T.Text     -- ^ Reset drive
+  | DrivePowerdown !T.Text -- ^ Powerdown drive
+  | DrivePoweron !T.Text   -- ^ Poweron drive
+  | SmartTest  !T.Text     -- ^ SMART drive test
+  | DriveLed !T.Text !LedControlState -- ^ Set led style
+  | DriveLedColor !T.Text !(Int, Int, Int) -- ^ Set led color
+  | NodeRaidCmd !T.Text !RaidCmd -- ^ RAID device, command
+  | SwapEnable !Bool -- ^ Enable/disable swap on the node
+  | Mount !T.Text -- ^ Mount the mountpoint
+  | Unmount !T.Text -- ^ Unmount
   deriving (Eq, Show, Generic, Typeable)
-
 instance Hashable NodeCmd
-deriveSafeCopy 0 'base ''NodeCmd
-
 
 -- | Convert control state to text.
 controlStateToText :: LedControlState -> T.Text
@@ -245,37 +245,31 @@ nodeCmdString (Unmount x) = T.intercalate " "
 
 -- | Convert @NodeCmd@ back from a text representation.
 parseNodeCmd :: T.Text -> Maybe NodeCmd
-parseNodeCmd t =
-    case cmd of
-      "IPMI:"        -> do [ip, opt] <- return rest
-                           op <- parseIPMIOp opt
-                           return $ IPMICmd op ip
-      "RESET_DRIVE:" -> return $ DriveReset (head rest)
-      "DRIVE_POWERDOWN:" -> return $ DrivePowerdown (head rest)
-      "DRIVE_POWERON:" -> return $ DrivePoweron (head rest)
-      "SMART_TEST:"  -> return $ SmartTest (head rest)
-      "LED:" -> case rest of
-         ("set":drive:st:_) ->
-            either (const Nothing) (Just . DriveLed drive) (parseControlState st)
-         _ -> Nothing
-      _ -> Nothing
-  where
-    (cmd:rest) = T.words t
+parseNodeCmd t = case T.words t of
+  ["IPMI:", ip, opt] -> do
+    op <- parseIPMIOp opt
+    return $ IPMICmd op ip
+  "RESET_DRIVE:" : opt : _ -> return $ DriveReset opt
+  "DRIVE_POWERDOWN:" : opt : _ -> return $ DrivePowerdown opt
+  "DRIVE_POWERON:" : opt : _ -> return $ DrivePoweron opt
+  "SMART_TEST:" : opt : _  -> return $ SmartTest opt
+  "LED:" : "set" : drive : st : _ -> do
+    either (const Nothing) (Just . DriveLed drive) (parseControlState st)
+  _ -> Nothing
 
 -- | Logger actuator command
 data LoggerCmd = LoggerCmd
-       { lcMsg :: T.Text
-       , lcLevel :: T.Text
-       , lcType  :: T.Text
+       { lcMsg :: !T.Text
+       , lcLevel :: !T.Text
+       , lcType  :: !T.Text
        } deriving (Eq, Show, Generic, Typeable)
 instance Binary LoggerCmd
 
 -- | Actuator reply.
-data AckReply = AckReplyPassed       -- ^ Request succesfully processed.
-              | AckReplyFailed       -- ^ Request failed.
-              | AckReplyError T.Text -- ^ Error while processing request.
+data AckReply = AckReplyPassed        -- ^ Request succesfully processed.
+              | AckReplyFailed        -- ^ Request failed.
+              | AckReplyError !T.Text -- ^ Error while processing request.
               deriving (Eq, Show, Generic, Typeable)
-deriveSafeCopy 0 'base ''AckReply
 
 -- | Parse text representation of the @AckReply@
 tryParseAckReply :: T.Text -> Either String AckReply
@@ -292,9 +286,8 @@ tryParseAckReply t
 data CommandAck = CommandAck
   { commandAckUUID :: Maybe UUID    -- ^ Unique identifier.
   , commandAckType :: Maybe NodeCmd -- ^ Command text message.
-  , commandAck     :: AckReply      -- ^ Command result.
+  , commandAck     :: !AckReply     -- ^ Command result.
   } deriving (Eq, Show, Generic, Typeable)
-deriveSafeCopy 0 'base ''CommandAck
 
 emptyActuatorMsg :: ActuatorRequestMessageActuator_request_type
 emptyActuatorMsg = ActuatorRequestMessageActuator_request_type
@@ -330,37 +323,6 @@ makeLoggerMsg lc = emptyActuatorMsg {
   }
 
 --------------------------------------------------------------------------------
--- Events
---------------------------------------------------------------------------------
-
--- | Event that sspl service didn't receive any messages in time.
-newtype SSPLServiceTimeout = SSPLServiceTimeout NodeId
-  deriving (Eq, Show, Typeable)
-deriveSafeCopy 0 'base ''SSPLServiceTimeout
-
--- | Request hard SSPL service restart.
-data ResetSSPLService = ResetSSPLService
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Binary ResetSSPLService
-
-data RequestChannels = RequestChannels
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Binary RequestChannels
-
--- | Event happens when SSPL can't connect to Rabbit-MQ broker
-newtype SSPLConnectFailure = SSPLConnectFailure NodeId
-   deriving (Eq, Show, Typeable)
-deriveSafeCopy 0 'base ''SSPLConnectFailure
-
--- | Event representing an expander reset, which is otherwise
---   an empty message.
-data ExpanderResetInternal = ExpanderResetInternal
-  deriving (Eq, Show, Generic, Typeable)
-deriveSafeCopy 0 'base ''ExpanderResetInternal
-
---------------------------------------------------------------------------------
 -- Channels                                                                   --
 --------------------------------------------------------------------------------
 
@@ -372,16 +334,6 @@ data ActuatorChannels = ActuatorChannels
   deriving (Show, Generic, Typeable)
 
 instance Hashable ActuatorChannels
-deriveSafeCopy 0 'base ''ActuatorChannels
-
--- | Message to the RC advertising which channels to talk on.
-data DeclareChannels = DeclareChannels
-    ProcessId -- Identity of reporting process
-    ActuatorChannels -- Relevant channels
-  deriving (Show, Generic, Typeable)
-
-instance Hashable DeclareChannels
-deriveSafeCopy 0 'base ''DeclareChannels
 
 -- | Resource graph representation of a channel
 newtype Channel a = Channel (SendPort a)
@@ -390,13 +342,6 @@ newtype Channel a = Channel (SendPort a)
 instance (Typeable a, Binary a) => SafeCopy (Channel a) where
   putCopy (Channel sp) = contain $ put (encode sp)
   getCopy = contain $ Channel . decode <$> get
-
--- | Relation connecting the SSPL service process to its IEM channel.
-data IEMChannel = IEMChannel
-  deriving (Eq, Show, Typeable, Generic)
-
-instance Hashable IEMChannel
-deriveSafeCopy 0 'base ''IEMChannel
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -454,7 +399,6 @@ instance ToJSON ActuatorConf where
            , "commands" .= command
            , "timeout"  .= fromDefault timeout
            ]
-deriveSafeCopy 0 'base ''ActuatorConf
 
 -- | 'Schema' for actuator.
 actuatorSchema :: Schema ActuatorConf
@@ -489,7 +433,6 @@ data SensorConf = SensorConf {
     scDCS :: Rabbit.BindConf
     -- ^ Binds to DCS; see 'dcsSchema'.
 } deriving (Eq, Generic, Show, Typeable)
-deriveSafeCopy 0 'base ''SensorConf
 
 instance Hashable SensorConf
 instance ToJSON SensorConf
@@ -501,6 +444,27 @@ sensorSchema = compositeOption subOpts
                   <> summary "Sensor configuration."
   where
     subOpts = SensorConf <$> dcsSchema
+
+-- | Values that can be sent from RC to the SSPL-HL service.
+data SsplLlToSvc
+  = SsplIem !InterestingEventMessage
+  | SystemdMessage !(Maybe UUID) !ActuatorRequestMessageActuator_request_type
+  | ResetSSPLService
+  deriving (Show, Eq)
+
+-- | Values that can be sent from RC to the SSPL-HL service.
+data SsplLlFromSvc
+  = CAck CommandAck
+  | SSPLServiceTimeout !NodeId
+  | SSPLConnectFailure !NodeId
+  | DiskHpi !NodeId !SensorResponseMessageSensor_response_typeDisk_status_hpi
+  | DiskStatusDm !NodeId !SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+  | ServiceWatchdog !SensorResponseMessageSensor_response_typeService_watchdog
+  | RaidData !NodeId !SensorResponseMessageSensor_response_typeRaid_data
+  | ThreadController !NodeId !ActuatorResponseMessageActuator_response_typeThread_controller
+  | ExpanderResetInternal !NodeId
+  deriving (Show, Eq)
+
 
 -- | SSPL service configuration.
 data SSPLConf = SSPLConf
@@ -518,7 +482,30 @@ instance Hashable SSPLConf
 instance ToJSON SSPLConf
 storageIndex ''SSPLConf "2f3e5559-c3f2-4e02-9ce5-3e5d2d231ea6"
 serviceStorageIndex ''SSPLConf "d54e9eaf-c1a5-4ea7-96d6-7fbdb29bd277"
-deriveSafeCopy 0 'base ''SSPLConf
+
+instance HasInterface SSPLConf SsplLlToSvc SsplLlFromSvc where
+  getInterface _ = interface
+
+-- | SSPL-LL 'Interface
+interface :: Interface SsplLlToSvc SsplLlFromSvc
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "sspl"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
 
 -- | SSPL configuration 'Schema'.
 ssplSchema :: Schema SSPLConf
@@ -542,53 +529,31 @@ parseTimeSSPL = parseTimeM True defaultTimeLocale ssplTimeFormatString . T.unpac
 -- Dictionaries                                                               --
 --------------------------------------------------------------------------------
 
-storageIndexQ
-  [t| Channel InterestingEventMessage |]
-  "67b795e0-75fb-4a41-9a21-14cc41e8d7dc"
-storageIndexQ
-  [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |]
-  "f68d2a18-6e8b-45a9-a99c-dc174223ff1a"
 mkDictsQ
-  [ (mkName "resourceDictChannelIEM", [t| Channel InterestingEventMessage |])
-  , (mkName "resourceDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
-  , (mkName "resourceDictLedControlState", [t| LedControlState |])
+  [ (mkName "resourceDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "relationDictLedControlStateSlot"
     ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
   ]
 mkStorageDictsQ
-  [ (mkName "storageDictChannelIEM", [t| Channel InterestingEventMessage |])
-  , (mkName "storageDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
-  , (mkName "storageDictLedControlState", [t| LedControlState |])
+  [ (mkName "storageDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "storageDictLedControlStateSlot"
     ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
   ]
 generateDicts ''SSPLConf
 deriveService ''SSPLConf 'ssplSchema
-  [ 'resourceDictChannelIEM
-  , 'resourceDictChannelSystemd
-  , 'resourceDictLedControlState
+  [ 'resourceDictLedControlState
   , 'relationDictLedControlStateSlot
-  , 'storageDictChannelIEM
-  , 'storageDictChannelSystemd
   , 'storageDictLedControlState
   , 'storageDictLedControlStateSlot
   ]
 mkStorageResRelQ
-  [ (mkName "storageDictChannelIEM", [t| Channel InterestingEventMessage |])
-  , (mkName "storageDictChannelSystemd", [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
-  , (mkName "storageDictLedControlState", [t| LedControlState |])
+  [ (mkName "storageDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "storageDictLedControlStateSlot"
     ,  ([t| Slot|], [t| Has |], [t| LedControlState |]))
   ]
-
-instance Resource (Channel InterestingEventMessage) where
-  resourceDict = $(mkStatic 'resourceDictChannelIEM)
-
-instance Resource (Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type)) where
-  resourceDict = $(mkStatic 'resourceDictChannelSystemd)
 
 instance Resource LedControlState where
   resourceDict = $(mkStatic 'resourceDictLedControlState)
@@ -600,12 +565,24 @@ instance Relation Has Slot LedControlState where
 
 myResourcesTable :: RemoteTable -> RemoteTable
 myResourcesTable
-  = $(makeResource [t| Channel InterestingEventMessage |])
-  . $(makeResource [t| Channel (Maybe UUID, ActuatorRequestMessageActuator_request_type) |])
-  . $(makeResource [t| LedControlState |])
+  = $(makeResource [t| LedControlState |])
   . $(makeRelation [t| Slot |] [t| Has |] [t| LedControlState |])
   . HA.Services.SSPL.LL.Resources.__resourcesTable
 
 --------------------------------------------------------------------------------
 -- End Dictionaries                                                           --
 --------------------------------------------------------------------------------
+
+deriveSafeCopy 0 'base ''AckReply
+deriveSafeCopy 0 'base ''ActuatorChannels
+deriveSafeCopy 0 'base ''ActuatorConf
+deriveSafeCopy 0 'base ''CommandAck
+deriveSafeCopy 0 'base ''IPMIOp
+deriveSafeCopy 0 'base ''InterestingEventMessage
+deriveSafeCopy 0 'base ''LedControlState
+deriveSafeCopy 0 'base ''NodeCmd
+deriveSafeCopy 0 'base ''RaidCmd
+deriveSafeCopy 0 'base ''SSPLConf
+deriveSafeCopy 0 'base ''SensorConf
+deriveSafeCopy 0 'base ''SsplLlFromSvc
+deriveSafeCopy 0 'base ''SsplLlToSvc

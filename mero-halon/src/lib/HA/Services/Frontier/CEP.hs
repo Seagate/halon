@@ -1,66 +1,57 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : HA.Services.Frontier.CEP
+-- Copyright : (C) 2015-2016 Seagate Technology Limited.
 --
 -- Module with rules for frontier service that should be running on RC
 -- side
-module HA.Services.Frontier.CEP
-  ( frontierRules
-    -- * Individual rules
-  , ruleDumpKeyValues
-  , ruleDumpGraph
-  ) where
+module HA.Services.Frontier.CEP ( frontierRules ) where
 
-import HA.EventQueue (HAEvent(..))
-import HA.RecoveryCoordinator.RC.Actions
-import HA.Services.Frontier.Command
-import HA.Multimap (getKeyValuePairs)
-import qualified HA.ResourceGraph as G
-import Network.CEP
-
-import Control.Distributed.Process
-
-import Data.ByteString.Builder (toLazyByteString, lazyByteString)
+import           Control.Distributed.Process
+import           Control.Monad (void)
+import           Data.ByteString.Builder (toLazyByteString, lazyByteString)
 import qualified Data.ByteString.Lazy as BL
+import           HA.EventQueue (HAEvent(..))
+import           HA.Multimap (getKeyValuePairs)
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.ResourceGraph as G
+import           HA.Service.Interface
+import           HA.Services.Frontier
+import           HA.Services.Frontier.Command
+import           Network.CEP
 
 -- | Merged frontiner rules. Indended to be used in RC.
 frontierRules :: Definitions RC ()
-frontierRules = sequence_
-  [ ruleDumpKeyValues
-  , ruleDumpGraph
-  ]
+frontierRules = sequence_ [ ruleDump ]
 
--- | Individual rule. Reads all key values in storage and sends that to
--- the caller. Reply it send as a stream of a 'Data.ByteString.ByteString's
--- followed by '()' when everything is sent.
+-- | Dump k-v/rg value out to the service.
 --
 -- This call marked as proccessed immediately and is not reprocessed if case
 -- of RC failure.
-ruleDumpKeyValues :: Definitions RC ()
-ruleDumpKeyValues = defineSimple "frontiner-get-key-values" $
-  \(HAEvent uuid (MultimapGetKeyValuePairs, pid)) -> do
-      chan <- lsMMChan <$> get Global
-      _ <- liftProcess $ spawnLocal $ do
-             reply <- mmKeyValues . Just <$> getKeyValuePairs chan
-             mapM_ (usend pid) $ BL.toChunks
-                               $ toLazyByteString . lazyByteString $ reply
-             usend pid ()
-      messageProcessed uuid
-
--- | Individual rule. Reads graph and sends serializes that into graphviz
--- format. Reply it send as a stream of a 'Data.ByteString.ByteString's
--- followed by '()' when everything is sent.
---
--- This call marked as proccessed immediately and is not reprocessed if case
--- of RC failure.
-ruleDumpGraph :: Definitions RC ()
-ruleDumpGraph = defineSimple "frontier-dump-graph" $
-  \(HAEvent uuid (ReadResourceGraph, pid)) -> do
-      rg   <- getLocalGraph
-      _ <- liftProcess $ spawnLocal $ do
-             let reply = dumpGraph $ G.getGraphResources rg
-             say "start sending graph"
-             mapM_ (usend pid) $ BL.toChunks
-                               $ toLazyByteString . lazyByteString $ reply
-             usend pid ()
-             say "finished sending graph"
-      messageProcessed uuid
+ruleDump :: Definitions RC ()
+ruleDump = defineSimple "frontier-dump-values" $ \(HAEvent uuid msg) -> case msg of
+  -- Reads all key values in storage and sends that to
+  -- the caller. Reply it send as a stream of a 'Data.ByteString.ByteString's
+  -- followed by '()' when everything is sent.
+  MultimapGetKeyValuePairs nid -> do
+    messageProcessed uuid
+    chan <- lsMMChan <$> get Global
+    void . liftProcess $ spawnLocal $ do
+      reply <- mmKeyValues . Just <$> getKeyValuePairs chan
+      mapM_ (sendSvc (getInterface frontier) nid . FrontierChunk)
+        $ BL.toChunks
+        $ toLazyByteString . lazyByteString $ reply
+      sendSvc (getInterface frontier) nid FrontierDone
+  -- Reads graph and sends serializes that into graphviz
+  -- format. Reply is send as a stream of a 'Data.ByteString.ByteString's
+  -- followed by '()' when everything is sent.
+  ReadResourceGraph nid -> do
+    messageProcessed uuid
+    rg <- getLocalGraph
+    void . liftProcess $ spawnLocal $ do
+      let reply = dumpGraph $ G.getGraphResources rg
+      say "start sending graph"
+      mapM_ (sendSvc (getInterface frontier) nid . FrontierChunk)
+        $ BL.toChunks
+        $ toLazyByteString . lazyByteString $ reply
+      sendSvc (getInterface frontier) nid FrontierDone
+      say "finished sending graph"

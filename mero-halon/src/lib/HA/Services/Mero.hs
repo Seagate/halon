@@ -4,75 +4,62 @@
 -- |
 -- Module    : HA.Services.Mero
 -- Copyright : (C) 2013 Xyratex Technology Limited.
---                 2015-2016 Seagate Technology Limited.
+--                 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
---
--- TODO: Fix copyright header
 module HA.Services.Mero
-    ( MeroChannel(..)
-    , TypedChannel(..)
-    , DeclareMeroChannel(..)
-    , MeroChannelDeclared(..)
+    ( MeroConf(..)
+    , MeroFromSvc(..)
+    , MeroKernelConf(..)
+    , MeroToSvc(..)
     , NotificationMessage(..)
-    , ProcessRunType(..)
     , ProcessConfig(..)
     , ProcessControlMsg(..)
-    , ProcessControlResultMsg(..)
-    , ProcessControlResultStopMsg(..)
-    , MeroConf(..)
-    , MeroKernelConf(..)
-    , ServiceReconnectRequest(..)
-    , ServiceStateRequest(..)
-    , m0d_real
+    , ProcessRunType(..)
+    , Started(..)
+    , HA.Services.Mero.Types.__remoteTable
+    , HA.Services.Mero.__remoteTableDecl
+    , HA.Services.Mero.__resourcesTable
+    , Mero.Notification.getM0Worker
+    , confXCPath
     , lookupM0d
+    , m0d__static
+    , m0d_real
     , putM0d
     , traceM0d
-    , HA.Services.Mero.__remoteTableDecl
-    , HA.Services.Mero.Types.__remoteTable
-    , HA.Services.Mero.__resourcesTable
-    , m0d__static
-    , Mero.Notification.getM0Worker
-    , sendMeroChannel
-    , confXCPath
     , unitString
-    , Started(..)
     ) where
 
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Closure ( remotableDecl, mkStatic
-                                                     , mkStaticClosure )
+import           Control.Distributed.Process.Closure ( remotableDecl, mkStatic, mkStaticClosure )
 import qualified Control.Distributed.Process.Internal.Types as DI
 import           Control.Distributed.Static (staticApply)
 import           Control.Exception (SomeException, IOException)
 import           Control.Monad (forever, unless, void, when)
 import qualified Control.Monad.Catch as Catch
 import           Control.Monad.Trans.Reader
-import           HA.Debug
-import           HA.EventQueue (promulgate, promulgateWait)
-import           HA.Logger
-import qualified HA.RecoveryCoordinator.Mero.Events as M0
-import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Mero as M0
-import           HA.Service
-import           HA.Services.Mero.RC.Events (CheckCleanup(..))
-import           HA.Services.Mero.Types
-import           Mero.ConfC (Fid, fidToStr)
-import qualified Mero.Notification
-import           Mero.Notification (NIRef)
-import qualified Network.RPC.RPCLite as RPC
-import qualified System.SystemD.API as SystemD
-
-import           Data.Binary
 import qualified Data.Bimap as BM
+import           Data.Binary
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
 import           Data.Function (fix)
 import           Data.Maybe (maybeToList)
 import qualified Data.UUID as UUID
+import           HA.Debug
+import           HA.Logger
+import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
+import qualified HA.Resources.Mero as M0
+import           HA.Service
+import           HA.Service.Interface
+import           HA.Services.Mero.Types
+import           Mero.ConfC (Fid, fidToStr)
+import qualified Mero.Notification
+import           Mero.Notification (NIRef)
+import qualified Network.RPC.RPCLite as RPC
 import           System.Directory
 import           System.Exit
 import           System.FilePath
+import qualified System.SystemD.API as SystemD
 import qualified System.Timeout as ST
 
 __resourcesTable :: RemoteTable -> RemoteTable
@@ -81,16 +68,6 @@ __resourcesTable = HA.Services.Mero.Types.myResourcesTable
 -- | Tracer for @halon:m0d@ with value @"halon:m0d"@. See 'mkHalonTracer'.
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
-
--- | Send information about communication channels to RC.
-sendMeroChannel :: SendPort NotificationMessage
-                -> SendPort ProcessControlMsg
-                -> Process ()
-sendMeroChannel cn cc = do
-  pid <- getSelfPid
-  let chan = DeclareMeroChannel
-              pid (TypedChannel cn) (TypedChannel cc)
-  void $ promulgate chan
 
 -- | Process handling object status updates: it dispatches
 -- notifications ('NotificationMessage') to local mero processes.
@@ -111,8 +88,8 @@ statusProcess niRef ha_pfid ha_sfid pid rp = do
       -- status process is killed.
       lproc <- DI.Process ask
       Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid
-            (DI.runLocalProcess lproc . promulgateWait . NotificationAck epoch)
-            (DI.runLocalProcess lproc . promulgateWait . NotificationFailure epoch)
+            (DI.runLocalProcess lproc . sendRC interface . NotificationAck epoch)
+            (DI.runLocalProcess lproc . sendRC interface . NotificationFailure epoch)
    `catchExit` (\_ reason -> traceM0d $ "statusProcess exiting: " ++ reason)
    `Catch.catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
@@ -133,7 +110,7 @@ keepaliveProcess kaFreq kaTimeout ha_pfid ha_sfid niRef pid = do
     pruned <- liftIO $ Mero.Notification.pruneLinks niRef kaTimeout
     liftIO $ Mero.Notification.runPing niRef ha_pfid ha_sfid
     unless (null pruned) $ do
-      promulgateWait $ KeepaliveTimedOut pruned
+      sendRC interface $ KeepaliveTimedOut pruned
 
 -- | Process responsible for controlling the system level Mero
 -- processes running on this node.
@@ -200,13 +177,13 @@ controlProcess mc pid rp = do
             case m of
               ConfigureProcess runType conf mkfs uid -> forkIOInProcess
                 (configureProcess mc runType conf mkfs)
-                (promulgateWait . ProcessControlResultConfigureMsg nid uid)
+                (sendRC interface . ProcessControlResultConfigureMsg nid uid)
               StartProcess runType p -> forkIOInProcess
                 (startProcess runType p)
-                (promulgateWait . ProcessControlResultMsg nid)
+                (sendRC interface . ProcessControlResultMsg nid)
               StopProcess runType p -> forkIOInProcess
                 (stopProcess runType p)
-                (promulgateWait . ProcessControlResultStopMsg nid)
+                (sendRC interface . ProcessControlResultStopMsg nid)
         ]
   loop BM.empty
 
@@ -370,10 +347,9 @@ m0dProcess parent conf = do
           -- update the service state first.
 
           if caller /= nullPid
-          then usend caller $ ServiceReconnectReply c cc
+          then usend caller $ InternalServiceReconnectReply c cc
           else do
             usend parent (Started (c,cc))
-            sendMeroChannel c cc
           traceM0d "Starting service m0d on mero client"
           -- When reconnect is requested (in case of HALON-546 for
           -- example), kill helper processes and jump out without
@@ -381,23 +357,23 @@ m0dProcess parent conf = do
           -- respawn helper processes, make new channels and send the
           -- new channels upstream.
           receiveWait
-            [ match $ \(ServiceReconnectRequest, (caller' :: ProcessId)) -> do
+            [ match $ \m@(InternalServiceReconnectRequest{}) -> do
                 -- TODO: block until exit? Shouldn't really need to…
                 exitWait kaPid
                 exitWait statusPid
                 exitWait controlPid
-                usend self (caller', ())
+                usend self (m, ())
             ]
         -- Jump back into the loop after escaping withEp: this way we
         -- can connect using fresh endpoint (hopefully).
         traceM0d "Escaped withEp"
-        expect >>= \(rcaller, ()) -> do
+        expect >>= \(InternalServiceReconnectRequest rcaller, ()) -> do
           traceM0d "Reconnecting to endpoint."
           loop rcaller
 
       Left i -> do
         traceM0d $ "Kernel module did not load correctly: " ++ show i
-        void . promulgate . M0.MeroKernelFailed parent $
+        sendRC interface . MeroKernelFailed (processNodeId parent) $
           "mero-kernel service failed to start: " ++ show i
         Control.Distributed.Process.die Shutdown
   where
@@ -419,7 +395,7 @@ m0dProcess parent conf = do
     epHandler e = do
       let msg = "endpoint exception in halon:m0d: " ++ show e
       say $ "[service:m0d] " ++ msg
-      void . promulgate . M0.MeroKernelFailed parent $ msg
+      sendRC interface . MeroKernelFailed (processNodeId parent) $ msg
 
     -- Kernel
     startKernel = liftIO $ do
@@ -441,23 +417,28 @@ remotableDecl [ [d|
   m0dFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
     bootstrap conf = do
       self <- getSelfPid
-      void . promulgate $ CheckCleanup self
-      cleanup <- expectTimeout (10 * 1000000)
+      sendRC interface $! CheckCleanup (processNodeId self)
+      cleanup <- receiveTimeout (10 * 1000000)
+        [ receiveSvcIf interface
+            (\case Cleanup{} -> True
+                   _ -> False)
+            (\case Cleanup b -> return b
+                   -- ‘impossible’
+                   _ -> return False) ]
       case cleanup of
-        Just True -> (liftIO $ SystemD.startService "mero-cleanup")
-          >>= \case
-            Right _ -> return ()
-            Left i -> do
-              traceM0d $ "mero-cleanup did not run correctly: " ++ show i
-              promulgateWait . M0.MeroCleanupFailed self $
-                "mero-cleanup service failed to start: " ++ show i
-              Control.Distributed.Process.die Shutdown
+        Just True -> liftIO (SystemD.startService "mero-cleanup") >>= \case
+          Right _ -> return ()
+          Left i -> do
+            traceM0d $ "mero-cleanup did not run correctly: " ++ show i
+            sendRC interface . MeroCleanupFailed (processNodeId self) $
+              "mero-cleanup service failed to start: " ++ show i
+            Control.Distributed.Process.die Shutdown
+        Just False -> traceM0d "mero-cleanup not required."
         Nothing ->
           -- This case is pretty unusual. Means some kind of major failure of
           -- the RC. Regardless, we continue, since at worst we just fail on
           -- the next step instead.
           traceM0d "Could not ascertain whether to run mero-cleanup."
-        _ -> return ()
       pid <- spawnLocalName "service::m0d::process" $ do
         link self
         m0dProcess self conf
@@ -465,7 +446,7 @@ remotableDecl [ [d|
       receiveWait
         [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                 $ \_ -> do
-          void . promulgate . M0.MeroKernelFailed self $ "process exited."
+          sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
           return (Left "failure during start")
         , match $ \(Started (c,cc)) -> do
           return (Right (pid,c,cc))
@@ -474,17 +455,23 @@ remotableDecl [ [d|
       self <- getSelfPid
       return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                    $ \_ -> do
-                 void . promulgate . M0.MeroKernelFailed self $ "process exited."
+                 sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
                  return (Failure, s)
-             , match $ \(ServiceReconnectReply c' cc') -> do
-                 sendMeroChannel c' cc'
+             , receiveSvc interface $ \case
+                 ServiceReconnectRequest -> do
+                   usend pid $! InternalServiceReconnectRequest self
+                   return (Continue, s)
+                 PerformNotification nm -> do
+                   sendChan c nm
+                   return (Continue, s)
+                 ProcessMsg pm -> do
+                   sendChan cc pm
+                   return (Continue, s)
+                 m -> do
+                   traceM0d $ "Unprocessed message: " ++ show m
+                   return (Continue, s)
+             , match $ \(InternalServiceReconnectReply c' cc') -> do
                  return (Continue, (pid, c', cc'))
-             , match $ \ServiceReconnectRequest -> do
-                 usend pid (ServiceReconnectRequest, self)
-                 return (Continue, s)
-             , match $ \ServiceStateRequest -> do
-                 sendMeroChannel c cc
-                 return (Continue, s)
              ]
     teardown _ (pid,_,_) = do
       mref <- monitor pid

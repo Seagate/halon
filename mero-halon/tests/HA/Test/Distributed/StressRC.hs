@@ -115,12 +115,12 @@ test = testCase "StressRC" $
       whereisRemoteAsync nid1 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
       say "Sending a test ping ..."
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog [nid0] $ isSuffixOf "received DummyEvent 0"
 
       let numPings = 500 :: Int
       say $ "Sending " ++ show numPings ++ " pings ..."
-      forM_ [1..numPings] $ send pingPid . show
+      forM_ [1..numPings] $ send pingPid . Ping.DummyEvent . show
       send pingPid (Ping.SyncPing "final")
 
       forM_ [1..numPings] $ \i -> do

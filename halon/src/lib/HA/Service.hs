@@ -39,6 +39,7 @@ module HA.Service
   , registerServiceOnNode
   , unregisterServicesOnNode
   , lookupServiceInfo
+  , findRunningServiceOn
    -- * Messages
   , startRemoteService
   , stopRemoteService
@@ -112,6 +113,12 @@ unregisterServicesOnNode service node rg = (configs, foldr (disconnect node Has)
 lookupServiceInfo :: Node -> Service a -> Graph -> [ServiceInfoMsg]
 lookupServiceInfo node srv = filter (\i -> configDict srv == getServiceInfoDict i)
                            . connectedTo node Has
+
+-- | Given a set of 'Node's and a 'Service', produce a set of nodes on
+-- which the service is known to be running.
+findRunningServiceOn :: [Node] -> Service a -> Graph -> [Node]
+findRunningServiceOn ns svc rg =
+  filter (\n -> not . Prelude.null $ lookupServiceInfo n svc rg) ns
 
 -- | Synchronously start service on the remote node.
 --

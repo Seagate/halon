@@ -5,101 +5,47 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.Services.Mero.RC.Actions
-   ( -- * Service channels
-     registerChannel
-   , unregisterChannel
-   , meroChannel
-   , unregisterMeroChannelsOn
-   , lookupMeroChannelByNode
-     -- * Notifications system
-   , mkStateDiff
+   ( -- * Notifications system
+     mkStateDiff
    , getStateDiffByEpoch
    , markNotificationDelivered
    , markNotificationFailed
-   , getNotificationChannels
    , tryCompleteStateDiff
    , failNotificationsOnNode
    , notifyMeroAsync
    , orderSet
    ) where
 
--- Mero service
+import           Control.Category
+import           Control.Distributed.Process
+import           Control.Monad (when, unless)
+import           Control.Monad.Trans.State (execState)
+import qualified Control.Monad.Trans.State as State
+import           Data.Foldable (for_)
+import           Data.Function (on)
+import           Data.List (sortBy)
+import           Data.Maybe (catMaybes)
+import           Data.Proxy (Proxy(..))
+import           Data.Traversable (for)
+import           Data.Word (Word64)
+import           HA.EventQueue (promulgateWait)
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.ResourceGraph as G
+import           HA.ResourceGraph (Graph)
+import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
+import           HA.Service.Interface
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Events
 import           HA.Services.Mero.RC.Resources
-
--- Halon
-import           HA.ResourceGraph (Graph, Resource, Relation)
-import qualified HA.ResourceGraph    as G
-import qualified HA.Resources        as R
-import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Mero   as M0
-import qualified HA.Resources.Mero.Note as M0
-
--- RC dependencies
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.RC.Actions.Log (actLog)
-import HA.RecoveryCoordinator.Mero.Events
-
-import HA.EventQueue (promulgateWait)
-import Control.Distributed.Process
-import Network.CEP
-
+import           Mero.ConfC (Fid(..))
 import qualified Mero.Notification
-import Mero.Notification.HAState (Note(..))
-import Mero.ConfC (Fid(..))
-
-import Control.Category
-import Control.Monad (when, unless)
-import Control.Monad.Trans.State (execState)
-import qualified Control.Monad.Trans.State as State
-import Data.Traversable (for)
-import Data.List (sortBy)
-import Data.Maybe (catMaybes)
-import Data.Function (on)
-import Data.Foldable (for_)
-import Data.Word (Word64)
-import Data.Proxy (Proxy(..))
-import Prelude hiding ((.), id)
-
--- | Regisger new mero channel inside RG.
-registerChannel :: (Relation MeroChannel R.Node (TypedChannel a))
-                => R.Node
-                -> TypedChannel a
-                -> PhaseM RC l ()
-registerChannel node chan = modifyGraph $ G.connect node MeroChannel chan
-
--- | Unregister mero channel inside RG.
-unregisterChannel :: forall a l proxy .
-   ( Resource (TypedChannel a)
-   , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.AtMostOne
-   , Relation MeroChannel R.Node (TypedChannel a)
-   ) => R.Node -> proxy a -> PhaseM RC l ()
-unregisterChannel node _ = modifyGraph $
-  G.disconnectAllFrom node MeroChannel (Proxy :: Proxy (TypedChannel a))
-
--- | Find mero channel.
-meroChannel :: ( Resource (TypedChannel a)
-               , G.CardinalityTo MeroChannel R.Node (TypedChannel a) ~ 'G.AtMostOne
-               , Relation MeroChannel R.Node (TypedChannel a)
-               )
-            => Graph
-            -> R.Node
-            -> Maybe (TypedChannel a)
-meroChannel rg sp = G.connectedTo sp MeroChannel rg
-
--- | Find mero channel registered on the given node.
-lookupMeroChannelByNode :: R.Node -> PhaseM RC l (Maybe (TypedChannel NotificationMessage))
-lookupMeroChannelByNode node = do
-   rg <- getLocalGraph
-   return $ G.connectedTo node MeroChannel rg
-
--- | Unregister mero channels on the given 'R.Node'.
-unregisterMeroChannelsOn :: R.Node -> PhaseM RC l ()
-unregisterMeroChannelsOn node = do
-   actLog "unregisterMeroChannelsOn" [("node", show node)]
-   unregisterChannel node (Proxy :: Proxy NotificationMessage)
-   unregisterChannel node (Proxy :: Proxy ProcessControlMsg)
+import           Mero.Notification.HAState (Note(..))
+import           Network.CEP
+import           Prelude hiding ((.), id)
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.
@@ -107,8 +53,8 @@ unregisterMeroChannelsOn node = do
 -- Only 'PSOnline' processes are used as recepients for notifications:
 -- starting processes should request state themselves. Stopping
 -- processes shouldn't need any further updates.
-getNotificationChannels :: PhaseM RC l [(SendPort NotificationMessage, [M0.Process])]
-getNotificationChannels = do
+getNotificationNodes :: PhaseM RC l [(R.Node, [M0.Process])]
+getNotificationNodes = do
   rg <- getLocalGraph
   let nodes = [ (node, m0node)
               | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
@@ -116,19 +62,12 @@ getNotificationChannels = do
               , Just m0node <- [M0.nodeToM0Node node rg]
               ]
   things <- for nodes $ \(node, m0node) -> do
-     mchan <- lookupMeroChannelByNode node
-
      let procs = [ p | p <- G.connectedTo m0node M0.IsParentOf rg
                      , M0.getState p rg == M0.PSOnline ]
-     case (mchan, procs) of
-       (_, []) -> return Nothing
-       (Nothing, r) -> do
-         phaseLog "warning" $ "HA.Service.Mero.notifyMero: can't find remote service for "
-                              ++ show node
-                              ++ "Recipients: "
-                              ++ show r
-         return Nothing
-       (Just (TypedChannel chan), r) -> return $ Just (chan, r)
+     case procs of
+       [] -> return Nothing
+       _ -> return $! Just (node, procs)
+       -- TODO: recover service missing warning
   return $ catMaybes things
 
 -- | Create state diff.
@@ -230,15 +169,19 @@ failNotificationsOnNode node = do
 -- notified. because other procesees should request state on their own.
 notifyMeroAsync :: StateDiff -> Mero.Notification.Set -> PhaseM RC l ()
 notifyMeroAsync diff s = do
-  chans <- getNotificationChannels :: PhaseM RC l [(SendPort NotificationMessage, [M0.Process])]
-  for_ chans $ \(chan, recipients) -> do
+  nodes <- getNotificationNodes
+  rg <- getLocalGraph
+  let iface = getInterface $ lookupM0d rg
+  for_ nodes $ \(R.Node nid, recipients) -> do
     modifyGraph $ execState $ for recipients $
       State.modify . G.connect diff ShouldDeliverTo
     registerSyncGraph $
-      sendChan chan $ NotificationMessage (stateEpoch diff) (orderSet notifyOrdering s) (map M0.fid recipients)
-  -- there are no processes to send notification to - just try no accomplish
-  -- notification delivery.
-  when (null chans) $ do
+      sendSvc iface nid . PerformNotification $!
+        NotificationMessage (stateEpoch diff) (orderSet notifyOrdering s) (map M0.fid recipients)
+  -- there are no processes to send notification to: no notifications
+  -- will be acked or failed so we have to explicitly trigger state
+  -- diff completion
+  when (null nodes) $ do
     tryCompleteStateDiff diff
 
 -- | There are cases where mero cares about the order of elements

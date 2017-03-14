@@ -1,15 +1,18 @@
-{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Module    : Network.CEP.Log
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
 --
 -- Logging functionality for CEP.
 module Network.CEP.Log where
 
 import Data.Aeson (ToJSON, FromJSON)
-import Data.Binary (Binary)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
 import Data.Typeable (Typeable)
+import HA.SafeCopy
 
 import GHC.Generics (Generic)
 
@@ -18,21 +21,19 @@ import GHC.Generics (Generic)
 --   which can be easily displayed.
 data Jump =
     NormalJump String
-  | TimeoutJump Int String
+  | TimeoutJump !Int String
   deriving (Show, Generic, Typeable)
 
-instance Binary Jump
 instance ToJSON Jump
 instance FromJSON Jump
 
 -- | Identifies the location of a logging statement.
 data Location = Location {
     loc_rule_name :: String
-  , loc_sm_id :: Int64
+  , loc_sm_id :: !Int64
   , loc_phase_name :: String
 } deriving (Eq, Show, Generic, Typeable)
 
-instance Binary Location
 instance ToJSON Location
 instance FromJSON Location
 
@@ -42,34 +43,30 @@ instance FromJSON Location
 data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
   deriving (Show, Generic, Typeable)
 
-instance Binary ForkType
 instance ToJSON ForkType
 instance FromJSON ForkType
 
 -- | Emitted when a call to 'fork' is made.
 data ForkInfo = ForkInfo {
-    f_buffer_type :: ForkType -- ^ How much of the buffer
-                              --   should be copied to the child rule?
-  , f_sm_child_id :: Int64 -- ^ ID of the child SM
-} deriving (Generic, Typeable)
+    f_buffer_type :: !ForkType -- ^ How much of the buffer should be
+                               --   copied to the child rule?
+  , f_sm_child_id :: !Int64 -- ^ ID of the child SM
+} deriving (Generic, Typeable, Show)
 
-instance Binary ForkInfo
 instance ToJSON ForkInfo
 instance FromJSON ForkInfo
 
 data ContinueInfo = ContinueInfo {
-    c_continue_phase :: Jump -- ^ Phase to continue to.
-} deriving (Generic, Typeable)
+    c_continue_phase :: !Jump -- ^ Phase to continue to.
+} deriving (Generic, Typeable, Show)
 
-instance Binary ContinueInfo
 instance ToJSON ContinueInfo
 instance FromJSON ContinueInfo
 
 data SwitchInfo = SwitchInfo {
     s_switch_phases :: [Jump] -- ^ Phases to switch on.
-} deriving (Generic, Typeable)
+} deriving (Generic, Typeable, Show)
 
-instance Binary SwitchInfo
 instance ToJSON SwitchInfo
 instance FromJSON SwitchInfo
 
@@ -77,9 +74,8 @@ instance FromJSON SwitchInfo
 --   beginning phase. This event documents that.
 data RestartInfo = RestartInfo {
     r_restarting_from_phase :: String -- ^ Phase to restart from.
-} deriving (Generic, Typeable)
+} deriving (Generic, Typeable, Show)
 
-instance Binary RestartInfo
 instance ToJSON RestartInfo
 instance FromJSON RestartInfo
 
@@ -87,19 +83,17 @@ instance FromJSON RestartInfo
 data PhaseLogInfo = PhaseLogInfo {
     pl_key :: String
   , pl_value :: String
-} deriving (Generic, Typeable)
+} deriving (Generic, Typeable, Show)
 
-instance Binary PhaseLogInfo
 instance ToJSON PhaseLogInfo
 instance FromJSON PhaseLogInfo
 
 -- | Emitted whenever an application log is made from the underlying
 --   application.
 data ApplicationLogInfo a = ApplicationLogInfo {
-    al_value :: a
-} deriving (Generic, Typeable)
+    al_value :: !a
+} deriving (Generic, Typeable, Show)
 
-instance Binary a => Binary (ApplicationLogInfo a)
 instance ToJSON a => ToJSON (ApplicationLogInfo a)
 instance FromJSON a => FromJSON (ApplicationLogInfo a)
 
@@ -108,9 +102,8 @@ type Environment = Map.Map String String
 
 data StateLogInfo = StateLogInfo {
     sl_state :: Environment
-} deriving (Generic, Typeable)
+} deriving (Generic, Typeable, Show)
 
-instance Binary StateLogInfo
 instance ToJSON StateLogInfo
 instance FromJSON StateLogInfo
 
@@ -133,9 +126,8 @@ data CEPLog a =
   | PhaseLog PhaseLogInfo
   | StateLog StateLogInfo
   | ApplicationLog (ApplicationLogInfo a)
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable, Show)
 
-instance (Binary a) => Binary (CEPLog a)
 instance ToJSON a => ToJSON (CEPLog a)
 instance FromJSON a => FromJSON (CEPLog a)
 
@@ -143,8 +135,21 @@ instance FromJSON a => FromJSON (CEPLog a)
 data Event a = Event {
     evt_loc :: Location
   , evt_log :: CEPLog a
-} deriving (Generic, Typeable)
+} deriving (Generic, Typeable, Show)
 
-instance (Binary a) => Binary (Event a)
 instance ToJSON a => ToJSON (Event a)
 instance FromJSON a => FromJSON (Event a)
+
+
+deriveSafeCopy 0 'base ''ApplicationLogInfo
+deriveSafeCopy 0 'base ''CEPLog
+deriveSafeCopy 0 'base ''ContinueInfo
+deriveSafeCopy 0 'base ''Event
+deriveSafeCopy 0 'base ''ForkInfo
+deriveSafeCopy 0 'base ''ForkType
+deriveSafeCopy 0 'base ''Jump
+deriveSafeCopy 0 'base ''Location
+deriveSafeCopy 0 'base ''PhaseLogInfo
+deriveSafeCopy 0 'base ''RestartInfo
+deriveSafeCopy 0 'base ''StateLogInfo
+deriveSafeCopy 0 'base ''SwitchInfo

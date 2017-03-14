@@ -14,30 +14,26 @@
 module HA.Services.Ping
   ( ping
   , PingConf(..)
-  , SyncPing(..)
+  , PingSvcEvent(..)
   , HA.Services.Ping.__remoteTable
   , HA.Services.Ping.__remoteTableDecl
   , HA.Services.Ping.__resourcesTable
   , ping__static
+  , interface
   ) where
 
+import Control.Distributed.Process.Closure
+import Control.Distributed.Static ( staticApply )
+import Data.Hashable (Hashable)
+import Data.Serialize.Get (runGet)
+import Data.Serialize.Put (runPut)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
 import HA.Aeson
-import HA.EventQueue.Producer
 import HA.SafeCopy
 import HA.Service
+import HA.Service.Interface
 import HA.Service.TH
-import HA.Services.Dummy (DummyEvent(..))
-
-import Control.Distributed.Process
-import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-  ( staticApply )
-
-import Data.Hashable (Hashable)
-import Data.Typeable (Typeable)
-
-import GHC.Generics (Generic)
-
 import Options.Schema (Schema)
 
 
@@ -46,10 +42,13 @@ data PingConf = PingConf deriving (Eq, Generic, Show, Typeable)
 instance Hashable PingConf
 instance ToJSON PingConf
 
--- | An event that causes the RC to write pending changes to the RG.
-newtype SyncPing = SyncPing String
-  deriving (Show, Generic, Typeable)
-deriveSafeCopy 0 'base ''SyncPing
+data PingSvcEvent =
+  DummyEvent String
+  -- ^ An event which produces no action in the RC. Used for testing.
+  | SyncPing String
+  -- ^ An event that causes the RC to write pending changes to the RG.
+  deriving (Show, Typeable, Generic)
+
 
 pingSchema :: Schema PingConf
 pingSchema = pure PingConf
@@ -64,9 +63,30 @@ $(generateDicts ''PingConf)
 $(deriveService ''PingConf 'pingSchema [])
 deriveSafeCopy 0 'base ''PingConf
 
+interface :: Interface PingSvcEvent PingSvcEvent
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "ping"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
+
+
 remotableDecl [ [d|
   ping :: Service PingConf
-  ping = Service "ping"
+  ping = Service (ifServiceName interface)
             $(mkStaticClosure 'pingFunctions)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictPingConf))
@@ -77,14 +97,16 @@ remotableDecl [ [d|
     bootstrap PingConf = do
       return (Right ())
     mainloop _ _ = return
-      [ match $ \x -> do
-          promulgateWait (DummyEvent x)
-          return (Continue, ())
-      , match $ \p -> do
-          promulgateWait (p::SyncPing)
+      [ receiveSvc interface $ \pse -> do
+          sendRC interface (pse :: PingSvcEvent)
           return (Continue, ())
       ]
     teardown _ _ = return ()
     confirm  _ _ = return ()
 
   |] ]
+
+instance HasInterface PingConf PingSvcEvent PingSvcEvent where
+  getInterface _ = interface
+
+deriveSafeCopy 0 'base ''PingSvcEvent

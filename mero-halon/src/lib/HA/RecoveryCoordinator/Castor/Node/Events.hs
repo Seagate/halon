@@ -7,7 +7,7 @@
 --
 -- Events associated with nodes.
 module HA.RecoveryCoordinator.Castor.Node.Events
-  ( M0KernelResult(..)
+  ( KernelStartFailure(..)
   , StartClientsOnNodeRequest(..)
   , StartClientsOnNodeResult(..)
   , StartHalonM0dRequest(..)
@@ -82,12 +82,8 @@ data StartClientsOnNodeResult
        deriving (Eq, Show, Generic)
 instance Binary StartClientsOnNodeResult
 
--- | Result of trying to start the M0 Kernel on a node.
-data M0KernelResult =
-  KernelStarted M0.Node
-  -- ^ @mero-kernel@ has managed to start on the 'M0.Node'.
-  | KernelStartFailure M0.Node
-  -- ^ @mero-kernel@ has failed to start on the 'M0.Node'.
+-- | @mero-kernel@ has failed to start on the 'M0.Node'.
+newtype KernelStartFailure = KernelStartFailure M0.Node
   deriving (Eq, Show, Generic)
 
 -- | Result of @StartProcessesOnNodeRequest@.
@@ -166,7 +162,9 @@ data MaintenanceStopNodeResult
   -- ^ Node stop has timed out.
   deriving (Eq, Show, Generic)
 
-deriveSafeCopy 0 'base ''M0KernelResult
+deriveSafeCopy 0 'base ''KernelStartFailure
+deriveSafeCopy 0 'base ''MaintenanceStopNode
+deriveSafeCopy 0 'base ''MaintenanceStopNodeResult
 deriveSafeCopy 0 'base ''StartClientsOnNodeRequest
 deriveSafeCopy 0 'base ''StartHalonM0dRequest
 deriveSafeCopy 0 'base ''StartMeroClientRequest
@@ -174,10 +172,8 @@ deriveSafeCopy 0 'base ''StartProcessNodeNew
 deriveSafeCopy 0 'base ''StartProcessesOnNodeRequest
 deriveSafeCopy 0 'base ''StopHalonM0dRequest
 deriveSafeCopy 0 'base ''StopMeroClientRequest_v0
-deriveSafeCopy 1 'extension ''StopMeroClientRequest
-deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
-deriveSafeCopy 0 'base ''StopNodeUserRequest_v0
-deriveSafeCopy 1 'extension ''StopNodeUserRequest
 deriveSafeCopy 0 'base ''StopNodeUserReply
-deriveSafeCopy 0 'base ''MaintenanceStopNode
-deriveSafeCopy 0 'base ''MaintenanceStopNodeResult
+deriveSafeCopy 0 'base ''StopNodeUserRequest_v0
+deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
+deriveSafeCopy 1 'extension ''StopMeroClientRequest
+deriveSafeCopy 1 'extension ''StopNodeUserRequest

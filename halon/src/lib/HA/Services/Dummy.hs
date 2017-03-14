@@ -14,7 +14,6 @@
 module HA.Services.Dummy
   ( dummy
   , DummyConf(..)
-  , DummyEvent(..)
   -- * D-P specific functions
   , HA.Services.Dummy.__remoteTable
   , HA.Services.Dummy.__remoteTableDecl
@@ -66,11 +65,6 @@ instance StorageIndex (Service DummyConf) where
 $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
 deriveSafeCopy 0 'base ''DummyConf
-
--- | An event which produces no action in the RC. Used for testing.
-data DummyEvent = DummyEvent String
-  deriving (Typeable, Generic)
-deriveSafeCopy 0 'base ''DummyEvent
 
 remotableDecl [ [d|
   dummy :: Service DummyConf

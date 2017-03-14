@@ -117,7 +117,7 @@ test = testCase "TSTotalIsolation" $
 
       whereisRemoteAsync nid3 $ serviceLabel Ping.ping
       WhereIsReply _ (Just pingPid) <- expect
-      send pingPid "0"
+      send pingPid $! Ping.DummyEvent "0"
       expectLog tsNodes $ isInfixOf "received DummyEvent 0"
 
       forM_ [m0, m1, m2] $ \m -> do
@@ -125,7 +125,7 @@ test = testCase "TSTotalIsolation" $
         liftIO $ isolateHostsAsUser "root" [m] ms
 
       expectLog tsNodes $ isInfixOf "RS: RC died"
-      send pingPid "1"
+      send pingPid $! Ping.DummyEvent "1"
       -- TS shouldn't be able to process the event
       False <- expectTimeoutLog 1000000 tsNodes $ isInfixOf $
         "received DummyEvent 1"
@@ -134,5 +134,5 @@ test = testCase "TSTotalIsolation" $
         say $ "Rejoining ts node " ++ m ++ " ..."
         liftIO $ rejoinHostsAsUser "root" [m] ms
 
-      send pingPid "2"
+      send pingPid $! Ping.DummyEvent "2"
       expectLog tsNodes $ isInfixOf "received DummyEvent 2"

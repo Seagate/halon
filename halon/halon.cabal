@@ -68,6 +68,7 @@ Library
                    HA.Network.RemoteTables
                    HA.Network.Socket
                    HA.Service
+                   HA.Service.Interface
                    HA.Service.TH
                    HA.Services.Dummy
                    HA.Services.Ekg

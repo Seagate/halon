@@ -5,8 +5,7 @@
 --
 module HA.Services.Frontier.Command
     ( Command(..)
-    , MultimapGetKeyValuePairs(..)
-    , ReadResourceGraph(..)
+    , FrontierCmd(..)
     , parseCommand
     , mmKeyValues
     , dumpGraph
@@ -22,32 +21,23 @@ import Data.Hashable
 import Data.Maybe (catMaybes)
 import Data.Typeable (Typeable, typeOf)
 
+import Control.Distributed.Process (NodeId)
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
-import HA.SafeCopy
-
-import GHC.Generics
-
-data MultimapGetKeyValuePairs = MultimapGetKeyValuePairs
-  deriving (Eq, Show, Typeable, Generic)
-deriveSafeCopy 0 'base ''MultimapGetKeyValuePairs
-
-data ReadResourceGraph = ReadResourceGraph
-  deriving (Eq, Show, Typeable, Generic)
-deriveSafeCopy 0 'base ''ReadResourceGraph
+import HA.Services.Frontier.Interface (FrontierCmd(..))
 
 -- | Service commands
 data Command
-    = CM MultimapGetKeyValuePairs
+    = CM !FrontierCmd
     -- ^ Read data from multimap
     | Quit
     -- ^ Finish work
 
-parseCommand :: B.ByteString -> Maybe Command
-parseCommand "mmvalues\r" = Just $ CM MultimapGetKeyValuePairs
-parseCommand "graph\r"    = Just $ CM MultimapGetKeyValuePairs
-parseCommand "quit\r"     = Just Quit
-parseCommand _            = Nothing
+parseCommand :: B.ByteString -> NodeId -> Maybe Command
+parseCommand "mmvalues\r" nid = Just . CM $! MultimapGetKeyValuePairs nid
+parseCommand "graph\r"    nid = Just . CM $! MultimapGetKeyValuePairs nid
+parseCommand "quit\r"     _   = Just Quit
+parseCommand _            _   = Nothing
 
 -- | Serialize multimap data
 mmKeyValues :: Maybe ([(Key, [Value])]) -> ByteString

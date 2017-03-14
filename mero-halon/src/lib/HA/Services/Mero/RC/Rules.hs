@@ -9,6 +9,7 @@ module HA.Services.Mero.RC.Rules
   ) where
 
 -- service dependencies
+import HA.Services.Mero (lookupM0d)
 import HA.Services.Mero.Types
 import HA.Services.Mero.RC.Actions
 import HA.Services.Mero.RC.Events
@@ -19,6 +20,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Log
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
+import           HA.EventQueue.Types (HAEvent(..))
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -29,11 +31,9 @@ import           HA.Service
   , ServiceFailed(..)
   , ServiceExit(..)
   , ServiceUncaughtException(..))
-import           HA.EventQueue
+import           HA.Service.Interface
 
 import Control.Monad (unless)
-import Control.Distributed.Process (usend)
-import Control.Distributed.Process.Internal.Types (processNodeId)
 import Data.Foldable (for_)
 import Data.Typeable (cast)
 
@@ -45,8 +45,6 @@ import Prelude hiding (id)
 rules :: Definitions RC ()
 rules = sequence_
   [ ruleCheckCleanup
-  , ruleRegisterChannels
--- , ruleNotificationsDeliveredToHalonM0d
   , ruleNotificationsDeliveredToM0d
   , ruleNotificationsFailedToBeDeliveredToM0d
   , ruleHalonM0dFailed
@@ -56,29 +54,28 @@ rules = sequence_
   ]
 
 ruleCheckCleanup :: Definitions RC ()
-ruleCheckCleanup = defineSimpleTask "service::m0d::check-cleanup" $ do
-  \(CheckCleanup sp) -> do
-    rg <- getLocalGraph
-    let node = R.Node (processNodeId sp)
-        cleanup = null $
-          [ ()
-          | Just (host :: R.Host) <- [G.connectedFrom R.Runs node rg]
-          , m0node :: M0.Node <- G.connectedTo host R.Runs rg
-          , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-          , G.isConnected proc R.Is M0.ProcessBootstrapped rg
-          ]
-    liftProcess $ usend sp cleanup
+ruleCheckCleanup = define "service::m0d::check-cleanup" $ do
+  check_cleanup <- phaseHandle "check_cleanup"
 
--- | Register channels that can be used in order to communicate with halon:m0d
--- service.
-ruleRegisterChannels :: Definitions RC ()
-ruleRegisterChannels = defineSimpleTask "service::m0d::declare-mero-channel" $
-  \(DeclareMeroChannel sp c cc) -> do
-      let node = R.Node (processNodeId sp)
-      registerChannel node c
-      registerChannel node cc
-      registerSyncGraph $ do -- XXX: use notificaion meachanism
-        promulgateWait $ MeroChannelDeclared sp c cc
+  setPhaseIf check_cleanup g $ \(uid, nid) -> do
+    todo uid
+    rg <- getLocalGraph
+    let msg = Cleanup . null $
+          [ ()
+          | Just (host :: R.Host) <- [G.connectedFrom R.Runs (R.Node nid) rg]
+          , m0node :: M0.Node <- G.connectedTo host R.Runs rg
+          , p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+          , G.isConnected p R.Is M0.ProcessBootstrapped rg
+          ]
+    -- Cleanup check is issued during bootstrap so the service is very
+    -- likely not online yet; use the interface directly.
+    sendSvc (getInterface $ lookupM0d rg) nid msg
+    done uid
+
+  start check_cleanup ()
+  where
+    g (HAEvent uid (CheckCleanup nid)) _ _ = return $! Just (uid, nid)
+    g _ _ _ = return Nothing
 
 -- | Rule that allow old interface that was listening to internal message to be
 -- used.
@@ -118,12 +115,21 @@ ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
 -- in graph and check if there are some other pending processes, if not -
 -- announce set as beign sent.
 ruleNotificationsDeliveredToM0d :: Definitions RC ()
-ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivered-to-mero" $
-  \(NotificationAck epoch fid) -> do
-      mdiff <- getStateDiffByEpoch epoch
-      for_ mdiff $ \diff -> do
-        mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
-        for_ mp $ markNotificationDelivered diff
+ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-to-mero" $ do
+  notification_delivered <- phaseHandle "notification_delivered"
+
+  setPhaseIf notification_delivered g $ \(uid, epoch, fid) -> do
+    todo uid
+    mdiff <- getStateDiffByEpoch epoch
+    for_ mdiff $ \diff -> do
+      mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
+      for_ mp $ markNotificationDelivered diff
+    done uid
+
+  start notification_delivered ()
+  where
+    g (HAEvent uid (NotificationAck epoch fid)) _ _ = return $! Just (uid, epoch, fid)
+    g _ _ _ = return Nothing
 
 -- | When notification was failed to be delivered to mero we mark it
 -- as not delivered, so other services who rely on that notification
@@ -144,13 +150,22 @@ ruleNotificationsDeliveredToM0d = defineSimpleTask "service::m0d::notification::
 -- * 'ruleFailedNotificationFailsProcess' fails every process that
 --   shares the endpoint
 ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
-ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleTask "service::m0d::notification::delivery-failed" $
-  \(NotificationFailure epoch fid) -> do
-      tagContext SM [("epoch", show epoch), ("fid", show fid)] Nothing
-      mdiff <- getStateDiffByEpoch epoch
-      for_ mdiff $ \diff -> do
-        mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
-        for_ mp $ markNotificationFailed diff
+ruleNotificationsFailedToBeDeliveredToM0d = define "service::m0d::notification::delivery-failed" $ do
+  notification_failed <- phaseHandle "notification_failed"
+
+  setPhaseIf notification_failed g $ \(uid, epoch, fid) -> do
+    todo uid
+    tagContext SM [("epoch", show epoch), ("fid", show fid)] Nothing
+    mdiff <- getStateDiffByEpoch epoch
+    for_ mdiff $ \diff -> do
+      mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
+      for_ mp $ markNotificationFailed diff
+    done uid
+
+  start notification_failed ()
+  where
+    g (HAEvent uid (NotificationFailure epoch fid)) _ _ = return $! Just (uid, epoch, fid)
+    g _ _ _ = return Nothing
 
 -- | Handle event from regular monitor about halon:m0d service death.
 -- This means that there is some problem with halon service (possibly non fatal
@@ -166,7 +181,6 @@ ruleHalonM0dFailed = defineSimpleTask "service::m0d::notification::halon-m0d-fai
      ServiceInfo svc _ <- decodeMsg info
      for_ (cast svc) $ \(_ :: Service MeroConf) -> do
        failNotificationsOnNode node
-       unregisterMeroChannelsOn node
 
 -- | Handle normal exit from service.
 -- (See 'ruleHalonM0dFailed' for more explations)
@@ -176,7 +190,6 @@ ruleHalonM0dExit = defineSimpleTask "service::m0d::notification::halon-m0d-exit"
      ServiceInfo svc _ <- decodeMsg info
      for_ (cast svc) $ \(_ :: Service MeroConf) -> do
        failNotificationsOnNode node
-       unregisterMeroChannelsOn node
 
 -- | Handle exceptional exit from service.
 -- (See 'ruleHalonM0dFailed' for more explations)
@@ -186,7 +199,6 @@ ruleHalonM0dException = defineSimpleTask "service::m0d::notification::halon-m0d-
      ServiceInfo svc _ <- decodeMsg info
      for_ (cast svc) $ \(_ :: Service MeroConf) -> do
        failNotificationsOnNode node
-       unregisterMeroChannelsOn node
 
 -- $outdated
 -- When we can't guarantee that halon:m0d have delivered all notifications that

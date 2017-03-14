@@ -10,46 +10,39 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE CPP #-}
 
 module HA.Services.Noisy
-  ( noisy
+  ( HasPingCount(..)
   , NoisyConf(..)
-  , HasPingCount(..)
   , NoisyPingCount(..)
-  , DummyEvent(..)
+  , interface
+  , noisy
+    -- D-P specifics
   , HA.Services.Noisy.__remoteTable
   , HA.Services.Noisy.__remoteTableDecl
   , HA.Services.Noisy.__resourcesTable
-    -- D-P specifics
   , noisy__static
   ) where
 
-import HA.Aeson
-import HA.Debug
-import HA.EventQueue.Producer
-import HA.ResourceGraph
-import HA.SafeCopy
-import HA.Service
-import HA.Service.TH
-import HA.Services.Dummy (DummyEvent(..))
-
-#if ! MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#endif
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-  ( staticApply )
+import Control.Distributed.Static ( staticApply )
 import Control.Monad
-
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
+import Data.Serialize.Get (runGet)
+import Data.Serialize.Put (runPut)
 import Data.Typeable (Typeable)
-
 import GHC.Generics (Generic)
-
+import HA.Aeson
+import HA.Debug
+import HA.ResourceGraph
+import HA.SafeCopy
+import HA.Service
+import HA.Service.Interface
+import HA.Service.TH
+import HA.Services.Ping (PingSvcEvent(..))
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
 
@@ -135,15 +128,33 @@ instance Resource NoisyPingCount where
 instance StorageResource NoisyPingCount where
   storageResourceDict = $(mkStatic 'storageDictNoisyPingCount)
 
+interface :: Interface () PingSvcEvent
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "noisy"
+  , ifEncodeToSvc = \_ _ -> Nothing
+  , ifDecodeToSvc = \_ -> Nothing
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
+
 remotableDecl [ [d|
   noisy :: Service NoisyConf
-  noisy = Service "noisy"
+  noisy = Service (ifServiceName interface)
             $(mkStaticClosure 'noisyFunctions)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictNoisyConf))
 
   noisyFunctions :: ServiceFunctions NoisyConf
-  noisyFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
+  noisyFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
 
     bootstrap c@(NoisyConf hw) = do
       say $ fromDefault hw
@@ -159,10 +170,12 @@ remotableDecl [ [d|
     teardown _ _ = return ()
 
     service :: NoisyConf -> Process ()
-    service (NoisyConf hw) = do -- FIXME: starte before running service
-      forM_ [1 .. read (fromDefault hw)] $ \i ->
-        promulgate $ DummyEvent $ show (i :: Int)
-
+    service (NoisyConf hw) = do -- FIXME: started before running service
+      forM_ [1 .. read (fromDefault hw)] $ \i -> do
+        sendRC interface $! DummyEvent (show (i :: Int))
     confirm _ pid = usend pid ()
 
   |] ]
+
+instance HasInterface NoisyConf () PingSvcEvent where
+  getInterface _ = interface

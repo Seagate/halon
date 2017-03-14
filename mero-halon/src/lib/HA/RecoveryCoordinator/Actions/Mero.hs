@@ -1,11 +1,10 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE TupleSections              #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Mero
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero actions.
@@ -25,20 +24,29 @@ module HA.RecoveryCoordinator.Actions.Mero
   , configureMeroProcess
   , m0t1fsBootLevel
   , retriggerMeroNodeBootstrap
+  , getRunningMeroInterface
   )
 where
 
 import           Control.Category ((>>>))
 import           Control.Distributed.Process
+import           Control.Lens ((<&>))
+import           Data.Foldable (for_)
 import           Data.Function ((&))
+import           Data.Maybe (isJust, listToMaybe)
+import           Data.Proxy
+import qualified Data.UUID as UUID
+import           Data.UUID.V4 (nextRandom)
 import           HA.Encode
-import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Events
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Initial
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
+import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import           HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
@@ -50,18 +58,12 @@ import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.Service
+import           HA.Service.Interface
 import           HA.Services.Mero
-import           Mero.ConfC
+import           Mero.ConfC hiding (Process)
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
 import           System.Posix.SysInfo
-
-import           Control.Lens ((<&>))
-import           Data.Foldable (for_)
-import           Data.Maybe (isJust, listToMaybe)
-import           Data.Proxy
-import qualified Data.UUID as UUID
-import           Data.UUID.V4 (nextRandom)
 
 -- | At what boot level do we start M0t1fs processes?
 m0t1fsBootLevel :: M0.BootLevel
@@ -280,20 +282,20 @@ isClusterStopped rg = null $
 -- | Send a request to configure the given mero process. Constructs
 -- the appropriate 'ProcessConfig' (which depends on whether the
 -- process in @confd@ or not) and sends it to @halon:m0d@.
-configureMeroProcess :: TypedChannel ProcessControlMsg
+configureMeroProcess :: (MeroToSvc -> Process ())
                      -> M0.Process
                      -> ProcessRunType
-                     -> Bool
                      -> PhaseM RC a UUID.UUID
-configureMeroProcess (TypedChannel chan) p runType mkfs = do
-    rg <- getLocalGraph
-    uid <- liftIO nextRandom
-    conf <- if any (\s -> M0.s_type s == CST_MGS)
-                 $ G.connectedTo p M0.IsParentOf rg
-            then ProcessConfigLocal p <$> syncToBS
-            else return $ ProcessConfigRemote p
-    liftProcess . sendChan chan $ ConfigureProcess runType conf mkfs uid
-    return uid
+configureMeroProcess sender p runType = do
+  rg <- getLocalGraph
+  uid <- liftIO nextRandom
+  conf <- if any (\s -> M0.s_type s == CST_MGS)
+               $ G.connectedTo p M0.IsParentOf rg
+          then ProcessConfigLocal p <$> syncToBS
+          else return $! ProcessConfigRemote p
+  liftProcess . sender . ProcessMsg $!
+    ConfigureProcess runType conf (runType == M0D) uid
+  return uid
 
 -- | Dispatch a request to start @halon:m0d@ on the given
 -- 'Castor.Host'.
@@ -314,27 +316,30 @@ startMeroService host node = do
                       G.connectedTo host Has $ rg of
       Just (M0.LNid lnid) -> return . Just $ lnid ++ haAddress
       Nothing -> return Nothing
-  mapM_ promulgateRC $ do
+
+  minfo <- return $! do
     profile <- mprofile
     haAddr <- mHaAddr
     uuid <- G.connectedTo host Has rg
     let mconf = listToMaybe
-                  [ (proc, srvHA, srvRM)
+                  [ (p, srvHA, srvRM)
                   | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
-                  , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-                  , srvHA  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                  , p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+                  , srvHA  :: M0.Service <- G.connectedTo p M0.IsParentOf rg
                   , M0.s_type srvHA  == CST_HA
-                  , srvRM  :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                  , srvRM  :: M0.Service <- G.connectedTo p M0.IsParentOf rg
                   , M0.s_type srvRM == CST_RMS
                   ]
-    mconf <&> \(proc, srvHA,srvRM) ->
-      let conf = MeroConf haAddr (M0.fid profile) (M0.fid proc)
+    mconf <&> \(p, srvHA,srvRM) ->
+      let conf = MeroConf haAddr (M0.fid profile) (M0.fid p)
                                  (M0.fid srvHA)
                                  (M0.fid srvRM)
                                  kaFreq kaTimeout
                                  (MeroKernelConf uuid)
-      in encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf []
-
+      in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], p)
+  for_ minfo $ \(msg, p) -> do
+    applyStateChanges [ stateSet p Tr.processStarting ]
+    promulgateRC msg
 
 -- | It may happen that a node reboots (either through halon or
 -- through external means) during cluster's lifetime. The below
@@ -390,3 +395,23 @@ announceTheseMeroHosts hosts p = do
   -- clients list.
   -- TODO can we remove this now? This should be marked properly.
   for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest
+
+
+-- | Get an 'Interface' we can send on to the halon:m0d service on the
+-- given node. This interface is only provided if the process on the
+-- node is 'M0.PSOnline'.
+--
+-- You should in general not use 'getInterface' for this service
+-- yourself without performing this check if you plan on
+-- communication.
+getRunningMeroInterface :: M0.Node -> G.Graph -> Maybe (Interface MeroToSvc MeroFromSvc)
+getRunningMeroInterface m0node rg =
+  let m0ds =
+        [ () | p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+             , M0.getState p rg == M0.PSOnline
+             , s :: M0.Service <- G.connectedTo p M0.IsParentOf rg
+             , M0.s_type s == CST_HA
+             , M0.getState s rg == M0.SSOnline ]
+  in case m0ds of
+       [] -> Nothing
+       _ -> Just . getInterface $! lookupM0d rg

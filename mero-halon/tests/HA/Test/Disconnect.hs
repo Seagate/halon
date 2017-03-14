@@ -1,6 +1,6 @@
 -- |
 -- Module    : HA.Test.Disconnect
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Various tests exercising the node recovery rule. Note that these
@@ -18,8 +18,6 @@ import           Data.List
 import           Data.Typeable
 import           GHC.Generics
 import           GHC.Word (Word8)
-import           HA.Encode
-import           HA.EventQueue.Producer
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Helpers
@@ -27,8 +25,8 @@ import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator.Log (RLogGroup)
-import           HA.Resources
 import           HA.Resources.HalonVars
+import           HA.Service.Interface
 import qualified HA.Services.Ping as Ping
 import           Helper.InitialData
 import qualified Helper.Runner as H
@@ -82,32 +80,26 @@ testDisconnect baseTransport connectionBreak = do
     subscribe (H._ts_rc ts) (Proxy :: Proxy (HAEvent ServiceStarted))
 
     sayTest "Starting ping service"
-    -- Start noisy service on the non-TS satellite
-    void $ liftIO $ forkProcess sat0 $ do
-      sayTest $ "Sending service start request to " ++ show [processNodeId $ H._ts_rc ts]
-      void . promulgateEQ [processNodeId $ H._ts_rc ts] $
-        encodeP $ ServiceStartRequest Start (Node $ localNodeId sat0) Ping.ping
-                                      Ping.PingConf []
-      sayTest $ "Sent service start request"
-    sayTest $ "Waiting for service to come up"
-    pingPid <- serviceStarted Ping.ping
+    [(pingNid, _)] <- serviceStartOnNodes [processNodeId $ H._ts_rc ts]
+                                          Ping.ping Ping.PingConf
+                                          [localNodeId sat0]
     sayTest $ "Running ping"
-    runPing pingPid 0
+    runPing pingNid 0
     sayTest $ "Starting isolations"
     forM_ (zip [1 :: Int,3..] ts_nids) $ \(i,m) -> do
       sayTest $ "isolating TS node " ++ (show m)
       splitNet [[m], filter (m /=) ts_nids]
-      runPing pingPid i
+      runPing pingNid i
 
       sayTest $ "rejoining TS node " ++ (show m)
       restoreNet ts_nids
-      runPing pingPid (i + 1)
+      runPing pingNid (i + 1)
 
       sayTest "testDisconnect complete"
   where
-    runPing :: ProcessId -> Int -> Process ()
-    runPing pingPid i = do
-      usend pingPid (show i)
+    runPing :: NodeId -> Int -> Process ()
+    runPing nid i = do
+      sendSvc (getInterface Ping.ping) nid $! Ping.DummyEvent (show i)
       receiveWait [ matchIf (\(Dummy str) -> show i == str)
                             (const $ return ()) ]
 

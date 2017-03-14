@@ -1438,6 +1438,7 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarted" $ do
               -- what kind of failure it was
               M0_NC_REBALANCE -> promulgateRC (PoolRebalanceRequest pool)
               M0_NC_REPAIR -> promulgateRC (PoolRepairRequest pool)
+              M0_NC_ONLINE -> return ()
               st -> phaseLog "warn" $
                 "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
           ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)

@@ -13,7 +13,6 @@ import qualified HA.Resources as R (Node)
 import HA.SafeCopy
 
 import HA.Aeson
-import Data.Binary (Binary)
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
 
@@ -30,7 +29,6 @@ data Event =
   | EvtInContexts [Context] CtxEvent
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary Event
 instance ToJSON Event
 instance FromJSON Event
 
@@ -46,7 +44,6 @@ data Context =
   | Local UUID -- ^ Relates to some local scope.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary Context
 instance ToJSON Context
 instance FromJSON Context
 
@@ -57,7 +54,6 @@ data TagContextInfo = TagContextInfo {
   , tc_msg :: Maybe String -- ^ Optional message describing the environment.
 } deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary TagContextInfo
 instance ToJSON TagContextInfo
 instance FromJSON TagContextInfo
 
@@ -89,7 +85,6 @@ data CtxEvent =
   | CE_UserEvent Level (Maybe SourceLoc) UserEvent
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary CtxEvent
 instance ToJSON CtxEvent
 instance FromJSON CtxEvent
 
@@ -166,16 +161,20 @@ data UserEvent =
     --   where possible.
   deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Binary UserEvent
 instance ToJSON UserEvent
 instance FromJSON UserEvent
 
 --------------------------------------------------------------------------------
 -- Safecopy instances
 --------------------------------------------------------------------------------
-deriveSafeCopy 0 'base ''TagContent
-deriveSafeCopy 0 'base ''Scope
-deriveSafeCopy 0 'base ''SystemEvent
-deriveSafeCopy 0 'base ''StateChangeInfo
-deriveSafeCopy 0 'base ''SourceLoc
+deriveSafeCopy 0 'base ''Context
+deriveSafeCopy 0 'base ''CtxEvent
+deriveSafeCopy 0 'base ''Event
 deriveSafeCopy 0 'base ''Level
+deriveSafeCopy 0 'base ''Scope
+deriveSafeCopy 0 'base ''SourceLoc
+deriveSafeCopy 0 'base ''StateChangeInfo
+deriveSafeCopy 0 'base ''SystemEvent
+deriveSafeCopy 0 'base ''TagContent
+deriveSafeCopy 0 'base ''TagContextInfo
+deriveSafeCopy 0 'base ''UserEvent

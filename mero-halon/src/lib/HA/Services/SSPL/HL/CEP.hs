@@ -1,37 +1,35 @@
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Contains RC rules that are required for SSPL HL service
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE OverloadedStrings #-}
 module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
 
-import HA.EventQueue
-import HA.Resources
-import HA.Resources.Castor
-import qualified HA.ResourceGraph as G
-import HA.Resources.Mero
-import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
-
-import HA.RecoveryCoordinator.RC.Actions
-
-import SSPL.Bindings
-import Network.CEP
-
-import qualified HA.Aeson as Aeson
 import qualified Data.Text as T
-import Data.UUID (toString)
-import Control.Distributed.Process (usend)
-import Text.Regex.TDFA ((=~))
+import           Data.UUID (toString)
+import qualified HA.Aeson as Aeson
+import           HA.EventQueue
+import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.ResourceGraph as G
+import           HA.Resources
+import           HA.Resources.Castor
+import           HA.Resources.Mero
+import           HA.Service.Interface
+import           HA.Services.SSPLHL (sspl, SsplHlToSvc(..), SsplHlFromSvc(..))
+import           Network.CEP
+import           SSPL.Bindings
+import           Text.Regex.TDFA ((=~))
 
 -- | Set of SSPL HL rules. Contain rules for status queries inside a graph.
 ssplHLRules :: Definitions RC ()
-ssplHLRules = defineSimple "status-query" $
-  \(HAEvent uuid (CommandRequestMessageStatusRequest mef et,msgId, pid)) -> do
+ssplHLRules = defineSimpleIf "status-query" extract $
+  \(uuid, CommandRequestMessageStatusRequest mef et, msgId, nid) -> do
       rg <- getLocalGraph
       let
         items = case et of
@@ -44,9 +42,11 @@ ssplHLRules = defineSimple "status-query" $
             , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
             }
       phaseLog "info" $ "Sending reply " ++ show msg
-      liftProcess $ usend pid msg
+      sendSvc (getInterface sspl) nid $! SResponse msg
       messageProcessed uuid
-
+  where
+    extract (HAEvent uid (SRequest v i nid)) _ = return $! Just (uid, v, i, nid)
+    extract _ _ = return Nothing
 
 -- | Calculate the cluster status from the resource graph.
 clusterStatus :: G.Graph -> [CommandResponseMessageStatusResponseItem]

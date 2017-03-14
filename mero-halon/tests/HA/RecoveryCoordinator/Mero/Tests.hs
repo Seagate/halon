@@ -33,8 +33,10 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Service.Interface
+import           HA.Services.SSPL (sspl)
 import           HA.Services.SSPL.CEP
-import           HA.Services.SSPL.LL.Resources (LoggerCmd(..))
+import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..), LoggerCmd(..))
 import           Helper.InitialData
 import qualified Helper.Runner as H
 import           Helper.SSPL
@@ -84,7 +86,8 @@ testDriveManagerUpdate transport pg = do
     subscribe (H._ts_rc ts) (Proxy :: Proxy LoggerCmd)
 
     sayTest "Sending online message"
-    _ <- promulgateEQ [processNodeId $ H._ts_rc ts] (processNodeId $ H._ts_rc ts, respDM "OK" "NONE" "/path")
+    sendRC (getInterface sspl) $ DiskStatusDm (processNodeId $ H._ts_rc ts)
+                                              (respDM "OK" "NONE" "/path")
     _ :: DriveOK <- expectPublished
     -- XXX: remove this delay it's needed because graph is not updated immediately
     _ <- receiveTimeout 1000000 []

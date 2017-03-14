@@ -11,10 +11,8 @@
 -- @halon:sspl@ service rules
 module HA.Services.SSPL.CEP
   ( DriveLedUpdate(..)
-  , initialRule
   , sendLedUpdate
   , sendNodeCmd
-  , sendNodeCmdChan
   , ssplRules
   , updateDriveManagerWithFailure
   , sendInterestingEvent
@@ -33,59 +31,79 @@ import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.Monoid ((<>))
 import           Data.Proxy
 import qualified Data.Text as T
-import           Data.Traversable (for)
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics
 import qualified HA.Aeson as Aeson
 import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
-import           HA.RecoveryCoordinator.Castor.Drive.Events
-import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
                  ( updateStorageDevicePresence
-                 , updateStorageDeviceStatus)
+                 , updateStorageDeviceStatus )
+import           HA.RecoveryCoordinator.Castor.Drive.Events
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
+import           HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.ResourceGraph hiding (null)
 import           HA.Resources (Node(..), Has(..), Cluster(..))
 import           HA.Resources.Castor
-import           HA.Service hiding (configDict)
-import           HA.Services.SSPL.IEM
-import           HA.Services.SSPL.LL.RC.Actions
-import           HA.Services.SSPL.LL.Resources
-import           Network.CEP
-import           SSPL.Bindings
-
-import           HA.RecoveryCoordinator.Mero.State
-import           HA.RecoveryCoordinator.Mero.Transitions
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Service hiding (configDict)
+import           HA.Service.Interface
+import           HA.Services.SSPL (sspl)
+import           HA.Services.SSPLHL (SsplHlFromSvc(..))
+import           HA.Services.SSPL.IEM
+import           HA.Services.SSPL.LL.Resources
 import           Mero.ConfC (strToFid)
+import           Network.CEP
+import           SSPL.Bindings
+import           Text.Printf (printf)
 import           Text.Read (readMaybe)
 
 --------------------------------------------------------------------------------
 -- Primitives
 --------------------------------------------------------------------------------
 
+-- | Find the SSPL service on any of the given nodes and send the
+-- given message to it.
+--
+-- True if some service was found, False otherwise.
+sendToSSPLSvc :: [Node] -> SsplLlToSvc -> PhaseM RC l Bool
+sendToSSPLSvc nodes msg = do
+  rg <- getLocalGraph
+  case findRunningServiceOn nodes sspl rg of
+    Node nid : _ -> do
+      phaseLog "info" $ printf "Sending %s through SSPL on %s" (show msg) (show nid)
+      sendSvc (getInterface sspl) nid msg
+      return True
+    [] -> do
+      phaseLog "warning" $ printf "Can't find running SSPL service on any of %s!" (show nodes)
+      return False
+
+-- | Send 'InterestingEventMessage' to any IEM channel available.
+sendInterestingEvent :: InterestingEventMessage
+                     -> PhaseM RC l ()
+sendInterestingEvent msg = do
+  rg <- getLocalGraph
+  let nodes = [ n | n <- connectedTo Cluster Has rg
+                  , Just m0n <- [M0.nodeToM0Node n rg]
+                  , getState m0n rg == M0.NSOnline ]
+  void . sendToSSPLSvc nodes $! SsplIem msg
+
 -- | Send command to logger actuator.
 --
 -- Logger actuator command is used to forcefully set drives status using
 -- SSPL and sent related IEM message.
-sendLoggingCmd :: Host
+sendLoggingCmd :: Node
                -> LoggerCmd
                -> PhaseM RC l ()
-sendLoggingCmd host req = do
-  phaseLog "action" $ "Sending Logger request" ++ show req
-  -- For test purposes, publish the LoggerCmd sent
-  publish req
-  rg <- getLocalGraph
-  mchan <- listToMaybe . catMaybes <$>
-             for (connectedTo host Runs rg) getCommandChannel
-  case mchan of
-    Just (Channel chan) -> liftProcess $ sendChan chan (Nothing, makeLoggerMsg req)
-    _ -> phaseLog "error" "Cannot find sspl channel!"
+sendLoggingCmd node req = do
+  r <- sendToSSPLSvc [node] $ SystemdMessage Nothing (makeLoggerMsg req)
+  when r $ publish req
 
 -- | Create a 'LoggerCmd'.
 mkDiskLoggingCmd :: T.Text -- ^ Status
@@ -121,80 +139,46 @@ sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
         modifyLedState $ Just FaultOn
-        sendNodeCmd nid Nothing (DriveLed sn FaultOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn FaultOn)
       DriveTransientlyFailed -> do
         modifyLedState $ Just PulseFastOn
-        sendNodeCmd nid Nothing (DriveLed sn PulseFastOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn PulseFastOn)
       DriveRebalancing -> do
         modifyLedState $ Just PulseSlowOn
-        sendNodeCmd nid Nothing (DriveLed sn PulseSlowOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn PulseSlowOn)
       DriveOk -> do
         modifyLedState Nothing
-        sendNodeCmd nid Nothing (DriveLed sn FaultOff)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn FaultOff)
     _ -> do phaseLog "error" "Cannot find sspl service on the node!"
             return False
 
 -- | Send command to nodecontroller. Reply will be received as a
--- HAEvent CommandAck. Where UUID will be set to UUID value if passed, and
--- any random value otherwise.
-sendNodeCmd :: NodeId
+-- @'HAEvent' 'SsplLlFromSvc' ('CAck')@ where UUID will be set to UUID
+-- value if passed, and any random value otherwise.
+sendNodeCmd :: [Node]
             -> Maybe UUID
             -> NodeCmd
             -> PhaseM RC l Bool
-sendNodeCmd nid muuid req = do
-  phaseLog "action" $ "Sending node actuator request: " ++ show req
-  chanm <- getCommandChannel (Node nid)
-  case chanm of
-    Just chan -> do sendNodeCmdChan chan muuid req
-                    return True
-    _ -> do phaseLog "warning" "Cannot find command channel!"
-            return False
-
--- | Like 'sendNodeCmd' but sends to the given channel.
-sendNodeCmdChan :: CommandChan
-                -> Maybe UUID
-                -> NodeCmd
-                -> PhaseM RC l ()
-sendNodeCmdChan (Channel chan) muuid req =
-  liftProcess $ sendChan chan (muuid, makeNodeMsg req)
+sendNodeCmd nodes muuid = do
+  sendToSSPLSvc nodes . SystemdMessage muuid . makeNodeMsg
 
 --------------------------------------------------------------------------------
 -- Rules                                                                      --
 --------------------------------------------------------------------------------
 
 -- | SSPL rules.
-ssplRules :: Service SSPLConf -> Definitions RC ()
-ssplRules sspl = sequence_
-  [ ruleDeclareChannels
-  , ruleMonitorDriveManager
+ssplRules :: Definitions RC ()
+ssplRules = sequence_
+  [ ruleMonitorDriveManager
   , ruleMonitorStatusHpi
   , ruleMonitorRaidData
-  , ruleHlNodeCmd sspl
+  , ruleHlNodeCmd
   , ruleThreadController
-  , ruleSSPLTimeout sspl
+  , ruleSSPLTimeout
   , ruleSSPLConnectFailure
   , ruleMonitorExpanderReset
   , ruleMonitorServiceFailed
   ]
-
--- | Ask any running SSPL services to their channels ('RequestChannels').
-initialRule :: Service SSPLConf -> PhaseM RC l () -- XXX: remove first argument
-initialRule sspl = do
-   rg <- getLocalGraph
-   let nodes = [ n | host <- connectedTo Cluster Has rg :: [Host]
-               , n <- connectedTo host Runs rg :: [Node]
-               , not . null $ lookupServiceInfo n sspl rg
-               ]
-   liftProcess $ for_ nodes $ \(Node nid) -> -- XXX: wait for reply ?!
-     nsendRemote nid (serviceLabel sspl) RequestChannels
-
-ruleDeclareChannels :: Definitions RC ()
-ruleDeclareChannels = defineSimpleTask "declare-channels" $
-      \(DeclareChannels pid (ActuatorChannels iem systemd)) -> do
-          let node = Node (processNodeId pid)
-          storeIEMChannel node (Channel iem)
-          storeCommandChannel node (Channel systemd)
-          liftProcess $ usend pid ()
 
 data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
   deriving (Eq,Show,Generic,Typeable)
@@ -220,7 +204,7 @@ instance Binary RuleDriveManagerDisk
 -- If drive is under reset, so we know that we are not interested in EMPTY/OK events
 -- rule ignores such events.
 ruleMonitorDriveManager :: Definitions RC ()
-ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent uuid (nid, srdm)) -> do
+ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ \(uuid, nid, srdm) -> do
   let enc' = Enclosure . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                        $ srdm
@@ -272,6 +256,9 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
        in sendInterestingEvent msg
   done uuid
   where
+    extract (HAEvent uid (DiskStatusDm nid v)) _ = return $! Just (uid, nid, v)
+    extract _ _ = return Nothing
+
     -- If SSPL doesn't know which enclosure the drive is in, try to
     -- infer it from the drive serial number and info we may have
     -- gotten previously
@@ -327,7 +314,7 @@ ruleMonitorDriveManager = defineSimple "sspl::monitor-drivemanager" $ \(HAEvent 
 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions RC ()
-ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid (nid, srphi)) -> do
+ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uuid ,nid, srphi) -> do
   let wwn = DIWWN . T.unpack
                   . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                   $ srphi
@@ -354,15 +341,17 @@ ruleMonitorStatusHpi = defineSimple "sspl::monitor-status-hpi" $ \(HAEvent uuid 
   have_wwn <- StorageDevice.hasIdentifier sdev wwn
   unless have_wwn $ StorageDevice.identify sdev [wwn]
   isOngoingReset <- hasOngoingReset sdev
-  unless isOngoingReset $ 
+  unless isOngoingReset $
     updateStorageDevicePresence uuid (Node nid) sdev sdev_loc
       is_installed is_powered
   done uuid
+  where
+    extract (HAEvent uid (DiskHpi nid v)) _ = return $! Just (uid, nid, v)
+    extract _ _ = return Nothing
 
 -- | Handle SSPL message about a service failure.
 ruleMonitorServiceFailed :: Definitions RC ()
-ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: NodeId, watchdogmsg) -> do
-
+ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(uid, watchdogmsg) -> do
   let currentState = sensorResponseMessageSensor_response_typeService_watchdogService_state watchdogmsg
       serviceName = sensorResponseMessageSensor_response_typeService_watchdogService_name watchdogmsg
       -- assume we have ‘service@fid.service’ format
@@ -370,6 +359,7 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
                     $ T.dropWhile (/= '@') serviceName
       mcurrentPid = readMaybe . T.unpack
                     $ sensorResponseMessageSensor_response_typeService_watchdogPid watchdogmsg
+  todo uid
   case (,,) <$> mprocessFid <*> mcurrentPid <*> pure currentState of
     Just (processFid, currentPid, "failed")-> do
       phaseLog "info" $ "Received SSPL message about service failure: "
@@ -404,6 +394,10 @@ ruleMonitorServiceFailed = defineSimpleTask "monitor-service-failure" $ \(_ :: N
             (_, Nothing) -> do
               phaseLog "warning" "Pid of the process is not known - ignoring."
     _ -> return ()
+  done uid
+  where
+    extract (HAEvent uid (ServiceWatchdog v)) _ = return $! Just (uid, v)
+    extract _ _ = return Nothing
 
 -- | Monitor RAID data. We should register the RAID devices in the system,
 --   with no corresponding Mero devices.
@@ -418,7 +412,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
   reset_failure <- phaseHandle "reset_failure"
   end <- phaseHandle "end"
 
-  setPhase raid_msg $ \(HAEvent uid (nid::NodeId, srrd)) -> let
+  setPhaseIf raid_msg extract $ \(uid, nid, srrd) -> let
       device_t = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
       device = T.unpack device_t
       -- Drives should have min length 2, so it's OK to access these directly
@@ -515,19 +509,28 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
   directly end stop
 
   startFork raid_msg Nothing
+  where
+    extract (HAEvent uid (RaidData nid v)) _ _ = return $! Just (uid, nid, v)
+    extract _ _ _ = return Nothing
 
 ruleMonitorExpanderReset :: Definitions RC ()
-ruleMonitorExpanderReset = defineSimpleTask "monitor-expander-reset" $ \(nid, ExpanderResetInternal) -> do
+ruleMonitorExpanderReset = defineSimpleIf "monitor-expander-reset" extract $ \(uid, nid) -> do
+  todo uid
   menc <- runMaybeT $ do
     host <- MaybeT $ findNodeHost (Node nid)
     MaybeT $ findHostEnclosure host
   forM_ menc $ promulgateRC . ExpanderReset
+  done uid
+  where
+    extract (HAEvent uid (ExpanderResetInternal nid)) _ = return $! Just (uid, nid)
+    extract _ _ = return Nothing
 
 ruleThreadController :: Definitions RC ()
-ruleThreadController = defineSimpleTask "monitor-thread-controller" $ \(nid, artc) -> let
+ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(uid, nid, artc) -> let
     module_name = actuatorResponseMessageActuator_response_typeThread_controllerModule_name artc
     thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
   in do
+     todo uid
      case (T.toUpper module_name, T.toUpper thread_response) of
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
          mhost <- findNodeHost (Node nid)
@@ -543,15 +546,19 @@ ruleThreadController = defineSimpleTask "monitor-thread-controller" $ \(nid, art
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(StorageDevice serial, status) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
-                   _ <- sendNodeCmd nid Nothing (DriveLed (T.pack serial) FaultOn)
-                   sendLoggingCmd host $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
-                                                          (T.pack serial)
-                                                          (T.pack reason)
+                   _ <- sendNodeCmd [Node nid] Nothing (DriveLed (T.pack serial) FaultOn)
+                   sendLoggingCmd (Node nid) $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
+                                                                (T.pack serial)
+                                                                (T.pack reason)
                  _ -> return ()
        _ -> return ()
+     done uid
+  where
+    extract (HAEvent uid (ThreadController nid v)) _ = return $! Just (uid, nid, v)
+    extract _ _ = return Nothing
 
-ruleHlNodeCmd :: Service SSPLConf -> Definitions RC ()
-ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr) _ ->
+ruleHlNodeCmd :: Definitions RC ()
+ruleHlNodeCmd = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid (CRequest cr)) _ ->
     return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
               . commandRequestMessage
               $ cr
@@ -562,22 +569,22 @@ ruleHlNodeCmd _sspl = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid cr) _ ->
           Just foo -> T.unpack foo
           Nothing -> "."
       in do
-        mactuationChannel <- listToMaybe <$> getAllCommandChannels -- XXX: filter nodes that is not running (?)
-        for_ mactuationChannel $ \actuationChannel -> do
-          hosts <- fmap catMaybes
-                  $ findHosts nodeFilter
-                >>= mapM findBMCAddress
-          case command of
-            Aeson.String "poweroff" -> do
-              phaseLog "action" $ "Powering off hosts " ++ (show hosts)
-              forM_ hosts $ \(nodeIp) -> do
-                sendNodeCmdChan actuationChannel Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
-            Aeson.String "poweron" -> do
-              phaseLog "action" $ "Powering on hosts " ++ (show hosts)
-              forM_ hosts $ \(nodeIp) -> do
-                sendNodeCmdChan actuationChannel Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
-            x -> liftProcess . say $ "Unsupported node command: " ++ show x
-          messageProcessed uuid
+        rg <- getLocalGraph
+        let nodes = [ n | n <- connectedTo Cluster Has rg
+                        , Just m0n <- [M0.nodeToM0Node n rg]
+                        , getState m0n rg == M0.NSOnline ]
+        hosts <- fmap catMaybes $ findHosts nodeFilter >>= mapM findBMCAddress
+        case command of
+          Aeson.String "poweroff" -> do
+            phaseLog "action" $ "Powering off hosts " ++ show hosts
+            forM_ hosts $ \nodeIp -> do
+              sendNodeCmd nodes Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
+          Aeson.String "poweron" -> do
+            phaseLog "action" $ "Powering on hosts " ++ show hosts
+            forM_ hosts $ \nodeIp -> do
+              sendNodeCmd nodes Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
+          x -> liftProcess . say $ "Unsupported node command: " ++ show x
+        messageProcessed uuid
 
 -- | Send update to SSPL that the given 'StorageDevice' changed its status.
 updateDriveManagerWithFailure :: StorageDevice
@@ -587,22 +594,31 @@ updateDriveManagerWithFailure :: StorageDevice
 updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sdev >>= \case
   host : _ -> do
     _ <- sendLedUpdate DrivePermanentlyFailed host sdev
-    sendLoggingCmd host $ mkDiskLoggingCmd (T.pack st)
-                                           (T.pack sn)
-                                           (maybe "unknown reason" T.pack reason)
+    nodesOnHost host >>= \case
+      n : _ -> do
+        sendLoggingCmd n $ mkDiskLoggingCmd (T.pack st)
+                                            (T.pack sn)
+                                            (maybe "unknown reason" T.pack reason)
+      _ -> phaseLog "error" $ "Unable to find node for " ++ show host
   _ -> phaseLog "error" $ "Unable to find host for " ++ show sdev
 
-ruleSSPLTimeout :: Service SSPLConf -> Definitions RC ()
-ruleSSPLTimeout sspl = defineSimple "sspl-service-timeout" $
-      \(HAEvent uuid (SSPLServiceTimeout nid)) -> do
-          mcfg <- Service.lookupInfoMsg (Node nid) sspl
-          for_ mcfg $ \_ -> do
-            phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
-            liftProcess $ nsendRemote nid (serviceLabel sspl) ResetSSPLService
-          messageProcessed uuid
+ruleSSPLTimeout :: Definitions RC ()
+ruleSSPLTimeout = defineSimpleIf "sspl-service-timeout" extract $ \(uuid, nid) -> do
+  todo uuid
+  mcfg <- Service.lookupInfoMsg (Node nid) sspl
+  for_ mcfg $ \_ -> do
+    phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
+    sendSvc (getInterface sspl) nid ResetSSPLService
+  done uuid
+  where
+    extract (HAEvent uuid (SSPLServiceTimeout nid)) _ = return $! Just (uuid, nid)
+    extract _ _ = return Nothing
 
 ruleSSPLConnectFailure :: Definitions RC ()
-ruleSSPLConnectFailure = defineSimple "sspl-service-connect-failure" $
-      \(HAEvent uuid (SSPLConnectFailure nid)) -> do
-          phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
-          messageProcessed uuid
+ruleSSPLConnectFailure = defineSimpleIf "sspl-service-connect-failure" extract $ \(uuid, nid) -> do
+  todo uuid
+  phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
+  done uuid
+  where
+    extract (HAEvent uuid (SSPLConnectFailure nid)) _ = return $! Just (uuid, nid)
+    extract _ _ = return Nothing

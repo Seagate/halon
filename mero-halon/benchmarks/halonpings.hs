@@ -141,7 +141,7 @@ main = (>>= maybe (error "test timed out") return) $
 
       say "Sending a first ping ..."
       forM_ pingPids $ \pingPid -> do
-        send pingPid $ show pingPid
+        send pingPid $! Ping.DummyEvent (show pingPid)
         expectLog tsNids $ isInfixOf $ "received DummyEvent " ++ show pingPid
 
       say "Starting benchmark ..."
@@ -150,7 +150,7 @@ main = (>>= maybe (error "test timed out") return) $
         t0 <- liftIO $ getTime Monotonic
         forM_ [1..batchSize] $ \j ->
           forM_ pingPids $ \pingPid ->
-            send pingPid $ show (pingPid, i :: Int, j :: Int)
+            send pingPid $! Ping.DummyEvent (show (pingPid, i :: Int, j :: Int))
         forM_ [1..batchSize] $ \j ->
           forM_ pingPids $ \pingPid ->
             expectLog tsNids $ isInfixOf $
@@ -187,4 +187,3 @@ main = (>>= maybe (error "test timed out") return) $
       , "The memory column lists the maximum peak resident memory size in"
       , "any tracking station."
       ]
-

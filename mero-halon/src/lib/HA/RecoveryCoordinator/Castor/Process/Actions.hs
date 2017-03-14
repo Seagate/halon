@@ -8,11 +8,14 @@ module HA.RecoveryCoordinator.Castor.Process.Actions
   , getLabel
   , getLabeled
   , getLabeledP
+  , getHA
   ) where
 
-import qualified HA.Resources as R
+import           Data.Maybe (listToMaybe)
 import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
+import           Mero.ConfC (ServiceType(CST_HA))
 
 -- | Get the process label, if attached.
 getLabel :: M0.Process -> G.Graph -> Maybe M0.ProcessLabel
@@ -48,3 +51,12 @@ getAll rg =
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   ]
+
+-- | Get a halon process on the given node.
+--
+-- This is a common action used throughout RC.
+getHA :: M0.Node -> G.Graph -> Maybe M0.Process
+getHA m0n rg = listToMaybe
+  [ p | p <- G.connectedTo m0n M0.IsParentOf rg
+      , any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
+      ]

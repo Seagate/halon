@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
@@ -47,8 +48,6 @@ module HA.Services.SSPL.IEM
   , logMeroBEError
   ) where
 
-import qualified HA.Aeson as JSON
-import           Data.Binary
 import           Data.ByteString (ByteString)
 import           Data.Hashable
 import           Data.List (intercalate)
@@ -62,6 +61,8 @@ import qualified Data.Text.Lazy.Encoding as TL
 import           Data.Typeable
 import           GHC.Generics
 import           GHC.TypeLits
+import qualified HA.Aeson as JSON
+import           HA.SafeCopy
 
 
 -- | Encoded interesting event message.
@@ -70,10 +71,10 @@ data IEM = IEM
   , iemEventText :: Text -- ^ Event code String
   , iemObject    :: Text -- ^ JSON formatted data containing metadata of
                          --   the event in the format of JSON encoded text
-  } deriving (Eq, Show, Generic, Typeable)
+  } deriving (Eq, Show, Generic, Typeable, Ord)
 
-instance Binary IEM
 instance Hashable IEM
+deriveSafeCopy 0 'base ''IEM
 
 -- | Interestng event message log.
 data IEMLog = IEMLog IEM LogLevel deriving (Eq, Show)

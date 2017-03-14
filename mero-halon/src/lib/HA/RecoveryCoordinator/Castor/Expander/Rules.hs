@@ -33,7 +33,6 @@ import           HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotificati
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions
-import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -148,7 +147,7 @@ ruleReassembleRaid =
         -- that we might not have to deal with Mero (this can happen on the
         -- CMU), so we have to deal with that.
         case (mnode, raidDevs) of
-          (Just (host, node@(R.Node nid)), (_:_)) -> do
+          (Just (host, node), (_:_)) -> do
             modify Local $ rlens fldHardware . rfield .~ Just (enc, host, node)
             modify Local $ rlens fldUUID . rfield .~ (Just eid)
             modify Local $ rlens fldRaidDevices . rfield .~ raidDevs
@@ -179,7 +178,7 @@ ruleReassembleRaid =
 
             -- Tell SSPL to disable swap
             cmdUUID <- liftIO $ nextRandom
-            sent <- sendNodeCmd nid (Just cmdUUID) $ SwapEnable False
+            sent <- sendNodeCmd [node] (Just cmdUUID) $ SwapEnable False
 
             if sent
             then do
@@ -228,10 +227,10 @@ ruleReassembleRaid =
 
       directly unmount $ do
         showLocality
-        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
         -- TODO magic constant
-        sent <- sendNodeCmd nid (Just cmdUUID) $ Unmount "/var/mero"
+        sent <- sendNodeCmd [node] (Just cmdUUID) $ Unmount "/var/mero"
 
         if sent
         then do
@@ -248,12 +247,12 @@ ruleReassembleRaid =
 
       directly stop_raid $ do
         showLocality
-        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         raidDevs <- gets Local (^. rlens fldRaidDevices . rfield)
 
         forM_ raidDevs $ \dev -> do
           cmdUUID <- liftIO $ nextRandom
-          sent <- sendNodeCmd nid (Just cmdUUID)
+          sent <- sendNodeCmd [node] (Just cmdUUID)
                   $ NodeRaidCmd (T.pack dev) RaidStop
 
           if sent
@@ -272,9 +271,9 @@ ruleReassembleRaid =
 
       directly reassemble_raid $ do
         showLocality
-        Just (_, _, R.Node nid) <- gets Local (^. rlens fldHardware . rfield)
+        Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
-        sent <- sendNodeCmd nid (Just cmdUUID) $ NodeRaidCmd "--scan" (RaidAssemble [])
+        sent <- sendNodeCmd [node] (Just cmdUUID) $ NodeRaidCmd "--scan" (RaidAssemble [])
 
         if sent
         then do

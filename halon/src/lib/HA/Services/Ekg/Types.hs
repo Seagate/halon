@@ -13,9 +13,10 @@
 -- EKG service types. In general you should not need to import this
 -- module: import "HA.Services.Ekg" or "HA.Services.Ekg.RC" instead.
 module HA.Services.Ekg.Types
-  ( -- * Core service types
+  ( -- * Core service things
     EkgConf(..)
   , EkgState(..)
+  , interface
     -- * Metrics
   , CounterCmd(..)
   , CounterContent(..)
@@ -37,18 +38,20 @@ module HA.Services.Ekg.Types
   ) where
 
 import           Control.Distributed.Process
-import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.Hashable
 import           Data.Int (Int64)
 import qualified Data.Map as M
 import           Data.Monoid ((<>))
+import           Data.Serialize.Get (runGet)
+import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
 import           HA.SafeCopy
 import           HA.Service hiding (__remoteTable)
+import           HA.Service.Interface
 import           HA.Service.TH
 import           Options.Schema
 import           Options.Schema.Builder
@@ -62,7 +65,7 @@ import           Text.Printf
 -- | Service configuration
 data EkgConf = EkgConf
   { _ekg_host :: String
-  , _ekg_port :: Int
+  , _ekg_port :: !Int
   } deriving (Eq, Show, Generic)
 
 instance Hashable EkgConf
@@ -93,6 +96,38 @@ $(generateDicts ''EkgConf)
 $(deriveService ''EkgConf 'ekgSchema [])
 deriveSafeCopy 0 'base ''EkgConf
 
+-- | A reply to various metric read requests. All replies sent to the
+-- RC.
+data MetricReadReply
+  = GaugeReadReply !GaugeContent
+  | CounterReadReply !CounterContent
+  | LabelReadReply !LabelContent
+  | DistributionReadReply !DistributionContent
+  deriving (Show, Generic, Typeable)
+
+interface :: Interface ModifyMetric MetricReadReply
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "ekg"
+  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
+  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
+      Left{} -> Nothing
+      Right !v -> Just v
+  }
+  where
+    mkWf payload = WireFormat
+      { wfServiceName = ifServiceName interface
+      , wfVersion = ifVersion interface
+      , wfPayload = payload
+      }
+
+instance HasInterface EkgConf ModifyMetric MetricReadReply where
+  getInterface _ = interface
+
 -- | Service state
 data EkgState = EkgState
   { _ekg_server :: Server
@@ -111,12 +146,11 @@ data EkgMetric = EkgCounter Counter.Counter
   deriving (Typeable, Generic)
 
 -- | Messages requesting metric changes.
-data ModifyMetric = ModifyCounter String CounterCmd
-                  | ModifyDistribution String DistributionCmd
-                  | ModifyGauge String GaugeCmd
-                  | ModifyLabel String LabelCmd
+data ModifyMetric = ModifyCounter String !CounterCmd
+                  | ModifyDistribution String !DistributionCmd
+                  | ModifyGauge String !GaugeCmd
+                  | ModifyLabel String !LabelCmd
   deriving (Show, Eq, Ord, Typeable, Generic)
-instance Binary ModifyMetric
 
 -- | Run an action described by 'ModifyMetric'.
 runModifyMetric :: EkgState -> ModifyMetric -> Process EkgState
@@ -145,30 +179,28 @@ unexpectedType n t m =
 -- * Metrics and their actions
 
 -- | Actions we can perform on 'Gauge.Gauge's.
-data GaugeCmd = GaugeRead ProcessId
-              -- ^ Corresponds to 'Gauge.read'. Caller should listen
-              -- for 'GaugeContent'.
+data GaugeCmd = GaugeRead
+              -- ^ Corresponds to 'Gauge.read'. RC should listen for
+              -- 'GaugeReadReply'.
               | GaugeInc
               -- ^ Corresponds to 'Gauge.inc'.
               | GaugeDec
               -- ^ Corresponds to 'Gauge.dec'.
-              | GaugeAdd Int64
+              | GaugeAdd !Int64
               -- ^ Corresponds to 'Gauge.add'.
-              | GaugeSubtract Int64
+              | GaugeSubtract !Int64
               -- ^ Corresponds to 'Gauge.subtract'.
-              | GaugeSet Int64
+              | GaugeSet !Int64
               -- ^ Corresponds to 'Gauge.set'.
   deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary GaugeCmd
 
--- | A reply to the caller of 'GaugeRead'.
+-- | A reply to the RC of 'GaugeRead'.
 data GaugeContent = GaugeContent
-  { _gc_name :: T.Text
+  { _gc_name :: !T.Text
   -- ^ 'Gauge.Gauge' metric name
-  , _gc_content :: Int64
+  , _gc_content :: !Int64
   -- ^ 'Gauge.Gauge' metric content
   } deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary GaugeContent
 
 -- | Run a 'GaugeCmd' on the specified metric.
 runModifyGauge :: EkgState -> String -> GaugeCmd -> Process EkgState
@@ -184,35 +216,35 @@ runModifyGauge st (T.pack -> n) cmd  = do
   mreply <- case m of
     Left err -> say err >> return Nothing
     Right g -> liftIO $ case cmd of
-      GaugeRead pid -> do
+      GaugeRead -> do
         i <- Gauge.read g
-        return $ Just (pid, GaugeContent n i)
+        return . Just . GaugeReadReply $! GaugeContent n i
       GaugeInc -> Gauge.inc g >> return Nothing
       GaugeDec -> Gauge.dec g >> return Nothing
       GaugeAdd i -> Gauge.add g i >> return Nothing
       GaugeSubtract i -> Gauge.subtract g i >> return Nothing
       GaugeSet i -> Gauge.set g i >> return Nothing
-  for_ mreply $ \(pid, reply) -> usend pid reply
+
+  for_ mreply $ sendRC interface
   return st'
 
 -- | Actions we can perform on 'Counter.Counter's.
-data CounterCmd = CounterRead ProcessId
-                -- ^ Corresponds to 'Counter.read'.
+data CounterCmd = CounterRead
+                -- ^ Corresponds to 'Counter.read'. RC should
+                -- listen for 'CounterReadReply'.
                 | CounterInc
                 -- ^ Corresponds to 'Counter.inc'.
-                | CounterAdd Int64
+                | CounterAdd !Int64
                 -- ^ Corresponds to 'Counter.add'.
   deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary CounterCmd
 
--- | A reply sent to the caller of 'CounterRead'.
+-- | A reply sent to the RC of 'CounterRead'.
 data CounterContent = CounterContent
-  { _cc_name :: T.Text
+  { _cc_name :: !T.Text
   -- ^ 'Counter.Counter' metric name.
-  , _cc_content :: Int64
+  , _cc_content :: !Int64
   -- ^ 'Counter.Counter' metric content.
   } deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary CounterContent
 
 -- | Run a 'CounterCmd' on the specified metric.
 runModifyCounter :: EkgState -> String -> CounterCmd -> Process EkgState
@@ -229,31 +261,29 @@ runModifyCounter st (T.pack -> n) cmd  = do
   mreply <- case m of
     Left err -> say err >> return Nothing
     Right c -> liftIO $ case cmd of
-      CounterRead pid -> do
+      CounterRead -> do
         i <- Counter.read c
-        return $ Just (pid, CounterContent n i)
+        return . Just . CounterReadReply $! CounterContent n i
       CounterInc -> Counter.inc c >> return Nothing
       CounterAdd i -> Counter.add c i >> return Nothing
-  for_ mreply $ \(pid, reply) -> usend pid reply
+  for_ mreply $ sendRC interface
   return st'
 
 -- | Actions we can perform on 'Label.Label's.
-data LabelCmd = LabelSet T.Text
+data LabelCmd = LabelSet !T.Text
               -- ^ Corresponds to 'Label.set'.
-              | LabelRead ProcessId
-              -- ^ Corresponds to 'Label.read'. Caller should listen
-              -- for 'LabelContent'.
+              | LabelRead
+              -- ^ Corresponds to 'Label.read'. RC should listen
+              -- for 'LabelReadReply'.
   deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary LabelCmd
 
--- | A reply sent to the caller for 'LabelRead'.
+-- | A reply sent to the RC for 'LabelRead'.
 data LabelContent = LabelContent
-  { _lc_name :: T.Text
+  { _lc_name :: !T.Text
   -- ^ 'Label.Label' metric name.
-  , _lc_content :: T.Text
+  , _lc_content :: !T.Text
   -- ^ 'Label.Label' content.
   } deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary LabelContent
 
 -- | Run a 'LabelCmd' on the specified metric.
 runModifyLabel :: EkgState -> String -> LabelCmd -> Process EkgState
@@ -269,50 +299,47 @@ runModifyLabel st (T.pack -> n) cmd  = do
   mreply <- case m of
     Left err -> say err >> return Nothing
     Right l -> liftIO $ case cmd of
-      LabelRead pid -> do
+      LabelRead -> do
         t <- Label.read l
-        return $ Just (pid, LabelContent n t)
+        return . Just . LabelReadReply $! LabelContent n t
       LabelSet t -> Label.set l t >> return Nothing
-  for_ mreply $ \(pid, reply) -> usend pid reply
+  for_ mreply $ sendRC interface
   return st'
 
 -- | Actions we can perform on 'Distribution.Distribution's.
-data DistributionCmd = DistributionAdd Double
+data DistributionCmd = DistributionAdd !Double
                      -- ^ Corresponds to 'Distribution.add'.
-                     | DistributionAddN Double Int64
+                     | DistributionAddN !Double !Int64
                      -- ^ Corresponds to 'Distribution.addN'.
-                     | DistributionRead ProcessId
-                     -- ^ Corresponds to 'Distribution.read'. Caller
-                     -- should listen for 'DistributionContent'.
+                     | DistributionRead
+                     -- ^ Corresponds to 'Distribution.read'. RC
+                     -- should listen for 'DistributionReadReply'.
   deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary DistributionCmd
 
--- | A reply sent to the caller for 'DistributionRead'.
+-- | A reply sent to the RC for 'DistributionRead'.
 data DistributionContent = DistributionContent
-  { _dc_name :: T.Text
+  { _dc_name :: !T.Text
   -- ^ 'Distribution.Distribution' metric name.
-  , _dc_content :: DistributionStats
+  , _dc_content :: !DistributionStats
   -- ^ 'Distribution.Distribution' content.
   } deriving (Show, Eq, Ord, Generic, Typeable)
-instance Binary DistributionContent
 
 -- | A locally-defined substitute for 'Distribution.Stats' providing
 -- necessary instances.
 data DistributionStats = DistributionStats
-  { _ds_mean :: Double
+  { _ds_mean :: !Double
   -- ^ Corresponds to 'Distribution.mean'.
-  , _ds_variance :: Double
+  , _ds_variance :: !Double
   -- ^ Corresponds to 'Distribution.variance'.
-  , _ds_count :: Int64
+  , _ds_count :: !Int64
   -- ^ Corresponds to 'Distribution.count'.
-  , _ds_sum :: Double
+  , _ds_sum :: !Double
   -- ^ Corresponds to 'Distribution.sum'.
-  , _ds_min :: Double
+  , _ds_min :: !Double
   -- ^ Corresponds to 'Distribution.min'.
-  , _ds_max :: Double
+  , _ds_max :: !Double
   -- ^ Corresponds to 'Distribution.max'.
   } deriving (Show, Eq, Ord, Typeable, Generic)
-instance Binary DistributionStats
 
 -- | Run a 'DistributionCmd' on the specified metric.
 runModifyDistribution :: EkgState -> String -> DistributionCmd
@@ -332,7 +359,7 @@ runModifyDistribution st (T.pack -> n) cmd  = do
     Right d -> liftIO $ case cmd of
       DistributionAdd v -> Distribution.add d v >> return Nothing
       DistributionAddN v i -> Distribution.addN d v i >> return Nothing
-      DistributionRead pid -> do
+      DistributionRead -> do
         sts <- Distribution.read d
         let stats = DistributionStats
               { _ds_mean = Distribution.mean sts
@@ -341,6 +368,18 @@ runModifyDistribution st (T.pack -> n) cmd  = do
               , _ds_sum = Distribution.sum sts
               , _ds_min = Distribution.min sts
               , _ds_max = Distribution.max sts }
-        return $ Just (pid, DistributionContent n stats)
-  for_ mreply $ \(pid, reply) -> usend pid reply
+        return . Just . DistributionReadReply $! DistributionContent n stats
+  for_ mreply $ sendRC interface
   return st'
+
+deriveSafeCopy 0 'base ''CounterCmd
+deriveSafeCopy 0 'base ''CounterContent
+deriveSafeCopy 0 'base ''DistributionCmd
+deriveSafeCopy 0 'base ''DistributionContent
+deriveSafeCopy 0 'base ''DistributionStats
+deriveSafeCopy 0 'base ''GaugeCmd
+deriveSafeCopy 0 'base ''GaugeContent
+deriveSafeCopy 0 'base ''LabelCmd
+deriveSafeCopy 0 'base ''LabelContent
+deriveSafeCopy 0 'base ''MetricReadReply
+deriveSafeCopy 0 'base ''ModifyMetric

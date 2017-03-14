@@ -85,6 +85,7 @@ Library
                    HA.Services.Frontier
                    HA.Services.Frontier.Command
                    HA.Services.Frontier.CEP
+                   HA.Services.Frontier.Interface
                    HA.Services.SSPL
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.CEP
@@ -192,7 +193,6 @@ Library
                    HA.Services.DecisionLog.Logger
                    HA.Services.DecisionLog.Trace
                    HA.Services.DecisionLog.Types
-                   HA.Services.SSPL.HL.StatusHandler
                    HA.Services.SSPL.HL.CEP
                    HA.Services.SSPL.LL.RC.Actions
                    HA.RecoveryCoordinator.Job.Internal

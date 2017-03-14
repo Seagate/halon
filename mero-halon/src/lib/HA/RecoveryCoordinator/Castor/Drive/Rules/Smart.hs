@@ -46,9 +46,10 @@ import HA.Services.SSPL.CEP
   ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
-  , CommandAck(..)
   , NodeCmd(..)
   , commandAck
+  , commandAckType
+  , SsplLlFromSvc(..)
   )
 
 import Control.Distributed.Process (Process)
@@ -106,7 +107,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
         ] ++ di
 
     directly smart $ do
-      Just (Node nid) <- gets Local (^. rlens fldNode . rfield)
+      Just node <- gets Local (^. rlens fldNode . rfield)
       Just (DeviceInfo sdev serial) <-
         gets Local (^. rlens fldDeviceInfo . rfield)
 
@@ -121,7 +122,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
           (Just $ SMARTResponse sdev SRSNotPossible)
         continue finish
 
-      sent <- sendNodeCmd nid Nothing (SmartTest serial)
+      sent <- sendNodeCmd [node] Nothing (SmartTest serial)
       if sent
       then do
         Log.rcLog' Log.DEBUG "Running SMART test."
@@ -166,7 +167,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
       modify Local $ rlens fldNode . rfield .~ (Just node)
       modify Local $ rlens fldDeviceInfo . rfield .~
         (Just $ DeviceInfo sdev serial)
-      return . Right $ 
+      return . Right $
         if isDisabled
         then (SMARTResponse sdev SRSSuccess, [finish])
         else (SMARTResponse sdev SRSNotPossible, [smart])
@@ -182,11 +183,11 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
        <+> fldDeviceInfo    =: Nothing
 
 onSmartSuccess :: forall g l. (FldDeviceInfo ∈ l)
-               => HAEvent CommandAck
+               => HAEvent SsplLlFromSvc
                -> g
                -> FieldRec l
                -> Process (Maybe UUID)
-onSmartSuccess (HAEvent eid cmd) _
+onSmartSuccess (HAEvent eid (CAck cmd)) _
                ((view $ rlens fldDeviceInfo . rfield) -> Just (DeviceInfo _ serial)) =
     case commandAckType cmd of
       Just (SmartTest x)
@@ -199,11 +200,11 @@ onSmartSuccess (HAEvent eid cmd) _
 onSmartSuccess _ _ _ = return Nothing
 
 onSmartFailure :: forall g l. (FldDeviceInfo ∈ l)
-               => HAEvent CommandAck
+               => HAEvent SsplLlFromSvc
                -> g
                -> FieldRec l
                -> Process (Maybe UUID)
-onSmartFailure (HAEvent eid cmd) _
+onSmartFailure (HAEvent eid (CAck cmd)) _
                ((view $ rlens fldDeviceInfo . rfield) -> Just (DeviceInfo _ serial)) =
     case commandAckType cmd of
       Just (SmartTest x)

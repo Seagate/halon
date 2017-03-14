@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module    : HA.Castor.Story.Tests
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- General Castor story tests
@@ -50,6 +50,7 @@ import           HA.Resources.Castor
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Service.Interface
 import           HA.Services.SSPL
 import           HA.Services.SSPL.LL.Resources
 import           HA.Services.SSPL.Rabbit
@@ -350,7 +351,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
     return (n, slot)
 
   _ <- usend rc $ DriveOK uuid node slot stord
-  _ <- promulgateEQ [processNodeId rc] resetCmd
+  sendRC (getInterface sspl) $ CAck resetCmd
   let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
                        $ nodeCmdString (SmartTest tserial)
   sayTest "Waiting for SMART request."
@@ -358,7 +359,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
               =<< expectNodeMsg ssplTimeout
   sayTest $ "Sending SMART completion message: " ++ show smartComplete
   -- Confirms that the disk powerdown operation has occured.
-  _ <- promulgateEQ [processNodeId rc] smartComplete
+  _ <- sendRC (getInterface sspl) $ CAck smartComplete
 
   -- If the sdev is there
   forM_ m0sdev $ \sdev -> do
@@ -561,6 +562,8 @@ testRepairedDriveReset t pg = mkTestAroundReset t pg M0.SDSRepaired
 testRebalanceDriveReset :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testRebalanceDriveReset t pg = mkTestAroundReset t pg M0.SDSRebalancing
 
+type RaidMsg = (UUID, NodeId, SensorResponseMessageSensor_response_typeRaid_data)
+
 -- | Test that we respond correctly to a notification that a RAID device
 --   has failed.
 testMetadataDriveFailed :: (Typeable g, RGroup g)
@@ -594,14 +597,14 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   usend (_ts_rmq ts) . MQSubscribe "sspl_iem" =<< getSelfPid
 
   subscribeOnTo [processNodeId $ _ts_rc ts]
-    (Proxy :: Proxy (HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data)))
+    (Proxy :: Proxy RaidMsg)
 
   usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
 
 
   sayTest "RAID message published"
   -- Expect the message to be processed by RC
-  _ :: HAEvent (NodeId, SensorResponseMessageSensor_response_typeRaid_data) <- expectPublished
+  _ :: RaidMsg <- expectPublished
 
   do
     Just (uid, msg) <- expectNodeMsgUid ssplTimeout
@@ -610,8 +613,8 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
         cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString nc
     liftIO $ assertEqual "drive removal command is issued" cmd msg
-    void . promulgateEQ [processNodeId $ _ts_rc ts] $ CommandAck uid (Just nc) AckReplyPassed
-
+    sendRC (getInterface sspl) . CAck $
+      CommandAck uid (Just nc) AckReplyPassed
   -- The RC should issue a 'ResetAttempt' and should be handled.
   sayTest "RAID removal for drive received at SSPL"
   _ :: HAEvent ResetAttempt <- expectPublished
@@ -651,13 +654,11 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
     return ()
   sayTest "Raid_data message processed by RC"
 
-type RaidMsg = (NodeId, SensorResponseMessageSensor_response_typeRaid_data)
-
 testExpanderResetRAIDReassemble :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport pg [] to $ \ts -> do
   let rcNodeId = processNodeId $ _ts_rc ts
   subscribeOnTo [rcNodeId] (Proxy :: Proxy (HAEvent ExpanderReset))
-  subscribeOnTo [rcNodeId] (Proxy :: Proxy (HAEvent RaidMsg))
+  subscribeOnTo [rcNodeId] (Proxy :: Proxy RaidMsg)
   subscribeOnTo [rcNodeId] (Proxy :: Proxy StopProcessResult)
   subscribeOnTo [rcNodeId] (Proxy :: Proxy StartProcessesOnNodeResult)
 
@@ -691,7 +692,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
 
   -- Before we can do anything, we need to establish a fake RAID device.
   usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" raidMsg
-  _ :: HAEvent RaidMsg <- expectPublished
+  _ :: RaidMsg <- expectPublished
   sayTest "RAID devices established"
 
   rg <- G.getGraph (_ts_mm ts)
@@ -725,7 +726,8 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
               $ nodeCmdString nc
     liftIO $ assertEqual "Swap is disabled" cmd msg
     -- Reply with a command acknowledgement
-    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
+    sendRC (getInterface sspl) . CAck $
+      CommandAck uid (Just nc) AckReplyPassed
 
   -- TODO: Maybe expander code should use StopProcessesOnNodeRequest
   -- or similar? Right now it just blindly tries to shut everything
@@ -742,7 +744,8 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
               $ nodeCmdString nc
     liftIO $ assertEqual "/var/mero is unmounted" cmd msg
     -- Reply with a command acknowledgement
-    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
+    sendRC (getInterface sspl) . CAck $
+      CommandAck uid (Just nc) AckReplyPassed
 
   -- Should see 'stop RAID' message
   _ <- do
@@ -753,7 +756,8 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
               $ nodeCmdString nc
     liftIO $ assertEqual "RAID is stopped" cmd msg
     -- Reply with a command acknowledgement
-    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
+    sendRC (getInterface sspl) . CAck $
+      CommandAck uid (Just nc) AckReplyPassed
 
   -- Should see 'reassemble RAID' message
   _ <- do
@@ -764,7 +768,8 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
               $ nodeCmdString nc
     liftIO $ assertEqual "RAID is assembling" cmd msg
     -- Reply with a command acknowledgement
-    void . promulgateEQ [rcNodeId] $ CommandAck uid (Just nc) AckReplyPassed
+    sendRC (getInterface sspl) . CAck $
+      CommandAck uid (Just nc) AckReplyPassed
 
   -- TODO: Expand to all processes we would expect
   NodeProcessesStarted{} <- expectPublished

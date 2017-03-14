@@ -27,7 +27,7 @@
 --     let notifications = [stateSet p processOnline]
 --     'setExpectedNotifications' notifications
 --     'applyStateChanges' notifications
---     'waitFor' notify_succeeded
+--     'waitFor' notifier
 --     'onTimeout' 10 notify_timed_out
 --     'onSuccess' notify_succeeded
 --     'continue' dispatcher
@@ -35,7 +35,7 @@
 --   'directly' notify_succeeded $ …
 --   'directly' notify_timed_out $ …
 --
---   start notify_process_online (args notify_process_online)
+--   'start' notify_process_online (args notify_succeeded)
 --   where
 --     args st =  'fldNotifications' '=:' []
 --          '<+>' 'fldDispatch'      '=:' 'Dispatch' [] st 'Nothing'
@@ -52,6 +52,7 @@ module HA.RecoveryCoordinator.Mero.Notifications
   , setPhaseInternalNotification
   , setPhaseNotified
   , simpleNotificationToPred
+  , module HA.RecoveryCoordinator.RC.Actions.Dispatch
   ) where
 
 import           Control.Distributed.Process (Process)
@@ -105,11 +106,33 @@ mkNotifier' :: forall a l. (FldDispatch ∈ l, FldNotifications a ∈ l)
             -- 'waitClear' some extra phase handles.
             -> RuleM RC (FieldRec l) (Jump PhaseHandle)
 mkNotifier' toPred dispatcher act = do
+  check_notifications <- phaseHandle "check_notifications"
   notifier <- phaseHandle "notifier"
+  let fldN = Proxy :: Proxy (FldNotifications a)
+  -- It could happen that the caller invoked the notifier without any
+  -- notifications. In that case the caller has to wait for
+  -- 'InternalObjectStateChangeMsg' to fly by to notice this: this is
+  -- sub-optimal because dispatcher can then happily timeout if we're
+  -- not lucky and some other component in the system causes a state
+  -- change. We prevent this situation by checking if there are any
+  -- notifications to wait for at all: if not then we're finished
+  -- straight away.
+  directly check_notifications $ do
+    gets Local (^. rlens fldN . rfield) >>= \case
+      [] -> do
+        waitDone check_notifications
+        act
+        continue dispatcher
+      _ -> do
+        -- We have some notifications to wait for so add the actual
+        -- handling phase to the dispatcher and just let the
+        -- dispatcher work as always.
+        waitDone check_notifications
+        waitFor notifier
+        continue dispatcher
 
   setPhase notifier $ \(HAEvent eid (msg :: InternalObjectStateChangeMsg)) -> do
     todo eid
-    let fldN = Proxy :: Proxy '("notifications", [a])
     gets Local (^. rlens fldN . rfield) >>= \case
       [] -> do
          waitDone notifier
@@ -135,7 +158,7 @@ mkNotifier' toPred dispatcher act = do
         -- for, we have to keep going.
         continue dispatcher
 
-  return notifier
+  return check_notifications
 
 -- | A wrapper over 'mkNotifier'' that works over @'FldNotifications'
 -- 'AnyStateSet'@ and allows the user to specify an additional action

@@ -19,7 +19,6 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , SpielDeviceDetached(..)
   -- * SDev state transitions
   , checkDiskFailureWithinTolerance
-  , iemFailureOverTolerance
   , updateStorageDevicePresence
   , updateStorageDeviceStatus
   ) where
@@ -29,8 +28,6 @@ import Data.Char (toUpper)
 import Data.Functor (void)
 import Data.Function (fix)
 import Data.Maybe (mapMaybe)
-import Data.Monoid ((<>))
-import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID (UUID)
 import Data.Word (Word32)
@@ -60,9 +57,6 @@ import qualified HA.Resources as Res
 import qualified HA.Resources.Castor as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import HA.Services.SSPL.IEM (logFailureOverK)
-import HA.Services.SSPL.LL.Resources (InterestingEventMessage(..))
-import HA.Services.SSPL.LL.RC.Actions (sendInterestingEvent)
 import Mero.ConfC
 import qualified Mero.Spiel as Spiel
 
@@ -220,13 +214,6 @@ isRemovedFromRAID = fmap (not . null) . findStorageDeviceAttrs go
   where
     go SDRemovedFromRAID = True
     go _ = False
-
--- | Send an IEM about 'M0.SDev' failure transition being prevented by
--- maximum allowed failure tolerance.
-iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
-iemFailureOverTolerance sdev =
-  sendInterestingEvent . InterestingEventMessage $ logFailureOverK
-      (" {'failedDevice':" <> T.pack (fidToStr $ M0.fid sdev) <> "}")
 
 -- | Produce an 'SDevTransition' which, when unpacked into
 -- 'AnyStateSet' (with 'sdevStateSet'), will either set the drive into
