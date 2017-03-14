@@ -290,16 +290,16 @@ updateStorageDevicePresence :: UUID          -- ^ Thread id.
                             -> StorageDevice -- ^ Installed storage device.
                             -> Res.Slot      -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.
-                            -> Bool          -- ^ Is device powered.
+                            -> Maybe Bool    -- ^ Is device powered.
                             -> PhaseM RC l ()
-updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
+updateStorageDevicePresence uuid node sdev sdev_loc is_installed mis_powered = do
   was_powered <- StorageDevice.isPowered sdev
   fix $ \next -> do
     eresult <- StorageDevice.insertTo sdev sdev_loc
     case eresult of
       -- New drive was installed
       Right () | is_installed ->
-        notify $ DriveInserted uuid node sdev_loc sdev is_powered
+        notify $ DriveInserted uuid node sdev_loc sdev mis_powered
       -- Same drive but it was removed.
       Right () -> do -- this is a bad case, as it means that we have missed notifcatio about drive
                      -- removal
@@ -308,8 +308,9 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
       Left StorageDevice.AlreadyInstalled | not is_installed -> do
         StorageDevice.ejectFrom sdev sdev_loc
         Log.rcLog' Log.DEBUG ("Removing no longer installed device from slot" :: String)
-        notify $ DriveRemoved uuid node sdev_loc sdev is_powered
-      Left StorageDevice.AlreadyInstalled | was_powered /= is_powered ->
+        notify $ DriveRemoved uuid node sdev_loc sdev mis_powered
+      Left StorageDevice.AlreadyInstalled | Just is_powered <- mis_powered
+                                          , was_powered /= is_powered ->
         notify $ DrivePowerChange uuid node sdev_loc sdev is_powered
       -- Nothing changed
       Left StorageDevice.AlreadyInstalled -> return ()
@@ -320,13 +321,13 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed is_powered = do
           Log.rcLog Log.ERROR
             ("Insertion in a slot where previous device was inserted - removing old device.":: String)
           StorageDevice.ejectFrom asdev sdev_loc
-          notify $ DriveRemoved uuid node sdev_loc asdev is_powered
+          notify $ DriveRemoved uuid node sdev_loc asdev mis_powered
         next
       Left (StorageDevice.InAnotherSlot slot) -> do
         Log.rcLog' Log.ERROR
           ("Storage device was associated with another slot.":: String)
         StorageDevice.ejectFrom sdev slot
-        notify $ DriveRemoved uuid node sdev_loc sdev is_powered
+        notify $ DriveRemoved uuid node sdev_loc sdev mis_powered
         next
 
 -- | Update status of the storage device.

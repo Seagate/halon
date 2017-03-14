@@ -70,7 +70,7 @@ data DriveRemoved = DriveRemoved
        , drNode :: Node -- ^ Node where event happens.
        , drLocation :: Slot -- ^ Location where event happened.
        , drDevice    :: StorageDevice -- ^ Removed device
-       , drPowered :: Bool -- Is disk powered?
+       , drPowered :: Maybe Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 instance Hashable DriveRemoved
 instance Binary DriveRemoved
@@ -82,7 +82,7 @@ data DriveInserted = DriveInserted
        , diNode :: Node -- ^ Node where event happens.
        , diLocation :: Slot -- ^ Location where event happened.
        , diDevice :: StorageDevice -- ^ Inserted device.
-       , diPowered :: Bool -- Is disk powered?
+       , diPowered :: Maybe Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted

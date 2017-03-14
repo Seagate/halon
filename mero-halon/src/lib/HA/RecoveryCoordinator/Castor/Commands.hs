@@ -43,7 +43,7 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
                Nothing -> liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchEnclosure
                Just node -> do
                  uuid <- liftIO $ nextRandom
-                 Drive.updateStorageDevicePresence uuid node sd slot isInstalled isPowered
+                 Drive.updateStorageDevicePresence uuid node sd slot isInstalled (Just isPowered)
                  liftProcess $ sendChan chan StorageDevicePresenceUpdated
      else liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchDevice
 

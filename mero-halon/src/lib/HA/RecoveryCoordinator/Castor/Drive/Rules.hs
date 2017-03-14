@@ -373,11 +373,12 @@ ruleDriveInserted = define "drive-inserted" $ do
   directly main $ do
     (Just (_, DriveInserted{ diNode = node
                            , diDevice = disk
-                           , diPowered = powered
+                           , diPowered = mpowered
                            }), _) <- get Local
-    if powered
-    then StorageDevice.poweron disk
-    else StorageDevice.poweroff disk
+    for_ mpowered $ \powered -> 
+      if powered
+      then StorageDevice.poweron disk
+      else StorageDevice.poweroff disk
     checked <- checkAndHandleDriveReady node disk (return [finish])
     switch checked
 

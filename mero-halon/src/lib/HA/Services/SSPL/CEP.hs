@@ -26,7 +26,6 @@ import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
-import           Data.Function (fix)
 import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.Monoid ((<>))
 import           Data.Proxy
@@ -229,19 +228,8 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
   sdev_loc <- StorageDevice.mkLocation enc diskNum
   Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing
   disk <- populateStorageDevice sn path
-  fix $ \next -> do
-    eresult <- StorageDevice.insertTo disk sdev_loc
-    case eresult of
-      Right () -> notify $ DriveInserted uuid (Node nid) sdev_loc disk True
-      Left StorageDevice.AlreadyInstalled -> return ()
-      Left (StorageDevice.InAnotherSlot slot) -> do
-        StorageDevice.ejectFrom disk slot
-        notify $ DriveRemoved uuid (Node nid) sdev_loc disk True
-        next
-      Left (StorageDevice.AnotherInSlot sdev') -> do
-        StorageDevice.ejectFrom sdev' sdev_loc
-        notify $ DriveRemoved uuid (Node nid) sdev_loc sdev' True
-        next
+  unless (T.unpack (T.toUpper disk_reason) =="EMPTY") $ do
+    updateStorageDevicePresence uuid (Node nid) disk sdev_loc True Nothing
   next <- shouldContinue disk
   when next $ do
     result <- updateStorageDeviceStatus uuid (Node nid) disk sdev_loc
@@ -343,7 +331,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
   isOngoingReset <- hasOngoingReset sdev
   unless isOngoingReset $
     updateStorageDevicePresence uuid (Node nid) sdev sdev_loc
-      is_installed is_powered
+      is_installed (Just is_powered)
   done uuid
   where
     extract (HAEvent uid (DiskHpi nid v)) _ = return $! Just (uid, nid, v)

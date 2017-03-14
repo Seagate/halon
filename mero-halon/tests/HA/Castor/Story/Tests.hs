@@ -217,7 +217,7 @@ announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
         True True
   withSubscription [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveInserted) $ do
     usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
-    let isOurDI (DriveInserted _ _ slot' sdev' True) = slot' == slot && sdev' == aDiskSD sdev
+    let isOurDI (DriveInserted _ _ slot' sdev' (Just True)) = slot' == slot && sdev' == aDiskSD sdev
         isOurDI _ = False
     r <- receiveTimeout 10000000
       [ matchIf (\(Published v _) -> isOurDI v) (\_ -> return ()) ]

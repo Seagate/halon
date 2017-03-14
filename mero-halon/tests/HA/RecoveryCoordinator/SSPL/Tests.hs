@@ -146,13 +146,13 @@ hpiTests =
   | a <- [True, False]] ++
   -- Remove drive
   [ HTI   True      a       False  False   b         $ \_uuid -> do
-     receiveWait $ oneMatch  $ matchIf (\(Published (DriveRemoved _ _ _ _ x) _) -> x == b)
+     receiveWait $ oneMatch  $ matchIf (\(Published (DriveRemoved _ _ _ _ (Just x)) _) -> x == b)
                                        (const $ return ())
      no_other_events
   | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
   -- Insert drive
   [ HTI   False     a       False  True    b         $ \_uuid -> do
-     receiveWait $ oneMatch $ matchIf (\(Published (DriveInserted _ _ _ _ x) _) -> x == b)
+     receiveWait $ oneMatch $ matchIf (\(Published (DriveInserted _ _ _ _ (Just x)) _) -> x == b)
                                       (const $ return ())
      no_other_events
   | (a,b) <- (,) <$> [True, False] <*> [True, False]] ++
