@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -12,8 +13,8 @@ module HA.RecoveryCoordinator.Mero.Actions.Initial
   ) where
 
 import           Control.Category ((>>>))
-import           Data.Foldable (foldl')
-import           Data.List (scanl')
+import           Data.Foldable (foldl', for_)
+import           Data.List (notElem, scanl')
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
 import qualified Data.Set as Set
@@ -158,12 +159,27 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         CI.PLClovis a b -> M0.PLClovis a b
         CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
         CI.PLHalon -> M0.PLHalon
+      procEnv rg = (mkProcEnv rg) <$> fromMaybe [] m0p_environment
+      mkProcEnv _ (key, CI.M0PEnvValue val) = M0.ProcessEnvValue key val
+      mkProcEnv rg (key, CI.M0PEnvRange from to) = let
+          used = [ i | (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+                     , M0.ProcessEnvInRange k i <- G.connectedTo proc Has rg
+                     , k == key
+                 ]
+          fstUnused = case filter (flip notElem used) [from .. to] of
+            (x:_) -> x
+            [] -> error $ "Specified range for " ++ show key ++ " is insufficient."
+        in M0.ProcessEnvInRange key fstUnused
     in do
+      rg <- getLocalGraph
       proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
       mapM_ (goSrv proc devs) m0p_services
 
       modifyGraph $ G.connect node M0.IsParentOf proc
                 >>> G.connect proc Has procLabel
+
+      for_ (procEnv rg) $ \pe -> modifyGraph $
+        G.connect proc Has pe
 
   goSrv proc devs CI.M0Service{..} = let
       filteredDevs = maybe

@@ -264,6 +264,19 @@ instance Hashable M0ProcessType
 instance A.FromJSON M0ProcessType
 instance A.ToJSON M0ProcessType
 
+-- | Mero process environment. Values of this type become additional Environment
+--   variables in the sysconfig file for this process.
+data M0ProcessEnv =
+    -- | A simple value, passed directly to the file.
+    M0PEnvValue String
+    -- | A unique range within the node. Each process shall be given a unique
+    --   value within this range for the given environment key.
+  | M0PEnvRange Int Int
+  deriving (Eq, Data, Show, Typeable, Generic)
+instance Hashable M0ProcessEnv
+instance A.FromJSON M0ProcessEnv
+instance A.ToJSON M0ProcessEnv
+
 -- | Information about mero process on the host
 data M0Process = M0Process
   { m0p_endpoint :: String
@@ -278,6 +291,8 @@ data M0Process = M0Process
   -- ^ List of services this process should run.
   , m0p_boot_level :: M0ProcessType
   -- ^ Type of process, governing how it should run.
+  , m0p_environment :: Maybe [(String, M0ProcessEnv)]
+  -- ^ Process environment - additional
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Process
@@ -542,6 +557,7 @@ storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals
 storageIndex           ''M0Globals "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Host
+deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service

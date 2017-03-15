@@ -293,8 +293,9 @@ configureMeroProcess sender p runType = do
                $ G.connectedTo p M0.IsParentOf rg
           then ProcessConfigLocal p <$> syncToBS
           else return $! ProcessConfigRemote p
+  let env = G.connectedTo p Has rg
   liftProcess . sender . ProcessMsg $!
-    ConfigureProcess runType conf (runType == M0D) uid
+    ConfigureProcess runType conf env (runType == M0D) uid
   return uid
 
 -- | Dispatch a request to start @halon:m0d@ on the given

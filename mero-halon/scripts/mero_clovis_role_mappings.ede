@@ -193,3 +193,29 @@
           m0s_params:
             tag: SPUnused
             contents: []
+- name: "s3server"
+  content:
+    - m0p_endpoint: "{{ lnid }}:12345:41:303"
+      m0p_mem_as: {{ host_mem_as }}
+      m0p_mem_rss: {{ host_mem_rss }}
+      m0p_mem_stack: {{ host_mem_stack }}
+      m0p_mem_memlock: {{ host_mem_memlock }}
+      m0p_cores:
+{% for core in host_cores %}
+       - {{ core.value }}
+{% endfor %}
+      m0p_boot_level:
+        tag: PLClovis
+        contents: ["s3server", True]
+      m0p_services:
+        - m0s_type:
+            tag: CST_RMS
+            contents: []
+          m0s_endpoints: ["{{ lnid }}:12345:41:303"]
+          m0s_params:
+            tag: SPUnused
+            contents: []
+      m0p_environment:
+        - - "MERO_S3SERVER_PORT"
+          - tag: M0PEnvRange
+            contents: [8081, 8092]

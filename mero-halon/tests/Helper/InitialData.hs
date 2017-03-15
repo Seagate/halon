@@ -195,6 +195,7 @@ haProcess ifaddr = CI.M0Process
       , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     ]
+  , CI.m0p_environment = Nothing
   }
 
 -- | Create a confd 'CI.M0Process'
@@ -220,6 +221,7 @@ confdProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
+  , CI.m0p_environment = Nothing
   }
 
 -- | Create an mds 'CI.M0Process'
@@ -250,6 +252,7 @@ mdsProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
+  , CI.m0p_environment = Nothing
   }
 
 -- | Create an IOS 'CI.M0Process'
@@ -290,6 +293,7 @@ iosProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
+  , CI.m0p_environment = Nothing
   }
 
 
@@ -311,4 +315,5 @@ m0t1fsProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
+  , CI.m0p_environment = Nothing
   }

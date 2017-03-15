@@ -343,7 +343,7 @@ controlProcess conf master pcChan = do
   link master
   nid <- getSelfNode
   forever $ receiveChan pcChan >>= \case
-    ConfigureProcess runType pconf mkfs uid ->
+    ConfigureProcess runType pconf _env mkfs uid ->
       configureProcess runType pconf mkfs >>=
         sendRC interface . ProcessControlResultConfigureMsg nid uid
     StartProcess runType p -> startProcess runType p >>=

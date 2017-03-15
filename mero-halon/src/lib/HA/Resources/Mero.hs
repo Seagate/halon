@@ -793,6 +793,16 @@ instance Migrate ProcessLabel where
   migrate (PLBootLevel_0 x) = PLM0d x
   migrate PLNoBoot_0 = PLHalon
 
+-- | Process environment. Values stored here will be added to the environment
+--   file for the process.
+data ProcessEnv =
+    ProcessEnvValue String String
+  | ProcessEnvInRange String Int
+  deriving (Eq, Ord, Show, Generic, Typeable)
+instance Hashable ProcessEnv
+storageIndex ''ProcessEnv "9A713802-A47B-4ABB-97F6-2CBC35C95431"
+deriveSafeCopy 0 'base ''ProcessEnv
+
 -- | Cluster disposition.
 --   This represents the desired state for the cluster, which is used to
 --   decide upon the correct behaviour to take in reaction to events.
@@ -901,7 +911,7 @@ $(mkDicts
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''Disposition, ''ProcessBootstrapped
+  , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
@@ -954,6 +964,7 @@ $(mkDicts
   , (''R.Host, ''R.Has, ''LNid)
   , (''R.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
+  , (''Process, ''R.Has, ''ProcessEnv)
   , (''Process, ''R.Has, ''PID)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
@@ -971,7 +982,7 @@ $(mkResRel
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
-  , ''Disposition, ''ProcessBootstrapped
+  , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
@@ -1024,6 +1035,7 @@ $(mkResRel
   , (''R.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''R.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
+  , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)

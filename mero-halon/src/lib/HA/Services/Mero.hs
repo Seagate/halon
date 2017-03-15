@@ -175,8 +175,8 @@ controlProcess mc pid rp = do
                   loop $ BM.insert mref m slaves
             nid <- getSelfNode
             case m of
-              ConfigureProcess runType conf mkfs uid -> forkIOInProcess
-                (configureProcess mc runType conf mkfs)
+              ConfigureProcess runType conf env mkfs uid -> forkIOInProcess
+                (configureProcess mc runType conf env mkfs)
                 (sendRC interface . ProcessControlResultConfigureMsg nid uid)
               StartProcess runType p -> forkIOInProcess
                 (startProcess runType p)
@@ -199,14 +199,15 @@ confXCPath = "/var/mero/confd/conf.xc"
 configureProcess :: MeroConf        -- ^ Mero configuration.
                  -> ProcessRunType  -- ^ Run type of the process.
                  -> ProcessConfig   -- ^ Process configuration.
+                 -> [M0.ProcessEnv]    -- ^ Additional environment
                  -> Bool            -- ^ Is mkfs needed?
                  -> IO (Either (M0.Process, String) M0.Process)
-configureProcess mc run conf needsMkfs = do
+configureProcess mc run conf env needsMkfs = do
   let procFid = M0.fid p
   putStrLn $ "m0d: configureProcess: " ++ show procFid
            ++ " with type(s) " ++ show run
   confXC <- maybeWriteConfXC conf
-  _unit  <- writeSysconfig mc run procFid (M0.r_endpoint p) confXC
+  _unit  <- writeSysconfig mc run procFid (M0.r_endpoint p) confXC (toEnv <$> env)
   if needsMkfs
   then do
     ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
@@ -215,6 +216,8 @@ configureProcess mc run conf needsMkfs = do
       Left x -> Left (p, "Unit failed to start with exit code " ++ show x)
   else return $ Right p
   where
+    toEnv (M0.ProcessEnvValue key val) = (key, val)
+    toEnv (M0.ProcessEnvInRange key val) = (key, show val)
     maybeWriteConfXC (ProcessConfigLocal _ bs) = do
       liftIO $ writeConfXC bs
       return $ Just confXCPath
@@ -298,8 +301,9 @@ writeSysconfig :: MeroConf
                -> Fid -- ^ Process fid
                -> String -- ^ Endpoint address
                -> Maybe String -- ^ Confd address?
+               -> [(String, String)] -- ^ Additional environment values
                -> IO String
-writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
+writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
     putStrLn $ "m0d: Writing sysctlFile: " ++ fileName
     _ <- SystemD.sysctlFile fileName $
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
@@ -307,6 +311,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath = do
       , ("MERO_PROFILE_FID", fidToStr mcProfile)
       , ("MERO_PROCESS_FID", fidToStr procFid)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
+        ++ additionalEnv
     return unit
   where
     fileName = prefix ++ "-" ++ fidToStr procFid

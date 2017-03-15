@@ -195,8 +195,8 @@ instance Hashable ProcessConfig
 data ProcessControlMsg =
     StartProcess !ProcessRunType !M0.Process
   | StopProcess !ProcessRunType !M0.Process
-  | ConfigureProcess !ProcessRunType !ProcessConfig !Bool !UUID.UUID
-  -- ^ @ConfigureProcess runType config runMkfs requestUUID@
+  | ConfigureProcess !ProcessRunType !ProcessConfig ![ProcessEnv] !Bool !UUID.UUID
+  -- ^ @ConfigureProcess runType config environment runMkfs requestUUID@
   --
   -- 'ProcessControlResultConfigureMsg' which is used as the reply
   -- should include the @requestUUID@.
