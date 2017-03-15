@@ -28,3 +28,9 @@ GSYMS
 GTAGS
 *.swp
 mero-halon/doc/diagrams/*.png
+rpmbuild/BUILD/
+rpmbuild/BUILDROOT/
+rpmbuild/RPMS/
+rpmbuild/SOURCES/
+rpmbuild/SPECS/
+rpmbuild/SRPMS/
