@@ -45,6 +45,7 @@ rpm-dev:
 	cp mero-halon/scripts/setup-rabbitmq-perms.sh rpmbuild/SOURCES/setup-rabbitmq-perms.sh
 	cp mero-halon/scripts/mero_clovis_role_mappings.ede rpmbuild/SOURCES/role_maps/clovis.ede
 	cp mero-halon/scripts/mero_provisioner_role_mappings.ede rpmbuild/SOURCES/role_maps/prov.ede
+	cp mero-halon/scripts/mero_s3server_role_mappings.ede rpmbuild/SOURCES/role_maps/s3server.ede
 	cp mero-halon/scripts/halon_roles.yaml rpmbuild/SOURCES/role_maps/halon_role_mappings
 	cp mero-halon/scripts/tmpfiles.d/halond.conf rpmbuild/SOURCES/tmpfiles.d/halond.conf
 	rpmbuild --define "_topdir ${PWD}/rpmbuild" --define "_gitversion ${VERSION}" -ba halon-dev.spec

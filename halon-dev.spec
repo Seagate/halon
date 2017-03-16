@@ -81,6 +81,7 @@ rm -rf %{buildroot}
 /etc/sysconfig/halond.example
 /etc/halon/role_maps/clovis.ede
 /etc/halon/role_maps/prov.ede
+/etc/halon/role_maps/s3server.ede
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings

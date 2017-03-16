@@ -59,6 +59,8 @@ cp mero-halon/scripts/mero_clovis_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/clovis.ede
 cp mero-halon/scripts/mero_provisioner_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/prov.ede
+cp mero-halon/scripts/mero_s3server_role_mappings.ede \
+   %{buildroot}/etc/halon/role_maps/s3server.ede
 cp mero-halon/scripts/halon_roles.yaml \
    %{buildroot}/etc/halon/role_maps/halon_role_mappings
 cp mero-halon/scripts/tmpfiles.d/halond.conf %{buildroot}%{_tmpfilesdir}/halond.conf
@@ -80,6 +82,7 @@ rm -rf %{buildroot}
 /usr/lib/systemd/system/halon-cleanup.service
 /etc/halon/role_maps/clovis.ede
 /etc/halon/role_maps/prov.ede
+/etc/halon/role_maps/s3server.ede
 /etc/halon/mero_role_mappings
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
