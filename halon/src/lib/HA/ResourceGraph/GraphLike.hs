@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -43,13 +44,25 @@ module HA.ResourceGraph.GraphLike
   , connectUniqueFrom
   , connectUniqueTo
   , connectUnbounded
+    -- * Helpers
+  , AnySafeCopyDict(..)
+  , decodeAnyResource
+  , AnySafeCopyDict3(..)
+  , decodeAnyRelation
   )
   where
 
 import Control.Distributed.Static
-  ( RemoteTable )
+  ( RemoteTable 
+  , unstatic
+  , staticLabel
+  )
 import Control.Lens (Lens', (^.), over)
+import Data.Binary
+import Data.Binary.Get (runGetOrFail)
 import Data.ByteString ( ByteString )
+import Data.ByteString.Lazy ( fromStrict )
+import Data.Constraint ( Dict(..) )
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
@@ -58,11 +71,15 @@ import qualified Data.HashSet as S
 import Data.List (foldl')
 import Data.Proxy (Proxy(..))
 import Data.Maybe (isJust, mapMaybe, maybeToList)
+import Data.Serialize.Get (runGetLazy)
 import Data.Typeable (Typeable, cast)
+import Data.UUID (UUID)
+import Data.Word (Word8)
 import GHC.Exts (Constraint)
 import HA.Multimap
   ( Key, MetaInfo, StoreChan, StoreUpdate(..) )
 import HA.Multimap.Implementation
+import HA.SafeCopy
 
 import Prelude hiding (null)
 
@@ -454,3 +471,79 @@ connectUniqueTo :: forall g r a b.
                 => a -> r -> b -> g -> g
 connectUniqueTo x r y = connectUnbounded x r y
                       . disconnectAllTo (Proxy :: Proxy a) r y
+
+data AnySafeCopyDict (c :: * -> Constraint) = forall a . SafeCopy a => A (Dict (c a))
+
+-- | Decode resource from wire message.
+decodeAnyResource :: forall p t f . Typeable f
+                  => Proxy (p :: * -> Constraint) -- ^ Describe the constraints we want to get.
+                  -> (f -> AnySafeCopyDict p) -- ^ Function that wraps wire message to dict carry message.
+                  -> (UUID -> String) -- ^ Converted from UUID to the label in static table.
+                  -> (forall a . p a => a -> t) -- ^ Converter that create requrired value.
+                  -> RemoteTable
+                  -> ByteString                 -- ^ Wire message.
+                  -> t
+decodeAnyResource _p rewrap mkResKeyName create rt bs =
+    case runGetOrFail get $ fromStrict bs of
+      Right (rest,_,d) 
+       | d == staticLabel "" -> new rest
+       | otherwise -> old rest d
+      Left (_,_,err) -> error $ "decodeRes: " ++ err
+    where
+      new rest0 = case runGetOrFail get rest0 of
+        Right (rest,_,uuid) ->
+           case fmap rewrap (unstatic rt (staticLabel $ mkResKeyName uuid)) of
+             Right (A (Dict :: Dict (p s))) ->
+               case runGetLazy safeGet rest of
+                 Right r -> create (r :: s)
+                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
+             Left err -> error $ "decodeRes: " ++ err
+        _ -> error $ "decodeRes: can't decode."
+      old rest d = case fmap rewrap (unstatic rt d) of
+        Right (A (Dict :: Dict (p s))) ->
+          case runGetLazy safeGet rest of
+            Right r -> create (r :: s)
+            Left err -> error $ "decodeRes: runGetLazy: " ++ err
+        Left err -> error $ "decodeRes: " ++ err
+
+
+data AnySafeCopyDict3 (c :: * -> * -> * -> Constraint) = forall r a b .
+   (SafeCopy r, SafeCopy a, SafeCopy b) => A3 (Dict (c r a b))
+
+-- | Decode relation from wire message
+decodeAnyRelation :: forall p t f . Typeable f
+   => Proxy (p :: * -> * -> * -> Constraint) -- ^ Proxy that carry constraints that we wish to attach
+   -> (f -> AnySafeCopyDict3 p) -- ^ A way to convert generic message to the messag that carry constraints.
+   -> (UUID -> UUID -> UUID -> String) -- ^ Function to create resource label
+   -> (forall r a b . p r a b => r -> a -> b -> t) -- ^ Function to create In relation
+   -> (forall r a b . p r a b => r -> a -> b -> t) -- ^ Function to create Out relation
+   -> RemoteTable
+   -> ByteString                                   -- ^ Wire message
+   -> t
+decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail get $ fromStrict bs of
+    Right (rest,_,d)
+      | d == staticLabel "" -> new rest
+      | otherwise -> old rest d
+    Left (_,_,err) -> error $ "decodeRel: " ++ err
+    where
+      new rest0 = case runGetOrFail get rest0 of
+        Right (rest,_,(ur,ua,ub)) ->
+           case fmap rewrap (unstatic rt (staticLabel $ genName ur ua ub)) of
+             Right (A3 (Dict :: Dict (p r a b))) ->
+               case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+                 Right (b, r, x, y) -> case b of
+                   0 -> createIn r x y
+                   1 -> createOut r x y
+                   _ -> error $ "decodeRel: Invalid direction bit."
+                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
+             Left err -> error $ "decodeRes: " ++ err
+        _ -> error $ "decodeRes: can't decode."
+      old rest d = case fmap rewrap (unstatic rt d) of
+        Right (A3 (Dict :: Dict (p r a b))) ->
+          case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+            Right (b, r, x, y) -> case b of
+              (0 :: Word8) -> createIn r x y
+              (1 :: Word8) -> createOut r x y
+              _ -> error $ "decodeRel: Invalid direction bit."
+            Left err -> error $ "decodeRel: runGetLazy: " ++ err
+        Left err -> error $ "decodeRel: " ++ err

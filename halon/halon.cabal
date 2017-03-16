@@ -55,6 +55,7 @@ Library
                    HA.EQTracker.Process
                    HA.ResourceGraph
                    HA.ResourceGraph.GraphLike
+                   HA.ResourceGraph.UGraph
                    HA.Resources.TH
                    HA.Multimap
                    HA.Multimap.Implementation

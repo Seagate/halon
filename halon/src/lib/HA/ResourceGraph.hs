@@ -36,6 +36,8 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 {-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 
@@ -108,6 +110,11 @@ module HA.ResourceGraph
     , someRelationDict
     , someResourceDict__static
     , someRelationDict__static
+    , GraphGCInfo(..)
+    , genStorageRelationKeyName
+    , genStorageResourceKeyName
+    , SomeResourceDict(..)
+    , SomeRelationDict(..)
     ) where
 
 import HA.Logger
@@ -136,7 +143,6 @@ import Control.Distributed.Process.Internal.Types
 import Control.Distributed.Static
   ( RemoteTable
   , Static
-  , unstatic
   , staticLabel
   )
 import Control.Distributed.Process.Closure
@@ -147,11 +153,10 @@ import Control.Arrow ( (***), (>>>), second )
 import Control.Monad ( liftM3 )
 import Control.Lens (makeLenses)
 import Control.Monad.Reader ( ask )
-import Data.Binary ( Binary(..), encode )
-import Data.Binary.Get ( runGetOrFail )
+import Data.Binary ( encode )
 import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy as Lazy ( fromChunks, toChunks )
+import Data.ByteString.Lazy as Lazy ( toChunks )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
@@ -164,7 +169,6 @@ import qualified Data.UUID as UUID
 import Data.Maybe
 import Data.Monoid
 import Data.Proxy
-import Data.Serialize.Get (runGetLazy)
 import Data.Serialize.Put (runPutLazy)
 import Data.Singletons.TH
 import Data.Typeable
@@ -493,56 +497,17 @@ instance GL.GraphLike Graph where
     <> runPutLazy (safePut (1 :: Word8, r, x, y))
 
   -- | Decodes a Res from a 'Lazy.ByteString'.
-  decodeUniversalResource rt bs =
-    case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d)
-       | d == staticLabel "" -> new rest
-       | otherwise -> old rest d
-      Left (_,_,err) -> error $ "decodeRes: " ++ err
-    where
-      new rest0 = case runGetOrFail get rest0 of
-        Right (rest,_,uuid) ->
-           case unstatic rt (staticLabel $ genResourceKeyName uuid) of
-             Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
-               case runGetLazy safeGet rest of
-                 Right r -> Res (r :: s)
-                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
-             Left err -> error $ "decodeRes: " ++ err
-        _ -> error $ "decodeRes: can't decode."
-      old rest d = case unstatic rt d of
-        Right (SomeResourceDict (Dict :: Dict (Resource s))) ->
-          case runGetLazy safeGet rest of
-            Right r -> Res (r :: s)
-            Left err -> error $ "decodeRes: runGetLazy: " ++ err
-        Left err -> error $ "decodeRes: " ++ err
-  decodeUniversalRelation rt bs = case runGetOrFail get $ fromStrict bs of
-    Right (rest,_,d)
-      | d == staticLabel "" -> new rest
-      | otherwise -> old rest d
-    Left (_,_,err) -> error $ "decodeRel: " ++ err
-    where
-      new rest0 = case runGetOrFail get rest0 of
-        Right (rest,_,(ur,ua,ub)) ->
-           case unstatic rt (staticLabel $ genRelationKeyName ur ua ub) of
-             Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-               case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
-                 Right (b, r, x, y) -> case b of
-                   0 -> InRel r x y
-                   1 -> OutRel r x y
-                   _ -> error $ "decodeRel: Invalid direction bit."
-                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
-             Left err -> error $ "decodeRes: " ++ err
-        _ -> error $ "decodeRes: can't decode."
-      old rest d = case unstatic rt d of
-        Right (SomeRelationDict (Dict :: Dict (Relation r a b))) ->
-          case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
-            Right (b, r, x, y) -> case b of
-              (0 :: Word8) -> InRel r x y
-              (1 :: Word8) -> OutRel r x y
-              _ -> error $ "decodeRel: Invalid direction bit."
-            Left err -> error $ "decodeRel: runGetLazy: " ++ err
-        Left err -> error $ "decodeRel: " ++ err
-
+  decodeUniversalResource = GL.decodeAnyResource
+     (Proxy :: Proxy Resource)
+     (\(SomeResourceDict (Dict :: Dict (Resource a))) -> GL.A (Dict :: Dict (Resource a)))
+     genResourceKeyName
+     Res
+  decodeUniversalRelation = GL.decodeAnyRelation
+     (Proxy :: Proxy Relation)
+     (\(SomeRelationDict (Dict :: Dict (Relation r a b))) -> GL.A3 (Dict :: Dict (Relation r a b)))
+     genRelationKeyName
+     InRel
+     OutRel
 
   decodeRes :: forall a. Resource a => Res -> Maybe a
   decodeRes (Res a) = cast a :: Maybe a
@@ -745,9 +710,6 @@ getGraph :: StoreChan -> Process Graph
 getGraph mmchan = do
   rt <- fmap (remoteTable . processNode) ask
   buildGraph mmchan rt <$> HA.Multimap.getStoreValue mmchan
-
-fromStrict :: ByteString -> Lazy.ByteString
-fromStrict = fromChunks . (:[])
 
 toStrict :: Lazy.ByteString -> ByteString
 toStrict = Strict.concat . toChunks
