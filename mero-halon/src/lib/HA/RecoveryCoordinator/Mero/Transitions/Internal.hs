@@ -67,10 +67,10 @@ transitionErr :: (Show (StateCarrier a), ShowFidObj a)
               -> StateCarrier a -- ^ State we received
               -> TransitionResult a
 transitionErr cs st = InvalidTransition $ \obj ->
-  printf "%s: transition from %s is invalid %s" (showFid obj) (show st) locInfo
+  printf "%s: transition from %s is invalid (%s)" (showFid obj) (show st) locInfo
   where
     -- Find last call-site: this should have been the direct use of
     -- transition itself.
     locInfo = case reverse $ getCallStack cs of
-      (_, loc) : _ -> "(" ++ prettySrcLoc loc ++ ")"
-      _ -> "(no loc)"
+      (_, loc) : _ -> prettySrcLoc loc
+      _ -> "no loc"

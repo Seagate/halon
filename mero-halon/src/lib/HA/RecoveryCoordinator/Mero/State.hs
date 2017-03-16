@@ -8,7 +8,7 @@
 {-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.State
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.State
   ( DeferredStateChanges(..)
@@ -53,6 +53,7 @@ import Data.List (nub, genericLength)
 import Data.Either (lefts)
 import Data.Functor (void)
 import Data.Word
+import Text.Printf (printf)
 
 import Network.CEP
 
@@ -139,7 +140,8 @@ createDeferredStateChanges stateSets rg =
         mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges
     (wrns, rootStateChanges) = partitionEithers $ mapMaybe lookupOldState stateSets
     lookupOldState (AnyStateSet (x :: a) t) = case runTransition t $ M0.getState x rg of
-      NoTransition -> Nothing
+      NoTransition -> Just . Left $
+        printf "%s: no transition from %s" (M0.showFid x) (show $ M0.getState x rg)
       InvalidTransition mkErr -> Just . Left $ mkErr x
       TransitionTo st -> Just . Right $ AnyStateChange x (M0.getState x rg) st sp
       where

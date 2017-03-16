@@ -133,11 +133,13 @@ tryCompleteStateDiff diff = do
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
   -- Processes we haven't heard success/failure from yet
   pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
+  phaseLog "tryCompleteStateDiff.epoch" $ show (stateEpoch diff)
+  phaseLog "tryCompleteStateDiff.remaining" $ show (map M0.fid pendingPs)
+
   when (notSent && null (pendingPs :: [M0.Process])) $ do
     modifyGraph $ G.disconnect rc R.Has diff
     okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
     failProcesses <- G.connectedTo diff DeliveryFailedTo <$> getLocalGraph
-    phaseLog "tryCompleteStateDiff.epoch" $ show (stateEpoch diff)
     registerSyncGraph $ do
       for_ (stateDiffOnCommit diff) applyOnCommit
       promulgateWait $ Notified (stateEpoch diff) (stateDiffMsg diff) okProcesses failProcesses
@@ -172,6 +174,8 @@ notifyMeroAsync diff s = do
   nodes <- getNotificationNodes
   rg <- getLocalGraph
   let iface = getInterface $ lookupM0d rg
+  phaseLog "notifyMeroAsynch.epoch" $ show (stateEpoch diff)
+  phaseLog "notifyMeroAsynch.nodes" $ show (map (\(n, p) -> (n, map M0.fid p)) nodes)
   for_ nodes $ \(R.Node nid, recipients) -> do
     modifyGraph $ execState $ for recipients $
       State.modify . G.connect diff ShouldDeliverTo

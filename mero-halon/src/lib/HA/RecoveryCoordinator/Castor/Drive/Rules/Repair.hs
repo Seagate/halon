@@ -525,7 +525,7 @@ jobRepairStart = Job "castor-repair-start"
 --
 -- see diagram: sns-repair
 ruleRepairStart :: Definitions RC ()
-ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
+ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish) -> do
   pool_disks_notified <- phaseHandle "pool_disks_notified"
   notify_failed <- phaseHandle "notify_failed"
   notify_timeout <- phaseHandle "notify_timeout"
@@ -542,11 +542,16 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
             fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
             case null tr && not (null fa) of
               True -> do
-                -- OK to just set repairing here without checking K:
-                -- @fa@ are already failed by this point.
-                let msgs = stateSet pool Tr.poolRepairing : (flip stateSet Tr.sdevRepairStart <$> fa)
-                modify Local $ rlens fldNotifications . rfield .~ msgs
+                -- TODO: HALON-678
+                rg <- getLocalGraph
+                let poolMsgs = case toConfObjState pool $ getState pool rg of
+                      M0_NC_REPAIR -> []
+                      _ -> [stateSet pool Tr.poolRepairing]
+                    -- OK to just set repairing here without checking K:
+                    -- @fa@ are already failed by this point.
+                    msgs = poolMsgs ++ (flip stateSet Tr.sdevRepairStart <$> fa)
                 modify Local $ rlens fldPool . rfield .~ Just pool
+                setExpectedNotifications msgs
                 applyStateChanges msgs
                 waitFor notifier
                 waitFor notify_failed
@@ -586,15 +591,18 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
                 continue finish)
 
   directly pool_disks_notified $ do
-    Just pool <- getField . rget fldPool <$> get Local
+    PoolRepairRequest pool <- getRequest
     statusRepair pool
     continue status_received
 
   -- Check if it's IOS that failed, if not then just keep going
   setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps)) -> do
     todo uuid
+    let msg = "Failed to notify " ++ show eps ++ ", not starting repair"
+    PoolRepairRequest pool <- getRequest
+    modify Local $ rlens fldRep . rfield .~ Just (PoolRepairFailedToStart pool msg)
     when (not $ null eps) $ do
-      phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting repair"
+      phaseLog "warn" msg
       abortRepairStart
     done uuid
     continue finish
@@ -602,7 +610,10 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle _ finish) -> do
   -- Failure endpoint message didn't come and notification didn't go
   -- through either, abort just in case.
   directly notify_timeout $ do
-    phaseLog "warn" $ "Unable to notify Mero; cannot start repair"
+    let msg = "Unable to notify Mero; cannot start repair"
+    PoolRepairRequest pool <- getRequest
+    phaseLog "warn" msg
+    modify Local $ rlens fldRep . rfield .~ Just (PoolRepairFailedToStart pool msg)
     abortRepairStart
     continue finish
 
