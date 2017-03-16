@@ -2,9 +2,10 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE ViewPatterns               #-}
 -- |
 -- Module    : HA.Resources.Castor.Initial
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Initial resource load for Castor cluster.
@@ -537,15 +538,18 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
   where
     validateData :: InitialData -> Either String InitialData
     validateData idata =
-      let encs = [ enc | r <- id_racks idata , enc <- rack_enclosures r ]
-          ixs = map enc_idx encs
-          ns = map enc_id encs
+      let encs = [ (r, rack_enclosures r) | r <- id_racks idata ]
+          ns = enc_id <$> (encs >>= snd)
 
           check True _ = return idata
           check False m = Left m
-      in check (length (nub ixs) == length ixs)
-               "Enclosures with non-unique enc_idx exist."
-         >> check (length ns == 0 || any (not . null) ns)
+      in check ( all (\(fmap enc_idx -> idx)
+                        -> (length (nub idx) == length idx)
+                        )
+                      (snd <$> encs)
+                )
+               "Enclosures with non-unique enc_idx exist inside a rack."
+         >> check (null ns || any (not . null) ns)
                   "Enclosure without enc_id specified."
          >> check (length ns == length (nub ns))
                   "Enclosures with non-unique enc_id exist."
