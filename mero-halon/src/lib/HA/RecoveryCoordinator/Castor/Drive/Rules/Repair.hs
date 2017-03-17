@@ -67,6 +67,7 @@ import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (barrierPass)
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
@@ -602,7 +603,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
     PoolRepairRequest pool <- getRequest
     modify Local $ rlens fldRep . rfield .~ Just (PoolRepairFailedToStart pool msg)
     when (not $ null eps) $ do
-      phaseLog "warn" msg
+      Log.rcLog' Log.WARN msg
       abortRepairStart
     done uuid
     continue finish
@@ -612,7 +613,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
   directly notify_timeout $ do
     let msg = "Unable to notify Mero; cannot start repair"
     PoolRepairRequest pool <- getRequest
-    phaseLog "warn" msg
+    Log.rcLog' Log.WARN msg
     modify Local $ rlens fldRep . rfield .~ Just (PoolRepairFailedToStart pool msg)
     abortRepairStart
     continue finish

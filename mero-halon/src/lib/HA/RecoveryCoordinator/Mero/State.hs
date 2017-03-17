@@ -45,7 +45,7 @@ import Control.Monad.Fix (fix)
 import Data.Constraint (Dict)
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
-import Data.Maybe (catMaybes, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.Monoid
 import Data.Traversable (mapAccumL)
 import Data.Typeable
@@ -136,14 +136,14 @@ createDeferredStateChanges :: [AnyStateSet] -> G.Graph -> ([String], DeferredSta
 createDeferredStateChanges stateSets rg =
     (wrns, DeferredStateChanges (fn>>>trigger_fn) (Set nvec Nothing) (InternalObjectStateChange iosc))
   where
-    (trigger_fn, stateChanges) = fmap join $
+    (trigger_fn, stateChanges) = join <$>
         mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges
-    (wrns, rootStateChanges) = partitionEithers $ mapMaybe lookupOldState stateSets
+    (wrns, rootStateChanges) = partitionEithers $ lookupOldState <$> stateSets
     lookupOldState (AnyStateSet (x :: a) t) = case runTransition t $ M0.getState x rg of
-      NoTransition -> Just . Left $
+      NoTransition -> Left $
         printf "%s: no transition from %s" (M0.showFid x) (show $ M0.getState x rg)
-      InvalidTransition mkErr -> Just . Left $ mkErr x
-      TransitionTo st -> Just . Right $ AnyStateChange x (M0.getState x rg) st sp
+      InvalidTransition mkErr -> Left $ mkErr x
+      TransitionTo st -> Right $ AnyStateChange x (M0.getState x rg) st sp
       where
         sp = staticApplyPtr
               (static M0.someHasConfObjectStateDict)

@@ -16,6 +16,7 @@ module HA.Services.Mero.RC.Actions
    , orderSet
    ) where
 
+import           Control.Arrow (second)
 import           Control.Category
 import           Control.Distributed.Process
 import           Control.Monad (when, unless)
@@ -31,6 +32,7 @@ import           Data.Word (Word64)
 import           HA.EventQueue (promulgateWait)
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.ResourceGraph (Graph)
 import qualified HA.Resources as R
@@ -133,8 +135,10 @@ tryCompleteStateDiff diff = do
   notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
   -- Processes we haven't heard success/failure from yet
   pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
-  phaseLog "tryCompleteStateDiff.epoch" $ show (stateEpoch diff)
-  phaseLog "tryCompleteStateDiff.remaining" $ show (map M0.fid pendingPs)
+  Log.rcLog' Log.DEBUG
+    [ ("tryCompleteStateDiff.epoch", show (stateEpoch diff))
+    , ("tryCompleteStateDiff.remaining", show $ fmap M0.fid pendingPs)
+    ]
 
   when (notSent && null (pendingPs :: [M0.Process])) $ do
     modifyGraph $ G.disconnect rc R.Has diff
@@ -174,8 +178,10 @@ notifyMeroAsync diff s = do
   nodes <- getNotificationNodes
   rg <- getLocalGraph
   let iface = getInterface $ lookupM0d rg
-  phaseLog "notifyMeroAsynch.epoch" $ show (stateEpoch diff)
-  phaseLog "notifyMeroAsynch.nodes" $ show (map (\(n, p) -> (n, map M0.fid p)) nodes)
+  Log.rcLog' Log.DEBUG
+    [ ("notifyMeroAsynch.epoch", show (stateEpoch diff))
+    , ("notifyMeroAsynch.nodes", show $ fmap (second (fmap M0.fid)) nodes)
+    ]
   for_ nodes $ \(R.Node nid, recipients) -> do
     modifyGraph $ execState $ for recipients $
       State.modify . G.connect diff ShouldDeliverTo

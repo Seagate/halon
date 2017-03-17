@@ -67,6 +67,7 @@ import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Transitions.Internal
 import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import qualified HA.Resources.Mero.Note as M0
 import           Network.CEP
@@ -164,7 +165,7 @@ mkNotifier' toPred dispatcher act = do
           -- decided notification is not needed for) so log when it
           -- happens.
           _ -> do
-            phaseLog "info" "Still waiting for notifications."
+            Log.rcLog' Log.DEBUG "Still waiting for notifications."
         -- There may well be other phases this dispatcher is waiting
         -- for, we have to keep going.
         continue dispatcher
