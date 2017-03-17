@@ -584,9 +584,9 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
   m0_drive_failed <- phaseHandle "m0_drive_failed"
 
   setPhaseInternalNotification m0_drive_failed
-    (\o n -> not (o `elem` [ M0.SDSRepaired
-                           , M0.SDSFailed
-                           , M0.SDSRepairing]) && n == M0.SDSFailed)
+    (\o n -> (o `notElem` [ M0.SDSRepaired
+                          , M0.SDSFailed
+                          , M0.SDSRepairing]) && n == M0.SDSFailed)
     $ \(uuid, objs) -> forM_ objs $ \(m0sdev, _) -> do
       todo uuid
       mdiskinfo <- runMaybeT $ do
