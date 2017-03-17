@@ -57,7 +57,6 @@ module HA.RecoveryCoordinator.Mero.Notifications
 
 import           Control.Distributed.Process (Process)
 import           Control.Lens
-import           Control.Monad (when)
 import           Data.List (foldl')
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Typeable
@@ -68,6 +67,7 @@ import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Transitions.Internal
 import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
 import qualified HA.Resources.Mero.Note as M0
 import           Network.CEP
@@ -148,12 +148,24 @@ mkNotifier' toPred dispatcher act = do
                           notificationSet iosc
         modify Local $ rlens fldN . rfield .~ next
 
-        -- We're not waiting for any more notifications, notifier has
-        -- done its job.
-        when (null next) $ do
-          waitDone notifier
-          done eid
-          act
+        case next of
+          -- We're not waiting for any more notifications, notifier
+          -- has done its job.
+          [] -> do
+            waitDone notifier
+            done eid
+            act
+          -- It may happen that the notifications can come in separate
+          -- state diffs. For example consider wanting to wait for all
+          -- notifications for some objects but the rule pertaining to
+          -- the object only notifies about one object at a time. This
+          -- is not the usual scenario however and can indicate a bug
+          -- in user code (for example user is waiting for
+          -- notification for an object that state change mechanism
+          -- decided notification is not needed for) so log when it
+          -- happens.
+          _ -> do
+            Log.rcLog' Log.DEBUG "Still waiting for notifications."
         -- There may well be other phases this dispatcher is waiting
         -- for, we have to keep going.
         continue dispatcher
