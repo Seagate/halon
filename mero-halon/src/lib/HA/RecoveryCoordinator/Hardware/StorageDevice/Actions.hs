@@ -22,6 +22,10 @@ module HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
     -- * Identifiers
   , getIdentifiers
   , hasIdentifier
+    -- * Attributes
+  , setAttr
+  , unsetAttr
+  , findAttrs
     -- ** Helpers.
   , path
   , setPath

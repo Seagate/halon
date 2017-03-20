@@ -39,10 +39,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
     -- ** Querying device properties
   , getSDevNode
   , getSDevHost
-    -- ** Device attributes
-  , findStorageDeviceAttrs
-  , setStorageDeviceAttr
-  , unsetStorageDeviceAttr
     --- *** Reset
   , markOnGoingReset
   , markResetComplete
@@ -54,6 +50,7 @@ module HA.RecoveryCoordinator.Actions.Hardware
 ) where
 
 import           Data.Maybe (listToMaybe, maybeToList)
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as SDev
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.ResourceGraph as G
@@ -274,7 +271,7 @@ updateDiskResetCount = do
 -- | Test whether a given device is currently undergoing a reset operation.
 hasOngoingReset :: StorageDevice -> PhaseM RC l Bool
 hasOngoingReset =
-    fmap (not . null) . findStorageDeviceAttrs go
+    fmap (not . null) . SDev.findAttrs go
   where
     go SDOnGoingReset = True
     go _              = False
@@ -284,10 +281,10 @@ markOnGoingReset :: StorageDevice -> PhaseM RC l ()
 markOnGoingReset sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
-    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
+    m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Nothing -> do
-        setStorageDeviceAttr sdev SDOnGoingReset
+        SDev.setAttr sdev SDOnGoingReset
         updateDiskResetCount
       _       -> return ()
 
@@ -296,11 +293,11 @@ markResetComplete :: StorageDevice -> PhaseM RC l ()
 markResetComplete sdev = do
     let _F SDOnGoingReset = True
         _F _                 = False
-    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
+    m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Nothing  -> return ()
       Just old -> do
-        unsetStorageDeviceAttr sdev old
+        SDev.unsetAttr sdev old
         updateDiskResetCount
 
 -- | Increment the number of disk reset attempts the 'StorageDevice'
@@ -309,12 +306,12 @@ incrDiskResetAttempts :: StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
         _F _                        = False
-    m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
+    m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Just old@(SDResetAttempts i) -> do
-        unsetStorageDeviceAttr sdev old
-        setStorageDeviceAttr sdev (SDResetAttempts (i+1))
-      _ -> setStorageDeviceAttr sdev (SDResetAttempts 1)
+        SDev.unsetAttr sdev old
+        SDev.setAttr sdev (SDResetAttempts (i+1))
+      _ -> SDev.setAttr sdev (SDResetAttempts 1)
 
 -- | Number of times the given 'StorageDevice' has been tried to
 -- reset.
@@ -322,7 +319,7 @@ getDiskResetAttempts :: StorageDevice -> PhaseM RC l Int
 getDiskResetAttempts sdev = do
   let _F (SDResetAttempts _) = True
       _F _                   = False
-  m <- listToMaybe <$> findStorageDeviceAttrs _F sdev
+  m <- listToMaybe <$> SDev.findAttrs _F sdev
   case m of
     Just (SDResetAttempts i) -> return i
     _                        -> return 0
@@ -347,29 +344,4 @@ getSDevNode sdev = do
 getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
-  return [ host
-         | Slot encl _ <- maybeToList $ G.connectedTo sdev Has rg
-         , host <- G.connectedTo encl Has rg :: [Host]
-         ]
-
--- | Set an attribute on a storage device.
-setStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
-setStorageDeviceAttr sd attr  = do
-  actLog "setStorageDeviceAttr" [("sd", show sd), ("attr", show attr)]
-  modifyGraph $ G.connect sd Has attr
-
--- | Unset an attribute on a storage device.
-unsetStorageDeviceAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
-unsetStorageDeviceAttr sd attr = do
-  actLog "unsetStorageDeviceAttr" [("sd", show sd), ("attr", show attr)]
-  modifyGraph $ G.disconnect sd Has attr
-
--- | Find attributes matching the given filter on a storage device.
-findStorageDeviceAttrs :: (StorageDeviceAttr -> Bool)
-                       -> StorageDevice
-                       -> PhaseM RC l [StorageDeviceAttr]
-findStorageDeviceAttrs k sdev = do
-    rg <- getLocalGraph
-    return [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
-                  , k attr
-                  ]
+  maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev 

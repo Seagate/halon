@@ -42,11 +42,6 @@ import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import HA.RecoveryCoordinator.Actions.Hardware
-  ( findStorageDeviceAttrs
-  , setStorageDeviceAttr
-  , unsetStorageDeviceAttr
-  )
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Events
@@ -201,16 +196,16 @@ mkDetachDisk getter onFailure onSuccess = do
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
 markRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
-markRemovedFromRAID sdev = setStorageDeviceAttr sdev SDRemovedFromRAID
+markRemovedFromRAID sdev = StorageDevice.setAttr sdev SDRemovedFromRAID
 
 -- | Remove the marker indicating that a device has been removed from the RAID
 --   array of which it is part.
 unmarkRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
-unmarkRemovedFromRAID sdev = unsetStorageDeviceAttr sdev SDRemovedFromRAID
+unmarkRemovedFromRAID sdev = StorageDevice.unsetAttr sdev SDRemovedFromRAID
 
 -- | Check whether a device has been removed from its RAID array.
 isRemovedFromRAID :: StorageDevice -> PhaseM RC l Bool
-isRemovedFromRAID = fmap (not . null) . findStorageDeviceAttrs go
+isRemovedFromRAID = fmap (not . null) . StorageDevice.findAttrs go
   where
     go SDRemovedFromRAID = True
     go _ = False
