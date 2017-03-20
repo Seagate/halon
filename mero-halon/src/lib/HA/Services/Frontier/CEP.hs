@@ -32,26 +32,26 @@ ruleDump = defineSimple "frontier-dump-values" $ \(HAEvent uuid msg) -> case msg
   -- Reads all key values in storage and sends that to
   -- the caller. Reply it send as a stream of a 'Data.ByteString.ByteString's
   -- followed by '()' when everything is sent.
-  MultimapGetKeyValuePairs nid -> do
+  MultimapGetKeyValuePairs pid -> do
     messageProcessed uuid
     chan <- lsMMChan <$> get Global
     void . liftProcess $ spawnLocal $ do
       reply <- mmKeyValues . Just <$> getKeyValuePairs chan
-      mapM_ (sendSvc (getInterface frontier) nid . FrontierChunk)
+      mapM_ (sendSvcPid (getInterface frontier) pid . FrontierChunk)
         $ BL.toChunks
         $ toLazyByteString . lazyByteString $ reply
-      sendSvc (getInterface frontier) nid FrontierDone
+      sendSvcPid (getInterface frontier) pid FrontierDone
   -- Reads graph and sends serializes that into graphviz
   -- format. Reply is send as a stream of a 'Data.ByteString.ByteString's
   -- followed by '()' when everything is sent.
-  ReadResourceGraph nid -> do
+  ReadResourceGraph pid -> do
     messageProcessed uuid
     rg <- getLocalGraph
     void . liftProcess $ spawnLocal $ do
       let reply = dumpGraph $ G.getGraphResources rg
       say "start sending graph"
-      mapM_ (sendSvc (getInterface frontier) nid . FrontierChunk)
+      mapM_ (sendSvcPid (getInterface frontier) pid . FrontierChunk)
         $ BL.toChunks
         $ toLazyByteString . lazyByteString $ reply
-      sendSvc (getInterface frontier) nid FrontierDone
+      sendSvcPid (getInterface frontier) pid FrontierDone
       say "finished sending graph"

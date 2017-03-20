@@ -100,8 +100,8 @@ cleanupHandle h = liftIO $ hClose h
 hReadCommand :: Handle -> Process Command
 hReadCommand h = do
     ln <- liftIO $ B.hGetLine h
-    nid <- getSelfNode
-    case parseCommand ln nid of
+    pid <- getSelfPid
+    case parseCommand ln pid of
       Just cmd -> return cmd
       _        -> hReadCommand h
 

@@ -21,7 +21,7 @@ import Data.Hashable
 import Data.Maybe (catMaybes)
 import Data.Typeable (Typeable, typeOf)
 
-import Control.Distributed.Process (NodeId)
+import Control.Distributed.Process (ProcessId)
 import HA.Multimap
 import HA.ResourceGraph hiding (null)
 import HA.Services.Frontier.Interface (FrontierCmd(..))
@@ -33,9 +33,9 @@ data Command
     | Quit
     -- ^ Finish work
 
-parseCommand :: B.ByteString -> NodeId -> Maybe Command
-parseCommand "mmvalues\r" nid = Just . CM $! MultimapGetKeyValuePairs nid
-parseCommand "graph\r"    nid = Just . CM $! MultimapGetKeyValuePairs nid
+parseCommand :: B.ByteString -> ProcessId -> Maybe Command
+parseCommand "mmvalues\r" pid = Just . CM $! MultimapGetKeyValuePairs pid
+parseCommand "graph\r"    pid = Just . CM $! ReadResourceGraph pid
 parseCommand "quit\r"     _   = Just Quit
 parseCommand _            _   = Nothing
 

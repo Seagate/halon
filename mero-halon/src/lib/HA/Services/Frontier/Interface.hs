@@ -12,7 +12,7 @@ module HA.Services.Frontier.Interface
   , module HA.Service.Interface
   ) where
 
-import           Control.Distributed.Process (NodeId)
+import           Control.Distributed.Process (ProcessId)
 import qualified Data.ByteString as B
 import           Data.Serialize.Get (runGet)
 import           Data.Serialize.Put (runPut)
@@ -20,9 +20,9 @@ import           HA.SafeCopy
 import           HA.Service.Interface
 
 data FrontierCmd
-  = MultimapGetKeyValuePairs !NodeId
+  = MultimapGetKeyValuePairs !ProcessId
   -- ^ Retrieve multimap in pairs of k:v
-  | ReadResourceGraph !NodeId
+  | ReadResourceGraph !ProcessId
   -- ^ Read the data from RG directly
   deriving (Show, Eq, Ord)
 
