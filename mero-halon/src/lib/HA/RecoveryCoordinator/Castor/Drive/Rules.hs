@@ -31,7 +31,6 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules (rules) where
 import           Control.Distributed.Process hiding (catch)
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
 import           Data.Maybe
 import qualified Data.Text as T
@@ -66,7 +65,6 @@ import           HA.Resources.Mero.Note
 import           HA.Services.SSPL
 import           HA.Services.SSPL.CEP (sendNodeCmd)
 import           Network.CEP
-import           Text.Printf (printf)
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
 -- used at the toplevel castor module.
@@ -589,21 +587,22 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
                           , M0.SDSRepairing]) && n == M0.SDSFailed)
     $ \(uuid, objs) -> forM_ objs $ \(m0sdev, _) -> do
       todo uuid
-      mdiskinfo <- runMaybeT $ do
-        sdev@(StorageDevice serial) <- MaybeT $ lookupStorageDevice m0sdev
-        node <- MaybeT $ listToMaybe <$> getSDevNode sdev
-        return (node, serial)
-      forM_ mdiskinfo $ \(node, serial) -> do
-        sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)
-        if sent
-        then phaseLog "info"
-              $ printf "Powering off failed device %s on node %s"
-                          serial
-                          (show node)
-        else phaseLog "warning"
-              $ printf "Unable to power off failed device %s on node %s"
-                          serial
-                          (show node)
+      Log.tagContext Log.SM m0sdev Nothing
+      msdev <- lookupStorageDevice m0sdev
+      mnode <- join <$> forM msdev (fmap listToMaybe . getSDevNode)
+      case (mnode, msdev) of
+        (Just node, Just sdev@(StorageDevice serial)) -> do
+          Log.tagContext Log.SM node $ Just "Node hosting this disk."
+          Log.tagContext Log.SM sdev Nothing
+          sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)
+          if sent
+          then Log.rcLog' Log.DEBUG "Powering off failed device."
+          else Log.rcLog' Log.WARN "Unable to power off failed device."
+        (Nothing, Just sdev) -> do
+          Log.tagContext Log.SM sdev Nothing
+          Log.rcLog' Log.WARN "Missing node for sdev."
+        (_, Nothing) -> do
+          Log.rcLog' Log.WARN "Missing sdev for m0sdev."
       done uuid
 
   startFork m0_drive_failed Nothing
