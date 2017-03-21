@@ -24,6 +24,8 @@ data FrontierCmd
   -- ^ Retrieve multimap in pairs of k:v
   | ReadResourceGraph !ProcessId
   -- ^ Read the data from RG directly
+  | JsonGraph !ProcessId
+  -- ^ Read the data from RG and dump it out to JSON
   deriving (Show, Eq, Ord)
 
 data FrontierReply

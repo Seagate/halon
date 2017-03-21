@@ -69,10 +69,11 @@ noisySchema = let
   in NoisyConf <$> hw
 
 newtype NoisyPingCount = NoisyPingCount Int
-  deriving (Typeable, Eq, Hashable, Show)
+  deriving (Typeable, Eq, Hashable, Show, Generic)
 instance StorageIndex NoisyPingCount where
   typeKey _ = $(mkUUID "95568b9e-d0e3-4297-a436-d8fc7534f76b")
 deriveSafeCopy 0 'base ''NoisyPingCount
+instance ToJSON NoisyPingCount
 
 data HasPingCount = HasPingCount
   deriving (Typeable, Generic, Eq, Show)
@@ -81,6 +82,7 @@ instance Hashable HasPingCount
 instance StorageIndex HasPingCount where
   typeKey _ = $(mkUUID "6319647a-7667-4808-a002-f97375cca4df")
 deriveSafeCopy 0 'base ''HasPingCount
+instance ToJSON HasPingCount
 
 relationDictHasPingCountServiceNoisyNoisyPingCount :: Dict (
     Relation HasPingCount (Service NoisyConf) NoisyPingCount

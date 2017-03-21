@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -19,6 +18,7 @@ import Data.Serialize.Get
   ( remaining, getLazyByteString )
 import Data.Serialize.Put (putLazyByteString)
 import Data.Typeable (Typeable)
+import HA.Aeson (ToJSON, toJSON)
 import HA.RecoveryCoordinator.RC.Application (RC)
 import HA.Resources (Cluster, Has)
 import HA.Resources.TH
@@ -34,6 +34,8 @@ newtype Todo = Todo (Static (PhaseM RC (Maybe ProcessId) ()))
   deriving (Binary, Eq, Ord, Show, Typeable)
 
 storageIndex ''Todo "7e5426fb-7b6f-464b-be12-061f2f7b10ee"
+instance ToJSON Todo where
+  toJSON _ = toJSON "Todo"
 
 instance Hashable Todo where
   hashWithSalt s (Todo ph) = s `hashWithSalt` (encode ph)

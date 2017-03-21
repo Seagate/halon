@@ -1,20 +1,22 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PackageImports             #-}
+{-# LANGUAGE StrictData                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE PackageImports             #-}
-{-# LANGUAGE OverloadedStrings          #-}
 -- For graph instances
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- |
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero specific resources in Halon.
 -- Should be imported qualified:
--- import qualified HA.Resources.Mero as M0
-
+--
+-- @import qualified HA.Resources.Mero as M0@
 module HA.Resources.Mero
   ( module HA.Resources.Mero
   , CI.M0Globals
@@ -68,6 +70,7 @@ newtype FidSeq = FidSeq Word64
   deriving (Eq, Generic, Hashable, Show, Typeable)
 storageIndex ''FidSeq "64e86424-83b3-49f6-91b9-47fa4597a98a"
 deriveSafeCopy 0 'base ''FidSeq
+instance ToJSON FidSeq
 
 -- | Couple of utility methods for conf objects. Minimal implementation:
 --   fidType and fid
@@ -170,6 +173,7 @@ data At = At
 instance Hashable At
 storageIndex ''At "faa2ba1b-b989-468b-98f2-d38859a6b566"
 deriveSafeCopy 0 'base ''At
+instance ToJSON At
 
 -- | Relationship between parent and child entities in confd
 --   Directed from parent to child (e.g. profile IsParentOf filesystem)
@@ -179,6 +183,7 @@ data IsParentOf = IsParentOf
 instance Hashable IsParentOf
 storageIndex ''IsParentOf "5e8df2ad-26c9-4614-8f66-4c9a31f044eb"
 deriveSafeCopy 0 'base ''IsParentOf
+instance ToJSON IsParentOf
 
 -- | Relationship between virtual and real entities in confd.
 --   Directed from real to virtual (e.g. pool IsRealOf pver)
@@ -188,6 +193,7 @@ data IsRealOf = IsRealOf
 instance Hashable IsRealOf
 storageIndex ''IsRealOf "5be580c1-5dfa-4e01-ae27-ccf6739746c9"
 deriveSafeCopy 0 'base ''IsRealOf
+instance ToJSON IsRealOf
 
 -- | Relationship between conceptual and hardware entities in confd
 --   Directed from sdev to disk (e.g. sdev IsOnHardware disk)
@@ -198,6 +204,7 @@ data IsOnHardware = IsOnHardware
 instance Hashable IsOnHardware
 storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
+instance ToJSON IsOnHardware
 
 newtype Root = Root Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -207,6 +214,7 @@ instance ConfObj Root where
    fid (Root f) = f
 storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
 deriveSafeCopy 0 'base ''Root
+instance ToJSON Root
 
 newtype Profile = Profile Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
@@ -274,6 +282,7 @@ displayNodeState xs = (prettyNodeState xs, Nothing)
 
 newtype Rack = Rack Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
+instance ToJSON Rack
 
 instance ConfObj Rack where
   fidType _ = fromIntegral . ord $ 'a'
@@ -442,6 +451,7 @@ sdsFailFailed _ = SDSFailed
 
 newtype Enclosure = Enclosure Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
+instance ToJSON Enclosure
 
 instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
@@ -472,6 +482,7 @@ data ControllerState
   deriving (Eq, Show, Typeable, Generic, Read)
 storageIndex ''ControllerState "83139b83-4170-47e2-be95-8a726c8159a6"
 deriveSafeCopy 0 'base ''ControllerState
+instance ToJSON ControllerState
 
 instance Hashable ControllerState
 
@@ -483,6 +494,7 @@ newtype Disk = Disk Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
 storageIndex ''Disk "ab1e2612-33cb-436c-8a37-d6763212db27"
 deriveSafeCopy 0 'base ''Disk
+instance ToJSON Disk
 
 instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
@@ -500,6 +512,7 @@ data PVerType = PVerActual {
 instance Hashable PVerType
 storageIndex ''PVerType "eb620a23-ffd8-4705-871f-c0674ad84cb7"
 deriveSafeCopy 0 'base ''PVerType
+instance ToJSON PVerType
 
 data PVer = PVer {
     v_fid :: Fid
@@ -509,6 +522,7 @@ data PVer = PVer {
 instance Hashable PVer
 storageIndex ''PVer "055c3f88-4bdd-419a-837b-a029c7f4effd"
 deriveSafeCopy 0 'base ''PVer
+instance ToJSON PVer
 
 newtype PVerCounter = PVerCounter Word32
   deriving (Eq, Generic, Show, Typeable, Ord, Hashable)
@@ -518,6 +532,7 @@ instance ConfObj PVer where
   fid = v_fid
 storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter
+instance ToJSON PVerCounter
 
 newtype RackV = RackV Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -527,6 +542,7 @@ instance ConfObj RackV where
   fid (RackV f) = f
 storageIndex ''RackV "23dd6e71-7a5b-48e1-9d1e-9aa2ef6a6994"
 deriveSafeCopy 0 'base ''RackV
+instance ToJSON RackV
 
 newtype EnclosureV = EnclosureV Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -536,6 +552,7 @@ instance ConfObj EnclosureV where
   fid (EnclosureV f) = f
 storageIndex ''EnclosureV "f63ac45b-7a36-483c-84c8-739f028b04ed"
 deriveSafeCopy 0 'base ''EnclosureV
+instance ToJSON EnclosureV
 
 newtype ControllerV = ControllerV Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -545,6 +562,7 @@ instance ConfObj ControllerV where
   fid (ControllerV f) = f
 storageIndex ''ControllerV "d3ab3c01-198d-4612-9281-ddf8ce217910"
 deriveSafeCopy 0 'base ''ControllerV
+instance ToJSON ControllerV
 
 newtype DiskV = DiskV Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -554,6 +572,7 @@ instance ConfObj DiskV where
   fid (DiskV f) = f
 storageIndex ''DiskV "31526120-34c9-47c8-b63e-8668ee6add27"
 deriveSafeCopy 0 'base ''DiskV
+instance ToJSON DiskV
 
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
 -- instances.
@@ -683,12 +702,14 @@ newtype DiskFailureVector = DiskFailureVector [Disk]
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 storageIndex ''DiskFailureVector "00b766c3-3740-4c9c-afb4-e485fa52b433"
 deriveSafeCopy 0 'base ''DiskFailureVector
+instance ToJSON DiskFailureVector
 
 -- | @lnet@ address associated with a host.
 newtype LNid = LNid String
   deriving (Eq, Generic, Hashable, Show, Typeable)
 storageIndex ''LNid "c46ca6b1-e84a-4981-8aa9-ed2223c91bff"
 deriveSafeCopy 0 'base ''LNid
+instance ToJSON LNid
 
 -- | Hardware information about a host.
 data HostHardwareInfo = HostHardwareInfo
@@ -703,6 +724,7 @@ data HostHardwareInfo = HostHardwareInfo
 instance Hashable HostHardwareInfo
 storageIndex ''HostHardwareInfo "7b81d801-ff8f-4364-b635-6648fc8614b2"
 deriveSafeCopy 0 'base ''HostHardwareInfo
+instance ToJSON HostHardwareInfo
 
 -- | Alias for process ID. In glibc @pid_t = int@.
 newtype PID = PID Int
@@ -711,6 +733,7 @@ newtype PID = PID Int
 instance Hashable PID
 storageIndex ''PID "a28fae4e-054b-4442-b81b-9dea98312d3a"
 deriveSafeCopy 0 'base ''PID
+instance ToJSON PID
 
 -- | Process state. This is a generalisation of what might be reported to Mero.
 data ProcessState =
@@ -786,6 +809,7 @@ data ProcessLabel =
 instance Hashable ProcessLabel
 storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
 deriveSafeCopy 1 'extension ''ProcessLabel
+instance ToJSON ProcessLabel
 
 instance Migrate ProcessLabel where
   type MigrateFrom ProcessLabel = ProcessLabel_0
@@ -800,8 +824,9 @@ data ProcessEnv =
   | ProcessEnvInRange String Int
   deriving (Eq, Ord, Show, Generic, Typeable)
 instance Hashable ProcessEnv
-storageIndex ''ProcessEnv "9A713802-A47B-4ABB-97F6-2CBC35C95431"
+storageIndex ''ProcessEnv "9a713802-a47b-4abb-97f6-2cbc35c95431"
 deriveSafeCopy 0 'base ''ProcessEnv
+instance ToJSON ProcessEnv
 
 -- | Cluster disposition.
 --   This represents the desired state for the cluster, which is used to
@@ -824,6 +849,7 @@ data RunLevel = RunLevel
 instance Hashable RunLevel
 storageIndex ''RunLevel "534ecce0-42bf-4618-ae24-dbb235ce5dec"
 deriveSafeCopy 0 'base ''RunLevel
+instance ToJSON RunLevel
 
 -- | Marker to tag the cluster stop level
 data StopLevel = StopLevel
@@ -832,6 +858,7 @@ data StopLevel = StopLevel
 instance Hashable StopLevel
 storageIndex ''StopLevel "65ff0e97-9a9f-47f8-8d80-b5ddce912985"
 deriveSafeCopy 0 'base ''StopLevel
+instance ToJSON StopLevel
 
 -- | Cluster state.
 --   We do not store this cluster state in the graph, but it's a useful
@@ -866,7 +893,7 @@ data ConfUpdateVersion = ConfUpdateVersion Word64 (Maybe Int)
 instance Hashable ConfUpdateVersion
 storageIndex ''ConfUpdateVersion "0792089d-38c7-4993-8e7b-fcc30dd2ca33"
 deriveSafeCopy 0 'base ''ConfUpdateVersion
-
+instance ToJSON ConfUpdateVersion
 
 -- | Process property, that shows that process was already bootstrapped,
 -- and no mkfs is needed.
@@ -876,6 +903,7 @@ data ProcessBootstrapped = ProcessBootstrapped
 instance Hashable ProcessBootstrapped
 storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
 deriveSafeCopy 0 'base ''ProcessBootstrapped
+instance ToJSON ProcessBootstrapped
 
 -- | Filesystem statistics
 data FilesystemStats = FilesystemStats {

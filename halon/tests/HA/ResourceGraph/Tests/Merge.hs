@@ -15,6 +15,7 @@
 
 module HA.ResourceGraph.Tests.Merge (tests) where
 
+import HA.Aeson (ToJSON)
 import HA.Multimap (StoreUpdate(..))
 import HA.ResourceGraph hiding (__remoteTable)
 import HA.Resources.TH
@@ -35,13 +36,14 @@ newtype Node = Node Integer
   deriving (Eq, Hashable, Ord, Typeable, Generic, Show)
 
 storageIndex ''Node "c0fff54b-453a-4321-9464-2e196843e1fc"
+instance ToJSON Node
 
 data Link = Link
   deriving (Eq, Ord, Typeable, Generic, Show)
 
 storageIndex ''Link "eda392bb-93ec-4c3e-b7bc-7e35cba9c910"
-
 instance Hashable Link
+instance ToJSON Link
 
 deriveSafeCopy 0 'base ''Node
 deriveSafeCopy 0 'base ''Link

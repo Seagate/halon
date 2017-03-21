@@ -46,7 +46,7 @@ ruleDump = defineSimple "frontier-dump-values" $ \(HAEvent uuid msg) -> case msg
   -- followed by '()' when everything is sent.
   ReadResourceGraph pid -> do
     messageProcessed uuid
-    rg <- getLocalGraph
+    rg <- G.garbageCollectRoot <$> getLocalGraph
     void . liftProcess $ spawnLocal $ do
       let reply = dumpGraph $ G.getGraphResources rg
       say "start sending graph"
@@ -55,3 +55,15 @@ ruleDump = defineSimple "frontier-dump-values" $ \(HAEvent uuid msg) -> case msg
         $ toLazyByteString . lazyByteString $ reply
       sendSvcPid (getInterface frontier) pid FrontierDone
       say "finished sending graph"
+  JsonGraph pid -> do
+    messageProcessed uuid
+    rg <- G.garbageCollectRoot <$> getLocalGraph
+    void . liftProcess $ spawnLocal $ do
+      let reply = dumpToJSON $ G.getGraphResources rg
+      say "start sending json-encoded graph"
+      mapM_ (sendSvcPid (getInterface frontier) pid . FrontierChunk)
+        $ BL.toChunks
+        $ toLazyByteString . lazyByteString
+        $ reply
+      sendSvcPid (getInterface frontier) pid FrontierDone
+      say "finished sending json-encoded graph"

@@ -35,6 +35,7 @@ import GHC.Generics (Generic)
 
 import Network.Transport (Transport)
 
+import HA.Aeson (ToJSON)
 import HA.Multimap (defaultMetaInfo, getKeyValuePairs, MetaInfo, StoreChan)
 import HA.Multimap.Implementation (Multimap, fromList)
 import HA.Multimap.Process (startMultimap)
@@ -58,36 +59,42 @@ data NodeA = NodeA Int
 
 instance Hashable NodeA
 storageIndex ''NodeA "4b3d448b-adab-4bd1-be8a-c6df76d9ec9b"
+instance ToJSON NodeA
 
 data NodeB = NodeB Int
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeB
 storageIndex ''NodeB "9a61aeed-8ed2-4c68-9182-ba49bf3882ed"
+instance ToJSON NodeB
 
 data NodeC = NodeC Int
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable NodeC
 storageIndex ''NodeC "895fd217-6857-4764-90cc-2aa06822b3ce"
+instance ToJSON NodeC
 
 data HasA = HasA
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasA
 storageIndex ''HasA "673277b8-e9ed-4dda-94c9-d8d4242faf09"
+instance ToJSON HasA
 
 data HasB = HasB
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasB
 storageIndex ''HasB "f266d212-7f0c-4bb2-88f8-0dd5afb9f746"
+instance ToJSON HasB
 
 data HasC = HasC
   deriving (Eq, Typeable, Generic, Show)
 
 instance Hashable HasC
 storageIndex ''HasC "8f6c6d6f-bece-45dc-beee-1a8a2deea408"
+instance ToJSON HasC
 
 deriveSafeCopy 0 'base ''NodeA
 deriveSafeCopy 0 'base ''NodeB

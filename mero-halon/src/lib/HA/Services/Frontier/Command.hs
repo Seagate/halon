@@ -9,22 +9,24 @@ module HA.Services.Frontier.Command
     , parseCommand
     , mmKeyValues
     , dumpGraph
+    , dumpToJSON
     ) where
 
+import           Control.Distributed.Process (ProcessId)
+import           Data.Binary.Put
 import qualified Data.ByteString as B
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import           Data.Foldable
-
-import Data.Binary.Put
-import Data.Hashable
-import Data.Maybe (catMaybes)
-import Data.Typeable (Typeable, typeOf)
-
-import Control.Distributed.Process (ProcessId)
-import HA.Multimap
-import HA.ResourceGraph hiding (null)
-import HA.Services.Frontier.Interface (FrontierCmd(..))
+import           Data.Hashable
+import qualified Data.Map.Strict as M
+import           Data.Maybe (catMaybes)
+import           Data.Typeable
+import           GHC.Generics (Generic)
+import qualified HA.Aeson as A
+import           HA.Multimap
+import           HA.ResourceGraph hiding (null)
+import           HA.Services.Frontier.Interface (FrontierCmd(..))
 
 -- | Service commands
 data Command
@@ -36,6 +38,7 @@ data Command
 parseCommand :: B.ByteString -> ProcessId -> Maybe Command
 parseCommand "mmvalues\r" pid = Just . CM $! MultimapGetKeyValuePairs pid
 parseCommand "graph\r"    pid = Just . CM $! ReadResourceGraph pid
+parseCommand "jsongraph\r" pid = Just . CM $! JsonGraph pid
 parseCommand "quit\r"     _   = Just Quit
 parseCommand _            _   = Nothing
 
@@ -83,6 +86,33 @@ dumpGraph graph = let
             `LB.append` (LB.pack $ unlines edges)
             `LB.append` footer
 
+data ResourceJson = ResourceJson
+  { resource_type :: String
+  , resources :: [A.Value]
+  } deriving (Show, Eq, Generic)
+
+instance A.ToJSON ResourceJson
+
+-- | Serialise graph resources through JSON.
+dumpToJSON :: [(Res, [Rel])] -> ByteString
+dumpToJSON graph = A.encode jsonResources
+  where
+    -- Group resources by their TypeRep, this allows us better
+    -- indexing if we know what we're looking for.
+    --
+    -- Caveat: show of typereps is not unique so once we serialise we
+    -- can have multiple groups with same such as @Process@.
+    jsonResources :: [ResourceJson]
+    jsonResources = -- Unwrap to ResourceJson keeping groups of
+                    -- different TypeReps distinct
+                    map (\(r, vs) -> ResourceJson { resource_type = r
+                                                  , resources =  vs }) $
+                    M.toList $
+                    M.mapKeysWith (++) show $
+                    -- Collapse to TypeRep:[Value]
+                    M.fromListWith (++) $
+                    -- Every resource to TypeRep:Value
+                    map (\(Res x, _) -> (typeOf x, [A.toJSON x])) graph
 
 renderNode :: Res -> String
 renderNode (Res res) = mkId res
