@@ -232,6 +232,7 @@ instance Hashable ProcessControlStartResult
 newtype MeroServiceInstance = MeroServiceInstance { _msi_m0d :: HA.Service.Service MeroConf }
   deriving (Eq, Show, Generic, Typeable)
 instance Hashable MeroServiceInstance
+instance ToJSON MeroServiceInstance
 
 -- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf

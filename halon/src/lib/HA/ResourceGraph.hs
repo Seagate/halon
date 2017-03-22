@@ -171,6 +171,7 @@ import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 import HA.SafeCopy
+import qualified HA.Aeson as A
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
@@ -187,7 +188,7 @@ class StorageIndex a where typeKey :: proxy a -> UUID
 instance StorageIndex UUID where
   typeKey _ = fromJust $ fromString "d2947f30-2858-4bce-b71f-0fa9b6ca64f1"
 
--- | 
+-- |
 -- This type class denotes that value of this type may present in resource
 -- graph storage. Such values may be there if schema changes, and application
 -- should know how to work with them.
@@ -215,7 +216,7 @@ instance StorageIndex UUID where
 --
 -- It's important that 'StorageMember' instance should not be removed for a
 -- type even if type is no longer a part of the schema.
-class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a, StorageIndex a)
+class (Eq a, Hashable a, Typeable a, SafeCopy a, Show a, StorageIndex a, A.ToJSON a)
   => StorageResource a where
   storageResourceDict :: Static (Dict (StorageResource a))
 
@@ -271,7 +272,7 @@ mkStorageRelationKeyName (pr, pa, pb) = genStorageRelationKeyName (typeKey pr) (
 -- | Generate storage relation name in the database.
 genStorageRelationKeyName :: UUID -> UUID -> UUID -> String
 genStorageRelationKeyName ur ua ub =  "storage:" ++
-  intercalate "_" 
+  intercalate "_"
     [ UUID.toString ur
     , UUID.toString ua
     , UUID.toString ub
@@ -295,9 +296,9 @@ mkRelationKeyName (pr, pa, pb) = genRelationKeyName (typeKey pr) (typeKey pa) (t
 
 -- | Generate relation name in the database.
 genRelationKeyName :: UUID -> UUID -> UUID -> String
-genRelationKeyName ur ua ub = "relation:" ++ 
+genRelationKeyName ur ua ub = "relation:" ++
   intercalate "_"
-    [ UUID.toString ur 
+    [ UUID.toString ur
     , UUID.toString ua
     , UUID.toString ub
     ]
@@ -348,6 +349,9 @@ instance Eq Rel where
 instance Show Res where
   show (Res x) = "Res (" ++ show x ++ ")"
 
+instance A.ToJSON Res where
+  toJSON (Res x) = A.toJSON x
+
 -- XXX Specialized existential datatypes required because 'remotable' does not
 -- yet support higher kinded type variables.
 
@@ -388,10 +392,10 @@ someRelationDict :: Dict (Relation r a b) -> SomeRelationDict
 someRelationDict = SomeRelationDict
 
 someStorageResourceDict :: Dict (StorageResource a) -> SomeStorageResourceDict
-someStorageResourceDict = SomeStorageResourceDict 
+someStorageResourceDict = SomeStorageResourceDict
 
 someStorageRelationDict :: Dict (StorageRelation r a b) -> SomeStorageRelationDict
-someStorageRelationDict = SomeStorageRelationDict 
+someStorageRelationDict = SomeStorageRelationDict
 
 remotable ['someResourceDict, 'someRelationDict]
 
@@ -434,7 +438,7 @@ instance Show Graph where
 proxy :: r -> Proxy r
 proxy _ = Proxy
 
--- Update plan, because graph is not covered by the safecopy we need to be able 
+-- Update plan, because graph is not covered by the safecopy we need to be able
 -- to distinguish with old and new states, this is done in the following way:
 --
 -- Version1: message is started with Static (Dict SomeRelation)
@@ -491,7 +495,7 @@ instance GL.GraphLike Graph where
   -- | Decodes a Res from a 'Lazy.ByteString'.
   decodeUniversalResource rt bs =
     case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d) 
+      Right (rest,_,d)
        | d == staticLabel "" -> new rest
        | otherwise -> old rest d
       Left (_,_,err) -> error $ "decodeRes: " ++ err

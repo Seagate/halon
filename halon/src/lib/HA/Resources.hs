@@ -41,6 +41,7 @@ data Cluster = Cluster
 instance Hashable Cluster
 storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
 deriveSafeCopy 0 'base ''Cluster
+instance ToJSON Cluster
 
 
 -- | A resource graph representation for nodes.
@@ -57,6 +58,7 @@ newtype EpochId = EpochId Word64
   deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
 storageIndex ''EpochId "8c4d4b29-0c24-4bc8-8ab5-e6b3a1f2cc96"
 deriveSafeCopy 0 'base ''EpochId
+instance ToJSON EpochId
 
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -70,6 +72,7 @@ data Has = Has
 instance Hashable Has
 storageIndex ''Has "c912f510-1829-4df0-873d-4a960ff1ff4e"
 deriveSafeCopy 0 'base ''Has
+instance ToJSON Has
 
 -- | A relation connecting a node to the services it runs.
 data Runs = Runs
@@ -77,6 +80,7 @@ data Runs = Runs
 storageIndex ''Runs "8a53e367-8746-4814-aa3e-fb29c5432119"
 deriveSafeCopy 0 'base ''Runs
 instance Hashable Runs
+instance ToJSON Runs
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

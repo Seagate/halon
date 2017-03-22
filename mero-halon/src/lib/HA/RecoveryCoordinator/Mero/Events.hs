@@ -4,8 +4,10 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE ViewPatterns              #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Mero.Events
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Events for the mero RC.
@@ -54,6 +56,7 @@ import           Data.Serialize.Put (runPutLazy)
 import           Data.Typeable
 import           Data.UUID
 import           GHC.Generics
+import           HA.Aeson
 import           HA.Encode (ProcessEncode(..))
 import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.Resources
@@ -140,13 +143,14 @@ newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
   deriving (Monoid, Typeable, Show)
 
 -- | Encoded version of 'InternalObjectStateChange'.
-newtype InternalObjectStateChangeMsg = InternalObjectStateChangeMsg BS.ByteString
-  deriving (Typeable, Eq, Show, Ord, Hashable)
+newtype InternalObjectStateChangeMsg = InternalObjectStateChangeMsg ByteString64
+  deriving (Typeable, Eq, Show, Ord, Hashable, Generic)
+instance ToJSON InternalObjectStateChangeMsg
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg
 
-  decodeP (InternalObjectStateChangeMsg bs) = let
+  decodeP (InternalObjectStateChangeMsg (BS64 (BS.fromStrict -> bs))) = let
       get_ :: RemoteTable -> Get [AnyStateChange]
       get_ rt = many $ do
         d <- get
@@ -170,7 +174,7 @@ instance ProcessEncode InternalObjectStateChange where
       return . InternalObjectStateChange $ runGet (get_ rt) bs
 
   encodeP (InternalObjectStateChange xs) =
-      InternalObjectStateChangeMsg . runPut $ traverse_ go xs
+      InternalObjectStateChangeMsg . BS64 . BS.toStrict . runPut $ traverse_ go xs
     where
       go (AnyStateChange obj old new dict) =
         put dict >> put (runPutLazy $ safePut obj) >> put (old, new)

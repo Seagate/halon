@@ -1,15 +1,17 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
+-- Halon-internal service machinery.
 module HA.Service.Internal
   ( Configuration(..)
   , spDict
@@ -42,35 +44,29 @@ module HA.Service.Internal
   , HA.Service.Internal.__resourcesTable
   ) where
 
-import HA.Aeson
-import HA.Debug
-import Control.Distributed.Process hiding (try, catch, mask, onException)
-import Control.Distributed.Process.Closure
-import Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
-import Control.Distributed.Static ( unstatic )
-import Control.Monad.Catch ( try, mask, onException )
-import Control.Monad.Fix (fix)
-import Control.Monad.Reader ( asks )
-
-
-import Data.Binary as Binary
-import qualified Data.ByteString.Lazy as BS
-import Data.Functor (void)
-import Data.Function (on)
-import Data.Hashable (Hashable, hashWithSalt)
+import           Control.Distributed.Process hiding (try, catch, mask, onException)
+import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
+import           Control.Distributed.Static ( unstatic )
+import           Control.Monad.Catch ( try, mask, onException )
+import           Control.Monad.Fix (fix)
+import           Control.Monad.Reader ( asks )
+import           Data.Binary as Binary
+import           Data.Function (on)
+import           Data.Functor (void)
+import           Data.Hashable (Hashable, hashWithSalt)
 import qualified Data.Serialize as Serialize
-import Data.Typeable (Typeable)
-
-import GHC.Generics (Generic)
-
-import Options.Schema
-
-import HA.Encode
-import HA.EventQueue.Producer (promulgateWait)
-import HA.ResourceGraph
-import HA.Resources
-import HA.Resources.TH
-import HA.SafeCopy
+import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+import           HA.Aeson
+import           HA.Debug
+import           HA.Encode
+import           HA.EventQueue.Producer (promulgateWait)
+import           HA.ResourceGraph
+import           HA.Resources
+import           HA.Resources.TH
+import           HA.SafeCopy
+import           Options.Schema
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -147,6 +143,10 @@ instance Ord (Service a) where
 instance Hashable (Service a) where
   hashWithSalt s = (*3) . hashWithSalt s . serviceName
 
+-- | Serialise service name only.
+instance ToJSON (Service a) where
+  toJSON (Service { serviceName = n }) = object ["serviceName" .= n]
+
 data ServiceFunctions a = ServiceFunctions
   { _serviceBootstrap :: a -> Process (Either String (ServiceState a))
   -- ^ Service bootstrap function. It's run just after service is registered,
@@ -177,6 +177,7 @@ data Supports = Supports
 instance Hashable Supports
 storageIndex ''Supports "330e72d2-746a-418d-a824-23afd7f54f95"
 deriveSafeCopy 0 'base ''Supports
+instance ToJSON Supports
 
 -- | Information about a service. 'ServiceInfo' describes all information that
 -- allow to identify and start service on the node.
@@ -186,14 +187,15 @@ data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
 -- | Monomorphised 'ServiceInfo' info about service, is used in messages sent over the network
 -- and resource graph.
 -- See 'ProcessEncode' for additional details.
-newtype ServiceInfoMsg = ServiceInfoMsg BS.ByteString -- XXX: memoize StaticSomeConfigurationDict
-  deriving (Typeable, Eq, Hashable, Show)
+newtype ServiceInfoMsg = ServiceInfoMsg ByteString64 -- XXX: memoize StaticSomeConfigurationDict
+  deriving (Typeable, Eq, Hashable, Show, Generic)
 storageIndex ''ServiceInfoMsg "c935f0fc-064e-4c75-be10-106b9ff3da43"
 deriveSafeCopy 0 'base ''ServiceInfoMsg
+instance ToJSON ServiceInfoMsg
 
 instance ProcessEncode ServiceInfo where
   type BinRep ServiceInfo = ServiceInfoMsg
-  decodeP (ServiceInfoMsg bs) = let
+  decodeP (ServiceInfoMsg (BS64 bs)) = let
       get_ :: RemoteTable -> Serialize.Get ServiceInfo
       get_ rt = do
         bd <- Serialize.get
@@ -208,18 +210,18 @@ instance ProcessEncode ServiceInfo where
           Left err -> error $ "decode ServiceExit: " ++ err
     in do
       rt <- asks (remoteTable . processNode)
-      case Serialize.runGetLazy (get_ rt) bs of
+      case Serialize.runGet (get_ rt) bs of
         Right m -> return m
         Left err -> error $ "decodeP ServiceInfo: " ++ err
 
   encodeP (ServiceInfo svc@(Service _ _ d) s) =
-    ServiceInfoMsg . Serialize.runPutLazy $
+    ServiceInfoMsg . BS64 . Serialize.runPut $
       Serialize.put (Binary.encode d) >> safePut (svc, s)
 
 -- | Extract ServiceDict info without full decoding of the 'ServiceInfoMsg'.
 getServiceInfoDict :: ServiceInfoMsg -> Static SomeConfigurationDict
-getServiceInfoDict (ServiceInfoMsg bs) =
-    case  Serialize.runGetLazy Serialize.get bs of
+getServiceInfoDict (ServiceInfoMsg (BS64 bs)) =
+    case Serialize.runGet Serialize.get bs of
       Right bd -> Binary.decode bd
       Left err -> error $ "getServiceInfoDict: " ++ err
 

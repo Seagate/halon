@@ -71,10 +71,24 @@ instance Show (Interface a b) where
   show i = printf "Interface { ifVersion = %s, ifServiceName = %s }"
                   (show $ ifVersion i) (ifServiceName i)
 
+-- | Send the given message to the service registered on the given
+-- node.
 sendSvc :: (MonadProcess m, Show toSvc) => Interface toSvc a -> NodeId -> toSvc -> m ()
 sendSvc Interface{..} nid toSvc = liftProcess $! case ifEncodeToSvc ifVersion toSvc of
   Nothing -> say $ printf "Unable to send %s to %s" (show toSvc) ifServiceName
   Just !wf -> nsendRemote nid (printf "service.%s" ifServiceName) wf
+
+-- | Send the given message directly to the given process.
+--
+-- In general you should prefer 'sendSvc' and where possible,
+-- restructuring the service such that the top-level listener
+-- (@mainloop@ of the service) can forward messages to any slaves.
+-- This is not always easy however, for example if we spawn some
+-- ephemeral process per connection that will do the work.
+sendSvcPid :: (MonadProcess m, Show toSvc) => Interface toSvc a -> ProcessId -> toSvc -> m ()
+sendSvcPid Interface{..} pid toSvc = liftProcess $! case ifEncodeToSvc ifVersion toSvc of
+  Nothing -> say $ printf "Unable to send %s to %s" (show toSvc) ifServiceName
+  Just !wf -> usend pid wf
 
 sendRC :: Show fromSvc => Interface a fromSvc -> fromSvc -> Process ()
 sendRC Interface{..} fromSvc = case ifEncodeFromSvc ifVersion fromSvc of

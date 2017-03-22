@@ -41,6 +41,7 @@ newtype Rack = Rack
   deriving (Eq, Show, Generic, Typeable, Hashable)
 storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
 deriveSafeCopy 0 'base ''Rack
+instance ToJSON Rack
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
@@ -78,6 +79,7 @@ data HostAttr =
 instance Hashable HostAttr
 storageIndex ''HostAttr "7a3def57-d9d2-41e1-9024-a72803916b6b"
 deriveSafeCopy 0 'base ''HostAttr
+instance ToJSON HostAttr
 
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
@@ -112,6 +114,7 @@ data StorageDeviceAttr
 instance Hashable StorageDeviceAttr
 storageIndex ''StorageDeviceAttr "0a27839d-7e0c-4dda-96b8-034d640e6503"
 deriveSafeCopy 0 'base ''StorageDeviceAttr
+instance ToJSON StorageDeviceAttr
 
 -- | Arbitrary identifier for a logical or storage device
 data DeviceIdentifier =
@@ -139,6 +142,7 @@ data StorageDeviceStatus = StorageDeviceStatus
 instance Hashable StorageDeviceStatus
 storageIndex ''StorageDeviceStatus "893b1410-6aff-4694-a6fd-19509a12d715"
 deriveSafeCopy 0 'base ''StorageDeviceStatus
+instance ToJSON StorageDeviceStatus
 
 -- | Marker used to indicate that a host is undergoing RAID reassembly.
 data ReassemblingRaid = ReassemblingRaid
@@ -147,6 +151,8 @@ data ReassemblingRaid = ReassemblingRaid
 instance Hashable ReassemblingRaid
 storageIndex ''ReassemblingRaid "e82259ce-5ae8-4117-85ca-6593e3856a89"
 deriveSafeCopy 0 'base ''ReassemblingRaid
+instance ToJSON ReassemblingRaid
+
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
 --------------------------------------------------------------------------------
@@ -158,13 +164,16 @@ data Is = Is
 instance Hashable Is
 storageIndex ''Is "72d44ab5-4a22-4dbf-9cf1-170ed8518f3e"
 deriveSafeCopy 0 'base ''Is
+instance ToJSON Is
 
 -- | The relation between a storage device and it's new version.
-data ReplacedBy = ReplacedBy deriving (Eq, Show, Generic, Typeable)
+data ReplacedBy = ReplacedBy
+  deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable ReplacedBy
 storageIndex ''ReplacedBy "5db0c0d7-59d0-4750-84f6-c4b140a190df"
 deriveSafeCopy 0 'base ''ReplacedBy
+instance ToJSON ReplacedBy
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
 -- get GC'd). Helpers elsewhere.
@@ -264,6 +273,7 @@ data HalonVars = HalonVars
 instance Hashable HalonVars
 storageIndex ''HalonVars "46828e80-3122-45e1-88b9-1ba3edea13ae"
 deriveSafeCopy 0 'base ''HalonVars
+instance ToJSON HalonVars
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --

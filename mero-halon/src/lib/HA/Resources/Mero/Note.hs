@@ -108,6 +108,7 @@ data PrincipalRM = PrincipalRM
 instance Hashable PrincipalRM
 storageIndex ''PrincipalRM "255f8652-9723-4f12-83b7-696800afed77"
 deriveSafeCopy 0 'base ''PrincipalRM
+instance ToJSON PrincipalRM
 
 -- | A notification for the following end-points has failed. We use
 -- this message to fail the processes that failed to receive a

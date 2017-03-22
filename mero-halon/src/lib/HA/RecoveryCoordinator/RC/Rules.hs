@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.RC.Rules
   , initialRule
   ) where
 
+import           HA.Aeson (ByteString64(..))
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log
 import           HA.RecoveryCoordinator.RC.Events
@@ -73,7 +74,7 @@ initialRule argv = do
   rg <- getLocalGraph
   l "subscribers"
   for_ (G.connectedFrom R.SubscribedTo rc rg) $
-      \(R.Subscriber p bs) -> do
+      \(R.Subscriber p (BS64 bs)) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
@@ -102,7 +103,7 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
       _ <- monitor pid
       rawSubscribeThem self fp pid
     rc <- getCurrentRC
-    let s  = R.Subscriber pid bs
+    let s = R.Subscriber pid (BS64 bs)
     modifyGraph $ G.connect (R.SubProcessId pid) R.IsSubscriber s
               >>> G.connect s R.SubscribedTo rc
 
@@ -125,7 +126,7 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
       rawUnsubscribeThem self fp pid
     rc <- getCurrentRC
     modifyGraph $ \g -> do
-      let s  = R.Subscriber pid bs
+      let s  = R.Subscriber pid (BS64 bs)
           g' = G.disconnect (R.SubProcessId pid) R.IsSubscriber s
            >>> G.disconnect s R.SubscribedTo rc
              $ g
@@ -151,7 +152,7 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
               rc  <- G.connectedTo sub R.SubscribedTo g :: Maybe R.RC
               return (sub,rc)
         flip execStateT g $ do
-          for_ subs $ \(sub@(R.Subscriber _ bs), rc) -> do
+          for_ subs $ \(sub@(R.Subscriber _ (BS64 bs)), rc) -> do
             let fp = decodeFingerprint bs
             State.modify $ G.disconnect sub R.SubscribedTo rc
             State.modify $ G.disconnect (R.SubProcessId pid) R.IsSubscriber sub

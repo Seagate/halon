@@ -176,6 +176,7 @@ data LedControlState
 
 instance Hashable LedControlState
 storageIndex ''LedControlState "4689d3b3-1597-4a79-a68a-8a20a06f4fe0"
+instance ToJSON LedControlState
 
 -- | Node commands we can request.
 data NodeCmd

@@ -119,6 +119,7 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
   deriving (Eq, Ord, Generic, Show)
 
+instance ToJSON Word128
 instance Binary Word128
 instance Serialize Word128
 instance SafeCopy Word128 where
@@ -189,3 +190,4 @@ confCtx = mempty {
 }
 
 deriveSafeCopy 0 'base ''PDClustAttr
+instance ToJSON PDClustAttr
