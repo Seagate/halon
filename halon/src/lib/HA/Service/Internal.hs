@@ -1,11 +1,12 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE RankNTypes             #-}
+{-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE TypeFamilies           #-}
 {-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 -- |
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
@@ -42,6 +43,7 @@ module HA.Service.Internal
   , ServiceStopNotRunning(..)
   , HA.Service.Internal.__remoteTable
   , HA.Service.Internal.__resourcesTable
+  , HasInterface(..)
   ) where
 
 import           Control.Distributed.Process hiding (try, catch, mask, onException)
@@ -66,6 +68,7 @@ import           HA.ResourceGraph
 import           HA.Resources
 import           HA.Resources.TH
 import           HA.SafeCopy
+import           HA.Service.Interface
 import           Options.Schema
 
 --------------------------------------------------------------------------------
@@ -84,6 +87,7 @@ class
   , Show a
   , Binary a
   , Eq a
+  , HasInterface a
   ) => Configuration a where
     -- | Dictionary providing evidence of the serializability of a
     sDict :: Static (SerializableDict a)
@@ -115,7 +119,7 @@ type family ServiceState a :: *
 data Service a = Service
     { serviceName    :: String -- ^ Name of service.
     , serviceProcess :: Closure (ServiceFunctions a)
-    , configDict :: Static (SomeConfigurationDict) -- ^ Configuration dictionary to use during encoding.
+    , configDict :: Static SomeConfigurationDict -- ^ Configuration dictionary to use during encoding.
     }
   deriving (Typeable, Generic)
 
@@ -146,6 +150,13 @@ instance Hashable (Service a) where
 -- | Serialise service name only.
 instance ToJSON (Service a) where
   toJSON (Service { serviceName = n }) = object ["serviceName" .= n]
+
+class ( Show (ToSvc c), Typeable (ToSvc c)
+      , Show (FromSvc c), Typeable (FromSvc c), Binary (FromSvc c)
+      ) => HasInterface c where
+  type ToSvc c :: *
+  type FromSvc c :: *
+  getInterface :: Service c -> Interface (ToSvc c) (FromSvc c)
 
 data ServiceFunctions a = ServiceFunctions
   { _serviceBootstrap :: a -> Process (Either String (ServiceState a))
@@ -330,9 +341,24 @@ remoteStartService (caller, msg) = do
           userEvents <- mainloop a b
           release $ (receiveWait $
             userEvents ++
-            [matchAny $ \s -> do
-               serviceLog $ "unhandled mesage" ++ show s
-               return (Continue, b)
+            [ -- Service receives are failed if the sender has filled
+              -- wfReceiveVersion which indicates it couldn't decode
+              -- the message on its end. Handle those messages here.
+              returnedFromSvc (getInterface svc) $ do
+                return (Continue, b)
+              -- Automatically deal with decode failures for all
+              -- services.
+            , receiveSvcFailure (getInterface svc) $ do
+                return (Continue, b)
+              -- Maybe the message was intended for us but it was sent
+              -- from a different version, with different fingerprint.
+              -- If yes then decode it and send it to ourselves again
+              -- so the above handlers have a fighting chance to catch
+              -- it.
+            , unsafeResendUnwrapped (getInterface svc) $ \_ -> (Continue, b)
+            , matchAny $ \s -> do
+                serviceLog $ "unhandled mesage" ++ show s
+                return (Continue, b)
             ]) `catchExit` (onExit b)
 
         runTeardown teardown notify b = do

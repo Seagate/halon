@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs            #-}
 {-# LANGUAGE MultiWayIf       #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -14,12 +15,14 @@ module HA.RecoveryCoordinator.Service.Rules
 import           Control.Distributed.Process
 import           Control.Lens
 import           Control.Monad (when, unless)
+import           Data.Coerce (coerce)
 import           Data.Foldable (for_)
 import           Data.Foldable (traverse_)
 import           Data.Functor (void)
 import           Data.Proxy
 import           Data.Serialize.Put (runPutLazy)
 import           Data.Typeable ((:~:), eqT, Typeable, (:~:)(Refl))
+import           Data.UUID (UUID)
 import           Data.Vinyl hiding ((:~:))
 import           HA.Encode (encodeP)
 import           HA.EventQueue
@@ -29,6 +32,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Log (rcLog', tagContext)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import           HA.RecoveryCoordinator.Service.Events
+import           HA.ResourceGraph (Graph)
 import           HA.Resources.HalonVars
 import           HA.SafeCopy
 import           HA.Service
@@ -42,16 +46,18 @@ import           HA.Service
   , Service(..)
   , serviceLabel
   , serviceName
+  , HasInterface(..)
   )
 import           HA.Service.Interface
 import qualified HA.Services.DecisionLog as DLog
+import qualified HA.Services.Dummy as Dummy
 import qualified HA.Services.Ekg as Ekg
 import qualified HA.Services.Frontier as Frontier
+import qualified HA.Services.Mero as Mero
 import qualified HA.Services.Noisy as Noisy
 import qualified HA.Services.Ping as Ping
 import qualified HA.Services.SSPL as SSPL
 import qualified HA.Services.SSPLHL as SSPLHL
-import qualified HA.Services.Mero as Mero
 import           Network.CEP
 import           Text.Printf (printf)
 
@@ -428,14 +434,11 @@ ruleServiceMessageReceived :: Definitions RC ()
 ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
   \(HAEvent uid wf) -> do
     rg <- getLocalGraph
-    case lookupIfaceAndSend wf uid rg of
-      Left err -> do
-        phaseLog "error" err
-        messageProcessed uid
-      Right act -> act
+    lookupIfaceAndSend wf uid rg
   where
     -- Technically we could just find the interface without going
     -- through typeclass here.
+    lookupIfaceAndSend :: WireFormat () -> UUID -> Graph -> PhaseM RC l ()
     lookupIfaceAndSend wf uid rg = if
       | serviceName (Mero.lookupM0d rg) == wfServiceName wf ->
           decodeAndSend wf (Mero.lookupM0d rg) uid
@@ -453,14 +456,47 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
           decodeAndSend wf Noisy.noisy uid
       | serviceName SSPLHL.sspl == wfServiceName wf ->
           decodeAndSend wf SSPLHL.sspl uid
-      | otherwise -> Left $ printf "No interface found for %s" (wfServiceName wf)
+      | serviceName Dummy.dummy == wfServiceName wf ->
+          decodeAndSend wf Dummy.dummy uid
+      | otherwise -> do
+          let msg :: String
+              msg = printf "No interface found for %s" (wfServiceName wf)
+          Log.rcLog' Log.WARN msg
 
-    decodeAndSend wf svc uid = case ifDecodeFromSvc (getInterface svc) wf of
-      Nothing -> Left $ printf "%s interface failed to decode %s"
-                               (wfServiceName wf) (show wf)
-      -- We send an non-persisted HAEvent. This is okay because it
-      -- uses the UUID of persisted HAEvent WireFormat: if RC
-      -- restarts, this rule will re-run and we'll resend service
-      -- message. If message gets processed, the WireFormat gets
-      -- processed.
-      Just msg -> Right . selfMessage $! HAEvent uid msg
+    decodeAndSend (coerce -> wf) svc uid = case wfReceiverVersion wf of
+      -- We got a message with wfReceiverVersion set which means it's
+      -- a message we previously sent. Try to re-encode and send it
+      -- back.
+      Just{} -> do
+        -- We have to coerce to toSvc because it turned out to be our
+        -- message returned to us.
+        returnToSvc (getInterface svc) (coerce wf)
+        -- TODO: It's a bug that we have this here. We should add
+        -- UUIDs of undecoded messages back into WireFormat so that we
+        -- can acknowledge them when their correction comes. Otherwise
+        -- we can lose messages if we acknowledge the message here and
+        -- RC dies before message is actually sent. In general it's a
+        -- hard problem because we can't rely on a service to ack a
+        -- message nor are we replicating our send. Acking doesn't
+        -- work without hooking up extra stuff to monitoring &c. too…
+        messageProcessed uid
+      Nothing -> do
+        -- TODO: We should be able to rely on interface performing this
+        -- check. See TODO on 'Interface'.
+        if ifVersion (getInterface svc) >= wfSenderVersion wf
+        then case ifDecodeFromSvc (getInterface svc) wf of
+          -- We send an non-persisted HAEvent. This is okay because it
+          -- uses the UUID of persisted HAEvent WireFormat: if RC
+          -- restarts, this rule will re-run and we'll resend service
+          -- message. If message gets processed, the WireFormat gets
+          -- processed. It also means SafeCopy can be bypassed: the
+          -- sender is not required to give instances for the types it
+          -- uses if it doesn't wish to do so.
+          DecodeOk msg -> selfMessage $! HAEvent uid msg
+          DecodeVersionMismatch -> returnSvcMsg (getInterface svc) wf
+          DecodeFailed err -> do
+            let msg :: String
+                msg = printf "%s interface failed to decode %s: %s"
+                             (wfServiceName wf) (show wf) err
+            Log.rcLog' Log.ERROR msg
+        else returnSvcMsg (getInterface svc) wf

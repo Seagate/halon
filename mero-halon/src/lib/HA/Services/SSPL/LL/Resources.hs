@@ -50,8 +50,6 @@ import           Data.Defaultable
 import           Data.Hashable (Hashable)
 import           Data.Monoid ((<>))
 import           Data.Serialize hiding (encode, decode)
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
 import           Data.Time
 import           Data.Typeable (Typeable)
@@ -484,7 +482,9 @@ instance ToJSON SSPLConf
 storageIndex ''SSPLConf "2f3e5559-c3f2-4e02-9ce5-3e5d2d231ea6"
 serviceStorageIndex ''SSPLConf "d54e9eaf-c1a5-4ea7-96d6-7fbdb29bd277"
 
-instance HasInterface SSPLConf SsplLlToSvc SsplLlFromSvc where
+instance HA.Service.HasInterface SSPLConf where
+  type ToSvc SSPLConf = SsplLlToSvc
+  type FromSvc SSPLConf = SsplLlFromSvc
   getInterface _ = interface
 
 -- | SSPL-LL 'Interface
@@ -492,21 +492,11 @@ interface :: Interface SsplLlToSvc SsplLlFromSvc
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "sspl"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
 -- | SSPL configuration 'Schema'.
 ssplSchema :: Schema SSPLConf

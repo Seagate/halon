@@ -39,6 +39,7 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Events

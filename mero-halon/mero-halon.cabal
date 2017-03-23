@@ -520,6 +520,7 @@ Test-Suite tests
                     HA.Test.Disconnect
                     HA.Test.InternalStateChanges
                     HA.Test.NotificationSort
+                    HA.Test.ServiceInterface
                     HA.Test.SSPL
                     Helper.SSPL
                     Helper.Runner

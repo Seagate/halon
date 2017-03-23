@@ -31,6 +31,7 @@ import qualified HA.Castor.Story.Process
 import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.Castor.Tests
 import qualified HA.Castor.Story.Tests
+import qualified HA.Test.ServiceInterface
 
 tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
 tests transport breakConnection = do
@@ -51,6 +52,7 @@ tests transport breakConnection = do
       , testGroup "NotificationSort" HA.Test.NotificationSort.tests
       , testGroup "Process" $ processTests transport
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
+      , testGroup "ServiceInterface" $ HA.Test.ServiceInterface.tests transport pg
       , HA.Test.Disconnect.tests transport breakConnection
       , ssplTest transport
       ]

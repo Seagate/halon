@@ -19,28 +19,24 @@ module HA.Services.Dummy
   , HA.Services.Dummy.__remoteTableDecl
   , HA.Services.Dummy.__resourcesTable
   , dummy__static
+  , interface
   ) where
-
-import HA.Aeson
-import HA.SafeCopy
-import HA.Service
-import HA.Service.TH
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Closure
-import Control.Distributed.Static
-  ( staticApply )
-
+import Control.Distributed.Static ( staticApply )
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
 import Data.Typeable (Typeable)
-
 import GHC.Generics (Generic)
-
+import HA.Aeson
+import HA.SafeCopy
+import HA.Service
+import HA.Service.Interface
+import HA.Service.TH
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
-import Prelude
 
 newtype DummyConf = DummyConf {
   helloWorld :: Defaultable String
@@ -66,9 +62,19 @@ $(generateDicts ''DummyConf)
 $(deriveService ''DummyConf 'dummySchema [])
 deriveSafeCopy 0 'base ''DummyConf
 
+interface :: Interface () ()
+interface = Interface
+  { ifVersion = 0
+  , ifServiceName = "dummy"
+  , ifEncodeToSvc = \_ _ -> Nothing
+  , ifDecodeToSvc = \_ -> DecodeFailed "no implementation"
+  , ifEncodeFromSvc = \_ _ -> Nothing
+  , ifDecodeFromSvc = \_ -> DecodeFailed "no implementation"
+  }
+
 remotableDecl [ [d|
   dummy :: Service DummyConf
-  dummy = Service "dummy"
+  dummy = Service (ifServiceName interface)
             $(mkStaticClosure 'dummyFunctions)
             ($(mkStatic 'someConfigDict)
                 `staticApply` $(mkStatic 'configDictDummyConf))
@@ -82,3 +88,8 @@ remotableDecl [ [d|
     teardown _ _ = return ()
     confirm  _ _ = return ()
   |] ]
+
+instance HasInterface DummyConf where
+  type ToSvc DummyConf = ()
+  type FromSvc DummyConf = ()
+  getInterface _ = interface

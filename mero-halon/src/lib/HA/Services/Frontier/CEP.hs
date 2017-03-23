@@ -14,6 +14,7 @@ import           HA.EventQueue (HAEvent(..))
 import           HA.Multimap (getKeyValuePairs)
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.ResourceGraph as G
+import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Frontier
 import           HA.Services.Frontier.Command

@@ -29,6 +29,7 @@ module Control.Distributed.Process
   , matchChan
   , matchSTM
   , matchAny
+  , matchMessageIf
   , expect
   , expectTimeout
   , receiveWait
@@ -110,6 +111,7 @@ import Control.Distributed.Process.Scheduler.Internal
   , matchChan
   , matchSTM
   , matchAny
+  , matchMessageIf
   , expect
   , receiveWait
   , receiveTimeout
@@ -130,6 +132,7 @@ import "distributed-process" Control.Distributed.Process as DPEtc
   , matchChan
   , matchSTM
   , matchAny
+  , matchMessageIf
   , expect
   , expectTimeout
   , receiveTimeout

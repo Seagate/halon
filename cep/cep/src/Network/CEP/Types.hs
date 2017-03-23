@@ -195,7 +195,7 @@ instance Functor Jump where
 --
 -- * @'liftProcess' . 'return' = 'return'@
 -- * @'liftProcess' (m >>= f) = 'liftProcess' m >>= ('liftProcess' . f)@
-class MonadProcess m where
+class Monad m => MonadProcess m where
   -- | Lifts a 'Process' computation in the state machine.
   liftProcess  :: Process a -> m a
 

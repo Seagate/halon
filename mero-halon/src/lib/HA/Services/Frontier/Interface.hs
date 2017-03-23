@@ -14,8 +14,6 @@ module HA.Services.Frontier.Interface
 
 import           Control.Distributed.Process (ProcessId)
 import qualified Data.ByteString as B
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import           HA.SafeCopy
 import           HA.Service.Interface
 
@@ -40,21 +38,11 @@ interface :: Interface FrontierReply FrontierCmd
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "frontier"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-    Left{} -> Nothing
-    Right !v -> Just v
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
 deriveSafeCopy 0 'base ''FrontierCmd
 deriveSafeCopy 0 'base ''FrontierReply

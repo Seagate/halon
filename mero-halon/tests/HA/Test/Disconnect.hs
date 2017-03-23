@@ -26,6 +26,7 @@ import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator.Log (RLogGroup)
 import           HA.Resources.HalonVars
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import qualified HA.Services.Ping as Ping
 import           Helper.InitialData
@@ -81,7 +82,7 @@ testDisconnect baseTransport connectionBreak = do
 
     sayTest "Starting ping service"
     [(pingNid, _)] <- serviceStartOnNodes [processNodeId $ H._ts_rc ts]
-                                          Ping.ping Ping.PingConf
+                                          Ping.ping Ping.defaultConf
                                           [localNodeId sat0]
     sayTest $ "Running ping"
     runPing pingNid 0

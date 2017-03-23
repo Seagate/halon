@@ -19,8 +19,6 @@ import           Control.Distributed.Process hiding (bracket)
 import           Data.Foldable (asum)
 import           Data.Hashable
 import           Data.Monoid ((<>))
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable
@@ -28,6 +26,7 @@ import           GHC.Generics
 import           HA.Aeson
 import qualified HA.RecoveryCoordinator.Log as RC
 import           HA.SafeCopy
+import qualified HA.Service
 import           HA.Service.Interface
 import           HA.Service.TH
 import qualified Network.CEP.Log as CEP
@@ -135,21 +134,15 @@ interface :: Interface (CEP.Event RC.Event) ()
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "decision-log"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
-  , ifEncodeFromSvc = \_ _ -> Nothing
-  , ifDecodeFromSvc = \_ -> Nothing
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
-instance HasInterface DecisionLogConf (CEP.Event RC.Event) () where
+instance HA.Service.HasInterface DecisionLogConf where
+  type ToSvc DecisionLogConf = CEP.Event RC.Event
+  type FromSvc DecisionLogConf = ()
   getInterface _ = interface
 
 -- | Migrate from 'DecisionLogConf_v0' to 'DecisionLogConf' by picking

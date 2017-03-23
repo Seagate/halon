@@ -36,6 +36,7 @@ module Control.Distributed.Process.Scheduler.Internal
   , matchChan
   , matchSTM
   , matchAny
+  , matchMessageIf
   , expect
   , receiveChan
   , receiveWait
@@ -89,8 +90,7 @@ import qualified "distributed-process" Control.Distributed.Process.Internal.Type
 import Control.Distributed.Process.Closure
 import "distributed-process" Control.Distributed.Process.Node
 import Control.Distributed.Process.Serializable ( Serializable )
-import "distributed-process" Control.Distributed.Process.Internal.Primitives
-    (SayMessage(..))
+import qualified "distributed-process" Control.Distributed.Process.Internal.Primitives as DP
 import Control.Distributed.Process.Internal.StrictMVar ( withMVar )
 import "distributed-process-trans" Control.Distributed.Process.Trans ( MonadProcess(..) )
 import qualified "distributed-process-trans" Control.Distributed.Process.Trans as DPT
@@ -1202,7 +1202,7 @@ say string = do
     now <- DP.expect
     -- Treat ticks as milliseconds.
     let utc = addUTCTime (toEnum now * 1000 * 1000) (UTCTime (toEnum 0) 0)
-    nsend "logger" (SayMessage utc self string)
+    nsend "logger" (DP.SayMessage utc self string)
 
 nsendRemote :: Serializable a => NodeId -> String -> a -> Process ()
 nsendRemote nid label msg = do
@@ -1293,6 +1293,9 @@ newtype Match a = Match
     unMatch :: Maybe (IORef Bool) -> DP.Match a
   }
 
+instance Functor Match where
+  fmap f (Match g) = Match $ fmap f . g
+
 match :: Serializable a => (a -> Process b) -> Match b
 match = matchIf (const True)
 
@@ -1311,6 +1314,13 @@ matchAny h = Match $ \mr -> case mr of
     Nothing -> DP.matchAny h
     Just r  -> fmap undefined $
       DP.matchMessageIf (\a -> seq (unsafeWriteIORef r True a) False) return
+
+matchMessageIf :: (DP.Message -> Bool) -> (DP.Message -> Process DP.Message)
+               -> Match DP.Message
+matchMessageIf p h = Match $ \mr -> case mr of
+  Nothing -> DP.matchMessageIf p h
+  Just r ->
+    DP.matchMessageIf (\a -> p a && seq (unsafeWriteIORef r True a) False) h
 
 matchSTM :: STM a -> (a -> Process b) -> Match b
 matchSTM sa h = Match $ \mr -> case mr of

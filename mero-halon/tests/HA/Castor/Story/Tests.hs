@@ -49,6 +49,7 @@ import           HA.Resources.Castor
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.SSPL
 import           HA.Services.SSPL.LL.Resources

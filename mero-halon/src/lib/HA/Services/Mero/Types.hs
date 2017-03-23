@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Module    : HA.Services.Mero.Types
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Types used by @halon:m0d@ service.
@@ -37,8 +37,6 @@ import           Data.Binary (Binary)
 import           Data.ByteString (ByteString)
 import           Data.Hashable (Hashable)
 import           Data.Monoid ((<>))
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import           Data.Typeable (Typeable)
 import           Data.UUID as UUID
 import           Data.Word (Word64)
@@ -128,23 +126,15 @@ interface :: Interface MeroToSvc MeroFromSvc
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "m0d"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
-instance HasInterface MeroConf MeroToSvc MeroFromSvc where
+instance HA.Service.HasInterface MeroConf where
+  type ToSvc MeroConf = MeroToSvc
+  type FromSvc MeroConf = MeroFromSvc
   getInterface _ = interface
 
 -- | A 'Set' of outgoing notifications from @halon:m0d@ to mero

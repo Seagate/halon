@@ -55,6 +55,7 @@ module HA.Service
   , HA.Service.Internal.__remoteTable
   , HA.Service.Internal.__resourcesTable
   , someConfigDict__static
+  , HasInterface(..)
 ) where
 
 import Control.Distributed.Process hiding (try)

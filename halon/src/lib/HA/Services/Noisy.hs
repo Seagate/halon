@@ -31,8 +31,6 @@ import Control.Monad
 import Data.Defaultable
 import Data.Hashable (Hashable)
 import Data.Monoid ((<>))
-import Data.Serialize.Get (runGet)
-import Data.Serialize.Put (runPut)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Aeson
@@ -135,18 +133,10 @@ interface = Interface
   { ifVersion = 0
   , ifServiceName = "noisy"
   , ifEncodeToSvc = \_ _ -> Nothing
-  , ifDecodeToSvc = \_ -> Nothing
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
 remotableDecl [ [d|
   noisy :: Service NoisyConf
@@ -179,5 +169,7 @@ remotableDecl [ [d|
 
   |] ]
 
-instance HasInterface NoisyConf () PingSvcEvent where
+instance HasInterface NoisyConf where
+  type ToSvc NoisyConf = ()
+  type FromSvc NoisyConf = PingSvcEvent
   getInterface _ = interface

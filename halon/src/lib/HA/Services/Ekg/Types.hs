@@ -43,8 +43,6 @@ import           Data.Hashable
 import           Data.Int (Int64)
 import qualified Data.Map as M
 import           Data.Monoid ((<>))
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
@@ -109,23 +107,15 @@ interface :: Interface ModifyMetric MetricReadReply
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "ekg"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
 
-instance HasInterface EkgConf ModifyMetric MetricReadReply where
+instance HasInterface EkgConf where
+  type ToSvc EkgConf = ModifyMetric
+  type FromSvc EkgConf = MetricReadReply
   getInterface _ = interface
 
 -- | Service state

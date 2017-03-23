@@ -9,6 +9,7 @@ module HA.Services.Mero.RC.Rules
   ) where
 
 -- service dependencies
+import HA.Service (getInterface)
 import HA.Services.Mero (lookupM0d)
 import HA.Services.Mero.Types
 import HA.Services.Mero.RC.Actions

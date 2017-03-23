@@ -33,6 +33,7 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.SSPL (sspl)
 import           HA.Services.SSPL.CEP

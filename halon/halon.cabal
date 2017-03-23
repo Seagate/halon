@@ -74,7 +74,6 @@ Library
                    HA.Services.Dummy
                    HA.Services.Ekg
                    HA.Services.Ekg.Types
-                   HA.Services.Empty
                    HA.Services.Noisy
                    HA.Services.Ping
                    HA.Startup

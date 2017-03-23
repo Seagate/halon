@@ -133,5 +133,7 @@ remotableDecl [ [d|
                  `staticApply` $(mkStatic 'configDictFrontierConf))
     |] ]
 
-instance HasInterface FrontierConf FrontierReply FrontierCmd where
+instance HasInterface FrontierConf where
+  type ToSvc FrontierConf = FrontierReply
+  type FromSvc FrontierConf = FrontierCmd
   getInterface _ = HA.Services.Frontier.Interface.interface

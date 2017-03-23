@@ -20,6 +20,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
 import           HA.Resources.Mero
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.SSPLHL (sspl, SsplHlToSvc(..), SsplHlFromSvc(..))
 import           Network.CEP

@@ -27,8 +27,6 @@ import           Data.Foldable (forM_)
 import           Data.Hashable (Hashable)
 import           Data.Maybe (isJust)
 import           Data.Monoid ((<>))
-import           Data.Serialize.Get (runGet)
-import           Data.Serialize.Put (runPut)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.UUID (toString)
@@ -134,22 +132,11 @@ interface :: Interface SsplHlToSvc SsplHlFromSvc
 interface = Interface
   { ifVersion = 0
   , ifServiceName = "sspl-hl"
-  , ifEncodeToSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeToSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
-  , ifEncodeFromSvc = \_v -> Just . mkWf . runPut . safePut
-  , ifDecodeFromSvc = \wf -> case runGet safeGet $! wfPayload wf of
-      Left{} -> Nothing
-      Right !v -> Just v
+  , ifEncodeToSvc = \_v -> Just . safeEncode interface
+  , ifDecodeToSvc = safeDecode
+  , ifEncodeFromSvc = \_v -> Just . safeEncode interface
+  , ifDecodeFromSvc = safeDecode
   }
-  where
-    mkWf payload = WireFormat
-      { wfServiceName = ifServiceName interface
-      , wfVersion = ifVersion interface
-      , wfPayload = payload
-      }
-
 
 traceSSPLHL :: String -> Process ()
 traceSSPLHL = mkHalonTracer "ssplhl-service"
@@ -306,7 +293,9 @@ remotableDecl [ [d|
               `staticApply` $(mkStatic 'configDictSSPLHLConf))
   |] ]
 
-instance HasInterface SSPLHLConf SsplHlToSvc SsplHlFromSvc where
+instance HasInterface SSPLHLConf  where
+  type ToSvc SSPLHLConf = SsplHlToSvc
+  type FromSvc SSPLHLConf = SsplHlFromSvc
   getInterface _ = interface
 
 deriveSafeCopy 0 'base ''SsplHlFromSvc
