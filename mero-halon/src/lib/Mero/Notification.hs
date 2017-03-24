@@ -359,8 +359,19 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                    et <- atomically $ (Left  <$> takeTMVar fbarrier)
                              `orElse` (Right <$> readTChan taskPool)
                    for_ et $ \t -> t >> loop
+                 -- During stop ha interface can still send messages
+                 -- and those messages should be processed. So we fork
+                 -- a worker that processes them. Because our thread
+                 -- would be blocked.
+                 d <- newTVarIO False 
+                 tid <- forkM0OS $ fix $ \loop -> do
+                          et <- atomically $ (pure Nothing <* (check =<< readTVar d))
+                                  `orElse` (Just <$> readTChan taskPool)
+                          for_ et $ \t -> t >> loop
                  terminateM0Worker worker
                  finiHAState
+                 atomically $ writeTVar d True
+                 joinM0OS tid
                  putMVar fdone ()
                Left e -> putMVar barrier (Left e)
     return (barrier, niRef)
