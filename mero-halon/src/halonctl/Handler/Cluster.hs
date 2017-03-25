@@ -114,6 +114,7 @@ parseCluster =
 data DriveCommand
   = DrivePresence String Castor.Slot Bool Bool
   | DriveStatus   String Castor.Slot String
+  | DriveNew      String String
   deriving (Eq, Show)
 
 parseDriveCommand :: Parser ClusterOptions
@@ -122,8 +123,13 @@ parseDriveCommand = CastorDriveCommand <$> asum
         $ Opt.withDesc parseDrivePresence "Update information about drive presence")
      , Opt.subparser (command "update-status"
         $ Opt.withDesc parseDriveStatus "Update drive status")
+     , Opt.subparser (command "new-drive"
+        $ Opt.withDesc parseDriveNew "create new drive")
      ]
    where
+     parseDriveNew :: Parser DriveCommand
+     parseDriveNew = DriveNew <$> optSerial <*> optPath
+                                           
      parseDrivePresence :: Parser DriveCommand
      parseDrivePresence = DrivePresence
         <$> optSerial
@@ -139,6 +145,15 @@ parseDriveCommand = CastorDriveCommand <$> asum
         <*> strOption (long "status"
                       <> metavar "[EMPTY|OK]"
                       <> help "Set drive status")
+
+optPath :: Parser String
+optPath = strOption $ mconcat
+  [ long "path"
+  , short 'p'
+  , help "Drive path"
+  , metavar "PATH"
+  ]
+
 
 parseSlot :: Parser Castor.Slot
 parseSlot = Castor.Slot
@@ -855,3 +870,10 @@ runDriveCommand nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled 
       exitFailure
     StorageDevicePresenceUpdated -> liftIO $ do
       putStrLn $ "Command executed."
+runDriveCommand nids (DriveNew serial path) =
+  clusterCommand nids Nothing (CommandStorageDeviceCreate serial path) $ \case
+   StorageDeviceErrorAlreadyExists -> liftIO $ do
+     putStrLn $ "Drive already exists: " ++ serial
+     exitFailure
+   StorageDeviceCreated -> liftIO $ do
+     putStrLn $ "Storage device created."
