@@ -303,7 +303,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
                         ]
           -- Update cluster disposition
           phaseLog "update" $ "cluster.disposition=ONLINE"
-          modifyGraph $ G.connect R.Cluster R.Has (M0.ONLINE)
+          modifyGraph $ G.connect R.Cluster R.Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
             $ \(host::R.Host) (node::M0.Node) rg' -> G.isConnected host R.Has R.HA_M0SERVER rg'
                             && M0.getState node rg' /= M0.NSFailed
@@ -445,7 +445,9 @@ requestClusterStop :: Definitions RC ()
 requestClusterStop = defineSimple "castor::cluster::request::stop"
   $ \(HAEvent eid (ClusterStopRequest _reason ch)) -> do
       rg <- getLocalGraph
-      let eresult = if isClusterStopped rg
+      let alreadyDone = isClusterStopped rg
+            && (maybe False (==M0.ONLINE) $ G.connectedTo R.Cluster R.Has rg)
+      let eresult = if alreadyDone
                     then Left StateChangeFinished
                     else Right $ stopCluster rg ch eid
       case eresult of
