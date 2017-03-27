@@ -182,7 +182,9 @@ instance FromJSON ReportClusterHost
 
 -- | Information about a 'M0.Process'.
 data ReportClusterProcess = ReportClusterProcess
-      { crpState    :: M0.ProcessState
+      { cprType :: String
+      -- ^ 'Type' of the process, such as ios, m0t1fs etc
+      , crpState    :: M0.ProcessState
       -- ^ 'M0.ProcessState' of the 'M0.Process'.
       , crpServices :: [ReportClusterService]
       -- ^ 'M0.Service's and their states associated with this

@@ -194,7 +194,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                      processes <- getChildren node
                      forM processes $ \process -> do
                        let st = M0.getState process rg
+                           mpl = G.connectedTo process R.Has rg
                        services  <- sort <$> getChildren process
+                       let ptyp = getType mpl services
                        services' <- forM services $ \service -> do
                           sdevs  <- sort <$> getChildren service
                           sdevs' <- forM sdevs $ \sdev -> do
@@ -205,7 +207,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                                 state = M0.getState sdev rg
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')
-                       return (process, ReportClusterProcess st services')
+                       return (process, ReportClusterProcess ptyp st services')
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus = status
@@ -214,6 +216,16 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
         , csrStats  = stats
         , csrHosts  = hosts
         }
+  where
+    getType (Just M0.PLM0t1fs) _ = "m0t1fs"
+    getType (Just (M0.PLClovis s _)) _ = s
+    getType (Just M0.PLHalon) _ = "halon"
+    getType _ srvs = inferType srvs
+    inferType srvs
+      | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
+      | any (\(M0.Service _ t _ _) -> t == CST_MDS) srvs = "mdservice"
+      | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
+      | otherwise                                        = "m0d      "
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
 jobClusterStart = Job "castor::cluster::start"

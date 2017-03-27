@@ -45,7 +45,7 @@ import HA.RecoveryCoordinator.RC.Events
 import HA.RecoveryCoordinator.RC.Events.Cluster
 import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
-import Mero.ConfC (ServiceType(..), fidToStr, strToFid)
+import Mero.ConfC (fidToStr, strToFid)
 import Mero.Spiel (FSStats(..))
 import Network.CEP
 import System.Exit (exitFailure, exitSuccess)
@@ -129,7 +129,7 @@ parseDriveCommand = CastorDriveCommand <$> asum
    where
      parseDriveNew :: Parser DriveCommand
      parseDriveNew = DriveNew <$> optSerial <*> optPath
-                                           
+
      parseDrivePresence :: Parser DriveCommand
      parseDrivePresence = DrivePresence
         <$> optSerial
@@ -796,12 +796,13 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
          let (nst,extSt) = M0.displayNodeState st
          printf node_pattern nst (showNodeFid m0fid) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
-         forM_ ps $ \(M0.Process{r_fid=rfid, r_endpoint=endpoint}, ReportClusterProcess proc_st srvs) -> do
+         forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
+                     , ReportClusterProcess ptype proc_st srvs) -> do
            let (pst,proc_extSt) = M0.displayProcessState proc_st
            printf proc_pattern pst
                                (fidToStr rfid)
                                endpoint
-                               (inferType (map crsService srvs)::String)
+                               ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _ _) sdevs) -> do
              let (serv_st,serv_extSt) = M0.displayServiceState sst
@@ -820,12 +821,6 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
                  for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
                  for_ mslot $ printf sdev_patterni (""::String) . show
    where
-     inferType srvs
-       | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
-       | any (\(M0.Service _ t _ _) -> t == CST_MDS) srvs = "mdservice"
-       | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
-       | any (\(M0.Service _ t _ _) -> t == CST_HA)  srvs = "halon    "
-       | otherwise                                        = "m0t1fs   "
      showNodeFid Nothing = ""
      showNodeFid (Just (M0.Node fid)) = show fid
      node_pattern  = "  [%9s] %-24s  %s\n"
