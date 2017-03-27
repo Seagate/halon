@@ -83,6 +83,7 @@ import           Mero.ConfC (Fid(..), fidToStr, ServiceType(..))
 import           Mero.Notification.HAState
 import qualified "distributed-process-scheduler" System.Clock as C
 import           System.IO.Unsafe (unsafePerformIO)
+import qualified System.Posix.Process as Posix
 import           Text.Printf (printf)
 
 -- | Meta-info about a 'M0.Process'.
@@ -576,21 +577,30 @@ remotableDecl [ [d|
             return (Left "failure during start")
         , match $ \(InternalStarted (c, cc)) -> return $! Right (m0dPid, c, cc)
         ]
-    mainloop _ s@(pid,c,cc) = do
+    mainloop conf s@(pid,c,cc) = do
       nid <- getSelfNode
       return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                    $ \_ -> do
                  sendRC interface $ MeroKernelFailed nid "process exited."
                  return (Failure, s)
              , receiveSvc interface $ \case
-                 ServiceReconnectRequest -> do
-                   -- We're not actually connected to anything so quest do nothing
-                   return (Continue, s)
                  PerformNotification nm -> do
                    sendChan c nm
                    return (Continue, s)
                  ProcessMsg pm -> do
                    sendChan cc pm
+                   return (Continue, s)
+                 AnnounceYourself -> do
+                   sys_pid <- liftIO $ fromIntegral <$> Posix.getProcessID
+                   t <- liftIO m0_time_now
+                   let meta = HAMsgMeta { _hm_fid = mcProcess conf
+                                        , _hm_source_process = mcProcess conf
+                                        , _hm_source_service = mcHA conf
+                                        , _hm_time = t }
+                       evt = ProcessEvent { _chp_event = TAG_M0_CONF_HA_PROCESS_STARTED
+                                          , _chp_type = TAG_M0_CONF_HA_PROCESS_M0D
+                                          , _chp_pid = sys_pid }
+                   sendRC interface . AnnounceEvent $ HAMsg evt meta
                    return (Continue, s)
              ]
     teardown _ (pid, _, _) = do

@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -47,6 +48,7 @@ module Mero.Notification.HAState
   , StobIoOpcode(..)
   , StobIoqError(..)
   , RpcEvent(..)
+  , m0_time_now
   ) where
 
 import HA.Resources.Mero.Note
@@ -85,6 +87,7 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #include "rpc/ha.h"
 #include "stob/io.h"
 #include "stob/ioq_error.h"
+#include "lib/time.h"
 
 #if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
@@ -644,6 +647,9 @@ ha_msg_debug_print (HAMsgPtr msg) s = withCString s $ m0_ha_msg_debug_print msg
 
 foreign import capi "ha/msg.h m0_ha_msg_debug_print"
   m0_ha_msg_debug_print :: Ptr HAMsgPtr -> CString -> IO ()
+
+foreign import capi "lib/time.h m0_time_now"
+  m0_time_now :: IO Word64
 
 -- * Boilerplate instances
 

@@ -31,7 +31,7 @@ import qualified HA.Resources.Mero.Note as M0
 import qualified HA.ResourceGraph as G
 import HA.Services.Mero.RC
 
-import Mero.ConfC (ServiceType(..))
+import Mero.ConfC (ServiceType(..), Fid)
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (Note(..))
 
@@ -43,15 +43,16 @@ import Control.Monad (join, when, guard)
 import Control.Monad.Fix (fix)
 
 import Data.Constraint (Dict)
+import Data.Either (lefts)
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
+import Data.Functor (void)
+import Data.List (nub, genericLength)
 import Data.Maybe (catMaybes, maybeToList)
 import Data.Monoid
+import qualified Data.Set as S
 import Data.Traversable (mapAccumL)
 import Data.Typeable
-import Data.List (nub, genericLength)
-import Data.Either (lefts)
-import Data.Functor (void)
 import Data.Word
 import Text.Printf (printf)
 
@@ -77,8 +78,13 @@ instance Monoid DeferredStateChanges where
 --   - Any failure implications (e.g. inhibited states)
 --   - Creating pool versions etc. in the graph
 --   - Syncing to confd if necessary.
-cascadeStateChange :: AnyStateChange -> G.Graph -> (G.Graph->G.Graph, [AnyStateChange])
-cascadeStateChange asc rg = go [asc] [asc] id
+cascadeStateChange :: AnyStateChange -- ^ Change we're cascading on
+                   -> G.Graph -- ^ RG
+                   -> S.Set Fid
+                   -- ^ Fids for which results in cascades are throw
+                   -- away for.
+                   -> (G.Graph->G.Graph, [AnyStateChange])
+cascadeStateChange asc rg topFids = go [asc] [asc] id
    where
     -- XXX: better structues for union and difference, should we nub on b?
     go :: [AnyStateChange] -- New changes. These will be evaluated for cascade
@@ -119,6 +125,9 @@ cascadeStateChange asc rg = go [asc] [asc] id
       then ( Nothing
            , [ (b, b_old, b_new)
              | b <- f a rg
+             -- Throw away objects in cascade that have been set "at
+             -- top level".
+             , M0.fid b `S.notMember` topFids
              , let b_old = M0.getState b rg
              , TransitionTo b_new <- [runTransition (u a_new) b_old]
              ])
@@ -137,7 +146,8 @@ createDeferredStateChanges stateSets rg =
     (wrns, DeferredStateChanges (fn>>>trigger_fn) (Set nvec Nothing) (InternalObjectStateChange iosc))
   where
     (trigger_fn, stateChanges) = join <$>
-        mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg)) id rootStateChanges
+        mapAccumL (\fg change -> first ((>>>) fg) (cascadeStateChange change rg rootFids)) id rootStateChanges
+    rootFids = S.fromList $ map (\(AnyStateChange o _ _ _) -> M0.fid o) rootStateChanges
     (wrns, rootStateChanges) = partitionEithers $ lookupOldState <$> stateSets
     lookupOldState (AnyStateSet (x :: a) t) = case runTransition t $ M0.getState x rg of
       NoTransition -> Left $

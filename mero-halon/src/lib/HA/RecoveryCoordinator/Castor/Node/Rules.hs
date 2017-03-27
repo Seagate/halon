@@ -452,9 +452,32 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
                      continue finish
       Right () -> continue synchronized
 
-  -- If mero service is already running we may have just recovered
-  -- from a disconnect. Request new channels instead of trying to use
-  -- old ones.
+  -- There are two scenarios: either halon:m0d is in graph or it is
+  -- not. If it's not then we do nothing and have RC start the service
+  -- in @announce@.
+  --
+  -- If it is in graph then monitor will be/has restarted it. If it is
+  -- in graph, we have two possible scenarios. Either the service is
+  -- actually running (there was a network problem but halond didn't
+  -- crash) or halond was restarted (service is actually dead). In
+  -- latter case everything is OK, monitor will restart service, mero
+  -- will send STARTED, process goes online. In former case service is
+  -- already online, the monitor doesn't do anything, mero never sends
+  -- STARTED. Previously we worked around this by asking the service
+  -- to reconnect its interface to mero which would cause this event
+  -- to be sent. This is however not good enough because firstly it
+  -- should not be necessary in principal and secondly it's cause of
+  -- bugs (CASTOR-2443). Instead, ask the service to send this STARTED
+  -- event itself. The service will only be able to process this
+  -- request after it has bootstrapped, we do not process messages
+  -- beforehand. If the service is dead, we lose the message and mero
+  -- sends the event. If the service is alive, it processes the
+  -- message and sends STARTED. We may get a duplicate event here (one
+  -- from mero one from us). This is fine, process started rule will
+  -- ignore a duplicate message. The data will be the same as long as
+  -- the service announces correct process ID: this is the process ID
+  -- of halond on the node. RC does not know it but halon:m0d can ask
+  -- the OS for it.
   directly reconnect_m0d $ do
     StartProcessNodeNew node <- getRequest
     rg <- getLocalGraph
@@ -463,9 +486,6 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
       [] -> do
         phaseLog "info" "No halon:m0d already running."
         continue announce
-      -- TODO: make the process transient? We're dropping old link.
-      --
-      -- TODO: Think about whether we still need it.
       _ -> do
         -- There's a service in RG but it may not be marked by halon
         -- is PSOnline: if we're recovering from a disconnect but
@@ -477,7 +497,10 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
             phaseLog "error" $ "Can't find halon:m0d for " ++ show node
             continue finish
           Just ha -> do
-            sendSvc (getInterface $ lookupM0d rg) nid ServiceReconnectRequest
+            -- Send directly as service will not usually be PSOnline
+            -- here. If it is then we're going to get stuck anyway
+            -- (HALON-678).
+            sendSvc (getInterface $ lookupM0d rg) nid AnnounceYourself
             t <- _hv_mero_kernel_start_timeout <$> getHalonVars
             waitClear
             setExpectedNotifications [stateSet ha processHAOnline]

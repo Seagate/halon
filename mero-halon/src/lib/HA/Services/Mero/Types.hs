@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE StrictData            #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 -- |
@@ -50,11 +51,12 @@ import           HA.SafeCopy
 import qualified HA.Service
 import           HA.Service.Interface
 import           HA.Service.TH
+import           Language.Haskell.TH (mkName)
 import           Mero.ConfC (Fid, strToFid)
 import           Mero.Notification (Set)
+import           Mero.Notification.HAState (HAMsg, ProcessEvent)
 import           Options.Schema
 import           Options.Schema.Builder
-import           Language.Haskell.TH (mkName)
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
@@ -94,10 +96,20 @@ instance ToJSON MeroConf where
 
 -- | Values that can be sent from RC to the halon:m0d service.
 data MeroToSvc
-  = ServiceReconnectRequest
-  | Cleanup !Bool
+  = -- | mero-cleanup is needed?
+    Cleanup !Bool
+    -- | Send given set of notifications to local m0d processes.
   | PerformNotification !NotificationMessage
+    -- | Perform an action on the mero service given.
   | ProcessMsg !ProcessControlMsg
+    -- | Ask the service to announce itself. This means it should send
+    -- the given 'HAMsg' to the RC if it can. This means the RC will
+    -- mark the service online based on the event. Normally mero sends
+    -- this event when we connect with an interface but in case of a
+    -- reconnect after network loss to the node, the interface isn't
+    -- reconnected. Ideally we would like to ask mero to re-send this
+    -- message but there isn't API for this.
+  | AnnounceYourself
   deriving (Eq, Show, Generic, Typeable)
 
 -- | Values that can be sent from the halon:m0d service to RC.
@@ -108,6 +120,7 @@ data MeroFromSvc
   | NotificationAck !Word64 !Fid
   | NotificationFailure !Word64 !Fid
   | ProcessControlResultConfigureMsg !UUID.UUID (Either (M0.Process, String) M0.Process)
+  | AnnounceEvent !(HAMsg ProcessEvent)
   -- ^ Results of @mero-mkfs@ @systemctl@ invocations.
   --
   -- @ProcessControlResultConfigureMsg requestUUID result@

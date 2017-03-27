@@ -42,7 +42,6 @@ import qualified Data.Bimap as BM
 import           Data.Binary
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
-import           Data.Function (fix)
 import           Data.Maybe (maybeToList)
 import qualified Data.UUID as UUID
 import           HA.Debug
@@ -56,10 +55,12 @@ import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid, fidToStr)
 import qualified Mero.Notification
 import           Mero.Notification (NIRef)
+import           Mero.Notification.HAState
 import qualified Network.RPC.RPCLite as RPC
 import           System.Directory
 import           System.Exit
 import           System.FilePath
+import qualified System.Posix.Process as Posix
 import qualified System.SystemD.API as SystemD
 import qualified System.Timeout as ST
 
@@ -344,63 +345,26 @@ m0dProcess parent conf = do
   traceM0d "starting."
   Catch.bracket startKernel (\_ -> stopKernel) $ \rc -> do
     traceM0d "Kernel module loaded."
-    nullPid <- DI.nullProcessId <$> getSelfNode
     case rc of
-      Right _ -> flip fix nullPid $ \loop caller -> do
+      Right _ -> do
         self <- getSelfPid
         flip Catch.catch epHandler . withEp $ \ep -> do
           traceM0d "Starting helper processes and initialising channels."
-          kaPid <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
-                                                 (mcKeepaliveTimeout conf)
-                                                 (mcProcess conf) (mcHA conf)
-                                                 ep self
-          (c, crp) <- newChan
-          statusPid <- spawnLocal $ statusProcess ep (mcProcess conf)
-                                                  (mcHA conf) self crp
-          (cc, ccrp) <- newChan
-          controlPid <- spawnLocal $ controlProcess conf self ccrp
-          -- We're in here because we were asked to reconnect so spare
-          -- ourselves a started and don't send the channels directly;
-          -- instead, send the channels back to the caller and let it
-          -- update the service state first.
-
-          if caller /= nullPid
-          then usend caller $ InternalServiceReconnectReply c cc
-          else do
-            usend parent (InternalStarted (c,cc))
-          traceM0d "Starting service m0d on mero client"
-          -- When reconnect is requested (in case of HALON-546 for
-          -- example), kill helper processes and jump out without
-          -- explicit loop. Outer ‘forever’ will retrigger everything,
-          -- respawn helper processes, make new channels and send the
-          -- new channels upstream.
-          receiveWait
-            [ match $ \m@(InternalServiceReconnectRequest{}) -> do
-                -- TODO: block until exit? Shouldn't really need to…
-                exitWait kaPid
-                exitWait statusPid
-                exitWait controlPid
-                usend self (m, ())
-            ]
-        -- Jump back into the loop after escaping withEp: this way we
-        -- can connect using fresh endpoint (hopefully).
-        traceM0d "Escaped withEp"
-        expect >>= \(InternalServiceReconnectRequest rcaller, ()) -> do
-          traceM0d "Reconnecting to endpoint."
-          loop rcaller
-
+          _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
+                                             (mcKeepaliveTimeout conf)
+                                             processFid haFid ep self
+          c <- spawnChannelLocal $ statusProcess ep processFid haFid self
+          cc <- spawnChannelLocal $ controlProcess conf self
+          usend parent (InternalStarted (c,cc))
+          traceM0d "Started service m0d on mero client"
+          -- Block forever, keeping the endpoint open.
+          receiveWait []
       Left i -> do
         traceM0d $ "Kernel module did not load correctly: " ++ show i
         sendRC interface . MeroKernelFailed (processNodeId parent) $
           "mero-kernel service failed to start: " ++ show i
         Control.Distributed.Process.die Shutdown
   where
-    exitWait pid = do
-      withMonitor pid $ do
-        exit pid "Restarting."
-        receiveWait [ matchIf (\(ProcessMonitorNotification _ pid' _) -> pid == pid')
-                              (\_ -> return ()) ]
-        traceM0d $ show pid ++ " exited before reconnect."
     profileFid = mcProfile conf
     processFid = mcProcess conf
     rmFid      = mcRM      conf
@@ -469,21 +433,31 @@ remotableDecl [ [d|
         , match $ \(InternalStarted (c,cc)) -> do
           return (Right (pid,c,cc))
         ]
-    mainloop _ s@(pid,c,cc) = do
+    mainloop conf s@(pid,c,cc) = do
       self <- getSelfPid
       return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                    $ \_ -> do
                  sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
                  return (Failure, s)
              , receiveSvc interface $ \case
-                 ServiceReconnectRequest -> do
-                   usend pid $! InternalServiceReconnectRequest self
-                   return (Continue, s)
                  PerformNotification nm -> do
                    sendChan c nm
                    return (Continue, s)
                  ProcessMsg pm -> do
                    sendChan cc pm
+                   return (Continue, s)
+                 AnnounceYourself -> do
+                   traceM0d $ "Announcing STARTED, likely due to node recovery."
+                   sys_pid <- liftIO $ fromIntegral <$> Posix.getProcessID
+                   t <- liftIO m0_time_now
+                   let meta = HAMsgMeta { _hm_fid = mcProcess conf
+                                        , _hm_source_process = mcProcess conf
+                                        , _hm_source_service = mcHA conf
+                                        , _hm_time = t }
+                       evt = ProcessEvent { _chp_event = TAG_M0_CONF_HA_PROCESS_STARTED
+                                          , _chp_type = TAG_M0_CONF_HA_PROCESS_M0D
+                                          , _chp_pid = sys_pid }
+                   sendRC interface . AnnounceEvent $ HAMsg evt meta
                    return (Continue, s)
                  m -> do
                    traceM0d $ "Unprocessed message: " ++ show m

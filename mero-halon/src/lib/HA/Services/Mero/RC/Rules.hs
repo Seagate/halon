@@ -52,6 +52,7 @@ rules = sequence_
   , ruleHalonM0dExit
   , ruleHalonM0dException
   , ruleGenericNotification
+  , ruleAnnounceEvent
   ]
 
 ruleCheckCleanup :: Definitions RC ()
@@ -151,10 +152,8 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
 -- * 'ruleFailedNotificationFailsProcess' fails every process that
 --   shares the endpoint
 ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
-ruleNotificationsFailedToBeDeliveredToM0d = define "service::m0d::notification::delivery-failed" $ do
-  notification_failed <- phaseHandle "notification_failed"
-
-  setPhaseIf notification_failed g $ \(uid, epoch, fid) -> do
+ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleIf "service::m0d::notification::delivery-failed" g $ do
+  \(uid, epoch, fid) -> do
     todo uid
     tagContext SM [("epoch", show epoch), ("fid", show fid)] Nothing
     mdiff <- getStateDiffByEpoch epoch
@@ -162,11 +161,20 @@ ruleNotificationsFailedToBeDeliveredToM0d = define "service::m0d::notification::
       mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
       for_ mp $ markNotificationFailed diff
     done uid
-
-  start notification_failed ()
   where
-    g (HAEvent uid (NotificationFailure epoch fid)) _ _ = return $! Just (uid, epoch, fid)
-    g _ _ _ = return Nothing
+    g (HAEvent uid (NotificationFailure epoch fid)) _ = return $! Just (uid, epoch, fid)
+    g _ _ = return Nothing
+
+-- | Unpack 'AnnounceEvent' sent by @halon:m0d@ and send it to rest of RC.
+ruleAnnounceEvent :: Definitions RC ()
+ruleAnnounceEvent = defineSimpleIf "service::m0d::notification::announce" g $
+  \(uid, ev) -> do
+    todo uid
+    promulgateRC ev
+    done uid
+  where
+    g (HAEvent uid (AnnounceEvent v)) _ = return $! Just (uid, v)
+    g _ _ = return Nothing
 
 -- | Handle event from regular monitor about halon:m0d service death.
 -- This means that there is some problem with halon service (possibly non fatal

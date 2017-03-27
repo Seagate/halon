@@ -539,8 +539,9 @@ ruleProcessOnline = define "castor::process::online" $ do
                         else []
         applyStateChanges $ stateSet p Tr.processOnline : nodeNotif
 
-      -- TODO: Now that we set PSStarting for HA, we may not need this case.
-      -- Think about it.
+      -- TODO: We need this case because when node rejoins, we do not
+      -- set PSStarting on halon:m0d which is already in RG, it just
+      -- springs back to life.
       (_, _)
         | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
         phaseLog "action" "HA Process started."
