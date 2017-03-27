@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StrictData                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 -- |
@@ -15,6 +16,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Events
   , ClusterStartRequest(..)
   , ClusterStartResult(..)
   , ClusterStopRequest(..)
+  , ClusterStopResult(..)
   , StateChangeResult(..)
   , PoolRebalanceRequest(..)
   , PoolRebalanceStarted(..)
@@ -75,26 +77,23 @@ data ClusterStartResult
 instance Binary ClusterStartResult
 
 -- | Request that the cluster stops.
-data ClusterStopRequest_v0 =
-  ClusterStopRequest_v0 (SendPort StateChangeResult)
-  -- ^ Request that the cluster stops. The 'StateChangeResult' is sent
-  -- back on the provided 'SendPort'.
-  deriving (Eq, Show, Generic)
-
--- | Request that the cluster stops.
-data ClusterStopRequest =
-  ClusterStopRequest String (SendPort StateChangeResult)
+data ClusterStopRequest = ClusterStopRequest String (SendPort StateChangeResult)
   -- ^ Request that the cluster stops with the provided reason. The
   -- 'StateChangeResult' is sent back on the provided 'SendPort'.
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Show, Generic, Ord)
 
-instance Migrate ClusterStopRequest where
-  type MigrateFrom ClusterStopRequest = ClusterStopRequest_v0
-  migrate (ClusterStopRequest_v0 p) = ClusterStopRequest "unspecified" p
+-- | Request that the cluster stops.
+data ClusterStopResult =
+  ClusterStopOk
+  -- ^ Cluster stopped successfully.
+  | ClusterStopFailed String
+  -- ^ Cluster failed to stop with the provided reason.
+  deriving (Eq, Show, Generic)
+instance Binary ClusterStopResult
 
 -- | A reply on 'ClusterStopRequest' channel.
 data StateChangeResult =
-  StateChangeStarted ProcessId
+  StateChangeStarted
   -- ^ The cluster started to shut down.
   | StateChangeFinished
   -- ^ The cluster is already in stopped state.
@@ -199,7 +198,7 @@ data ReportClusterService = ReportClusterService
       { crsState      :: M0.ServiceState
       -- ^ 'M0.ServiceState' of the 'M0.Service'
       , crsService    :: M0.Service
-      -- ^ 'M0.Service' 
+      -- ^ 'M0.Service'
       , crsDevices    :: [( M0.SDev
                           , M0.StateCarrier M0.SDev
                           , Maybe Castor.Slot
@@ -239,7 +238,7 @@ data ClusterStopDiff = ClusterStopDiff
     -- ^ Cluster 'M0.Disposition'
   , _csp_progress :: (Rational, Rational)
     -- ^ Percentage of cluster stopped, @(old, new)@
-  , _csp_cluster_stopped :: Bool
+  , _csp_cluster_stopped :: Maybe ClusterStopResult
     -- ^ Is cluster considered stopped
   , _csp_warnings :: [String]
     -- ^ Any warnings user could want to see found when calculating the diff.
@@ -261,8 +260,7 @@ data ClusterLiveness = ClusterLiveness
 deriveSafeCopy 0 'base ''ClusterResetRequest
 deriveSafeCopy 0 'base ''ClusterStartRequest
 deriveSafeCopy 0 'base ''ClusterStatusRequest
-deriveSafeCopy 0 'base ''ClusterStopRequest_v0
-deriveSafeCopy 1 'extension ''ClusterStopRequest
+deriveSafeCopy 0 'base ''ClusterStopRequest
 deriveSafeCopy 0 'base ''MarkProcessesBootstrapped
 deriveSafeCopy 0 'base ''MonitorClusterStop
 deriveSafeCopy 0 'base ''PoolRebalanceRequest

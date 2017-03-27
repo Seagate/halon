@@ -70,7 +70,9 @@ processStopping = Transition $ \case
 -- TODO: Make HA process go through quiescing like other processes
 -- do and use 'processStopping'.
 processHAStopping :: Transition M0.Process
-processHAStopping = constTransition M0.PSStopping
+processHAStopping = Transition $ \case
+  M0.PSOnline -> TransitionTo M0.PSStopping
+  st -> transitionErr ?loc st
 
 -- | 'M0.Process' is starting.
 processStarting :: Transition M0.Process

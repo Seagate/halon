@@ -82,12 +82,11 @@ import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.List (sort)
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
-                            , isJust, isNothing
-                            )
+                            , isJust, isNothing )
 import           Data.Ratio
 import           Data.Foldable
 import qualified Data.Map.Strict as M
-import           Data.Traversable (forM)
+import           Data.Traversable (forM, for)
 import           Data.Typeable
 import           Data.Vinyl hiding ((:~:))
 import qualified Data.Set as Set
@@ -435,6 +434,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
       then return $ Nothing
       else return $ Just msg
 
+jobClusterStop :: Job ClusterStopRequest ClusterStopResult
+jobClusterStop = Job "castor::cluster::request::stop"
+
 -- | Request cluster to teardown.
 --   Immediately set cluster disposition to OFFLINE.
 --   If the cluster is already tearing down, or is starting, this
@@ -442,26 +444,45 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
 --   Sends 'StopProcessesOnNodeRequest' to all nodes.
 --   TODO: Does this include stopping clients on the nodes?
 requestClusterStop :: Definitions RC ()
-requestClusterStop = defineSimple "castor::cluster::request::stop"
-  $ \(HAEvent eid (ClusterStopRequest _reason ch)) -> do
-      rg <- getLocalGraph
-      let alreadyDone = isClusterStopped rg
-            && (maybe False (==M0.ONLINE) $ G.connectedTo R.Cluster R.Has rg)
-      let eresult = if alreadyDone
-                    then Left StateChangeFinished
-                    else Right $ stopCluster rg ch eid
-      case eresult of
-        Left m -> liftProcess (sendChan ch m) >> messageProcessed eid
-        Right action -> action
+requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
+  let mkNodesAwait name = mkLoop name (return [])
+        (\(JobFinished lis v) l -> case v of
+            StopProcessesOnNodeOk{} -> return . Right $
+              (rlens fldJobs %~ fieldMap (filter (`notElem` lis))) l
+            _ -> do
+              modify Local $ rlens fldRep . rfield .~ Just (ClusterStopFailed (show v))
+              return $ Left finish)
+        (getField . rget fldJobs <$> get Local >>= \case
+            [] -> do
+              modify Local $ rlens fldRep . rfield .~ Just ClusterStopOk
+              return $ Just [finish]
+            _ -> return Nothing)
+
+  wait_for_nodes_stop <- mkNodesAwait "wait_for_nodes_stop"
+
+  let route (ClusterStopRequest _reason ch) = do
+        rg <- getLocalGraph
+        if isClusterStopped rg && maybe False (== M0.ONLINE) (G.connectedTo R.Cluster R.Has rg)
+        then do
+          liftProcess $ sendChan ch StateChangeFinished
+          return $ Right (ClusterStopOk, [finish])
+        else do
+          modifyGraph $ G.connect R.Cluster R.Has M0.OFFLINE
+          let nodes = [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
+                             , node <- G.connectedTo host R.Runs rg ]
+          jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
+          modify Local $ rlens fldJobs . rfield .~ jobs
+          liftProcess $ sendChan ch StateChangeStarted
+          return $ Right (ClusterStopFailed "default", [wait_for_nodes_stop])
+
+  return route
   where
-    stopCluster rg ch eid = do
-      modifyGraph $ G.connect R.Cluster R.Has M0.OFFLINE
-      let nodes = [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-                         , node <- G.connectedTo host R.Runs rg ]
-      for_ nodes $ promulgateRC . StopProcessesOnNodeRequest
-      registerSyncGraphCallback $ \pid proc -> do
-        sendChan ch (StateChangeStarted pid)
-        proc eid
+    fldReq = Proxy :: Proxy '("request", Maybe ClusterStopRequest)
+    fldRep = Proxy :: Proxy '("reply", Maybe ClusterStopResult)
+    fldJobs = Proxy :: Proxy '("jobs", [ListenerId])
+    args = fldReq =: Nothing
+       <+> fldRep =: Nothing
+       <+> fldJobs =: []
 
 -- | Reset the (mero) cluster. This should be used when something
 --   has gone wrong and we cannot restore the cluster to ground
@@ -556,13 +577,15 @@ requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::sta
 -- until it's satisfied, report to the user with progress and so on.
 ruleClusterMonitorStop :: Definitions RC ()
 ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
-  start_monitoring <- phaseHandle "start-monitoring"
-  caller_died <- phaseHandle "caller-died"
-  isc_watcher <- phaseHandle "internal-state-change-watcher"
-  cluster_level_watcher <- phaseHandle "cluster-level-watcher"
+  start_monitoring <- phaseHandle "start_monitoring"
+  caller_died <- phaseHandle "caller_died"
+  isc_watcher <- phaseHandle "internal_state_change_watcher"
+  cluster_level_watcher <- phaseHandle "cluster_level_watcher"
+  cluster_stop_finished <- phaseHandle "cluster_stop_finished"
   finish <- phaseHandle "finish"
 
-  let watchForChanges = switch [caller_died, isc_watcher, cluster_level_watcher]
+  let watchForChanges = switch [ caller_died, isc_watcher
+                               , cluster_level_watcher, cluster_stop_finished ]
 
   setPhase start_monitoring $ \(HAEvent uuid (MonitorClusterStop caller)) -> do
     todo uuid
@@ -575,12 +598,16 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     watchForChanges
 
   setPhaseIf isc_watcher iscGuard $ \() -> do
-    notifyCallerWithDiff finish
+    notifyCallerWithDiff finish Nothing
     watchForChanges
 
   setPhase cluster_level_watcher $ \ClusterStateChange{} -> do
-    notifyCallerWithDiff finish
+    notifyCallerWithDiff finish Nothing
     watchForChanges
+
+  setPhase cluster_stop_finished $ \csr -> do
+    notifyCallerWithDiff finish $ Just csr
+    continue finish
 
   setPhaseIf caller_died monitorGuard $ \() -> do
     caller <- getField . rget fldCallerPid <$> get Local
@@ -643,7 +670,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
         Just mref' | mref == mref' -> Just ()
         _ -> Nothing
 
-    notifyCallerWithDiff finish = do
+    notifyCallerWithDiff finish mcsp = do
       newSt <- calculateStoppingState
       moldSt <- getField . rget fldClusterStopProgress <$> get Local
       mcaller <- getField . rget fldCallerPid <$> get Local
@@ -656,10 +683,15 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
           phaseLog "warn" "No caller known (‘impossible’)"
           continue finish
         (Just oldSt, Just caller) -> do
-          let diff = calculateStopDiff oldSt newSt
-          when (not $ isEmptyDiff diff) $ do
-            liftProcess $ usend caller diff
-            when (_csp_cluster_stopped diff) $ continue finish
+          let diff = (calculateStopDiff oldSt newSt) { _csp_cluster_stopped = mcsp }
+          -- When we have cluster stop result, just report the diff
+          -- containing it. If not, continue as usual.
+          case mcsp of
+            Nothing -> when (not $ isEmptyDiff diff) $ do
+              liftProcess $ usend caller diff
+            Just{} -> do
+              liftProcess $ usend caller diff
+              continue finish
 
     calculateStoppingState :: PhaseM RC l ClusterStoppingState
     calculateStoppingState = do
@@ -679,14 +711,23 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
           disp = maybeToList $ G.connectedTo R.Cluster R.Has rg
           doneDisp = filter (== M0.OFFLINE) disp
 
+          -- This is a bit of a hack: even if all processes and
+          -- services are stopped, we do not want to report completion
+          -- to the user before ClusterStopResult is received. It
+          -- would be strange to report 100% completion and still keep
+          -- the user waiting. Put in this dummy ‘part’ which will
+          -- server to keep that from happening: when
+          -- ClusterStopResult comes, we will announce completion to
+          -- the user straight away anyway.
+          clusterStopResultPart = [()]
+
           allParts = toInteger $ length ps + length svs + length disp
+                               + length clusterStopResultPart
           doneParts = toInteger $ length donePs + length doneSvs + length doneDisp
 
           progress :: Rational
           progress = (100 % allParts) * (doneParts % 1)
-
-          allDone = allParts == doneParts
-      return $ ClusterStoppingState ps svs disp progress allDone
+      return $ ClusterStoppingState ps svs disp progress
 
     -- It may happen that previously sent state already covered all
     -- interesting changes and the newly calculated diff is just empty
@@ -694,8 +735,8 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     isEmptyDiff :: ClusterStopDiff -> Bool
     isEmptyDiff ClusterStopDiff{..} =
       null _csp_procs && null _csp_servs && isNothing _csp_disposition
-      && fst _csp_progress == snd _csp_progress && not _csp_cluster_stopped
-      && null _csp_warnings
+      && fst _csp_progress == snd _csp_progress
+      && isNothing _csp_cluster_stopped && null _csp_warnings
 
     calculateStopDiff :: ClusterStoppingState -> ClusterStoppingState
                       -> ClusterStopDiff
@@ -707,7 +748,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
                          , _csp_servs = nSs
                          , _csp_disposition = nDs
                          , _csp_progress = (_css_progress old, _css_progress new)
-                         , _csp_cluster_stopped = _css_done new
+                         , _csp_cluster_stopped = Nothing
                          , _csp_warnings = wps ++ wss ++ wds
                          }
 
@@ -749,5 +790,4 @@ data ClusterStoppingState = ClusterStoppingState
   , _css_svs :: [(M0.Service, M0.ServiceState)]
   , _css_disposition :: [M0.Disposition]
   , _css_progress :: Rational
-  , _css_done :: Bool
   }

@@ -264,7 +264,7 @@ serviceStop = mkJobRule serviceStopJob  args $ \(JobHandle _ finish) -> do
                                 ] Nothing
              Service.markStopping node cfg
              return $ Right (ServiceStopRequestCancelled, [do_stop])
-           Nothing -> return $ Right (ServiceStopRequestCancelled, [do_stop_only])
+           Nothing -> return $ Right (ServiceStopRequestOk, [do_stop_only])
 
    let loop = do
          t <- getHalonVar _hv_service_stop_timeout

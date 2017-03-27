@@ -1,8 +1,9 @@
+{-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Node.Events
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Events associated with nodes.

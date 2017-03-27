@@ -598,7 +598,15 @@ clusterStopCommand :: [NodeId] -> StopOptions -> Process ()
 clusterStopCommand nids (StopOptions silent async stopTimeout reason) = do
   say' "Stopping cluster."
   self <- getSelfPid
-  clusterCommand nids Nothing (ClusterStopRequest reason) (say' . show)
+  clusterCommand nids Nothing (ClusterStopRequest reason) return >>= \case
+    StateChangeFinished -> do
+      say' "Cluster already stopped"
+      -- Bail out early, do not start monitor which won't receive any
+      -- messages.
+      liftIO exitSuccess
+    StateChangeStarted -> do
+      say' "Cluster stop initiated."
+
   promulgateEQ nids (MonitorClusterStop self) >>= flip withMonitor wait
   case async of
     True -> return ()
@@ -610,9 +618,11 @@ clusterStopCommand nids (StopOptions silent async stopTimeout reason) = do
             liftIO exitFailure
         , match $ \csd -> do
             outputClusterStopDiff csd
-            if _csp_cluster_stopped csd then return () else loop
+            case _csp_cluster_stopped csd of
+              Nothing -> loop
+              Just ClusterStopOk -> liftIO exitSuccess
+              Just ClusterStopFailed{} -> liftIO exitFailure
         ]
-
   where
     say' msg = if silent then return () else liftIO (putStrLn msg)
     wait = void (expect :: Process ProcessMonitorNotification)
@@ -629,7 +639,10 @@ clusterStopCommand nids (StopOptions silent async stopTimeout reason) = do
       let (op, np) = _csp_progress
       when (op /= np) $ do
         say' $ printf "Progress: %.2f%% -> %.2f%%" (fromRational op :: Float) (fromRational np :: Float)
-      if _csp_cluster_stopped then say' "Cluster stopped successfully" else return ()
+
+      for_ _csp_cluster_stopped $ \case
+        ClusterStopOk -> say' "Cluster stopped successfully"
+        ClusterStopFailed failMsg -> say' $ "Cluster stop failed: " ++ failMsg
 
       if op > np then warn "Cluster stop progress decreased!" else return ()
       for_ _csp_warnings $ \w -> warn w
@@ -674,17 +687,17 @@ clusterCommand :: (SafeCopy a, Serializable a, Serializable b, Show b)
                => [NodeId]
                -> Maybe Int -- ^ Custom timeout in seconds, default 10s
                -> (SendPort b -> a)
-               -> (b -> Process ())
-               -> Process ()
-clusterCommand eqnids mt mk output = do
+               -> (b -> Process c)
+               -> Process c
+clusterCommand eqnids mt mk f = do
   (schan, rchan) <- newChan
   promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
   let t = maybe 10000000 (* 1000000) mt
-  receiveTimeout t [ matchChan rchan output ] >>= liftIO . \case
+  receiveTimeout t [ matchChan rchan f ] >>= liftIO . \case
     Nothing -> do
       hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
       exitFailure
-    Just () -> return ()
+    Just c -> return c
   where
     wait = void (expect :: Process ProcessMonitorNotification)
 

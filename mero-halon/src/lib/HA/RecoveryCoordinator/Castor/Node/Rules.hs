@@ -117,7 +117,7 @@ import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, sendChan)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
-import           Control.Monad (void, guard, join)
+import           Control.Monad (void, guard, join, when)
 import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
@@ -365,7 +365,9 @@ requestStopHalonM0d = mkJobRule halonM0dStopJob args $ \(JobHandle _ finish) -> 
           Nothing -> do
             return $ Right (HalonM0dNotFound, [finish])
           Just hp -> do
-            applyStateChanges [stateSet hp processHAStopping]
+            -- Only apply state change when we're online.
+            when (M0.getState hp rg == M0.PSOnline) $ do
+              applyStateChanges [stateSet hp processHAStopping]
             j <- startJob . encodeP $ ServiceStopRequest node (lookupM0d rg)
             modify Local $ rlens fldJob . rfield .~ Just j
             return $ Right ( HalonM0dStopResult ServiceStopTimedOut
