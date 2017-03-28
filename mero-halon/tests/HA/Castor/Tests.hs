@@ -14,7 +14,7 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
-import           Control.Monad (forM_, join, unless)
+import           Control.Monad (forM_, join, unless, void)
 import           Data.Foldable (for_)
 import           Data.List (partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
@@ -281,13 +281,13 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
 
     let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
 
-    (ls2, _) <- run ls1 $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
+    (ls2, _) <- run ls1 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
       $ length (connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
         length procs
 
-    (ls3, _) <- run ls2 $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSStopping) <$> procs
+    (ls3, _) <- run ls2 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSStopping) <$> procs
 
     assertMsg "All processes should be stopping"
       $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
@@ -308,7 +308,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                        (connectedTo ps M0.IsParentOf rg)
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> confds
+           void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> confds
            )
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
@@ -321,7 +321,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                              (connectedTo ps M0.IsParentOf rg)
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
+           void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
            )
        $ Tasty.assertEqual "cluster is alive"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=True}
@@ -332,7 +332,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_MGS
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
+           void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
            )
        $ Tasty.assertEqual "cluster have no quorum"
             ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=False,clPrincipalRM=False}
@@ -346,7 +346,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
+           void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
            )
        $ Tasty.assertEqual "pvers can be found"
             ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
@@ -357,7 +357,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                  , srv <- connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
-           applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
+           void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
            )
        $ Tasty.assertEqual "pvers can't be found"
             ClusterLiveness{clPVers=False,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
@@ -381,7 +381,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
          RC.initialRule (IgnitionArguments [])
       let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
       (ls2, _) <- run ls1 $ do
-        applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
+        void . applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
         _ <- pickPrincipalRM
         return ()
       (ls3, _) <- run ls2 $ configure

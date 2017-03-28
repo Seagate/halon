@@ -404,9 +404,9 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                     -- so moving to rebalancing does not increase
                     -- number of failures.
                     let messages = stateSet pool Tr.poolRebalance : (flip stateSet Tr.diskRebalance <$> disks)
-                    modify Local $ rlens fldNotifications . rfield .~ messages
                     modify Local $ rlens fldPoolDisks . rfield .~ Just (pool, disks)
-                    applyStateChanges messages
+                    notifications <- applyStateChanges messages
+                    setExpectedNotifications notifications
                     waitFor notifier
                     waitFor notify_failed
                     onSuccess pool_disks_notified
@@ -467,7 +467,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
         ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
         -- Don't need to think about K here as both rebalance and
         -- repaired are failed states.
-        applyStateChanges $ map (\d -> stateSet d Tr.sdevRebalanceAbort) ds
+        _ <- applyStateChanges $ map (\d -> stateSet d Tr.sdevRebalanceAbort) ds
         unsetPoolRepairStatus pool
 
     -- Is this device ready to be rebalanced onto?
@@ -543,17 +543,13 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
             fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
             case null tr && not (null fa) of
               True -> do
-                -- TODO: HALON-678
-                rg <- getLocalGraph
-                let poolMsgs = case toConfObjState pool $ getState pool rg of
-                      M0_NC_REPAIR -> []
-                      _ -> [stateSet pool Tr.poolRepairing]
-                    -- OK to just set repairing here without checking K:
+                let -- OK to just set repairing here without checking K:
                     -- @fa@ are already failed by this point.
-                    msgs = poolMsgs ++ (flip stateSet Tr.sdevRepairStart <$> fa)
+                    msgs = stateSet pool Tr.poolRepairing
+                           : map (`stateSet` Tr.sdevRepairStart) fa
                 modify Local $ rlens fldPool . rfield .~ Just pool
-                setExpectedNotifications msgs
-                applyStateChanges msgs
+                notifications <- applyStateChanges msgs
+                setExpectedNotifications notifications
                 waitFor notifier
                 waitFor notify_failed
                 onSuccess pool_disks_notified
@@ -634,7 +630,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
         -- notification fires first. The race does not matter
         -- because notification failure handler will check for
         -- already failed processes.
-        applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds
+        _ <- applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds
         unsetPoolRepairStatus pool
 
     -- It's possible that after calling for the repair to start, but before
@@ -865,9 +861,9 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     -- After abort.
     -- https://seagate.slack.com/archives/mero-halon/p1487363284005215
     ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
-    applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
+    _ <- applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
     ds1 <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
-    applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
+    _ <- applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
     continue finish
 
   directly failure $ do
@@ -877,9 +873,9 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     unsetPoolRepairStatusWithUUID pool uuid
 
     ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
-    applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
+    _ <- applyStateChanges $ (`stateSet` Tr.sdevRebalanceAbort) <$> ds
     ds1 <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REPAIR
-    applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
+    _ <- applyStateChanges $ (`stateSet` Tr.sdevRepairAbort) <$> ds1
     continue finish
 
   return route
@@ -1117,13 +1113,13 @@ completeRepair pool prt muid = do
           repairedSdevTr M0.Failure = Tr.sdevRepairComplete
 
       unless (null repaired_sdevs) $ do
-        applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
+        _ <- applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
 
         when (prt == M0.Rebalance) $ forM_ repaired_sdevs unmarkSDevReplaced
 
         if Set.null non_repaired_sdevs
         then do phaseLog "info" $ "Full repair on " ++ show pool
-                applyStateChanges [stateSet pool $ R.snsCompletedTransition prt]
+                _ <- applyStateChanges [stateSet pool $ R.snsCompletedTransition prt]
                 unsetPoolRepairStatus pool
                 when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
         else do phaseLog "info" $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
@@ -1360,10 +1356,6 @@ processPoolInfo pool st m = phaseLog "warning" $ unwords
 -- Helpers                                                                    --
 --------------------------------------------------------------------------------
 
--- | Like 'mapMaybe' but lifted to 'Monad'.
-mapMaybeM :: Monad m => (a -> m (Maybe b)) -> [a] -> m [b]
-mapMaybeM f xs = catMaybes <$> mapM f xs
-
 -- | Info about Pool repair update. Such sets are sent by the IO
 -- services during repair and rebalance procedures.
 data PoolInfo = PoolInfo M0.Pool ConfObjectState SDevStateMap deriving (Show)
@@ -1379,6 +1371,8 @@ getPoolInfo (Set ns _) =
       disks <- M.fromListWith (<>) . map (second S.singleton) <$> mapMaybeM noteToSDev ns
       return . Just . PoolInfo pool typ $ SDevStateMap disks
     _ -> return Nothing
+  where
+    mapMaybeM f xs = catMaybes <$> mapM f xs
 
 -- | Updates of sdev, that doesn't contain Pool version.
 newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)

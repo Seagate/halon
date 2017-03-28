@@ -358,7 +358,7 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
             phaseLog "info" $ "Failing " ++ showFid p
             when updatePid $ do
               modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
-            applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
+            void $ applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
         Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
         Just p -> do

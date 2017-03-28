@@ -28,8 +28,7 @@ import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
-import           HA.RecoveryCoordinator.Mero.Events (AnyStateChange)
-import           HA.RecoveryCoordinator.Mero.Notifications hiding (fldNotifications)
+import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions
@@ -98,7 +97,7 @@ ruleReassembleRaid =
       dispatcher <- mkDispatcher
       node_stop_result <- phaseHandle "node_stop_result"
       sspl_notify_done <- mkDispatchAwaitCommandAck dispatcher failed showLocality
-      mero_notifier <- mkNotifierAct dispatcher $ do
+      mero_notifier <- mkNotifierSimpleAct dispatcher $ do
         -- We have received mero notification so ramp up the timeout
         -- in case we're waiting for SSPL. This is necessary in case
         -- we're waiting for both mero notification and SSPL ack:
@@ -152,17 +151,14 @@ ruleReassembleRaid =
 
             -- Mark enclosure as transiently failed. This should cascade down to
             -- controllers, disks etc.
-            forM_ mm0 $ \(m0enc, m0node) -> let
-                notifications = [ stateSet m0enc enclosureTransient ]
-                notificationChk = simpleNotificationToPred <$> notifications
-              in do
-                setExpectedNotifications notificationChk
-                applyStateChanges notifications
-                modify Local $ rlens fldM0 . rfield .~ Just (m0enc, m0node)
-                -- Wait for Mero notification, and also jump to stop_mero_services
-                waitFor mero_notifier
-                onTimeout 10 notify_failed
-                onSuccess stop_mero_services
+            forM_ mm0 $ \(m0enc, m0node) -> do
+              notifications <- applyStateChanges [stateSet m0enc enclosureTransient]
+              setExpectedNotifications notifications
+              modify Local $ rlens fldM0 . rfield .~ Just (m0enc, m0node)
+              -- Wait for Mero notification, and also jump to stop_mero_services
+              waitFor mero_notifier
+              onTimeout 10 notify_failed
+              onSuccess stop_mero_services
 
             showLocality
 
@@ -295,11 +291,8 @@ ruleReassembleRaid =
       -- Mark the enclosure as healthy again
       directly mark_mero_healthy $ do
         Just (m0enc, _) <- gets Local (^. rlens fldM0 . rfield)
-        let notifications = [ stateSet m0enc enclosureOnline ]
-            notificationChk = simpleNotificationToPred <$> notifications
-        applyStateChanges notifications
-
-        setExpectedNotifications notificationChk
+        notifications <- applyStateChanges [stateSet m0enc enclosureOnline]
+        setExpectedNotifications notifications
         waitFor mero_notifier
         onTimeout 10 notify_failed
         onSuccess finish
@@ -346,8 +339,6 @@ ruleReassembleRaid =
   where
     -- Enclosure, node
     fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
-    -- Notifications to wait for
-    fldNotifications = Proxy :: Proxy '("notifications", [AnyStateChange -> Bool])
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

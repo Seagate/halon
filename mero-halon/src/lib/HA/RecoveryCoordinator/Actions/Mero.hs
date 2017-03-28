@@ -347,7 +347,7 @@ startMeroService host node = do
                                  (MeroKernelConf uuid)
       in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], p)
   for_ minfo $ \(msg, p) -> do
-    applyStateChanges [ stateSet p Tr.processStarting ]
+    _ <- applyStateChanges [ stateSet p Tr.processStarting ]
     promulgateRC msg
 
 -- | It may happen that a node reboots (either through halon or

@@ -255,7 +255,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 -- back before recovery fired? unlikely but who knows
                 case nodeToM0Node n1 g of
                   Nothing -> RCLog.rcLog' RCLog.WARN ("Couldn't find mero node." :: String)
-                  Just n -> applyStateChanges [stateSet n nodeFailed]
+                  Just n -> void $ applyStateChanges [stateSet n nodeFailed]
                 -- if the node is a mero server then power-cycle it.
                 -- Client nodes can run client-software that may not be
                 -- OK with reboots so we only reboot servers.
