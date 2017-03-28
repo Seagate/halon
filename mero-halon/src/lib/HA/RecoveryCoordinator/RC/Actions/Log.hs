@@ -9,7 +9,8 @@
 -- License   : All rights reserved.
 --
 module HA.RecoveryCoordinator.RC.Actions.Log
-  ( module HA.RecoveryCoordinator.Log
+  ( -- $logging
+    module HA.RecoveryCoordinator.Log
     -- * User logging - e.g. direct logging in rules
   , rcLog
   , rcLog'
@@ -17,6 +18,7 @@ module HA.RecoveryCoordinator.RC.Actions.Log
   , actLog
   , sysLog'
     -- * Contexts
+    -- $contexts
   , withLocalContext
   , withLocalContext'
   , tagContext
@@ -48,6 +50,35 @@ import GHC.Stack
 import Network.CEP hiding (Local)
 import Network.CEP.Log (Environment)
 
+-- $logging
+--
+-- The new logging framework is designed to make logging simpler for the
+-- developer whilst giving much more information to the debugger. In order
+-- to support this, here are some guidelines for logging.
+--
+-- The two most important functions in this module are 'tagContext' and
+-- 'rcLog'', in that order. Tagging contexts (see '$context') is used to
+-- associate data with logging statements. In general, where a rule concerns
+-- some particular part of the cluster, or some configuration entity, these
+-- should be attached to the relevant context (usually SM or Phase) using
+-- 'tagContext'. This ensures that this information is available to any
+-- logging calls made, and removes the need to encode these into message
+-- strings.
+--
+-- 'rcLog' or 'rcLog'' should then be used to provide information about what's
+-- happening. It is overloaded using the 'UserLoggable' class to support
+-- logging of multiple types; in particular, there is support for logging
+-- '[(String, String)]' in order to directly capture key-value information.
+-- The need to perform string manipulation should be reduced; if you find
+-- yourself using it, consider whether logging an 'Environment' or using
+-- 'tagContext' would be better.
+--
+-- * Local contexts
+--
+-- Local contexts can be used to attach information to a block of log
+-- statements. When using local contexts, the 'rcLog' call should be used in
+-- place of 'rcLog'', since this call picks up on established local contexts.
+
 -- | Simple class which lets us log basic types more easily. This allows the
 --   user to just log "things" whilst constructing sensible types for logging,
 --   rather than stringifying.
@@ -65,6 +96,48 @@ instance UserLoggable [(String, String)] where
 
 instance UserLoggable (String, String) where
   toUserEvent = Env . Map.fromList . (:[])
+
+-- $contexts
+--
+-- Contexts are used to associate data to multiple logging statements.
+-- Fundamental to the use of contexts are two ideas:
+--
+-- - Tags are items of data which will be associated with any logging
+--   statement made within the given context.
+-- - Contexts delineate the set of messages which will be associated with
+--   that context's tags.
+--
+-- There are currently four different contexts:
+-- - Rule contexts associate tags with any log statement made in any instance of
+--   the current rule. Their only likely use case is where some initial state
+--   of the rule may be set on RC up, and we wish to associate this.
+-- - SM contexts are the most common. The SM context associates tags with any
+--   log statement made within the given instance of the rule. This context is
+--   useful where a rule may fork and deal with a particular part of the
+--   cluster - a node, say, or a disk.
+-- - Phase contexts associate tags with messages in the current phase of the
+--   SM.
+-- - Local contexts can be used to establish a block within which any log
+--   messages may be associated with tags. For example:
+--   @
+--     Left (StorageDevice.AnotherInSlot asdev) -> do
+--    Log.withLocalContext' $ do
+--      Log.tagLocalContext asdev Nothing
+--      Log.tagLocalContext [("location"::String, show sdev_loc)] Nothing
+--      Log.rcLog Log.ERROR
+--        ("Insertion in a slot where previous device was inserted - removing old device.":: String)
+--      StorageDevice.ejectFrom asdev sdev_loc
+--      notify $ DriveRemoved uuid node sdev_loc asdev mis_powered
+--   @
+--
+-- Tags typically fall into two categories:
+-- - Entities in the resource graph, such as nodes and Mero conf objects.
+-- - General strings and key-value string pairs.
+--
+-- Which things can be used to tag contexts is determined by the 'Taggable'
+-- class. If you find yourself repeatedly tagging contexts with a particular
+-- type, consider adding it as a potential 'HA.RecoveryCoordinator.Log.Scope'
+-- and adding a 'Taggable' instance rather than using 'show'.
 
 -- | Hidden type to collect local contexts implicitly.
 newtype LocalContext = LocalContext {unLocalContext :: [UUID]}
@@ -91,6 +164,15 @@ withLocalContext' :: ((?ctx :: LocalContext) => PhaseM RC l a) -> PhaseM RC l a
 withLocalContext' = let ?ctx = emptyLocalContext in withLocalContext
 
 -- | Log a user loggable event to the decision log framework.
+--
+--   'rcLog' (or its non-local context sensitive analogue, 'rcLog''), should
+--   be the go-to stop for most logging. It has a number of benefits over
+--   'phaseLog':
+--   - Messages will be associated with any tags established in its contexts.
+--   - Source location will be recorded for easier debugging.
+--   - Log levels may be used for filtering.
+--   - Key-value pairs may be logged directly without the need for formatting
+--     into a single string, or using multiple log calls.
 rcLog :: (UserLoggable a, ?ctx :: LocalContext, ?loc :: CallStack)
       => Level -> a -> PhaseM RC l ()
 rcLog lvl x = let
@@ -103,14 +185,19 @@ rcLog lvl x = let
   in appLog evt
 
 -- | Log a user loggable event to the decision log framework.
+--
 --   This variant does not attempt to discover local contexts - 'Rule', 'SM'
 --   and 'Phase' contexts will be applied to any log statements made, but
 --   if run within a 'withLocalContext' block, that context will not be found.
 rcLog' :: (UserLoggable a, ?loc :: CallStack) => Level -> a -> PhaseM RC l ()
 rcLog' = let ?ctx = emptyLocalContext in rcLog
 
--- | Log an action call to the decision log framework.
-actLog :: String -> [(String, String)] -> PhaseM RC l ()
+-- | Log an action call to the decision log framework. This should only be used
+--   within named actions to log calls to that action, and any arguments it is
+--   called with.
+actLog :: String -- ^ Name of the action called.
+       -> [(String, String)] -- ^ Arguments passed to the function.
+       -> PhaseM RC l ()
 actLog name params = sysLog' $ ActionCalled name (Map.fromList params)
 
 -- | Log a system loggable event to the decision log framework. No Local
@@ -156,6 +243,7 @@ instance {-# OVERLAPPABLE #-} M0.ShowFidObj a => Taggable a where
   toTagContent obj = TagScope [MeroConfObj $ M0.showFid obj]
 
 -- | Tag a context with some additional information.
+--   See $contexts
 tagContext :: Taggable a => Context -> a -> Maybe String -> PhaseM RC l ()
 tagContext ctx ctn msg = let
     evt = TagContext $ TagContextInfo {
@@ -165,7 +253,10 @@ tagContext ctx ctn msg = let
           }
   in appLog evt
 
--- | Tag the most recent 'local' context, if it exists.
+-- | Tag the most recent 'local' context, if it exists. This function is
+--   provided for convenience; usually one will not care about nesting contexts,
+--   and it is a pain to have to find the UUID of the local context to address
+--   it correctly.
 tagLocalContext :: (?ctx :: LocalContext, Taggable a)
                 => a -> Maybe String -> PhaseM RC l ()
 tagLocalContext a msg = case unLocalContext ?ctx of
