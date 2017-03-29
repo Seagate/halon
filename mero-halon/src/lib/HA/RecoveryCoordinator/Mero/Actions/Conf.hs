@@ -80,8 +80,6 @@ getFilesystem = getLocalGraph >>= \rg -> do
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
       ]
 
-
-
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM RC l [M0.Service]
 getM0ServicesRC = M0.getM0Services <$> getLocalGraph

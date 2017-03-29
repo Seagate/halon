@@ -48,6 +48,7 @@ defaultHalonVars = HalonVars
   , _hv_mero_workers_allowed = True
   , _hv_disable_smart_checks = False
   , _hv_service_stop_timeout = 30
+  , _hv_m0dixinit_timeout = 30
   }
 
 -- | Get 'HalonVars' from RG

@@ -748,19 +748,14 @@ prettyClusterStartResult = \case
   ClusterStartTimeout ns -> unlines $
     "Cluster failed to start on time. Still waiting for following processes:"
     : map (\n -> formatNode n " (Timeout)") ns
-  ClusterStartFailure s spn scn -> unlines $
+  ClusterStartFailure s spn -> unlines $
     ("Cluster failed with “" ++ s ++ "” due to:")
     : mapMaybe formatSPNR spn
-    ++ mapMaybe formatSCNR scn
   where
     formatSPNR :: StartProcessesOnNodeResult -> Maybe String
     formatSPNR (NodeProcessesStartTimeout n ps) = Just $ formatNode (n, ps) " (Timeout)"
     formatSPNR (NodeProcessesStartFailure n ps) = Just $ formatNode (n, ps) " (Failure)"
     formatSPNR NodeProcessesStarted{}           = Nothing
-
-    formatSCNR :: StartClientsOnNodeResult -> Maybe String
-    formatSCNR (ClientsStartFailure n s) = Just $ formatNode (n, []) (": " ++ s)
-    formatSCNR ClientsStartOk{}          = Nothing
 
     formatProcess :: (M0.Process, M0.ProcessState) -> String
     formatProcess (p, s) = "\t\t" ++ showFid p ++ ": " ++ show s

@@ -5,6 +5,7 @@
 -- Actions on 'M0.Process's.
 module HA.RecoveryCoordinator.Castor.Process.Actions
   ( getAll
+  , getAllHostingService
   , getLabel
   , getLabeled
   , getLabeledP
@@ -60,3 +61,11 @@ getHA m0n rg = listToMaybe
   [ p | p <- G.connectedTo m0n M0.IsParentOf rg
       , any (\s -> M0.s_type s == CST_HA) $ G.connectedTo p M0.IsParentOf rg
       ]
+
+-- | Get all processes hosting the given service.
+getAllHostingService :: ServiceType -> G.Graph -> [M0.Process]
+getAllHostingService srvTyp rg =
+  [ p
+  | p <- getAll rg
+  , any (\s -> M0.s_type s == srvTyp) $ G.connectedTo p M0.IsParentOf rg
+  ]

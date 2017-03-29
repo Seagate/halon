@@ -70,9 +70,9 @@ data ClusterStartResult
       -- ^ Cluster start timed out. Reports the nodes which failed
       -- along with processes on those nodes which have failed to
       -- properly start and their state.
-      | ClusterStartFailure String [StartProcessesOnNodeResult] [StartClientsOnNodeResult]
+      | ClusterStartFailure String [StartProcessesOnNodeResult]
       -- ^ Cluster failed to start. Reports the reason as well as
-      -- process start and client start results back to the user.
+      -- process start results back to the user.
       deriving (Eq, Show, Generic, Typeable)
 instance Binary ClusterStartResult
 

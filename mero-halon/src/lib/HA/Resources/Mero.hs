@@ -229,7 +229,7 @@ data Filesystem = Filesystem {
     f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
   , f_imeta_fid :: Fid -- ^ Fid of the imeta pver
-} deriving (Eq, Generic, Show, Typeable)
+} deriving (Eq, Ord, Generic, Show, Typeable)
 
 instance Hashable Filesystem
 instance ToJSON Filesystem
@@ -240,6 +240,17 @@ instance ConfObj Filesystem where
   fid = f_fid
 storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
 deriveSafeCopy 0 'base ''Filesystem
+
+-- | Marker to indicate the DIX subsystem has been initialised.
+data DIXInitialised = DIXInitialised
+  deriving (Eq, Generic, Show, Typeable)
+
+instance Hashable DIXInitialised
+instance ToJSON DIXInitialised
+instance FromJSON DIXInitialised
+
+storageIndex ''DIXInitialised "E36D8C47-62D8-466C-88D7-BD1255776BE0"
+deriveSafeCopy 0 'base ''DIXInitialised
 
 newtype Node = Node Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
@@ -944,6 +955,7 @@ $(mkDicts
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
+  , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -1001,6 +1013,7 @@ $(mkDicts
   , (''Node,    ''R.Is, ''NodeState)
   , (''Controller,    ''R.Is, ''ControllerState)
   , (''Filesystem, ''R.Has, ''FilesystemStats)
+  , (''Filesystem, ''R.Is, ''DIXInitialised)
   ]
   )
 
@@ -1015,6 +1028,7 @@ $(mkResRel
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
+  , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
@@ -1072,6 +1086,7 @@ $(mkResRel
   , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
   , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
+  , (''Filesystem, Unbounded, ''R.Is, AtMostOne, ''DIXInitialised)
   ]
   []
   )

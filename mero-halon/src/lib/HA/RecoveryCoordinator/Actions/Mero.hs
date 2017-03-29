@@ -161,7 +161,7 @@ calculateRunLevel = do
     return . fst . findLast $ zip lvls vals
   where
     findLast = head . reverse . takeWhile snd
-    lvls = M0.BootLevel <$> [0..2]
+    lvls = M0.BootLevel <$> [0..3]
     guard (M0.BootLevel 0) = return True
     guard (M0.BootLevel 1) = do
       -- We allow boot level 1 processes to start when at least ceil(n+1/2)
@@ -172,7 +172,7 @@ calculateRunLevel = do
         Process.getLabeled (M0.PLM0d $ M0.BootLevel 0) rg & filter
           (\p -> any
               (\s -> M0.s_type s == CST_MGS)
-              [svc | svc <- G.connectedTo p M0.IsParentOf rg]
+              (G.connectedTo p M0.IsParentOf rg)
           )
       onlineProcs <- getLocalGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) confdprocs
@@ -191,6 +191,13 @@ calculateRunLevel = do
       onlineProcs <- getLocalGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
       return $ length onlineProcs == length lvl1procs
+    guard (M0.BootLevel 3) = do
+      -- Boot level 3 may start once all CAS services have started.
+      casProcs <- getLocalGraph <&>
+        Process.getAllHostingService CST_CAS
+      onlineProcs <- getLocalGraph <&>
+        \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) casProcs
+      return $ length onlineProcs == length casProcs
     guard (M0.BootLevel _) = return False
 
 -- | Calculate the current stop level of the cluster. A stop level of x
@@ -202,7 +209,7 @@ calculateStopLevel = do
     return . fst . findLast $ zip lvls vals
   where
     findLast = head . reverse . takeWhile snd
-    lvls = M0.BootLevel <$> reverse [(-1)..2]
+    lvls = M0.BootLevel <$> reverse [(-1)..3]
     filterHA :: G.Graph -> M0.Process -> Bool
     filterHA g p = all (\srv -> M0.s_type srv /= CST_HA)
                        (G.connectedTo (p::M0.Process) M0.IsParentOf g)
@@ -235,6 +242,7 @@ calculateStopLevel = do
                                   _ -> False)
       return $ null stillUnstopped
     guard (M0.BootLevel 2) = return True
+    guard (M0.BootLevel 3) = return True
     guard (M0.BootLevel _) = return False
     unstoppedWithLabel lbl = getLocalGraph <&> \g ->
       ( Process.getLabeledP lbl g) & filter
@@ -391,11 +399,7 @@ announceTheseMeroHosts hosts p = do
       clientNodes = hostsToNodes clientHosts :: [M0.Node]
   phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
       ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
-  for_ serverNodes $ promulgateRC . StartProcessesOnNodeRequest
-  -- XXX: this is a hack, for some reason on devvm main node is not in the
-  -- clients list.
-  -- TODO can we remove this now? This should be marked properly.
-  for_ (serverNodes++clientNodes) $ promulgateRC . StartClientsOnNodeRequest
+  for_ (serverNodes++clientNodes) $ promulgateRC . StartProcessesOnNodeRequest
 
 
 -- | Get an 'Interface' we can send on to the halon:m0d service on the

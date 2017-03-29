@@ -132,6 +132,7 @@ data MeroFromSvc
   -- ^ Results of @systemctl stop@ operations.
   | CheckCleanup !NodeId
   -- ^ Check with RC if mero-cleanup service should be ran.
+  | DixInitialised !(Either String ())
   deriving (Eq, Generic, Show, Typeable)
 
 -- | halon:m0d 'Interface'
@@ -208,6 +209,7 @@ data ProcessControlMsg =
     StartProcess !ProcessRunType !M0.Process
   | StopProcess !ProcessRunType !M0.Process
   | ConfigureProcess !ProcessRunType !ProcessConfig ![ProcessEnv] !Bool !UUID.UUID
+  | DixInit !Fid
   -- ^ @ConfigureProcess runType config environment runMkfs requestUUID@
   --
   -- 'ProcessControlResultConfigureMsg' which is used as the reply

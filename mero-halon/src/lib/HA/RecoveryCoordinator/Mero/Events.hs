@@ -28,6 +28,8 @@ module HA.RecoveryCoordinator.Mero.Events
   , QuiesceSNSOperationResult(..)
   , RestartSNSOperationRequest(..)
   , RestartSNSOperationResult(..)
+  , DixInitRequest(..)
+  , DixInitResult(..)
   -- * State changes
   , AnyStateSet(..)
   , AnyStateChange(..)
@@ -220,6 +222,14 @@ instance Binary RestartSNSOperationResult
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 
+newtype DixInitRequest = DixInitRequest M0.Filesystem
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+data DixInitResult =
+    DixInitSuccess M0.Filesystem
+  | DixInitFailure M0.Filesystem String
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
 -- | The endpoint hasn't been initialised yet so the m0 worker is not
 -- available yet.
 data WorkerIsNotAvailableException = WorkerIsNotAvailable
@@ -236,3 +246,5 @@ deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
 deriveSafeCopy 0 'base ''QuiesceSNSOperation
 deriveSafeCopy 0 'base ''RestartSNSOperationRequest
 deriveSafeCopy 0 'base ''UpdateResult
+deriveSafeCopy 0 'base ''DixInitRequest
+deriveSafeCopy 0 'base ''DixInitResult

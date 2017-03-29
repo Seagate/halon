@@ -9,8 +9,6 @@
 -- Events associated with nodes.
 module HA.RecoveryCoordinator.Castor.Node.Events
   ( KernelStartFailure(..)
-  , StartClientsOnNodeRequest(..)
-  , StartClientsOnNodeResult(..)
   , StartHalonM0dRequest(..)
   , StartMeroClientRequest(..)
   , StartProcessNodeNew(..)
@@ -75,21 +73,6 @@ data StopProcessesOnNodeResult
        | StopProcessesOnNodeFailed R.Node String
        deriving (Eq, Show, Generic)
 instance Binary StopProcessesOnNodeResult
-
--- | Start client processes on the given 'M0.Node'. Replied to with
--- 'StartClientsOnNodeResult'.
-newtype StartClientsOnNodeRequest = StartClientsOnNodeRequest M0.Node
-         deriving (Eq, Show, Generic, Ord)
-
--- | A reply to 'StartClientsOnNodeRequest'.
-data StartClientsOnNodeResult
-       = ClientsStartOk M0.Node
-       -- ^ Client processes started fine on the given 'M0.Node'.
-       | ClientsStartFailure M0.Node String
-       -- ^ Client processes have failed on the 'M0.Node' with the
-       -- provided reason.
-       deriving (Eq, Show, Generic)
-instance Binary StartClientsOnNodeResult
 
 -- | @mero-kernel@ has failed to start on the 'M0.Node'.
 newtype KernelStartFailure = KernelStartFailure M0.Node
@@ -176,7 +159,6 @@ data MaintenanceStopNodeResult
 deriveSafeCopy 0 'base ''KernelStartFailure
 deriveSafeCopy 0 'base ''MaintenanceStopNode
 deriveSafeCopy 0 'base ''MaintenanceStopNodeResult
-deriveSafeCopy 0 'base ''StartClientsOnNodeRequest
 deriveSafeCopy 0 'base ''StartHalonM0dRequest
 deriveSafeCopy 0 'base ''StartMeroClientRequest
 deriveSafeCopy 0 'base ''StartProcessNodeNew

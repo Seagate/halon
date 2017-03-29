@@ -102,9 +102,6 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
   , ruleStartProcessesOnNode
   , StartProcessesOnNodeRequest(..)
   , StartProcessesOnNodeResult(..)
-    --- *** Stop clients on node
-  , StartClientsOnNodeRequest(..)
-  , StartClientsOnNodeResult(..)
     -- *** Stop processes on node
   , StopProcessesOnNodeRequest(..)
   , StopProcessesOnNodeResult(..)
@@ -117,7 +114,7 @@ import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, sendChan)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
-import           Control.Monad (void, guard, join, when)
+import           Control.Monad (void, guard, when)
 import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
@@ -148,6 +145,7 @@ import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.RC.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Service.Events as Service
@@ -176,7 +174,6 @@ rules :: Definitions RC ()
 rules = sequence_
   [ ruleNodeNew
   , ruleStartProcessesOnNode
-  , ruleStartClientsOnNode
   , ruleStopProcessesOnNode
   , ruleFailNodeIfProcessCantRestart
   , ruleMaintenanceStopNode
@@ -647,17 +644,24 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     kernel_failed     <- phaseHandle "kernel_failed"
     boot_level_0      <- phaseHandle "boot_level_0"
     boot_level_1      <- phaseHandle "boot_level_1"
+    boot_level_2      <- phaseHandle "boot_level_2"
+    boot_level_3_dixinit <- phaseHandle "boot_level_3_dixinit"
+    boot_level_3      <- phaseHandle "boot_level_3"
+    dix_failure       <- phaseHandle "dix_failure"
     kernel_timeout    <- phaseHandle "kernel_timeout"
     dispatch          <- mkDispatcher
     notifier          <- mkNotifierSimpleAct dispatch waitClear
 
     let route (StartProcessesOnNodeRequest m0node) = do
+          Log.tagContext Log.SM m0node Nothing
           let def = NodeProcessesStartTimeout m0node []
           r <- runMaybeT $ do
             node <- MaybeT $ M0.m0nodeToNode m0node <$> getLocalGraph
             MaybeT $ do
+              Log.tagContext Log.SM node Nothing
               rg <- getLocalGraph
               host <- findNodeHost node  -- XXX: head
+              Log.tagContext Log.SM [("host" :: String, show host)] Nothing
               modify Local $ rlens fldHost . rfield .~ host
               modify Local $ rlens fldNode . rfield .~ Just node
               if isJust $ getRunningMeroInterface m0node rg
@@ -754,19 +758,69 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
           modify Local $ rlens fldWaitingProcs . rfield .~ ps
           continue boot_level_0_result
 
-    boot_level_1_result <- mkProcessesAwait "boot_level_1_result" finish
+    boot_level_1_result <- mkProcessesAwait "boot_level_1_result" boot_level_2
 
-    setPhaseIf boot_level_1 (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
-      Just host <- getField . rget fldHost <$> get Local
+    setPhaseIf boot_level_1
+      (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
+        Just host <- getField . rget fldHost <$> get Local
+        startProcesses host (== M0.PLM0d (M0.BootLevel 1)) >>= \case
+          [] -> do
+            notifyOnClusterTransition
+            continue boot_level_2
+          ps -> do
+            modify Local $ rlens fldWaitingProcs . rfield .~ ps
+            continue boot_level_1_result
+
+    clients_result <- mkProcessesAwait "clients_result" finish
+
+    setPhaseIf boot_level_2
+      (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 2) $ \() -> do
+        StartProcessesOnNodeRequest m0node <- getRequest
+        Just host <- getField . rget fldHost <$> get Local
+        ps <- startProcesses host m0t1fsProcess
+        Log.rcLog' Log.DEBUG $ "Starting these m0tifs processes: "
+                            ++ show (M0.showFid <$> ps)
+        modify Local $ rlens fldWaitingProcs . rfield .~ ps
+        casProcs <- getLocalGraph <&> Process.getAllHostingService CST_CAS
+        if null casProcs
+        then do
+          modify Local $ rlens fldRep .rfield .~
+            (Just $ NodeProcessesStarted m0node)
+          continue clients_result
+        else continue boot_level_3_dixinit
+
+    directly boot_level_3_dixinit $ do
+      Just fs <- getFilesystem -- Legitimate, we couldn't be here otherwise
+      -- Check that we're on BL3. This should be fine; no need to wait, since
+      -- while different conditions are required for BL2 and 3, the BL2
+      -- conditions should guarantee the BL3 ones.
+      (M0.BootLevel n) <- calculateRunLevel
+      if n >= 3 then do
+        promulgateRC $ DixInitRequest fs
+        switch [boot_level_3, dix_failure]
+      else do
+        StartProcessesOnNodeRequest m0node <- getRequest
+        void $ nodeFailedWith NodeProcessesStartFailure m0node
+        continue finish
+
+    setPhaseIf boot_level_3 dixInitSuccess $ \() -> do
       StartProcessesOnNodeRequest m0node <- getRequest
-      modify Local $ rlens fldRep .~ Field (Just $ NodeProcessesStarted m0node)
-      startProcesses host (== M0.PLM0d (M0.BootLevel 1)) >>= \case
-        [] -> do
-          notifyOnClusterTransition
-          continue finish
-        ps -> do
-          modify Local $ rlens fldWaitingProcs . rfield .~ ps
-          continue boot_level_1_result
+      Just host <- getField . rget fldHost <$> get Local
+      Log.rcLog' Log.DEBUG ("Starting clovis processes." :: String)
+      modify Local $ rlens fldRep .~
+        Field (Just $ NodeProcessesStarted m0node)
+      ps <- startProcesses host clovisProcess
+      Log.rcLog' Log.DEBUG $ "Starting these clovis processes: "
+                          ++ show (M0.showFid <$> ps)
+      modify Local $ rlens fldWaitingProcs . rfield %~ (ps ++)
+      continue clients_result
+
+    setPhaseIf dix_failure dixInitFailure $ \() -> do
+      StartProcessesOnNodeRequest m0node <- getRequest
+      Log.rcLog' Log.ERROR
+        ("DIX failed to initialise, cannot start clovis procs." :: String)
+      void $ nodeFailedWith NodeProcessesStartFailure m0node
+      continue finish
 
     return route
   where
@@ -782,136 +836,23 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
        <+> fldWaitingProcs =: []
        <+> fldDispatch =: Dispatch [] (error "ruleStartProcessOnNode dispatcher") Nothing
 
+    m0t1fsProcess M0.PLM0t1fs = True
+    m0t1fsProcess _ = False
+
+    clovisProcess (M0.PLClovis _ _) = True
+    clovisProcess _ = False
+
+    dixInitSuccess (DixInitSuccess _) _ _ = return $ Just ()
+    dixInitSuccess _ _ _ = return Nothing
+
+    dixInitFailure (DixInitFailure _ _ ) _ _ = return $ Just ()
+    dixInitFailure _ _ _ = return Nothing
+
     nodeFailedWith state m0node = do
       rg <- getLocalGraph
       let ps = getUnstartedProcesses m0node rg
       modify Local $ rlens fldRep .~ (Field . Just $ state m0node ps)
       return $ state m0node ps
-
-processStartClientsOnNode :: Job StartClientsOnNodeRequest StartClientsOnNodeResult
-processStartClientsOnNode = Job "castor::node::client::start"
-
--- | Start all clients on the given node.
-ruleStartClientsOnNode :: Definitions RC ()
-ruleStartClientsOnNode = mkJobRule processStartClientsOnNode args $ \(JobHandle _ finish) -> do
-    kernel_failed <- phaseHandle "kernel_failed"
-    m0d_up_timeout <- phaseHandle "m0d_up_timeout"
-    start_clients <- phaseHandle "start_clients"
-    dispatch <- mkDispatcher
-    notifier <- mkNotifierSimpleAct dispatch waitClear
-
-    let mkProcessesAwait name next = mkLoop name (return [])
-          (\result l ->
-             case result of
-               ProcessStarted p -> return . Right
-                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
-               ProcessConfiguredOnly p -> return . Right
-                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
-               ProcessStartFailed p r -> do
-                 Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-                 modify Local $ rlens fldRep . rfield .~
-                   Just (ClientsStartFailure m0node $ printf "%s failed to start: %s" (M0.showFid p) r)
-                 return $ Left finish
-               ProcessStartInvalid p r -> do
-                 Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-                 modify Local $ rlens fldRep . rfield .~
-                   Just (ClientsStartFailure m0node $ printf "%s failed to start: %s" (M0.showFid p) r)
-                 return $ Left finish
-          )
-          (getField . rget fldWaitingProcs <$> get Local >>= \case
-             [] -> do
-               Just (StartClientsOnNodeRequest m0node) <- getField . rget fldReq <$> get Local
-               modify Local $ rlens fldRep . rfield .~ Just (ClientsStartOk m0node)
-               return $ Just [next]
-             _  -> return Nothing)
-
-    let route (StartClientsOnNodeRequest m0node) = do
-          phaseLog "debug" $ "request start client for " ++ show m0node
-          rg <- getLocalGraph
-          let mnode = M0.m0nodeToNode m0node rg
-          mhost <- join <$> traverse findNodeHost mnode
-          case liftA2 (,) mnode mhost of
-            Nothing -> do return . Left $ "Could not find host or node associated with " ++ show m0node
-            Just (node,host) -> do
-              modify Local $ rlens fldM0Node .~ Field (Just m0node)
-              modify Local $ rlens fldNode .~ Field (Just node)
-              modify Local $ rlens fldHost .~ Field (Just host)
-              case getClusterStatus rg of
-                Nothing -> do
-                  return $ Left "Cluster disposition not set, can't start clients."
-                Just (M0.MeroClusterState M0.OFFLINE _ _ ) -> do
-                  return $ Left $ "Request to start clients but "
-                             ++ "cluster disposition is OFFLINE."
-                Just (M0.MeroClusterState M0.ONLINE _ _)
-                  | isJust $ getRunningMeroInterface m0node rg -> do
-                      phaseLog "info" "halon:m0d running, starting clients"
-                      return $ Right (ClientsStartFailure m0node "default failure"
-                                     , [start_clients])
-                  | otherwise -> do
-                      phaseLog "info" $ "Waiting for halon:m0d to come up on " ++ show m0node
-                      t <- _hv_mero_kernel_start_timeout <$> getHalonVars
-                      waitClear
-                      waitFor notifier
-                      waitFor kernel_failed
-                      onTimeout t m0d_up_timeout
-                      onSuccess start_clients
-                      return $ Right (ClientsStartFailure m0node "default failure"
-                                     , [dispatch])
-
-        -- Filter for client processes
-        clientProcess M0.PLM0t1fs = True
-        clientProcess (M0.PLClovis _ _) = True
-        clientProcess _ = False
-
-    setPhaseIf kernel_failed (\(KernelStartFailure node) _ l ->  -- XXX: HA event?
-       return $! case getField $ rget fldReq l of
-         Just (StartClientsOnNodeRequest m0node)
-           | node == m0node -> Just ()
-         _ -> Nothing
-      ) $ \() -> do
-            Just m0node <- getField . rget fldM0Node <$> get Local
-            waitClear
-            modify Local $ rlens fldRep . rfield .~
-              (Just $ ClientsStartFailure m0node "Kernel failed to start")
-            continue finish
-
-    directly m0d_up_timeout $ do
-      Just m0node <- getField . rget fldM0Node <$> get Local
-      modify Local $ rlens fldRep . rfield .~
-        (Just $ ClientsStartFailure m0node "Waited too long for kernel")
-      continue finish
-
-    start_clients_results <- mkProcessesAwait "start_clients_results" finish
-
-    directly start_clients $ do
-      Just m0node <- getField . rget fldM0Node <$> get Local
-      Just host <- getField . rget fldHost <$> get Local
-      phaseLog "info" $ "Starting mero client on " ++ show host
-      startProcesses host clientProcess >>= \case
-        [] -> do
-          phaseLog "warn" "No client processes found on the host"
-          modify Local $ rlens fldRep . rfield .~
-            (Just $ ClientsStartOk m0node)
-          continue finish
-        ps -> do
-          modify Local $ rlens fldWaitingProcs . rfield .~ ps
-          continue start_clients_results
-
-    return route
-  where
-    fldReq = Proxy :: Proxy '("request", Maybe StartClientsOnNodeRequest)
-    fldRep = Proxy :: Proxy '("reply", Maybe StartClientsOnNodeResult)
-    fldM0Node = Proxy :: Proxy '("reply", Maybe M0.Node)
-    fldWaitingProcs = Proxy :: Proxy '("waiting-procs", [M0.Process])
-    args  = fldUUID =: Nothing
-        <+> fldReq     =: Nothing
-        <+> fldRep     =: Nothing
-        <+> fldNode    =: Nothing
-        <+> fldM0Node  =: Nothing
-        <+> fldHost    =: Nothing
-        <+> fldNotifications =: []
-        <+> fldWaitingProcs =: []
-        <+> fldDispatch =: Dispatch [] (error "ruleStartClientsOnNode dispatcher") Nothing
 
 processStopProcessesOnNode :: Job StopProcessesOnNodeRequest StopProcessesOnNodeResult
 processStopProcessesOnNode = Job "castor::node::stop-processes"
