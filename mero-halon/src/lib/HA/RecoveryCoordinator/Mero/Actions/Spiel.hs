@@ -488,7 +488,7 @@ syncToBS = loadConfData >>= \case
   Just tx -> getHalonVar _hv_mero_workers_allowed >>= \case
     True -> do
       M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
-      wrk <- DP.liftIO $ newM0Worker
+      wrk <- DP.liftIO newM0Worker
       bs <- txOpenLocalContext (mkLiftRC wrk)
         >>= txPopulate (mkLiftRC wrk) tx
         >>= m0synchronously (mkLiftRC wrk) . flip txToBS verno
@@ -496,7 +496,7 @@ syncToBS = loadConfData >>= \case
       return bs
     False -> do
       phaseLog "warn" "syncToBS: returning empty string due to HalonVars"
-      return $! BS.empty
+      return BS.empty
   Nothing -> error "Cannot load configuration data from graph."
 
 data Synchronized = Synchronized (Maybe Int) (Either String ()) deriving (Generic, Show)

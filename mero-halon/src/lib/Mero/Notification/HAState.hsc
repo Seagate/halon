@@ -166,11 +166,6 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 instance Hashable ServiceEventType
 deriveSafeCopy 0 'base ''ServiceEventType
 
-data ServiceEvent_v0 = ServiceEvent_v0
-  { _chs_event0 :: ServiceEventType
-  , _chs_type0 :: ServiceType
-  } deriving (Show, Eq, Ord, Typeable, Generic)
-
 -- | @m0_conf_ha_service@.
 data ServiceEvent = ServiceEvent
   { _chs_event :: ServiceEventType
@@ -180,12 +175,7 @@ data ServiceEvent = ServiceEvent
 
 instance Hashable ServiceEvent
 
-instance Migrate ServiceEvent where
-  type MigrateFrom ServiceEvent = ServiceEvent_v0
-  migrate (ServiceEvent_v0 e t) = ServiceEvent e t (-1)
-
-deriveSafeCopy 0 'base ''ServiceEvent_v0
-deriveSafeCopy 1 'extension ''ServiceEvent
+deriveSafeCopy 0 'base ''ServiceEvent
 
 -- | @m0_be_location@.
 data {-# CTYPE "be/ha.h" "struct m0_be_location" #-}
