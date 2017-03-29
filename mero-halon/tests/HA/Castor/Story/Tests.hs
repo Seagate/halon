@@ -547,7 +547,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         case msdev of
           Nothing -> liftProcess $ usend caller (Nothing :: Maybe M0.SDev)
           Just sdev -> do
-            applyStateChanges [ stateSet sdev $ TrI.constTransition devSt ]
+            _ <- applyStateChanges [ stateSet sdev $ TrI.constTransition devSt ]
             liftProcess . usend caller $ Just sdev
 
       start rule_init ()

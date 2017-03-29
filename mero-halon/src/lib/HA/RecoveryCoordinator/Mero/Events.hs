@@ -4,6 +4,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE ViewPatterns              #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Events
@@ -137,6 +138,12 @@ data AnyStateChange =
   deriving (Typeable)
 
 deriving instance Show AnyStateChange
+
+instance Eq AnyStateChange where
+  AnyStateChange (a :: a) oa na _ == AnyStateChange (b :: b) ob nb _ =
+    case eqT of
+      Just (Refl :: a :~: b) -> a == b && oa == ob && na == nb
+      _ -> False
 
 -- | Event sent when the state of an object changes internally to Halon.
 --   This event should be sent *after* the state of the references objects

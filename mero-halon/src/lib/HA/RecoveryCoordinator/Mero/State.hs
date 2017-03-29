@@ -167,11 +167,14 @@ createDeferredStateChanges stateSets rg =
         io' = x : io
 
 -- | Apply a number of state changes.
-applyStateChanges :: [AnyStateSet] -> PhaseM RC l ()
+applyStateChanges :: [AnyStateSet] -> PhaseM RC l [AnyStateChange]
 applyStateChanges ass = getLocalGraph >>= \rg -> do
   let (warns, changes) = createDeferredStateChanges ass rg
   for_ warns $ phaseLog "warn"
   applyDeferredStateChanges changes
+  let DeferredStateChanges _ _ (InternalObjectStateChange i) = changes
+  return i
+
 
 -- | Apply deferred state changes in the standard order.
 applyDeferredStateChanges :: DeferredStateChanges -> PhaseM RC l ()

@@ -170,7 +170,7 @@ testConfObjectStateQuery transport pg = do
       setPhase init_state $ \(WaitFailedSDev caller m0sdev st) -> do
         let state = M0.sdsFailTransient st
         put Local (caller, m0sdev, state)
-        applyStateChanges [ stateSet m0sdev Tr.sdevFailTransient ]
+        _ <- applyStateChanges [ stateSet m0sdev Tr.sdevFailTransient ]
         continue wait_failure
 
       setPhaseNotified wait_failure (\(_, m0sdev, st) -> Just (m0sdev, (== st))) $ \(d, st) -> do

@@ -22,7 +22,7 @@
 --    * Reset - castor specific procedule of drive reset. This procedure
 --       tries to recover disk in case if error appeared on the mero side.
 --       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Reset" for details.
-
+--
 --    * Repair - mero specific procedure of recovering data in case of
 --       disk failure or new drive insertion.
 --       See "HA.RecoveryCoordinator.Castor.Rules.Disk.Repair" for details.
@@ -114,7 +114,7 @@ mkCheckAndHandleDriveReady smartLens next = do
         getState m0sdev <$> getLocalGraph >>= \case
           SDSUnknown -> do
             -- We do not know the old state, so set the new state to online
-            applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
+            _ <- applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
             next m0sdev
           SDSOnline -> return () -- Do nothing
           SDSFailed -> do
@@ -137,7 +137,7 @@ mkCheckAndHandleDriveReady smartLens next = do
                 continue abort_result
           SDSTransient _ -> do
             -- Transient failure - recover
-            applyStateChanges [ stateSet m0sdev Tr.sdevRecoverTransient]
+            _ <- applyStateChanges [stateSet m0sdev Tr.sdevRecoverTransient]
             next m0sdev
           SDSRebalancing -> next m0sdev
           SDSInhibited _ -> do
@@ -237,7 +237,7 @@ mkCheckAndHandleDriveReady smartLens next = do
                     , SDSUnknown == getState sdev rg
                     -> do
             Log.rcLog' Log.DEBUG "Device is already attached."
-            applyStateChanges [ stateSet sdev Tr.sdevReady]
+            _ <- applyStateChanges [ stateSet sdev Tr.sdevReady]
             onFailure
           Just sdev | Just (M0.d_path sdev) == disk_path
                     , SDSOnline == getState sdev rg
@@ -272,7 +272,7 @@ ruleDriveRemoved = define "drive-removed" $ do
   removal  <- phaseHandle "removal"
 
   let post_process m0sdev = do
-        applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
+        _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
         t <- getHalonVar _hv_drive_removal_timeout
         switch [reinsert, timeout t removal]
 
@@ -306,7 +306,7 @@ ruleDriveRemoved = define "drive-removed" $ do
   directly removal $ do
     Just (_, _, _, m0sdev) <- get Local
     Log.rcLog' Log.DEBUG "Notifying M0_NC_FAILED for sdev"
-    applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
+    _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
     continue finish
 
   startFork pinit Nothing
@@ -375,7 +375,7 @@ ruleDriveInserted = define "drive-inserted" $ do
                            , diDevice = disk
                            , diPowered = mpowered
                            }), _) <- get Local
-    for_ mpowered $ \powered -> 
+    for_ mpowered $ \powered ->
       if powered
       then StorageDevice.poweron disk
       else StorageDevice.poweroff disk
@@ -425,7 +425,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       Just b -> y b g l
 
   let post_process m0sdev = do
-        applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
+        _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
         continue post_power_removed
   (device_detached, detachDisk) <- mkDetachDisk
     (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)

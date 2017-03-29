@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Castor.Process.Rules
 
 import           Control.Distributed.Process (Process)
 import           Control.Lens
-import           Control.Monad (unless)
+import           Control.Monad (unless, void)
 import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.List (nub)
@@ -145,7 +145,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   let defaultReply c m = do
         phaseLog "warn" m
         ProcessStartRequest p <- getRequest
-        applyStateChanges [ stateSet p $ Tr.processFailed m ]
+        _ <- applyStateChanges [ stateSet p $ Tr.processFailed m ]
         return (c p m, [finish])
 
   let fail_start m = snd <$> defaultReply ProcessStartFailed m
@@ -174,9 +174,8 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
                 False -> configure
                 True -> start_process
 
-              let notifications = [stateSet p Tr.processStarting]
+              notifications <- applyStateChanges [stateSet p Tr.processStarting]
               setExpectedNotifications notifications
-              applyStateChanges notifications
               return $ Right (ProcessStartFailed p "default", [dispatch])
 
   directly starting_notify_timed_out $ do
@@ -224,7 +223,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
                       "Independent CLOVIS process; only writing configuration."
           modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
           -- Put the process in unknown state again.
-          applyStateChanges [ stateSet p Tr.processUnknown ]
+          _ <- applyStateChanges [ stateSet p Tr.processUnknown ]
           continue finish
         _ -> continue start_process
 
@@ -473,7 +472,7 @@ ruleProcessStarting = define "castor::process::starting" $ do
       (st, _) | isEphemeral p rg -> do
         Log.rcLog' Log.DEBUG "Ephemeral process starting."
         Log.rcLog' Log.DEBUG ("oldState", show st)
-        applyStateChanges [ stateSet p Tr.processStarting ]
+        _ <- applyStateChanges [ stateSet p Tr.processStarting ]
         modifyGraph $ G.connect p Has processPid
 
       -- Process is not ephemeral, and we are not expecting this transition.
@@ -537,7 +536,7 @@ ruleProcessOnline = define "castor::process::online" $ do
                                Nothing -> []
                                Just n -> [stateSet n Tr.nodeOnline]
                         else []
-        applyStateChanges $ stateSet p Tr.processOnline : nodeNotif
+        void . applyStateChanges $ stateSet p Tr.processOnline : nodeNotif
 
       -- TODO: We need this case because when node rejoins, we do not
       -- set PSStarting on halon:m0d which is already in RG, it just
@@ -548,7 +547,7 @@ ruleProcessOnline = define "castor::process::online" $ do
         phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
         phaseLog "info" $ "process.pid     = " ++ show processPid
         modifyGraph $ G.connect p Has processPid
-        case G.connectedFrom M0.IsParentOf p rg of
+        void $! case G.connectedFrom M0.IsParentOf p rg of
           Nothing -> do
             phaseLog "warn" $ "No node associated with " ++ show (M0.fid p)
             applyStateChanges [ stateSet p Tr.processHAOnline ]
@@ -583,10 +582,10 @@ ruleProcessStopping = define "castor::process::stopping" $ do
     getLocalGraph >>= \rg -> case getState p rg of
       M0.PSOnline -> do
         Log.rcLog' Log.DEBUG "Ephemeral process stopping."
-        applyStateChanges [ stateSet p Tr.processStopping ]
+        void $ applyStateChanges [ stateSet p Tr.processStopping ]
       (M0.PSInhibited M0.PSOnline) -> do
         Log.rcLog' Log.DEBUG "Ephemeral process stopping under inhibition."
-        applyStateChanges [ stateSet p Tr.processStopping ]
+        void $ applyStateChanges [ stateSet p Tr.processStopping ]
       st -> do
         Log.rcLog' Log.WARN "Ephemeral process unexpectedly reported stopping."
         Log.rcLog' Log.WARN ("oldState", show st)
@@ -633,12 +632,12 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
           -- We are intending to stop this process. Either this or the
           -- notification from systemd should be sufficient to mark it
           -- as stopped.
-          applyStateChanges [stateSet p Tr.processOffline]
+          void $ applyStateChanges [stateSet p Tr.processOffline]
         -- Harmless case, we have probably just stopped the process
         -- through ruleProcessStop already.
         M0.PSOffline ->
           phaseLog "info" $ "PROCESS_STOPPED for already-offline process"
-        _ -> applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
+        _ -> void $ applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
     done eid
 
   startFork rule_init ()
@@ -674,41 +673,37 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
   process_services_offline <- phaseHandle "process_services_offline"
   no_response <- phaseHandle "no_response"
   dispatch <- mkDispatcher
-  notifier <- mkNotifierSimple dispatch
+  notifier <- mkNotifier dispatch
 
   let quiesce (StopProcessRequest p) = do
         showContext
         phaseLog "info" $ "Setting processes to quiesce."
-        let notification = stateSet p Tr.processQuiescing
         waitFor notifier
         onTimeout 10 run_stopping
         onSuccess run_stopping
-        setExpectedNotifications [notification]
-        applyStateChanges [notification]
+        notifications <- applyStateChanges [stateSet p Tr.processQuiescing]
+        setExpectedNotifications $ map (==) notifications
         return $ Right (StopProcessTimeout p, [dispatch])
 
   directly run_stopping $ do
     StopProcessRequest p <- getRequest
     phaseLog "info" $ "Notifying about process stopping."
-    let notifications = [stateSet p Tr.processStopping]
-
     waitClear
     waitFor notifier
     onSuccess stop_process
     onTimeout 10 stop_process
-    setExpectedNotifications notifications
-    applyStateChanges notifications
+    notifications <- applyStateChanges [stateSet p Tr.processStopping]
+    setExpectedNotifications $ map (==) notifications
     continue dispatch
 
   let notifyProcessFailed p failMsg = do
-        let notifications = [stateSet p $ Tr.processFailed failMsg]
         setReply $ StopProcessResult (p, M0.PSFailed failMsg)
         waitClear
         waitFor notifier
         onSuccess finish
         onTimeout 10 finish
-        setExpectedNotifications notifications
-        applyStateChanges notifications
+        notifications <- applyStateChanges [stateSet p $ Tr.processFailed failMsg]
+        setExpectedNotifications $ map (==) notifications
         continue dispatch
 
   directly stop_process $ do
@@ -747,7 +742,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
         let svcs = [ s | s :: M0.Service <- G.connectedTo p M0.IsParentOf rg
                        , getState s rg == M0.SSStopping
                        ]
-        let notifications = map (`stateSet` Tr.serviceOffline) svcs
+        let notifications = map (\s -> simpleNotificationToPred $ stateSet s Tr.serviceOffline) svcs
         waitClear
         waitFor notifier
         onSuccess process_services_offline
@@ -778,13 +773,12 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     if getState p rg == M0.PSOffline
     then continue finish
     else do
-      let notifications = [stateSet p Tr.processOffline]
       waitClear
       waitFor notifier
       onSuccess finish
       onTimeout 20 no_response
-      setExpectedNotifications notifications
-      applyStateChanges notifications
+      notifications <- applyStateChanges [stateSet p Tr.processOffline]
+      setExpectedNotifications $ map (==) notifications
       continue dispatch
 
   directly no_response $ do
@@ -809,12 +803,13 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe StopProcessResult)
     fldRep = Proxy
+    fldN = Proxy :: Proxy '("notifications", [AnyStateChange -> Bool])
 
-    args = fldReq           =: Nothing
-       <+> fldRep           =: Nothing
-       <+> fldUUID          =: Nothing
-       <+> fldNotifications =: []
-       <+> fldDispatch      =: Dispatch [] (error "ruleProcessStop dispatcher") Nothing
+    args = fldReq      =: Nothing
+       <+> fldRep      =: Nothing
+       <+> fldUUID     =: Nothing
+       <+> fldN        =: []
+       <+> fldDispatch =: Dispatch [] (error "ruleProcessStop dispatcher") Nothing
 
     setReply r = modify Local $ rlens fldRep . rfield .~ Just r
 
@@ -857,7 +852,8 @@ ruleFailedNotificationFailsProcess =
     -- handler for failed notifications so there isn't anything sane
     -- we could do here anyway.
     unless (null procs) $ do
-      applyStateChanges $ map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
+      void . applyStateChanges $
+        map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
   where
     isProcFailed (M0.PSFailed _) = True
     isProcFailed _ = False

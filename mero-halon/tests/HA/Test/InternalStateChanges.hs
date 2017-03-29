@@ -85,7 +85,7 @@ stateCascade t pg = do
               , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
               ]
           srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
-      applyStateChanges [stateSet p Tr.processStarting]
+      _ <- applyStateChanges [stateSet p Tr.processStarting]
       rg' <- getLocalGraph
 
       let allOK = getState p rg'  == M0.PSStarting
@@ -117,7 +117,7 @@ failvecCascade t pg = do
               , (disk :: M0.Disk) <- G.connectedTo controller M0.IsParentOf rg
               ]
           disks = [d0, d1]
-      applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
+      _ <- applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
       rg' <- getLocalGraph
 
       let pools =

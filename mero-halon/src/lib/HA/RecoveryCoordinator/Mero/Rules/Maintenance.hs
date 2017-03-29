@@ -50,5 +50,5 @@ ruleUpdateObjectState = defineSimpleTask "mero::maintenance::update-object-state
                [(st, _)] -> do tell [stateSet o $ constTransition st]
                                return Success
                _ -> return ParseFailed
-     applyStateChanges updates
+     _ <- applyStateChanges updates
      liftProcess $ sendChan chan $ ForceObjectStateUpdateReply results

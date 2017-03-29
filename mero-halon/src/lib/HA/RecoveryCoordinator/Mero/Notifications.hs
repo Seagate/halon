@@ -24,9 +24,8 @@
 --   notifier <- 'mkNotifierSimple' dispatcher
 --
 --   'setPhase' notify_process_online $ \(SomeProcess p) -> do
---     let notifications = [stateSet p processOnline]
+--     notifications <- 'applyStateChanges' ['stateSet' p processOnline]
 --     'setExpectedNotifications' notifications
---     'applyStateChanges' notifications
 --     'waitFor' notifier
 --     'onTimeout' 10 notify_timed_out
 --     'onSuccess' notify_succeeded
@@ -76,7 +75,7 @@ import           Network.CEP
 type FldNotifications a = '("notifications", [a])
 
 -- | An instance of 'FldNotifications' field over 'AnyStateSet'.
-fldNotifications :: Proxy (FldNotifications AnyStateSet)
+fldNotifications :: Proxy (FldNotifications AnyStateChange)
 fldNotifications = Proxy
 
 -- | A helper to set 'FldNotifications' in the local state.
@@ -120,6 +119,7 @@ mkNotifier' toPred dispatcher act = do
   directly check_notifications $ do
     gets Local (^. rlens fldN . rfield) >>= \case
       [] -> do
+        Log.rcLog' Log.DEBUG "No notifications given, completing trivially."
         waitDone check_notifications
         act
         continue dispatcher
@@ -177,20 +177,20 @@ mkNotifier' toPred dispatcher act = do
 -- to perform after the notification phase is finished working. This
 -- action can be used to perform any additional clean-up, such as by
 -- removing ('waitDone') any potential abort phases &c.
-mkNotifierSimpleAct :: (FldDispatch ∈ l, FldNotifications AnyStateSet ∈ l)
+mkNotifierSimpleAct :: (FldDispatch ∈ l, FldNotifications AnyStateChange ∈ l)
                     => Jump PhaseHandle
                     -- ^ Dispatcher handle
                     -> PhaseM RC (FieldRec l) ()
                     -- ^ Act to perform after notifier phase is finished.
                     -> RuleM RC (FieldRec l) (Jump PhaseHandle)
-mkNotifierSimpleAct = mkNotifier' simpleNotificationToPred
+mkNotifierSimpleAct = mkNotifier' (==)
 
 -- | 'mkNotifierSimpleAct' with an action that does nothing.
-mkNotifierSimple :: (FldDispatch ∈ l, FldNotifications AnyStateSet ∈ l)
+mkNotifierSimple :: (FldDispatch ∈ l, FldNotifications AnyStateChange ∈ l)
                  => Jump PhaseHandle
                  -- ^ Dispatcher handle
                  -> RuleM RC (FieldRec l) (Jump PhaseHandle)
-mkNotifierSimple h = mkNotifier' simpleNotificationToPred h (return ())
+mkNotifierSimple h = mkNotifier' (==) h (return ())
 
 -- | 'mkNotifierSimpleAct' where notification set is already in
 -- @'AnyStateChange -> 'Bool'@ form.
@@ -218,13 +218,12 @@ mkNotifier h = mkNotifierAct h (return ())
 -- us to eliminate these transitions when looking through the set of
 -- 'AnyStateChange's.
 simpleNotificationToPred :: AnyStateSet -> AnyStateChange -> Bool
-simpleNotificationToPred (AnyStateSet a tr) (AnyStateChange (obj :: objT) o n _) =
-  case (cast a, cast tr) of
-    (Just (a' :: objT), Just (tr' :: Transition objT)) ->
-      obj == a' && case runTransition tr' o of
-        TransitionTo n' -> n == n'
-        NoTransition -> True
-        _ -> False
+simpleNotificationToPred (AnyStateSet (a :: a) tr) (AnyStateChange (obj :: b) o n _) =
+  case eqT of
+    Just (Refl :: a :~: b) | obj == a -> case runTransition tr o of
+      TransitionTo n' -> n == n'
+      NoTransition -> True
+      _ -> False
     _ -> False
 
 -- | Given a predicate on object state, retrieve all objects and

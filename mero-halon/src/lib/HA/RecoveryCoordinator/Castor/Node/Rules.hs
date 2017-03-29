@@ -230,10 +230,8 @@ eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNo
 -- Listens:      'MeroKernelFailed'
 -- State-Changes: 'M0.Node' Failed
 eventKernelFailed :: Definitions RC ()
-eventKernelFailed = define "castor::node::event::kernel-failed" $ do
-  mero_kernel_failed <- phaseHandle "mero_kernel_failed"
-
-  setPhaseIf mero_kernel_failed g $ \(uid, nid, msg) -> do
+eventKernelFailed = defineSimpleIf "castor::node::event::kernel-failed" g $
+  \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
     let node = R.Node nid
@@ -245,11 +243,9 @@ eventKernelFailed = define "castor::node::event::kernel-failed" $ do
     promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d rg)
     for_ mm0node $ notify . KernelStartFailure
     done uid
-
-  start mero_kernel_failed ()
   where
-    g (HAEvent uid (MeroKernelFailed nid msg)) _ _ = return $! Just (uid, nid, msg)
-    g _ _ _ = return Nothing
+    g (HAEvent uid (MeroKernelFailed nid msg)) _ = return $! Just (uid, nid, msg)
+    g _ _ = return Nothing
 
 -- | Handle a case when mero-cleanup failed to start on the node. Currently we
 --   treat this as a kernel failure, as it effectively is.
@@ -257,10 +253,8 @@ eventKernelFailed = define "castor::node::event::kernel-failed" $ do
 -- Listens:      'MeroCleanupFailed'
 -- State-Changes: 'M0.Node' Failed
 eventCleanupFailed :: Definitions RC ()
-eventCleanupFailed = define "castor::node::event::cleanup-failed" $ do
-  cleanup_failed <- phaseHandle "cleanup-failed"
-
-  setPhaseIf cleanup_failed g $ \(uid, nid, msg) -> do
+eventCleanupFailed = defineSimpleIf "castor::node::event::cleanup-failed" g $
+  \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
     let node = R.Node nid
@@ -272,11 +266,9 @@ eventCleanupFailed = define "castor::node::event::cleanup-failed" $ do
     promulgateRC $ encodeP $ ServiceStopRequest node (lookupM0d rg)
     for_ mm0node $ notify . KernelStartFailure
     done uid
-
-  start cleanup_failed ()
   where
-    g (HAEvent uid (MeroCleanupFailed nid msg)) _ _ = return $! Just (uid, nid, msg)
-    g _ _ _ = return Nothing
+    g (HAEvent uid (MeroCleanupFailed nid msg)) _ = return $! Just (uid, nid, msg)
+    g _ _ = return Nothing
 
 -- | Handle error being thrown from Mero BE. This typically indicates something
 --   like a RAID failure, but there's nothing we can do about it. It indicates
@@ -299,7 +291,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
                  ( "{ 'metadata':" <> code meta
                 <> ", 'beError':" <> code beioerr
                 <> "}" )
-              applyStateChanges [stateSet node nodeFailed]
+              void $ applyStateChanges [stateSet node nodeFailed]
             where
               code :: Aeson.ToJSON a => a -> T.Text
               code = TL.toStrict . TL.decodeUtf8 . Aeson.encode
@@ -364,7 +356,7 @@ requestStopHalonM0d = mkJobRule halonM0dStopJob args $ \(JobHandle _ finish) -> 
           Just hp -> do
             -- Only apply state change when we're online.
             when (M0.getState hp rg == M0.PSOnline) $ do
-              applyStateChanges [stateSet hp processHAStopping]
+              void $ applyStateChanges [stateSet hp processHAStopping]
             j <- startJob . encodeP $ ServiceStopRequest node (lookupM0d rg)
             modify Local $ rlens fldJob . rfield .~ Just j
             return $ Right ( HalonM0dStopResult ServiceStopTimedOut
@@ -412,7 +404,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   query_host_info <- mkQueryHostInfo config_created finish
   (synchronized, synchronize) <- mkSyncToConfd (rlens fldConfSyncState . rfield) announce
   dispatch <- mkDispatcher
-  notifier <- mkNotifierSimple dispatch
+  notifier <- mkNotifier dispatch
 
   let route node = getFilesystem >>= \case
         Nothing -> return [wait_data_load]
@@ -500,7 +492,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
             sendSvc (getInterface $ lookupM0d rg) nid AnnounceYourself
             t <- _hv_mero_kernel_start_timeout <$> getHalonVars
             waitClear
-            setExpectedNotifications [stateSet ha processHAOnline]
+            setExpectedNotifications
+              [simpleNotificationToPred $ stateSet ha processHAOnline]
             waitFor notifier
             onSuccess announce
             onTimeout t finish
@@ -523,10 +516,10 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     initialDataLoaded Event.InitialDataLoaded _ _ = return $ Just ()
     initialDataLoaded Event.InitialDataLoadFailed{} _ _ = return Nothing
 
-    fldReq :: Proxy '("request", Maybe StartProcessNodeNew)
-    fldReq = Proxy
-    fldRep :: Proxy '("reply", Maybe NewMeroServer)
-    fldRep = Proxy
+    fldReq = Proxy :: Proxy '("request", Maybe StartProcessNodeNew)
+    fldRep = Proxy :: Proxy '("reply", Maybe NewMeroServer)
+    fldN  = Proxy :: Proxy '("notifications", [AnyStateChange -> Bool])
+
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
        <+> fldHostHardwareInfo =: Nothing
@@ -534,7 +527,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
        <+> fldConfSyncState =: defaultConfSyncState
-       <+> fldNotifications =: []
+       <+> fldN =: []
        <+> fldDispatch =: Dispatch [] (error "ruleNodeNew dispatch") Nothing
 
 -- | Rule fragment: query node hardware information.
@@ -650,7 +643,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     dix_failure       <- phaseHandle "dix_failure"
     kernel_timeout    <- phaseHandle "kernel_timeout"
     dispatch          <- mkDispatcher
-    notifier          <- mkNotifierSimpleAct dispatch waitClear
+    notifier          <- mkNotifierAct dispatch waitClear
 
     let route (StartProcessesOnNodeRequest m0node) = do
           Log.tagContext Log.SM m0node Nothing
@@ -680,7 +673,8 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
                     phaseLog "info" $ "Waiting for halon:m0d to come up on " ++ show m0node
                     t <- _hv_mero_kernel_start_timeout <$> getHalonVars
                     waitClear
-                    setExpectedNotifications [stateSet ha processHAOnline]
+                    setExpectedNotifications
+                      [simpleNotificationToPred $ stateSet ha processHAOnline]
                     waitFor notifier
                     waitFor kernel_failed
                     onSuccess boot_level_0
@@ -827,12 +821,13 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     fldReq = Proxy :: Proxy '("request", Maybe StartProcessesOnNodeRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe StartProcessesOnNodeResult)
     fldWaitingProcs = Proxy :: Proxy '("waiting-procs", [M0.Process])
+    fldN  = Proxy :: Proxy '("notifications", [AnyStateChange -> Bool])
     args = fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldNode =: Nothing
        <+> fldRep  =: Nothing
        <+> fldHost =: Nothing
-       <+> fldNotifications =: []
+       <+> fldN =: []
        <+> fldWaitingProcs =: []
        <+> fldDispatch =: Dispatch [] (error "ruleStartProcessOnNode dispatcher") Nothing
 
@@ -1068,7 +1063,7 @@ ruleFailNodeIfProcessCantRestart =
       phaseLog "info" $ "Process start failure for " ++ M0.showFid p ++ ": " ++ r
       rg <- getLocalGraph
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
-      applyStateChanges $ map (`stateSet` nodeFailed) m0ns
+      void . applyStateChanges $ map (`stateSet` nodeFailed) m0ns
     _ -> return ()
 
 processMaintenaceStopNode :: Job MaintenanceStopNode MaintenanceStopNodeResult

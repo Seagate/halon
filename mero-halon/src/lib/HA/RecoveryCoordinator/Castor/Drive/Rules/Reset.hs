@@ -52,12 +52,7 @@ import Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 import Control.Distributed.Process
   ( Process )
 import Control.Lens
-import Control.Monad
-  ( forM_
-  , when
-  , unless
-  , join
-  )
+import Control.Monad (forM_, when, unless, join, void)
 import Data.Either (isRight)
 import Data.Foldable (for_)
 import Data.Proxy (Proxy(..))
@@ -183,8 +178,8 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
               either
                 (\failedTransition -> do
                   iemFailureOverTolerance m0sdev
-                  applyStateChanges [ failedTransition ])
-                (\okTransition -> applyStateChanges [ okTransition ])
+                  void $ applyStateChanges [ failedTransition ])
+                (\okTransition -> void $ applyStateChanges [ okTransition ])
                 sdevTransition
 
               promulgateRC $ ResetAttempt sdev
@@ -288,7 +283,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
-               applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
+               _ <- applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
                ResetAttempt sdev <- getRequest
                modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
              -- Drives in repaired/rebalancing state never go into
@@ -334,8 +329,8 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
             M0.SDSTransient _ -> do
               either (\failedTransition -> do
                          iemFailureOverTolerance m0sdev
-                         applyStateChanges [ failedTransition ])
-                     (\okTransition -> applyStateChanges [ okTransition ])
+                         void $ applyStateChanges [ failedTransition ])
+                     (\okTransition -> void $ applyStateChanges [ okTransition ])
                      sdevTransition
             x -> do
               phaseLog "info" $ "Cannot bring drive Failed from state "
