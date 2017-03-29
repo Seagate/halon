@@ -133,25 +133,15 @@ data SpielAddress = SpielAddress {
 instance Binary SpielAddress
 instance Hashable SpielAddress
 
-data SyncToConfd_0 =
-      SyncToConfdServersInRG_0
-    | SyncDumpToBS_0 ProcessId
-  deriving (Eq, Generic, Show, Typeable)
-
 data SyncToConfd =
       SyncToConfdServersInRG Bool
+      -- | Used by halonctl
     | SyncDumpToBS ProcessId
   deriving (Eq, Generic, Show, Typeable)
 
-instance Migrate SyncToConfd where
-  type MigrateFrom SyncToConfd = SyncToConfd_0
-  migrate SyncToConfdServersInRG_0 = SyncToConfdServersInRG False
-  migrate (SyncDumpToBS_0 p) = SyncDumpToBS p
-
 instance Hashable SyncToConfd
 storageIndex ''SyncToConfd "6990a155-7db8-48a9-91e8-d49b75d16b25"
-deriveSafeCopy 0 'base ''SyncToConfd_0
-deriveSafeCopy 1 'extension ''SyncToConfd
+deriveSafeCopy 0 'base ''SyncToConfd
 
 newtype SyncDumpToBSReply = SyncDumpToBSReply (Either String BS.ByteString)
   deriving (Eq, Generic, Show, Typeable)

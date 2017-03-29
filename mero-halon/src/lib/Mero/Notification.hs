@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -363,7 +364,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                  -- and those messages should be processed. So we fork
                  -- a worker that processes them. Because our thread
                  -- would be blocked.
-                 d <- newTVarIO False 
+                 d <- newTVarIO False
                  tid <- forkM0OS $ fix $ \loop -> do
                           et <- atomically $ (pure Nothing <* (check =<< readTVar d))
                                   `orElse` (Just <$> readTChan taskPool)
