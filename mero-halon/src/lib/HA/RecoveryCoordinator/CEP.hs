@@ -235,6 +235,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
   timeout_host <- phaseHandle "timeout_host"
 
   let start_recover (RecoverNode n1) = do
+        RCLog.tagContext RCLog.SM n1 Nothing
         g <- getLocalGraph
         st <- case G.connectedFrom Runs n1 g of
           Nothing -> do
@@ -243,6 +244,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
             modify Local $ rlens fldNode .~ Field (Just n1)
             modify Local $ rlens fldHost .~ Field (Just host)
             modify Local $ rlens fldRetries .~ Field (Just 0)
+            RCLog.tagContext RCLog.SM [("host" :: String, show host)] Nothing
             hasHostAttr M0.HA_TRANSIENT host >>= \case
               -- Node not already marked as down so mark it as such and
               -- notify mero
@@ -252,7 +254,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 -- monitor disconnects and not here: what if node came
                 -- back before recovery fired? unlikely but who knows
                 case nodeToM0Node n1 g of
-                  Nothing -> phaseLog "warn" $ "Couldn't find a mero node for " ++ show n1
+                  Nothing -> RCLog.rcLog' RCLog.WARN ("Couldn't find mero node." :: String)
                   Just n -> applyStateChanges [stateSet n nodeFailed]
                 -- if the node is a mero server then power-cycle it.
                 -- Client nodes can run client-software that may not be
@@ -263,12 +265,15 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
               -- the simple thing and start the recovery all over: as
               -- long as the RC doesn't die more often than a full node
               -- timeout happens, we'll finish the recovery eventually
-              True -> return $ Right ()
+              True -> do
+                RCLog.rcLog' RCLog.DEBUG $ "Node already marked down; starting "
+                                        ++ "recovery again."
+                return $ Right ()
 
         case st of
           Left e -> return $ Left e
           Right{}  -> do
-            phaseLog "info" $ "Marked transient: " ++ show n1
+            RCLog.rcLog' RCLog.DEBUG ("Marked transient." :: String)
             notify $ NodeTransient n1
             return $ Right (RecoverNodeFinished n1, [try_recover])
 
@@ -276,14 +281,16 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     -- If max retries is negative, we keep doing recovery
     -- indefinitely.
     maxRetries <- getHalonVar _hv_recovery_max_retries
+    RCLog.tagContext RCLog.SM [("Max retries" :: String, show maxRetries)] Nothing
     Just node@(Node nid) <- getField . rget fldNode <$> get Local
     Just h <- getField . rget fldHost <$> get Local
     Just i <- getField . rget fldRetries <$> get Local
+    RCLog.rcLog' RCLog.DEBUG ("Current retries" :: String, show i)
     if maxRetries > 0 && i >= maxRetries
     then continue timeout_host
     else hasHostAttr M0.HA_TRANSIENT h >>= \case
            False -> do
-             phaseLog "info" $ "Recovery complete for " ++ show node
+             RCLog.rcLog' RCLog.DEBUG ("Recovery complete." :: String)
              modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
              -- It may be possible that node already joined and failed again.
              -- in this case new recovery rule will not be running, because
@@ -292,10 +299,11 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
              addNodeToCluster (eqNodes argv) node
              continue finish
            True -> do
-             phaseLog "info" $ "Recovery call #" ++ show i ++ " for " ++ show h
+             RCLog.rcLog' RCLog.DEBUG ("Attempting recovery." :: String)
              notify $ RecoveryAttempt node i
              modify Local $ rlens fldRetries .~ Field (Just $ i + 1)
-             phaseLog "test" $ "Sending nodeUp on " ++ show nid ++ " using " ++ show (eqNodes argv)
+             RCLog.rcLog' RCLog.TRACE $ "Sending nodeUp on " ++ show nid
+                                      ++ " using " ++ show (eqNodes argv)
              void . liftProcess . callLocal . spawnAsync nid $
                $(mkClosure 'nodeUp) (eqNodes argv)
              expirySeconds <- getHalonVar _hv_recovery_expiry_seconds
@@ -309,7 +317,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
              let t' = if abs maxRetries < i
                       then expirySeconds
                       else expirySeconds `div` abs maxRetries
-             phaseLog "info" $ "Trying recovery again in " ++ show t' ++ " seconds for " ++ show h
+             RCLog.rcLog' RCLog.DEBUG $ "Trying recovery again in " ++ show t' ++ " seconds."
              switch [timeout t' try_recover, node_up]
 
   setPhaseIf node_up (\(NewNodeConnected node) _ l -> do
@@ -351,8 +359,12 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     -- IEM otherwise.
     rebootOrLogHost :: Host -> PhaseM RC l ()
     rebootOrLogHost host@(Host hst) = do
+      RCLog.actLog "rebootOrLogHost" [("host", show host)]
       isServer <- hasHostAttr HA_M0SERVER host
       isClient <- hasHostAttr HA_M0CLIENT host
+      RCLog.rcLog' RCLog.DEBUG [("isServer" :: String, show isServer)
+                               ,("isClient" :: String, show isClient)
+                               ]
       case () of
         _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed
                                   ( "{ 'hostname': \"" <> T.pack hst <> "\", "
@@ -361,12 +373,12 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
           | isServer -> do
               nodesOnHost host >>= \case
                 [] -> do
-                  phaseLog "warn" $ "Cannot find nodes corresponding to " ++ show host
+                  RCLog.rcLog' RCLog.WARN ("Cannot find nodes on host." :: String)
                 nodes -> void $ do
                   HA.Services.SSPL.CEP.sendNodeCmd nodes Nothing $
                     IPMICmd IPMI_CYCLE (T.pack hst)
           | otherwise ->
-              phaseLog "warn" $ show host ++ " not labeled as server or client"
+              RCLog.rcLog' RCLog.WARN ("Host not labeled as server or client" :: String)
 
 -- | Ask RC for its pid. Send the answer back to given process.
 newtype RequestRCPid = RequestRCPid ProcessId
