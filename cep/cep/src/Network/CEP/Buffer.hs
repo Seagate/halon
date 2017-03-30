@@ -84,11 +84,11 @@ fifoBuffer tpe = Buffer $ go empty 0
     go xs _ Length = length xs
     go xs _ Display = show $ toList xs
     go xs _ Indexes = toList $ fmap fst xs
-    go xs idx (Drop i) = 
+    go xs idx (Drop i) =
         let loop cur =
               case viewl cur of
                 EmptyL -> Buffer $ go empty idx
-                elm@(ei,e) :< rest
+                elm@(ei, _) :< rest
                   | ei < i -> loop rest
                   | otherwise -> Buffer $ go (elm <| rest) idx in
         loop xs

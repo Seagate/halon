@@ -16,17 +16,14 @@ module Mero.Concurrent
   , addM0Finalizer
   ) where
 
-import Control.Concurrent      (myThreadId, ThreadId, rtsSupportsBoundThreads, killThread)
+import Control.Concurrent      (myThreadId, ThreadId, rtsSupportsBoundThreads)
 import Control.Concurrent.MVar
 import Control.Monad           (when)
 import Foreign.C.Types         (CInt(..))
 import Foreign.Marshal.Alloc   (mallocBytes)
 import Foreign.Ptr             (FunPtr, Ptr)
-import Data.Foldable           (forM_)
 import System.IO.Unsafe        (unsafePerformIO)
-import Data.IORef              (IORef, newIORef, modifyIORef, atomicModifyIORef)
-
-import System.IO
+import Data.IORef              (IORef, newIORef, atomicModifyIORef)
 #include "lib/thread.h"
 
 

@@ -57,6 +57,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Internal.Primitives (SayMessage(..))
 import Control.Distributed.Process.Internal.Types (runLocalProcess)
 import Control.Exception as E (evaluate, onException, SomeException, throwIO)
+import qualified Control.Monad.Catch as C
 import Control.Monad.Reader (ask, when)
 import qualified Data.ByteString.Base64.Lazy as B64
 import Data.Binary (decode, encode, Binary)
@@ -166,7 +167,7 @@ spawnNodeWith ioSpawn cmd = do
       cmd
     -- The following try handles the exception that would result when the caller
     -- interrupts the call because it takes too long.
-    enid <- try expect
+    enid <- C.try expect
     spawnId <- liftIO $ atomicModifyIORef' spawnIdGen $ \i -> (i + 1, i)
     let spawnLog = hPutStrLn stderr . (++) ("spawnNode(" ++ show spawnId ++ ")")
     case enid of

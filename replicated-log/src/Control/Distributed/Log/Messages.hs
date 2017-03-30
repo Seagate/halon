@@ -3,6 +3,7 @@
 -- License   : All rights reserved.
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Control.Distributed.Log.Messages where
 
 import Control.Distributed.Log.Policy (NominationPolicy)
@@ -60,6 +61,7 @@ data Locale = Local [ProcessId] [ProcessId] | Remote | Stored
 data Decree a = Decree TimeSpec Locale DecreeId a
     deriving (Typeable, Generic)
 
+-- | Orphan
 instance Binary TimeSpec
 
 -- | Replica asking another replica what the value of a given decree number is.

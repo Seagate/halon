@@ -48,10 +48,7 @@ Library
   Other-Extensions:   TemplateHaskell
                       TypeFamilies
 
-  Ghc-Options: -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror
 
 Test-Suite tests
   Type:             exitcode-stdio-1.0
@@ -60,10 +57,7 @@ Test-Suite tests
   Hs-Source-Dirs:   tests
   Other-Modules:    Test
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   Build-Depends:    base >= 4.5.0,
                     consensus,
@@ -88,11 +82,7 @@ Test-Suite random
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options: -threaded -Wall -Werror
 
   Build-Depends:    base >= 4.5.0,
                     consensus,
@@ -113,7 +103,7 @@ Benchmark paxos
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -threaded -Wall
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(maintainer)
     Ghc-Options: -Werror

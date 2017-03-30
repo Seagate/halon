@@ -20,8 +20,7 @@ module Mero
 import Mero.Concurrent
 
 import Control.Concurrent
-    ( forkOS
-    , forkIO
+    ( forkIO
     , myThreadId
     , killThread
     , ThreadId
@@ -37,7 +36,6 @@ import Control.Exception
     ( Exception
     , bracket_
     , bracket
-    , finally
     , try
     , SomeException(..)
     , throwIO)

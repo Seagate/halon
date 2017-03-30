@@ -17,10 +17,6 @@ Flag distributed-benchmarks
   Description: Enables distributed benchmarks.
   Default: False
 
-Flag maintainer
-  Description: Enforce strict code quality checks (-Werror, etc)
-  Default: False
-
 Library
   Exposed-Modules:  Control.Distributed.Log
                     Control.Distributed.Log.Persistence
@@ -69,10 +65,7 @@ Library
   Other-Extensions:   TemplateHaskell
                       TypeFamilies
 
-  Ghc-Options: -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror
 
 Test-Suite tests
   Type:             exitcode-stdio-1.0
@@ -82,10 +75,7 @@ Test-Suite tests
   Other-Modules:    Test
                     Transport
 
-  Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror -threaded -eventlog -debug -with-rtsopts=-l-au
 
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
@@ -125,10 +115,7 @@ Test-Suite scheduler-tests
   Other-Modules:    Test
                     Transport
 
-  Ghc-Options: -Wall -threaded -eventlog -debug -with-rtsopts=-l-au
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror -threaded -eventlog -debug -with-rtsopts=-l-au
 
   Build-Depends:    base >= 4.7,
                     binary >= 0.6,
@@ -166,11 +153,8 @@ Test-Suite persistence
   Default-Language: Haskell2010
   Hs-Source-Dirs:   tests
 
-  Ghc-Options: -Wall -threaded
+  Ghc-Options: -Wall -Werror -threaded
   extra-libraries: leveldb
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
 
   Build-Depends:    base >= 4.7,
                     distributed-process-test,
@@ -184,10 +168,7 @@ Test-Suite random
   Other-Modules:    Test
                     Transport
 
-  Ghc-Options:      -Wall -threaded
-
-  if flag(maintainer)
-    Ghc-Options:    -Werror
+  Ghc-Options:      -Wall -Werror -threaded
 
   Build-Depends:    base >= 4.7,
                     consensus,
@@ -213,10 +194,7 @@ Benchmark state
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -Wall -threaded -with-rtsopts=-N
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror -threaded -with-rtsopts=-N
 
   Build-Depends:    base >= 4.7,
                     binary,
@@ -241,10 +219,7 @@ Benchmark state-distributed
   Default-Language: Haskell2010
   Hs-Source-Dirs:   benchmarks
 
-  Ghc-Options: -Wall -threaded
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -Wall -Werror -threaded
 
   if flag(distributed-benchmarks)
     Build-Depends:  base >= 4.7,

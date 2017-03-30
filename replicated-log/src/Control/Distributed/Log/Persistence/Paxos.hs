@@ -73,7 +73,7 @@ acceptorStore ps = do
             P.atomically ps [ P.Insert pv (0 :: Int) v ]
           done
       , storeGet = \done -> doAsync $ liftIO (readIORef vref) >>= done
-      , storeClose = getSelfPid >>= \self -> callLocal $ do
+      , storeClose = callLocal $ do
           mprocs <- liftIO $ atomicModifyIORef procsRef $ \mprocs ->
                                                             (Nothing, mprocs)
           case mprocs of

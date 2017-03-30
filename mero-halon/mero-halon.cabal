@@ -11,20 +11,19 @@ Copyright:      (C) 2013 Xyratex Technology Limited
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10
+extra-doc-files:
+    doc/diagrams/Makefile
+  , doc/diagrams/sdev-state-transitions.dot
+  , doc/diagrams/sns-operation-abort.uml
+  , doc/diagrams/sns-operation-failure.uml
+  , doc/diagrams/sns-operation-success.uml
+  , doc/diagrams/sns-repair.uml
+  , doc/diagrams/sns-rebalance.uml
 
 source-repository master
   Type:         git
   Location:     git@github.com:tweag/halon.git
   Subdir:       mero-halon/
-
-extra-doc-files
-  doc/diagrams/Makefile
-  doc/diagrams/sdev-state-transition.dot
-  doc/diagrams/sns-operation-abort.uml
-  doc/diagrams/sns-operation-failure.uml
-  doc/diagrams/sns-operation-success.uml
-  doc/diagrams/sns-repair.uml
-  doc/diagrams/sns-rebalance.uml
 
 Flag debug
   Description: Enable tracing output so errors are logged.
@@ -42,16 +41,8 @@ Flag rpc
   Description: Build with the RPC backend instead of TCP.
   Default: False
 
-Flag mero
-  Description: Build using the real rather than fake Mero.
-  Default: False
-
 Flag eventqueue-tests
   Description: Enables distributed tests.
-  Default: False
-
-Flag maintainer
-  Description: Enforce strict code quality checks (-Werror, etc)
   Default: False
 
 Flag long-tests
@@ -373,9 +364,8 @@ Executable halond
                       network-transport >= 0.3,
                       options-schema,
                       rank1dynamic,
+                      rpclite,
                       time
-  if flag(mero)
-      Build-Depends: rpclite
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
   else
@@ -448,11 +438,7 @@ Test-Suite testsnapshot2
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         snapshots2.hs
 
-  Ghc-Options:     -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options:     -threaded -Wall -Werror
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -471,10 +457,7 @@ Test-Suite testepoch
   Hs-Source-Dirs:  tests
   Main-Is:         testepoch.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
   buildable: False
 
 Test-Suite testeventqueue
@@ -483,11 +466,7 @@ Test-Suite testeventqueue
   Hs-Source-Dirs:  tests/Distributed
   Main-Is:         EventQueue.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options: -threaded -Wall -Werror
   Build-Depends:   distributed-process,
                    base,
                    filepath,
@@ -671,11 +650,7 @@ benchmark halonpings
   Hs-Source-Dirs:  benchmarks
   Main-Is:         halonpings.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options: -threaded -Wall -Werror
   if flag(distributed-benchmarks)
     Build-Depends: distributed-process,
                    base,
@@ -703,10 +678,7 @@ Benchmark initial-data-gc
 
 
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
     Ghc-Options:    -eventlog -debug -with-rtsopts=-l-au
@@ -748,23 +720,19 @@ Test-Suite test-bootstrap
   Hs-Source-Dirs:   tests
   Main-Is:          test-bootstrap.hs
   Other-Modules:    Helper.Environment
-  if flag(mero)
-    Build-Depends:  base >= 4.5,
-                    bytestring,
-                    confc,
-                    halon-instances,
-                    directory,
-                    filepath,
-                    mero-halon,
-                    network,
-                    process,
-                    process-extras,
-                    template-haskell,
-                    unix,
-                    split
-  else
-    Buildable:        False
-
+  Build-Depends:  base >= 4.5,
+                  bytestring,
+                  confc,
+                  halon-instances,
+                  directory,
+                  filepath,
+                  mero-halon,
+                  network,
+                  process,
+                  process-extras,
+                  template-haskell,
+                  unix,
+                  split
 
 Test-Suite test-server-bootstrap-local
   Type:             exitcode-stdio-1.0
@@ -772,11 +740,7 @@ Test-Suite test-server-bootstrap-local
   Hs-Source-Dirs:  tests/Bootstrap
   Main-Is:         Server.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
-
+  Ghc-Options: -threaded -Wall -Werror
   Build-Depends:   distributed-process,
                    base,
                    filepath,

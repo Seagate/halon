@@ -36,6 +36,7 @@ import Control.Applicative ((<$>))
 import Control.Concurrent
 import Control.Exception (throwIO, SomeException)
 import Control.Monad
+import qualified Control.Monad.Catch as C
 import Control.Monad.Reader ( ask )
 import Data.Binary ( Binary )
 import Data.List ( delete )
@@ -80,7 +81,7 @@ timeout t action
         -- completed. It helps ensuring at most one of these events is
         -- considered.
         mv <- liftIO newEmptyMVar
-        mask $ \unmask -> do
+        C.mask $ \unmask -> do
           timerPid <- spawnLocal $ do
             Nothing <- receiveTimeout t [] :: Process (Maybe ())
             b <- liftIO $ tryPutMVar mv ()
@@ -267,7 +268,7 @@ propose :: Serializable a
 propose retryTimeout sendA acceptors d x = liftProcess $
   (do self <- getSelfPid
       loop 0 (BallotId 0 self)
-  ) `onException` paxosTrace "terminated with exception"
+  ) `C.onException` paxosTrace "terminated with exception"
     where loop backoff b = do
             eth <- retry retryTimeout $ scout sendA acceptors d b
             let backoff' = if backoff == 0 then 200000 else 2 * backoff

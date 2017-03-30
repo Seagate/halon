@@ -26,19 +26,10 @@ Flag docker-tests
   Description: Enables tests on docker.
   Default: False
 
-Flag maintainer
-  Description: Enforce strict code quality checks (-Werror, etc)
-  Default: False
-
 Library
   Hs-Source-Dirs:  src
   Default-Language: Haskell2010
-
-  if flag(maintainer)
-    Ghc-Options:  -Wall -Werror
-  else
-    Ghc-Options:  -Wall
-
+  Ghc-Options:  -Wall -Werror
   Exposed-Modules: Control.Distributed.Commands.DigitalOcean
                    Control.Distributed.Commands.Docker
                    Control.Distributed.Commands
@@ -58,6 +49,7 @@ Library
                   ,bytestring >= 0.10.4.0
                   ,distributed-process >= 0.5.0
                   ,distributed-static >= 0.3.0.0
+                  ,exceptions >= 0.8.3
                   ,lifted-async >= 0.2.0.2
                   ,mtl >= 2.1.3
                   ,network >= 2.4.2.3
@@ -73,8 +65,7 @@ Test-Suite unit-tests
   default-language: Haskell2010
   Hs-Source-Dirs:   tests
   Main-Is:          unit-tests.hs
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options:      -threaded -Wall -Werror
   Build-Depends:    base
                    ,distributed-commands
   Buildable:        True
@@ -85,9 +76,7 @@ Test-Suite digitalocean
   Hs-Source-Dirs:   tests
   Main-Is:          digitalocean.hs
 
-  Ghc-Options: -threaded -Wall
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(digital-ocean-tests)
     Build-Depends:   distributed-commands
@@ -101,9 +90,7 @@ Test-Suite docker
   Hs-Source-Dirs:   tests
   Main-Is:          docker.hs
 
-  Ghc-Options: -threaded -Wall
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(docker-tests)
     Build-Depends:   distributed-commands
@@ -119,10 +106,7 @@ Test-Suite test-distributed-process
   Hs-Source-Dirs:   tests
   Main-Is:          test-distributed-process.hs
 
-  Ghc-Options: -threaded -Wall
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   if flag(distributed-tests)
     Build-Depends:  distributed-commands

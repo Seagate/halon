@@ -696,7 +696,7 @@ replica Dict
     reportTermination name m = do
       let LogId nLogId = logId
       catch (do
-        m
+        void m
         say $ nLogId ++ ": " ++ name ++ " terminated normally"
        ) $ \e -> do
         say $ nLogId ++ ": " ++ name ++ " terminated with exception: " ++ show e

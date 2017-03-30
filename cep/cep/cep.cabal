@@ -9,10 +9,6 @@ build-type:          Simple
 -- extra-source-files:
 cabal-version:       >=1.10
 
-Flag maintainer
-  Description: Enforce strict code quality checks (-Werror, etc)
-  Default: False
-
 -- ghc-heap-view cannot be built with profiling, does we need to drop
 -- ghc-datasize which depends on it.
 Flag profiling
@@ -54,12 +50,10 @@ library
                        hashable,
                        halon-instances
   default-language:    Haskell2010
-  ghc-options:         -Wall
+  ghc-options:         -Wall -Werror
 
   if !flag(profiling)
     build-depends:     ghc-datasize
-  if flag(maintainer)
-    Ghc-Options: -Werror
 
 Test-Suite unit-tests
   Type: exitcode-stdio-1.0
@@ -70,10 +64,7 @@ Test-Suite unit-tests
                        Tests
                        Regression
 
-  Ghc-Options: -threaded -Wall -eventlog
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -eventlog -Werror
 
   Build-Depends: base,
                  mtl,
@@ -101,10 +92,7 @@ Test-Suite unit-tests-scheduler
                        Tests
                        Regression
 
-  Ghc-Options: -threaded -Wall -eventlog
-
-  if flag(maintainer)
-    Ghc-Options: -Werror
+  Ghc-Options: -threaded -Wall -Werror -eventlog
 
   Build-Depends: base,
                  mtl,
