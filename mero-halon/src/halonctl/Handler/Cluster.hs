@@ -27,6 +27,7 @@ import Data.Monoid ((<>))
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
+import qualified Handler.Cluster.Pool as Pool
 import HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..) )
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
@@ -77,6 +78,7 @@ data ClusterOptions =
   | StateUpdate StateUpdateOptions
   | StopNode StopNodeOptions
   | CastorDriveCommand DriveCommand
+  | PoolCommand Pool.Commands
   deriving (Eq, Show)
 
 
@@ -108,7 +110,8 @@ parseCluster =
         "Force update state of the mero objects")))
   <|> ( StopNode <$> Opt.subparser (Opt.command "node-stop" (Opt.withDesc parseStopNodeOptions
          "Stop m0d processes on the given node")))
-  <|> ( Opt.subparser $ command "drive" $ Opt.withDesc parseDriveCommand "Commands to drive")
+  <|> ( Opt.subparser . command "drive" $ Opt.withDesc parseDriveCommand "Commands to drive")
+  <|> ( Opt.subparser . command "pool" $ Opt.withDesc (PoolCommand <$> Pool.parseCommands) "Pool commands")
 
 
 data DriveCommand
@@ -218,6 +221,7 @@ cluster nids' opt = do
     cluster' nids (StopNode options)
       = clusterStopNode nids options
     cluster' nids (CastorDriveCommand s) = runDriveCommand nids s
+    cluster' nids (PoolCommand s) = Pool.run nids s
 
 data LoadOptions = LoadOptions
     FilePath -- ^ Facts file
