@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeOperators     #-}
 -- |
@@ -148,23 +147,23 @@ nodeUpJob = Job "node-up"
 -- requesting 'Node' to the cluster. Brief description of each rule
 -- phase below.
 ruleNodeUp :: IgnitionArguments -> Definitions RC ()
-ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
+ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> do
   do_register <- phaseHandle "register node"
 
   let route (NodeUp h pid) = do -- XXX: remove pid here
         let nid  = processNodeId pid
             node = Node nid
             host = Host h
-        phaseLog "node.nid" $ show nid
-        phaseLog "node.host" $ show h
+        RCLog.tagContext RCLog.SM [ ("node", show node)
+                                  , ("host", show h)
+                                  ] Nothing
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
         isDown <- hasHostAttr HA_DOWN (Host h)
         isKnown <- knownResource node
         when isKnown $ do
           publish $ OldNodeRevival node
         when (hasFailed || isDown) $ do
-          phaseLog "info" $ "Reviving old node."
-          phaseLog "info" $ "node = " ++ show node
+          RCLog.rcLog' RCLog.DEBUG "Reviving existing node."
           unsetHostAttr host HA_TRANSIENT
           unsetHostAttr host HA_DOWN
         registerNode node
@@ -173,10 +172,8 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle _ finish) -> do
         return $ Right (NewNodeConnected node, [do_register])
 
   directly do_register $ do
-    Just (NodeUp _ pid) <- getField . rget fldReq <$> get Local
-    let nid  = processNodeId pid
-        node = Node nid
-    phaseLog "node.nid" $ show nid
+    NodeUp _ pid <- getRequest
+    let node = Node $! processNodeId pid
     liftProcess $ usend pid ()
     modify Local $ rlens fldRep .~ (Field . Just $ NewNodeConnected node)
     addNodeToCluster (eqNodes argv) node
@@ -237,6 +234,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
   let start_recover (RecoverNode n1) = do
         RCLog.tagContext RCLog.SM n1 Nothing
         g <- getLocalGraph
+        RCLog.tagContext RCLog.SM [("node", show n1)] Nothing
         st <- case G.connectedFrom Runs n1 g of
           Nothing -> do
             return $ Left $ "Couldn't find host for " ++ show n1
@@ -286,6 +284,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     Just h <- getField . rget fldHost <$> get Local
     Just i <- getField . rget fldRetries <$> get Local
     RCLog.rcLog' RCLog.DEBUG ("Current retries" :: String, show i)
+
     if maxRetries > 0 && i >= maxRetries
     then continue timeout_host
     else hasHostAttr M0.HA_TRANSIENT h >>= \case
@@ -366,8 +365,8 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                                ,("isClient" :: String, show isClient)
                                ]
       case () of
-        _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed
-                                  ( "{ 'hostname': \"" <> T.pack hst <> "\", "
+        _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed $ T.pack
+                                  ( "{ 'hostname': \"" <> hst <> "\", "
                                   <> " 'reason': \"Lost connection to RC\" }")
                         in HA.Services.SSPL.CEP.sendInterestingEvent msg
           | isServer -> do

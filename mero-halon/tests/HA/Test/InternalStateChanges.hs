@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module    : HA.Test.InternalStateChanges
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Exercise the internal state change mechanism
@@ -15,6 +15,7 @@ import           Data.Typeable
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -106,7 +107,7 @@ failvecCascade t pg = do
 
     rule :: Definitions RC ()
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
-      phaseLog "info" "Set hooks"
+      Log.rcLog' Log.DEBUG ("Set hooks." :: String)
       rg <- getLocalGraph
       let d0:d1:_ =
               [ disk | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]

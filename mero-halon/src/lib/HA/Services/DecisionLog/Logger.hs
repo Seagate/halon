@@ -117,7 +117,6 @@ ppLog (Log loc evts ctts) =
     ppEvt Stop = fillSep [langle]
     ppEvt Suspend = fillSep [char '~']
     ppEvt (Restart _) = fillSep [char '^']
-    ppEvt (PhaseLog (PhaseLogInfo key val)) = text key <+> equals <> rangle <+> text val
     ppEvt (StateLog (StateLogInfo env)) = ppEnv env
     ppEvt (ApplicationLog (ApplicationLogInfo value)) = char '§' <> ppAL value
 
@@ -257,7 +256,6 @@ mkLogger printer0 = mk printer0 initState where
     Suspend    -> mkRec evt True p st $ forgetCurrentPhase (loc_sm_id loc)
     Restart _  -> mkRec evt True p st $ forgetSM (loc_sm_id loc)
     PhaseEntry -> mkRec evt False p st $ forgetCurrentPhase (loc_sm_id loc)
-    PhaseLog _ -> mkRec evt False p st id
     StateLog _ -> mkRec evt False p st id
     ApplicationLog (ApplicationLogInfo app) -> case app of
       BeginLocalContext uuid ->

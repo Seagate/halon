@@ -168,7 +168,7 @@ knownResource res = fmap (G.memberResource res) getLocalGraph
 -- | Register a new satellite node in the cluster.
 registerNode :: Node -> PhaseM RC l ()
 registerNode node = do
-  phaseLog "rg" $ "Registering satellite node: " ++ show node
+  Log.rcLog' Log.DEBUG $ "Registering satellite node: " ++ show node
   modifyGraph $ G.connect Cluster Has node
 
 -- | Retrieve the Resource 'G.Graph' from the 'Global' state.
@@ -403,7 +403,7 @@ notify :: (Serializable a, Show a)
        => a
        -> PhaseM RC l ()
 notify msg = do
-  phaseLog "emit-event" $ show msg
+  Log.rcLog' Log.DEBUG $ show msg
   selfMessage msg
   publish msg
 

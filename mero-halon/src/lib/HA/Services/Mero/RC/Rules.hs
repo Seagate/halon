@@ -17,7 +17,7 @@ import HA.Services.Mero.RC.Events
 
 -- RC dependencies
 import           HA.RecoveryCoordinator.RC.Actions
-import           HA.RecoveryCoordinator.RC.Actions.Log
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 
 -- halon dependencies
@@ -108,9 +108,9 @@ ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
     unless (null fails) $ do
       ps <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getLocalGraph
       unless (null ps) $ do
-        phaseLog "warning" "Some services were marked online but notifications failed to be delivered"
-        phaseLog "warning" $ "epoch = " ++ show epoch
-        for_ ps $ \p -> phaseLog "warning" $ "fid = " ++ show (M0.fid p)
+        Log.rcLog' Log.WARN "Some services were marked online but notifications failed to be delivered"
+        Log.rcLog' Log.WARN $ "epoch = " ++ show epoch
+        for_ ps $ \p -> Log.rcLog' Log.WARN $ "fid = " ++ show (M0.fid p)
         promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> ps)
 
 -- | When notification Set was delivered to some process we should mark that
@@ -155,7 +155,7 @@ ruleNotificationsFailedToBeDeliveredToM0d :: Definitions RC ()
 ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleIf "service::m0d::notification::delivery-failed" g $ do
   \(uid, epoch, fid) -> do
     todo uid
-    tagContext SM [("epoch", show epoch), ("fid", show fid)] Nothing
+    Log.tagContext Log.SM [("epoch", show epoch), ("fid", show fid)] Nothing
     mdiff <- getStateDiffByEpoch epoch
     for_ mdiff $ \diff -> do
       mp <- M0.lookupConfObjByFid fid <$> getLocalGraph

@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- |
+-- Module    : HA.Services.SSPL.HL.CEP
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -16,6 +17,7 @@ import qualified HA.Aeson as Aeson
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -42,7 +44,7 @@ ssplHLRules = defineSimpleIf "status-query" extract $
             , commandResponseMessageResponseId = msgId
             , commandResponseMessageMessageId = Just . T.pack . toString $ uuid
             }
-      phaseLog "info" $ "Sending reply " ++ show msg
+      Log.rcLog' Log.DEBUG $ "Sending reply " ++ show msg
       sendSvc (getInterface sspl) nid $! SResponse msg
       messageProcessed uuid
   where

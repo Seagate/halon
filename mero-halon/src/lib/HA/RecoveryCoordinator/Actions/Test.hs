@@ -1,25 +1,24 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Test
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Helper used for testing.
 module HA.RecoveryCoordinator.Actions.Test
   ( getNoisyPingCount ) where
 
-import Prelude hiding ((.), id, mapM_)
-import HA.Services.Noisy
-
-import HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-
-import Network.CEP
+import           HA.Services.Noisy
+import           Network.CEP
+import           Prelude hiding ((.), id, mapM_)
 
 -- | Query 'NoisyPingCount' and increment its value in RG. Returns old
 -- value.
 getNoisyPingCount :: PhaseM RC l Int
 getNoisyPingCount = do
-    phaseLog "rg-query" "Querying noisy ping count."
+    Log.rcLog' Log.TRACE "Querying noisy ping count."
     rg <- getLocalGraph
     let (rg', i) =
           case G.connectedTo noisy HasPingCount rg of

@@ -184,7 +184,7 @@ setStatus :: StorageDevice
 setStatus dev st reason = do
   ds <- status dev
   let statusNode = StorageDeviceStatus st reason
-  phaseLog "rg" $ "Updating status for device"
+  Log.rcLog' Log.TRACE $ "Updating status for device"
   Log.rcLog' Log.DEBUG [("status.old", show ds)
                        ,("status.new", show statusNode)
                        ]
@@ -203,13 +203,13 @@ identify ld dis = do
 -- | Set an attribute on a storage device.
 setAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 setAttr sd attr  = do
-    phaseLog "rg" $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
+    Log.rcLog' Log.TRACE $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
     modifyGraph $ G.connect sd R.Has attr
 
 -- | Unset an attribute on a storage device.
 unsetAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 unsetAttr sd attr = do
-    phaseLog "rg" $ "Unsetting disk attribute "
+    Log.rcLog' Log.TRACE $ "Unsetting disk attribute "
                   ++ show attr ++ " on " ++ show sd
     modifyGraph (G.disconnect sd R.Has attr)
 

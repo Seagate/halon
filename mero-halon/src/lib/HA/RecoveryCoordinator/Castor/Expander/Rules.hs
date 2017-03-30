@@ -1,17 +1,18 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeOperators     #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Castor.Expander.Rules
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Module rules for expander card.
 module HA.RecoveryCoordinator.Castor.Expander.Rules (rules) where
 
+import           Control.Arrow ((***))
 import           Control.Distributed.Process (liftIO)
 import           Control.Lens
 import           Control.Monad (forM_)
@@ -32,6 +33,7 @@ import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -42,7 +44,6 @@ import           HA.Services.SSPL.CEP (sendNodeCmd)
 import           HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
 import           Network.CEP
-import           Text.Printf (printf)
 
 -- | Expander reset rules.
 rules :: Definitions RC ()
@@ -173,17 +174,17 @@ ruleReassembleRaid =
               continue dispatcher
             else do
               -- TODO Send some kind of 'CannotTalkToSSPL' message
-              phaseLog "error" $ "Expander reset event received for enclosure, "
+              Log.rcLog' Log.ERROR $ "Expander reset event received for enclosure, "
                               ++ "but we are unable to contact SSPL on that "
                               ++ "node."
               continue failed
           (_, []) -> do
-            phaseLog "info" $ "Expander reset event received for enclosure "
+            Log.rcLog' Log.DEBUG $ "Expander reset event received for enclosure "
                            ++ "but there were no RAID devices to reassemble."
             done eid
           (Nothing, _) -> do
             -- TODO this is pretty interesting - should we raise an IEM?
-            phaseLog "warning" $ "Expander reset event received for enclosure, "
+            Log.rcLog' Log.WARN $ "Expander reset event received for enclosure, "
                               ++ "but there was no corresponding node."
             done eid
 
@@ -192,13 +193,13 @@ ruleReassembleRaid =
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         j <- startJob $ MaintenanceStopNode node
         modify Local $ rlens fldNodeJob . rfield .~ Just j
-        phaseLog "info" $ "Stopping node " ++ show node
+        Log.rcLog' Log.DEBUG $ "Stopping node " ++ show node
         continue node_stop_result
 
       setPhaseIf node_stop_result ourJob $ \case
         MaintenanceStopNodeOk{} -> continue unmount
         failure -> do
-          phaseLog "error" $ "Failure in expander reset: " ++ show failure
+          Log.rcLog' Log.ERROR $ "Failure in expander reset: " ++ show failure
           continue failed
 
       directly unmount $ do
@@ -206,7 +207,7 @@ ruleReassembleRaid =
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
         -- TODO magic constant
-        sent <- sendNodeCmd [node] (Just cmdUUID) $ Unmount "/var/mero"
+        sent <- sendNodeCmd [node] (Just cmdUUID) $ Unmount $ T.pack "/var/mero"
 
         if sent
         then do
@@ -216,9 +217,9 @@ ruleReassembleRaid =
 
           continue dispatcher
         else do
-          phaseLog "error" $ "Expander reset event received for enclosure "
-                          ++ ", but we are unable to contact SSPL on that "
-                          ++ "node."
+          Log.rcLog' Log.ERROR $ "Expander reset event received for enclosure "
+                              ++ ", but we are unable to contact SSPL on that "
+                              ++ "node."
           continue failed
 
       directly stop_raid $ do
@@ -235,7 +236,7 @@ ruleReassembleRaid =
           then
             modify Local $ rlens fldCommandAck . rfield %~ (cmdUUID :)
           else do
-            phaseLog "warning" $ "Tried to stop RAID device "
+            Log.rcLog' Log.WARN $ "Tried to stop RAID device "
                               ++ (show dev)
                               ++ ", but we are unable to contact SSPL on that "
                               ++ "node."
@@ -249,7 +250,7 @@ ruleReassembleRaid =
         showLocality
         Just (_, _, node) <- gets Local (^. rlens fldHardware . rfield)
         cmdUUID <- liftIO $ nextRandom
-        sent <- sendNodeCmd [node] (Just cmdUUID) $ NodeRaidCmd "--scan" (RaidAssemble [])
+        sent <- sendNodeCmd [node] (Just cmdUUID) $ NodeRaidCmd (T.pack "--scan") (RaidAssemble [])
 
         if sent
         then do
@@ -266,9 +267,9 @@ ruleReassembleRaid =
           continue dispatcher
         else do
           showLocality
-          phaseLog "warning" $ "Tried to reassemble RAID devices"
-                            ++ ", but we are unable to contact SSPL on that "
-                            ++ "node."
+          Log.rcLog' Log.WARN $ "Tried to reassemble RAID devices"
+                             ++ ", but we are unable to contact SSPL on that "
+                             ++ "node."
           continue failed
 
       directly start_mero_services $ do
@@ -284,7 +285,7 @@ ruleReassembleRaid =
         NodeProcessesStartTimeout{} -> continue nodeup_timeout
         NodeProcessesStartFailure{} -> do
           showLocality
-          phaseLog "error" $ "Cannot start kernel, although it was never "
+          Log.rcLog' Log.ERROR $ "Cannot start kernel, although it was never "
                           ++ "stopped."
           continue failed
 
@@ -301,25 +302,25 @@ ruleReassembleRaid =
 
       directly finish $ do
         showLocality
-        phaseLog "info" $ "Raid reassembly complete."
+        Log.rcLog' Log.DEBUG $ "Raid reassembly complete."
         continue tidyup
 
       directly notify_failed $ do
         showLocality
         waiting <- gets Local (^. rlens fldDispatch . rfield . waitPhases)
-        phaseLog "error" $ "Timeout whilst waiting for phases: "
+        Log.rcLog' Log.ERROR $ "Timeout whilst waiting for phases: "
                         ++ show waiting
         continue failed
 
       directly nodeup_timeout $ do
         showLocality
-        phaseLog "error" $ "Timeout whilst waiting for Mero processes to "
+        Log.rcLog' Log.ERROR $ "Timeout whilst waiting for Mero processes to "
                         ++ "restart."
         continue failed
 
       directly failed $ do
         showLocality
-        phaseLog "error" $ "Error during expander reset handling."
+        Log.rcLog' Log.ERROR $ "Error during expander reset handling."
         -- TODO enclosure restart?
         continue tidyup
 
@@ -359,10 +360,10 @@ ruleReassembleRaid =
       hardware <- gets Local (^. rlens fldHardware . rfield)
       raidDevs <- gets Local (^. rlens fldRaidDevices . rfield)
       m0 <- gets Local (^. rlens fldM0 . rfield)
-      phaseLog "locality"
-        $ printf "Hardware: %s, Raid Devices: %s, Mero Objects: %s"
-            (show hardware) (show raidDevs)
-            (show $ (\(a,b) -> (M0.showFid a, M0.showFid b)) <$> m0)
+      Log.actLog "locality" [ ("hardware", show hardware)
+                            , ("raid devices", show raidDevs)
+                            , ("mero objects", show $ (M0.showFid *** M0.showFid) <$> m0)
+                            ]
 
     ourJob (JobFinished lis v) _ ls = case getField $ rget fldNodeJob ls of
       Just l | l `elem` lis -> return $ Just v

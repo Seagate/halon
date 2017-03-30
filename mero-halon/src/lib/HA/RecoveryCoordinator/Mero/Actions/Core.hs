@@ -36,6 +36,7 @@ import           Data.Proxy
 import           Data.Word ( Word64, Word32 )
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
@@ -88,7 +89,7 @@ mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 -- | Retrieve 'CI.M0Globals' from the RG.
 getM0Globals :: PhaseM RC l (Maybe CI.M0Globals)
 getM0Globals = getLocalGraph >>= \rg -> do
-  phaseLog "rg-query" $ "Looking for Mero globals."
+  Log.rcLog' Log.TRACE $ "Looking for Mero globals."
   return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph

@@ -57,9 +57,10 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
   setPhase main $ \(HAEvent uuid (GetSpielAddress fid profile pid)) -> do
-    phaseLog "info" $ "Spiel Address requested."
-    phaseLog "info" $ "requester.fid = " ++ show fid
-    phaseLog "info" $ "requester.profile = " ++ show profile
+    Log.tagContext Log.SM [ ("requester.fid", show fid)
+                          , ("requester.profile", show profile)
+                          ] Nothing
+    Log.rcLog' Log.DEBUG $ "Spiel Address requested."
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
@@ -218,7 +219,7 @@ meroRules = do
     rg <- getLocalGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
            <$> G.connectedTo (M0.Pool pool) R.Has rg
-    phaseLog "debug" $ "FailureVector="++show mv
+    Log.rcLog' Log.DEBUG $ "FailureVector=" ++ show mv
     liftProcess $ sendChan port mv
 
   ruleGetEntryPoint

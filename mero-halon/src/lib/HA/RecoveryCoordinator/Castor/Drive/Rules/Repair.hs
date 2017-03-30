@@ -137,10 +137,10 @@ queryStartHandling pool = do
   M0.PoolRepairStatus prt ruuid _ <- getPoolRepairStatus pool >>= \case
     Nothing -> do
       let err = "In queryStartHandling for " ++ show pool ++ " without PRS set."
-      phaseLog "error" err
+      Log.rcLog' Log.ERROR err
       return $ error err
     Just prs -> do
-      phaseLog "info" $ "PoolRepairStatus = " ++ show prs
+      Log.rcLog' Log.DEBUG $ "PoolRepairStatus = " ++ show prs
       return prs
   -- We always send SpielQuery and move all complex logic there,
   -- this allow to leave this call synchronous but non-blocking
@@ -253,9 +253,8 @@ querySpiel = define "spiel::sns:query-status" $ do
   let process_failure pool str = do
         Just (uuid, _, _, _) <- get Local
         messageProcessed uuid
-        phaseLog "error" "Exception when requesting status"
-        phaseLog "pool.fid" $ show (M0.fid pool)
-        phaseLog "text"  str
+        Log.tagContext Log.Phase [ ("pool.fid", show (M0.fid pool)) ] Nothing
+        Log.rcLog' Log.ERROR $ "Exception when requesting status: " ++ str
 
   (repair_status, repairStatus) <-
      mkRepairStatusRequestOperation process_failure process_info
@@ -264,8 +263,10 @@ querySpiel = define "spiel::sns:query-status" $ do
     mkRebalanceStatusRequestOperation process_failure process_info
 
   setPhase query_status $ \(HAEvent uid (SpielQuery pool prt ruuid)) -> do
-    phaseLog "pool.fid" $ show (M0.fid pool)
-    phaseLog "repair.type" $ show prt
+    Log.actLog "query status" [ ("pool.fid", show (M0.fid pool))
+                              , ("repair.type", show prt)
+                              , ("repair.uuid", show ruuid)
+                              ]
     put Local $ Just (uid, pool, prt, ruuid)
     case prt of
       M0.Rebalance -> do
@@ -280,9 +281,10 @@ querySpiel = define "spiel::sns:query-status" $ do
     keepRunning <- maybe False ((ruuid ==) .prsRepairUUID)
                      <$> getPoolRepairStatus pool
     when keepRunning $ do
-      phaseLog "pool.fid" $ show (M0.fid  pool)
-      phaseLog "repair.type" $ show prt
-      phaseLog "repair.uuid" $ show ruuid
+      Log.actLog "keep running" [ ("pool.fid", show (M0.fid pool))
+                                , ("repair.type", show prt)
+                                , ("repair.uuid", show ruuid)
+                                ]
       promulgateRC $ SpielQueryHourly pool prt ruuid
 
   setPhase abort_on_quiesce $
@@ -393,12 +395,12 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                 sdev_repaired = snd <$> filter (\(typ, _) -> typ == M0_NC_REPAIRED) sts
                 (sdev_notready, sdev_ready) = partitionEithers $ deviceReadyStatus rg <$> sdev_repaired
                 sdev_broken   = snd <$> filter (\(typ, _) -> typ `notElem` okMessages) sts
-            for_ sdev_notready $ phaseLog "info"
+            for_ sdev_notready $ Log.rcLog' Log.DEBUG
             if null sdev_broken
             then if null sdev_ready
                   then return $ Left $ "Can't start rebalance, no drive to rebalance on"
                   else do
-                    phaseLog "info" "starting rebalance"
+                    Log.rcLog' Log.DEBUG "starting rebalance"
                     disks <- catMaybes <$> mapM Drive.lookupSDevDisk sdev_ready
                     -- Can ignore K here: disks are in Repaired state
                     -- so moving to rebalancing does not increase
@@ -426,7 +428,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                          continue finish
 
   (status_received, statusRebalance) <- mkRebalanceStatusRequestOperation
-     (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
+     (\_ s -> do Log.rcLog' Log.ERROR $ "failed to query SNS state: " ++ s
                  abortRebalanceStart
                  continue finish)
      (\_ sns -> if all R.iosReady $ Spiel._sss_state <$> sns
@@ -435,8 +437,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
                 startRebalance pool disks
                 continue rebalance_started
               else do
-                phaseLog "error" "some IO services are not ready"
-                phaseLog "reply" $ show sns
+                Log.rcLog' Log.ERROR $ "some IO services are not ready: " ++ show sns
                 abortRebalanceStart
                 continue finish)
 
@@ -448,13 +449,13 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
   setPhase notify_failed $ \(HAEvent uuid (NotifyFailureEndpoints eps)) -> do
     todo uuid
     when (not $ null eps) $ do
-      phaseLog "warn" $ "Failed to notify " ++ show eps ++ ", not starting rebalance"
+      Log.rcLog' Log.WARN $ "Failed to notify " ++ show eps ++ ", not starting rebalance"
       abortRebalanceStart
     done uuid
     continue finish
 
   directly notify_timeout $ do
-    phaseLog "warn" $ "Unable to notify Mero; cannot start rebalance"
+    Log.rcLog' Log.WARN $ "Unable to notify Mero; cannot start rebalance"
     abortRebalanceStart
     continue finish
 
@@ -462,7 +463,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
 
   where
     abortRebalanceStart = getField . rget fldPoolDisks <$> get Local >>= \case
-      Nothing -> phaseLog "error" "No pool info in local state"
+      Nothing -> Log.rcLog' Log.ERROR "No pool info in local state"
       Just (pool, _) -> do
         ds <- liftGraph2 Pool.getSDevsWithState pool M0_NC_REBALANCE
         -- Don't need to think about K here as both rebalance and
@@ -574,7 +575,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
         continue finish
 
   (status_received, statusRepair) <- mkRepairStatusRequestOperation
-     (\_ s -> do phaseLog "error" $ "failed to query SNS state: " ++ s
+     (\_ s -> do Log.rcLog' Log.ERROR $ "failed to query SNS state: " ++ s
                  abortRepairStart
                  continue finish)
      (\pool sns -> if all R.iosReady $ Spiel._sss_state <$> sns
@@ -582,8 +583,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
                 startRepairOperation pool
                 continue repair_started
               else do
-                phaseLog "error" "some IO services are not ready"
-                phaseLog "reply" $ show sns
+                Log.rcLog' Log.ERROR $ "some IO services are not ready: " ++ show sns
                 abortRepairStart
                 continue finish)
 
@@ -617,7 +617,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
   return init_rule
   where
     abortRepairStart = getField . rget fldPool <$> get Local >>= \case
-      Nothing -> phaseLog "error" "No pool info in local state"
+      Nothing -> Log.rcLog' Log.ERROR "No pool info in local state"
       -- HALON-275: We have failed to start the repair so
       -- clean up repair status. halon:m0d should notice that
       -- notification has failed and fail the process, restart
@@ -645,21 +645,21 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
         tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
         fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
         when (not $ null tr) $
-          phaseLog "disks.transient" $ show tr
+          Log.rcLog' Log.DEBUG $ "disks.transient: " ++ show tr
         when (not $ null fa) $
-          phaseLog "disks.failed" $ show fa
+          Log.rcLog' Log.DEBUG $ "disks.failed: " ++ show fa
         case (null tr, null fa) of
           (True, False) -> do
-            phaseLog "info" "Devices failed after repair start - restarting."
+            Log.rcLog' Log.DEBUG "Devices failed after repair start - restarting."
             promulgateRC $ RestartSNSOperationRequest pool uuid
           (False, True) -> do
-            phaseLog "info" "Devices transient after repair start - quiescing."
+            Log.rcLog' Log.DEBUG "Devices transient after repair start - quiescing."
             promulgateRC $ QuiesceSNSOperation pool
           (False, False) -> do
-            phaseLog "info" "Devices both transient and failed after repair start - aborting."
+            Log.rcLog' Log.DEBUG "Devices both transient and failed after repair start - aborting."
             promulgateRC $ AbortSNSOperation pool uuid
           _ -> return ()
-      Nothing -> phaseLog "error" "abort_if_needed called but PRS is unset."
+      Nothing -> Log.rcLog' Log.ERROR "abort_if_needed called but PRS is unset."
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStartResult)
@@ -695,7 +695,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
                 modify Local $
                   rlens fldRep . rfield .~ Just (SNSFailed ruuid pool prt s)
         else do
-          phaseLog "warning" "SNS continue operation failedm but SNS is no longer registered in RG"
+          Log.rcLog' Log.WARN "SNS continue operation failedm but SNS is no longer registered in RG"
           continue finish
       check_and_run (phase, action) pool sns = do
        keep_running <- isStillRunning pool
@@ -805,7 +805,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
 
   let route (AbortSNSOperation pool uuid) = getPoolRepairStatus pool >>= \case
         Nothing -> do
-          phaseLog "repair" $ "Abort requested on " ++ show pool
+          Log.rcLog' Log.DEBUG $ "Abort requested on " ++ show pool
                            ++ "but no repair seems to be happening."
           return $ Right (AbortSNSOperationSkip pool, [finish])
         Just (M0.PoolRepairStatus prt uuid' _) | uuid == uuid' -> do
@@ -813,9 +813,11 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
           modify Local $ rlens fldRepairUUID .~ (Field . Just $ uuid')
           return $ Right (AbortSNSOperationFailure pool "default", [entry])
         Just (M0.PoolRepairStatus _ uuid' _) -> do
-          phaseLog "repair" $ "Abort requested on " ++ show pool ++ " but UUIDs mismatch"
-          phaseLog "request.uuid" $ show uuid
-          phaseLog "PRS.uuid" $ show uuid'
+          Log.tagContext Log.Phase [ ("pool", show pool)
+                                   , ("request.uuid", show uuid)
+                                   , ("repair.uuid", show uuid')
+                                   ] Nothing
+          Log.rcLog' Log.DEBUG "Abort requested on UUIDs mismatch"
           let msg = show uuid ++ " /= " ++ show uuid'
           return $ Right (AbortSNSOperationFailure pool msg, [finish])
 
@@ -867,7 +869,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     continue finish
 
   directly failure $ do
-    phaseLog "warning" "SNS abort failed - removing Pool repair info."
+    Log.rcLog' Log.WARN "SNS abort failed - removing Pool repair info."
     Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
     Just uuid <- getField . rget fldRepairUUID <$> get Local
     unsetPoolRepairStatusWithUUID pool uuid
@@ -904,11 +906,10 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -
   entry <- phaseHandle "execute operation"
 
   let route (QuiesceSNSOperation pool) = do
-       phaseLog "info" $ "Quisce request."
-       phaseLog "pool.fid" $ show (M0.fid pool)
+       Log.actLog "Quisce request." [ ("pool.fid", show (M0.fid pool)) ]
        mprs <- getPoolRepairStatus pool
        case mprs of
-         Nothing -> do phaseLog "result" $ "no repair seems to be happening"
+         Nothing -> do Log.rcLog' Log.WARN $ "no repair seems to be happening"
                        return $ Right (QuiesceSNSOperationSkip pool, [finish])
          Just (M0.PoolRepairStatus prt uuid _) -> do
            modify Local $ rlens fldPrt .~ (Field . Just $ prt)
@@ -987,7 +988,7 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \(JobHandle _ 
         promulgateRC $ AbortSNSOperation pool uuid
         continue start_req
       Nothing -> do
-        phaseLog "info" "Skipping repair as pool repair status is not set."
+        Log.rcLog' Log.DEBUG "Skipping repair as pool repair status is not set."
         modify Local $ rlens fldRep . rfield .~ (Just $ RestartSNSOperationSkip pool)
         continue finish
 
@@ -1040,13 +1041,13 @@ ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-e
 -- | Log 'StobIoqError' and abort repair if it's on-going.
 ruleStobIoqError :: Definitions RC ()
 ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
-  phaseLog "meta" $ show meta
-  phaseLog "stob" $ show stob
+  Log.actLog "stob ioq error" [ ("meta", show meta)
+                              , ("stob", show stob) ]
   rg <- getLocalGraph
   case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
-    Nothing -> phaseLog "warn" $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
+    Nothing -> Log.rcLog' Log.WARN $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
     Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
-      Nothing -> phaseLog "info" $ "No repair on-going on " ++ showFid pool
+      Nothing -> Log.rcLog' Log.DEBUG $ "No repair on-going on " ++ showFid pool
       Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
 
 --------------------------------------------------------------------------------
@@ -1065,13 +1066,13 @@ continueSNS pool prt = do
   -- data in the graph.
   mprs <- getPoolRepairStatus pool
   case mprs of
-    Nothing -> phaseLog "warning" $
+    Nothing -> Log.rcLog' Log.WARN $
       "continue repair was called, when no SNS operation were registered\
        \- ignoring"
     Just prs ->
       if prsType prs == prt
       then promulgateRC $ ContinueSNS (prsRepairUUID prs) pool prt
-      else phaseLog "warning" $
+      else Log.rcLog' Log.WARN $
              "Continue for " ++ show prt
                              ++ "was requested, but "
                              ++ show (prsType prs) ++ "is registered."
@@ -1097,7 +1098,7 @@ completeRepair pool prt muid = do
   iosvs <- length <$> R.getIOServices pool
   mdrive_updates <- fmap M0.priStateUpdates <$> getPoolRepairInformation pool
   case mdrive_updates of
-    Nothing -> phaseLog "warning" $ "No pool repair information were found for " ++ show pool
+    Nothing -> Log.rcLog' Log.WARN $ "No pool repair information were found for " ++ show pool
     Just drive_updates -> do
       sdevs <- liftGraph Pool.getSDevs pool
       sts <- mapM (\d -> (,d) <$> getSDevState d) sdevs
@@ -1118,11 +1119,11 @@ completeRepair pool prt muid = do
         when (prt == M0.Rebalance) $ forM_ repaired_sdevs unmarkSDevReplaced
 
         if Set.null non_repaired_sdevs
-        then do phaseLog "info" $ "Full repair on " ++ show pool
+        then do Log.rcLog' Log.DEBUG $ "Full repair on " ++ show pool
                 _ <- applyStateChanges [stateSet pool $ R.snsCompletedTransition prt]
                 unsetPoolRepairStatus pool
                 when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
-        else do phaseLog "info" $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
+        else do Log.rcLog' Log.DEBUG $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
                 -- TODO: schedule next repair.
                 unsetPoolRepairStatus pool
         traverse_ messageProcessed muid
@@ -1140,7 +1141,7 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
    getPoolInfo noteSet >>= traverse_ run
    where
      run (PoolInfo pool st m) = do
-       phaseLog "repair" $ "Processed as PoolInfo " ++ show (pool, st, m)
+       Log.rcLog' Log.DEBUG $ "Processed as PoolInfo " ++ show (pool, st, m)
        mprs <- getPoolRepairStatus pool
        forM_ mprs $ \prs@(PoolRepairStatus _prt _ mpri) ->
          forM_ mpri $ \pri -> do
@@ -1187,7 +1188,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
     -- commonly we'll enter here when some device changes state and
     -- RC is notified about the change.
     go (DevicesOnly devices) = do
-      phaseLog "repair" $ "Processed as " ++ show (DevicesOnly devices)
+      Log.rcLog' Log.DEBUG $ "Processed as " ++ show (DevicesOnly devices)
       for_ devices $ \(pool, diskMap) -> do
 
         tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
@@ -1201,7 +1202,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
         let maybeBeginRepair =
               if null tr && not (null fa)
               then promulgateRC $ PoolRepairRequest pool
-              else do phaseLog "repair" $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
+              else do Log.rcLog' Log.DEBUG $ "Failed: " ++ show fa ++ ", Transient: " ++ show tr
                       maybeBeginRebalance
 
             -- If there are neither failed nor transient, and no new transient
@@ -1218,12 +1219,12 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
             -- Repair happening, device failed, restart repair
             | fa' <- getSDevs diskMap M0_NC_FAILED
             , not (S.null fa') -> do
-              phaseLog "info" $ "Repair happening, device failed, restart repair"
+              Log.rcLog' Log.DEBUG $ "Repair happening, device failed, restart repair"
               promulgateRC $ RestartSNSOperationRequest pool uuid
             -- Repair happening, some devices are transient
             | tr' <- getSDevs diskMap M0_NC_TRANSIENT
             , not (S.null tr') -> do
-                phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
+                Log.rcLog' Log.DEBUG $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                                  ++ ", quescing repair."
                 quiesceSNS pool
             -- Repair happening, something came online, check if
@@ -1235,11 +1236,11 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
                   return $ (flip getConfObjState $ rg) <$> sdevs
                 if M0_NC_TRANSIENT `notElem` sts
                 then continueSNS pool prt
-                else phaseLog "repair" $ "Still some drives transient: " ++ show sts
-            | otherwise -> phaseLog "repair" $
+                else Log.rcLog' Log.DEBUG $ "Still some drives transient: " ++ show sts
+            | otherwise -> Log.rcLog' Log.DEBUG $
                 "Repair on-going but don't know what to do with " ++ show diskMap
           Nothing -> do
-            phaseLog "info" "No ongoing repair found, maybe begin repair."
+            Log.rcLog' Log.DEBUG "No ongoing repair found, maybe begin repair."
             maybeBeginRepair
 
 -- | When the cluster has completed starting up, it's possible that
@@ -1272,45 +1273,45 @@ processPoolInfo :: M0.Pool
 -- procedure.
 processPoolInfo pool M0_NC_ONLINE m
   | Just _ <- allWithState m M0_NC_ONLINE = getPoolRepairStatus pool >>= \case
-      Nothing -> phaseLog "warning" $ "Got M0_NC_ONLINE for a pool but "
+      Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_ONLINE for a pool but "
                                    ++ "no pool repair status was found."
       Just (M0.PoolRepairStatus M0.Rebalance _ _) -> do
-        phaseLog "repair" $ "Got M0_NC_ONLINE for a pool that is rebalancing."
+        Log.rcLog' Log.DEBUG $ "Got M0_NC_ONLINE for a pool that is rebalancing."
         -- Will query spiel for repair status and complete the repair
         queryStartHandling pool
-      _ -> phaseLog "repair" $ "Got M0_NC_ONLINE but pool is repairing now."
+      _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_ONLINE but pool is repairing now."
 
 -- We got a REPAIRED for a pool that was repairing before. Currently
 -- we simply fall back to queryStartHandling which should conclude the
 -- repair.
 processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
-  Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIRED for a pool but "
+  Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIRED for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Failure -> queryStartHandling pool
-  _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
+  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- Partial repair or problem during repair on a pool, if one of IOS
 -- experienced problem - we abort repair.
 processPoolInfo pool M0_NC_REPAIR _ = getPoolRepairStatus pool >>= \case
-  Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIR for a pool but "
+  Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIR for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Failure -> do
-        phaseLog "repair" $ "Got partial repair -- aborting."
+        Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
         promulgateRC $ DelayedAbort pool
-  _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is rebalancing now."
+  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- Partial repair or problem during repair on a pool, if one of IOS
 -- experienced problem - we abort repair.
 processPoolInfo pool M0_NC_REBALANCE _ = getPoolRepairStatus pool >>= \case
-  Nothing -> phaseLog "warning" $ "Got M0_NC_REPAIR for a pool but "
+  Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIR for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Rebalance -> do
-        phaseLog "repair" $ "Got partial repair -- aborting."
+        Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
         promulgateRC $ DelayedAbort pool
-  _ -> phaseLog "repair" $ "Got M0_NC_REPAIRED but pool is repairing now."
+  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is repairing now."
 
 -- We got some pool state info but we don't care about what it is as
 -- it seems some devices belonging to the pool failed, abort repair.
@@ -1335,20 +1336,20 @@ processPoolInfo pool _ m
           return $ (flip getConfObjState $ rg) <$> sdevs
         if null $ filter (== M0_NC_TRANSIENT) sts
         then continueSNS pool prt
-        else phaseLog "repair" $ "Still some drives transient: " ++ show sts
-      _ -> phaseLog "repair" $ "Got some transient drives but repair not on-going on " ++ show pool
+        else Log.rcLog' Log.DEBUG $ "Still some drives transient: " ++ show sts
+      _ -> Log.rcLog' Log.DEBUG $ "Got some transient drives but repair not on-going on " ++ show pool
 -- Some devices came up as transient, quiesce repair if it's on-going.
   | tr <- getSDevs m M0_NC_TRANSIENT
   , _:_ <- S.toList tr = getPoolRepairStatus pool >>= \case
       Nothing -> do
-        phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
+        Log.rcLog' Log.DEBUG $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ " but no repair is on-going, doing nothing."
       Just (M0.PoolRepairStatus _ _ _) -> do
-        phaseLog "repair" $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
+        Log.rcLog' Log.DEBUG $ "Got M0_NC_TRANSIENT for " ++ show (pool, tr)
                          ++ ", quescing repair."
         quiesceSNS pool
 
-processPoolInfo pool st m = phaseLog "warning" $ unwords
+processPoolInfo pool st m = Log.rcLog' Log.WARN $ unwords
   [ "Got", show st, "for a pool", show pool
   , "but don't know how to handle it: ", show m ]
 
@@ -1445,9 +1446,9 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarted" $ do
               M0_NC_REBALANCE -> promulgateRC (PoolRebalanceRequest pool)
               M0_NC_REPAIR -> promulgateRC (PoolRepairRequest pool)
               M0_NC_ONLINE -> return ()
-              st -> phaseLog "warn" $
+              st -> Log.rcLog' Log.WARN $
                 "checkRepairOnProcessStart: Don't know how to deal with pool state " ++ show st
-          ps -> phaseLog "info" $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)
+          ps -> Log.rcLog' Log.DEBUG $ "Still waiting for following IOS processes: " ++ show (M0.fid <$> ps)
       done eid
 
     start init_rule ()

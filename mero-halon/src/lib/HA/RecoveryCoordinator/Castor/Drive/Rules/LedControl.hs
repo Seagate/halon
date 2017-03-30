@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Central place dealing with LED control for drives.
@@ -17,6 +17,7 @@ import           HA.RecoveryCoordinator.Actions.Hardware (getSDevHost)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveReady(..), ResetAttemptResult(..))
 import           HA.RecoveryCoordinator.Mero.Notifications (setPhaseInternalNotification)
 import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
@@ -60,7 +61,7 @@ ruleDriveFailed = define "castor::drive::led::ruleDriveFailed" $ do
   where
     sendFailedLed storDev = getSDevHost storDev >>= \case
       h : _ -> void $! sendLedUpdate DrivePermanentlyFailed h storDev
-      _ -> phaseLog "warn" $ "No host associated with " ++ show storDev
+      _ -> Log.rcLog' Log.WARN $ "No host associated with " ++ show storDev
 
     is_raid_drive msg ls _ = case msg of
       ResetFailure sd -> do
@@ -94,7 +95,7 @@ ruleDriveReplaced = define "castor::drive::led::ruleDriveReplaced" $ do
   where
     sendReadyLed storDev = getSDevHost storDev >>= \case
       h : _ -> void $! sendLedUpdate DriveOk h storDev
-      _ -> phaseLog "error" $ "No host associated with " ++ show storDev
+      _ -> Log.rcLog' Log.ERROR $ "No host associated with " ++ show storDev
 
     is_drive_ready (HAEvent uid msg) _ _ = case msg of
       DriveReady sd -> return $ Just (uid, sd)

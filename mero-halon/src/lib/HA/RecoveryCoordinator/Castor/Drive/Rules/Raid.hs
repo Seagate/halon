@@ -36,6 +36,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   )
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
 import HA.Resources.Castor (StorageDevice)
 import HA.Services.SSPL.CEP
@@ -59,6 +60,7 @@ import Data.Proxy
 import qualified Data.Text as T
 import Data.UUID.V4 (nextRandom)
 import Data.Vinyl
+import Text.Printf (printf)
 
 import Network.CEP
 
@@ -82,19 +84,20 @@ failRaidStorageDevice :: StorageDevice -> PhaseM RC l ()
 failRaidStorageDevice sd = updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | Log info about the state of this operation
-logInfo :: forall a l. ( Application a
-                       , '("node", Maybe Node) ∈ l
-                       , '("raidInfo", Maybe RaidInfo) ∈ l
-                       )
-        => PhaseM a (FieldRec l) ()
+logInfo :: forall l. ( '("node", Maybe Node) ∈ l
+                     , '("raidInfo", Maybe RaidInfo) ∈ l
+                     )
+        => PhaseM RC (FieldRec l) ()
 logInfo = do
-  node <- gets Local (^. rlens fldNode . rfield)
+  mnode <- gets Local (^. rlens fldNode . rfield)
   mrinfo <- gets Local (^. rlens fldRaidInfo . rfield)
-  phaseLog "node" $ show node
+  Log.rcLog' Log.DEBUG $ "node=" ++ show mnode
   for_ mrinfo $ \rinfo -> do
-    phaseLog "raid.device" $ show (rinfo ^. riRaidDevice)
-    phaseLog "raid.consituent.sdev" $ show (rinfo ^. riCompSDev)
-    phaseLog "raid.consituent.path" $ show (rinfo ^. riCompPath)
+    Log.rcLog' Log.DEBUG $ concat [ "device=", show (rinfo ^. riRaidDevice)
+                                  , " constituent.sdev=", show (rinfo ^. riCompSDev)
+                                  , " constituent.path=", show (rinfo ^. riCompPath)
+                                  ]
+
 
 -- | RAID device failure rule.
 failed :: Definitions RC ()
@@ -114,8 +117,8 @@ failed = define "castor::drive::raid::failed" $ do
         go [] = return ()
         go ((sdev, path):xs) = do
           fork CopyNewerBuffer $ do
-            phaseLog "action" $ "Metadrive drive " ++ show path
-                              ++ "failed on " ++ show ruNode ++ "."
+            Log.rcLog' Log.DEBUG $ "Metadrive drive " ++ show path
+                                ++ "failed on " ++ show ruNode ++ "."
             msgUuid <- liftIO $ nextRandom
             modify Local $ rlens fldNode . rfield .~ Just ruNode
             modify Local $ rlens fldRaidInfo . rfield .~
@@ -132,7 +135,8 @@ failed = define "castor::drive::raid::failed" $ do
               onTimeout 30 failure
               continue dispatcher
             else do
-              phaseLog "error" $ "Failed to send ResetAttept command via SSPL."
+              Log.rcLog' Log.ERROR
+                ("Failed to send ResetAttept command via SSPL." :: String)
           go xs
 
       todo eid
@@ -270,8 +274,8 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
         StorageDevice.raidDevice sdev >>= \case
           [rd] -> do
             removed <- isRemovedFromRAID sdev
-            phaseLog "device" $ show sdev
-            phaseLog "removed from RAID" $ show removed
+            Log.rcLog' Log.DEBUG
+              (printf "%s removed from RAID: %s" (show sdev) (show removed) :: String)
             mnode <- listToMaybe <$> getSDevNode sdev
             mpath <- StorageDevice.path sdev
             case (,) <$> mnode <*> mpath of
@@ -290,23 +294,24 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
                   onTimeout 120 failure
                   return [dispatcher]
                 else do
-                  phaseLog "error" "Cannot send drive add command to SSPL."
+                  Log.rcLog' Log.ERROR ("Cannot send drive add command to SSPL." :: String)
                   return [failure]
               Nothing -> do
-                phaseLog "warning" "Cannot find node or path for device."
-                phaseLog "node" $ show mnode
-                phaseLog "path" $ show mpath
+                Log.rcLog' Log.WARN ("Cannot find node or path for device." :: String)
+                Log.tagContext Log.Phase [ ("node" :: String, show mnode)
+                                         , ("path" :: String, show mpath)
+                                         ] Nothing
                 return [failure]
           [] -> do
-            phaseLog "warn" $ "Device not part of a RAID array."
+            Log.rcLog' Log.WARN $ ("Device not part of a RAID array." :: String)
             return [finish]
           rds -> do
-            phaseLog "warn" $ "Device part of multiple arrays: " ++ show rds
+            Log.rcLog' Log.WARN $ "Device part of multiple arrays: " ++ show rds
             return [finish]
 
   directly success $ do
     Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
-    phaseLog "info" "Successfully returned RAID array to operation."
+    Log.rcLog' Log.DEBUG ("Successfully returned RAID array to operation." :: String)
     unmarkRemovedFromRAID (rinfo ^. riCompSDev)
     modify Local $ rlens fldRep . rfield .~ Just (RaidAddOK $ rinfo ^. riCompSDev)
     logInfo
@@ -314,7 +319,7 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
 
   directly failure $ do
     Just rinfo <- gets Local (^. rlens fldRaidInfo . rfield)
-    phaseLog "error" $ "RAID device could not be added."
+    Log.rcLog' Log.ERROR ("RAID device could not be added." :: String)
     logInfo
     sendInterestingEvent . InterestingEventMessage $ logRaidArrayFailure
        ( "{ 'raidDevice':" <> (rinfo ^. riRaidDevice)

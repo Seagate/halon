@@ -247,7 +247,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     pver = PoolVersion Nothing fids failures attrs
   in do
     Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
-    phaseLog "info" $ "Creating PVer in metadata pool: " ++ show pver
+    Log.rcLog' Log.DEBUG $ "Creating PVer in metadata pool: " ++ show pver
     modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 
 -- | Create an imeta_pver along with all associated structures. This should

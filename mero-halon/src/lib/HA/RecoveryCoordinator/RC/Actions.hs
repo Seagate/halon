@@ -179,11 +179,10 @@ addNodeToCluster eqs node@(R.Node nid) = do
     startMonitoring node
     sr <- registerSpawnAsync node
             ( $(mkClosure 'EQT.updateEQNodes) eqs ) $ do
-              phaseLog "node-up" $ "starting services on the node."
-              phaseLog "node"    $ show node
+              Log.rcLog' Log.DEBUG "starting services on the node."
               Service.findRegisteredOn node >>= traverse_ (Service.start node)
     void $ registerNodeMonitor node $ do
-      phaseLog "node.angel" "monitored node died - sending restart request"
+      Log.rcLog' Log.WARN "monitored node died - sending restart request"
       stopMonitoring node
       Service.findRegisteredOn node >>=
         traverse_ (\svc -> promulgateRC $ ServiceFailed node svc (nullProcessId nid))
@@ -191,8 +190,7 @@ addNodeToCluster eqs node@(R.Node nid) = do
       publish $ R.RecoverNode node
       unregisterSpawnAsync sr
       return ()
-  else do phaseLog "debug" "Node is already monitored."
-          phaseLog "node" $ show node
+  else Log.rcLog' Log.DEBUG "Node is already monitored."
 
 -------------------------------------------------------------------------------
 -- Node monitor angel
@@ -221,7 +219,7 @@ isMonitored node = do
 startMonitoring :: R.Node -> PhaseM RC l ()
 startMonitoring node@(R.Node nid) = do
   Log.actLog "startMonitoring" [("nid", show nid)]
-  phaseLog "info" "Adding new node to the cluster."
+  Log.rcLog' Log.DEBUG "Adding new node to the cluster."
   mmns <- getStorageRC
   putStorageRC $ maybe (MonitoredNodes (Set.singleton node))
                        (MonitoredNodes . Set.insert node . getMonitoredNodes)
@@ -292,5 +290,5 @@ registerNodeMonitoringAngel = do
   -- let nodes = (\(R.Node n) -> n) <$> G.connectedTo R.Cluster R.Has rg
   -- liftProcess $ for_ nodes $ usend pid . AddNode
   void $ registerProcessMonitor pid $ do
-     phaseLog "warning" "Node monitor angel has died, restarting."
+     Log.rcLog' Log.WARN "Node monitor angel has died, restarting."
      registerNodeMonitoringAngel

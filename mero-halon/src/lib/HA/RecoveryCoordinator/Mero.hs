@@ -33,9 +33,10 @@ import           HA.Multimap
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Test
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
-import qualified HA.ResourceGraph as G
 import qualified HA.RecoverySupervisor as RS
+import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Castor as M0
 import           Network.CEP
@@ -60,7 +61,7 @@ timeoutHost :: M0.Host -> PhaseM RC g ()
 timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do
-    phaseLog "info" $ "Disconnecting " ++ show h ++ " due to timeout"
+    Log.rcLog' Log.DEBUG $ "Disconnecting " ++ show h ++ " due to timeout"
     unsetHostAttr h M0.HA_TRANSIENT
     setHostAttr h M0.HA_DOWN
     publish $ HostDisconnected h
@@ -117,7 +118,7 @@ makeRecoveryCoordinator mm eq rm = do
          (const $ reregister labelRecoveryCoordinator self)
          =<< whereis labelRecoveryCoordinator
    execute init_st $ do
-     rm 
+     rm
      defineSimple "rs:keepalive-reply" $ liftProcess . RS.keepaliveReply
      setRuleFinalizer $ \ls -> do
        newGraph <- G.sync (lsGraph ls) (return ())

@@ -33,7 +33,7 @@ testSettingsLogger = do
         define "rule" $ do
           ph1 <- phaseHandle "state-1"
           setPhase ph1 $ \() -> do
-            phaseLog "test" "test"
+            appLog ()
             liftProcess $ usend self ()
           start ph1 ()
   pid  <- spawnLocal $ execute () spec

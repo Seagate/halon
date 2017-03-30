@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators     #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
@@ -16,26 +15,28 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
   ) where
 
 import HA.EventQueue (HAEvent(..))
-import HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Castor.Drive.Actions
-import HA.RecoveryCoordinator.Mero.Events
-import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import HA.RecoveryCoordinator.Castor.Drive.Events
+import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
+import HA.RecoveryCoordinator.Mero.Events
 import HA.RecoveryCoordinator.Mero.State
+import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
 import HA.Resources.Castor
+import HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..), getState)
-import HA.Resources.HalonVars
 import HA.Services.SSPL.CEP
   ( sendNodeCmd
   , updateDriveManagerWithFailure
   , sendInterestingEvent
   )
+import HA.Services.SSPL.IEM (logFailureOverK)
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)
@@ -43,7 +44,6 @@ import HA.Services.SSPL.LL.Resources
   , commandAck
   , SsplLlFromSvc(..)
   )
-import HA.Services.SSPL.IEM (logFailureOverK)
 import HA.Services.SSPL.LL.Resources (InterestingEventMessage(..))
 import Mero.ConfC (fidToStr)
 import Mero.Notification (Set(..))
@@ -135,25 +135,25 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
       status <- StorageDevice.status sdev
       isDrivePowered <- StorageDevice.isPowered sdev
       isDriveRemoved <- isStorageDriveRemoved sdev
-      phaseLog "info" $ "Handle reset"
-      phaseLog "storage-device" $ show sdev
-      phaseLog "storage-device.status" $ show status
-      phaseLog "storage-device.powered" $ show isDrivePowered
-      phaseLog "storage-device.removed" $ show isDriveRemoved
+      Log.rcLog' Log.DEBUG $ concat
+        [ "storage-device", show sdev
+        , " status=", show status
+        , " powered=", show isDrivePowered
+        , " removed=", show isDriveRemoved ]
       case (\(StorageDeviceStatus s _) -> s) status of
         _ | isDriveRemoved ->
-          phaseLog "info" "Drive is physically removed, skipping reset."
+          Log.rcLog' Log.DEBUG "Drive is physically removed, skipping reset."
         _ | not isDrivePowered ->
-          phaseLog "info" "Drive is not powered, skipping reset."
+          Log.rcLog' Log.DEBUG "Drive is not powered, skipping reset."
         "EMPTY" ->
-          phaseLog "info" "Expander reset in progress, skipping reset."
+          Log.rcLog' Log.DEBUG "Expander reset in progress, skipping reset."
         _ -> do
           st <- getState m0sdev <$> getLocalGraph
 
           unless (st == M0.SDSFailed) $ do
             ongoing <- hasOngoingReset sdev
             if ongoing
-            then phaseLog "debug" $ "Reset ongoing on a drive - ignoring message"
+            then Log.rcLog' Log.DEBUG $ "Reset ongoing on a drive - ignoring message"
             else do
               ratt <- getDiskResetAttempts sdev
               resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
@@ -163,7 +163,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
 
               sdevTransition <- checkDiskFailureWithinTolerance m0sdev m0status <$> getLocalGraph
               when (ratt > resetAttemptThreshold) $ do
-                phaseLog "warning" "drive have failed to reset too many times => marking as failed."
+                Log.rcLog' Log.WARN "drive have failed to reset too many times => marking as failed."
                 when (isRight sdevTransition) $
                   updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
 
@@ -185,7 +185,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
               promulgateRC $ ResetAttempt sdev
 
     _ -> do
-      phaseLog "warning" $ "Cannot find all entities attached to M0"
+      Log.rcLog' Log.WARN $ "Cannot find all entities attached to M0"
                         ++ " storage device: "
                         ++ show m0sdev
                         ++ ": "
@@ -234,7 +234,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
         Just (DeviceInfo sdev serial) <- gets Local (^. rlens fldDeviceInfo . rfield)
         Just node <- gets Local (^. rlens fldNode . rfield)
         i <- getDiskResetAttempts sdev
-        phaseLog "debug" $ "Current reset attempts: " ++ show i
+        Log.rcLog' Log.DEBUG $ "Current reset attempts: " ++ show i
         resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
         if i <= resetAttemptThreshold
         then do
@@ -242,7 +242,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
           sent <- sendNodeCmd [node] Nothing (DriveReset serial)
           if sent
           then do
-            phaseLog "debug" $ "DriveReset message sent for device " ++ show serial
+            Log.rcLog' Log.DEBUG $ "DriveReset message sent for device " ++ show serial
             StorageDevice.poweroff sdev
             msd <- lookupStorageDeviceSDev sdev
             case msd of
@@ -257,12 +257,12 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
         markResetComplete sdev
         if result
         then do
-          phaseLog "debug" $ "Drive reset success for sdev: " ++ show sdev
+          Log.rcLog' Log.DEBUG $ "Drive reset success for sdev: " ++ show sdev
           StorageDevice.poweron sdev
           messageProcessed eid
           switch [drive_removed, smart, timeout driveResetTimeout failure]
         else do
-          phaseLog "debug" $ "Drive reset failure for sdev: " ++ show sdev
+          Log.rcLog' Log.DEBUG $ "Drive reset failure for sdev: " ++ show sdev
           messageProcessed eid
           continue failure
 
@@ -278,7 +278,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
         (\l -> fmap join $ traverse
           (lookupStorageDeviceSDev . _diSDev)
           (l ^. rlens fldDeviceInfo . rfield))
-        (\_ _ -> do phaseLog "error" "failed to attach disk"
+        (\_ _ -> do Log.rcLog' Log.ERROR "failed to attach disk"
                     continue failure)
         (\m0sdev -> do
            getLocalGraph <&> getState m0sdev >>= \case
@@ -293,13 +293,13 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
                     ResetAttempt sdev <- getRequest
                     modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
                 | otherwise ->
-                    phaseLog "info" $ "Cannot bring drive Online from state " ++ show st
+                    Log.rcLog' Log.DEBUG $ "Cannot bring drive Online from state " ++ show st
            continue finalize)
 
       setPhaseIf smartResponse onSameSdev $ \status -> do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
-        phaseLog "sdev" $ show sdev
-        phaseLog "smart.response" $ show status
+        Log.rcLog' Log.DEBUG $ concat [ "smart response sdev=", show sdev
+                                      , " smart.response=", show status ]
         case status of
           SRSSuccess -> do
             sd <- lookupStorageDeviceSDev sdev
@@ -312,12 +312,12 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
             modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
             continue finalize
           _ -> do
-            phaseLog "info" "Unsuccessful SMART test."
+            Log.rcLog' Log.DEBUG "Unsuccessful SMART test."
             continue failure
 
       directly failure $ do
         Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
-        phaseLog "info" $ "Drive reset failure for " ++ show sdev
+        Log.rcLog' Log.DEBUG $ "Drive reset failure for " ++ show sdev
         sd <- lookupStorageDeviceSDev sdev
         forM_ sd $ \m0sdev -> do
           sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
@@ -333,12 +333,12 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
                      (\okTransition -> void $ applyStateChanges [ okTransition ])
                      sdevTransition
             x -> do
-              phaseLog "info" $ "Cannot bring drive Failed from state "
+              Log.rcLog' Log.DEBUG $ "Cannot bring drive Failed from state "
                               ++ show x
         continue finalize
 
       setPhaseIf drive_removed onDriveRemoved $ \sdev -> do
-        phaseLog "info" "Cancelling drive reset as drive removed."
+        Log.rcLog' Log.DEBUG "Cancelling drive reset as drive removed."
         modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
         continue finalize
 
@@ -416,5 +416,5 @@ driveOKSdev (DriveOK _ _ _ x) _ l =
 -- maximum allowed failure tolerance.
 iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
 iemFailureOverTolerance sdev =
-  sendInterestingEvent . InterestingEventMessage $ logFailureOverK
-      (" {'failedDevice':" <> T.pack (fidToStr $ M0.fid sdev) <> "}")
+  sendInterestingEvent . InterestingEventMessage $ logFailureOverK $ T.pack
+      (" {'failedDevice':" <> fidToStr (M0.fid sdev) <> "}")

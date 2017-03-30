@@ -2,33 +2,23 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-)017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Rules specific to Castor install of Mero.
 
 module HA.RecoveryCoordinator.Castor.Rules (castorRules,goRack) where
 
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.RC.Actions
-import HA.RecoveryCoordinator.RC.Events.Cluster
-import HA.Resources
-import HA.Resources.Castor
-import Network.CEP
-import qualified HA.ResourceGraph as G
-import qualified HA.Resources.Castor.Initial as CI
-
-import Data.Foldable (for_)
-import Control.Monad.Catch
-import HA.RecoveryCoordinator.Actions.Mero
-import HA.RecoveryCoordinator.Mero.Actions.Failure
+import           Control.Monad.Catch
+import           Data.Foldable (for_)
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
 import qualified HA.RecoveryCoordinator.Castor.Expander.Rules as Expander
@@ -36,6 +26,15 @@ import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
+import           HA.RecoveryCoordinator.Mero.Actions.Failure
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import           HA.RecoveryCoordinator.RC.Events.Cluster
+import qualified HA.ResourceGraph as G
+import           HA.Resources
+import           HA.Resources.Castor
+import qualified HA.Resources.Castor.Initial as CI
+import           Network.CEP
 
 -- | Collection of Castor rules.
 castorRules :: Definitions RC ()
@@ -59,14 +58,14 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
   let racks  = G.connectedTo Cluster Has rg :: [Rack]
       runValidateConf = validateTransactionCache >>= \case
         Left e -> do
-          phaseLog "error" $ "Exception during conf validation: " ++ show e
+          Log.rcLog' Log.ERROR $ "Exception during conf validation: " ++ show e
           putLocalGraph rg
           notify $ InitialDataLoadFailed (show e)
         Right Nothing -> do
-          phaseLog "info" "Initial data loaded."
+          Log.rcLog' Log.DEBUG "Initial data loaded."
           notify InitialDataLoaded
         Right (Just e) -> do
-          phaseLog "error" $ "Conf failed to validate: " ++ e
+          Log.rcLog' Log.ERROR $ "Conf failed to validate: " ++ e
           putLocalGraph rg
           notify $ InitialDataLoadFailed e
   if null racks
@@ -79,7 +78,7 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
             Iterative update -> do
-              phaseLog "warning" "iterative graph population - can't test sanity prior to update."
+              Log.rcLog' Log.WARN "iterative graph population - can't test sanity prior to update."
               let mupdate = update graph
               for_ mupdate $ \updateGraph -> do
                 graph' <- updateGraph $ \rg' -> do
@@ -102,10 +101,10 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           createIMeta filesystem
           runValidateConf
         ) `catch` (\e -> do
-            phaseLog "error" $ "Failure during initial data load: " ++ show (e::SomeException)
+            Log.rcLog' Log.ERROR $ "Failure during initial data load: " ++ show (e::SomeException)
             notify $ InitialDataLoadFailed (show e))
   else do
-    phaseLog "error" "Initial data is already loaded."
+    Log.rcLog' Log.ERROR "Initial data is already loaded."
     notify $ InitialDataLoadFailed "Initial data is already loaded."
 
 goRack :: CI.Rack -> PhaseM RC l ()

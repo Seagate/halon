@@ -158,8 +158,8 @@ withLocalContext action = do
 
 -- | Establishes an implicit local context ex nihilo; thus this can be used
 --   without any existing contexts in scope.
---   Note that nesting calls to 'withLocalContext\'' will not work. However,
---   'withLocalContext' can safely be nested within 'withLocalContext\''
+--   Note that nesting calls to 'withLocalContext'' will not work. However,
+--   'withLocalContext' can safely be nested within 'withLocalContext''
 withLocalContext' :: ((?ctx :: LocalContext) => PhaseM RC l a) -> PhaseM RC l a
 withLocalContext' = let ?ctx = emptyLocalContext in withLocalContext
 

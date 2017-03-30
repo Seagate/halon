@@ -289,9 +289,6 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
       inner (Publish e :>>= k) = do
         lift $ notifySubscribers subs e
         go ids l buf (k ())
-      inner (PhaseLog ctx lg :>>= k) = do
-        logIt $ Log.PhaseLog $ Log.PhaseLogInfo ctx lg
-        go ids l buf $ k ()
       inner (AppLog evt :>>= k) = do
         logIt $ Log.ApplicationLog $ Log.ApplicationLogInfo evt
         go ids l buf $ k ()

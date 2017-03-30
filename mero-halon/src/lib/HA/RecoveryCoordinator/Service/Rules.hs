@@ -132,8 +132,8 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
      ServiceStartRequest _ node svc a _ <- decodeMsg msg
      tagContext Log.SM node (Just "service.node")
      tagContext Log.SM [ ("service.name", serviceName svc)
-                        , ("service.config", show a)
-                        ] Nothing
+                       , ("service.config", show a)
+                       ] Nothing
      minfo <- Service.lookupInfoMsg node svc
      for_ minfo $ \cfg -> do
        Service.markStopping node cfg
@@ -166,8 +166,8 @@ serviceStart = mkJobRule serviceStartJob  args $ \(JobHandle _ finish) -> do
      ServiceStartRequest _ node svc conf _ <- decodeMsg msg
      tagContext Log.SM node (Just "service.node")
      tagContext Log.SM [ ("service.name", serviceName svc)
-                        , ("service.config", show conf)
-                        ] Nothing
+                       , ("service.config", show conf)
+                       ] Nothing
      Service.declare svc
      Service.register node svc conf
      continue do_start

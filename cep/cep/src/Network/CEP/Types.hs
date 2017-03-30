@@ -523,9 +523,6 @@ data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
 --
 -- 'Publish': Pushes message to subscribers.
 --
--- 'PhaseLog': Simple log. First parameter is the context and the last
--- one is the log.
---
 -- 'Switch': Changes state machine context. Given the list of
 -- 'PhaseHandle', switch to the first 'Phase' that's successfully
 -- executed.
@@ -546,7 +543,6 @@ data PhaseInstr app l a where
     Lift :: Process a -> PhaseInstr app l a
     Suspend :: PhaseInstr app l ()
     Publish :: Serializable e => e -> PhaseInstr app l ()
-    PhaseLog :: String -> String -> PhaseInstr app l ()
     Switch :: [Jump PhaseHandle] -> PhaseInstr app l ()
     Peek :: Serializable a => Index -> PhaseInstr app l (Index, a)
     Shift :: Serializable a => Index -> PhaseInstr app l (Index, a)
@@ -600,10 +596,6 @@ suspend = singleton Suspend
 -- | Pushes message to subscribers.
 publish :: Serializable e => e -> PhaseM app l ()
 publish e = singleton $ Publish e
-
--- | Simple log. First parameter is the context and the last one is the log.
-phaseLog :: String -> String -> PhaseM app l ()
-phaseLog ctx line = singleton $ PhaseLog ctx line
 
 -- | Application log. Log a value in the underlying application log type.
 appLog :: Application app => LogType app -> PhaseM app l ()

@@ -119,8 +119,7 @@ mkAttachDisk getter onFailure onSuccess = do
         | otherwise -> continue ph
 
   return (ph, \sdev -> do
-    phaseLog "spiel"    $ "Attaching disk."
-    phaseLog "disk.fid" $ show $ M0.fid sdev
+    Log.actLog "Attaching disk" [ ("disk.fid", show $ M0.fid sdev) ]
     mdisk <- lookupSDevDisk sdev
 
     unlift <- mkUnliftProcess
@@ -133,7 +132,7 @@ mkAttachDisk getter onFailure onSuccess = do
         void $ withSpielIO $
           withRConfIO mp $ try (Spiel.deviceAttach (M0.fid d)) >>= unlift . next
       Nothing -> do
-        phaseLog "warning" $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
+        Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
 
 -- | Create all code that allow to ask mero (IO services) to detach certain disk.
@@ -175,8 +174,7 @@ mkDetachDisk getter onFailure onSuccess = do
         | otherwise -> continue ph
 
   return (ph, \sdev -> do
-    phaseLog "spiel"    $ "Detaching disk."
-    phaseLog "disk.fid" $ show $ M0.fid sdev
+    Log.actLog "Detaching disk" [ ("disk.fid", show $ M0.fid sdev) ]
     mdisk <- lookupSDevDisk sdev
     unlift <- mkUnliftProcess
 
@@ -189,7 +187,7 @@ mkDetachDisk getter onFailure onSuccess = do
         void $ withSpielIO $
           withRConfIO mp $ try (Spiel.deviceDetach (M0.fid d)) >>= unlift . next
       Nothing -> do
-        phaseLog "warning" $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
+        Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
 
 

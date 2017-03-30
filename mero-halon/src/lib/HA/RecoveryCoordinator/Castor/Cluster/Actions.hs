@@ -2,7 +2,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 -- |
--- Copyright:  (C) 2015 Seagate Technology Limited.
+-- Module    : HA.RecoveryCoordinator.Castor.Cluster.Actions
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
 --
 module HA.RecoveryCoordinator.Castor.Cluster.Actions
   ( -- * Guards
@@ -12,25 +14,24 @@ module HA.RecoveryCoordinator.Castor.Cluster.Actions
   , calculateClusterLiveness
   ) where
 
-import           HA.RecoveryCoordinator.RC.Actions
+import           Control.Distributed.Process (Process, usend)
+import           Data.List (nub)
+import           Data.Maybe (fromMaybe, listToMaybe)
+import           Data.Monoid (All(..), Any(..))
+import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Actions.Mero
-import qualified HA.ResourceGraph    as G
-import qualified HA.Resources        as R
-import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Mero   as M0
-import qualified HA.Resources.Mero.Note as M0
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Event
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
+import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import           Mero.Notification (getSpielAddress)
-
-import Control.Distributed.Process (Process, usend)
-import Data.List (nub)
-import Data.Maybe (fromMaybe, listToMaybe)
-import Data.Monoid (All(..), Any(..))
-import Data.Traversable (for)
-
-import Network.CEP
+import           Network.CEP
 
 -- | Message guard: Check if the barrier being passed is for the
 -- correct level. This is used during 'ruleNewMeroServer' with the
@@ -63,8 +64,8 @@ notifyOnClusterTransition = do
   let disposition = fromMaybe M0.OFFLINE $ G.connectedTo R.Cluster R.Has rg
       oldState = getClusterStatus rg
       newState = M0.MeroClusterState disposition newRunLevel newStopLevel
-  phaseLog "oldState" $ show oldState
-  phaseLog "newState" $ show newState
+  Log.actLog "Cluster transition" [ ("old state", show oldState)
+                                  , ("new state", show newState) ]
   modifyGraph $ G.connect R.Cluster M0.StopLevel newStopLevel
               . G.connect R.Cluster M0.RunLevel newRunLevel
   registerSyncGraphCallback $ \self _ -> do

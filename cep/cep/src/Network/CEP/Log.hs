@@ -79,15 +79,6 @@ data RestartInfo = RestartInfo {
 instance ToJSON RestartInfo
 instance FromJSON RestartInfo
 
--- | Emitted whenever a legacy call to 'phaseLog' is made.
-data PhaseLogInfo = PhaseLogInfo {
-    pl_key :: String
-  , pl_value :: String
-} deriving (Generic, Typeable, Show)
-
-instance ToJSON PhaseLogInfo
-instance FromJSON PhaseLogInfo
-
 -- | Emitted whenever an application log is made from the underlying
 --   application.
 data ApplicationLogInfo a = ApplicationLogInfo {
@@ -123,7 +114,6 @@ data CEPLog a =
   | Restart RestartInfo
   | PhaseEntry
     -- ^ Emitted whenever the body of a phase begins processing.
-  | PhaseLog PhaseLogInfo
   | StateLog StateLogInfo
   | ApplicationLog (ApplicationLogInfo a)
   deriving (Generic, Typeable, Show)
@@ -149,7 +139,6 @@ deriveSafeCopy 0 'base ''ForkInfo
 deriveSafeCopy 0 'base ''ForkType
 deriveSafeCopy 0 'base ''Jump
 deriveSafeCopy 0 'base ''Location
-deriveSafeCopy 0 'base ''PhaseLogInfo
 deriveSafeCopy 0 'base ''RestartInfo
 deriveSafeCopy 0 'base ''StateLogInfo
 deriveSafeCopy 0 'base ''SwitchInfo

@@ -9,15 +9,16 @@ module HA.RecoveryCoordinator.RC.Rules
   ) where
 
 import           HA.Aeson (ByteString64(..))
+import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events
 import           HA.RecoveryCoordinator.RC.Internal
-import           HA.RecoveryCoordinator.Mero (IgnitionArguments(..))
-import qualified HA.Resources.RC as R
-import qualified HA.Resources as R
 import qualified HA.ResourceGraph as G
+import qualified HA.Resources as R
 import           HA.Resources.HalonVars
+import qualified HA.Resources.RC as R
 import Network.CEP
 
 
@@ -84,7 +85,7 @@ initialRule argv = do
   -- Run node monitoring angel.
   registerNodeMonitoringAngel
   -- Add all known nodes to cluster.
-  phaseLog "info" "Adding known nodes" -- XXX: do not add ones that are not up
+  Log.rcLog' Log.DEBUG "Adding known nodes" -- XXX: do not add ones that are not up
   l "add nodes"
   for_ (G.connectedTo R.Cluster R.Has rg) $
     addNodeToCluster (eqNodes argv)
@@ -162,15 +163,16 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
 ruleNodeMonitorNotification :: Definitions RC ()
 ruleNodeMonitorNotification = defineSimple "halon::rc::node-monitor-notification" $
   \(NodeMonitorNotification mref nid reason) -> do
-     phaseLog "node" $ show nid
-     phaseLog "reason" $ show reason
+     Log.actLog "nodeMonitorNotification" [ ("node", show nid)
+                                          , ("reason", show reason)
+                                          ]
      runMonitorCallback mref
 
 -- | When process did spawn we run all interested subscribers.
 ruleDidSpawn :: Definitions RC ()
 ruleDidSpawn = defineSimple "halon::rc::did-spawn" $
   \(DidSpawn ref _) -> do
-     phaseLog "ref" $ show ref
+     Log.tagContext Log.Phase [ ("ref", show ref) ] Nothing
      runSpawnCallback ref
 
 -- | Set the given 'HalonVars' in RG.

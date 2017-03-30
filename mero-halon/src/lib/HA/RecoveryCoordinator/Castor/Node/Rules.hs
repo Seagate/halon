@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -279,8 +278,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
   $ \(HAMsg (beioerr :: BEIoErr) meta) -> do
     lookupConfObjByFid (_hm_source_process meta) >>= \case
       Nothing -> do
-        phaseLog "warning" $ "Unknown source process."
-        phaseLog "metadata" $ show meta
+        Log.rcLog' Log.WARN $ "Unknown source process: " ++ show meta
       Just (sendingProcess :: M0.Process) -> do
         mnode <- G.connectedFrom M0.IsParentOf sendingProcess
                 <$> getLocalGraph
@@ -288,16 +286,15 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
           Just (node :: M0.Node) -> do
               -- Log an IEM about this error
               sendInterestingEvent . InterestingEventMessage $ logMeroBEError
-                 ( "{ 'metadata':" <> code meta
-                <> ", 'beError':" <> code beioerr
-                <> "}" )
+                 ( T.pack "{ 'metadata':" <> code meta
+                <> T.pack ", 'beError':" <> code beioerr
+                <> T.pack "}" )
               void $ applyStateChanges [stateSet node nodeFailed]
             where
               code :: Aeson.ToJSON a => a -> T.Text
               code = TL.toStrict . TL.decodeUtf8 . Aeson.encode
           Nothing -> do
-            phaseLog "error" $ "No node found for source process."
-            phaseLog "metadata" $ show meta
+            Log.rcLog' Log.ERROR $ "No node found for source process: " ++ show meta
 
 -------------------------------------------------------------------------------
 -- Requests handling
@@ -319,25 +316,25 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
     rg <- getLocalGraph
     case getClusterStatus rg of
       Just (M0.MeroClusterState M0.OFFLINE _ _) -> do
-         phaseLog "info" "Cluster disposition is OFFLINE."
+         Log.rcLog' Log.DEBUG "Cluster disposition is OFFLINE."
       _ -> case M0.m0nodeToNode m0node rg of
              Just node@(R.Node nid) ->
                findNodeHost node >>= \case
                  Just host -> do
-                   phaseLog "info" $ "Starting new mero server."
-                   phaseLog "info" $ "node.host = " ++ show nid
+                   Log.rcLog' Log.DEBUG $ "Starting new mero server."
+                   Log.rcLog' Log.DEBUG $ "node.host = " ++ show nid
                    let mlnid = (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
                            <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
                                                    <- G.connectedTo host R.Has rg ])
                    case mlnid of
                      Nothing ->
-                       phaseLog "error" $ "Unable to find Data IP addr for host " ++ show host
+                       Log.rcLog' Log.ERROR $ "Unable to find Data IP addr for host " ++ show host
                      Just lnid -> do
-                       phaseLog "info" $ "node.lnid = " ++ show lnid
+                       Log.rcLog' Log.DEBUG $ "node.lnid = " ++ show lnid
                        createMeroKernelConfig host $ lnid ++ "@tcp"
                        startMeroService host node
-                 Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show node
-             Nothing -> phaseLog "error" $ "Can't find R.Host for node " ++ show m0node
+                 Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show node
+             Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show m0node
 
 halonM0dStopJob :: Job StopHalonM0dRequest StopHalonM0dResult
 halonM0dStopJob = Job "castor::node::request::stop-halon-m0d"
@@ -411,7 +408,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
         Just _ -> do
           mnode <- findNodeHost node
           if isJust mnode
-          then do phaseLog "info" $ show node ++ " is already in configuration."
+          then do Log.rcLog' Log.DEBUG $ show node ++ " is already in configuration."
                   return [reconnect_m0d]
           else return [query_host_info]
 
@@ -419,7 +416,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
         mhost <- findNodeHost node
         if isNothing mhost
         then do
-          phaseLog "error" $ "StartProcessNodeNew sent for node with no host: " ++ show node
+          Log.rcLog' Log.ERROR $ "StartProcessNodeNew sent for node with no host: " ++ show node
           return $ Right (NewMeroServerFailure node, [finish])
         else Right . (NewMeroServerFailure node,) <$> route node
 
@@ -437,7 +434,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
     syncStat <- synchronize False
     case syncStat of
-      Left err -> do phaseLog "error" $ "Unable to sync new client to confd: " ++ show err
+      Left err -> do Log.rcLog' Log.ERROR $ "Unable to sync new client to confd: " ++ show err
                      continue finish
       Right () -> continue synchronized
 
@@ -473,7 +470,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     let R.Node nid = node
     case lookupServiceInfo node (lookupM0d rg) rg of
       [] -> do
-        phaseLog "info" "No halon:m0d already running."
+        Log.rcLog' Log.DEBUG "No halon:m0d already running."
         continue announce
       _ -> do
         -- There's a service in RG but it may not be marked by halon
@@ -483,7 +480,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
         -- we can tell the already-running service to reconnect.
         case M0.nodeToM0Node node rg >>= \m0n -> Process.getHA m0n rg of
           Nothing -> do
-            phaseLog "error" $ "Can't find halon:m0d for " ++ show node
+            Log.rcLog' Log.ERROR $ "Can't find halon:m0d for " ++ show node
             continue finish
           Just ha -> do
             -- Send directly as service will not usually be PSOnline
@@ -504,7 +501,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     -- TOOD: shuffle retrigger around a bit
     rg <- getLocalGraph
     case M0.nodeToM0Node node rg of
-      Nothing -> phaseLog "info" $ "No m0node associated, not retriggering mero"
+      Nothing -> Log.rcLog' Log.DEBUG $ "No m0node associated, not retriggering mero"
       Just m0node -> retriggerMeroNodeBootstrap m0node
 
     modify Local $ rlens fldRep .~ (Field . Just $ NewMeroServer node)
@@ -541,14 +538,14 @@ mkQueryHostInfo andThen orFail = do
 
     directly query_info $ do
       Just node@(R.Node nid) <- getField . rget fldNode <$> get Local
-      phaseLog "info" $ "Querying system information from " ++ show node
+      Log.rcLog' Log.DEBUG $ "Querying system information from " ++ show node
       liftProcess . void . spawnLocal . void
         $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
       continue info_returned
 
     setPhaseIf info_returned systemInfoOnNode $ \(eid,info) -> do
       Just node <- getField . rget fldNode <$> get Local
-      phaseLog "info" $ "Received system information about " ++ show node
+      Log.rcLog' Log.DEBUG $ "Received system information about " ++ show node
       mhost <- findNodeHost node
       case mhost of
         Just host -> do
@@ -557,7 +554,7 @@ mkQueryHostInfo andThen orFail = do
           registerSyncGraphProcessMsg eid
           continue andThen
         Nothing -> do
-          phaseLog "error" $ "Unknown host"
+          Log.rcLog' Log.ERROR $ "Unknown host"
           messageProcessed eid
           continue orFail
 
@@ -662,15 +659,15 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
               else do
                 lookupInfoMsg node (lookupM0d rg) >>= \case
                   Nothing -> do
-                    phaseLog "info" $ "Requesting halon:m0d start on " ++ show m0node
+                    Log.rcLog' Log.DEBUG $ "Requesting halon:m0d start on " ++ show m0node
                     promulgateRC $ StartHalonM0dRequest m0node
                   Just _ -> return ()
                 case Process.getHA m0node rg of
                   Nothing -> do
-                    phaseLog "error" $ "No HA process on " ++ show m0node
+                    Log.rcLog' Log.ERROR $ "No HA process on " ++ show m0node
                     return Nothing
                   Just ha -> do
-                    phaseLog "info" $ "Waiting for halon:m0d to come up on " ++ show m0node
+                    Log.rcLog' Log.DEBUG $ "Waiting for halon:m0d to come up on " ++ show m0node
                     t <- _hv_mero_kernel_start_timeout <$> getHalonVars
                     waitClear
                     setExpectedNotifications
@@ -684,7 +681,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
             -- Always explicitly fail this job so callers don't have to
             -- set and wait for a timeout on their end.
             Nothing -> do
-              phaseLog "warn" $ "Node not ready for start."
+              Log.rcLog' Log.WARN $ "Node not ready for start."
               st <- nodeFailedWith NodeProcessesStartFailure m0node
               return $ Right (st, [finish])
             Just phs -> return $ Right (def, phs)
@@ -942,7 +939,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
    directly teardown $ do
      StopProcessesOnNodeRequest node <- getRequest
      lvl@(M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
-     phaseLog "info" $ "Tearing down " ++ show lvl ++ " on " ++ show node
+     Log.rcLog' Log.DEBUG $ "Tearing down " ++ show lvl ++ " on " ++ show node
      cluster_lvl <- getClusterStatus <$> getLocalGraph
      barrierTimeout <- _hv_node_stop_barrier_timeout <$> getHalonVars
      case cluster_lvl of
@@ -950,13 +947,17 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
           | i < 0 && s <= M0.BootLevel (-1) -> continue stop_service
           | i < 0 -> switch [await_barrier, timeout barrierTimeout barrier_timeout]
           | s < lvl -> do
-              phaseLog "debug" $ printf "%s is on %s while cluster is on %s - skipping"
-                                        (show node) (show lvl) (show s)
+              let msg :: String
+                  msg = printf "%s is on %s while cluster is on %s - skipping"
+                               (show node) (show lvl) (show s)
+              Log.rcLog' Log.DEBUG msg
               continue lower_boot_level
           | s == lvl  -> continue teardown_exec
           | otherwise -> do
-              phaseLog "debug" $ printf "%s is on %s while cluster is on %s - waiting for barriers."
-                                        (show node) (show lvl) (show s)
+              let msg :: String
+                  msg = printf "%s is on %s while cluster is on %s - waiting for barriers."
+                               (show node) (show lvl) (show s)
+              Log.rcLog' Log.DEBUG msg
               notifyOnClusterTransition
               switch [ await_barrier, timeout barrierTimeout barrier_timeout ]
        Just st -> do
@@ -983,11 +984,13 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
                                     , M0.PSStopping, M0.PSStarting ]
           )
      case stillUnstopped of
-       [] -> do phaseLog "info" $ printf "%s R.Has no services on level %s - skipping to the next level"
-                                          (show node) (show lvl)
+       [] -> do let msg :: String
+                    msg = printf "%s R.Has no services on level %s - skipping to the next level"
+                                 (show node) (show lvl)
+                Log.rcLog' Log.DEBUG msg
                 continue lower_boot_level
        ps -> do
-          phaseLog "info" $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
+          Log.rcLog' Log.DEBUG $ "Stopping " ++ show (M0.fid <$> ps) ++ " on " ++ show node
           for_ ps $ promulgateRC . StopProcessRequest
           modify Local $ rlens fldWaitingProcs . rfield .~ ps
           continue await_stopping_processes
@@ -1006,8 +1009,10 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
 
    directly stop_service $ do
      StopProcessesOnNodeRequest node <- getRequest
-     phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
-                              (show node)
+     let msg :: String
+         msg = printf "%s stopped all mero services - stopping halon mero service."
+                      (show node)
+     Log.rcLog' Log.DEBUG msg
      l <- startJob $ StopHalonM0dRequest node
      modify Local $ rlens fldJob . rfield .~ Just l
      continue halon_m0d_stop_result
@@ -1060,7 +1065,7 @@ ruleFailNodeIfProcessCantRestart :: Definitions RC ()
 ruleFailNodeIfProcessCantRestart =
   defineSimple "castor::node::process-start-failure" $ \case
     ProcessStartFailed p r -> do
-      phaseLog "info" $ "Process start failure for " ++ M0.showFid p ++ ": " ++ r
+      Log.rcLog' Log.DEBUG $ "Process start failure for " ++ M0.showFid p ++ ": " ++ r
       rg <- getLocalGraph
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
       void . applyStateChanges $ map (`stateSet` nodeFailed) m0ns
@@ -1105,8 +1110,10 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
 
    directly stop_service $ do
      MaintenanceStopNode node <- getRequest
-     phaseLog "info" $ printf "%s stopped all mero services - stopping halon mero service."
-                              (show node)
+     let msg :: String
+         msg = printf "%s stopped all mero services - stopping halon mero service."
+                      (show node)
+     Log.rcLog' Log.DEBUG msg
      j <- startJob $ StopHalonM0dRequest node
      modify Local $ rlens fldJob . rfield .~ Just j
      continue halon_m0d_stop_result

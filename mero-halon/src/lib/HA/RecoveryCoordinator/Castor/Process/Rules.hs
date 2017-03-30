@@ -143,7 +143,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   notifier <- mkNotifierSimple dispatch
 
   let defaultReply c m = do
-        phaseLog "warn" m
+        Log.rcLog' Log.WARN m
         ProcessStartRequest p <- getRequest
         _ <- applyStateChanges [ stateSet p $ Tr.processFailed m ]
         return (c p m, [finish])
@@ -158,7 +158,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
           Nothing -> initResources p rg >>= \case
             Just failMsg -> Right <$> defaultReply ProcessStartFailed failMsg
             Nothing -> do
-              forM_ (runWarnings p rg) $ phaseLog "warn"
+              forM_ (runWarnings p rg) $ Log.rcLog' Log.WARN
 
               waitClear
               waitFor notifier
@@ -180,14 +180,14 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
 
   directly starting_notify_timed_out $ do
     ProcessStartRequest p <- getRequest
-    phaseLog "warn" $ "Failed to notify PSStarting for " ++ showFid p
+    Log.rcLog' Log.WARN $ "Failed to notify PSStarting for " ++ showFid p
     fail_start "Notification about PSStarting failed" >>= switch
 
   directly configure $ do
     Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
     ProcessStartRequest p <- getRequest
-    phaseLog "info" $ "Configuring " ++ showFid p
+    Log.rcLog' Log.DEBUG $ "Configuring " ++ showFid p
     confUUID <- configureMeroProcess sender p runType
     modify Local $ rlens fldConfigureUUID . rfield .~ Just confUUID
     t <- getHalonVar _hv_process_configure_timeout
@@ -203,7 +203,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     -- UUID and only listen to results from the invocation from this
     -- rule run.
     WrongUUID uid -> do
-      phaseLog "warn" "Received process configure result from different invocation."
+      Log.rcLog' Log.WARN "Received process configure result from different invocation."
       messageProcessed uid
       t <- getHalonVar _hv_process_configure_timeout
       switch [configure_result, timeout t configure_timeout]
@@ -212,11 +212,11 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       finisher <- fail_start $ "Configuration failed: " ++ failMsg
       switch finisher
     ConfigureSuccess uid -> do
-      Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
+      ProcessStartRequest p <- getRequest
       Just label <- getField . rget fldLabel <$> get Local
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
       messageProcessed uid
-      phaseLog "info" $ "Configuration successful for " ++ showFid p
+      Log.rcLog' Log.DEBUG $ "Configuration successful for " ++ showFid p
       case label of
         M0.PLClovis _ True -> do
           Log.rcLog' Log.DEBUG
@@ -236,8 +236,10 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   directly start_process $ do
     Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldLabel <$> get Local
-    Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
-    phaseLog "info" $ printf "Requesting start of %s (%s)" (showFid p) (show runType)
+    ProcessStartRequest p <- getRequest
+    let msg :: String
+        msg = printf "Requesting start of %s (%s)" (showFid p) (show runType)
+    Log.rcLog' Log.DEBUG msg
     liftProcess . sender . ProcessMsg $! StartProcess runType p
     t <- _hv_process_start_cmd_timeout <$> getHalonVars
     switch [start_process_cmd_result, timeout t start_process_timeout]
@@ -250,15 +252,17 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         messageProcessed uid
         switch finisher
       Started p pid -> do
-        phaseLog "info" $ "systemctl OK for " ++ showFid p
-        phaseLog "PID" $ show pid
+        Log.actLog "systemctl OK" [ ("fid", showFid p)
+                                  , ("pid", show pid) ]
         messageProcessed uid
         modifyGraph . G.connect p Has $ M0.PID pid
         t <- _hv_process_start_timeout <$> getHalonVars
         switch [ start_process_complete, start_process_failure
                , timeout t start_process_timeout ]
       RequiresStop p -> do
-        phaseLog "info" $ printf "Process %s already running, stopping first." (showFid p)
+        let msg :: String
+            msg = printf "Process %s already running, stopping first." (showFid p)
+        Log.rcLog' Log.DEBUG msg
         l <- startJob $! StopProcessRequest p
         modify Local $ rlens fldStopJob . rfield .~ Just l
         -- ruleProcessStop should always reply
@@ -271,19 +275,25 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   -- this job itself should decide what to do with the process.
   setPhaseIf stop_finished ourStopJob $ \case
     StopProcessResult (p, M0.PSOffline) -> do
-      phaseLog "info" $ printf "%s stopped successfully, retrying start." (showFid p)
+      let msg :: String
+          msg = printf "%s stopped successfully, retrying start." (showFid p)
+      Log.rcLog' Log.DEBUG msg
       continue start_process_retry
     StopProcessResult (p, pst) -> do
-      phaseLog "warn" $ printf "%s ended up in %s, trying to start again anyway."
-                               (showFid p) (show pst)
+      let msg :: String
+          msg = printf "%s ended up in %s, trying to start again anyway."
+                       (showFid p) (show pst)
+      Log.rcLog' Log.WARN msg
       continue start_process_retry
     StopProcessTimeout p -> do
-      phaseLog "warn" $ printf "%s didn't stop in timely manner, retrying start." (showFid p)
+      let msg :: String
+          msg = printf "%s didn't stop in timely manner, retrying start." (showFid p)
+      Log.rcLog' Log.WARN msg
       continue start_process_retry
 
   -- Wait for the process to come online - sent out by `ruleProcessOnline`
   setPhaseNotified start_process_complete (processState (== M0.PSOnline)) $ \_ -> do
-    Just (ProcessStartRequest p) <- getField . rget fldReq <$> get Local
+    ProcessStartRequest p <- getRequest
     modify Local $ rlens fldRep . rfield .~ Just (ProcessStarted p)
     continue finish
 
@@ -304,11 +314,11 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     switch finisher
 
   directly start_process_retry $ do
-    Just req@(ProcessStartRequest p) <- getField . rget fldReq <$> get Local
+    req@(ProcessStartRequest p) <- getRequest
     retryCount <- getField . rget fldRetryCount <$> get Local
     restartMaxAttempts <- _hv_process_max_start_attempts <$> getHalonVars
-    phaseLog "info" $ printf "%s: Retrying start (%d/%d)"
-                             (showFid p) retryCount restartMaxAttempts
+    Log.rcLog' Log.DEBUG $ (printf "%s: Retrying start (%d/%d)"
+                             (showFid p) retryCount restartMaxAttempts :: String)
 
     -- We can make the most out of the rule by starting again from the
     -- very top: we get all the checks for free and we verify all the
@@ -515,7 +525,7 @@ ruleProcessOnline = define "castor::process::online" $ do
       -- happen if someone manually starts up a service but it's not a
       -- valid usecase.
       (M0.PSOnline, Just (M0.PID _)) -> do
-        phaseLog "debug" $
+        Log.rcLog' Log.DEBUG $
           "Process started notification for already online process with a PID. Do nothing."
 
       -- We have a process but no PID for it, somehow. This shouldn't
@@ -523,13 +533,12 @@ ruleProcessOnline = define "castor::process::online" $ do
       -- online is this rule and we receive the PID inside the
       -- message.
       (M0.PSOnline, Nothing) -> do
-        phaseLog "warn" "Received process online notification for already online process without PID."
+        Log.rcLog' Log.WARN "Received process online notification for already online process without PID."
         modifyGraph $ G.connect p Has processPid
 
       (M0.PSStarting, _) -> do
-        phaseLog "action" "Process started."
-        phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
-        phaseLog "info" $ "process.pid     = " ++ show processPid
+        Log.actLog "Process started." [ ("fid", show (M0.fid p))
+                                      , ("pid", show processPid) ]
         modifyGraph $ G.connect p Has processPid
         let nodeNotif = if any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg)
                         then case G.connectedFrom M0.IsParentOf p rg of
@@ -543,17 +552,16 @@ ruleProcessOnline = define "castor::process::online" $ do
       -- springs back to life.
       (_, _)
         | any (\s -> M0.s_type s == CST_HA) (G.connectedTo p M0.IsParentOf rg) -> do
-        phaseLog "action" "HA Process started."
-        phaseLog "info" $ "process.fid     = " ++ show (M0.fid p)
-        phaseLog "info" $ "process.pid     = " ++ show processPid
+        Log.actLog "HA process started." [ ("fid", show (M0.fid p))
+                                         , ("pid", show processPid) ]
         modifyGraph $ G.connect p Has processPid
         void $! case G.connectedFrom M0.IsParentOf p rg of
           Nothing -> do
-            phaseLog "warn" $ "No node associated with " ++ show (M0.fid p)
+            Log.rcLog' Log.WARN $ "No node associated with " ++ show (M0.fid p)
             applyStateChanges [ stateSet p Tr.processHAOnline ]
           Just n -> applyStateChanges [ stateSet p Tr.processHAOnline
                                       , stateSet n Tr.nodeOnline ]
-      st -> phaseLog "warn" $ "ruleProcessOnline: Unexpected state for"
+      st -> Log.rcLog' Log.WARN $ "ruleProcessOnline: Unexpected state for"
             ++ " process " ++ show p ++ ", " ++ show st
     done eid
 
@@ -618,7 +626,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       -- The process is already in what we consider a failed state:
       -- either we're already done dealing with it (it's offline or it
       -- failed).
-      True -> phaseLog "warn" $
+      True -> Log.rcLog' Log.WARN $
                 "Failed notification for already failed process: " ++ show p
 
       -- Make sure we're not in PSStarting state: this means that SSPL
@@ -626,7 +634,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       -- process restart) which means we shouldn't try to restart again
       False -> case getState p rg of
         M0.PSStarting ->
-          phaseLog "warn" $ "Proceess in starting state, not restarting: "
+          Log.rcLog' Log.WARN $ "Proceess in starting state, not restarting: "
                           ++ show p
         M0.PSStopping ->
           -- We are intending to stop this process. Either this or the
@@ -636,7 +644,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
         -- Harmless case, we have probably just stopped the process
         -- through ruleProcessStop already.
         M0.PSOffline ->
-          phaseLog "info" $ "PROCESS_STOPPED for already-offline process"
+          Log.rcLog' Log.DEBUG $ "PROCESS_STOPPED for already-offline process"
         _ -> void $ applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
     done eid
 
@@ -677,7 +685,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 
   let quiesce (StopProcessRequest p) = do
         showContext
-        phaseLog "info" $ "Setting processes to quiesce."
+        Log.rcLog' Log.DEBUG $ "Setting processes to quiesce."
         waitFor notifier
         onTimeout 10 run_stopping
         onSuccess run_stopping
@@ -687,7 +695,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 
   directly run_stopping $ do
     StopProcessRequest p <- getRequest
-    phaseLog "info" $ "Notifying about process stopping."
+    Log.rcLog' Log.DEBUG $ "Notifying about process stopping."
     waitClear
     waitFor notifier
     onSuccess stop_process
@@ -725,7 +733,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
         switch [system_process_stopped, timeout t no_response]
       Nothing -> do
         showContext
-        phaseLog "error" "No process node found. Failing processes."
+        Log.rcLog' Log.ERROR "No process node found. Failing processes."
         let failMsg = "No process control channel found during stop."
         notifyProcessFailed p failMsg
 
@@ -815,9 +823,8 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 
     showContext = do
       req <- gets Local (^. rlens fldReq . rfield)
-      for_ req $ \(StopProcessRequest p) ->
-        phaseLog "request-context" $
-          printf "Process: %s" (showFid p)
+      for_ req $ \(StopProcessRequest p) -> do
+        Log.rcLog' Log.DEBUG $ (printf "Process: %s" (showFid p) :: String)
 
     ourProcess (HAEvent eid (ProcessControlResultStopMsg _ r)) _ l =
       return $ case (l ^. rlens fldReq . rfield) of
@@ -835,7 +842,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 ruleFailedNotificationFailsProcess :: Definitions RC ()
 ruleFailedNotificationFailsProcess =
   defineSimpleTask "notification-failed-fails-process" $ \(NotifyFailureEndpoints eps) -> do
-    phaseLog "info" $ "Handling notification failure for: " ++ show eps
+    Log.rcLog' Log.DEBUG $ "Handling notification failure for: " ++ show eps
     rg <- getLocalGraph
     -- Get procs which have servicess
     let procs = nub $

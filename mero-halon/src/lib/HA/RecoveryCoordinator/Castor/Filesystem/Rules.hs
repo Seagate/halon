@@ -12,20 +12,21 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   , periodicQueryStats
   ) where
 
-import HA.RecoveryCoordinator.RC.Actions
-  ( RC
-  , getLocalGraph
-  , modifyGraph
-  , notify
-  )
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
+import HA.RecoveryCoordinator.Castor.Filesystem.Events ( StatsUpdated(..) )
 import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem)
 import HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
 import HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( withSpielIO
   , withRConfIO
   )
-import HA.RecoveryCoordinator.Castor.Filesystem.Events ( StatsUpdated(..) )
+import HA.RecoveryCoordinator.RC.Actions
+  ( RC
+  , getLocalGraph
+  , modifyGraph
+  , notify
+  )
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
@@ -64,7 +65,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
   stats_fetched <- phaseHandle "stats_fetched"
 
   directly stats_fetch $ do
-    phaseLog "info" "Querying filesystem stats."
+    Log.rcLog' Log.DEBUG "Querying filesystem stats."
 
     unlift <- mkUnliftProcess
     next <- liftProcess $ do
@@ -86,14 +87,14 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
         put Local $ Just fs
         continue stats_fetched
       Nothing ->
-        phaseLog "info" "No filesystem found in graph."
+        Log.rcLog' Log.DEBUG "No filesystem found in graph."
       Just (_, M0.MeroClusterState _ rl _) ->
-        phaseLog "info" $ "Cluster is on runlevel " ++ show rl
+        Log.rcLog' Log.DEBUG $ "Cluster is on runlevel " ++ show rl
     continue $ timeout queryInterval stats_fetch
 
   setPhase stats_fetched $ \(FSStatsFetched q) -> do
     case q of
-      Left se -> phaseLog "warning" $ "Could not fetch filesystem stats: "
+      Left se -> Log.rcLog' Log.WARN $ "Could not fetch filesystem stats: "
                                     ++ se
       Right stats -> do
         Just fs <- get Local

@@ -20,6 +20,7 @@ import           Data.Vinyl
 import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Services.SSPL.LL.Resources
 import           Network.CEP
 
@@ -42,23 +43,23 @@ mkDispatchAwaitCommandAck dispatcher failed logAction = do
     sspl_notify_done <- phaseHandle "dispatcher:await:sspl"
 
     setPhaseIf sspl_notify_done onCommandAck $ \(eid, uid, ack) -> do
-      phaseLog "debug" "SSPL notification complete"
+      Log.rcLog' Log.DEBUG "SSPL notification complete"
       logAction
       modify Local $ rlens fldCommandAck . rfield %~ delete uid
       messageProcessed eid
       remaining <- gets Local (^. rlens fldCommandAck . rfield)
       when (null remaining) $ waitDone sspl_notify_done
 
-      phaseLog "info" $ "SSPL ack for command "  ++ show (commandAckType ack)
+      Log.rcLog' Log.DEBUG $ "SSPL ack for command "  ++ show (commandAckType ack)
       case commandAck ack of
         AckReplyPassed -> do
-          phaseLog "info" $ "SSPL command successful."
+          Log.rcLog' Log.DEBUG $ "SSPL command successful."
           continue dispatcher
         AckReplyFailed -> do
-          phaseLog "warning" $ "SSPL command failed."
+          Log.rcLog' Log.WARN $ "SSPL command failed."
           continue failed
         AckReplyError msg -> do
-          phaseLog "error" $ "Error received from SSPL: " ++ (T.unpack msg)
+          Log.rcLog' Log.ERROR $ "Error received from SSPL: " ++ (T.unpack msg)
           continue failed
 
     return sspl_notify_done

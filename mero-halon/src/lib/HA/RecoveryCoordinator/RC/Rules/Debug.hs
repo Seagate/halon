@@ -7,6 +7,7 @@ module HA.RecoveryCoordinator.RC.Rules.Debug where
 
 import           Control.Distributed.Process (usend)
 import           HA.RecoveryCoordinator.Mero
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Debug
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
@@ -36,7 +37,7 @@ ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
 ruleDebugRC :: IgnitionArguments -> Definitions RC ()
 ruleDebugRC argv = defineSimpleTask "Debug::debug-rc" $
   \(DebugRequest pid) -> do
-    phaseLog "info" "Sending debug statistics to client."
+    Log.rcLog' Log.DEBUG "Sending debug statistics to client."
     ls <- get Global
     rg <- getLocalGraph
     liftProcess . usend pid $ DebugResponse {

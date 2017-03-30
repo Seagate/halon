@@ -1,9 +1,4 @@
--- |
--- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
---
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -13,7 +8,10 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE LambdaCase                 #-}
-
+-- |
+-- Module    : HA.RecoveryCoordinator.Mero.Actions.Spiel
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( haAddress
   , getSpielAddressRC
@@ -54,12 +52,13 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
 
 import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
   ( lookupDiskSDev )
-import HA.RecoveryCoordinator.RC.Actions
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events
 import HA.RecoveryCoordinator.Mero.Actions.Conf
 import HA.RecoveryCoordinator.Mero.Actions.Core
 import HA.RecoveryCoordinator.Mero.Events
+import HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import HA.Resources (Has(..), Cluster(..))
 import HA.Resources.Castor
@@ -175,8 +174,9 @@ mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
   -- ^ Pool of interest
   -> PhaseM RC l ()
 mkGenericSNSOperation operation_name operation_reply operation_action pool = do
-  phaseLog "spiel"    $ symbolVal' operation_name
-  phaseLog "pool.fid" $ show (M0.fid pool)
+  Log.tagContext Log.SM [ ("spiel", symbolVal' operation_name)
+                        , ("pool.fid", show (M0.fid pool))
+                        ] Nothing
   unlift <- mkUnliftProcess
   next <- liftProcess $ do
     rc <- DP.getSelfPid
@@ -208,12 +208,11 @@ mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Ty
 mkGenericSNSReplyHandler n onError onSuccess action = do
   ph <- phaseHandle $ symbolVal' n ++ " reply"
   setPhase ph $ \(GenericSNSOperationResult pool er :: GenericSNSOperationResult k c) -> do
-    phaseLog "pool.fid" $ show (M0.fid pool)
+    Log.tagContext Log.SM [ ("pool.fid", show (M0.fid pool)) ] Nothing
     result <- case er of
-      Left s -> do phaseLog "result" "ERROR"
-                   phaseLog "error" s
+      Left s -> do Log.rcLog' Log.ERROR s
                    onError s pool
-      Right x -> do phaseLog "result" (show x)
+      Right x -> do Log.rcLog' Log.DEBUG (show x)
                     onSuccess x pool
     action pool result
   return ph
@@ -323,9 +322,10 @@ mkRebalanceStartOperation handler = do
   operation_started <- handleReply handler
   return ( operation_started
          , \pool disks -> do
-             phaseLog "spiel" $ "Starting rebalance on pool"
-             phaseLog "pool"  $ show pool
-             phaseLog "disks" $ show disks
+             Log.tagContext Log.Phase [ ("pool", show pool)
+                                      , ("disks", show disks)
+                                      ] Nothing
+             Log.rcLog' Log.DEBUG "Starting rebalance on pool"
              for_ disks $ \d -> do
                mt <- lookupDiskSDev d
                for_ mt $ unmarkSDevReplaced -- XXX: (qnikst) we should do that when finished rebalance, shouldm't we?
@@ -453,11 +453,11 @@ mkSyncAction lstate next = do
    (synchronized, synchronizeToConfd) <- mkSyncToConfd lstate next
 
    return $ \sync -> do
-     flip catch (\e -> phaseLog "error" $ "Exception during sync: "++show (e::SomeException))
+     flip catch (\e -> Log.rcLog' Log.ERROR $ "Exception during sync: "++show (e::SomeException))
          $ do
       case sync of
         SyncToConfdServersInRG f -> flip catch (handler (const $ return ())) $ do
-          phaseLog "info" "Syncing RG to confd servers in RG."
+          Log.rcLog' Log.DEBUG "Syncing RG to confd servers in RG."
           _ <- synchronizeToConfd f
           continue synchronized
         SyncDumpToBS pid -> flip catch (handler $ failToBS pid) $ do
@@ -472,7 +472,7 @@ mkSyncAction lstate next = do
             -> SomeException
             -> PhaseM RC l ()
     handler act e = do
-      phaseLog "error" $ "Exception during sync: " ++ show e
+      Log.rcLog' Log.ERROR $ "Exception during sync: " ++ show e
       liftProcess $ act e
 
 -- | Dump the conf into a 'BS.ByteString'.
@@ -495,7 +495,7 @@ syncToBS = loadConfData >>= \case
       DP.liftIO $ terminateM0Worker wrk
       return bs
     False -> do
-      phaseLog "warn" "syncToBS: returning empty string due to HalonVars"
+      Log.rcLog' Log.WARN "syncToBS: returning empty string due to HalonVars"
       return BS.empty
   Nothing -> error "Cannot load configuration data from graph."
 
@@ -526,7 +526,7 @@ mkSyncToConfd lstate next = do
               t1 <- txPopulate lift x t0
               txSyncToConfd force (lstate.cssHash) lift t1)
         case eresult of
-          Left ex -> phaseLog "error" $ "Exception during sync: " ++ show ex
+          Left ex -> Log.rcLog' Log.ERROR $ "Exception during sync: " ++ show ex
           _ -> return ()
       clean_and_run :: Lens' ConfSyncState [ListenerId] -> [ListenerId] -> PhaseM RC l ()
       clean_and_run ls listeners = do
@@ -571,15 +571,15 @@ mkSyncToConfd lstate next = do
      then return (Just (h, r))
      else return Nothing
      ) $ \(h', er) -> do
-     phaseLog "spiel" "Transaction closed."
+     Log.rcLog' Log.DEBUG "Transaction closed."
      case er of
        Right () -> do
          -- spiel increases conf version here so we should too; alternative
          -- would be querying spiel after transaction for the new version
          modifyConfUpdateVersion (\(M0.ConfUpdateVersion i _) -> M0.ConfUpdateVersion (succ i) h')
-         phaseLog "spiel" $ "Transaction committed, new hash: " ++ show h'
+         Log.rcLog' Log.DEBUG $ "Transaction committed, new hash: " ++ show h'
        Left err -> do
-         phaseLog "spiel" $ "Transaction commit failed with cache failure:" ++ err
+         Log.rcLog' Log.DEBUG $ "Transaction commit failed with cache failure:" ++ err
      continue next
 
   return ( on_synchronized
@@ -597,7 +597,7 @@ txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
 txSyncToConfd :: Bool -> Lens' l (Maybe Int) -> LiftRC -> SpielTransaction -> PhaseM RC l ()
 txSyncToConfd f luuid lift t = do
-  phaseLog "spiel" "Committing transaction to confd"
+  Log.rcLog' Log.DEBUG "Committing transaction to confd"
   M0.ConfUpdateVersion v h <- getConfUpdateVersion
   h' <- return . hash <$> m0synchronously lift (txToBS t v)
   if h /= h' || f
@@ -607,8 +607,8 @@ txSyncToConfd f luuid lift t = do
      m0asynchronously lift (DP.usend self . Synchronized h' . first show)
                            (void $ (first (SomeException . userError) <$> commitTransactionForced t False v)
                                     `finally` closeTransaction t)
-  else phaseLog "spiel" $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
-  phaseLog "spiel" "Transaction closed."
+  else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
+  Log.rcLog' Log.DEBUG "Transaction closed."
 
 data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 
@@ -635,7 +635,7 @@ modifyConfUpdateVersion :: (M0.ConfUpdateVersion -> M0.ConfUpdateVersion)
 modifyConfUpdateVersion f = do
   csu <- getConfUpdateVersion
   let fcsu = f csu
-  phaseLog "rg" $ "Setting ConfUpdateVersion to " ++ show fcsu
+  Log.rcLog' Log.TRACE $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
@@ -653,7 +653,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   m0synchronously lift $ do
     addProfile t pfid
     addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
-  phaseLog "spiel" "Added profile, filesystem, mdpool objects."
+  Log.rcLog' Log.DEBUG "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
   for_ racks $ \rack -> do
@@ -701,7 +701,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
           m0synchronously lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
-  phaseLog "spiel" "Finished adding concrete entities."
+  Log.rcLog' Log.DEBUG "Finished adding concrete entities."
   -- Pool versions
   let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
       pvNegWidth pver = case pver of
@@ -735,18 +735,18 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         pvf@M0.PVerFormulaic{} -> do
           base <- lookupConfObjByFid (M0.v_base pvf)
           case fmap M0.v_type base of
-            Nothing -> phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+            Nothing -> Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                    ++ " because base pver can't be found"
             Just (pva@M0.PVerActual{}) -> do
               let(PDClustAttr n k p _ _) = M0.v_attrs pva
               if (M0.v_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k))
               then m0synchronously lift $ addPVerFormulaic t (M0.fid pver) (M0.fid pool)
                             (M0.v_id pvf) (M0.v_base pvf) (M0.v_allowance pvf)
-              else phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+              else Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                      ++ " because it doesn't meet"
                      ++ " allowance[M0_CONF_PVER_LVL_DISKS] <=  P - (N+2K) criteria"
             Just _ ->
-              phaseLog "warning" $ "Ignoring pool version " ++ show pvf
+              Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                  ++ " because base pver is not an actual pversion"
   return t
 
@@ -755,10 +755,10 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
 validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
 validateTransactionCache = loadConfData >>= \case
   Nothing -> do
-    phaseLog "spiel" "validateTransactionCache: loadConfData failed"
+    Log.rcLog' Log.DEBUG "validateTransactionCache: loadConfData failed"
     return $! Right Nothing
   Just x -> do
-    phaseLog "spiel" "validateTransactionCache: validating context"
+    Log.rcLog' Log.DEBUG "validateTransactionCache: validating context"
     getHalonVar _hv_mero_workers_allowed >>= \case
       True -> do
         -- We can use withSpielRC because SpielRC require ha_interface
@@ -773,7 +773,7 @@ validateTransactionCache = loadConfData >>= \case
         DP.liftIO $ terminateM0Worker wrk
         return r
       False -> do
-        phaseLog "warn" "validateTransactionCache: disabled by HalonVars"
+        Log.rcLog' Log.DEBUG "validateTransactionCache: disabled by HalonVars"
         return $! Right Nothing
 
 -- | RC wrapper for 'getSpielAddress'.
@@ -814,7 +814,7 @@ setPoolRepairStatus pool prs =
 -- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
 unsetPoolRepairStatus :: M0.Pool -> PhaseM RC l ()
 unsetPoolRepairStatus pool = do
-  phaseLog "info" $ "Unsetting PRS from " ++ show pool
+  Log.rcLog' Log.DEBUG $ "Unsetting PRS from " ++ show pool
   modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
 
 -- | Remove 'M0.PoolRepairStatus' connection to the given 'M0.Pool' as
@@ -846,7 +846,7 @@ setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
   Nothing -> return ()
   Just (M0.PoolRepairStatus prt uuid _) -> do
     let prs = M0.PoolRepairStatus prt uuid $ Just pri
-    phaseLog "rg" $ "Setting PRR for " ++ show pool ++ " to " ++ show prs
+    Log.rcLog' Log.DEBUG $ "Setting PRS for " ++ show pool ++ " to " ++ show prs
     modifyLocalGraph $ return . G.connect pool Has prs
 
 -- | Modify the  'PoolRepairInformation' in the graph with the given function.
@@ -901,5 +901,5 @@ setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
   rg <- getLocalGraph
   let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported
-  phaseLog "spiel" $ "set command profile to" ++ show mp
+  Log.rcLog' Log.DEBUG $ "set command profile to" ++ show mp
   m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)

@@ -48,6 +48,7 @@ import           HA.RecoveryCoordinator.Mero.Actions.Spiel
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
@@ -310,8 +311,8 @@ configureMeroProcess sender p runType = do
 -- 'Castor.Host'.
 startMeroService :: Castor.Host -> Res.Node -> PhaseM RC a ()
 startMeroService host node = do
-  phaseLog "action" $ "Trying to start mero service on "
-                    ++ show (host, node)
+  Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
+                      ++ show (host, node)
   rg <- getLocalGraph
   mprofile <- Conf.getProfile
   kaFreq <- getHalonVar _hv_keepalive_frequency
@@ -363,13 +364,13 @@ retriggerMeroNodeBootstrap n = do
   rg <- getLocalGraph
   case G.connectedTo Res.Cluster Has rg of
     Just M0.ONLINE -> restartMeroOnNode
-    cst -> phaseLog "info"
-           $ "Not trying to retrigger mero as cluster state is " ++ show cst
+    cst -> Log.rcLog' Log.DEBUG $
+             "Not trying to retrigger mero as cluster state is " ++ show cst
   where
     restartMeroOnNode = do
       rg <- getLocalGraph
       case G.connectedFrom Runs n rg of
-        Nothing -> phaseLog "info" $ "Not a mero node: " ++ show n
+        Nothing -> Log.rcLog' Log.DEBUG $ "Not a mero node: " ++ show n
         Just h  -> announceTheseMeroHosts [h] (\_ _ -> True)
 
 -- | Send notifications about new mero nodes and new mero servers for
@@ -397,7 +398,7 @@ announceTheseMeroHosts hosts p = do
 
       serverNodes = hostsToNodes serverHosts :: [M0.Node]
       clientNodes = hostsToNodes clientHosts :: [M0.Node]
-  phaseLog "post-initial-load" $ "Sending messages about these new mero nodes: "
+  Log.rcLog' Log.DEBUG $ "Sending messages about these new mero nodes: "
       ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
   for_ (serverNodes++clientNodes) $ promulgateRC . StartProcessesOnNodeRequest
 

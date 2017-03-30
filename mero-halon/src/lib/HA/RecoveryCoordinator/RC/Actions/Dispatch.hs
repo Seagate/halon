@@ -1,10 +1,10 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TemplateHaskell  #-}
+{-# LANGUAGE TypeOperators    #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.RC.Actions.Dispatch
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Generic phase dispatcher. This can be used to control the flow
@@ -16,6 +16,8 @@ import           Control.Lens
 import           Data.List (delete)
 import           Data.Proxy
 import           Data.Vinyl
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import           HA.RecoveryCoordinator.RC.Application (RC)
 import           Network.CEP
 
 -- | Holds dispatching information for complex jumps.
@@ -168,17 +170,19 @@ waitClear = modify Local $ rlens fldDispatch . rfield . waitPhases .~ []
 --     The second option is picked because it allows the user to use
 --     'timeout' without worrying if underlying implementation uses
 --     'timeout' and what will CEP do in this case.
-mkDispatcher :: forall a l. (Application a, FldDispatch ∈ l)
-             => RuleM a (FieldRec l) (Jump PhaseHandle)
+mkDispatcher :: forall l. FldDispatch ∈ l
+             => RuleM RC (FieldRec l) (Jump PhaseHandle)
 mkDispatcher = do
   dispatcher <- phaseHandle "dispatcher::dispatcher"
   time_out_wrapper <- phaseHandle "dispatcher::time_out_wrapper"
 
   directly dispatcher $ do
     dinfo <- gets Local (^. rlens fldDispatch . rfield)
-    phaseLog "dispatcher:awaiting" $ show (dinfo ^. waitPhases)
-    phaseLog "dispatcher:onSuccess" $ show (dinfo ^. successPhase)
-    phaseLog "dispatcher:onTimeout" $ show (dinfo ^. timeoutPhase)
+    Log.tagContext Log.Phase
+      [ ("dispatcher:awaiting", show (dinfo ^. waitPhases))
+      , ("dispatcher:onSuccess", show (dinfo ^. successPhase))
+      , ("dispatcher:onTimeout", show (dinfo ^. timeoutPhase))
+      ] Nothing
     case dinfo ^. waitPhases of
       [] -> continue $ dinfo ^. successPhase
       xs -> switch (xs ++ (maybe [] (\(t, _) -> [timeout t time_out_wrapper])
@@ -192,7 +196,7 @@ mkDispatcher = do
       -- the phase from the dispatcher after we have sampled the time
       -- from accompanying information but before we entered the
       -- phase. Just yell loudly.
-      _ -> phaseLog "error"
+      _ -> Log.rcLog' Log.ERROR
         "Dispatcher in time_out_wrapper but no timeout phase set"
 
   return dispatcher

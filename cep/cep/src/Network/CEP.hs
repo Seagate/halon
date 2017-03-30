@@ -48,7 +48,6 @@ module Network.CEP
     , fork
     , suspend
     , publish
-    , phaseLog
     , appLog
     , peek
     , shift

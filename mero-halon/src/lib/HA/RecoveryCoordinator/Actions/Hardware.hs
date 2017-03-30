@@ -53,6 +53,7 @@ import           Data.Maybe (listToMaybe, maybeToList)
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as SDev
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
@@ -140,7 +141,7 @@ registerOnCluster x m = modifyLocalGraph $ \rg ->
   if G.isConnected Cluster Has x rg
   then return rg
   else do
-    phaseLog "rg" m
+    Log.rcLog' Log.TRACE m
     return $! G.connect Cluster Has x rg
 
 -- | Record that a host is running in an enclosure.
@@ -197,7 +198,7 @@ findHostsByAttributeFilter :: String -- ^ Message to log
                            -> ([HostAttr] -> Bool) -- ^ Filter predicate
                            -> PhaseM RC l [Host]
 findHostsByAttributeFilter msg p = do
-  phaseLog "rg-query" msg
+  Log.rcLog' Log.TRACE msg
   g <- getLocalGraph
   return $ [ host | host@(Host {}) <- G.connectedTo Cluster Has g
                   , p (G.connectedTo host Has g) ]
@@ -344,4 +345,4 @@ getSDevNode sdev = do
 getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
-  maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev 
+  maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev

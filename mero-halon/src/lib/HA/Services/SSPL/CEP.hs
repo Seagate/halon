@@ -76,11 +76,13 @@ sendToSSPLSvc nodes msg = do
   rg <- getLocalGraph
   case findRunningServiceOn nodes sspl rg of
     Node nid : _ -> do
-      phaseLog "info" $ printf "Sending %s through SSPL on %s" (show msg) (show nid)
+      Log.rcLog' Log.DEBUG
+        (printf "Sending %s through SSPL on %s" (show msg) (show nid) :: String)
       sendSvc (getInterface sspl) nid msg
       return True
     [] -> do
-      phaseLog "warning" $ printf "Can't find running SSPL service on any of %s!" (show nodes)
+      Log.rcLog' Log.WARN
+        (printf "Can't find running SSPL service on any of %s!" (show nodes) :: String)
       return False
 
 -- | Send 'InterestingEventMessage' to any IEM channel available.
@@ -126,14 +128,16 @@ sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
               -> StorageDevice -- ^ Drive
               -> PhaseM RC l Bool
 sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
-  phaseLog "action" $ "Sending Led update " ++ show status ++ " about " ++ show sn ++ " on " ++ show host
+  Log.actLog "sending LED update" [ ("status", show status)
+                                  , ("sn", show sn)
+                                  , ("host", show host) ]
   rg <- getLocalGraph
   let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
       modifyLedState mledSt = case connectedTo sd Has rg of
         Just slot@Slot{} -> modifyGraph $ case mledSt of
           Just ledSt -> connect slot Has ledSt
           Nothing -> disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
-        _ -> phaseLog "warn" $ "No slot found for " ++ show sd
+        _ -> Log.rcLog' Log.WARN $ "No slot found for " ++ show sd
   case mnode of
     Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
@@ -148,7 +152,7 @@ sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
       DriveOk -> do
         modifyLedState Nothing
         sendNodeCmd [Node nid] Nothing (DriveLed sn FaultOff)
-    _ -> do phaseLog "error" "Cannot find sspl service on the node!"
+    _ -> do Log.rcLog' Log.ERROR ("Cannot find sspl service on the node!" :: String)
             return False
 
 -- | Send command to nodecontroller. Reply will be received as a
@@ -350,37 +354,40 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
   todo uid
   case (,,) <$> mprocessFid <*> mcurrentPid <*> pure currentState of
     Just (processFid, currentPid, "failed")-> do
-      phaseLog "info" $ "Received SSPL message about service failure: "
+      Log.rcLog' Log.DEBUG $ "Received SSPL message about service failure: "
                      ++ show watchdogmsg
       svs <- M0.getM0Processes <$> getLocalGraph
-      phaseLog "info" $ "Looking for fid " ++ show processFid ++ " in " ++ show svs
+      Log.rcLog' Log.DEBUG $ "Looking for fid " ++ show processFid ++ " in " ++ show svs
       let markFailed p updatePid = do
-            phaseLog "info" $ "Failing " ++ showFid p
+            Log.rcLog' Log.DEBUG $ "Failing " ++ showFid p
             when updatePid $ do
               modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
             void $ applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
-        Nothing -> phaseLog "warn" $ "Couldn't find process with fid " ++ show processFid
+        Nothing -> Log.rcLog' Log.WARN $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
           rg <- getLocalGraph
           case (getState p rg, connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
-              phaseLog "info" "Failed SSPL notification for already failed process - doing nothing."
+              Log.rcLog' Log.DEBUG
+                ("Failed SSPL notification for already failed process - doing nothing." :: String)
             (M0.PSOffline, _) ->
-              phaseLog "info" "Failed SSPL notification for stopped process - doing nothing."
+              Log.rcLog' Log.DEBUG
+                ("Failed SSPL notification for stopped process - doing nothing." :: String)
             (M0.PSStopping, _) ->
-              phaseLog "info" "Failed SSPL notification for process that is stopping - doing nothing."
+              Log.rcLog' Log.DEBUG
+                ("Failed SSPL notification for process that is stopping - doing nothing." :: String)
             (_, Just (M0.PID pid))
               | pid == currentPid ->
                   markFailed p False
               | otherwise ->
                   -- Warn because it's probably not great to have SSPL
                   -- messages this late/out of order.
-                  phaseLog "warn" $ "Current process has PID " ++ show pid
-                                 ++ " but we got a failure notification for "
-                                 ++ show currentPid
+                  Log.rcLog' Log.WARN $ "Current process has PID " ++ show pid
+                                     ++ " but we got a failure notification for "
+                                     ++ show currentPid
             (_, Nothing) -> do
-              phaseLog "warning" "Pid of the process is not known - ignoring."
+              Log.rcLog' Log.WARN ("Pid of the process is not known - ignoring." :: String)
     _ -> return ()
   done uid
   where
@@ -409,11 +416,11 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
       todo uid
       mhost <- findNodeHost (Node nid)
       case mhost of
-        Nothing -> phaseLog "error" $ "Cannot find host for node " ++ show nid
+        Nothing -> Log.rcLog' Log.ERROR $ "Cannot find host for node " ++ show nid
                                     ++ " resulting from failure of RAID device "
                                     ++ show device
         Just host -> do
-          phaseLog "debug" $ "Found host: " ++ show host
+          Log.rcLog' Log.DEBUG $ "Found host: " ++ show host
           -- First, attempt to identify each drive
           sdevs <- forM (zip drives [0..length drives]) $ \(drive, idx) -> do
             let
@@ -449,13 +456,13 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                         >>= filterM (flip StorageDevice.hasIdentifier $ DIRaidIdx idx)
                         >>= \case
                           [] -> do
-                            phaseLog "error" $ "Metadata drive at index " ++ (show idx)
+                            Log.rcLog' Log.ERROR $ "Metadata drive at index " ++ (show idx)
                                             ++ " failed, but we have no prior information for"
                                             ++ " a drive in this position."
                             return Nothing
                           [sdev] -> return $ Just sdev
                           sdevs -> do
-                            phaseLog "warning" $ "Multiple devices with same IDs: " ++ show sdevs
+                            Log.rcLog' Log.WARN $ "Multiple devices with same IDs: " ++ show sdevs
                             Just <$> error "FIXME" -- mergeStorageDevices sdevs
                   path <- MaybeT $ fmap T.pack <$> StorageDevice.path dev
                   return (dev, path)
@@ -470,7 +477,7 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
             , ruFailedComponents = fmap fst . filter (\(_,x) -> x == "_")
                                     $ catMaybes sdevs
             }
-          else phaseLog "info" $ "RAID device is reassembling; not attempting "
+          else Log.rcLog' Log.DEBUG $ "RAID device is reassembling; not attempting "
                               ++ "further action."
       done uid
 
@@ -523,14 +530,14 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
          mhost <- findNodeHost (Node nid)
          case mhost of
-           Nothing -> phaseLog "error" $ "can't find host for node " ++ show nid
+           Nothing -> Log.rcLog' Log.ERROR $ "can't find host for node " ++ show nid
            Just host -> do
              msds <- runMaybeT $ do
                lift $ findHostStorageDevices host >>=
                         traverse (\x -> do
                           liftA (x,) <$> fmap Just (StorageDevice.status x))
              encl' <- findHostEnclosure host
-             phaseLog "debug" $ "MSDS: " ++ show (catMaybes <$> msds, host, encl')
+             Log.rcLog' Log.DEBUG $ "MSDS: " ++ show (catMaybes <$> msds, host, encl')
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(StorageDevice serial, status) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
@@ -564,11 +571,11 @@ ruleHlNodeCmd = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid (CRequest cr))
         hosts <- fmap catMaybes $ findHosts nodeFilter >>= mapM findBMCAddress
         case command of
           Aeson.String "poweroff" -> do
-            phaseLog "action" $ "Powering off hosts " ++ show hosts
+            Log.rcLog' Log.DEBUG $ "Powering off hosts " ++ show hosts
             forM_ hosts $ \nodeIp -> do
               sendNodeCmd nodes Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
           Aeson.String "poweron" -> do
-            phaseLog "action" $ "Powering on hosts " ++ show hosts
+            Log.rcLog' Log.DEBUG $ "Powering on hosts " ++ show hosts
             forM_ hosts $ \nodeIp -> do
               sendNodeCmd nodes Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
           x -> liftProcess . say $ "Unsupported node command: " ++ show x
@@ -587,15 +594,16 @@ updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sd
         sendLoggingCmd n $ mkDiskLoggingCmd (T.pack st)
                                             (T.pack sn)
                                             (maybe "unknown reason" T.pack reason)
-      _ -> phaseLog "error" $ "Unable to find node for " ++ show host
-  _ -> phaseLog "error" $ "Unable to find host for " ++ show sdev
+      _ -> Log.rcLog' Log.ERROR $ "Unable to find node for " ++ show host
+  _ -> Log.rcLog' Log.ERROR $ "Unable to find host for " ++ show sdev
 
 ruleSSPLTimeout :: Definitions RC ()
 ruleSSPLTimeout = defineSimpleIf "sspl-service-timeout" extract $ \(uuid, nid) -> do
   todo uuid
   mcfg <- Service.lookupInfoMsg (Node nid) sspl
   for_ mcfg $ \_ -> do
-    phaseLog "warning" "SSPL didn't send any message withing timeout - restarting."
+    Log.rcLog' Log.WARN
+      ("SSPL didn't send any message withing timeout - restarting." :: String)
     sendSvc (getInterface sspl) nid ResetSSPLService
   done uuid
   where
@@ -605,7 +613,7 @@ ruleSSPLTimeout = defineSimpleIf "sspl-service-timeout" extract $ \(uuid, nid) -
 ruleSSPLConnectFailure :: Definitions RC ()
 ruleSSPLConnectFailure = defineSimpleIf "sspl-service-connect-failure" extract $ \(uuid, nid) -> do
   todo uuid
-  phaseLog "error" $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
+  Log.rcLog' Log.ERROR $ "SSPL service can't connect to rabbitmq on node: " ++ show nid
   done uuid
   where
     extract (HAEvent uuid (SSPLConnectFailure nid)) _ = return $! Just (uuid, nid)

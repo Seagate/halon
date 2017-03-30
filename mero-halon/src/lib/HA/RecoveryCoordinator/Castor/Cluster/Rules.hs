@@ -1,6 +1,6 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Rules.Castor.Cluster
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero cluster rules
@@ -90,6 +90,7 @@ import           Data.Vinyl hiding ((:~:))
 import qualified Data.Set as Set
 
 import           Prelude hiding ((.), id)
+import           Text.Printf (printf)
 
 -- | All the rules that are required for cluster start.
 clusterRules :: Definitions RC ()
@@ -116,7 +117,7 @@ clusterRules = sequence_
 eventNodeFailedStart :: Definitions RC ()
 eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $ \case
   KernelStartFailure{} -> do
-    phaseLog "error" $ "Kernel module failed to start."
+    Log.rcLog' Log.ERROR $ "Kernel module failed to start."
     -- _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
     -- XXX: notify $ MeroClusterFailed
     -- XXX: check if it's a client node, in that case such failure
@@ -300,7 +301,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
                         , M0.s_type srv == CST_RMS
                         ]
           -- Update cluster disposition
-          phaseLog "update" $ "cluster.disposition=ONLINE"
+          Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
           modifyGraph $ G.connect R.Cluster R.Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
             $ \(host::R.Host) (node::M0.Node) rg' ->
@@ -310,13 +311,13 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
                 && M0.getState node rg' /= M0.NSFailed
                 && M0.getState node rg' /= M0.NSFailedUnrecoverable
           jobs <- forM servers $ \s -> do
-            phaseLog "debug" $ "starting processes on node=" ++ M0.showFid s
+            Log.rcLog' Log.DEBUG $ "starting processes on node=" ++ M0.showFid s
             startJob $ StartProcessesOnNodeRequest s
           modify Local $ rlens fldJobs . rfield .~ Set.fromList jobs
 
           case jobs of
             [] -> do
-              phaseLog "warn" $ "No nodes to start."
+              Log.rcLog' Log.WARN $ "No nodes to start."
               return $ Right (ClusterStartOk, [finish])
             _ -> do
               modify Local $ rlens fldNext . rfield .~ Just finish
@@ -328,7 +329,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
             rg <- getLocalGraph
             case getClusterStatus rg of
               Nothing -> do
-                phaseLog "error" "graph invariant violation: cluster have no attached state"
+                Log.rcLog' Log.ERROR "graph invariant violation: cluster has no attached state"
                 fail_job $ ClusterStartFailure "Unknown cluster state." []
               Just _ -> if (maybe False (==M0.ONLINE) $ G.connectedTo R.Cluster R.Has rg)
                             || isClusterStopped rg
@@ -347,8 +348,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
            modify Local $ rlens fldNext . rfield .~ Just finish
            appendServerFailure s'
            return (node, "failure")
-       phaseLog "job finished" $ "node=" ++ M0.showFid node
-       phaseLog "job finished" $ "result=" ++ result
+       Log.rcLog' Log.DEBUG (printf "node job finished for %s with %s"
+                                    (M0.showFid node) (show result) :: String)
        modify Local $ rlens fldJobs . rfield %~ (`Set.difference` Set.fromList l)
        remainingJobs <- getField . rget fldJobs <$> get Local
        if Set.null remainingJobs
@@ -444,7 +445,7 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
 requestClusterReset :: Definitions RC ()
 requestClusterReset = defineSimple "castor::cluster::reset"
   $ \(HAEvent eid (ClusterResetRequest deepReset)) -> do
-    phaseLog "info" "Cluster reset requested."
+    Log.rcLog' Log.DEBUG "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getLocalGraph <&> \rg -> [ node
               | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
@@ -460,7 +461,7 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     if deepReset
     then do
       syncGraphBlocking
-      phaseLog "info" "Clearing event queue."
+      Log.rcLog' Log.DEBUG "Clearing event queue."
       self <- liftProcess $ getSelfPid
       eqPid <- lsEQPid <$> get Global
       liftProcess $ usend eqPid (DoClearEQ self)
@@ -468,9 +469,9 @@ requestClusterReset = defineSimple "castor::cluster::reset"
       -- other events to occur in the meantime.
       msg <- liftProcess $ expectTimeout (1*1000000) -- 1s
       case msg of
-        Just DoneClearEQ -> phaseLog "info" "EQ cleared"
+        Just DoneClearEQ -> Log.rcLog' Log.DEBUG "EQ cleared"
         Nothing -> do
-          phaseLog "error" "Unable to clear the EQ!"
+          Log.rcLog' Log.ERROR "Unable to clear the EQ!"
           -- Attempt to ack this message to avoid a reset loop
           messageProcessed eid
       -- Reset the recovery co-ordinator
@@ -491,14 +492,14 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
   \(StopMeroClientRequest fid reason) -> do
     Log.tagContext Log.SM [("client.fid", show fid)
                           ,("client.stopreason", reason)] Nothing
-    phaseLog "info" $ "Stop mero client requested."
+    Log.rcLog' Log.DEBUG $ "Stop mero client requested."
     lookupConfObjByFid fid >>= \case
-      Nothing -> phaseLog "warn" "Could not find associated process."
+      Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
       Just p -> do
         rg <- getLocalGraph
         if G.isConnected p R.Has M0.PLM0t1fs rg
         then promulgateRC $ StopProcessRequest p
-        else phaseLog "warn" "Not a client process."
+        else Log.rcLog' Log.WARN "Not a client process."
 
 -- | Start already existing (in confd) mero client.
 --
@@ -508,12 +509,12 @@ requestStartMeroClient :: Definitions RC ()
 requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::start" $
   \(StartMeroClientRequest fid) -> do
     Log.tagContext Log.SM [("client.fid", show fid)] Nothing
-    phaseLog "info" $ "Start mero client requested."
+    Log.rcLog' Log.DEBUG $ "Start mero client requested."
     lookupConfObjByFid fid >>= \case
-      Nothing -> phaseLog "warn" "Could not find associated process."
+      Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
       Just p -> G.isConnected p R.Has M0.PLM0t1fs <$> getLocalGraph >>= \case
         True -> promulgateRC $ ProcessStartRequest p
-        False -> phaseLog "warn" "Not a client process."
+        False -> Log.rcLog' Log.WARN "Not a client process."
 
 -- | Caller 'ProcessId' signals that it's interested in cluster
 -- stopping ('MonitorClusterStop') and wants to receive information
@@ -558,16 +559,15 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
 
   setPhaseIf caller_died monitorGuard $ \() -> do
     caller <- getField . rget fldCallerPid <$> get Local
-    phaseLog "info" "Calling process died: did user ^C?"
-    phaseLog "caller.ProcessId" $ show caller
+    Log.actLog "Caller died" [ ("caller.pid", show caller) ]
     continue finish
 
   directly finish $ do
     getField . rget fldMonitorRef <$> get Local >>= \case
-      Nothing -> phaseLog "warn" "No monitor ref"
+      Nothing -> Log.rcLog' Log.WARN "No monitor ref"
       Just mref -> liftProcess $ unmonitor mref
     getField . rget fldUUID <$> get Local >>= \case
-      Nothing -> phaseLog "warn" "No UUID"
+      Nothing -> Log.rcLog' Log.WARN "No UUID"
       Just uuid -> done uuid
 
   startFork start_monitoring args
@@ -624,10 +624,10 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
       modify Local $ rlens fldClusterStopProgress . rfield .~ Just newSt
       case (moldSt, mcaller) of
         (Nothing, _) -> do
-          phaseLog "warn" "No previous cluster state known (‘impossible’)"
+          Log.rcLog' Log.WARN "No previous cluster state known (‘impossible’)"
           continue finish
         (_, Nothing) -> do
-          phaseLog "warn" "No caller known (‘impossible’)"
+          Log.rcLog' Log.WARN "No caller known (‘impossible’)"
           continue finish
         (Just oldSt, Just caller) -> do
           let diff = (calculateStopDiff oldSt newSt) { _csp_cluster_stopped = mcsp }

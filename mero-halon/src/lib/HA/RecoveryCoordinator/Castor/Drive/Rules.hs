@@ -176,7 +176,7 @@ mkCheckAndHandleDriveReady smartLens next = do
            continue device_attached
 
   directly smart_run $ do
-    phaseLog "info" "Device ready. Running SMART test."
+    Log.rcLog' Log.DEBUG "Device ready. Running SMART test."
     Just disk <- getter <$> get Local
     Just node <- fmap (\x -> x ^. chsNode) . (\x -> x ^. smartLens) <$> get Local
     smartId <- startJob $ SMARTRequest node disk
@@ -210,14 +210,13 @@ mkCheckAndHandleDriveReady smartLens next = do
           registerSyncGraphProcess $ \self -> usend self (request, SyncToConfdServersInRG False)
           continue sync_complete
     else
-      phaseLog "warning" "Unsuccessful SMART test. Drive cannot be used."
+      Log.rcLog' Log.WARN "Unsuccessful SMART test. Drive cannot be used."
 
   setPhase abort_result $ \msg -> do
     case msg of
       AbortSNSOperationOk pool -> promulgateRC $ PoolRebalanceRequest pool
       AbortSNSOperationFailure _ err -> do
-        phaseLog "warn" "Failed to abort SNS operation, doing nothing."
-        phaseLog "warn.message" err
+        Log.rcLog' Log.WARN $ "Failed to abort SNS operation, doing nothing: " ++ err
       AbortSNSOperationSkip pool -> promulgateRC $ PoolRebalanceRequest pool
     mm0sdev <- getter  <$> get Local >>= fmap join . traverse lookupStorageDeviceSDev
     for_ mm0sdev next
@@ -278,7 +277,7 @@ ruleDriveRemoved = define "drive-removed" $ do
 
   (device_detached, detachDisk) <- mkDetachDisk
     (return . fmap (\(_,_,_,d) -> d))
-    (\sdev e -> do phaseLog "warning" e
+    (\sdev e -> do Log.rcLog' Log.WARN e
                    post_process sdev)
     post_process
 
@@ -350,7 +349,7 @@ ruleDriveInserted = define "drive-inserted" $ do
           then return $ Just ()
           else return Nothing)
     $ \() -> do
-        phaseLog "debug" "cancel drive insertion procedure due to drive removal."
+        Log.rcLog' Log.DEBUG "cancel drive insertion procedure due to drive removal."
         continue finish
 
   -- If for some reason new Inserted event will be received during a timeout
@@ -365,7 +364,7 @@ ruleDriveInserted = define "drive-inserted" $ do
            then return (Just ())
            else return Nothing)
     $ \() -> do
-        phaseLog "info" "cancel drive insertion procedure due to new drive insertion."
+        Log.rcLog' Log.DEBUG "cancel drive insertion procedure due to new drive insertion."
         continue finish
 
   checkAndHandleDriveReady <- mkCheckAndHandleDriveReady _2 (\_ -> continue finish)
@@ -429,7 +428,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
         continue post_power_removed
   (device_detached, detachDisk) <- mkDetachDisk
     (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
-    (\sdev e -> do phaseLog "warning" e
+    (\sdev e -> do Log.rcLog' Log.WARN e
                    post_process sdev) post_process
 
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
@@ -461,7 +460,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
         -- Unable to send drive power on message - go straight to
         -- power_removed_duration
         -- TODO Send some sort of 'CannotTalkToSSPL' message?
-        phaseLog "warning" $ "Cannot send poweron message to "
+        Log.rcLog' Log.WARN $ "Cannot send poweron message to "
                           ++ (show nid)
                           ++ " for disk with s/n "
                           ++ (show serial)

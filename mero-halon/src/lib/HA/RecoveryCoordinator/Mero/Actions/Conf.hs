@@ -38,6 +38,7 @@ import           Control.Category ((>>>))
 import           Data.Maybe (listToMaybe)
 import           Data.Typeable (Typeable)
 import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources.Castor
@@ -107,7 +108,7 @@ getSDevPool sdev = do
       [] -> error "getSDevPool: No pool found for sdev."
       x:[] -> return x
       x:_ -> do
-        phaseLog "error" $ "Multiple pools found for sdev!"
+        Log.rcLog' Log.ERROR ("Multiple pools found for sdev!" :: String)
         return x
 
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.

@@ -68,6 +68,7 @@ Test-Suite unit-tests
   Main-Is: UnitTests.hs
   Other-Modules:       CEP.Settings.Tests
                        Tests
+                       Regression
 
   Ghc-Options: -threaded -Wall -eventlog
 
@@ -98,6 +99,7 @@ Test-Suite unit-tests-scheduler
   Main-Is: unit-tests-scheduler.hs
   Other-Modules:       CEP.Settings.Tests
                        Tests
+                       Regression
 
   Ghc-Options: -threaded -Wall -eventlog
 
