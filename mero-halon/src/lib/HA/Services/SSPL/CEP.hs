@@ -20,7 +20,6 @@ module HA.Services.SSPL.CEP
 
 import           Control.Applicative
 import           Control.Distributed.Process
-import           Control.Lens ((<&>))
 import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
@@ -400,14 +399,8 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
 --   the letter 'U' if the drive is part of the array and working, and
 --   an underscore (_) if not.
 ruleMonitorRaidData :: Definitions RC ()
-ruleMonitorRaidData = define "monitor-raid-data" $ do
-
-  raid_msg <- phaseHandle "raid_msg"
-  reset_success <- phaseHandle "reset_success"
-  reset_failure <- phaseHandle "reset_failure"
-  end <- phaseHandle "end"
-
-  setPhaseIf raid_msg extract $ \(uid, nid, srrd) -> let
+ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
+  \(uid, nid, srrd) -> let
       device_t = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
       device = T.unpack device_t
       -- Drives should have min length 2, so it's OK to access these directly
@@ -467,12 +460,11 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
                   path <- MaybeT $ fmap T.pack <$> StorageDevice.path dev
                   return (dev, path)
 
-          isReassembling <- getLocalGraph
-                            <&> isConnected host Is ReassemblingRaid
+          isReassembling <- isConnected host Is ReassemblingRaid <$> getLocalGraph
 
-          if (not isReassembling)
+          if not isReassembling
           then promulgateRC $ RaidUpdate {
-              ruNode = (Node nid)
+              ruNode = Node nid
             , ruRaidDevice = device_t
             , ruFailedComponents = fmap fst . filter (\(_,x) -> x == "_")
                                     $ catMaybes sdevs
@@ -480,33 +472,9 @@ ruleMonitorRaidData = define "monitor-raid-data" $ do
           else Log.rcLog' Log.DEBUG $ "RAID device is reassembling; not attempting "
                               ++ "further action."
       done uid
-
-  setPhaseIf reset_success
-    -- TODO: relies on drive reset rule; TODO: nicer local state
-    ( \msg _ l -> case (msg, l) of
-        (ResetSuccess x, Just (_,_,y,_,_)) | x == y -> return $ Just ()
-        _ -> return Nothing
-    ) $ \() -> do
-      Just (nid, _, _, device, path) <- get Local
-      -- Add drive back into array
-      void $ sendNodeCmd nid Nothing (NodeRaidCmd device (RaidAdd path))
-      -- At this point we are done
-      continue end
-
-  setPhaseIf reset_failure
-    ( \msg _ l -> case (msg, l) of
-        (ResetFailure x, Just (_,_,y,_,_)) | x == y -> return $ Just ()
-        _ -> return Nothing
-    ) $ \() -> do
-      -- TODO: log an IEM (SEM?) here that things are wrong
-      continue end
-
-  directly end stop
-
-  startFork raid_msg Nothing
   where
-    extract (HAEvent uid (RaidData nid v)) _ _ = return $! Just (uid, nid, v)
-    extract _ _ _ = return Nothing
+    extract (HAEvent uid (RaidData nid v)) _ = return $! Just (uid, nid, v)
+    extract _ _ = return Nothing
 
 ruleMonitorExpanderReset :: Definitions RC ()
 ruleMonitorExpanderReset = defineSimpleIf "monitor-expander-reset" extract $ \(uid, nid) -> do

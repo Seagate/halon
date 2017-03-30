@@ -398,7 +398,7 @@ ruleDriveFailed :: Definitions RC ()
 ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> do
   sd <- lookupStorageDeviceSDev disk
   forM_ sd $ \m0sdev -> do
-    applyStateChanges [ stateSet m0sdev Tr.sdevFailFailed]
+    applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
   messageProcessed uuid
 
 -- | When a drive is powered off

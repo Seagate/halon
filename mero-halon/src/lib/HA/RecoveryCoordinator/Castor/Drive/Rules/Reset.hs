@@ -156,7 +156,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
             then Log.rcLog' Log.DEBUG $ "Reset ongoing on a drive - ignoring message"
             else do
               ratt <- getDiskResetAttempts sdev
-              resetAttemptThreshold <- fmap _hv_drive_reset_max_retries getHalonVars
+              resetAttemptThreshold <- getHalonVar _hv_drive_reset_max_retries
               let m0status = if ratt <= resetAttemptThreshold
                              then M0.sdsFailTransient st
                              else M0.SDSFailed

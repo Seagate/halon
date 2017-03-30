@@ -422,8 +422,9 @@ displaySDevState s@SDSTransient{} = ("transient", Just $ prettySDevState s)
 displaySDevState s = (prettySDevState s, Nothing)
 
 -- | Transiently fail a drive in an existing state. Most of the time
---   this will result in @x@ becoming @SDSTransient x@, but with exceptions
---   where the device is failed or already transient.
+--   this will result in @x@ becoming @SDSTransient x@, but with
+--   exceptions where the device is failed (including SNS) or already
+--   transient.
 sdsFailTransient :: SDevState -> SDevState
 sdsFailTransient SDSFailed = SDSFailed
 sdsFailTransient SDSRepairing = SDSRepairing
@@ -432,23 +433,6 @@ sdsFailTransient SDSRebalancing = SDSRebalancing
 sdsFailTransient s@(SDSTransient _) = s
 sdsFailTransient (SDSInhibited x) = SDSInhibited $ sdsFailTransient x
 sdsFailTransient x = SDSTransient x
-
--- | Update state following recovery from a transient failure. In general
---   this should restore the previous state.
-sdsRecoverTransient :: SDevState -> SDevState
-sdsRecoverTransient (SDSTransient x) = x
-sdsRecoverTransient (SDSInhibited x) = SDSInhibited $ sdsRecoverTransient x
-sdsRecoverTransient y = y
-
--- | Permanently fail an SDev. Most of the time this will switch
---   a device to @SDSFailed@, unless it is already repairing or
---   repaired. In cases where repair fails the state should be
---   set back to @SDSFailed@ through a direct transition rather than
---   using this.
-sdsFailFailed :: SDevState -> SDevState
-sdsFailFailed SDSRepairing = SDSRepairing
-sdsFailFailed SDSRepaired = SDSRepaired
-sdsFailFailed _ = SDSFailed
 
 newtype Enclosure = Enclosure Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)

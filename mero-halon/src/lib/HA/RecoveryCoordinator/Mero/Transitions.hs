@@ -270,15 +270,28 @@ sdevReady = Transition $ \case
 sdevFailTransient :: Transition M0.SDev
 sdevFailTransient = Transition $ TransitionTo . M0.sdsFailTransient
 
--- | 'M0.SDev' is no longer transient, recover.
+-- | Recover an 'M0.SDev' from a transient failure.
 sdevRecoverTransient :: (?loc :: CallStack) => Transition M0.SDev
 sdevRecoverTransient = Transition $ \case
-  st@M0.SDSTransient{} -> TransitionTo $ M0.sdsRecoverTransient st
+  -- Make sure we start with transient on the outside.
+  M0.SDSTransient st -> TransitionTo $ recover st
   st -> transitionErr ?loc st
+  where
+    -- Unwrap any layers of transient/inhibited we may have inside.
+    recover (M0.SDSTransient st) = recover st
+    recover (M0.SDSInhibited st) = M0.SDSInhibited $! recover st
+    recover st = st
 
--- | Perform 'M0.sdsFailFailed' on the 'M0.SDev'.
+-- | Fail an 'M0.SDev'. Most of the time this will switch a device to
+-- 'M0.SDSFailed', unless it is already on-going SNS. In cases where SNS
+-- fails the state should be set back to 'M0.SDSFailed' through a direct
+-- transition to rather than using this one.
 sdevFailFailed :: Transition M0.SDev
-sdevFailFailed = Transition $ TransitionTo . M0.sdsFailFailed
+sdevFailFailed = Transition $ TransitionTo . \case
+  M0.SDSRepairing -> M0.SDSRepairing
+  M0.SDSRepaired -> M0.SDSRepaired
+  M0.SDSRebalancing -> M0.SDSRepaired
+  _ -> M0.SDSFailed
 
 -- | 'M0.Service' has changed state: if there are any 'M0.SDev's
 -- associated with it, adjust accordingly.

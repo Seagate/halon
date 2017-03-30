@@ -1,8 +1,9 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE StrictData #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Transitions.Internal
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Internal-use types for 'Transition's. Users should not import this
@@ -17,9 +18,6 @@ module HA.RecoveryCoordinator.Mero.Transitions.Internal
 
 import Data.Typeable
 import GHC.Generics
-#if __GLASGOW_HASKELL__ < 800
-import GHC.SrcLoc
-#endif
 import GHC.Stack
 import HA.Resources.Mero.Note
 import Text.Printf
