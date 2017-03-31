@@ -14,7 +14,7 @@ STACK=$(which stack)
 declare -a FLAGS
 
 #EXTRA_INCLUDE_DIRS=("$DIR/rpclite/rpclite")
-FLAGS=("--flag confc:mero")
+FLAGS=""
 
 if [ $HALON_BUILD_ENV = "bare" ]; then
   if [ -z "$MERO_ROOT" ]; then
