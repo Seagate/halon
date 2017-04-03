@@ -115,6 +115,9 @@ module HA.ResourceGraph
     , genStorageResourceKeyName
     , SomeResourceDict(..)
     , SomeRelationDict(..)
+      -- * Migration
+    , setChangeLog
+    , buildGraph
     ) where
 
 import HA.Logger
@@ -377,14 +380,14 @@ data GraphGCInfo = GraphGCInfo
     -- only a heuristic, not an /accurate/ number of resources we have
     -- actually disconnected. Disconnecting the same resource multiple
     -- times will have no effect but will increase 'grSinceGC'.
-    grSinceGC :: Int
+    grSinceGC :: !Int
     -- | Amount of disconnects after which the GC should be ran. There
     -- is no guarantee that GC will run after precisely after this
     -- many. If the value is not a positive integer, the automatic GC
     -- won't be ran at all. Defaults to @100@.
-  , grGCThreshold :: Int
+  , grGCThreshold :: !Int
     -- | Set of nodes that we consider as being roots
-  , grRootNodes :: [Res]
+  , grRootNodes :: ![Res]
   } deriving (Eq, Typeable, Generic, Show)
 
 -- XXX Wrapper functions because 'remotable' doesn't like constructors names.
@@ -428,9 +431,9 @@ data Graph = Graph
     -- | Changes in the graph with respect to the version stored in the multimap.
   , _grChangeLog :: !GL.ChangeLog
     -- | The graph.
-  , _grGraph :: HashMap Res (HashSet Rel)
+  , _grGraph :: !(HashMap Res (HashSet Rel))
     -- | Metadata about the graph GC
-  , grGraphGCInfo :: GraphGCInfo
+  , grGraphGCInfo :: !GraphGCInfo
   } deriving (Typeable)
 
 makeLenses ''Graph
@@ -839,3 +842,8 @@ defaultGraphGCInfo = GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) []
 
 getStoreUpdates :: Graph -> [StoreUpdate]
 getStoreUpdates = fromChangeLog . _grChangeLog
+
+-- * Migration
+
+setChangeLog :: GL.ChangeLog -> Graph -> Graph
+setChangeLog cl g = g { _grChangeLog = cl }

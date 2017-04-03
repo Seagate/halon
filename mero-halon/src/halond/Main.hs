@@ -1,63 +1,40 @@
--- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
-
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE RecursiveDo     #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE MultiWayIf      #-}
+{-# LANGUAGE ViewPatterns    #-}
+-- |
+-- Module    : Main
+-- Copyright : (C) 2013 Xyratex Technology Limited.
+--                 2015-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Main entry point to halon.
 module Main (main) where
-
-import Flags
-import Version.Read
-
-import HA.Network.RemoteTables (haRemoteTable)
-import Mero.RemoteTables (meroRemoteTable)
-
-#ifdef USE_RPC
-import qualified Network.Transport.RPC as RPC
-import HA.Network.Transport (writeTransportGlobalIVar)
-#else
-import Network.Transport.TCP as TCP
-#endif
-import HA.RecoveryCoordinator.Definitions
-import HA.Replicator.Log (replicasDir, storageDir)
-import HA.Startup (startupHalonNode)
-import Version (gitDescribe)
 
 import Control.Distributed.Commands.Process (sendSelfNode)
 import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Closure ( mkStaticClosure )
 import Control.Distributed.Process.Node
-
-import Control.Monad (when)
-import Data.Function (on)
-import Data.Version (parseVersion, versionBranch)
-import Text.ParserCombinators.ReadP
-import System.FilePath ((</>))
-import System.Directory
-    ( getCurrentDirectory
-    , doesFileExist
-    , doesDirectoryExist
-    , createDirectoryIfMissing
-    )
+import Flags
+import HA.Network.RemoteTables (haRemoteTable)
+import HA.RecoveryCoordinator.Definitions
+import HA.Startup (startupHalonNode)
+import Mero.RemoteTables (meroRemoteTable)
+import Network.Transport.TCP as TCP
+import System.Directory ( getCurrentDirectory )
 import System.Environment
-import System.Exit
 import System.IO
+import Version.Read
 
 printHeader :: String -> IO ()
 printHeader listen = do
     cwd <- getCurrentDirectory
     hSetBuffering stdout LineBuffering
-    putStrLn $ "This is halond/" ++ buildType ++ " listening on " ++ listen
+    putStrLn $ "This is halond/TCP listening on " ++ listen
     putStrLn $ "Working directory: " ++ show cwd
     versionString >>= putStrLn
     hFlush stdout
-  where
-#ifdef USE_RPC
-    buildType = "RPC"
-#else
-    buildType = "TCP"
-#endif
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
@@ -77,14 +54,6 @@ main = do
         whenTestIsDistributed $
           setEnvIfUnset "HALON_TRACING"
            "consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup"
-        checkStoredVersion
-#ifdef USE_RPC
-        rpcTransport <- RPC.createTransport "s1"
-                                            (RPC.rpcAddress $ localEndpoint config)
-                                            RPC.defaultRPCParameters
-        writeTransportGlobalIVar rpcTransport
-        let transport = RPC.networkTransport rpcTransport
-#else
         let (hostname, _:port) = break (== ':') $ localEndpoint config
         transport <- either (error . show) id <$>
                      TCP.createTransport hostname port TCP.defaultTCPParameters
@@ -92,7 +61,6 @@ main = do
                        , tcpNoDelay = True
                        , transportConnectTimeout = Just 2000000
                        }
-#endif
         lnid <- newLocalNode transport myRemoteTable
         printHeader (localEndpoint config)
         runProcess lnid sendSelfNode
@@ -104,43 +72,3 @@ main = do
       lookupEnv "DC_CALLER_PID" >>= maybe (return ()) (const action)
 
     setEnvIfUnset v x = lookupEnv v >>= maybe (setEnv v x) (const $ return ())
-
-    checkStoredVersion = do
-      let versionFile = storageDir </> "version.txt"
-          parseGitDescribe = readP_to_S $ do
-            v <- parseVersion
---          Uncomment when versionTag is removed from Data.Version.Version
---            optional $ char '-' >> munch1 isDigit >> char '-' >>
---                       munch1 isAlphaNum
-            skipSpaces
-            eof
-            return v
-      exists <- doesFileExist versionFile
-      stateExists <- doesDirectoryExist replicasDir
-
-      -- We don't want to check the persisted state version if there is no
-      -- persisted state.
-      if exists && stateExists then do
-        str <- readFile versionFile
-        case (parseGitDescribe str, parseGitDescribe gitDescribe) of
-          ([(fVersion, "")], [(version, "")]) ->
-            when (versionBranch fVersion > versionBranch version
-                  || ((/=) `on` (take 2 . versionBranch)) fVersion version) $ do
-              hPutStrLn stderr "Version incompatibility of the persisted state."
-              hPutStrLn stderr "The state was written with version"
-              hPutStrLn stderr str
-              hPutStrLn stderr $ "but halond is at version"
-              hPutStrLn stderr gitDescribe
-              exitFailure
-          (fver, ver) -> do
-            hPutStrLn stderr $ "Error when parsing versions."
-            hPutStrLn stderr $ show versionFile ++ ": " ++ show str
-            hPutStrLn stderr $ "Parses to: " ++ show fver
-            hPutStrLn stderr $ "Current version: " ++ show gitDescribe
-            hPutStrLn stderr $ "Parses to: " ++ show ver
-            when (str /= gitDescribe) $ do
-              hPutStrLn stderr "Unparsed versions do not match."
-              exitFailure
-      else do
-        createDirectoryIfMissing True storageDir
-      writeFile versionFile gitDescribe

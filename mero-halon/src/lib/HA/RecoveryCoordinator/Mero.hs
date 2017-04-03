@@ -29,6 +29,7 @@ import           Data.Dynamic
 import           Data.Foldable (for_)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
+import           HA.Migrations
 import           HA.Multimap
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Test
@@ -72,7 +73,8 @@ ack pid = liftProcess $ usend pid ()
 
 initialize :: StoreChan -> Process G.Graph
 initialize mm = do
-    rg <- G.getGraph mm
+   -- Migrate replicated state before doing anything else if necessary.
+    rg <- migrateOrQuit mm
     -- Empty graph means cluster initialization.
     if G.null rg
     then do
@@ -91,7 +93,7 @@ initialize mm = do
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
     rg      <- HA.RecoveryCoordinator.Mero.initialize mm
-    startRG <- G.sync rg (return ())
+    startRG <- G.sync rg $ writeCurrentVersionFile
     return $ LoopState startRG mm eq Map.empty Storage.empty
 
 msgProcessedGap :: Int

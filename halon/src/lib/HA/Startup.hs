@@ -129,7 +129,7 @@ remotableDecl [ [d|
                       ( cEQGroup, cMMGroup
                       , Just (r1, r2)
                       , rcClosure
-                      , sp :: SendPort ()
+                      , sp :: SendPort ProcessId
                       )
          forM_ newNodes $ \_ -> receiveChan rp
        Nothing -> return ()

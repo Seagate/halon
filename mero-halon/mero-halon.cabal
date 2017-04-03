@@ -70,6 +70,7 @@ Library
   Exposed-Modules: Mero.FakeEpoch
                    Mero.Messages
                    Mero.RemoteTables
+                   HA.Migrations
                    HA.Network.Transport
                    HA.Services.DecisionLog
                    HA.Services.Ekg.RC
@@ -229,8 +230,10 @@ Library
                    rpclite,
                    replicated-log,
                    scientific,
+                   shelly,
                    sspl,
                    stm,
+                   system-filepath,
                    template-haskell,
                    text,
                    transformers,
@@ -351,9 +354,6 @@ Executable halond
                       ScopedTypeVariables
                       TupleSections
                       StandaloneDeriving
-  Other-Extensions:   CPP
-  if flag(rpc)
-      CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       binary,
                       directory,
@@ -367,13 +367,9 @@ Executable halond
                       options-schema,
                       rank1dynamic,
                       rpclite,
-                      time
-  if flag(rpc)
-      Build-Depends: network-transport-rpc >= 0.0.1
-  else
-      Build-Depends: network >= 2.4,
-                     network-transport-tcp >= 0.3.1
-
+                      time,
+                      network >= 2.4,
+                      network-transport-tcp >= 0.3.1
 
 Executable halon-cleanup
   Hs-Source-Dirs:     src/halon-cleanup

@@ -58,6 +58,7 @@ extra-deps:
 - validation-0.5.4
 - QuickCheck-2.8.2
 - aeson-0.11.3.0
+- shelly-1.6.8.3
 
 docker:
   enable: true

@@ -49,11 +49,13 @@ module HA.ResourceGraph.GraphLike
   , decodeAnyResource
   , AnySafeCopyDict3(..)
   , decodeAnyRelation
+  , toKeyValue
   )
   where
 
+import Control.Arrow ((***))
 import Control.Distributed.Static
-  ( RemoteTable 
+  ( RemoteTable
   , unstatic
   , staticLabel
   )
@@ -75,9 +77,9 @@ import Data.Serialize.Get (runGetLazy)
 import Data.Typeable (Typeable, cast)
 import Data.UUID (UUID)
 import Data.Word (Word8)
-import GHC.Exts (Constraint)
+import GHC.Exts (Constraint, IsList(..))
 import HA.Multimap
-  ( Key, MetaInfo, StoreChan, StoreUpdate(..) )
+  ( Key, Value, MetaInfo, StoreChan, StoreUpdate(..) )
 import HA.Multimap.Implementation
 import HA.SafeCopy
 
@@ -118,8 +120,8 @@ updateChangeLog x (ChangeLog is dvs dks mi) = case x of
 -- | Gets the list of updates from the changelog.
 fromChangeLog :: ChangeLog -> [StoreUpdate]
 fromChangeLog (ChangeLog is dvs dks mi) =
-    [ InsertMany   $ toList is
-    , DeleteValues $ toList dvs
+    [ InsertMany   $ HA.Multimap.Implementation.toList is
+    , DeleteValues $ HA.Multimap.Implementation.toList dvs
     , DeleteKeys   $ S.toList dks
     ] ++ maybeToList (SetMetaInfo <$> mi)
 
@@ -485,7 +487,7 @@ decodeAnyResource :: forall p t f . Typeable f
                   -> t
 decodeAnyResource _p rewrap mkResKeyName create rt bs =
     case runGetOrFail get $ fromStrict bs of
-      Right (rest,_,d) 
+      Right (rest,_,d)
        | d == staticLabel "" -> new rest
        | otherwise -> old rest d
       Left (_,_,err) -> error $ "decodeRes: " ++ err
@@ -547,3 +549,20 @@ decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail
               _ -> error $ "decodeRel: Invalid direction bit."
             Left err -> error $ "decodeRel: runGetLazy: " ++ err
         Left err -> error $ "decodeRel: " ++ err
+
+-- | Encode full graph into @[('Key', ['Value'])]@ format. Useful as a
+-- middle-ground for 'GraphLike' conversions.
+toKeyValue
+  :: forall g l.
+     ( GraphLike g
+     , IsList (l (UniversalResource g) (HashSet (UniversalRelation g)))
+     , Item (l (UniversalResource g) (HashSet (UniversalRelation g)))
+       ~ (UniversalResource g, HashSet (UniversalRelation g)))
+  => l (UniversalResource g) (HashSet (UniversalRelation g))
+  -> [(Key, [Value])]
+toKeyValue = map (encRes *** encRels) . GHC.Exts.toList
+  where
+    encRes :: UniversalResource g -> Key
+    encRes = encodeUniversalResource
+    encRels :: HashSet (UniversalRelation g) -> [Value]
+    encRels = map encodeUniversalRelation . S.toList

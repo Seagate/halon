@@ -28,6 +28,9 @@ module HA.ResourceGraph.UGraph
   , GL.disconnectAllTo
   , GL.removeResource
   , grUGraphGCInfo
+    -- * Migration
+  , getChangeLog
+  , getGraphValues
   ) where
 
 import Control.Arrow ((***))
@@ -81,7 +84,7 @@ import HA.SafeCopy
 import Prelude hiding (null)
 
 data UGraph = UGraph
-   { _grUMMChan :: StoreChan 
+   { _grUMMChan :: StoreChan
    , _grUChangeLog :: !GL.ChangeLog
    , _grUGraph :: HashMap URes (HashSet URel)
    , _grUGraphGCInfo :: GraphGCInfo
@@ -161,11 +164,11 @@ instance GL.GraphLike UGraph where
     (Proxy :: Proxy StorageResource)
     (\(SomeStorageResourceDict (Dict :: Dict (StorageResource a))) ->
       GL.A (Dict :: Dict (StorageResource a)))
-    genStorageResourceKeyName 
+    genStorageResourceKeyName
     URes
-      
+
   decodeUniversalRelation = GL.decodeAnyRelation
-    (Proxy :: Proxy StorageRelation) 
+    (Proxy :: Proxy StorageRelation)
     (\(SomeStorageRelationDict (Dict :: Dict (StorageRelation r a b))) ->
       GL.A3 (Dict :: Dict (StorageRelation r a b)))
     genStorageRelationKeyName
@@ -182,7 +185,7 @@ instance GL.GraphLike UGraph where
   encodeIRes a = URes a
   encodeIRelIn (Edge s r d) = InURel r s d
   encodeIRelOut (Edge s r d) = OutURel r s d
-   
+
   -- explodeRel :: Rel -> (Res, GL.Any, Res)
   explodeRel (OutURel r s d) = (URes s, GL.Any r, URes d)
   explodeRel (InURel r s d)  = (URes s, GL.Any r, URes d)
@@ -214,7 +217,6 @@ connectedTo a _ g = map (\(Edge _ _ d :: Edge a r b) -> d) $ GL.edgesFromSrc a g
 connectedFrom :: forall r a b . StorageRelation r a b =>  r -> b -> UGraph -> [a]
 connectedFrom _ b g = map (\(Edge s _ _ :: Edge a r b) -> s) $ GL.edgesToDst b g
 
-
 buildUGraph :: StoreChan -> RemoteTable -> (MetaInfo, [(Key, [Value])]) -> UGraph
 buildUGraph mmchan rt (mi, kvs) = (\hm -> UGraph mmchan emptyChangeLog hm gcInfo)
   . M.fromList
@@ -225,3 +227,9 @@ buildUGraph mmchan rt (mi, kvs) = (\hm -> UGraph mmchan emptyChangeLog hm gcInfo
     gcInfo = GraphGCInfo (_miSinceGC mi)
                          (_miGCThreshold mi)
                          (map (GL.decodeUniversalResource rt) (_miRootNodes mi))
+
+getChangeLog :: UGraph -> GL.ChangeLog
+getChangeLog = _grUChangeLog
+
+getGraphValues :: UGraph -> HashMap URes (HashSet URel)
+getGraphValues = _grUGraph
