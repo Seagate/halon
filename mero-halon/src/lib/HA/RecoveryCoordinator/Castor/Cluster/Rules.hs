@@ -221,9 +221,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
     getType (Just M0.PLHalon) _ = "halon"
     getType _ srvs = inferType srvs
     inferType srvs
-      | any (\(M0.Service _ t _ _) -> t == CST_IOS) srvs = "ioservice"
-      | any (\(M0.Service _ t _ _) -> t == CST_MDS) srvs = "mdservice"
-      | any (\(M0.Service _ t _ _) -> t == CST_MGS) srvs = "confd    "
+      | any (\(M0.Service _ t _) -> t == CST_IOS) srvs = "ioservice"
+      | any (\(M0.Service _ t _) -> t == CST_MDS) srvs = "mdservice"
+      | any (\(M0.Service _ t _) -> t == CST_MGS) srvs = "confd    "
       | otherwise                                        = "m0d      "
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult

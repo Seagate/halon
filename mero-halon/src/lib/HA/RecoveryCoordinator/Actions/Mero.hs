@@ -126,24 +126,22 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
                             <*> pure (nid ++ rmsAddress)
     -- Check if RMS service is already defined in RG
     let mrmsService = listToMaybe
-          $ filter (\(M0.Service _ x _ _) -> x == CST_RMS)
+          $ filter (\(M0.Service _ x _) -> x == CST_RMS)
           $ G.connectedTo process M0.IsParentOf rg
     rmsService <- case mrmsService of
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_RMS
                             <*> pure [nid ++ rmsAddress]
-                            <*> pure SPUnused
     -- Check if HA service is already defined in RG
     let mhaService = listToMaybe
-          $ filter (\(M0.Service _ x _ _) -> x == CST_HA)
+          $ filter (\(M0.Service _ x _) -> x == CST_HA)
           $ G.connectedTo process M0.IsParentOf rg
     haService <- case mhaService of
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_HA
                             <*> pure [nid ++ haAddress]
-                            <*> pure SPUnused
     -- Create graph
     let rg' = G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService

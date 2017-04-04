@@ -694,7 +694,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                             r_endpoint
       let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
       for_ servs $ \(serv@M0.Service{..}) -> do
-        m0synchronously lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints s_params)
+        m0synchronously lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints)
         let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
           let disk = G.connectedTo sdev M0.IsOnHardware g :: Maybe M0.Disk

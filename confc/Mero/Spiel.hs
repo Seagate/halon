@@ -572,7 +572,6 @@ instance Spliceable Process where
 instance Spliceable Service where
   splice t p o = addService t (cs_fid o) p $ ServiceInfo (cs_type o)
                                                          (cs_endpoints o)
-                                                         (cs_u o)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [Sdev]

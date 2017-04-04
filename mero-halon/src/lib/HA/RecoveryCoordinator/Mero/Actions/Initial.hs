@@ -186,7 +186,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         devs
         (\x -> filter (\y -> M0.d_path y =~ x) devs)
         m0s_pathfilter
-      mkSrv fid = M0.Service fid m0s_type m0s_endpoints m0s_params
+      mkSrv fid = M0.Service fid m0s_type m0s_endpoints
       linkDrives svc = case m0s_type of
         CST_IOS -> foldl' (.) id
                     $ fmap (G.connect svc M0.IsParentOf) filteredDevs

@@ -799,7 +799,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
                                endpoint
                                ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
-           for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _ _) sdevs) -> do
+           for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _) sdevs) -> do
              let (serv_st,serv_extSt) = M0.displayServiceState sst
              printf serv_pattern serv_st
                                  (fidToStr fid')

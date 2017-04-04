@@ -322,12 +322,22 @@ instance Ord Process where
 storageIndex ''Process "7d76bc51-c2ee-4cbf-bbfc-19276403e500"
 deriveSafeCopy 0 'base ''Process
 
+data Service_v0 = Service_v0 {
+    s_fid_v0 :: Fid
+  , s_type_v0 :: ServiceType -- ^ e.g. ioservice, haservice
+  , s_endpoints_v0 :: [String]
+  , s_params_v0 :: ServiceParams
+} deriving (Eq, Generic, Show, Typeable)
+
 data Service = Service {
     s_fid :: Fid
   , s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , s_endpoints :: [String]
-  , s_params :: ServiceParams
 } deriving (Eq, Generic, Show, Typeable)
+
+instance Migrate Service where
+  type MigrateFrom Service = Service_v0
+  migrate v0 = Service (s_fid_v0 v0) (s_type_v0 v0) (s_endpoints_v0 v0)
 
 instance Ord Service where
   compare = comparing s_fid
@@ -339,7 +349,8 @@ instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
 storageIndex ''Service "2f7bd43d-767a-4c6d-9586-ef369528f2e2"
-deriveSafeCopy 0 'base ''Service
+deriveSafeCopy 0 'base ''Service_v0
+deriveSafeCopy 1 'extension ''Service
 
 -- | Service state. This is a generalisation of what might be reported to Mero.
 data ServiceState =
