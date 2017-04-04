@@ -151,7 +151,6 @@ data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_service_info" #-} ServiceInfo =
   ServiceInfo {
       _svi_type :: ServiceType
     , _svi_endpoints :: [String]
-    , _svi_u :: ServiceParams
   } deriving (Eq, Show)
 
 instance Storable ServiceInfo where
@@ -161,23 +160,13 @@ instance Storable ServiceInfo where
     st <- fmap (toEnum . fromIntegral) $
             (#{peek struct m0_spiel_service_info, svi_type} p :: IO CInt)
     ep <- peekStringArray (#{ptr struct m0_spiel_service_info, svi_endpoints} p)
-    u <- case st of
-      CST_MGS -> fmap SPConfDBPath $ peekCString $
-        #{ptr struct m0_spiel_service_info, svi_u} p
-      _ -> return SPUnused
-    return $ ServiceInfo st ep u
+    return $ ServiceInfo st ep
 
-  poke p (ServiceInfo t e u) = do
+  poke p (ServiceInfo t e) = do
     #{poke struct m0_spiel_service_info, svi_type} p $ fromEnum t
     cstrs <- mapM newCString e
     cstr_arr_ptr <- newArray0 nullPtr cstrs
     #{poke struct m0_spiel_service_info, svi_endpoints} p cstr_arr_ptr
-    case u of
-      SPRepairLimits w -> #{poke struct m0_spiel_service_info, svi_u} p w
-      SPADDBStobFid f -> #{poke struct m0_spiel_service_info, svi_u} p f
-      SPConfDBPath c -> newCString c >>= \cs ->
-                          #{poke struct m0_spiel_service_info, svi_u} p cs
-      SPUnused -> return ()
 
 -- | @sns/cm/cm.h m0_sns_cm_status@
 data {-# CTYPE "sns/cm/cm.h" "struct m0_sns_cm_status" #-}

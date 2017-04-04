@@ -391,7 +391,6 @@ data Service = Service
   , cs_fid :: Fid
   , cs_type      :: ServiceType
   , cs_endpoints :: [String]
-  , cs_u :: ServiceParams
   } deriving Show
 
 getService :: Ptr Obj -> IO Service
@@ -402,16 +401,11 @@ getService po = do
             $ (#{peek struct m0_conf_service, cs_type} ps :: IO CInt)
   endpoints <- #{peek struct m0_conf_service, cs_endpoints} ps
                     >>= peekStringArray
-  attrs <- case stype of
-    CST_MGS -> fmap SPConfDBPath $ peekCString $
-        #{ptr struct m0_conf_service, cs_u} ps
-    _ -> return SPUnused
   return Service
            { cs_ptr = po
            , cs_fid = fid
            , cs_type = stype
            , cs_endpoints = endpoints
-           , cs_u = attrs
            }
 
 data Rack = Rack
