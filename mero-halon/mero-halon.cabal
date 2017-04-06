@@ -254,6 +254,7 @@ Executable halonctl
                       Handler.Bootstrap.TrackingStation
                       Handler.Bootstrap.Cluster
                       Handler.Cluster
+                      Handler.Cluster.Pool
                       Handler.Service
                       Handler.Status
                       Lookup
@@ -299,7 +300,8 @@ Executable halonctl
                       lens,
                       text,
                       mtl,
-                      unordered-containers
+                      unordered-containers,
+                      uuid
   if flag(rpc)
       Build-Depends: network-transport-rpc >= 0.0.1
   else

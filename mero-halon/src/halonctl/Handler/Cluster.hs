@@ -26,8 +26,9 @@ import Data.Foldable
 import Data.Proxy
 import qualified Mero.Notification as M0
 import qualified Mero.Notification.HAState as M0
+import qualified Handler.Cluster.Pool as Pool
 import HA.EventQueue (eventQueueLabel)
-import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..))
+import HA.EventQueue.Types (DoClearEQ(..), DoneClearEQ(..) )
 import HA.Resources.Mero (SyncToConfd(..), SyncDumpToBSReply(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (showFid)
@@ -69,6 +70,7 @@ data ClusterOptions =
   | ResetCmd ResetOptions
   | MkfsDone MkfsDoneOptions
   | VarsCmd VarsOptions
+  | PoolCommand Pool.Commands
 #endif
   deriving (Eq, Show)
 
@@ -98,6 +100,7 @@ parseCluster =
         "Mark all processes as finished mkfs.")))
   <|> ( VarsCmd  <$> Opt.subparser ( Opt.command "vars" (Opt.withDesc parseVarsOptions
         "Control variable parameters of the halon.")))
+  <|> ( Opt.subparser . command "pool" $ Opt.withDesc (PoolCommand <$> Pool.parseCommands) "Pool commands")
 #endif
 
 -- | Run the specified cluster command over the given nodes. The nodes
@@ -138,6 +141,7 @@ cluster nids' opt = do
       clusterCommand nids MarkProcessesBootstrapped (const $ liftIO $ putStrLn "Done")
     cluster' nids (VarsCmd VarsGet) = clusterCommand nids GetHalonVars (liftIO . print)
     cluster' nids (VarsCmd s@VarsSet{}) = clusterHVarsUpdate nids s
+    cluster' nids (PoolCommand s) = Pool.run nids s
 #endif
 
 data LoadOptions = LoadOptions
