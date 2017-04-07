@@ -24,7 +24,6 @@ module HA.Service.Interface
   , Interface(..)
   , sendSvc
   , returnSvcMsg
-  , sendSvcPid
   , sendRC
   , receiveSvcIf
   , receiveSvc
@@ -150,19 +149,6 @@ returnSvcMsg Interface{..} wf = liftProcess $! case wfServiceNode wf of
   Just nid -> nsendRemote nid (printf "service.%s" ifServiceName) $
     wf { wfReceiverVersion = Just ifVersion, wfServiceNode = Nothing }
     `asTypeOf` wf
-
--- | Send the given message directly to the given process.
---
--- In general you should prefer 'sendSvc' and where possible,
--- restructuring the service such that the top-level listener
--- (@mainloop@ of the service) can forward messages to any slaves.
--- This is not always easy however, for example if we spawn some
--- ephemeral process per connection that will do the work.
-sendSvcPid :: (MonadProcess m, Typeable toSvc, Show toSvc)
-           => Interface toSvc a -> ProcessId -> toSvc -> m ()
-sendSvcPid Interface{..} pid toSvc = liftProcess $! case ifEncodeToSvc ifVersion toSvc of
-  Nothing -> say $ printf "Unable to send %s to %s" (show toSvc) ifServiceName
-  Just !wf -> usend pid wf
 
 sendRC :: (Typeable fromSvc, Show fromSvc)
        => Interface a fromSvc -> fromSvc -> Process ()

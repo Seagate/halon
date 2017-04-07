@@ -7,7 +7,6 @@ import Mero.Messages()
 import Mero.RemoteTables()
 import HA.Network.Transport()
 import HA.Services.DecisionLog()
-import HA.Services.Frontier()
 import HA.Services.Monitor()
 import HA.Services.SSPL()
 import HA.Services.SSPLHL()
@@ -37,5 +36,3 @@ main = do
   putStrLn "}"
   -- Write all possible relations
   -- forM (nub $ map (\(a,_,_) -> a) $(resources ''Relation)) putStrLn
-
-

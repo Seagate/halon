@@ -12,7 +12,7 @@ module Handler.Status
   ) where
 
 import HA.EventQueue
-import HA.RecoveryCoordinator.RC.Events.Debug
+import HA.RecoveryCoordinator.RC.Events.Info
 import HA.Resources
 
 import Lookup
@@ -40,19 +40,19 @@ parseStatus = StatusOptions
 
 status :: [NodeId] -> StatusOptions -> Process ()
 status nids (StatusOptions t) = do
-    self <- getSelfPid
     eqs <- findEQFromNodes t nids
-    resp <- mapM (go self eqs) nids
-    let stats = zip nids resp
+    stats <- mapM (go eqs) nids
     mapM_ (liftIO . putStrLn . display) stats
   where
-    go self eqs nid = do
-        promulgateEQ eqs msg >>= \pid -> withMonitor pid wait
+    go eqs nid = do
+        (sp, rp) <- newChan
+        let msg = NodeStatusRequest (Node nid) sp
+        promulgateEQ eqs msg >>= \pid -> withMonitor pid (wait rp)
       where
-        msg = NodeStatusRequest (Node nid) [self]
-        wait = do
+        wait rp = do
           _ <- expect :: Process ProcessMonitorNotification
-          expectTimeout t
+          (,) <$> pure nid <*> receiveChanTimeout t rp
+
     display (nid, Nothing) = show nid ++ ": No reply from RC."
     display (nid, Just (NodeStatusResponse{..})) = join $
         [ show nid ++ ":"

@@ -74,10 +74,6 @@ Library
                    HA.Network.Transport
                    HA.Services.DecisionLog
                    HA.Services.Ekg.RC
-                   HA.Services.Frontier
-                   HA.Services.Frontier.Command
-                   HA.Services.Frontier.CEP
-                   HA.Services.Frontier.Interface
                    HA.Services.SSPL
                    HA.Services.SSPL.Rabbit
                    HA.Services.SSPL.CEP
@@ -138,16 +134,17 @@ Library
                    HA.RecoveryCoordinator.RC
                    HA.RecoveryCoordinator.RC.Actions
                    HA.RecoveryCoordinator.RC.Actions.Core
-                   HA.RecoveryCoordinator.RC.Actions.Log
                    HA.RecoveryCoordinator.RC.Actions.Dispatch
+                   HA.RecoveryCoordinator.RC.Actions.Info
+                   HA.RecoveryCoordinator.RC.Actions.Log
                    HA.RecoveryCoordinator.RC.Actions.Update
                    HA.RecoveryCoordinator.RC.Application
                    HA.RecoveryCoordinator.RC.Events
-                   HA.RecoveryCoordinator.RC.Events.Debug
+                   HA.RecoveryCoordinator.RC.Events.Info
                    HA.RecoveryCoordinator.RC.Events.Cluster
                    HA.RecoveryCoordinator.RC.Internal.Storage
                    HA.RecoveryCoordinator.RC.Rules
-                   HA.RecoveryCoordinator.RC.Rules.Debug
+                   HA.RecoveryCoordinator.RC.Rules.Info
                    HA.RecoveryCoordinator.RC.Subscription
                    HA.Resources.RC
                    HA.Resources.Mero
@@ -268,7 +265,7 @@ Executable halonctl
                       Handler.Bootstrap.Cluster
                       Handler.Cluster
                       Handler.Cluster.Pool
-                      Handler.Debug
+                      Handler.Info
                       Handler.Node
                       Handler.Service
                       Handler.Status

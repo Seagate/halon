@@ -1,67 +1,67 @@
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE RecordWildCards #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Querying Halon debugging information.
-
-module Handler.Debug
-  ( DebugOptions
-  , parseDebug
-  , debug
+-- Querying Halon information.
+module Handler.Info
+  ( InfoOptions
+  , parseInfo
+  , info
   ) where
 
-import HA.EventQueue
-import HA.RecoveryCoordinator.RC.Events.Debug
-import Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
-
-import Lookup
-
-import Control.Applicative ((<|>))
-import Control.Distributed.Process
-import Control.Distributed.Process.Internal.Primitives
-import Control.Monad (void, when)
-import Control.Monad.Fix (fix)
-
-import Data.Foldable (for_)
+import           Control.Applicative ((<|>))
+import           Control.Distributed.Process
+import qualified Control.Distributed.Process.Internal.Primitives as P
+import           Control.Monad (void, when)
+import           Control.Monad.Fix (fix)
+import qualified Data.ByteString as B
+import           Data.Foldable (for_)
 import qualified Data.Map as M
-import Data.Maybe (isNothing)
-import Data.Monoid ((<>))
-
+import           Data.Maybe (isNothing)
+import           Data.Monoid ((<>))
+import           HA.EventQueue
+import           HA.RecoveryCoordinator.RC.Events.Info
+import           Lookup
+import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
-import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
-import Text.Printf (printf)
+import           System.Exit (exitFailure)
+import           System.IO (hFlush, hPutStrLn, stderr, stdout)
+import           Text.Printf (printf)
 
-data DebugOptions =
+data InfoOptions =
     EQStats EQStatsOptions
   | RCStats RCStatsOptions
   | CEPStats CEPStatsOptions
-  | NodStats NodeStatsOptions
+  | NodeStats NodeStatsOptions
+  | GraphInfo GraphInfoOptions
   deriving (Eq, Show)
 
-parseDebug :: O.Parser DebugOptions
-parseDebug =
+parseInfo :: O.Parser InfoOptions
+parseInfo =
       ( EQStats <$> O.subparser ( O.command "eq" (O.withDesc parseEQStatsOptions
         "Print EQ statistics." )))
   <|> ( RCStats <$> O.subparser ( O.command "rc" (O.withDesc parseRCStatsOptions
         "Print RC statistics." )))
   <|> ( CEPStats <$> O.subparser ( O.command "cep" (O.withDesc parseCEPStatsOptions
         "Print CEP statistics." )))
-  <|> ( NodStats <$> O.subparser ( O.command "node" (O.withDesc parseNodeStatsOptions
+  <|> ( NodeStats <$> O.subparser ( O.command "node" (O.withDesc parseNodeStatsOptions
         "Print Node statistics.")))
+  <|> ( GraphInfo <$> O.subparser ( O.command "graph" (O.withDesc parseGraphInfoOptions
+        "Print graph data in some format" )))
 
-debug :: [NodeId] -> DebugOptions -> Process ()
-debug nids dbgo = case dbgo of
+info :: [NodeId] -> InfoOptions -> Process ()
+info nids dbgo = case dbgo of
   EQStats x -> eqStats nids x
   RCStats x -> rcStats nids x
   CEPStats x -> cepStats nids x
-  NodStats x -> nodeStats nids x
+  NodeStats x -> nodeStats nids x
+  GraphInfo x -> graphInfo nids x
 
-data EQStatsOptions = EQStatsOptions Int -- ^ Timeout for querying EQ.
-                                     Bool -- ^ Request cep stats.
-                                     Bool -- ^ Request memory stats.
+-- | 'EqStatsOptions' @eqTimeout@ @requestCepStats@ @requestMemoryStats@.
+data EQStatsOptions = EQStatsOptions Int Bool Bool
   deriving (Eq, Show)
 
 -- | Print Event Queue statistics.
@@ -107,17 +107,17 @@ parseEQStatsOptions = EQStatsOptions
        <> O.help "Show memory allocation; this operation may be slow. Require -c"
         )
 
-data RCStatsOptions = RCStatsOptions
-    Int -- ^ Timeout for querying EQ
+ -- | 'RCStartsOptions' @eqTimeout@.
+newtype RCStatsOptions = RCStatsOptions Int
   deriving (Eq, Show)
 
 -- | Print RC statistics
 rcStats :: [NodeId] -> RCStatsOptions -> Process ()
 rcStats nids (RCStatsOptions t) = do
-    self <- getSelfPid
     eqs <- findEQFromNodes t nids
-    _ <- promulgateEQ eqs $ DebugRequest self
-    expect >>= liftIO . display
+    (sp, rp) <- newChan
+    _ <- promulgateEQ eqs $ DebugRequest sp
+    receiveChan rp >>= liftIO . display
   where
     display (DebugResponse{..}) = do
       putStrLn $ printf "EQ nodes: %s" (show dr_eq_nodes)
@@ -229,18 +229,18 @@ parseCEPStatsOptions = CEPStatsOptions
        <> O.help "Show memory allocation; this operation may be slow."
         )
 
-data NodeStatsOptions = NodeStatsOptions
-    Int -- ^ Timeout for querying EQ
+-- | 'NodeStatsOptions' @eqTimeout@.
+newtype NodeStatsOptions = NodeStatsOptions Int
   deriving (Eq, Show)
 
 nodeStats :: [NodeId] -> NodeStatsOptions -> Process ()
 nodeStats nids (NodeStatsOptions _) = do
     for_ nids $ \nid -> do
       liftIO $ putStrLn $ "Node: " ++ show nid
-      getNodeStats nid >>= display
+      P.getNodeStats nid >>= display
   where
-    display :: Either DiedReason NodeStats -> Process ()
-    display (Right NodeStats{..}) = liftIO $ do
+    display :: Either DiedReason P.NodeStats -> Process ()
+    display (Right P.NodeStats{..}) = liftIO $ do
       putStrLn $ printf (unlines
                           [ "Registered names: %d"
                           , "Monitors: %d"
@@ -264,3 +264,35 @@ parseNodeStatsOptions = NodeStatsOptions
         <> O.value 1000000
         <> O.help ("Time to wait for the location of an RC on the given nodes.")
       )
+
+graphInfo :: [NodeId] -> GraphInfoOptions -> Process ()
+graphInfo nids (GraphInfoOptions format) = do
+  (sp, rp) <- newChan
+  let cmd = case format of
+        Json -> JsonGraph sp
+        Dot -> ReadResourceGraph sp
+        KeyValues -> MultimapGetKeyValuePairs sp
+  eqs <- findEQFromNodes (5 * 1000000) nids
+  _ <- promulgateEQ eqs cmd
+  fix $ \go -> receiveWait
+    [ matchChan rp $ \case
+        GraphDataChunk resp -> do
+          liftIO $ B.hPut stdout resp >> hFlush stdout
+          go
+        GraphDataDone -> return ()
+    ]
+
+-- | What format to send graph data back in.
+data GraphFormat = KeyValues | Json | Dot
+  deriving (Eq, Show)
+
+-- | 'GraphInfoOptions' @graphFormat@.
+newtype GraphInfoOptions = GraphInfoOptions GraphFormat
+  deriving (Eq, Show)
+
+parseGraphInfoOptions :: O.Parser GraphInfoOptions
+parseGraphInfoOptions = GraphInfoOptions <$>
+  (mkCmd "json" Json <|> mkCmd "dot" Dot <|> mkCmd "kv" KeyValues)
+  where
+    mkCmd c v = O.subparser $
+      O.command c (O.withDesc (pure v) ("Output graph as " ++ show v))

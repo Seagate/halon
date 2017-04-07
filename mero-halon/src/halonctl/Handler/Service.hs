@@ -26,7 +26,6 @@ import HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Ekg as Ekg
 import qualified HA.Services.Dummy       as Dummy
-import qualified HA.Services.Frontier    as Frontier
 import qualified HA.Services.Mero        as Mero
 import qualified HA.Services.Noisy       as Noisy
 import qualified HA.Services.Ping        as Ping
@@ -75,7 +74,6 @@ data ServiceCmdOptions =
     | PingServiceCmd (StandardServiceOptions Ping.PingConf)
     | SSPLServiceCmd (StandardServiceOptions SSPL.SSPLConf)
     | SSPLHLServiceCmd (StandardServiceOptions SSPLHL.SSPLHLConf)
-    | FrontierServiceCmd (StandardServiceOptions Frontier.FrontierConf)
     | DLogServiceCmd (StandardServiceOptions DLog.DecisionLogConf)
     | EkgServiceCmd (StandardServiceOptions Ekg.EkgConf)
     | MeroServiceCmd (StandardServiceOptions Mero.MeroConf)
@@ -198,9 +196,6 @@ parseService =
     (SSPLHLServiceCmd <$> (O.subparser $
          mkStandardServiceCmd SSPLHL.sspl)
     ) <|>
-    (FrontierServiceCmd <$> (O.subparser $
-         mkStandardServiceCmd Frontier.frontier)
-    ) <|>
     (DLogServiceCmd <$> (O.subparser $
          mkStandardServiceCmd DLog.decisionLog)
     ) <|>
@@ -224,7 +219,6 @@ service nids so = case so of
   PingServiceCmd sso    -> standardService nids sso Ping.ping
   SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
   SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
-  FrontierServiceCmd sso -> standardService nids sso Frontier.frontier
   DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
   EkgServiceCmd sso      ->standardService nids sso Ekg.ekg
   MeroServiceCmd sso     -> standardService nids sso Mero.m0d_real
