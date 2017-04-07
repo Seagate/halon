@@ -1,6 +1,8 @@
+{-# LANGUAGE ImplicitParams    #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
@@ -13,6 +15,7 @@ module HA.Services.SSPL.Rabbit where
 
 import Prelude hiding ((<$>), (<*>))
 import Control.Applicative ((<$>), (<*>))
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 import Control.Distributed.Process
@@ -29,8 +32,7 @@ import Control.Distributed.Process
   , usend
   )
 import qualified Control.Distributed.Process as DP
-import qualified Control.Exception as E
-import Control.Monad (forever)
+import Control.Monad (forever, void)
 import Control.Monad.Catch
   ( finally
   , bracket
@@ -46,15 +48,14 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Defaultable
 import Data.Hashable (Hashable)
-import Data.Monoid ((<>))
+import Data.Monoid
 import Data.Foldable
-import Data.Functor (void)
 import qualified Data.Set as Set
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
+import GHC.Stack
 import HA.Aeson
 import HA.SafeCopy
 
@@ -62,6 +63,7 @@ import Network.AMQP
 
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
+import Text.Printf (printf)
 
 --------------------------------------------------------------------------------
 -- Configuration                                                              --
@@ -143,6 +145,26 @@ openConnection ConnectionConf{..} =
     un = T.pack ccLoginName
     pw = T.pack ccPassword
 
+-- | Create a @topic@ exchange, queue and bind the two together with
+-- the given routing key. This should be ran before trying to send a
+-- message through the exchange.
+setupBind :: Network.AMQP.Channel
+          -> BindConf -- ^ Exchange, queue and key information to use.
+          -> IO ()
+setupBind chan BindConf{..} = mask_ $ do
+  ignoreException $ declareExchange chan newExchange
+    { exchangeName = exchangeName
+    , exchangeType = "topic"
+    , exchangeDurable = False
+    }
+  ignoreException $ void $
+    declareQueue chan newQueue { queueName = queueName }
+  ignoreException $ bindQueue chan queueName exchangeName routingKey
+  where
+    exchangeName = T.pack $ fromDefault bcExchangeName
+    queueName = T.pack $ fromDefault bcQueueName
+    routingKey = T.pack $ fromDefault bcRoutingKey
+
 -- | Distributed-process variant of 'consumeMsgs'
 receive :: Network.AMQP.Channel
         -> BindConf
@@ -162,41 +184,22 @@ receive chan BindConf{..} handle = do
       handle msg
 
     rabbitHandler lChan = liftIO $ do
-      mask_ $ do -- ignore async exceptions during startup
-        ignoreException $ declareExchange chan newExchange
-          { exchangeName = exchangeName
-          , exchangeType = "topic"
-          , exchangeDurable = False
-          }
-        ignoreException $ void $
-          declareQueue chan newQueue { queueName = queueName }
-        ignoreException $ bindQueue chan queueName exchangeName routingKey
-
+      mask_ . ignoreException . void $
+        declareQueue chan newQueue { queueName = queueName }
       consumeMsgs chan queueName NoAck $ writeChan lChan
-
-    exchangeName = T.pack . fromDefault $ bcExchangeName
     queueName = T.pack . fromDefault $ bcQueueName
-    routingKey = T.pack . fromDefault $ bcRoutingKey
 
-receiveAck :: Network.AMQP.Channel
-           -> T.Text -- ^ Exchange
+
+receiveAck :: (?loc :: CallStack)
+           => Network.AMQP.Channel
            -> T.Text -- ^ Queue
-           -> T.Text -- ^ Routing key
            -> (Network.AMQP.Message -> Process ())
            -> Process ()
-receiveAck chan exchange queue routingKey handle = go `catch` (liftIO . logException) where
+receiveAck chan queue handle = go `catch` (liftIO . logException ?loc) where
   go = bracket
          (liftIO $ do
-            mask_ $ do -- ignore all asynchronous exception for simplicity
-              ignoreException $
-                declareExchange chan newExchange
-                  { exchangeName = exchange
-                  , exchangeType = "topic"
-                  , exchangeDurable = False
-                  }
-              ignoreException $ void $
-                declareQueue chan newQueue{ queueName = queue }
-              ignoreException $ bindQueue chan queue exchange routingKey
+            mask_ . ignoreException . void $
+              declareQueue chan newQueue{ queueName = queue }
             mbox  <- newEmptyMVar
             mdone <- newEmptyMVar
             tag   <- consumeMsgs chan queue Ack $ \(msg,env) -> do
@@ -209,57 +212,97 @@ receiveAck chan exchange queue routingKey handle = go `catch` (liftIO . logExcep
             handle =<< liftIO (takeMVar mbox)
             liftIO $ putMVar mdone ())
 
-ignoreException :: IO () -> IO ()
+ignoreException :: (?loc :: CallStack) => IO () -> IO ()
 ignoreException io = try io >>= \case
   Right _ -> return ()
-  Left e  -> logException e
+  Left e  -> logException ?loc e
 
 -- | Output 'SomeException' with SSPL-HL service header.
-logException :: SomeException -> IO ()
-logException e = case E.fromException e of
-  -- Don't make noise on just normal ThreadKilled: very annoying in
-  -- test output.
-  Just E.ThreadKilled -> return ()
-  _ -> putStrLn $ "[SSPL-HL]: exception: " ++ show e
+logException :: CallStack -> SomeException -> IO ()
+logException cs e =
+  putStrLn $ printf "[SSPL-HL]: exception %s (%s)" (show e) locInfo
+  where
+    locInfo = case reverse $ getCallStack cs of
+      (_, loc) : _ -> prettySrcLoc loc
+      _ -> "no loc"
+
 
 -- | Publish message
 data MQPublish = MQPublish
-       { publishExchange :: ByteString
-       , publishKey      :: ByteString
-       , publishBody     :: ByteString
+       { publishExchange :: !T.Text
+       , publishKey      :: !T.Text
+       , publishBody     :: !ByteString
        } deriving (Generic)
 
 instance Binary MQPublish
 
 -- | Subscribe to the queue
 data MQSubscribe = MQSubscribe
-      { subQueue   :: ByteString
-      , subProcess :: ProcessId
+      { subQueue   :: !T.Text
+      , subProcess :: !ProcessId
       } deriving (Generic)
-
 instance Binary MQSubscribe
 
 data MQMessage = MQMessage
-      { mqQueue :: ByteString
-      , mqMessage :: ByteString
+      { mqQueue :: !T.Text
+      , mqMessage :: !ByteString
       } deriving (Generic)
-
 instance Binary MQMessage
 
 data MQBind = MQBind
-      { mqBindExchange :: ByteString
-      , mqBindQueue    :: ByteString
-      , mqBindKey      :: ByteString
+      { mqBindExchange :: !T.Text
+      , mqBindQueue    :: !T.Text
+      , mqBindKey      :: !T.Text
       } deriving (Generic)
-
 instance Binary MQBind
 
 data MQPurge = MQPurge
-  { mqPurgeQueueName :: ByteString
-  , mqPurgeCaller :: ProcessId
+  { mqPurgeQueueName :: !T.Text
+  , mqPurgeCaller :: !ProcessId
   } deriving (Eq, Generic)
-
 instance Binary MQPurge
+
+-- | Ask RMQ proxy to forward messages from a key to another queue.
+--
+-- Note that this will result in 'MQMessage's from '_mqForwardToQueue'
+-- even if '_mqForwardToExchange' with '_mqForwardToKey' decided not
+-- to publish into '_mqForwardToQueue'. You should therefore only use
+-- this for exchanges and keys that you *know* will always forward the
+-- message (such as @direct@ or @topic@ without @*/#@) otherwise you
+-- will see 'MQMessage's for things that haven't actually gone into
+-- '_mqForwardToQueue'.
+--
+-- It is up to the user to ensure that '_mqForwardToExchange' and
+-- '_mqForwardToQueue' have been declared and bound through
+-- '_mqForwardToKey'.
+--
+-- You should not 'MQSubscribe' to '_mqForwardToQueue' if you're
+-- forwarding out of it: you will register two consumers (forwarder
+-- and subscriber). Instead, only 'MQForward' and pass in
+-- '_mqMiddleman'.
+data MQForward = MQForward
+  { _mqForwardFromQueue :: !T.Text
+  , _mqForwardToExchange :: !T.Text
+  , _mqForwardToQueue :: !T.Text
+  , _mqForwardToKey :: !T.Text
+    -- | The process that should receive 'MQMessage's for
+    -- '_mqForwardToQueue' as if it was listening to it directly. See
+    -- 'MQForward' comment.
+  , _mqMiddleman :: !ProcessId
+  } deriving (Eq, Generic)
+instance Binary MQForward
+
+-- | Local state used by 'rabbitMQProxy
+data ProxyState = ProxyState
+ { exchanges :: !(Set.Set T.Text)
+ , queues :: !(Set.Set T.Text)
+ , subscribers :: !(Map.Map T.Text (Set.Set ProcessId))
+ } deriving (Show, Eq)
+
+instance Monoid ProxyState where
+  mempty = ProxyState mempty mempty mempty
+  ProxyState e q s `mappend` ProxyState e' q' s' =
+    ProxyState (e <> e') (q <> q') (s <> s')
 
 -- | Creates Mock RabbitMQ Proxy.
 rabbitMQProxy :: ConnectionConf -> Process ()
@@ -291,33 +334,46 @@ rabbitMQProxy conf = run
                 _ <- liftIO $ declareQueue chan newQueue{queueName = name}
                 return (Set.insert name queues)
             | otherwise = return queues
-          loop queues subscribers exchanges = receiveWait
-            [ match $ \msg@(MQPurge (T.decodeUtf8 -> que) p) -> do
-                queues' <- queuesIfMissing queues que
-                liftIO . void $ purgeQueue chan que
+          loop state = receiveWait
+            [ match $ \msg@(MQPurge queue p) -> do
+                queues' <- queuesIfMissing (queues state) queue
+                liftIO . void $ purgeQueue chan queue
                 usend p msg
-                loop queues' subscribers exchanges
-            , match $ \(MQSubscribe k@(T.decodeUtf8 -> key) pid) -> do
-                queues' <- queuesIfMissing queues key
-                tag <- liftIO $ consumeMsgs chan key NoAck $ \(msg, _env) -> do
-                   writeChan iochan (T.encodeUtf8 key, msgBody msg)
+                loop $! state { queues = queues' }
+            , match $ \(MQSubscribe queue pid) -> do
+                queues' <- queuesIfMissing (queues state) queue
+                tag <- liftIO $ consumeMsgs chan queue NoAck $ \(msg, _env) ->
+                   writeChan iochan (queue, LBS.toStrict $ msgBody msg)
                 liftIO $ modifyMVar_ tags (return .(tag:))
-                let subscribers' = Map.insertWith (<>) k [pid] subscribers
-                loop queues' subscribers' exchanges
-            , match $ \(MQBind (T.decodeUtf8 -> exch) (T.decodeUtf8 -> que) (T.decodeUtf8 -> key)) -> do
-                exchanges' <- exchangesIfMissing exchanges exch
-                queues'    <- queuesIfMissing queues que
-                liftIO $ bindQueue chan que exch key
-                loop queues' subscribers exchanges'
-            , match $ \(MQPublish (T.decodeUtf8 -> exch) (T.decodeUtf8 -> key) (LBS.fromStrict -> msg)) -> do
-                exchanges' <- exchangesIfMissing exchanges exch
+                let subscribers' = Map.insertWith (<>) queue (Set.singleton pid) (subscribers state)
+                loop $! state { queues = queues', subscribers = subscribers' }
+              -- Forwarding from @queue@ also subscribes to messages
+              -- for @fqueue@.
+            , match $ \(MQForward queue fexchange fqueue fkey pid) -> do
+                queues' <- queuesIfMissing (queues state) queue
+                let subscribers' = Map.insertWith (<>) fqueue (Set.singleton pid)
+                                                              (subscribers state)
+                tag <- liftIO $ consumeMsgs chan queue NoAck $ \(msg, _) -> do
+                  -- Fork because consumeMsgs warnings sound scary.
+                  void . forkIO $ do
+                    -- Requires fexchange and fqueue are already bound.
+                    _ <- publishMsg chan fexchange fkey msg
+                    writeChan iochan (fqueue, LBS.toStrict $ msgBody msg)
+                liftIO $ modifyMVar_ tags (return . (tag:))
+                loop $! state { queues = queues', subscribers = subscribers' }
+            , match $ \(MQBind exch queue key) -> do
+                exchanges' <- exchangesIfMissing (exchanges state) exch
+                queues'    <- queuesIfMissing (queues state) queue
+                liftIO $ bindQueue chan queue exch key
+                loop $! state { queues = queues', exchanges = exchanges' }
+            , match $ \(MQPublish exch key (LBS.fromStrict -> msg)) -> do
+                exchanges' <- exchangesIfMissing (exchanges state) exch
                 _ <- liftIO $ publishMsg chan exch key newMsg{msgBody = msg}
-                loop queues subscribers exchanges'
-            , matchChan receivePort $ \(key, msg) -> do
-                let msg' = LBS.toStrict msg
-                for_ (fromMaybe [] $ Map.lookup key subscribers) $ \p ->
-                  usend p $ MQMessage key msg'
-                loop queues subscribers exchanges
+                loop $! state { exchanges = exchanges' }
+            , matchChan receivePort $ \(queue, msg) -> do
+                for_ (fromMaybe mempty $ Map.lookup queue (subscribers state)) $ \p ->
+                  usend p $ MQMessage queue msg
+                loop state
             ]
-      (loop Set.empty Map.empty Set.empty)
-          `finally` (liftIO $ takeMVar tags >>= mapM (cancelConsumer chan))
+      loop mempty
+        `finally` (liftIO $ takeMVar tags >>= mapM (cancelConsumer chan))

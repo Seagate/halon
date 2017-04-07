@@ -354,7 +354,7 @@ iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
 
 -- | 'Schema' for command bind configuration
 commandSchema :: Schema Rabbit.BindConf
-commandSchema = genericBindConf ("sspl_halon","systemd_exchange")
+commandSchema = genericBindConf ("sspl_halon_command","systemd_exchange")
                                 ("sspl_ll", "systemd_routingKey")
                                 ("sspl_halon", "systemd_queue")
 
@@ -363,6 +363,14 @@ commandAckSchema :: Schema Rabbit.BindConf
 commandAckSchema = genericBindConf ("sspl_command_ack", "command_ack_exchange")
                                    ("sspl_ll",      "command_ack_routing_key")
                                    ("sspl_command_ack", "command_ack_queue")
+
+-- | DCS 'Schema'. See also 'sensorSchema'.
+dcsSchema :: Schema Rabbit.BindConf
+dcsSchema = genericBindConf ("sspl_halon_sensor", "dcs_exchange")
+                            ("sspl_ll", "dcs_routingKey")
+                            (shortHostName, "dcs_queue")
+  where
+    shortHostName = unsafePerformIO $ readProcess "hostname" ["-s"] ""
 
 -- | Generic 'Schema' creating 'Rabbit.BindConf' on the given
 -- @genericBindConf exchange route queue@.
@@ -411,22 +419,6 @@ actuatorSchema = compositeOption subOpts
                 <> summary "Timeout to use when declaring channels to the RC."
                 <> metavar "MICROSECONDS"
 
--- | DCS 'Schema'. See also 'sensorSchema'.
-dcsSchema :: Schema Rabbit.BindConf
-dcsSchema = let
-    en = defaultable "sspl_halon" . strOption
-        $ long "dcs_exchange"
-        <> metavar "EXCHANGE_NAME"
-    rk = defaultable "sspl_ll" . strOption
-          $ long "dcs_routingKey"
-          <> metavar "ROUTING_KEY"
-    qn = defaultable shortHostName . strOption
-          $ long "dcs_queue"
-          <> metavar "QUEUE_NAME"
-          where
-            shortHostName = unsafePerformIO $ readProcess "hostname" ["-s"] ""
-  in Rabbit.BindConf <$> en <*> rk <*> qn
-
 -- | Sensor configuration
 data SensorConf = SensorConf {
     scDCS :: Rabbit.BindConf
@@ -463,7 +455,6 @@ data SsplLlFromSvc
   | ThreadController !NodeId !ActuatorResponseMessageActuator_response_typeThread_controller
   | ExpanderResetInternal !NodeId
   deriving (Show, Eq)
-
 
 -- | SSPL service configuration.
 data SSPLConf = SSPLConf

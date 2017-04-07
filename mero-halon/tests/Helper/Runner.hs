@@ -1,9 +1,11 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE StrictData                #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE ViewPatterns              #-}
 -- |
 -- Module    : Helper.Runner
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
@@ -16,6 +18,7 @@ module Helper.Runner
   , RuleHook(..)
   , TestOptions(..)
   , TestSetup(..)
+  , RmqSetup(..)
   , mkDefaultTestOptions
   , run
   , run'
@@ -26,16 +29,17 @@ import           Control.Distributed.Process.Node
 import           Control.Lens hiding (to)
 import           Control.Monad (foldM, void, when)
 import           Data.Binary (Binary)
+import           Data.ByteString (ByteString)
 import           Data.Defaultable
 import           Data.Foldable (for_)
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy
+import           Data.String (fromString)
 import           Data.Typeable
 import           Data.Vinyl
 import           GHC.Generics (Generic)
 import           GHC.Word (Word8)
 import qualified HA.EQTracker.Process as EQT
-import           HA.Encode
 import           HA.EventQueue.Producer
 import           HA.Multimap
 import           HA.NodeUp (nodeUp')
@@ -95,20 +99,28 @@ data TestOptions = TestOptions
   -- preserve any changes test runner has made.
   }
 
+data RmqSetup = RmqSetup
+  { -- | RMQ proxy 'ProcessId'.
+    _rmq_pid :: !ProcessId
+    -- | Publish the given message to the proxy exchange that will
+    -- then forward to the sensor exchange.
+  , _rmq_publishSensorMsg :: ByteString -> Process ()
+  }
+
 -- | Set of values from the environment setup that can be used
 -- throughout test execution. This is provided to the test itself.
 data TestSetup = TestSetup
-  { _ts_rc :: ProcessId
+  { _ts_rc :: !ProcessId
   -- ^ RC 'ProcessId'
-  , _ts_eq :: ProcessId
+  , _ts_eq :: !ProcessId
   -- ^ EQ 'ProcessId'
-  , _ts_mm :: StoreChan
+  , _ts_mm :: !StoreChan
   -- ^ MM 'ProcessId'
-  , _ts_rmq :: ProcessId
-  -- ^ RMQ 'ProcessId'
-  , _ts_nodes :: [LocalNode]
+  , _ts_rmq :: ~RmqSetup
+  -- ^ RMQ setup information. Lazy as might not be set-up.
+  , _ts_nodes :: ![LocalNode]
   -- ^ Group of nodes involved in the test
-  , _ts_ts_nodes :: [LocalNode]
+  , _ts_ts_nodes :: ![LocalNode]
   -- ^ '_ts_nodes' that are tracking stations, excluding RC node.
   }
 
@@ -126,25 +138,25 @@ data ClusterSetup =
 
 -- | Ask RC to put mock version of @halon:m0d@ service in RG.
 -- Optionally set the cluster disposition to online.
-data MockM0 = MockM0 ProcessId Bool
+data MockM0 = MockM0 !ProcessId !Bool
   deriving (Show, Eq, Generic, Typeable)
 instance Binary MockM0
 
 -- | Reply to 'MockM0'
-data MockM0Reply = MockM0RequestOK NodeId
-                 | MockM0RequestFailed String
+data MockM0Reply = MockM0RequestOK !NodeId
+                 | MockM0RequestFailed !String
   deriving (Generic, Typeable)
 instance Binary MockM0Reply
 
 
 -- | Ask RC to start a mock version of @halon:m0d@ service.
-data PopulateMock = PopulateMock ProcessId NodeId
+data PopulateMock = PopulateMock !ProcessId !NodeId
                   -- ^ PopulateMock @halon:m0d-worker-pid@ @target-node@
   deriving (Show, Eq, Ord, Generic, Typeable)
 
 -- | Reply to 'MockM0'
-data PopulateMockReply = MockRunning NodeId
-                       | MockPopulateFailure NodeId String
+data PopulateMockReply = MockRunning !NodeId
+                       | MockPopulateFailure !NodeId !String
   deriving (Show, Eq, Ord, Generic, Typeable)
 instance Binary PopulateMockReply
 
@@ -182,9 +194,8 @@ testRules = do
           rg <- getLocalGraph
           let procs = Node.getProcesses (Node nid) rg
               pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
-              ha = [ p | (p, _) <- pmap
-                       , s <- G.connectedTo p M0.IsParentOf rg
-                       , M0.s_type s == CST_HA ]
+              ha = [ p | (p, svcs) <- pmap
+                       , any (\s -> M0.s_type s == CST_HA) svcs ]
           case ha of
             [ha_p] -> do
               mack <- liftProcess $ Mock.sendMockCmd (Mock.SetProcessMap pmap) m0dPid
@@ -300,6 +311,7 @@ run' transport pg extraRules to test = do
       numNodes = length (CI.id_m0_servers idata)
       rt = _to_remote_table to
       runs = _to_scheduler_runs to
+
   runTest (numNodes + 1) runs 15000000 transport rt $ \lnodes -> do
     -- Wipe the halon:m0d state from any previous test runs.
     liftIO Mock.clearMockState
@@ -405,12 +417,10 @@ run' transport pg extraRules to test = do
       rmq <- case _to_run_sspl to of
         True -> do
           rmq <- spawnMockRabbitMQ self
-          usend rmq $ MQSubscribe "halon_sspl" self
-          usend rmq $ MQBind "halon_sspl" "halon_sspl" "sspl_ll"
           sayTest "Started mock RabbitMQ service."
           return rmq
         False -> do
-          sayTest "nullProcessId for RabbitMQ as no SSPL requested."
+          sayTest "No RabbitMQ proxy as no SSPL requested."
           return $ error "RabbitMQ service not initialised"
 
       sayTest "Starting test..."
@@ -425,44 +435,87 @@ run' transport pg extraRules to test = do
 
       when (_to_run_sspl to) $ do
         for_ nids $ \nid -> do
-          void . promulgateEQ [rcNodeId] . encodeP $ ServiceStopRequest (Node nid) sspl
-        void $ receiveTimeout 1000000 []
-        unlink rmq
-        kill rmq "end of game"
+          ServiceStopRequestOk <- serviceStopOnNode [rcNodeId] sspl nid
+          return ()
+        unlink (_rmq_pid rmq)
+        kill (_rmq_pid rmq) "end of game"
       sayTest "All done!"
   where
+    routingKey = fromString "sspl_ll"
+    sensorExchange = fromString "sspl_halon_sensor"
+    sensorQueue = fromString "sspl_dcsque"
+    iemQueue = fromString "sspl_iem"
+    iemExchange = fromString "sspl_iem"
+    commandExchange = fromString "sspl_halon_command"
+    commandQueue = fromString "sspl_halon"
+    commandAckExchange = fromString "sspl_command_ack"
+    commandAckQueue = fromString "sspl_command_ack"
+    proxyExchange = fromString "halon_test_rmq_proxy_exchange"
+    proxyQueue = fromString "halon_test_rmq_proxy_queue"
+    proxyKey = fromString "halon_test_rmq_proxy_key"
+    rabbitConnectionConf = ConnectionConf
+      (Configured "localhost") (Configured "/") ("guest") ("guest")
     ssplConf = SSPLConf
-      (ConnectionConf (Configured "localhost")
-                      (Configured "/")
-                      ("guest")
-                      ("guest"))
-      (SensorConf (BindConf (Configured "sspl_halon")
-                            (Configured "sspl_ll")
-                            (Configured "sspl_dcsque")))
-      (ActuatorConf (BindConf (Configured "sspl_iem")
-                              (Configured "sspl_ll")
-                              (Configured "sspl_iem"))
-                    (BindConf (Configured "halon_sspl")
-                              (Configured "sspl_ll")
-                              (Configured "halon_sspl"))
-                    (BindConf (Configured "sspl_command_ack")
-                              (Configured "halon_ack")
-                              (Configured "sspl_command_ack"))
+      rabbitConnectionConf
+      (SensorConf (BindConf (Configured sensorExchange)
+                            (Configured routingKey)
+                            (Configured sensorQueue)))
+      (ActuatorConf (BindConf (Configured iemExchange)
+                              (Configured routingKey)
+                              (Configured iemQueue))
+                    (BindConf (Configured commandExchange)
+                              (Configured routingKey)
+                              (Configured commandQueue))
+                    (BindConf (Configured commandAckExchange)
+                              (Configured routingKey)
+                              (Configured commandAckQueue))
                     (Configured 1000000))
 
-    spawnMockRabbitMQ :: ProcessId -> Process ProcessId
+    spawnMockRabbitMQ :: ProcessId -> Process RmqSetup
     spawnMockRabbitMQ self = do
       pid <- spawnLocal $ do
         link self
-        rabbitMQProxy $ ConnectionConf (Configured "localhost")
-                                       (Configured "/")
-                                       ("guest")
-                                       ("guest")
+        rabbitMQProxy rabbitConnectionConf
       sayTest "Clearing RMQ queues."
-      purgeRmqQueues pid [ "sspl_dcsque", "sspl_iem"
-                         , "halon_sspl", "sspl_command_ack"]
+      purgeRmqQueues pid [ sensorQueue, iemQueue
+                         , commandQueue, commandAckQueue
+                         , proxyQueue
+                         ]
+
+      -- Bind the send queues we'll need whether halon:sspl did it
+      -- first or not.
+      usend pid $ MQBind sensorExchange sensorQueue routingKey
+      usend pid $ MQBind commandAckExchange commandAckQueue routingKey
+
+      -- We want to be able to send messages to halon:sspl but also to
+      -- be able to see the things we send. As RMQ uses round-robin to
+      -- dispatch messages from queues to its consumers, we can't
+      -- subscribe to the same queue as halon:sspl. Deal with this by
+      -- creating an intermediate queue used by the proxy and inspect
+      -- that then forward the message to halon:sspl exchange/queue.
+      usend pid $ MQBind proxyExchange proxyQueue proxyKey
+      usend pid $ MQForward proxyQueue sensorExchange sensorQueue routingKey self
+
+      -- We want to know what messages halon:sspl sends. This is
+      -- straight forward as the proxy pretends to be SSPL simply by
+      -- consuming what halon:sspl sends. This will make the proxy
+      -- send us MQMessage with the content.
+      usend pid $ MQBind iemExchange iemQueue routingKey
+      usend pid $ MQBind commandExchange commandQueue routingKey
+      usend pid $ MQSubscribe iemQueue self
+
+      -- Real SSPL returns messages in full on the command ack queue
+      -- when it has processed them. Tell proxy to just forward
+      -- messages from the command queue to command ack queue. This
+      -- also subscribes us to 'commandQueue' which is desired.
+      usend pid $ MQForward commandQueue commandAckExchange commandAckQueue
+                            routingKey self
+
       sayTest "RMQ queues purged."
       link pid
-      return pid
+      return $! RmqSetup
+        { _rmq_pid = pid
+        , _rmq_publishSensorMsg = usend pid . MQPublish proxyExchange proxyKey
+        }
 
 deriveSafeCopy 0 'base ''PopulateMock

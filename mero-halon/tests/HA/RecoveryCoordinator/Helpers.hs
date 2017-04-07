@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Helpers
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Collection of helper functions used by the HA.RecoveryCoordinator
@@ -17,11 +17,12 @@ import Control.Monad (void)
 import Data.Foldable (for_)
 import Data.Function (fix)
 import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
 import Data.Typeable
 import HA.Encode
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
+import HA.RecoveryCoordinator.Job.Actions (startJob)
+import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import HA.RecoveryCoordinator.RC.Subscription
 import HA.RecoveryCoordinator.Service.Events
 import HA.Resources
@@ -102,6 +103,22 @@ serviceStartOnNodes eqs svc conf nids = withSubscription eqs startedEvent $ do
   where
     startedEvent = Proxy :: Proxy (HAEvent ServiceStarted)
 
+serviceStopOnNode :: Configuration a
+                  => [NodeId]
+                  -- ^ Location of EQ nodes for subscription purposes.
+                  -> Service a
+                  -- ^ Service to stop
+                  -> NodeId
+                  -- ^ Node to stop the service on.
+                  -> Process ServiceStopRequestResult
+serviceStopOnNode eqs svc nid = withSubscription eqs svcStopFinished $ do
+  l <- startJob . encodeP $ ServiceStopRequest (Node nid) svc
+  JobFinished _ v <- expectPublishedIf (\(JobFinished lis _) -> l `elem` lis)
+  return v
+  where
+    svcStopFinished :: Proxy (JobFinished ServiceStopRequestResult)
+    svcStopFinished = Proxy
+
 -- | Subscribe then unsubscribe for the duration of the given action.
 withSubscription :: Serializable a
                  => [NodeId] -- ^ EQ nodes
@@ -166,7 +183,7 @@ purgeRmqQueues :: ProcessId -- ^ RMQ 'ProcessId'
 purgeRmqQueues rmq qs = do
   self <- getSelfPid
   for_ qs $ \q -> do
-    let msg = MQPurge (encodeUtf8 q) self
+    let msg = MQPurge q self
     usend rmq msg
     Just{} <- receiveTimeout (5 * 1000000)
       [ matchIf (\m -> m == msg) (\_ -> return ()) ]

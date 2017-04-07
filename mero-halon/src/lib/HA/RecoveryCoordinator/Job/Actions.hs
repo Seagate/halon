@@ -4,7 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 -- |
--- Copyright:  (C) 2015 Seagate Technology Limited.
+-- Copyright:  (C) 2015-2017 Seagate Technology Limited.
 --
 -- Helpers that simplifies creation of the long running processes
 module HA.RecoveryCoordinator.Job.Actions
@@ -167,8 +167,8 @@ mkJobRule (Job name)
 
 -- | Start a job using the given request. Returns a listener ID that
 -- can be kept by the caller.
-startJob :: (Typeable r, SafeCopy r) => r -> PhaseM RC l ListenerId
+startJob :: (MonadProcess m, Typeable r, SafeCopy r) => r -> m ListenerId
 startJob request = do
-  l <- ListenerId <$> liftIO UUID.nextRandom
+  l <- liftProcess $ ListenerId <$> liftIO UUID.nextRandom
   promulgateRC $ JobStartRequest l request
   return l
