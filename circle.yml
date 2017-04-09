@@ -42,12 +42,14 @@ dependencies:
     - cd vendor/mero; stack $STACK_FLAGS exec -- ./autogen.sh
     - cd vendor/mero; stack $STACK_FLAGS exec -- ./configure '--with-linux=/usr/src/kernels/*/'
     - cd vendor/mero; stack $STACK_FLAGS exec -- make
-    # Build stack-managed halon dependencies.
-    - stack $STACK_FLAGS build --only-snapshot --prefetch --test --bench
+    # Build everything which will then get copied to cache. On next run, cache will be restored and stack will (hopefully) incrementally build changes.
+    - stack $STACK_FLAGS build --test --no-run-tests --haddock --no-haddock-deps:
+        timeout: 3600
     - stack $STACK_FLAGS exec bash -- -c 'mkdir ~/.ssh; cp -v docker/tweagremote/id_rsa ~/.ssh/ && chmod go-rwx ~/.ssh/id_rsa'
 
   cache_directories:
     - ~/.stack/
+    - ~/halon/.stack-work
 
 test:
   override:
@@ -59,8 +61,6 @@ test:
         background: true
     - "iostat -dNtxzm 5 &> iostats.log":
         background: true
-    # Build
-    - stack $STACK_FLAGS build --test --no-run-tests --haddock --no-haddock-deps
     # Regular tests
     - stack $STACK_FLAGS $STACK_TEST_FLAGS --docker-env HALON_TRACING='consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup' build  replicated-log:tests halon:tests mero-halon:tests:
         timeout: 3600
