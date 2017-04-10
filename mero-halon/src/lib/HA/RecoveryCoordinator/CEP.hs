@@ -40,7 +40,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 import qualified HA.RecoveryCoordinator.RC.Actions.Update as Update
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
-import qualified HA.RecoveryCoordinator.RC.Rules.Debug as Debug (rules)
+import qualified HA.RecoveryCoordinator.RC.Rules.Info as Info (rules)
 import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.ResourceGraph as G
 import           HA.Resources
@@ -52,7 +52,6 @@ import           HA.SafeCopy
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
-import           HA.Services.Frontier.CEP (frontierRules)
 import           HA.Services.Mero.RC (rules)
 import           HA.Services.Ping
 import qualified HA.Services.SSPL.CEP (sendInterestingEvent, sendNodeCmd, ssplRules)
@@ -124,10 +123,9 @@ rcRules argv additionalRules = do
               , rulePidRequest
               ]
     HA.RecoveryCoordinator.Service.Rules.rules
-    Debug.rules argv
+    Info.rules argv
     HA.Services.SSPL.CEP.ssplRules
     castorRules
-    frontierRules
     ssplHLRules
     HA.RecoveryCoordinator.RC.Rules.rules
     HA.Services.Mero.RC.rules

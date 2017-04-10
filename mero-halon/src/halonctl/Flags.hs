@@ -12,7 +12,7 @@ import qualified Options.Applicative.Extras as O
 
 import qualified Handler.Service as Service
 import qualified Handler.Cluster as Cluster
-import qualified Handler.Debug as Debug
+import qualified Handler.Info as Info
 import qualified Handler.Status as Status
 import qualified Handler.Node as Node
 
@@ -37,7 +37,7 @@ data Command =
     | Service Service.ServiceCmdOptions
     | Cluster Cluster.ClusterOptions
     | Status Status.StatusOptions
-    | Debug Debug.DebugOptions
+    | Info Info.InfoOptions
     | Node  Node.NodeOptions
   deriving (Eq)
 
@@ -69,7 +69,7 @@ getOptions = do
         <*> (O.strOption $ O.metavar "ADDRESS" <>
                O.long "listen" <>
                O.short 'l' <>
-               O.value (maybe (listenAddr hostname) 
+               O.value (maybe (listenAddr hostname)
                               (listenAddr . fst) $ getLast la) <>
                O.help "Address halonctl binds to.")
         <*> (O.subparser $
@@ -81,8 +81,8 @@ getOptions = do
                     O.withDesc Cluster.parseCluster "Control cluster wide options.")
               <> (O.command "status" $ Status <$>
                     O.withDesc Status.parseStatus "Query node status.")
-              <> (O.command "debug" $ Debug <$>
-                    O.withDesc Debug.parseDebug "Print Halon debugging information.")
+              <> (O.command "info" $ Info <$>
+                    O.withDesc Info.parseInfo "Print Halon information.")
               <> (O.command "node" $ Node <$>
                     O.withDesc Node.parseOptions "Control node wide options.")
             )

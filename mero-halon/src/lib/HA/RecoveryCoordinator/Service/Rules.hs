@@ -52,7 +52,6 @@ import           HA.Service.Interface
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
 import qualified HA.Services.Ekg as Ekg
-import qualified HA.Services.Frontier as Frontier
 import qualified HA.Services.Mero as Mero
 import qualified HA.Services.Noisy as Noisy
 import qualified HA.Services.Ping as Ping
@@ -446,8 +445,6 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
           decodeAndSend wf DLog.decisionLog uid
       | serviceName SSPL.sspl == wfServiceName wf ->
           decodeAndSend wf SSPL.sspl uid
-      | serviceName Frontier.frontier == wfServiceName wf ->
-          decodeAndSend wf Frontier.frontier uid
       | serviceName Ekg.ekg == wfServiceName wf ->
           decodeAndSend wf Ekg.ekg uid
       | serviceName Ping.ping == wfServiceName wf ->
