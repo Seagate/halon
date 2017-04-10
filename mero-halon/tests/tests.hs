@@ -37,7 +37,7 @@ tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTr
 tests transport breakConnection = do
   -- For mock replicator, change to 'Proxy RLocalGroup'
   let pg = Proxy :: Proxy RLogGroup
-  ssplTest <- HA.Test.SSPL.mkTests
+  ssplTests <- HA.Test.SSPL.mkTests transport pg
   driveFailureTests <- HA.Castor.Story.Tests.mkTests pg
   processTests <- HA.Castor.Story.Process.mkTests pg
   internalSCTests <- HA.Test.InternalStateChanges.mkTests pg
@@ -54,7 +54,7 @@ tests transport breakConnection = do
       , testGroup "Service-SSPL" $ HA.RecoveryCoordinator.SSPL.Tests.utTests transport pg
       , testGroup "ServiceInterface" $ HA.Test.ServiceInterface.tests transport pg
       , HA.Test.Disconnect.tests transport breakConnection
-      , ssplTest transport
+      , ssplTests
       ]
 
 -- | Set up a 'Transport' and a way to break connections before

@@ -217,9 +217,10 @@ announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
         (pack $ aDiskWWN sdev)
         True True
   withSubscription [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveInserted) $ do
-    usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+    _rmq_publishSensorMsg (_ts_rmq ts) message
     let isOurDI (DriveInserted _ _ slot' sdev' (Just True)) = slot' == slot && sdev' == aDiskSD sdev
         isOurDI _ = False
+    sayTest $ "Waiting for published " ++ show (slot, aDiskSD sdev)
     r <- receiveTimeout 10000000
       [ matchIf (\(Published v _) -> isOurDI v) (\_ -> return ()) ]
     case r of
@@ -451,7 +452,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
                   False True
   -- For now the device is still in the slot.
   False <- checkStorageDeviceRemoved enc devIdx <$> G.getGraph (_ts_mm ts)
-  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+  _rmq_publishSensorMsg (_ts_rmq ts) message
   Just{} <- expectTimeout ssplTimeout :: Process (Maybe (Published DriveRemoved))
 
   -- Wait until drive gets removed from the slot.
@@ -593,13 +594,10 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
                                   sensorResponseMessageSensor_response_typeRaid_data = Just raidData
                                 }
 
-  usend (_ts_rmq ts) $ MQBind "sspl_iem" "sspl_iem" "sspl_ll"
-  usend (_ts_rmq ts) . MQSubscribe "sspl_iem" =<< getSelfPid
-
   subscribeOnTo [processNodeId $ _ts_rc ts]
     (Proxy :: Proxy RaidMsg)
 
-  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" message
+  _rmq_publishSensorMsg (_ts_rmq ts) message
 
 
   sayTest "RAID message published"
@@ -642,7 +640,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
     sayTest $ "sspl_msg(reset): " ++ show msg
     let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DriveReset "mdserial2")
-    liftIO $ assertEqual "drive reset command is issued"  (Just cmd) msg
+    liftIO $ assertEqual "drive reset command is issued" (Just cmd) msg
 
   sayTest "Reset command received at SSPL"
   resetComplete (_ts_rc ts) (_ts_mm ts) disk2 AckReplyPassed M0.SDSOnline
@@ -691,7 +689,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
               }
 
   -- Before we can do anything, we need to establish a fake RAID device.
-  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" raidMsg
+  _rmq_publishSensorMsg (_ts_rmq ts) raidMsg
   _ :: RaidMsg <- expectPublished
   sayTest "RAID devices established"
 
@@ -706,7 +704,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   sayTest $ "(enc, m0enc): " ++ show (enc, m0enc)
 
   -- First, we sent expander reset message for an enclosure.
-  usend (_ts_rmq ts) $ MQPublish "sspl_halon" "sspl_ll" erm
+  _rmq_publishSensorMsg (_ts_rmq ts) erm
 
   -- Should get propogated to the RC
   _ :: HAEvent ExpanderReset <- expectPublished

@@ -32,6 +32,7 @@ import           Control.Distributed.Static ( staticApply, RemoteTable )
 import qualified Control.Monad.Catch as C
 import           Control.Monad.State.Strict hiding (mapM_)
 import           Control.Monad.Trans.Maybe
+import           Data.Binary (Binary)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import           Data.Defaultable
 import           Data.Foldable (for_)
@@ -39,7 +40,9 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Time (getCurrentTime, addUTCTime)
+import           Data.Typeable (Typeable)
 import qualified Data.UUID as UID
+import           GHC.Generics (Generic)
 import qualified HA.Aeson as Aeson
 import           HA.Debug
 import           HA.Logger (mkHalonTracer)
@@ -152,8 +155,16 @@ startActuators :: Network.AMQP.Channel
                -> SendPort ()
                -> Process ActuatorChannels
 startActuators chan ac pid monitorChan = do
-    iemChan <- spawnChannelLocal $ \ch -> link pid >> (iemProcess $ acIEM ac) ch
-    systemdChan <- spawnChannelLocal $ \ch -> link pid >> commandProcess (acSystemd ac) ch
+    iemChan <- spawnChannelLocal $ \ch -> do
+      liftIO $ Rabbit.setupBind chan (acIEM ac)
+      link pid
+      iemProcess (acIEM ac) ch
+
+    systemdChan <- spawnChannelLocal $ \ch -> do
+      liftIO $ Rabbit.setupBind chan (acSystemd ac)
+      link pid
+      commandProcess (acSystemd ac) ch
+
     _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
     return $! ActuatorChannels iemChan systemdChan
   where
@@ -183,19 +194,20 @@ startActuators chan ac pid monitorChan = do
           , actuatorRequestMessageSspl_ll_msg_header = header uuid
           }
         }
+      saySSPL $ unwords [ "commandProcess"
+                        , fromDefault bcExchangeName
+                        , fromDefault bcRoutingKey
+                        , show msg ]
       liftIO $ publishMsg
         chan
-        (T.pack . fromDefault $ bcExchangeName)
-        (T.pack . fromDefault $ bcRoutingKey)
+        (T.pack $ fromDefault bcExchangeName)
+        (T.pack $ fromDefault bcRoutingKey)
         (newMsg { msgBody = msg
                 , msgReplyTo = Just cmdAckQueueName
                 , msgDeliveryMode = Just Persistent
                 }
         )
-    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan
-      (T.pack . fromDefault $ bcExchangeName)
-      (cmdAckQueueName)
-      (T.pack . fromDefault $ bcRoutingKey)
+    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan cmdAckQueueName
       (\msg -> for_ (Aeson.decode $ msgBody msg) $ \response -> do
           uuid <- case actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response of
              Aeson.Object hm ->  case "uuid" `HM.lookup` hm of
@@ -227,6 +239,12 @@ monitorProcess rchan = forever $ receiveChanTimeout ssplMaxMessageTimeout rchan 
                     sendRC interface $ SSPLServiceTimeout node
       _ -> return ()
 
+-- | Tell 'ssplProcess' that it's time to stop and that it should
+-- disconnect.
+data StopServiceInternal = StopServiceInternal
+  deriving (Eq, Typeable, Generic)
+instance Binary StopServiceInternal
+
 -- | Main daemon for SSPL halon service
 ssplProcess :: SSPLConf -> Process ()
 ssplProcess (SSPLConf{..}) = let
@@ -236,12 +254,15 @@ ssplProcess (SSPLConf{..}) = let
     pid <- spawnLocal $ connectSSPL lock me
     ActuatorChannels iemCh sysCh <- expect :: Process ActuatorChannels
     mref <- monitor pid
-    fix $ \loop -> do
+    flip fix False $ \loop !shutdown -> do
       receiveWait [
-          match $ \(ProcessMonitorNotification _ _ r) -> do
+          matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
+                  $ \(ProcessMonitorNotification _ _ r) -> do
             saySSPL $ "Process died:" ++ show r
-            _ <- receiveTimeout 2000000 []
-            connectRetry lock
+            unless shutdown $ do
+              saySSPL "Restarting connectRetry..."
+              _ <- receiveTimeout 2000000 []
+              connectRetry lock
         , match $ \case
             ResetSSPLService -> do
               saySSPL "restarting RabbitMQ and sspl-ll."
@@ -249,16 +270,17 @@ ssplProcess (SSPLConf{..}) = let
                 void $ SystemD.restartService "rabbitmq-server.service"
                 void $ SystemD.restartService "sspl-ll.service"
                 void $ tryPutMVar lock ()
-              loop
+              loop shutdown
             SsplIem iem -> do
               sendChan iemCh iem
-              loop
+              loop shutdown
             SystemdMessage muid arma -> do
               sendChan sysCh (muid, arma)
-              loop
-        , match $ \() -> do
+              loop shutdown
+        , match $ \StopServiceInternal -> do
             saySSPL $ "tearing server down"
-            unmonitor mref >> (liftIO $ void $ tryPutMVar lock ())
+            liftIO . void $ tryPutMVar lock ()
+            loop True
         ]
   connectSSPL lock pid = do
     node <- getSelfNode
@@ -330,6 +352,9 @@ remotableDecl [ [d|
       -- accumulate messages if the channels never come up. We should
       -- only declare service as started once we have channels and we
       -- should only send messages to it after it has started.
+      --
+      -- It turns out that even if we announce service start late,
+      -- service internals announce service as started straight away.
       return (Right pid)
     mainloop _ pid = return
       [ matchIf (\(ProcessMonitorNotification _ p _) -> p == pid) $ \_ ->
@@ -341,6 +366,11 @@ remotableDecl [ [d|
           return (Continue, pid)
       , match $ \() -> usend pid () >> return (Continue, pid)
       ]
-    teardown _ _ = return ()
+    teardown _ pid = do
+      mref <- monitor pid
+      usend pid StopServiceInternal
+      receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> mref == m)
+                            (\_ -> return ())
+                  ]
     confirm  _ pid = usend pid ()
   |] ]

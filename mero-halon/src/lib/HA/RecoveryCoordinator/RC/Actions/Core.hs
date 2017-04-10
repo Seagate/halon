@@ -299,8 +299,8 @@ getMultimapChan = fmap lsMMChan $ get Global
 --
 -- However, 'promulgateRC' introduces additional synchronization overhead in normal
 -- case, so on a fast-path 'unsafePromulgateRC' could be used.
-promulgateRC :: (SafeCopy msg, Typeable msg) => msg -> PhaseM RC l ()
-promulgateRC msg = liftProcess $ promulgateWait msg
+promulgateRC :: (MonadProcess m, SafeCopy msg, Typeable msg) => msg -> m ()
+promulgateRC = liftProcess . promulgateWait
 
 -- | Fast-path 'promulgateRC', this call is not blocking call, so there is no guarantees
 -- of message to be persisted when RC exit 'unsafePromulgateRC' call. This call is much

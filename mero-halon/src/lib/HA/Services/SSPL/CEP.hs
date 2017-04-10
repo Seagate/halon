@@ -305,7 +305,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions RC ()
-ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uuid ,nid, srphi) -> do
+ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uuid, nid, srphi) -> do
   let wwn = DIWWN . T.unpack
                   . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                   $ srphi
