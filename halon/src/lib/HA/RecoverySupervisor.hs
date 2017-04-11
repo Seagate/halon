@@ -15,20 +15,20 @@ module HA.RecoverySupervisor
   ( RSPing
   , keepaliveReply
   , recoverySupervisor
+  , ReallyDie(..)
   ) where
 
 import Control.Distributed.Process hiding (catch)
-import Control.Monad.Catch
 import Control.Monad ( void )
+import Control.Monad.Catch
 import Data.Binary
 import Data.Function
+import qualified Data.Text as T
 import GHC.Generics
-
 import HA.Debug
 import HA.Logger
 import HA.Replicator ( RGroup, getLeaderReplica, monitorLocalLeader )
-
-
+import Text.Read (readMaybe)
 
 rsTrace :: String -> Process ()
 rsTrace = mkHalonTracer "RS"
@@ -57,6 +57,10 @@ instance Binary RSPong
 -- | Keepalive request.
 newtype RSPing = RSPing ProcessId deriving (Eq, Show, Generic)
 instance Binary RSPing
+
+newtype ReallyDie = ReallyDie T.Text
+  deriving (Read, Show)
+instance Exception ReallyDie
 
 -- | Reply to keepalive message.
 keepaliveReply :: RSPing -> Process ()
@@ -95,7 +99,14 @@ recoverySupervisor rg rcP = do
     go leaderRef mRC = do
       rc <- maybe spawnRC return mRC
       maction <- receiveTimeout pingTimeout
-         [ match $ \pmn@(ProcessMonitorNotification ref pid _) -> do
+         [ match $ \pmn@(ProcessMonitorNotification ref pid reason) -> do
+             case reason of
+               DiedException str -> case readMaybe str of
+                 Just e@(ReallyDie r) -> do
+                   say $ "RC asked to die with " ++ T.unpack r
+                   throwM e
+                 Nothing -> say $ "RC died with " ++ show reason
+               _ -> say $ "RC died with " ++ show reason
              rsTrace $ show pmn
              -- Respawn the RC if it died.
              if rc == pid then do
@@ -110,7 +121,7 @@ recoverySupervisor rg rcP = do
          ]
       case maction of
         Just action -> action
-        Nothing -> do 
+        Nothing -> do
           cleanupPongs
           usend rc . RSPing =<< getSelfPid
           mpong <- expectTimeout pongTimeout

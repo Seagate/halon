@@ -15,14 +15,17 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
     (remoteTable, processNode)
 import           Control.Distributed.Static (RemoteTable)
+import qualified Control.Monad.Catch as C
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader (ask)
 import           Data.Monoid
+import qualified Data.Text as T
 import           Data.Time.Clock
 import           Data.Time.Format
 import           Data.Version (parseVersion, versionBranch)
 import           Filesystem.Path.CurrentOS (decodeString)
 import           HA.Multimap
+import qualified HA.RecoverySupervisor as RS
 import           HA.Replicator.Log (replicasDir, storageDir)
 import qualified HA.ResourceGraph as G
 import           HA.ResourceGraph.GraphLike (toKeyValue)
@@ -33,9 +36,7 @@ import           System.Directory
     , doesDirectoryExist
     , createDirectoryIfMissing
     )
-import           System.Exit
 import           System.FilePath ((</>))
-import           System.IO
 import           Text.ParserCombinators.ReadP
 import           Text.Printf (printf)
 import           Version (gitDescribe)
@@ -46,7 +47,7 @@ data HalonVersion = HalonVersion
     _hv_major :: !Int
     -- | @y in x.y@
   , _hv_minor :: !Int
-  } deriving (Eq, Ord)
+  } deriving (Show, Eq, Ord)
 
 pprHalonVersion :: HalonVersion -> String
 pprHalonVersion (HalonVersion major minor) = printf "v%d.%d" major minor
@@ -87,7 +88,7 @@ writeCurrentVersionFile = liftIO $ writeFile versionFile gitDescribe
 -- * Leave the backup around "just in case" though we have
 --   already verified we can load the graph.
 --
--- If any step fails, 'exitFailure'.
+-- If any step fails, throws 'RS.ReallyDie'.
 migrateOrQuit :: StoreChan -> Process G.Graph
 migrateOrQuit mm = do
   haveData <- liftIO $
@@ -98,24 +99,25 @@ migrateOrQuit mm = do
     liftIO $ createDirectoryIfMissing True storageDir
     G.getGraph mm
    else getVersions versionFile >>= \case
-     Nothing -> liftIO $ do
-       hPutStrLn stderr $ unlines
+     Nothing -> do
+       C.throwM . RS.ReallyDie . T.pack $! Prelude.unlines
          [ "Error when parsing versions."
          , "Halon version: " <> gitDescribe
          , "State version file: " <> versionFile ]
-       exitFailure
-     Just (dataVer, halonVer)
+     Just (Exact ver) -> do
+       liftIO . putStrLn $ printf "Loading existing version %s data." ver
+       G.getGraph mm
+     Just (Numeric dataVer halonVer)
        | dataVer == halonVer -> do
            liftIO . putStrLn $ printf "Loading existing version %s data."
                                       (pprHalonVersion dataVer)
            G.getGraph mm
        | otherwise -> case buildMigration dataVer halonVer of
-           Nothing -> liftIO $ do
-             hPutStrLn stderr $
+           Nothing -> do
+             C.throwM . RS.ReallyDie . T.pack $
                printf "Can not find a migration path from %s to %s."
                       (pprHalonVersion dataVer)
                       (pprHalonVersion halonVer)
-             exitFailure
            Just m -> do
              t <- liftIO $
                formatTime defaultTimeLocale rfc822DateFormat <$> getCurrentTime
@@ -145,9 +147,19 @@ migrateOrQuit mm = do
       eof
       return v
 
+    getVersions :: MonadIO m => FilePath -> m (Maybe VersionMatch)
     getVersions vFile = liftIO $ do
       vtxt <- readFile vFile
-      return $ (,) <$> parseGitDescribe vtxt <*> parseGitDescribe gitDescribe
+      return $!
+        if vtxt == gitDescribe
+        then Just $! Exact vtxt
+        else Numeric <$> parseGitDescribe vtxt <*> parseGitDescribe gitDescribe
+
+data VersionMatch =
+  Exact !String
+  | Numeric !HalonVersion !HalonVersion
+  deriving (Show, Eq)
+
 
 -- | Compose two 'Migration's together if their versions line up.
 mcomp :: Migration -> Migration -> Maybe Migration
