@@ -87,7 +87,7 @@ ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   start main Nothing
   where
     logEP Nothing = Log.rcLog' Log.WARN "Entrypoint information not available."
-    logEP (Just (M0.SpielAddress confd_fids confd_eps quorum rm_fid rm_ep)) =
+    logEP (Just (M0.SpielAddress confd_fids confd_eps rm_fid rm_ep quorum)) =
       Log.rcLog' Log.DEBUG
         [ ("confd.fids"   , show confd_fids)
         , ("confd.eps"    , show confd_eps)
