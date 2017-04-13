@@ -25,10 +25,11 @@ module HA.Services.SSPL
   , sspl__static
   ) where
 
-import           Control.Concurrent.MVar
+import           Control.Concurrent.STM
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static ( staticApply, RemoteTable )
+import qualified Control.Exception as E
 import qualified Control.Monad.Catch as C
 import           Control.Monad.State.Strict hiding (mapM_)
 import           Control.Monad.Trans.Maybe
@@ -52,13 +53,19 @@ import           HA.Services.SSPL.IEM
 import           HA.Services.SSPL.LL.Resources
 import qualified HA.Services.SSPL.Rabbit as Rabbit
 import           Network.AMQP
-import           Prelude hiding (id, mapM_)
+import           Prelude hiding (id)
 import           SSPL.Bindings
 import           System.Random (randomIO)
 import qualified System.SystemD.API as SystemD
+import           Text.Printf (printf)
 
 __resourcesTable :: RemoteTable -> RemoteTable
 __resourcesTable = HA.Services.SSPL.LL.Resources.myResourcesTable
+
+-- | Splice @'ifServiceName' 'interface'@ of the service into the
+-- format string. Useful for consistent naming.
+spliceName :: String -> String
+spliceName fmt = printf fmt (ifServiceName interface)
 
 header :: UID.UUID -> ActuatorRequestMessageSspl_ll_msg_header
 header uuid = ActuatorRequestMessageSspl_ll_msg_header {
@@ -72,15 +79,15 @@ header uuid = ActuatorRequestMessageSspl_ll_msg_header {
 
 -- | Messages that are always logged.
 saySSPL :: String -> Process ()
-saySSPL msg = say $ "[Service:SSPL] " ++ msg
+saySSPL msg = say $ spliceName "[Service:%s] " ++ msg
 
 -- | Trace messages, output only in case if debug mode is set.
 traceSSPL :: String -> Process ()
-traceSSPL = mkHalonTracer "service:sspl"
+traceSSPL = mkHalonTracer (spliceName "service:%s")
 
 -- | Messages that are always logged.
 logSSPL :: String -> IO ()
-logSSPL msg = putStrLn $ "[Service:SSPL] " ++ msg
+logSSPL msg = putStrLn $ spliceName "[Service:%s] " ++ msg
 
 -- | Maximum allowed timeout between any sspl messages.
 ssplMaxMessageTimeout :: Int
@@ -99,7 +106,7 @@ msgHandler chan msg = do
       -- XXX: check that message was sent by sspl service
       let srms = sensorResponseMessageSensor_response_type . sensorResponseMessage $ mr
           sendMessage s f = forM_ (f srms) $ \x -> do
-            traceSSPL $ "[SSPL-Service] received " ++ s
+            traceSSPL $ "received " ++ s
             sendRC interface x
           ignoreMessage s f = forM_ (f srms) $ \_ -> do
             traceSSPL $ s ++ " is not used by RC, ignoring."
@@ -145,69 +152,72 @@ msgHandler chan msg = do
 startSensors :: Network.AMQP.Channel -- ^ AMQP Channel.
              -> SendPort () -- ^ Monitor channel.
              -> SensorConf -- ^ Sensor configuration.
+             -> TVar Rabbit.DesiredWorkerState
              -> Process ()
-startSensors chan monChan SensorConf{..} = do
-  Rabbit.receive chan scDCS (msgHandler monChan)
+startSensors chan monChan SensorConf{..} keepRunning = do
+  let qName = T.pack . fromDefault $ Rabbit.bcQueueName scDCS
+  Rabbit.receive chan qName keepRunning NoAck (msgHandler monChan)
 
 startActuators :: Network.AMQP.Channel
                -> ActuatorConf
-               -> ProcessId -- ^ ProcessID of SSPL main process.
                -> SendPort ()
+               -> TVar Rabbit.DesiredWorkerState -- ^ IEM completion
+               -> TVar Rabbit.DesiredWorkerState -- ^ Command completion
+               -> TVar Rabbit.DesiredWorkerState -- ^ Reply completion
                -> Process ActuatorChannels
-startActuators chan ac pid monitorChan = do
-    iemChan <- spawnChannelLocal $ \ch -> do
-      liftIO $ Rabbit.setupBind chan (acIEM ac)
-      link pid
-      iemProcess (acIEM ac) ch
+startActuators chan ac monitorChan iemKr commandKr replyKr = do
+    iemChan <- liftIO newTChanIO
+    liftIO $ Rabbit.setupBind chan (acIEM ac)
+    iemProcess (acIEM ac) iemChan
 
-    systemdChan <- spawnChannelLocal $ \ch -> do
-      liftIO $ Rabbit.setupBind chan (acSystemd ac)
-      link pid
-      commandProcess (acSystemd ac) ch
+    systemdChan <- liftIO newTChanIO
+    liftIO $ Rabbit.setupBind chan (acSystemd ac)
+    commandProcess (acSystemd ac) systemdChan
 
-    _ <- spawnLocal $ link pid >> replyProcess (acCommandAck ac)
+    _ <- replyProcess (acCommandAck ac)
     return $! ActuatorChannels iemChan systemdChan
   where
     cmdAckQueueName = T.pack . fromDefault . Rabbit.bcQueueName $ acCommandAck ac
-    iemProcess Rabbit.BindConf{..} rp = forever $ do
-      InterestingEventMessage iem <- receiveChan rp
-      liftIO $ publishMsg
-        chan
-        (T.pack . fromDefault $ bcExchangeName)
-        (T.pack . fromDefault $ bcRoutingKey)
-        (newMsg { msgBody = BL.fromChunks [iemToBytes iem]
-                , msgDeliveryMode = Just Persistent
-                }
-        )
-    commandProcess Rabbit.BindConf{..} rp = forever $ do
-      (muuid, cmd) <- receiveChan rp
-      uuid <- liftIO $ maybe randomIO return muuid
-      msgTime <- liftIO getCurrentTime
-      let msg = Aeson.encode $ ActuatorRequest {
-          actuatorRequestSignature = "Signature-is-not-implemented-yet"
-        , actuatorRequestTime = formatTimeSSPL msgTime
-        , actuatorRequestExpires = Nothing
-        , actuatorRequestUsername = "halon"
-        , actuatorRequestMessage = ActuatorRequestMessage {
-            actuatorRequestMessageSspl_ll_debug = Nothing
-          , actuatorRequestMessageActuator_request_type = cmd
-          , actuatorRequestMessageSspl_ll_msg_header = header uuid
+
+    iemProcess Rabbit.BindConf{..} c = do
+      Rabbit.consumeChanOrDie c iemKr $ \(InterestingEventMessage iem) -> do
+        liftIO $ publishMsg
+          chan
+          (T.pack . fromDefault $ bcExchangeName)
+          (T.pack . fromDefault $ bcRoutingKey)
+          (newMsg { msgBody = BL.fromChunks [iemToBytes iem]
+                  , msgDeliveryMode = Just Persistent
+                  })
+
+    commandProcess Rabbit.BindConf{..} c = do
+      Rabbit.consumeChanOrDie c commandKr $ \(muuid, cmd) -> do
+        uuid <- liftIO $ maybe randomIO return muuid
+        msgTime <- liftIO getCurrentTime
+        let msg = Aeson.encode $ ActuatorRequest {
+            actuatorRequestSignature = "Signature-is-not-implemented-yet"
+          , actuatorRequestTime = formatTimeSSPL msgTime
+          , actuatorRequestExpires = Nothing
+          , actuatorRequestUsername = "halon"
+          , actuatorRequestMessage = ActuatorRequestMessage {
+              actuatorRequestMessageSspl_ll_debug = Nothing
+            , actuatorRequestMessageActuator_request_type = cmd
+            , actuatorRequestMessageSspl_ll_msg_header = header uuid
+            }
           }
-        }
-      saySSPL $ unwords [ "commandProcess"
-                        , fromDefault bcExchangeName
-                        , fromDefault bcRoutingKey
-                        , show msg ]
-      liftIO $ publishMsg
-        chan
-        (T.pack $ fromDefault bcExchangeName)
-        (T.pack $ fromDefault bcRoutingKey)
-        (newMsg { msgBody = msg
-                , msgReplyTo = Just cmdAckQueueName
-                , msgDeliveryMode = Just Persistent
-                }
-        )
-    replyProcess Rabbit.BindConf{..} = Rabbit.receiveAck chan cmdAckQueueName
+        saySSPL $ unwords [ "commandProcess"
+                          , fromDefault bcExchangeName
+                          , fromDefault bcRoutingKey
+                          , show msg ]
+        liftIO $ publishMsg
+          chan
+          (T.pack $ fromDefault bcExchangeName)
+          (T.pack $ fromDefault bcRoutingKey)
+          (newMsg { msgBody = msg
+                  , msgReplyTo = Just cmdAckQueueName
+                  , msgDeliveryMode = Just Persistent
+                  })
+
+    replyProcess Rabbit.BindConf{..} = Rabbit.receive chan cmdAckQueueName replyKr Ack
       (\msg -> for_ (Aeson.decode $ msgBody msg) $ \response -> do
           uuid <- case actuatorResponseMessageSspl_ll_msg_header $ actuatorResponseMessage $ response of
              Aeson.Object hm ->  case "uuid" `HM.lookup` hm of
@@ -247,81 +257,115 @@ instance Binary StopServiceInternal
 
 -- | Main daemon for SSPL halon service
 ssplProcess :: SSPLConf -> Process ()
-ssplProcess (SSPLConf{..}) = let
+ssplProcess conf@(SSPLConf{..}) = makeConnection >>= \case
+  Left e -> do
+    saySSPL $ "Failed to connect to RabbitMQ: " ++ show e
+    node <- getSelfNode
+    sendRC interface $ SSPLConnectFailure node
+  Right conn -> do
+    saySSPL $ "Connection to RabbitMQ opened."
+    chan <- startRmqChannel conn
+    (ActuatorChannels iemCh sysCh, runTeardown) <- startRmqCustomers chan conn
 
-  connectRetry lock = do
-    me <- getSelfPid
-    pid <- spawnLocal $ connectSSPL lock me
-    ActuatorChannels iemCh sysCh <- expect :: Process ActuatorChannels
-    mref <- monitor pid
-    flip fix False $ \loop !shutdown -> do
-      receiveWait [
-          matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
-                  $ \(ProcessMonitorNotification _ _ r) -> do
-            saySSPL $ "Process died:" ++ show r
-            unless shutdown $ do
-              saySSPL "Restarting connectRetry..."
-              _ <- receiveTimeout 2000000 []
-              connectRetry lock
-        , match $ \case
-            ResetSSPLService -> do
-              saySSPL "restarting RabbitMQ and sspl-ll."
-              liftIO $ do
-                void $ SystemD.restartService "rabbitmq-server.service"
-                void $ SystemD.restartService "sspl-ll.service"
-                void $ tryPutMVar lock ()
-              loop shutdown
-            SsplIem iem -> do
-              sendChan iemCh iem
-              loop shutdown
-            SystemdMessage muid arma -> do
-              sendChan sysCh (muid, arma)
-              loop shutdown
+    fix $ \loop -> receiveWait
+      [ match $ \case
+          -- Shut down all current processes, restart sspl-ll and
+          -- rabbitmq-server and connect fresh.
+          ResetSSPLService -> do
+            saySSPL "restarting RabbitMQ and sspl-ll."
+            runTeardown
+            liftIO $ do
+              void $ SystemD.restartService "rabbitmq-server.service"
+              void $ SystemD.restartService "sspl-ll.service"
+            ssplProcess conf
+          SsplIem iem -> do
+            liftIO . atomically $ writeTChan iemCh iem
+            loop
+          SystemdMessage muid arma -> do
+            liftIO . atomically $ writeTChan sysCh (muid, arma)
+            loop
+          -- Tear everything down
         , match $ \StopServiceInternal -> do
             saySSPL $ "tearing server down"
-            liftIO . void $ tryPutMVar lock ()
-            loop True
+            runTeardown
         ]
-  connectSSPL lock pid = do
-    node <- getSelfNode
-    -- In case if it's not possible to connect to rabbitmq service
-    -- just exits.
-    let failure = do saySSPL "Failed to connect to RabbitMQ"
-                     usend pid ()
-                     sendRC interface $ SSPLConnectFailure node
-    let retry 0 action = action `C.onException` failure
-        retry n action = do
-          C.try action >>= \case
-            Right x -> return x
+  where
+    makeConnection :: Process (Either C.SomeException Network.AMQP.Connection)
+    makeConnection = flip fix (10 :: Int) $ \tryAgain n -> case n of
+      _ | n <= 0 -> error "SSPL.makeConnection underflow"
+        | n == 1 -> C.try (liftIO $ Rabbit.openConnection scConnectionConf)
+        | otherwise -> C.try (liftIO $ Rabbit.openConnection scConnectionConf) >>= \case
+            Right x -> return $! Right x
             Left (_ :: C.SomeException) -> do
               _ <- receiveTimeout 1000000 []
-              retry (n-1 :: Int) action
-    conn <- retry 10 (liftIO $ Rabbit.openConnection scConnectionConf)
-    chan <- liftIO $ do
-      chan <- openChannel conn
-      addReturnListener chan $ \(_msg, err) ->
+              tryAgain $! n - 1
+
+    -- Open RMQ channel and register exception handlers.
+    startRmqChannel :: Network.AMQP.Connection -> Process Network.AMQP.Channel
+    startRmqChannel conn = do
+      chan <- liftIO $ openChannel conn
+      liftIO . addReturnListener chan $ \(_msg, err) ->
         logSSPL $ unlines [ "Error during publishing message (" ++ show (errReplyCode err) ++ ")"
                           , "  " ++ maybe ("No exchange") (\x -> "Exchange: " ++ T.unpack x) (errExchange err)
                           , "  Routing key: " ++ T.unpack (errRoutingKey err)
                           ]
-      addChannelExceptionHandler chan $ \se -> do
-        logSSPL $ "Exception on channel: " ++ show se
-        void $ tryPutMVar lock ()
+
+      -- Spin up a process that waits for AMQ exception var to be
+      -- filled and lets the main process know if it ever does. Note
+      -- that it only listens for one exception then quits.
+      amqExceptionVar <- liftIO $ newTVarIO Nothing
+      mainPid <- getSelfPid
+      _ <- spawnLocal $ do
+        link mainPid
+        exc :: AMQPException <- liftIO . atomically $
+          readTVar amqExceptionVar >>= maybe retry return
+        saySSPL $ "RabbitMQ exception on the channel: " ++ show exc
+        usend mainPid ResetSSPLService
+
+      -- Register exception handler that fills the AMQ exception var.
+      liftIO . addChannelExceptionHandler chan $
+        atomically . writeTVar amqExceptionVar . E.fromException
+
       return chan
-    (sendPort, receivePort) <- newChan
-    startSensors chan sendPort scSensorConf
-    decl <- startActuators chan scActuatorConf pid sendPort
-    usend pid decl
-    rc <- spawnLocal $ link pid >> monitorProcess receivePort
-    link pid
-    () <- liftIO $ takeMVar lock
-    kill rc "restart"
-    liftIO $ closeConnection conn
-    saySSPL "Connection closed."
-  in do
-    say $ "Starting service sspl"
-    lock <- liftIO newEmptyMVar
-    connectRetry lock
+
+    -- Start all the workers and provide a blocking teardown call.
+    startRmqCustomers :: Network.AMQP.Channel
+                      -> Network.AMQP.Connection
+                      -> Process (ActuatorChannels, Process ())
+    startRmqCustomers chan conn = do
+      iemDone <- liftIO $ newTVarIO Rabbit.Running
+      commandDone <- liftIO $ newTVarIO Rabbit.Running
+      replyDone <- liftIO $ newTVarIO Rabbit.Running
+      sensorDone <- liftIO $ newTVarIO Rabbit.Running
+      let tvars = [iemDone, commandDone, replyDone, sensorDone]
+
+      (sendPort, receivePort) <- newChan
+      startSensors chan sendPort scSensorConf sensorDone
+      decl <- startActuators chan scActuatorConf sendPort iemDone commandDone replyDone
+      -- Spawn process that checks liveness of SSPL.
+      monitorChannel <- do
+        mainPid <- getSelfPid
+        spawnLocal $ link mainPid >> monitorProcess receivePort
+
+      let runTeardown = do
+            liftIO $ do
+              -- Signal to all processes that they should stop.
+              mapM_ (\t -> atomically $ writeTVar t Rabbit.Dying) tvars
+              -- Wait until they have all signalled that they are
+              -- finished by putting True back into their vars.
+              atomically $ do
+                allDone <- all (== Rabbit.Dead) <$> mapM readTVar tvars
+                unless allDone retry
+
+              -- Close RMQ resources.
+              closeChannel chan
+              closeConnection conn
+
+            -- Stop the monitoring process too though we don't really
+            -- care when it dies as long as it's soon-ish.
+            kill monitorChannel "restart"
+            saySSPL "Connection to RabbitMQ closed."
+      return (decl, runTeardown)
 
 remotableDecl [ [d|
 
@@ -335,7 +379,7 @@ remotableDecl [ [d|
   ssplFunctions = ServiceFunctions  bootstrap mainloop teardown confirm where
     bootstrap conf = do
       self <- getSelfPid
-      pid <- spawnLocalName "service::sspl::process" $ do
+      pid <- spawnLocalName (spliceName "service::%s::process") $ do
         link self
         () <- expect
         ssplProcess conf
@@ -364,7 +408,6 @@ remotableDecl [ [d|
       , receiveSvc interface $ \msg -> do
           usend pid msg
           return (Continue, pid)
-      , match $ \() -> usend pid () >> return (Continue, pid)
       ]
     teardown _ pid = do
       mref <- monitor pid

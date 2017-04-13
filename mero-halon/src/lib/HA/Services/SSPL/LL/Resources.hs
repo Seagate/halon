@@ -42,6 +42,7 @@ module HA.Services.SSPL.LL.Resources
   , tryParseAckReply
   ) where
 
+import           Control.Concurrent.STM (TChan)
 import           Control.Distributed.Process (NodeId, ProcessId, SendPort)
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static (RemoteTable)
@@ -327,12 +328,10 @@ makeLoggerMsg lc = emptyActuatorMsg {
 
 -- | Actuator channel list
 data ActuatorChannels = ActuatorChannels
-    { iemPort :: SendPort InterestingEventMessage
-    , systemdPort :: SendPort (Maybe UUID, ActuatorRequestMessageActuator_request_type)
+    { iemPort :: TChan InterestingEventMessage
+    , systemdPort :: TChan (Maybe UUID, ActuatorRequestMessageActuator_request_type)
     }
-  deriving (Show, Generic, Typeable)
-
-instance Hashable ActuatorChannels
+  deriving (Generic, Typeable)
 
 -- | Resource graph representation of a channel
 newtype Channel a = Channel (SendPort a)
@@ -556,7 +555,6 @@ myResourcesTable
 --------------------------------------------------------------------------------
 
 deriveSafeCopy 0 'base ''AckReply
-deriveSafeCopy 0 'base ''ActuatorChannels
 deriveSafeCopy 0 'base ''ActuatorConf
 deriveSafeCopy 0 'base ''CommandAck
 deriveSafeCopy 0 'base ''IPMIOp

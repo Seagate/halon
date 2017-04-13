@@ -13,11 +13,11 @@
 -- Service interacting with @rabbitmq@. Please import this qualified.
 module HA.Services.SSPL.Rabbit where
 
-import Prelude hiding ((<$>), (<*>))
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$))
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Distributed.Process
   ( Process
   , ProcessId
@@ -32,16 +32,15 @@ import Control.Distributed.Process
   , usend
   )
 import qualified Control.Distributed.Process as DP
-import Control.Monad (forever, void)
+import Control.Monad (forever, void, when)
 import Control.Monad.Catch
   ( finally
   , bracket
   , mask_
   , try
-  , catch
   , SomeException(..)
   )
-
+import Data.Function (fix)
 import Data.Maybe
 import Data.Binary (Binary)
 import Data.ByteString (ByteString)
@@ -58,9 +57,7 @@ import GHC.Generics (Generic)
 import GHC.Stack
 import HA.Aeson
 import HA.SafeCopy
-
 import Network.AMQP
-
 import Options.Schema (Schema)
 import Options.Schema.Builder hiding (name, desc)
 import Text.Printf (printf)
@@ -134,6 +131,12 @@ connectionSchema = let
 -- Functionality                                                              --
 --------------------------------------------------------------------------------
 
+-- | Desired state of consumer/producer processes. When a worker
+-- process dies, it should either restart when in 'Running' or stay
+-- dead (and mark 'Dead').
+data DesiredWorkerState = Running | Dying | Dead
+  deriving (Show, Eq, Ord, Generic, Typeable)
+
 -- | openConnection operating directly over a `ConnectionConf`.
 openConnection :: ConnectionConf
                -> IO Network.AMQP.Connection
@@ -165,52 +168,78 @@ setupBind chan BindConf{..} = mask_ $ do
     queueName = T.pack $ fromDefault bcQueueName
     routingKey = T.pack $ fromDefault bcRoutingKey
 
--- | Distributed-process variant of 'consumeMsgs'
-receive :: Network.AMQP.Channel
-        -> BindConf
-        -> (Network.AMQP.Message -> Process ())
-        -> Process ()
-receive chan BindConf{..} handle = do
-    me <- getSelfPid
-    lChan <- liftIO newChan
-    tag <- rabbitHandler lChan
-    hpid <- spawnLocal $ finally
-              (link me >> handler lChan)
-              (liftIO $ cancelConsumer chan tag)
-    link hpid
+
+-- | Read the given channel until we're signalled to stop. If process
+-- dies without being signalled, it's restarted.
+--
+-- Channel-biased.
+consumeChanOrDieBracket :: TChan a
+                        -> TVar DesiredWorkerState -- ^ Keep running?
+                        -> Process b -- ^ Init
+                        -> (b -> Process ()) -- ^ Teardown
+                        -> (a -> Process c) -- ^ Act
+                        -> Process ()
+consumeChanOrDieBracket stmChan wstate init' teardown' act = do
+  self <- getSelfPid
+
+  -- Do work until signalled to die.
+  let spawnWorker spawner = spawnLocal . bracket init' teardown' $ \_ -> do
+        link self
+        link spawner
+        fix $ \go -> do
+          r <- liftIO . atomically $
+            (Just <$> readTChan stmChan) `orElse` (Nothing <$ terminate)
+          for_ r $ \v -> void (act v) >> go
+
+  -- Spawn the worker process and wait until it dies. When it dies,
+  -- restart it if it wasn't supposed to die. If it was supposed to
+  -- die, mark it as dead and quit.
+  void . spawnLocal . bracket (return ()) (\() -> markDead) $ \() -> do
+    link self
+    respawner <- getSelfPid
+    fix $ \restartWorker -> do
+      workerPid <- spawnWorker respawner
+      mref <- DP.monitor workerPid
+      receiveWait
+        [ DP.matchIf (\(DP.ProcessMonitorNotification m _ _ ) -> m == mref)
+                     (\_ -> liftIO (atomically $ readTVar wstate) >>= \case
+                         Running -> restartWorker
+                         _ -> return ())
+        ]
   where
-    handler lChan = forever $ do
-      (msg, _env) <- liftIO $ readChan lChan
-      handle msg
+    terminate = readTVar wstate >>= check . (/= Running)
+    markDead = liftIO . atomically $ writeTVar wstate Dead
 
-    rabbitHandler lChan = liftIO $ do
-      mask_ . ignoreException . void $
-        declareQueue chan newQueue { queueName = queueName }
-      consumeMsgs chan queueName NoAck $ writeChan lChan
-    queueName = T.pack . fromDefault $ bcQueueName
+-- | 'consumeChanOrDieBracket' without init/teardown.
+consumeChanOrDie :: TChan a
+                 -> TVar DesiredWorkerState
+                 -> (a -> Process c)
+                 -> Process ()
+consumeChanOrDie stmChan keepRunning act =
+  consumeChanOrDieBracket stmChan keepRunning (return ()) (\() -> return ()) act
 
-
-receiveAck :: (?loc :: CallStack)
+receive :: (?loc :: CallStack)
            => Network.AMQP.Channel
            -> T.Text -- ^ Queue
+           -> TVar DesiredWorkerState -- ^ Keep running?
+           -> Ack -- ^ Ack messages?
            -> (Network.AMQP.Message -> Process ())
            -> Process ()
-receiveAck chan queue handle = go `catch` (liftIO . logException ?loc) where
-  go = bracket
-         (liftIO $ do
-            mask_ . ignoreException . void $
-              declareQueue chan newQueue{ queueName = queue }
-            mbox  <- newEmptyMVar
-            mdone <- newEmptyMVar
-            tag   <- consumeMsgs chan queue Ack $ \(msg,env) -> do
-              putMVar mbox msg
-              takeMVar mdone
-              ackEnv env
-            return (tag,(mbox,mdone)))
-         (liftIO . cancelConsumer chan . fst)
-         (\(_,(mbox,mdone)) -> forever $ do
-            handle =<< liftIO (takeMVar mbox)
-            liftIO $ putMVar mdone ())
+receive chan queue keepRunning doAck handle = do
+  c <- liftIO newTChanIO
+  _ <- consumeChanOrDieBracket c keepRunning (initRmq c) teardown $ \(msg, env) -> do
+    handle msg
+    liftIO . when (doAck == Ack) $ ackEnv env
+  return ()
+  where
+    initRmq lChan = liftIO $ do
+      mask_ . ignoreException . void $
+        declareQueue chan newQueue{ queueName = queue }
+      tag <- consumeMsgs chan queue doAck $
+        atomically . writeTChan lChan
+      return tag
+
+    teardown tag = liftIO $ cancelConsumer chan tag
 
 ignoreException :: (?loc :: CallStack) => IO () -> IO ()
 ignoreException io = try io >>= \case
