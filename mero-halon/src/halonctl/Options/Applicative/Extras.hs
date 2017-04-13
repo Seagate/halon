@@ -6,21 +6,13 @@
 module Options.Applicative.Extras
     ( withDesc
     , withFullDesc
+    , cmd
     )
   where
 
 import Prelude hiding ((<*>))
 import Data.Monoid ((<>))
 import Options.Applicative
-    ( (<*>)
-    , Parser
-    , ParserInfo
-    , fullDesc
-    , header
-    , helper
-    , info
-    , progDesc
-    )
 
 withDesc :: Parser a -> String -> ParserInfo a
 withDesc parser desc =
@@ -32,3 +24,9 @@ withFullDesc name parser desc =
          header name
       <> progDesc desc
       <> fullDesc
+
+cmd :: String -- ^ Command
+    -> Parser a -- ^ Command parser
+    -> String -- ^ Command description
+    -> Mod CommandFields a
+cmd c p dsc = command c (withDesc p dsc)

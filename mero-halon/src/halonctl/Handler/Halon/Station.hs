@@ -1,52 +1,47 @@
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StrictData                 #-}
+{-# LANGUAGE TemplateHaskell            #-}
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
+-- Module    : Handler.Halon.Station
+-- Copyright : (C) 2014-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Tracking station bootstrap module. This serves to start recovery supervisors
 -- on a set of provided nodes.
-
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
-
-module Handler.Bootstrap.TrackingStation
-  ( Config
-  , schema
+module Handler.Halon.Station
+  ( Options(..)
+  , parser
   , start
-  )
-where
+  ) where
 
-import Prelude hiding ((<$>),(<*>))
-import Control.Distributed.Process
-import Control.Distributed.Process.Closure ( mkClosure )
-
-import Data.Binary (Binary)
-import Data.Defaultable (Defaultable, defaultable, fromDefault)
-import Data.Hashable (Hashable)
-import Data.Monoid ((<>))
-import Data.Typeable (Typeable)
-
-import GHC.Generics (Generic)
-
-import Options.Applicative ((<$>), (<*>))
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Closure ( mkClosure )
+import           Data.Binary (Binary)
+import           Data.Defaultable (Defaultable, defaultable, fromDefault)
+import           Data.Hashable (Hashable)
+import           Data.Monoid ((<>))
+import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+import           HA.RecoveryCoordinator.Definitions
+import           HA.RecoveryCoordinator.Mero
+import           HA.Startup
+import           Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as Opt
+import           Prelude hiding ((<$>),(<*>))
 
-import HA.RecoveryCoordinator.Definitions
-import HA.RecoveryCoordinator.Mero
-import HA.Startup
-
-data Config = Config
+data Options = Options
   { configUpdate :: Defaultable Bool
   , configSnapshotsThreshold :: Defaultable Int
   , configSnapshotsTimeout :: Defaultable Int
   , configRSLease :: Defaultable Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
-instance Binary Config
-instance Hashable Config
+instance Binary Options
+instance Hashable Options
 
-schema :: Opt.Parser Config
-schema = let
+parser :: Opt.Parser Options
+parser = let
     upd = defaultable False . Opt.switch
              $ Opt.long "update"
             <> Opt.short 'u'
@@ -76,13 +71,14 @@ schema = let
                          ++ "or more precisely, the lease of the recovery "
                          ++ "supervisor."
                         )
-  in Config <$> upd <*> snapshotThreshold <*> snapshotTimeout <*> rsLease
+  in Options <$> upd <*> snapshotThreshold <*> snapshotTimeout <*> rsLease
 
 self :: String
 self = "HA.TrackingStation"
 
 start :: [NodeId] -- ^ Nodes on which to start the tracking station
-      -> Config -> Process ()
+      -> Options
+      -> Process ()
 start nids naConf = do
     say $ "This is " ++ self
     result <- ignition args

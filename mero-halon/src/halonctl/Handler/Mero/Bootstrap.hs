@@ -1,54 +1,49 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TupleSections    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Script that is responsible for bootstrapping entire cluster.
-module Handler.Bootstrap.Cluster
-  ( bootstrap
-  , schema
-  , Config
+module Handler.Mero.Bootstrap
+  ( Options(..)
+  , parser
+  , run
   ) where
 
-import qualified Handler.Service as Service
+import           Control.Distributed.Process
+import           Control.Lens
+import           Control.Monad (unless, when, void)
+import           Data.Bifunctor
+import           Data.Defaultable (Defaultable(..), defaultable, fromDefault)
+import           Data.Foldable (for_)
+import           Data.List (intercalate)
+import           Data.Maybe (fromMaybe)
+import           Data.Monoid ((<>))
+import           Data.Proxy
+import           Data.Typeable
+import           Data.Validation
+import           GHC.Generics (Generic)
 import           HA.EventQueue
-import qualified Handler.Bootstrap.TrackingStation as Station
-import qualified Handler.Bootstrap.Satellite as Satellite
-import           HA.Resources.Castor.Initial as CI
-
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
+import           HA.Resources.Castor.Initial as CI
+import qualified Handler.Halon.Node.Add as NodeAdd
+import qualified Handler.Halon.Service as Service
+import qualified Handler.Halon.Station as Station
 import           Lookup (conjureRemoteNodeId)
-
+import           Network.CEP (Published(..))
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Types as Opt
 import qualified Options.Applicative.Internal as Opt
-import           Data.Defaultable (Defaultable(..), defaultable, fromDefault)
+import qualified Options.Applicative.Types as Opt
+import           System.Environment
+import           System.Exit
 
-import Control.Distributed.Process
-import Control.Lens
-import Control.Monad (unless, when, void)
-import Data.Bifunctor
-import Data.Foldable (for_)
-import Data.List (intercalate)
-import Data.Maybe (fromMaybe)
-import Data.Monoid ((<>))
-import Data.Proxy
-import Data.Typeable
-import Data.Validation
-import GHC.Generics (Generic)
-
-import System.Exit
-import System.Environment
-
-import Network.CEP (Published(..))
-
-data Config = Config
+data Options = Options
   { configInitialData :: Defaultable FilePath
   , configRoles  :: Defaultable FilePath
   , configHalonRoles :: Defaultable FilePath
@@ -57,8 +52,8 @@ data Config = Config
   , configMkfsDone :: Bool
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
-schema :: Opt.Parser Config
-schema = let
+parser :: Opt.Parser Options
+parser = let
     initial = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
             $ Opt.long "facts"
             <> Opt.short 'f'
@@ -84,18 +79,18 @@ schema = let
          <> Opt.help "Verbose output"
     mkfs = Opt.switch
          $ Opt.long "mkfs-done"
-         <> Opt.help "do not run mkfs on a cluster"
-  in Config <$> initial <*> roles <*> halonRoles <*> dry <*> verbose <*> mkfs
+         <> Opt.help "Do not run mkfs on a cluster."
+  in Options <$> initial <*> roles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
 data ValidatedConfig = ValidatedConfig
-      { vcTsConfig :: (String, Station.Config)  -- ^ Tracking station config and it's representation
-      , vcSatConfig :: (String, Satellite.Config) -- ^ Satellite config and it's representation
-      , vcHosts :: [(String, String, [HalonRole], [(String, Service.ServiceCmdOptions)])]
+      { vcTsConfig :: (String, Station.Options)  -- ^ Tracking station config and it's representation
+      , vcSatConfig :: (String, NodeAdd.Options) -- ^ Satellite config and it's representation
+      , vcHosts :: [(String, String, [HalonRole], [(String, Service.Options)])]
         -- ^ Addresses of hosts and their halon roles: @(fqdn, ip, roles, (servicestrings, parsedserviceconfs))@
       }
 
-bootstrap :: Config -> Process ()
-bootstrap Config{..} = do
+run :: Options -> Process ()
+run Options{..} = do
   einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
                                             (fromDefault configRoles)
                                             (fromDefault configHalonRoles)
@@ -104,9 +99,9 @@ bootstrap Config{..} = do
     Right (initialData, halonRoleObj) -> do
       -- Check services config files
       station_opts <- fmap (fromMaybe "") . liftIO $ lookupEnv "HALOND_STATION_OPTIONS"
-      let validateTrackingStationCfg = (text,) <$> parseHelper Station.schema text
+      let validateTrackingStationCfg = (text,) <$> parseHelper Station.parser text
             where text = station_opts
-          validateSatelliteCfg = (text,) <$> parseHelper Satellite.schema text
+          validateSatelliteCfg = (text,) <$> parseHelper NodeAdd.parser text
             where text = ""
 
       -- Check halon facts and get interseting info. Throw away hosts
@@ -126,7 +121,7 @@ bootstrap Config{..} = do
 
           parseSrvs = sequenceA . map parseSrv . concatMap _hc_h_services
 
-          parseSrv str = case parseHelper Service.parseService str of
+          parseSrv str = case parseHelper Service.parser str of
             Left e -> _Failure # ["Failure to parse service \"" ++ str ++ "\": " ++ printParseError e]
             Right conf -> _Success # (str, conf)
 
@@ -184,8 +179,8 @@ bootstrap Config{..} = do
 
               when configMkfsDone $ do
                 if dry
-                then out $ "halonctl -l $IP:0 " ++ " cluster mkfs-done --confirm "
-                             ++ intercalate " -t " station_hosts
+                then out $ "halonctl -l $IP:0 mero mkfs-done --confirm "
+                        ++ intercalate " -t " station_hosts
                 else do
                  let stnodes = conjureRemoteNodeId <$> station_hosts
                  (schan, rchan) <- newChan
@@ -201,47 +196,47 @@ bootstrap Config{..} = do
     verbose = liftIO . if configVerbose then putStrLn else const (return ())
     step_delay    = 10000000
 
-    startService :: String -> (String, Service.ServiceCmdOptions) -> [String] -> Process ()
+    startService :: String -> (String, Service.Options) -> [String] -> Process ()
     startService host (srvString, conf) stations
       | dry = do
           out $ "halonctl -l $IP:0 -a " ++ host
-             ++ " service " ++ srv
+             ++ " halon service " ++ srv
       | otherwise = Service.service [conjureRemoteNodeId host] conf
       where
         srv = srvString ++ " -t " ++ intercalate " -t " stations
 
     -- Bootstrap all halon stations.
-    bootstrapStation :: (String, Station.Config) -> [String] -> Process ()
+    bootstrapStation :: (String, Station.Options) -> [String] -> Process ()
     bootstrapStation (str, _) hosts | dry = do
        out "# Starting stations"
-       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts ++ " bootstrap station" ++ str
+       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts ++ " halon station" ++ str
     bootstrapStation (_, conf) hosts = do
       verbose $ "Starting stations: " ++ show hosts
       Station.start nodes conf
       where
         nodes = conjureRemoteNodeId <$> hosts
     -- Bootstrap satellites
-    bootstrapSatellites :: (String, Satellite.Config) -> [String] -> [String] -> Process ()
+    bootstrapSatellites :: (String, NodeAdd.Options) -> [String] -> [String] -> Process ()
     bootstrapSatellites _ stations hosts | dry = do
        out "# Starting satellites"
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
-                                     ++ " bootstrap satellite -t "
+                                     ++ " halon node add -t "
                                      ++ intercalate " -t " stations
     bootstrapSatellites (_, cfg) st hosts = do
       verbose $ "Starting satellites" ++ show hosts
-      Satellite.startSatellitesAsync conf nodes >>= \case
+      NodeAdd.run nodes conf >>= \case
         [] -> return ()
         failures -> liftIO $ do
           putStrLn $ "nodeUp failed on following nodes: " ++ show failures
           exitFailure
        where
          nodes = conjureRemoteNodeId <$> hosts
-         conf = cfg{Satellite.configTrackers=Configured st}
+         conf = cfg{NodeAdd.configTrackers=Configured st}
 
     loadInitialData satellites _ fn roles | dry = do
        out $ "# load intitial data"
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
-             ++ " cluster load -f " ++ fn ++ " -r " ++ roles
+             ++ " mero load -f " ++ fn ++ " -r " ++ roles
     loadInitialData satellites datum _ _ = do
         verbose "Loading initial data"
 
@@ -266,14 +261,14 @@ bootstrap Config{..} = do
     startCluster stations | dry = do
        out $ "# Start cluster"
        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
-             ++ " cluster start"
+             ++ " mero start"
     startCluster stations = do
         verbose "Requesting cluster start"
         promulgateEQ stnodes ClusterStartRequest >>= flip withMonitor wait
       where
         stnodes = conjureRemoteNodeId <$> stations
         wait = void (expect :: Process ProcessMonitorNotification)
---
+
 -- | Parse options.
 parseHelper :: Opt.Parser a -> String -> Either Opt.ParseError a
 parseHelper schm text = fst $

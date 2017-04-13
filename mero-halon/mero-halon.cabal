@@ -52,8 +52,6 @@ Flag long-tests
 Library
   Hs-Source-Dirs:  src/lib
   Default-Language: Haskell2010
-  if flag(rpc)
-    CPP-Options:    -DUSE_RPC
   Default-Extensions: BangPatterns
                       DeriveDataTypeable
                       DeriveGeneric
@@ -67,11 +65,9 @@ Library
   Ghc-Options:  -Wall -Werror
                 -optc-Wno-attributes -optc-Werror -optc-g -optc-DM0_INTERNAL=
                 -optc-DM0_EXTERN=extern -optc-Wall
-  Exposed-Modules: Mero.FakeEpoch
-                   Mero.Messages
+  Exposed-Modules: Mero.Messages
                    Mero.RemoteTables
                    HA.Migrations
-                   HA.Network.Transport
                    HA.Services.DecisionLog
                    HA.Services.Ekg.RC
                    HA.Services.SSPL
@@ -241,7 +237,8 @@ Library
                    yaml,
                    vector,
                    vinyl,
-                   wl-pprint
+                   wl-pprint,
+                   network-transport-tcp >= 0.3
 
   c-sources:       src/lib/Version/Read.c
                    hastate/hastate.c
@@ -249,26 +246,41 @@ Library
                    ../rpclite/rpclite
   pkgconfig-depends: mero >= 0.1.0
 
-  if flag(rpc)
-      Build-Depends: rpclite,
-                     network-transport-rpc
-  else
-      Build-Depends: network-transport-tcp >= 0.3
-
 Executable halonctl
   Hs-Source-Dirs:     src/halonctl
   Main-Is:            Main.hs
-  Other-Modules:      Flags
-                      Handler.Bootstrap
-                      Handler.Bootstrap.Satellite
-                      Handler.Bootstrap.TrackingStation
-                      Handler.Bootstrap.Cluster
-                      Handler.Cluster
-                      Handler.Cluster.Pool
-                      Handler.Info
-                      Handler.Node
-                      Handler.Service
-                      Handler.Status
+  Other-Modules:      Handler.Halon
+                      Handler.Halon.Info
+                      Handler.Halon.Node
+                      Handler.Halon.Node.Add
+                      Handler.Halon.Node.Remove
+                      Handler.Halon.Service
+                      Handler.Halon.Station
+                      Handler.Mero
+                      Handler.Mero.Bootstrap
+                      Handler.Mero.Drive
+                      Handler.Mero.Dump
+                      Handler.Mero.Helpers
+                      Handler.Mero.Load
+                      Handler.Mero.MkfsDone
+                      Handler.Mero.Node
+                      Handler.Mero.Node.Remove
+                      Handler.Mero.Node.Start
+                      Handler.Mero.Node.Stop
+                      Handler.Mero.Pool
+                      Handler.Mero.Process
+                      Handler.Mero.Process.Add
+                      Handler.Mero.Process.Configuration
+                      Handler.Mero.Process.Remove
+                      Handler.Mero.Process.Start
+                      Handler.Mero.Process.Stop
+                      Handler.Mero.Reset
+                      Handler.Mero.Start
+                      Handler.Mero.Status
+                      Handler.Mero.Stop
+                      Handler.Mero.Sync
+                      Handler.Mero.Update
+                      Handler.Mero.Vars
                       Lookup
                       Options.Applicative.Extras
 
@@ -284,9 +296,6 @@ Executable halonctl
                       ScopedTypeVariables
                       TupleSections
                       StandaloneDeriving
-  Other-Extensions:   CPP
-  if flag(rpc)
-      CPP-Options:    -DUSE_RPC
   Build-Depends:      halon,
                       confc,
                       mero-halon,
@@ -313,12 +322,9 @@ Executable halonctl
                       mtl,
                       directory,
                       unordered-containers,
-                      uuid
-  if flag(rpc)
-      Build-Depends: network-transport-rpc >= 0.0.1
-  else
-      Build-Depends: network >= 2.4,
-                     network-transport-tcp >= 0.3
+                      uuid,
+                      network >= 2.4,
+                      network-transport-tcp >= 0.3
 
 Executable haloninfo
   Hs-Source-Dirs:     src/haloninfo

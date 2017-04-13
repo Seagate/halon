@@ -1,15 +1,18 @@
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StrictData      #-}
 -- |
+-- Module    : Handler.Halon.Info
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Querying Halon information.
-module Handler.Info
-  ( InfoOptions
-  , parseInfo
+module Handler.Halon.Info
+  ( Options(..)
+  , parser
   , info
   ) where
+
 
 import           Control.Applicative ((<|>))
 import           Control.Distributed.Process
@@ -23,6 +26,7 @@ import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Events.Info
+import           HA.Resources (Node(..))
 import           Lookup
 import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 import qualified Options.Applicative as O
@@ -31,7 +35,7 @@ import           System.Exit (exitFailure)
 import           System.IO (hFlush, hPutStrLn, stderr, stdout)
 import           Text.Printf (printf)
 
-data InfoOptions =
+data Options =
     EQStats EQStatsOptions
   | RCStats RCStatsOptions
   | CEPStats CEPStatsOptions
@@ -39,8 +43,8 @@ data InfoOptions =
   | GraphInfo GraphInfoOptions
   deriving (Eq, Show)
 
-parseInfo :: O.Parser InfoOptions
-parseInfo =
+parser :: O.Parser Options
+parser =
       ( EQStats <$> O.subparser ( O.command "eq" (O.withDesc parseEQStatsOptions
         "Print EQ statistics." )))
   <|> ( RCStats <$> O.subparser ( O.command "rc" (O.withDesc parseRCStatsOptions
@@ -52,7 +56,7 @@ parseInfo =
   <|> ( GraphInfo <$> O.subparser ( O.command "graph" (O.withDesc parseGraphInfoOptions
         "Print graph data in some format" )))
 
-info :: [NodeId] -> InfoOptions -> Process ()
+info :: [NodeId] -> Options -> Process ()
 info nids dbgo = case dbgo of
   EQStats x -> eqStats nids x
   RCStats x -> rcStats nids x
@@ -234,26 +238,52 @@ newtype NodeStatsOptions = NodeStatsOptions Int
   deriving (Eq, Show)
 
 nodeStats :: [NodeId] -> NodeStatsOptions -> Process ()
-nodeStats nids (NodeStatsOptions _) = do
+nodeStats nids (NodeStatsOptions t) = do
     for_ nids $ \nid -> do
       liftIO $ putStrLn $ "Node: " ++ show nid
-      P.getNodeStats nid >>= display
+      nStats <- P.getNodeStats nid
+      (sp, rp) <- newChan
+      let msg = NodeStatusRequest (Node nid) sp
+      _ <- promulgateEQ nids msg >>= \pid -> withMonitor pid wait
+      mresult <- receiveChanTimeout t rp
+      display nStats mresult nid
   where
-    display :: Either DiedReason P.NodeStats -> Process ()
-    display (Right P.NodeStats{..}) = liftIO $ do
+    wait = void (expect :: Process ProcessMonitorNotification)
+    formatMnsr Nothing _ = "Node didn't report status on time."
+    formatMnsr (Just NodeStatusResponse{..}) nid = concat
+        [ show nid ++ ":"
+        , "\n\t" ++ ts
+        , "\n\t" ++ sat
+        ]
+      where
+        ts = if nsrIsStation
+              then "is a tracking station node."
+              else "is not a tracking station node."
+        sat = if nsrIsSatellite
+              then "is a satellite node."
+              else "is not a satellite node."
+
+    display :: Either DiedReason P.NodeStats
+            -> Maybe NodeStatusResponse
+            -> NodeId
+            -> Process ()
+    display (Right P.NodeStats{..}) mr nid = liftIO $ do
       putStrLn $ printf (unlines
                           [ "Registered names: %d"
                           , "Monitors: %d"
                           , "Links: %d"
                           , "Processes: %d"
-                          ]
-                         )
+                          , "Node info: %s"
+                          ])
                          nodeStatsRegisteredNames
                          nodeStatsMonitors
                          nodeStatsLinks
                          nodeStatsProcesses
-    display (Left r) = liftIO $ do
-      hPutStrLn stderr $ "Died: " ++ show r
+                         (formatMnsr mr nid)
+    display (Left r) mr nid = liftIO $ do
+      hPutStrLn stderr $
+        printf (unlines [ "Died: %s", "Node info: %s" ])
+               (show r) (formatMnsr mr nid)
       exitFailure
 
 parseNodeStatsOptions :: O.Parser NodeStatsOptions

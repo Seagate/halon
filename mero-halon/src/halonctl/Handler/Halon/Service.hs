@@ -1,42 +1,25 @@
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE StrictData                 #-}
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
+-- Module    : Handler.Halon.Service
+-- Copyright : (C) 2014-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-
---  Handler for the 'service' command, used to start, stop and query service
---  status.
-module Handler.Service
-  ( ServiceCmdOptions
+-- Handler for the 'service' command, used to start, stop and query
+-- service status.
+module Handler.Halon.Service
+  ( Options(..)
   , service
-  , parseService
+  , parser
   , start
-  )
-where
+  ) where
 
-import Prelude hiding ((<$>), (<*>))
-import HA.EventQueue (promulgateEQ)
-import HA.Resources ( Node(..) )
-import HA.Encode
-import HA.Service
-import qualified HA.Services.DecisionLog as DLog
-import qualified HA.Services.Ekg as Ekg
-import qualified HA.Services.Dummy       as Dummy
-import qualified HA.Services.Mero        as Mero
-import qualified HA.Services.Noisy       as Noisy
-import qualified HA.Services.Ping        as Ping
-import qualified HA.Services.SSPL        as SSPL
-import qualified HA.Services.SSPLHL      as SSPLHL
-import           HA.RecoveryCoordinator.Service.Events
 
-import Lookup
-
-import Control.Applicative ((<|>))
-import Control.Distributed.Process
+import           Control.Applicative ((<|>))
+import           Control.Distributed.Process
   ( NodeId
   , Process
   , ProcessMonitorNotification
@@ -46,29 +29,36 @@ import Control.Distributed.Process
   , withMonitor
   , liftIO
   )
-import Control.Monad (void)
-
-import Data.Aeson.Encode.Pretty
-import Data.Binary
-  ( Binary )
+import           Control.Monad (void)
+import           Data.Aeson.Encode.Pretty
+import           Data.Binary ( Binary )
 import qualified Data.ByteString.Lazy.Char8 as B8
-import Data.Monoid ((<>))
-import Data.Typeable
-  ( Typeable )
-import GHC.Generics
-  ( Generic )
-
-import Options.Applicative
-    ( (<$>)
-    , (<*>)
-    )
+import           Data.Monoid ((<>))
+import           Data.Typeable ( Typeable )
+import           GHC.Generics ( Generic )
+import           HA.Encode
+import           HA.EventQueue (promulgateEQ)
+import           HA.RecoveryCoordinator.Service.Events
+import           HA.Resources ( Node(..) )
+import           HA.Service
+import qualified HA.Services.DecisionLog as DLog
+import qualified HA.Services.Dummy as Dummy
+import qualified HA.Services.Ekg as Ekg
+import qualified HA.Services.Mero as Mero
+import qualified HA.Services.Noisy as Noisy
+import qualified HA.Services.Ping as Ping
+import qualified HA.Services.SSPL as SSPL
+import qualified HA.Services.SSPLHL as SSPLHL
+import           Lookup
+import           Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
-import Options.Schema.Applicative (mkParser)
+import           Options.Schema.Applicative (mkParser)
+import           Prelude hiding ((<$>), (<*>))
 
 -- | Options for the "service" command. Typically this will be a subcommand
 --   corresponding to operating on a particular service.
-data ServiceCmdOptions =
+data Options =
       DummyServiceCmd (StandardServiceOptions Dummy.DummyConf)
     | NoisyServiceCmd (StandardServiceOptions Noisy.NoisyConf)
     | PingServiceCmd (StandardServiceOptions Ping.PingConf)
@@ -179,8 +169,8 @@ mkStandardServiceCmd svc = let
       ("Control the " ++ (serviceName $ svc) ++ " service."))
 
 -- | Parse the options for the "service" command.
-parseService :: O.Parser ServiceCmdOptions
-parseService =
+parser :: O.Parser Options
+parser =
     (DummyServiceCmd <$> (O.subparser $
          mkStandardServiceCmd Dummy.dummy)
     ) <|>
@@ -211,7 +201,7 @@ parseService =
 --   for individual services (e.g. dummy service, m0 service). Often these
 --   will follow 'standard service' structure.
 service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
-        -> ServiceCmdOptions
+        -> Options
         -> Process ()
 service nids so = case so of
   DummyServiceCmd sso    -> standardService nids sso Dummy.dummy

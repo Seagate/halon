@@ -1,13 +1,18 @@
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE LambdaCase #-}
 -- |
+-- Module    : Handler.Mero.Pool
 -- Copyright : (C) 2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Operations on pools.
+module Handler.Mero.Pool
+  ( parser
+  , Options(..)
+  , run
+  ) where
 
-module Handler.Cluster.Pool where
-
-import Control.Distributed.Process
+import           Control.Distributed.Process
   ( Process
   , NodeId
   , expectTimeout
@@ -15,27 +20,26 @@ import Control.Distributed.Process
   , matchIf
   , receiveTimeout
   )
-import Control.Monad (unless, void)
-import Control.Monad.Fix (fix)
-import Data.Monoid ((<>))
-import Data.Proxy (Proxy(..))
-import Data.UUID (UUID)
+import           Control.Monad (unless, void)
+import           Control.Monad.Fix (fix)
+import           Data.Monoid ((<>))
+import           Data.Proxy (Proxy(..))
+import           Data.UUID (UUID)
 import qualified Data.UUID as UUID
-import Mero.ConfC ( strToFid )
-import HA.EventQueue (promulgateEQ)
+import           HA.EventQueue (promulgateEQ)
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Evt
 import qualified HA.RecoveryCoordinator.Mero.Events as Evt
-import HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
-import HA.Resources.Mero (Pool(..))
+import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
+import           HA.Resources.Mero (Pool(..))
 import qualified HA.Resources.Mero.Note as M0 (showFid)
-import Options.Applicative ((<|>))
+import           Mero.ConfC ( strToFid )
+import           Options.Applicative ((<|>))
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
-import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
+import           System.Exit (exitFailure)
+import           System.IO (hPutStrLn, stderr)
 
-data Commands =
-    RepReb RepRebCommands
+data Options = RepReb RepRebCommands
   deriving (Eq, Show)
 
 data RepRebCommands =
@@ -51,8 +55,8 @@ data SNSOpts = SNSOpts {
   , opTimeout :: Int
 } deriving (Eq, Show)
 
-parseCommands :: Opt.Parser Commands
-parseCommands =
+parser :: Opt.Parser Options
+parser =
   ( RepReb <$> Opt.subparser ( Opt.command "repreb"
     ( Opt.withDesc parseRepRebCommands "Control repair/rebalance.")))
 
@@ -91,7 +95,7 @@ parseSNSOpts = SNSOpts
       <> Opt.metavar "TIMEOUT (s)"
       )
 
-run :: [NodeId] -> Commands -> Process ()
+run :: [NodeId] -> Options -> Process ()
 run eqnids (RepReb r) = runRepReb eqnids r
 
 -- | Trigger repair or rebalance operations.
