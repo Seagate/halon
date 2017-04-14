@@ -32,27 +32,26 @@ import           Control.Distributed.Process hiding (catch)
 import           Control.Distributed.Process.Closure
 import           Control.Monad.Catch
 import           Data.Function (fix)
-import           Data.Hashable
+import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
-import           HA.SafeCopy
-import           HA.EventQueue.Producer (promulgate)
 import qualified HA.EQTracker.Internal as EQT
+import           HA.EventQueue.Producer (promulgate)
+import           HA.SafeCopy
 import           Network.HostName
 import           System.IO
-
+import           System.Posix.SysInfo
 
 -- | NodeUp message sent to the Recovery Coordinator when a node starts.
 data NodeUp =
-  -- | 'NodeUp' @nodeHostname@ @nodePid@
-  NodeUp String ProcessId
+  -- | 'NodeUp' @sysInfo@ @nodeId@ @ackChannel@
+  NodeUp !SysInfo !NodeId !(SendPort ())
   deriving (Eq, Show, Typeable, Generic, Ord)
-instance Hashable NodeUp
 deriveSafeCopy 0 'base ''NodeUp
 
 -- | Process which setup EQT and then repeatedly sends 'NodeUp' messages
 --   to the EQ, until one is acknowledged with a '()' reply.x
-nodeUp' :: String -- ^ Hostname to use for the node
+nodeUp' :: T.Text -- ^ Hostname to use for the node
         -> [NodeId] -- ^ set of EQ nodes to contact
         -> Process ()
 nodeUp' h eqs = do
@@ -83,9 +82,16 @@ nodeUp' h eqs = do
           _ -> retry
 
     say $ "Sending NodeUp message to " ++ show eqNodes ++ " from " ++ show (processNodeId self)
-    _ <- promulgate $ NodeUp h self
+    mem <- liftIO getMemTotalMB
+    cpus <- liftIO getProcessorCount
+    let info = SysInfo { _si_hostname = h
+                       , _si_memMiB = mem
+                       , _si_cpus = cpus
+                       }
+    (sp, rp) <- newChan
+    _ <- promulgate $ NodeUp info (processNodeId self) sp
     -- Ack
-    () <- expect :: Process ()
+    () <- receiveChan rp
     say "Node succesfully joined the cluster."
    `catch` \e -> do
      liftIO $ hPutStrLn stderr $
@@ -104,6 +110,6 @@ nodeUp' h eqs = do
 -- 'getHostName' is used by default.
 nodeUp :: [NodeId] -- ^set of EQ nodes to contact
        -> Process ()
-nodeUp eqs = liftIO getHostName >>= \h -> nodeUp' h eqs
+nodeUp eqs = liftIO getHostName >>= \h -> nodeUp' (T.pack h) eqs
 
 remotable ['nodeUp]

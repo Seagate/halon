@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE TupleSections    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Mero
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
@@ -35,6 +36,7 @@ import           Data.Foldable (for_)
 import           Data.Function ((&))
 import           Data.Maybe (isJust, listToMaybe)
 import           Data.Proxy
+import qualified Data.Text as T
 import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
 import           HA.Encode
@@ -64,7 +66,6 @@ import           HA.Services.Mero
 import           Mero.ConfC hiding (Process)
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
-import           System.Posix.SysInfo
 
 -- | At what boot level do we start M0t1fs processes?
 m0t1fsBootLevel :: M0.BootLevel
@@ -99,11 +100,11 @@ createMeroKernelConfig host lnid = do
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
 createMeroClientConfig :: M0.Filesystem
-                        -> Castor.Host
-                        -> HostHardwareInfo
-                        -> PhaseM RC a ()
-createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
-  createMeroKernelConfig host nid
+                       -> Castor.Host
+                       -> M0.HostHardwareInfo
+                       -> PhaseM RC a ()
+createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt (T.unpack -> lnid)) = do
+  createMeroKernelConfig host lnid
   modifyLocalGraph $ \rg -> do
     -- Check if node is already defined in RG
     m0node <- case do (c :: M0.Controller) <- G.connectedFrom M0.At host rg
@@ -113,7 +114,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
       Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
     -- Check if process is already defined in RG
     let mprocess = listToMaybe
-          $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == nid ++ rmsAddress)
+          $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == lnid ++ rmsAddress)
           $ G.connectedTo m0node M0.IsParentOf rg
     process <- case mprocess of
       Just process -> return process
@@ -123,7 +124,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
                             <*> pure memsize
                             <*> pure memsize
                             <*> pure (bitmapFromArray (replicate cpucnt True))
-                            <*> pure (nid ++ rmsAddress)
+                            <*> pure (lnid ++ rmsAddress)
     -- Check if RMS service is already defined in RG
     let mrmsService = listToMaybe
           $ filter (\(M0.Service _ x _) -> x == CST_RMS)
@@ -132,7 +133,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_RMS
-                            <*> pure [nid ++ rmsAddress]
+                            <*> pure [lnid ++ rmsAddress]
     -- Check if HA service is already defined in RG
     let mhaService = listToMaybe
           $ filter (\(M0.Service _ x _) -> x == CST_HA)
@@ -141,7 +142,7 @@ createMeroClientConfig fs host (HostHardwareInfo memsize cpucnt nid) = do
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_HA
-                            <*> pure [nid ++ haAddress]
+                            <*> pure [lnid ++ haAddress]
     -- Create graph
     let rg' = G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService

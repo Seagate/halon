@@ -18,6 +18,7 @@ import           Data.List (notElem, scanl')
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
@@ -118,7 +119,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
   goHost (CI.M0Host{..}, hostIdx) = let
-      host = Host m0h_fqdn
+      host = Host $! T.unpack m0h_fqdn
     in do
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)

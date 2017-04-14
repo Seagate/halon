@@ -16,7 +16,7 @@ import           Control.Category
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Lens
-import           Control.Monad (void, when)
+import           Control.Monad (guard, void, when)
 import           Data.Binary (Binary)
 import           Data.Foldable (for_)
 import           Data.Monoid
@@ -64,6 +64,7 @@ import           Network.HostName
 import           Prelude hiding ((.), id)
 import           System.Environment
 import           System.IO.Unsafe (unsafePerformIO)
+import           System.Posix.SysInfo (SysInfo(..))
 
 -- | 'enableDebugMode' when @HALON_DEBUG_RC@ environmental variable
 -- variable is set at the start of the program.
@@ -148,8 +149,8 @@ ruleNodeUp :: IgnitionArguments -> Definitions RC ()
 ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> do
   do_register <- phaseHandle "register node"
 
-  let route (NodeUp h pid) = do -- XXX: remove pid here
-        let nid  = processNodeId pid
+  let route (NodeUp info nid _) = do
+        let h = T.unpack $ _si_hostname info
             node = Node nid
             host = Host h
         RCLog.tagContext RCLog.SM [ ("node", show node)
@@ -158,22 +159,27 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
         hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
         isDown <- hasHostAttr HA_DOWN (Host h)
         isKnown <- knownResource node
-        when isKnown $ do
-          publish $ OldNodeRevival node
+        if isKnown
+        then publish $ OldNodeRevival node
+        else modifyGraph $
+          G.connect host Has (HA_MEMSIZE_MB $! fromIntegral $ _si_memMiB info)
+          . G.connect host Has (HA_CPU_COUNT $ _si_cpus info)
+
         when (hasFailed || isDown) $ do
           RCLog.rcLog' RCLog.DEBUG "Reviving existing node."
           unsetHostAttr host HA_TRANSIENT
           unsetHostAttr host HA_DOWN
+
         registerNode node
         registerHost host
         locateNodeOnHost node host
-        return $ Right (NewNodeConnected node, [do_register])
+        return $ Right (NewNodeConnected node info, [do_register])
 
   directly do_register $ do
-    NodeUp _ pid <- getRequest
-    let node = Node $! processNodeId pid
-    liftProcess $ usend pid ()
-    modify Local $ rlens fldRep .~ (Field . Just $ NewNodeConnected node)
+    NodeUp info nid ackChan <- getRequest
+    let node = Node nid
+    liftProcess $ sendChan ackChan ()
+    modify Local $ rlens fldRep . rfield .~ Just (NewNodeConnected node info)
     addNodeToCluster (eqNodes argv) node
     continue finish
 
@@ -185,8 +191,8 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
     fldRep = Proxy
 
     args = fldUUID =: Nothing
-       <+> fldReq     =: Nothing
-       <+> fldRep     =: Nothing
+       <+> fldReq  =: Nothing
+       <+> fldRep  =: Nothing
 
 -- | Handle 'PingSvcEvent'
 --
@@ -317,10 +323,8 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
              RCLog.rcLog' RCLog.DEBUG $ "Trying recovery again in " ++ show t' ++ " seconds."
              switch [timeout t' try_recover, node_up]
 
-  setPhaseIf node_up (\(NewNodeConnected node) _ l -> do
-    if Just node == getField (rget fldNode l)
-    then return (Just ())
-    else return Nothing) $ \() -> do
+  setPhaseIf node_up (\(NewNodeConnected node _) _ l ->
+    return $! guard (Just node == getField (rget fldNode l))) $ \() -> do
       Just node <- getField . rget fldNode <$> get Local
       modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
       continue finish

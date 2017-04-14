@@ -29,8 +29,6 @@ module HA.RecoveryCoordinator.Actions.Hardware
   , findHostsByAttributeFilter
   , findHostsByAttr
   , findHostAttrs
-    -- * Interface related functions
-  , registerInterface
     -- * Drive related functions
     -- ** Searching devices
   , findHostStorageDevices
@@ -218,18 +216,6 @@ findHostAttrs :: Host
               -> PhaseM RC l [HostAttr]
 findHostAttrs host = do
   G.connectedTo host Has <$> getLocalGraph
-
-----------------------------------------------------------
--- Interface related functions                          --
-----------------------------------------------------------
-
--- | Register an interface on a host.
-registerInterface :: Host -- ^ Host on which the interface resides.
-                  -> Interface
-                  -> PhaseM RC l ()
-registerInterface host int = do
-  actLog "registerInterface" [("host", show host), ("int", show int)]
-  modifyGraph $ G.connect host Has int
 
 ----------------------------------------------------------
 -- Drive related functions                              --

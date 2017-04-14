@@ -1,9 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE StrictData       #-}
 {-# LANGUAGE TupleSections    #-}
 {-# LANGUAGE ViewPatterns     #-}
 -- |
+-- Module    : Handler.Mero.Bootstrap
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
@@ -24,6 +26,7 @@ import           Data.List (intercalate)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import           Data.Proxy
+import qualified Data.Text as T
 import           Data.Typeable
 import           Data.Validation
 import           GHC.Generics (Generic)
@@ -85,7 +88,7 @@ parser = let
 data ValidatedConfig = ValidatedConfig
       { vcTsConfig :: (String, Station.Options)  -- ^ Tracking station config and it's representation
       , vcSatConfig :: (String, NodeAdd.Options) -- ^ Satellite config and it's representation
-      , vcHosts :: [(String, String, [HalonRole], [(String, Service.Options)])]
+      , vcHosts :: [(T.Text, String, [HalonRole], [(String, Service.Options)])]
         -- ^ Addresses of hosts and their halon roles: @(fqdn, ip, roles, (servicestrings, parsedserviceconfs))@
       }
 
@@ -115,7 +118,7 @@ run Options{..} = do
                             , Just hs <- [h_halon h] ]
 
           unwrap (h, hs) = case mkHalonRoles halonRoleObj $ _hs_roles hs of
-            Left err -> _Failure # ["Halon role failure for " ++ h_fqdn h ++ ": " ++ err]
+            Left err -> _Failure # ["Halon role failure for " ++ T.unpack (h_fqdn h) ++ ": " ++ err]
             Right hRoles -> (\srvs -> (h_fqdn h, _hs_address hs, hRoles, srvs))
                             <$> parseSrvs hRoles
 

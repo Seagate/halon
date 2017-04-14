@@ -148,6 +148,7 @@ Library
                    -- Other resources
                    HA.Resources.Castor
                    HA.Resources.Castor.Initial
+                   HA.Resources.Castor.Initial.Old
                    HA.Resources.HalonVars
                    HA.Resources.Update
                    Mero.Epoch
@@ -184,7 +185,7 @@ Library
                    HA.Resources.Mero.Note.TH
                    HA.Services.Mero.RC.Rules
                    HA.Services.Mero.RC.Resources
-                   System.Posix.SysInfo
+                   System.Lnet
                    Mero.Engine
 
   Build-Depends:   base,

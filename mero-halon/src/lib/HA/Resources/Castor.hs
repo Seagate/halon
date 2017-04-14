@@ -18,7 +18,6 @@
 module HA.Resources.Castor (
     module HA.Resources.Castor
   , MI.BMC(..)
-  , MI.Interface(..)
 ) where
 
 import HA.Aeson
@@ -285,7 +284,7 @@ instance ToJSON HalonVars
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
-  , ''Enclosure, ''MI.Interface, ''StorageDevice
+  , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
@@ -295,7 +294,6 @@ $(mkDicts
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice)
   , (''Rack, ''Has, ''Enclosure)
-  , (''Host, ''Has, ''MI.Interface)
   , (''Host, ''Has, ''HostAttr)
   , (''Enclosure, ''Has, ''Slot)
   , (''StorageDevice, ''Has, ''Slot)
@@ -313,7 +311,7 @@ $(mkDicts
 
 $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
-  , ''Enclosure, ''MI.Interface, ''StorageDevice
+  , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
@@ -324,7 +322,6 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
   , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
-  , (''Host, AtMostOne, ''Has, Unbounded, ''MI.Interface)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)

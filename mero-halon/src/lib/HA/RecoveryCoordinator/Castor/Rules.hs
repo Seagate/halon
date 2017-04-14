@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Castor.Rules (castorRules,goRack) where
 
 import           Control.Monad.Catch
 import           Data.Foldable (for_)
+import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
@@ -122,15 +123,10 @@ goEnc rack (CI.Enclosure{..}) = let
 
 goHost :: Enclosure -> CI.Host -> PhaseM RC l ()
 goHost enc (CI.Host{..}) = let
-    host = Host h_fqdn
-    mem = fromIntegral h_memsize
-    cpucount = fromIntegral h_cpucount
-    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
+    host = Host $ T.unpack h_fqdn
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
     remAttrs = [HA_M0CLIENT]
   in do
     registerHost host
     locateHostInEnclosure host enc
-    mapM_ (setHostAttr host) attrs
     mapM_ (unsetHostAttr host) remAttrs
-    mapM_ (registerInterface host) h_interfaces

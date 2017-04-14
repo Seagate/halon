@@ -34,9 +34,10 @@ import qualified HA.Resources as R
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
 import           Mero.ConfC (Fid)
+import           System.Posix.SysInfo
 
 -- | Request start of the 'ruleNewNode'.
-newtype StartProcessNodeNew = StartProcessNodeNew R.Node
+data StartProcessNodeNew = StartProcessNodeNew !R.Node !SysInfo
   deriving (Eq, Show, Generic, Ord)
 
 -- | Request that @halon:m0d@ service is started on the given

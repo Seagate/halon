@@ -1,8 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StrictData                 #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.RC.Events.Cluster
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Cluster wide events related to halon cluster only, and
@@ -15,22 +16,22 @@ module HA.RecoveryCoordinator.RC.Events.Cluster
   , NodeTransient(..)
   ) where
 
-import HA.Resources
-
 import Data.Binary
 import Data.Typeable
 import GHC.Generics
+import HA.Resources
+import System.Posix.SysInfo
 
 -- | New mero server was connected. This event is emitted
 -- as a result of the new node event.
-newtype NewNodeConnected = NewNodeConnected Node
-   deriving (Eq, Show, Typeable, Generic, Binary)
+data NewNodeConnected = NewNodeConnected !Node !SysInfo
+   deriving (Eq, Show, Typeable, Generic)
+instance Binary NewNodeConnected
 
 -- | Initial data was loaded or has failed to load.
 data InitialDataLoaded = InitialDataLoaded
                        | InitialDataLoadFailed String
    deriving (Eq, Show, Typeable, Generic)
-
 instance Binary InitialDataLoaded
 
 -- * Messages which may be interesting to any subscribers (disconnect

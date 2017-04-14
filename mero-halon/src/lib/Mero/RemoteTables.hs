@@ -8,12 +8,13 @@
 module Mero.RemoteTables (meroRemoteTable) where
 
 import HA.Resources.Castor(__remoteTable, __resourcesTable)
+import HA.Resources.Castor.Initial.Old(__remoteTable, __resourcesTable)
 import HA.Resources.RC(__remoteTable, __resourcesTable)
 import HA.Resources.Mero(__remoteTable, __resourcesTable)
 import HA.Resources.Mero.Note ( __remoteTable, __resourcesTable)
 import HA.Services.Mero ( __remoteTable, __remoteTableDecl, __resourcesTable )
 import HA.Services.Mero.RC (__remoteTable, __resourcesTable)
-import System.Posix.SysInfo ( __remoteTable )
+import System.Lnet ( __remoteTable )
 import HA.Services.Ekg ( __remoteTable, __remoteTableDecl, __resourcesTable )
 import HA.Services.DecisionLog ( __remoteTable, __remoteTableDecl, __resourcesTable )
 import HA.Services.SSPL ( __remoteTable, __remoteTableDecl, __resourcesTable )
@@ -37,13 +38,15 @@ meroRemoteTable next =
    HA.Resources.RC.__resourcesTable $
    HA.Resources.Castor.__resourcesTable $
    HA.Resources.Castor.__remoteTable $
+   HA.Resources.Castor.Initial.Old.__resourcesTable $
+   HA.Resources.Castor.Initial.Old.__remoteTable $
    HA.Resources.RC.__remoteTable $
    HA.Resources.Mero.__remoteTable $
    HA.Resources.Mero.Note.__remoteTable $
    HA.Services.Mero.__remoteTableDecl $
    HA.Services.Mero.__remoteTable $
    HA.Services.Mero.RC.__remoteTable $
-   System.Posix.SysInfo.__remoteTable $
+   System.Lnet.__remoteTable $
    HA.Services.SSPL.__remoteTable $
    HA.Services.SSPL.__remoteTableDecl $
    HA.Services.SSPLHL.__remoteTable $

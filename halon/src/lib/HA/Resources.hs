@@ -26,7 +26,6 @@ import Data.Binary
 import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-
 import HA.Aeson
 import HA.Resources.TH
 import HA.SafeCopy
