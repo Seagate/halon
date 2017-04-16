@@ -435,7 +435,9 @@ run' transport pg extraRules to test = do
 
       when (_to_run_sspl to) $ do
         for_ nids $ \nid -> do
-          ServiceStopRequestOk <- serviceStopOnNode [rcNodeId] sspl nid
+          serviceStopOnNode [rcNodeId] sspl nid >>= \case
+            ServiceStopRequestOk -> return ()
+            r -> fail $ "SSPL failed to stop with: " ++ show r
           return ()
         unlink (_rmq_pid rmq)
         kill (_rmq_pid rmq) "end of game"

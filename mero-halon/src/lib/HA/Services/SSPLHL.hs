@@ -14,6 +14,7 @@ module HA.Services.SSPLHL where
 
 import           Control.Applicative ((<$>), (<*>))
 import           Control.Concurrent.MVar
+import           Control.Concurrent.STM (newTVarIO)
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static ( staticApply )
@@ -245,7 +246,10 @@ remotableDecl [ [d|
                 newMsg{msgBody="keepalive"}
           responseChan <- spawnChannelLocal (responseProcess chan scResponseConf)
           statusHandler <- startStatusHandler responseChan
-          Rabbit.receive chan scCommandConf (cmdHandler statusHandler responseChan parent)
+          -- TODO: SSPL-HL dies badly, fixity fix
+          keepRunning <- liftIO $ newTVarIO Rabbit.Running
+          let qName = T.pack . fromDefault $ Rabbit.bcQueueName scCommandConf
+          Rabbit.receive chan qName keepRunning NoAck (cmdHandler statusHandler responseChan parent)
           liftIO $ takeMVar lock :: Process ()
 
       responseProcess chan bc rp = forever $ do
