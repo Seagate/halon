@@ -1,8 +1,9 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData        #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module    : HA.Resources.Castor.Initial
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
@@ -13,57 +14,26 @@
 
 module HA.Resources.Castor.Initial where
 
-import Mero.ConfC (ServiceParams, ServiceType)
-import Control.Monad (forM)
-
-import qualified HA.Aeson as A
-import Data.Data
-import Data.Hashable (Hashable)
-
-import qualified Data.Hashable as H
-import qualified Data.HashMap.Strict as HM
-import SSPL.Bindings.Instances () -- HashMap
-
-import Data.Word
-  ( Word32
-  , Word64
-  )
-
-import GHC.Generics (Generic)
-
+import           Control.Monad (forM)
+import           Data.Data
 import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
+import qualified Data.HashMap.Strict as HM
+import           Data.Hashable (Hashable)
+import qualified Data.Hashable as H
 import           Data.List (find, intercalate, nub)
-import qualified Text.EDE as EDE
-import qualified Data.Text as T (unpack)
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
-
+import           Data.Word (Word32, Word64)
 import qualified Data.Yaml as Y
+import           GHC.Generics (Generic)
+import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
-
--- | Type of network 'Interface'.
-data Network = Data | Management | Local
-  deriving (Eq, Data, Generic, Show, Typeable)
-
-deriveSafeCopy 0 'base ''Network
-instance Hashable Network
-instance A.FromJSON Network
-instance A.ToJSON Network
-
--- | Network interface on the 'Host'.
-data Interface = Interface {
-    if_macAddress :: String
-  , if_network :: Network
-  , if_ipAddrs :: [String]
-} deriving (Eq, Data, Generic, Show, Typeable)
-
-storageIndex ''Interface "9d4812ee-d1c9-455b-9e27-e146bb1c17e5"
-deriveSafeCopy 0 'base ''Interface
-instance Hashable Interface
-instance A.FromJSON Interface
-instance A.ToJSON Interface
+import           Mero.ConfC (ServiceParams, ServiceType)
+import           SSPL.Bindings.Instances () -- HashMap
+import qualified Text.EDE as EDE
 
 -- | Halon-specific settings for the 'Host'.
 data HalonSettings = HalonSettings
@@ -90,15 +60,9 @@ instance A.ToJSON HalonSettings where
 
 -- | Information about a mero host.
 data Host = Host
-  { h_fqdn :: String
+  { h_fqdn :: !T.Text
   -- ^ Fully-qualified domain name.
-  , h_interfaces :: [Interface]
-  -- ^ Network interfaces
-  , h_memsize :: Word32
-  -- ^ Memory in MB
-  , h_cpucount :: Word32
-  -- ^ Number of CPUs
-  , h_halon :: Maybe HalonSettings
+  , h_halon :: !(Maybe HalonSettings)
   -- ^ Halon settings, if any. Note that if unset, the node is ignored
   -- during @hctl bootstrap cluster@ command. This does not imply that
   -- the host is not loaded as part of the initial data.
@@ -238,11 +202,11 @@ instance A.ToJSON M0Device
 -- necessarily need for the castor implementation - nodes,
 -- controllers, and processes.
 data M0Host = M0Host
-  { m0h_fqdn :: String
+  { m0h_fqdn :: !T.Text
   -- ^ Fully qualified domain name of host this server is running on
-  , m0h_processes :: [M0Process]
+  , m0h_processes :: ![M0Process]
   -- ^ Processes that should run on the host.
-  , m0h_devices :: [M0Device]
+  , m0h_devices :: ![M0Device]
   -- ^ Information about devices attached to the host.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -433,9 +397,9 @@ instance A.ToJSON InitialWithRoles where
 -- don't have present and use them in their roles, without updating
 -- the source here.
 data UnexpandedHost = UnexpandedHost
-  { _uhost_m0h_fqdn :: String
-  , _uhost_m0h_roles :: [RoleSpec]
-  , _uhost_m0h_devices :: [M0Device]
+  { _uhost_m0h_fqdn :: !T.Text
+  , _uhost_m0h_roles :: ![RoleSpec]
+  , _uhost_m0h_devices :: ![M0Device]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.

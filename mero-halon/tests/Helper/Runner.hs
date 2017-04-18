@@ -35,6 +35,7 @@ import           Data.Foldable (for_)
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy
 import           Data.String (fromString)
+import qualified Data.Text as T
 import           Data.Typeable
 import           Data.Vinyl
 import           GHC.Generics (Generic)
@@ -76,7 +77,7 @@ import           TestRunner
 -- | Set of configuration options used for environment setup and test
 -- execution. This is provided to the test runner.
 data TestOptions = TestOptions
-  { _to_initial_data :: CI.InitialData
+  { _to_initial_data :: !CI.InitialData
   -- ^ Initial data to use for cluster setup and test environment.
   , _to_run_decision_log :: !Bool
   -- ^ Should we run decision-log service?
@@ -242,7 +243,7 @@ testRules = do
 -- | Start satellite nodes. This is intended to be ran from tracking
 -- station node.
 startSatellites :: [NodeId] -- ^ EQ nodes
-                -> [(LocalNode, String)] -- ^ @(node, hostname)@ pairs
+                -> [(LocalNode, T.Text)] -- ^ @(node, hostname)@ pairs
                 -> Process ()
 startSatellites _ [] = sayTest "startSatellites called without any nodes."
 startSatellites eqs ns = withSubscription eqs (Proxy :: Proxy NewNodeConnected) $ do
@@ -257,8 +258,8 @@ startSatellites eqs ns = withSubscription eqs (Proxy :: Proxy NewNodeConnected) 
 
   let loop [] = return ()
       loop waits = receiveWait
-        [ matchIf (\(pubValue -> NewNodeConnected n) -> n `elem` waits)
-                  (\(pubValue -> NewNodeConnected n) -> loop $ filter (/= n) waits) ]
+        [ matchIf (\(pubValue -> NewNodeConnected n _) -> n `elem` waits)
+                  (\(pubValue -> NewNodeConnected n _) -> loop $ filter (/= n) waits) ]
       nodes = map (\(ln, _) -> Node $! localNodeId ln) ns
   sayTest $ "Waiting for following satellites: " ++ show nodes
   loop nodes

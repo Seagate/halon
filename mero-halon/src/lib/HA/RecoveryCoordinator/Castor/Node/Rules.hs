@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Collection of the rules for maintaining castor node.
@@ -109,20 +109,18 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
   , maxTeardownLevel
   ) where
 
-import           Control.Applicative
 import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, sendChan)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
 import           Control.Monad (void, guard, when)
 import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
-import           Data.Maybe (listToMaybe, isNothing, isJust, maybeToList)
+import           Data.Maybe (isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import           Data.Typeable
-import           Data.UUID (UUID)
 import           Data.Vinyl
 import qualified HA.Aeson as Aeson
 import           HA.Encode
@@ -151,7 +149,6 @@ import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -164,7 +161,8 @@ import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import           Mero.ConfC (ServiceType(..))
 import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
 import           Network.CEP
-import           System.Posix.SysInfo
+import           System.Lnet
+import           System.Posix.SysInfo (SysInfo(..))
 import           Text.Printf
 
 -- | All rules related to node.
@@ -193,9 +191,10 @@ maxTeardownLevel = 3 -- XXX: move to cluster constants.
 -- Extensible record fields
 --------------------------------------------------------------------------------
 
-type FldHostHardwareInfo = '("mhostHardwareInfo", Maybe HostHardwareInfo)
-fldHostHardwareInfo :: Proxy FldHostHardwareInfo
-fldHostHardwareInfo = Proxy
+type FldLnetInfo = '("mLnetInfo", Maybe LnetInfo)
+
+fldLnetInfo :: Proxy FldLnetInfo
+fldLnetInfo = Proxy
 
 
 type FldHost = '("host", Maybe R.Host)
@@ -220,8 +219,9 @@ fldBootLevel = Proxy
 -- Listens: 'Event.NewNodeConnected'
 -- Emits:   'StartProcessNodeNew'
 eventNewHalonNode :: Definitions RC ()
-eventNewHalonNode = defineSimple "castor::node::event::new-node" $ \(Event.NewNodeConnected node) -> do
-  promulgateRC $! StartProcessNodeNew node
+eventNewHalonNode = defineSimple "castor::node::event::new-node" $
+  \(Event.NewNodeConnected node info) -> do
+    promulgateRC $! StartProcessNodeNew node info
 
 -- | Handle a case when mero-kernel failed to start on the node. Mark node as failed.
 -- Stop halon:m0d service on the node.
@@ -323,15 +323,21 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                  Just host -> do
                    Log.rcLog' Log.DEBUG $ "Starting new mero server."
                    Log.rcLog' Log.DEBUG $ "node.host = " ++ show nid
-                   let mlnid = (listToMaybe [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ])
-                           <|> (listToMaybe $ [ ip | CI.Interface { CI.if_network = CI.Data, CI.if_ipAddrs = ip:_ }
-                                                   <- G.connectedTo host R.Has rg ])
-                   case mlnid of
-                     Nothing ->
-                       Log.rcLog' Log.ERROR $ "Unable to find Data IP addr for host " ++ show host
-                     Just lnid -> do
-                       Log.rcLog' Log.DEBUG $ "node.lnid = " ++ show lnid
-                       createMeroKernelConfig host $ lnid ++ "@tcp"
+                   -- Take LNid address. If we don't have it, take the
+                   -- address from the CST_HA service as the listen
+                   -- address.
+                   let meroAddr = [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ]
+                               ++ [ ip | ha_p <- maybeToList $ Process.getHA m0node rg
+                                       , svc <- G.connectedTo ha_p M0.IsParentOf rg
+                                       , M0.s_type svc == CST_HA
+                                       , ip <- map (takeWhile (/= '@')) $ M0.s_endpoints svc
+                                       ]
+                   case meroAddr of
+                     [] ->
+                       Log.rcLog' Log.ERROR $ "Unable to determine mero address for host " ++ show host
+                     addr : _ -> do
+                       Log.rcLog' Log.DEBUG $ "node.addr = " ++ show addr
+                       createMeroKernelConfig host $ addr ++ "@tcp"
                        startMeroService host node
                  Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show node
              Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show m0node
@@ -398,7 +404,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   wait_data_load  <- phaseHandle "wait-bootstrap"
   reconnect_m0d   <- phaseHandle "reconnect_m0d"
   announce        <- phaseHandle "announce"
-  query_host_info <- mkQueryHostInfo config_created finish
+  query_host_info <- mkQueryLnetInfo config_created finish
   (synchronized, synchronize) <- mkSyncToConfd (rlens fldConfSyncState . rfield) announce
   dispatch <- mkDispatcher
   notifier <- mkNotifier dispatch
@@ -406,13 +412,13 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   let route node = getFilesystem >>= \case
         Nothing -> return [wait_data_load]
         Just _ -> do
-          mnode <- findNodeHost node
-          if isJust mnode
+          mhost <- findNodeHost node
+          if isJust mhost
           then do Log.rcLog' Log.DEBUG $ show node ++ " is already in configuration."
                   return [reconnect_m0d]
           else return [query_host_info]
 
-  let check (StartProcessNodeNew node) = do
+  let check (StartProcessNodeNew node _) = do
         mhost <- findNodeHost node
         if isNothing mhost
         then do
@@ -423,12 +429,17 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   directly config_created $ do
     Just fs <- getFilesystem
     Just host <- getField . rget fldHost <$> get Local
-    Just hhi <- getField . rget fldHostHardwareInfo <$> get Local
-    createMeroClientConfig fs host hhi
+    Just (LnetInfo _ lnet)  <- getField . rget fldLnetInfo <$> get Local
+    StartProcessNodeNew _ info <- getRequest
+    createMeroClientConfig fs host $
+      M0.HostHardwareInfo { hhMemorySize = _si_memMiB info
+                          , hhCpuCount = _si_cpus info
+                          , hhLNidAddress = lnet
+                          }
     continue confd_running
 
   setPhaseIf wait_data_load initialDataLoaded $ \() -> do
-    StartProcessNodeNew node <- getRequest
+    StartProcessNodeNew node _ <- getRequest
     route node >>= switch
 
   setPhaseIf confd_running (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
@@ -465,7 +476,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   -- of halond on the node. RC does not know it but halon:m0d can ask
   -- the OS for it.
   directly reconnect_m0d $ do
-    StartProcessNodeNew node <- getRequest
+    StartProcessNodeNew node _ <- getRequest
     rg <- getLocalGraph
     let R.Node nid = node
     case lookupServiceInfo node (lookupM0d rg) rg of
@@ -497,7 +508,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
             continue dispatch
 
   directly announce $ do
-    StartProcessNodeNew node <- getRequest
+    StartProcessNodeNew node _ <- getRequest
     -- TOOD: shuffle retrigger around a bit
     rg <- getLocalGraph
     case M0.nodeToM0Node node rg of
@@ -519,7 +530,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
 
     args = fldHost =: Nothing
        <+> fldNode =: Nothing
-       <+> fldHostHardwareInfo =: Nothing
+       <+> fldLnetInfo =: Nothing
        <+> fldUUID =: Nothing
        <+> fldReq  =: Nothing
        <+> fldRep  =: Nothing
@@ -528,11 +539,11 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
        <+> fldDispatch =: Dispatch [] (error "ruleNodeNew dispatch") Nothing
 
 -- | Rule fragment: query node hardware information.
-mkQueryHostInfo :: forall l. (FldHostHardwareInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
-              => Jump PhaseHandle -- ^ Phase handle to jump to on completion
-              -> Jump PhaseHandle -- ^ Phase handle to jump to on failure.
-              -> RuleM RC (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
-mkQueryHostInfo andThen orFail = do
+mkQueryLnetInfo :: forall l. (FldLnetInfo ∈ l, FldHost ∈ l, FldNode ∈ l)
+                => Jump PhaseHandle -- ^ Phase handle to jump to on completion
+                -> Jump PhaseHandle -- ^ Phase handle to jump to on failure.
+                -> RuleM RC (FieldRec l) (Jump PhaseHandle) -- ^ Handle to start on
+mkQueryLnetInfo andThen orFail = do
     query_info <- phaseHandle "queryHostInfo::query_info"
     info_returned <- phaseHandle "queryHostInfo::info_returned"
 
@@ -540,17 +551,17 @@ mkQueryHostInfo andThen orFail = do
       Just node@(R.Node nid) <- getField . rget fldNode <$> get Local
       Log.rcLog' Log.DEBUG $ "Querying system information from " ++ show node
       liftProcess . void . spawnLocal . void
-        $ spawnAsync nid $ $(mkClosure 'getUserSystemInfo) node
+        $ spawnAsync nid $ $(mkClosure 'getLnetInfo) node
       continue info_returned
 
-    setPhaseIf info_returned systemInfoOnNode $ \(eid,info) -> do
+    setPhaseIf info_returned lnetOnNode $ \(HAEvent eid info) -> do
       Just node <- getField . rget fldNode <$> get Local
       Log.rcLog' Log.DEBUG $ "Received system information about " ++ show node
       mhost <- findNodeHost node
       case mhost of
         Just host -> do
-          modify Local $ over (rlens fldHostHardwareInfo) (const . Field $ Just info)
-          modify Local $ over (rlens fldHost) (const . Field $ Just host)
+          modify Local $ rlens fldLnetInfo . rfield .~ Just info
+          modify Local $ rlens fldHost . rfield .~ Just host
           registerSyncGraphProcessMsg eid
           continue andThen
         Nothing -> do
@@ -560,15 +571,13 @@ mkQueryHostInfo andThen orFail = do
 
     return query_info
   where
-    systemInfoOnNode :: HAEvent SystemInfo
-                     -> g
-                     -> FieldRec l
-                     -> Process (Maybe (UUID, HostHardwareInfo))
-    systemInfoOnNode (HAEvent eid (SystemInfo node' info)) _ l = let
-        Just node = getField . rget fldNode $ l
-      in
-        return $ if node == node' then Just (eid, info) else Nothing
-
+    lnetOnNode :: HAEvent LnetInfo
+               -> g
+               -> FieldRec l
+               -> Process (Maybe (HAEvent LnetInfo))
+    lnetOnNode msg@(HAEvent _ (LnetInfo node _)) _ l
+      | Just node == getField (rget fldNode l) = return $! Just msg
+      | otherwise = return Nothing
 
 
 -- | Process that will bootstrap mero node.

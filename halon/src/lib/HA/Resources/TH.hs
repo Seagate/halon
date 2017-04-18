@@ -13,9 +13,12 @@ module HA.Resources.TH (
   , mkResRel
   , mkResource
   , mkRelation
+  , mkResourcesTable
   , mkStorageDicts
   , mkStorageRelation
-  , mkResourcesTable
+  , mkStorageRelationName
+  , mkStorageResource
+  , mkStorageResourceName
   , mkStorageResourceTable
   , Cardinality(..)
     -- generalized versions
@@ -47,7 +50,7 @@ import Language.Haskell.TH
 
 -- | Generate UUID from string in compile time. This method can't fail in runtime.
 mkUUID :: String -> Q Exp
-mkUUID s =  [e| UUID.fromWords w1 w2 w3 w4 |] 
+mkUUID s =  [e| UUID.fromWords w1 w2 w3 w4 |]
   where u = fromJust (UUID.fromString s)
         (w1,w2,w3,w4) = UUID.toWords u
 
@@ -155,7 +158,7 @@ mkStorageRelationQ :: Name
                   -> DecsQ
 mkStorageRelationQ sdictName (from, by, to) = do
     [d| instance StorageRelation $by $from $to where
-          storageRelationDict = $(mkStatic sdictName) 
+          storageRelationDict = $(mkStatic sdictName)
       |]
 
 -- | Make the given (from, rel, to) tuple into a @Relation@
@@ -257,17 +260,17 @@ compose [] = [| id |]
 compose [e] = e
 compose (e:es) = [| $e . $(compose es) |]
 
-genTableUpdate :: ExpQ -> ExpQ -> ExpQ -> ExpQ 
+genTableUpdate :: ExpQ -> ExpQ -> ExpQ -> ExpQ
 genTableUpdate dict key som =
   [e| \rt -> case unstatic rt $dict of
                Right z -> registerStatic $key (toDynamic ($som z)) rt
                Left _ -> rt
     |]
-                   
+
 -- | Create resource.
 makeResource :: TypeQ -> Q Exp
 makeResource x = [e| $f . $(makeStorageResource x) |]
-  where 
+  where
     f = genTableUpdate [e| resourceDict :: Static (Dict (Resource $x)) |]
                        [e| mkResourceKeyName (Proxy :: Proxy $x) |]
                        [e| someResourceDict |]
@@ -277,7 +280,7 @@ makeRelation :: TypeQ -> TypeQ -> TypeQ -> Q Exp
 makeRelation a r b  = [e| $f . $(makeStorageRelation a r b) |]
   where
     f = genTableUpdate [e| relationDict :: Static (Dict (Relation $r $a $b)) |]
-                       [e| mkRelationKeyName (Proxy :: Proxy $r, Proxy :: Proxy $a, Proxy :: Proxy $b) |] 
+                       [e| mkRelationKeyName (Proxy :: Proxy $r, Proxy :: Proxy $a, Proxy :: Proxy $b) |]
                        [e| someRelationDict |]
 
 makeStorageRelation :: TypeQ -> TypeQ -> TypeQ -> Q Exp
@@ -287,7 +290,7 @@ makeStorageRelation a r b =
                  [e| someStorageRelationDict |]
 
 makeStorageResource :: TypeQ -> ExpQ
-makeStorageResource x = 
+makeStorageResource x =
   genTableUpdate [e| storageResourceDict :: Static (Dict (StorageResource $x))|]
                  [e| mkStorageResourceKeyName (Proxy :: Proxy $x)|]
                  [e| someStorageResourceDict |]

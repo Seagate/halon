@@ -1,8 +1,10 @@
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE StrictData        #-}
 -- |
 -- Module    : Helper.InitialData
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Module containing configurable 'CI.InitialData' used throughout
@@ -16,6 +18,8 @@ module Helper.InitialData
   ) where
 
 import           Data.List.Split (splitOn)
+import           Data.Monoid ((<>))
+import qualified Data.Text as T
 import           GHC.Word (Word8)
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
@@ -26,13 +30,13 @@ import           Text.Read
 
 -- | Configuration used in creation of 'CI.InitialData'. See 'initialData'.
 data InitialDataSettings = InitialDataSettings
-  { _id_hostname :: String
+  { _id_hostname :: !T.Text
     -- ^ Hostname of the node. Can usually be obtained with @hostname@
     -- command. e.g. "devvm.seagate.com".
-  , _id_host_ip :: (Word8, Word8, Word8, Word8)
+  , _id_host_ip :: !(Word8, Word8, Word8, Word8)
   -- ^ IP of the main host: the host running the tests and RC.
   -- e.g. "10.0.2.15" is provided as @(10,0,2,15)@.
-  , _id_servers :: Word8
+  , _id_servers :: !Word8
   -- ^ Number of servers (i.e. 'CI.Enclosure's and 'CI.M0Host's) to
   -- generate. The naming scheme for enclosures in case @'_id_servers'
   -- > 1@ is "enclosure_i" where @i@ is the last octet of the
@@ -40,9 +44,9 @@ data InitialDataSettings = InitialDataSettings
   -- '_id_host_ip', increasing the last octet for each new enclosure,
   -- allowing for overflow. Naming scheme for 'CI.M0Host's is
   -- @'_id_hostname'_i@.
-  , _id_drives :: Int
+  , _id_drives :: !Int
   -- ^ Number of drives __per enclosure__ to insert into the data.
-  , _id_globals :: CI.M0Globals
+  , _id_globals :: !CI.M0Globals
   -- ^ Various global settings usually provided by the provisioner.
   -- See 'defaultGlobals'.
   } deriving (Show, Eq)
@@ -94,7 +98,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
       , CI.rack_enclosures = fmap
           (\ifaddr@(x,y,z,w) ->
             let host = if _id_servers > 1
-                       then _id_hostname ++ "_" ++ show w
+                       then _id_hostname <> "_" <> T.pack (show w)
                        else _id_hostname
                 ifaddrBMC = showIP (x, y, z + 10, w)
             in CI.Enclosure {
@@ -104,15 +108,6 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
                 , CI.enc_hosts = [
                     CI.Host {
                       CI.h_fqdn = host
-                    , CI.h_memsize = 4096
-                    , CI.h_cpucount = 8
-                    , CI.h_interfaces = [
-                        CI.Interface {
-                          CI.if_macAddress = "10-00-00-00-00"
-                        , CI.if_network = CI.Data
-                        , CI.if_ipAddrs = [showIP ifaddr]
-                        }
-                      ]
                     , CI.h_halon = Just $ CI.HalonSettings {
                         CI._hs_address = showIP ifaddr ++ ":9000"
                       , CI._hs_roles = []
@@ -126,7 +121,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
   , CI.id_m0_servers = fmap
       (\ifaddr@(_,_,_,w) ->
          let host = if _id_servers > 1
-                    then _id_hostname ++ "_" ++ show w
+                    then _id_hostname <> "_" <> T.pack (show w)
                     else _id_hostname
         in CI.M0Host {
             CI.m0h_fqdn = host
@@ -152,7 +147,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
 -- | Pre-populated 'InitialDataSettings'.
 defaultInitialDataSettings :: IO InitialDataSettings
 defaultInitialDataSettings = do
-  host <- getHostName
+  host <- T.pack <$> getHostName
   traverse readMaybe . splitOn "." <$> testListenName >>= \case
     Just [x,y,z,w] -> return $ InitialDataSettings
       { _id_hostname = host

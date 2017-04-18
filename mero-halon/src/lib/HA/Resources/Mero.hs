@@ -23,11 +23,29 @@ module HA.Resources.Mero
   ) where
 
 import Control.Distributed.Process (ProcessId)
+import Data.Binary (Binary(..))
+import Data.Bits
+import qualified Data.ByteString as BS
+import Data.Char (ord)
+import Data.Hashable (Hashable(..))
+import Data.Int (Int64)
+import Data.Maybe (listToMaybe)
+import Data.Ord (comparing)
+import Data.Proxy (Proxy(..))
+import Data.Scientific
+import qualified Data.Text as T
+import Data.Typeable (Typeable)
+import Data.UUID (UUID)
+import qualified Data.Vector as V
+import Data.Word ( Word32, Word64 )
+import GHC.Generics (Generic)
+import HA.Aeson
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
-import HA.Resources.TH
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
-
+import HA.Resources.TH
+import HA.SafeCopy hiding (Profile)
 import Mero.ConfC
   ( Bitmap
   , Fid(..)
@@ -36,27 +54,7 @@ import Mero.ConfC
   , ServiceType
   )
 import Mero.Spiel (FSStats)
-
-import Data.Binary (Binary(..))
-import Data.Bits
-import qualified Data.ByteString as BS
-import Data.Char (ord)
-import Data.Hashable (Hashable(..))
-import Data.Int (Int64)
-import Data.Ord (comparing)
-import Data.Proxy (Proxy(..))
-import Data.Scientific
-import Data.Typeable (Typeable)
-import qualified Data.Vector as V
-import Data.Word ( Word32, Word64 )
-import GHC.Generics (Generic)
 import qualified "distributed-process-scheduler" System.Clock as C
-import Data.Maybe (listToMaybe)
-import Data.UUID (UUID)
-
-import qualified HA.ResourceGraph as G
-import HA.Aeson
-import HA.SafeCopy hiding (Profile)
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
@@ -709,14 +707,15 @@ instance ToJSON LNid
 
 -- | Hardware information about a host.
 data HostHardwareInfo = HostHardwareInfo
-       { hhMemorySize  :: Word64
+       { hhMemorySize  :: !Word64
        -- ^ Memory size in MiB
-       , hhCpuCount    :: Int
+       , hhCpuCount    :: !Int
        -- ^ Number of CPUs
-       , hhLNidAddress :: String
+       , hhLNidAddress :: !T.Text
        -- ^ @lnet@ address
        }
    deriving (Eq, Show, Typeable, Generic)
+
 instance Hashable HostHardwareInfo
 storageIndex ''HostHardwareInfo "7b81d801-ff8f-4364-b635-6648fc8614b2"
 deriveSafeCopy 0 'base ''HostHardwareInfo

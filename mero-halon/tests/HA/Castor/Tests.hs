@@ -20,6 +20,7 @@ import           Data.List (partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import           Data.Typeable
 import           HA.Multimap
 import           HA.Multimap.Implementation (Multimap, fromList)
@@ -420,12 +421,7 @@ goHost :: forall l. Enclosure
        -> CI.Host
        -> PhaseM RC l ()
 goHost enc (CI.Host{..}) = let
-    host = Host h_fqdn
-    mem = fromIntegral h_memsize
-    cpucount = fromIntegral h_cpucount
-    attrs = [HA_MEMSIZE_MB mem, HA_CPU_COUNT cpucount]
+    host = Host $ T.unpack h_fqdn
   in do
     registerHost host
     locateHostInEnclosure host enc
-    mapM_ (setHostAttr host) attrs
-    mapM_ (registerInterface host) h_interfaces

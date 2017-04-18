@@ -79,6 +79,7 @@ Library
                    HA.Startup
                    HA.Logger
                    Control.SpineSeq
+                   System.Posix.SysInfo
                    System.SystemD.API
   other-modules:   HA.CallTimeout
                    HA.Service.Internal
