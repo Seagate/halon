@@ -14,19 +14,22 @@
 module HA.RecoveryCoordinator.Castor.Process.Rules
   ( rules ) where
 
-import           Control.Distributed.Process (Process)
+import           Control.Distributed.Process (Process, sendChan)
 import           Control.Lens
 import           Control.Monad (unless, void)
 import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.List (nub)
 import           Data.Maybe (isJust, listToMaybe)
+import qualified Data.Text as T
 import           Data.Typeable
 import qualified Data.UUID as UUID
 import           Data.Vinyl
 import           GHC.Generics (Generic)
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Cluster.Actions
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
@@ -36,6 +39,7 @@ import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
+import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
@@ -61,6 +65,7 @@ rules = sequence_ [
   , ruleProcessDispatchRestart
   , ruleProcessStart
   , ruleProcessStop
+  , requestUserStopsProcess
   , ruleFailedNotificationFailsProcess
   , ruleProcessKeepaliveReply
   , ruleRpcEvent
@@ -834,6 +839,34 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
           _ -> Nothing
         _ -> Nothing
     ourProcess _ _ _ = return Nothing
+
+-- | Handle user request for stopping a process.
+requestUserStopsProcess :: Definitions RC ()
+requestUserStopsProcess = defineSimpleTask "castor::process:stop_user_request" $
+  \(StopProcessUserRequest pfid force replyChan) -> lookupConfObjByFid pfid >>= \case
+    Nothing -> liftProcess $ sendChan replyChan NoSuchProcess
+    Just p -> do
+      if force
+      then do
+        l <- startJob $ StopProcessRequest p
+        liftProcess . sendChan replyChan $ StopProcessInitiated l
+      else do
+        rg <- getLocalGraph
+        let (_, DeferredStateChanges f _ _) = createDeferredStateChanges
+              [stateSet p $ TrI.constTransition M0.PSOffline] rg
+        -- Do we want to check for SNS? For example if this is IOS
+        -- process.
+        ClusterLiveness pvs _ quorum rm <- calculateClusterLiveness (f rg)
+        let errors = T.unlines $ concat
+              [ if pvs then [] else [T.pack "No writeable PVers found."]
+              , if quorum then [] else [T.pack "Quorum would be lost."]
+              , if rm then [] else [T.pack "No principle RM chosen."]
+              ]
+        if T.null errors
+        then do
+          l <- startJob $ StopProcessRequest p
+          liftProcess . sendChan replyChan $ StopProcessInitiated l
+        else liftProcess . sendChan replyChan $ StopWouldBreakCluster errors
 
 -- | Listens for 'NotifyFailureEndpoints' from notification mechanism.
 -- Finds the non-failed processes which failed to be notified (through

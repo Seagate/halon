@@ -29,11 +29,12 @@ data Options =
 
 parser :: Parser Options
 parser = subparser $ mconcat
-  [ cmd "add" (Add <$> Add.parser) "Add node"
-  , cmd "configuration" (Configuration <$> Configuration.parser) "Configure node"
-  , cmd "remove" (Remove <$> Remove.parser) "Remove node"
-  , cmd "start" (Start <$> Start.parser) "Start node"
-  , cmd "stop" (Stop <$> Stop.parser) "Stop node"
+  [ cmd "add" (Add <$> Add.parser) "Add process"
+  , cmd "configuration" (Configuration <$> Configuration.parser)
+      "Show configuration for process."
+  , cmd "remove" (Remove <$> Remove.parser) "Remove process"
+  , cmd "start" (Start <$> Start.parser) "Start process"
+  , cmd "stop" (Stop <$> Stop.parser) "Stop process"
   ]
 
 run :: [NodeId] -> Options -> Process ()

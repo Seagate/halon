@@ -1160,7 +1160,8 @@ requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go whe
        Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
        Just node ->
          if should_force
-         then do
+         then initiateStop node
+         else do
            rg <- getLocalGraph
            let (_, DeferredStateChanges f _ _) = createDeferredStateChanges
                      [stateSet m0node (TrI.constTransition M0.NSFailed)] rg -- XXX: constTransition?
@@ -1171,7 +1172,6 @@ requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go whe
            if null errors
            then initiateStop node
            else liftProcess $ sendChan reply_to (Event.CantStop m0fid node errors)
-         else initiateStop node
     where
       initiateStop node = do
         promulgateRC (Event.MaintenanceStopNode node)

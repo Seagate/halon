@@ -13,14 +13,16 @@ module HA.RecoveryCoordinator.Job.Actions
    , JobHandle(..)
    , mkJobRule
    , startJob
+   , startJobEQ
    , ListenerId
    , FldListenerId
    , fldListenerId
    ) where
 
+import           Control.Distributed.Process
 import           Control.Distributed.Process.Serializable
 import           Control.Lens
-import           Control.Monad (unless, join)
+import           Control.Monad (unless, join, void)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Foldable (for_)
 import           Data.Proxy
@@ -164,6 +166,16 @@ mkJobRule (Job name)
     fldRequest = Proxy
     fldReply :: Proxy '("reply", Maybe output)
     fldReply = Proxy
+
+-- | Like 'startJob' but allows the user to specify set of EQ nodes to
+-- use. Blocking.
+startJobEQ :: (MonadProcess m, Typeable r, SafeCopy r)
+           => [NodeId] -> r -> m ListenerId
+startJobEQ nids request = liftProcess $ do
+  l <- ListenerId <$> liftIO UUID.nextRandom
+  let wait = void (expect :: Process ProcessMonitorNotification)
+  promulgateEQ nids (JobStartRequest l request) >>= \pid -> withMonitor pid wait
+  return l
 
 -- | Start a job using the given request. Returns a listener ID that
 -- can be kept by the caller.

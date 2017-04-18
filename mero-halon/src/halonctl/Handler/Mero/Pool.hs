@@ -32,7 +32,7 @@ import qualified HA.RecoveryCoordinator.Mero.Events as Evt
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.Resources.Mero (Pool(..))
 import qualified HA.Resources.Mero.Note as M0 (showFid)
-import           Mero.ConfC ( strToFid )
+import qualified Handler.Mero.Helpers as Helpers
 import           Options.Applicative ((<|>))
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
@@ -72,7 +72,7 @@ parseRepRebCommands =
         ( Opt.withDesc parseSNSOpts "Resume in-progress repair/rebalance.")))
 
 parsePool :: Opt.Parser Pool
-parsePool = Pool <$> Opt.option (Opt.maybeReader strToFid)
+parsePool = Pool <$> Helpers.fidOpt
     ( Opt.long "pool"
     <> Opt.short 'p'
     <> Opt.help "Fid of the pool to control operations on."

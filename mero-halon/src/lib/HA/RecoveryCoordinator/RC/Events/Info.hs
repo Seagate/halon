@@ -14,7 +14,9 @@ import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics
 import           HA.Resources
+import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
+import           Mero.ConfC (Fid)
 
 -- | Sent when a process wishes to enquire about the status of a node.
 data NodeStatusRequest = NodeStatusRequest !Node !(SendPort NodeStatusResponse)
@@ -60,6 +62,12 @@ data GraphDataReply
   deriving (Show, Eq, Ord, Generic, Typeable)
 instance Binary GraphDataReply
 
+-- | Support for @halonctl
+data ProcessQueryRequest =
+  ProcessQueryRequest !Fid !(SendPort (Maybe M0.Process))
+  deriving (Eq, Show, Generic, Typeable)
+
 deriveSafeCopy 0 'base ''DebugRequest
-deriveSafeCopy 0 'base ''NodeStatusRequest
 deriveSafeCopy 0 'base ''GraphDataCmd
+deriveSafeCopy 0 'base ''NodeStatusRequest
+deriveSafeCopy 0 'base ''ProcessQueryRequest

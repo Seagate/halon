@@ -13,11 +13,12 @@ import qualified Data.ByteString.Lazy as BL
 import           HA.EventQueue (HAEvent(..))
 import           HA.Multimap (getKeyValuePairs)
 import           HA.RecoveryCoordinator.Mero
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Actions.Info
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Info
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
+import qualified HA.Resources.Mero as M0
 import           Network.CEP
 
 -- | RC debug rules.
@@ -26,6 +27,7 @@ rules argv = sequence_ [
     ruleNodeStatus argv
   , ruleDebugRC argv
   , ruleGetGraph
+  , ruleQueryRequest
   ]
 
 -- | Listen for 'NodeStatusRequest' and send back the
@@ -96,3 +98,17 @@ ruleGetGraph = defineSimple "graph-dump-values" $ \(HAEvent uuid msg) -> case ms
         $ toLazyByteString . lazyByteString
         $ reply
       sendChan sp GraphDataDone
+
+-- | @halonctl@-supporting rule responding to queries about graph.
+ruleQueryRequest :: Definitions RC ()
+ruleQueryRequest = define "query-request" $ do
+  process_request <- phaseHandle "process_request"
+
+  setPhase process_request $ \(HAEvent uid (ProcessQueryRequest fid sp)) -> do
+    messageProcessed uid
+    rg <- getLocalGraph
+    let rep = M0.lookupConfObjByFid fid rg
+    Log.rcLog' Log.DEBUG $ "Sending process info: " ++ show rep
+    liftProcess $ sendChan sp rep
+
+  start process_request ()
