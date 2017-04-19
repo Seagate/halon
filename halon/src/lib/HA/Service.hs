@@ -130,14 +130,14 @@ startRemoteService :: HasServiceInfoMsg si
                    -> si -- ^ Service
                    -> Process (Maybe ProcessId)
 startRemoteService node@(Node nid) (serviceInfoMsg -> msg) = do
-  self <- getSelfPid
   mref <- monitorNode nid
-  void $ spawnAsync nid $ $(mkClosure 'remoteStartService) (self, msg)
+  (sp, rp) <- newChan
+  void $ spawnAsync nid $ $(mkClosure 'remoteStartService) (sp, msg)
   receiveWait
     [ matchIf (\(NodeMonitorNotification ref _ _) -> ref == mref)
         $ \_ -> do promulgateWait $ ServiceCouldNotStart node msg
                    return Nothing
-    , match $ \pid -> do
+    , matchChan rp $ \pid -> do
         promulgateWait $ ServiceStarted node msg pid
         return (Just pid)
     ]
@@ -150,17 +150,15 @@ stopRemoteService :: forall a . Configuration a
                   -> Service a
                   -> Process ()
 stopRemoteService node@(Node nid) svc = do
-  self <- getSelfPid
   mref <- monitorNode nid
   let label = serviceLabel svc
-  void $ spawnAsync nid $ $(mkClosure 'remoteStopService) (self, label)
+  (sp, rp) <- newChan
+  void $ spawnAsync nid $ $(mkClosure 'remoteStopService) (sp, label)
   receiveWait
     [ matchIf (\(NodeMonitorNotification ref _ _) -> ref == mref)
         $ \_ -> return ()
-    , match $ \b ->
-       if b
-       then return ()
-       else promulgateWait (ServiceStopNotRunning node label)
+    , matchChan rp $ \b -> unless b $ do
+        promulgateWait (ServiceStopNotRunning node label)
     ]
 
 -- XXX: use ADT instead?

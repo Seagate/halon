@@ -278,8 +278,8 @@ data Result b = AlreadyRunning ProcessId
               | ServiceStarted (Either String b)
 
 -- | Run process service.
-remoteStartService :: (ProcessId, ServiceInfoMsg) -> Process ()
-remoteStartService (caller, msg) = do
+remoteStartService :: (SendPort ProcessId, ServiceInfoMsg) -> Process ()
+remoteStartService (replyCh, msg) = do
     ServiceInfo svc conf <- decodeP msg
     mask $ go svc conf (serviceName svc)
   where
@@ -298,7 +298,7 @@ remoteStartService (caller, msg) = do
                    Left (ProcessRegistrationException _ _) ->
                      whereis label >>= maybe whereisOrRegister return
            in do pid <- whereisOrRegister
-                 usend caller pid -- backwards compatibility.
+                 sendChan replyCh pid
                  if pid == self
                  then ServiceStarted <$> bootstrap conf
                  else return $ AlreadyRunning pid
@@ -378,8 +378,8 @@ remoteStartService (caller, msg) = do
 --------------------------------------------------------------------------------
 
 -- | Stop service.
-remoteStopService :: (ProcessId, String) -> Process ()
-remoteStopService (caller, label) = do
+remoteStopService :: (SendPort Bool, String) -> Process ()
+remoteStopService (ackCh, label) = do
   mpid <- whereis label
   case mpid of
     Just pid -> do
@@ -387,9 +387,9 @@ remoteStopService (caller, label) = do
       exit pid Shutdown
       receiveWait [ matchIf (\(ProcessMonitorNotification m _ _) -> m == mref)
                             (const $ return ())]
-      usend caller True
+      sendChan ackCh True
     Nothing -> do
-      usend caller False
+      sendChan ackCh False
 
 
 $(mkDicts
