@@ -151,13 +151,14 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       else
         mapM_ (addProcess node []) m0h_processes
 
+  -- TODO: M0Device should just use Text
   goDev enc ctrl (CI.M0Device{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
-      devIds = [ DIWWN m0d_wwn
-               , DIPath m0d_path
+      devIds = [ DIWWN $ T.pack m0d_wwn
+               , DIPath $ T.pack m0d_path
                ]
     in do
-      let sdev = StorageDevice m0d_serial
+      let sdev = StorageDevice $ T.pack m0d_serial
           slot = Slot enc m0d_slot
       StorageDevice.identify sdev devIds
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case

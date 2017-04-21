@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
 -- Copyright : (C) 2016 Seagate Technology Limited.
@@ -42,21 +43,21 @@ module HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
 
 import           Control.Arrow ((>>>))
 import           Data.Bool
-import           Data.Proxy
+import           Data.Foldable (for_)
 import           Data.List (foldl')
 import           Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
-import           Data.Foldable (for_)
-import           HA.RecoveryCoordinator.RC.Application
+import           Data.Proxy
+import qualified Data.Text as T
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import           HA.Resources.Castor
-import qualified HA.ResourceGraph as G
 import           Network.CEP
 
 -- | Check if storage device exists in a graph. If so
 -- it returns 'StorageDevice' object
-exists :: String   -- ^ Serial number.
+exists :: T.Text   -- ^ Serial number.
        -> PhaseM RC l (Maybe StorageDevice)
 exists sn =  bool Nothing (Just sdev)
           .  G.isConnected R.Cluster R.Has sdev
@@ -178,14 +179,14 @@ status dev = fromMaybe (StorageDeviceStatus "UNKNOWN" "UNKNOWN") . G.connectedTo
 --
 -- XXX: keep in mind that some statuses are final.
 setStatus :: StorageDevice
-          -> String -- ^ Status.
-          -> String -- ^ Reason.
+          -> T.Text -- ^ Status.
+          -> T.Text -- ^ Reason.
           -> PhaseM RC l ()
 setStatus dev st reason = do
   ds <- status dev
   let statusNode = StorageDeviceStatus st reason
-  Log.rcLog' Log.TRACE $ "Updating status for device"
-  Log.rcLog' Log.DEBUG [("status.old", show ds)
+  Log.rcLog' Log.TRACE ("Updating status for device" :: String)
+  Log.rcLog' Log.DEBUG [("status.old" :: String, show ds)
                        ,("status.new", show statusNode)
                        ]
   modifyGraph $ G.connect dev Is statusNode
@@ -224,7 +225,7 @@ findAttrs k sdev = do
                   ]
 
 -- | Lookup filesystem paths for storage devices (e.g. /dev/sda1)
-path :: StorageDevice -> PhaseM RC l (Maybe String)
+path :: StorageDevice -> PhaseM RC l (Maybe T.Text)
 path sd =
     listToMaybe . mapMaybe extractPath <$> getIdentifiers sd
   where
@@ -233,7 +234,7 @@ path sd =
 
 -- | Set the path ('DIPath') 'DeviceIdentifier' for the
 -- 'StorageDevice' to the given 'String'.
-setPath :: StorageDevice -> String -> PhaseM RC l ()
+setPath :: StorageDevice -> T.Text -> PhaseM RC l ()
 setPath sd path' = do
    old <- mapMaybe extractPath <$> getIdentifiers sd
    for_ old $ \o -> modifyGraph $ G.disconnect sd R.Has o
@@ -254,7 +255,7 @@ hasIdentifier :: StorageDevice
 hasIdentifier ld di = elem di <$> getIdentifiers ld
 
 -- | Lookup raid device associated with a storage device.
-raidDevice :: StorageDevice -> PhaseM RC l [String]
+raidDevice :: StorageDevice -> PhaseM RC l [T.Text]
 raidDevice sd =
     mapMaybe extract <$> getIdentifiers sd
   where

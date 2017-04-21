@@ -12,7 +12,6 @@ module HA.Resources.Castor.Initial.Old
   , __remoteTable
   ) where
 
-import           Control.Distributed.Process.Closure (remotable)
 import           Data.Data (Data)
 import           Data.Hashable (Hashable)
 import           Data.Typeable (Typeable)
@@ -43,11 +42,4 @@ deriveSafeCopy 0 'base ''Network
 storageIndex ''Interface "9d4812ee-d1c9-455b-9e27-e146bb1c17e5"
 
 mkStorageDicts [''Interface] [(''C.Host, ''R.Has, ''Interface)]
-
-remotable [ mkStorageResourceName ''Interface
-          , mkStorageRelationName (''C.Host, ''R.Has, ''Interface)
-          ]
-
-snd <$> mkStorageResource ''Interface
-snd <$> mkStorageRelation (''C.Host, ''R.Has, ''Interface)
-mkStorageResourceTable [''Interface] [(''C.Host, ''R.Has, ''Interface)]
+mkOldRels [''Interface] [(''C.Host, ''R.Has, ''Interface)]

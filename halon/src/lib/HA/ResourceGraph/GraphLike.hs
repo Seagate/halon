@@ -98,7 +98,7 @@ import Prelude hiding (null)
 -- * Edges in the insertion multimap are not present in the removal multimap.
 -- * Nodes in the insertion multimap are not present in the removal set.
 -- * Nodes in the removal multimap are not present in removal set.
-data ChangeLog = ChangeLog !Multimap !Multimap !(HashSet Key) (Maybe MetaInfo)
+data ChangeLog = ChangeLog !Multimap !Multimap !(HashSet Key) !(Maybe MetaInfo)
   deriving Typeable
 
 -- | Gets a list of updates and produces a possibly shorter equivalent list.
@@ -340,7 +340,7 @@ disconnectAllFrom :: forall g a r b.
                       , Relation g r a b
                       )
                   => a -> r -> Proxy b -> g -> g
-disconnectAllFrom a _ _ g = foldl' (.) id (fmap deleteEdge oldEdges) $ g
+disconnectAllFrom a _ _ g = foldl' (flip deleteEdge) g oldEdges
   where
     oldEdges = edgesFromSrc a g :: [Edge a r b]
 

@@ -282,10 +282,10 @@ ruleRaidDeviceAdd = mkJobRule jobRaidDeviceAdd args $ \(JobHandle _ finish) -> d
               Just (node, path) -> do
                 modify Local $ rlens fldNode . rfield .~ (Just node)
                 modify Local $ rlens fldRaidInfo . rfield .~
-                  (Just $ RaidInfo (T.pack rd) sdev (T.pack path))
+                  (Just $! RaidInfo rd sdev path)
                 cmdUUID <- liftIO $ nextRandom
                 sent <- sendNodeCmd [node] (Just cmdUUID)
-                         (NodeRaidCmd (T.pack rd) (RaidAdd $ T.pack path))
+                         (NodeRaidCmd rd (RaidAdd path))
                 if sent
                 then do
                   modify Local $ rlens fldCommandAck . rfield .~ [cmdUUID]

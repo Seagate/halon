@@ -1,8 +1,9 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StrictData        #-}
 -- |
--- Copyright : (C) 2013-2016 Xyratex Technology Limited.
+-- Copyright : (C) 2013-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- This module contains tests which exercise the RC with respect to
@@ -10,11 +11,10 @@
 module HA.RecoveryCoordinator.Mero.Tests (tests) where
 
 import           Control.Distributed.Process
-import           Control.Monad (unless, void, when)
+import           Control.Monad (unless, void)
 import           Data.Binary (Binary)
 import           Data.Function (on)
-import           Data.List
-  (isInfixOf, isPrefixOf, partition, sortBy, sort, tails)
+import           Data.List (sortBy, sort)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Typeable
@@ -49,9 +49,8 @@ import           Mero.Notification
 import           Mero.Notification.HAState
 import           Network.CEP
 import           Network.Transport (Transport(..))
-import           Prelude hiding ((<*>))
 import           Test.Framework
-import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
+import           Test.Tasty.HUnit (assertEqual, testCase)
 import           TestRunner
 
 tests ::  (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
@@ -76,18 +75,13 @@ testDriveManagerUpdate transport pg = do
   let tos' = tos { H._to_cluster_setup = H.NoSetup
                  , H._to_initial_data = iData }
   H.run' transport pg [testRule] tos' $ \ts -> do
-    self <- getSelfPid
-    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
-                                              , d <- CI.m0h_devices s ]
+    let interestingSN : _ = [ T.pack $ CI.m0d_serial d
+                            | s <- CI.id_m0_servers iData
+                            , d <- CI.m0h_devices s ]
         enc : _ = [ CI.enc_id enc' | r <- CI.id_racks iData
                                    , enc' <- CI.rack_enclosures r ]
-        respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
+        respDM = mkResponseDriveManager (T.pack enc) interestingSN 1
 
-    registerInterceptor $ \case
-      str | "lcType = \"HDS\"" `isInfixOf` str ->
-              when (any (interestingSN `isPrefixOf`) (tails str)) $
-                usend self ("OK" :: String)
-          | otherwise -> return ()
     subscribe (H._ts_rc ts) (Proxy :: Proxy DriveOK)
     subscribe (H._ts_rc ts) (Proxy :: Proxy LoggerCmd)
 
@@ -95,20 +89,18 @@ testDriveManagerUpdate transport pg = do
     sendRC (getInterface sspl) $ DiskStatusDm (processNodeId $ H._ts_rc ts)
                                               (respDM "OK" "NONE" "/path")
     _ :: DriveOK <- expectPublished
-    -- XXX: remove this delay it's needed because graph is not updated immediately
-    _ <- receiveTimeout 1000000 []
 
-    sayTest "Checking drive status sanity"
-    graph <- G.getGraph $ H._ts_mm ts
     let drive = StorageDevice interestingSN
-    liftIO . assertBool "drive is resource graph member" $ G.memberResource drive graph
-    liftIO . assertBool "status is graph member" $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
+    Just () <- waitUntilGraph (H._ts_mm ts) 1 5 $ \rg -> case () of
+      _ | G.memberResource drive rg
+        , G.memberResource (StorageDeviceStatus "OK" "NONE") rg -> Just ()
+        | otherwise -> Nothing
 
     sayTest "Sending RunDriveManagerFailure"
     usend (H._ts_rc ts) $ RunDriveManagerFailure drive
     expectPublished >>= \case
       LoggerCmd { lcMsg = msg, lcType = "HDS" }
-        | T.pack interestingSN `T.isInfixOf` msg -> return ()
+        | interestingSN `T.isInfixOf` msg -> return ()
       lc -> fail $ "Unexpected LoggerCmd: " ++ show lc
   where
     testRule :: Definitions RC ()

@@ -126,7 +126,7 @@ sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
               -> Host -- ^ Host we want to deal with
               -> StorageDevice -- ^ Drive
               -> PhaseM RC l Bool
-sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
+sendLedUpdate status host sd@(StorageDevice sn) = do
   Log.actLog "sending LED update" [ ("status", show status)
                                   , ("sn", show sn)
                                   , ("host", show host) ]
@@ -211,11 +211,9 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
                        . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                        $ srdm
       diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
-      sn = T.unpack
-           . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
+      sn = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerSerialNumber
            $ srdm
-      path = T.unpack
-             . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
+      path = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerPathID
              $ srdm
       disk_status = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskStatus srdm
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
@@ -235,9 +233,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
     updateStorageDevicePresence uuid (Node nid) disk sdev_loc True Nothing
   next <- shouldContinue disk
   when next $ do
-    result <- updateStorageDeviceStatus uuid (Node nid) disk sdev_loc
-                (T.unpack disk_status)
-                (T.unpack disk_reason)
+    result <- updateStorageDeviceStatus uuid (Node nid) disk sdev_loc disk_status disk_reason
     unless result $
        let msg = InterestingEventMessage $ logSSPLUnknownMessage
                ( "{'type': 'actuatorRequest.manager_status', "
@@ -306,8 +302,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions RC ()
 ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uuid, nid, srphi) -> do
-  let wwn = DIWWN . T.unpack
-                  . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
+  let wwn = DIWWN . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                   $ srphi
       diskNum = fromInteger
               . sensorResponseMessageSensor_response_typeDisk_status_hpiDiskNum
@@ -319,7 +314,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
                    $ srphi
       is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
       is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
-      sdev = StorageDevice $ T.unpack serial
+      sdev = StorageDevice serial
       sdev_loc = Slot enc diskNum
   -- Setup context
   todo uuid
@@ -401,8 +396,7 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
 ruleMonitorRaidData :: Definitions RC ()
 ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
   \(uid, nid, srrd) -> let
-      device_t = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
-      device = T.unpack device_t
+      device = sensorResponseMessageSensor_response_typeRaid_dataDevice srrd
       -- Drives should have min length 2, so it's OK to access these directly
       drives = sensorResponseMessageSensor_response_typeRaid_dataDrives srrd
     in do
@@ -423,8 +417,8 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
               Just ident -> let
                   path = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath ident
                   sn = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber ident
-                  sdev = StorageDevice $ T.unpack sn
-                  devIds = [ DIPath (T.unpack path)
+                  sdev = StorageDevice sn
+                  devIds = [ DIPath path
                            , DIRaidDevice device
                            , DIRaidIdx idx
                            ]
@@ -457,7 +451,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
                           sdevs -> do
                             Log.rcLog' Log.WARN $ "Multiple devices with same IDs: " ++ show sdevs
                             Just <$> error "FIXME" -- mergeStorageDevices sdevs
-                  path <- MaybeT $ fmap T.pack <$> StorageDevice.path dev
+                  path <- MaybeT $ StorageDevice.path dev
                   return (dev, path)
 
           isReassembling <- isConnected host Is ReassemblingRaid <$> getLocalGraph
@@ -465,7 +459,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
           if not isReassembling
           then promulgateRC $ RaidUpdate {
               ruNode = Node nid
-            , ruRaidDevice = device_t
+            , ruRaidDevice = device
             , ruFailedComponents = fmap fst . filter (\(_,x) -> x == "_")
                                     $ catMaybes sdevs
             }
@@ -509,10 +503,9 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(StorageDevice serial, status) ->
                case status of
                  StorageDeviceStatus "HALON-FAILED" reason -> do
-                   _ <- sendNodeCmd [Node nid] Nothing (DriveLed (T.pack serial) FaultOn)
-                   sendLoggingCmd (Node nid) $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
-                                                                (T.pack serial)
-                                                                (T.pack reason)
+                   _ <- sendNodeCmd [Node nid] Nothing (DriveLed serial FaultOn)
+                   sendLoggingCmd (Node nid) $
+                     mkDiskLoggingCmd "HALON-FAILED" serial reason
                  _ -> return ()
        _ -> return ()
      done uid
@@ -560,7 +553,7 @@ updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sd
     nodesOnHost host >>= \case
       n : _ -> do
         sendLoggingCmd n $ mkDiskLoggingCmd (T.pack st)
-                                            (T.pack sn)
+                                            sn
                                             (maybe "unknown reason" T.pack reason)
       _ -> Log.rcLog' Log.ERROR $ "Unable to find node for " ++ show host
   _ -> Log.rcLog' Log.ERROR $ "Unable to find host for " ++ show sdev

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ViewPatterns      #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -25,7 +26,7 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Maybe (isJust, listToMaybe, maybeToList)
 import           Data.Proxy
-import           Data.Text (pack)
+import qualified Data.Text as T
 import           Data.Typeable
 import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
@@ -46,7 +47,6 @@ import           HA.Replicator
 import qualified HA.ResourceGraph as G
 import           HA.Resources
 import           HA.Resources.Castor
-import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.Service (getInterface)
@@ -71,8 +71,8 @@ ssplTimeout = 10*1000000
 data ThatWhichWeCallADisk = ADisk
   { aDiskSD :: StorageDevice -- ^ Has a storage device
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
-  , aDiskPath :: String -- ^ Has a path
-  , aDiskWWN :: String -- ^ Has a WWN
+  , aDiskPath :: T.Text -- ^ Has a path
+  , aDiskWWN :: T.Text -- ^ Has a WWN
   } deriving (Show)
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
@@ -116,30 +116,6 @@ getHostName ts nid = do
   return $! case G.connectedFrom Runs (Node nid) rg of
     Just (Host hn) -> Just hn
     _ -> Nothing
-
--- | Keep checking RG until the given predicate on it holds. Useful
--- when notifications from RC don't cut it: for example, a
--- notification goes out before graph sync. If we rely on notification
--- and ask for graph, we might still see the old state.
---
--- Note that this works on a timeout loop: even if a change in the
--- graph happened, we're not guaranteed to see it with this. That is,
--- the graph might update again before we check it and we miss the
--- update all together therefore this shouldn't be used with
--- predicates that will only hold momentarily.
-waitUntilGraph :: StoreChan            -- ^ Where to retrieve current RG from.
-               -> Int                  -- ^ Time between retries in seconds.
-               -> Int                  -- ^ Number of retries before giving up.
-               -> (G.Graph -> Maybe a) -- ^ Predicate on the graph.
-               -> Process (Maybe a)
-waitUntilGraph _ _ tries _ | tries <= 0 = return Nothing
-waitUntilGraph mm interval tries p = do
-  rg <- G.getGraph mm
-  case p rg of
-    Nothing -> do
-      _ <- receiveTimeout (interval * 1000000) []
-      waitUntilGraph mm interval (tries - 1) p
-    r -> return r
 
 -- | Waits until given object enters state. Caveats from
 -- 'waitUntilGraph' apply.
@@ -210,12 +186,10 @@ announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
   let Host host : _ = G.connectedTo enc Has rg
       devIdx = succ . maximum . map slotIndex $ G.connectedTo enc Has rg
       slot = Slot enc devIdx
+      StorageDevice sn = aDiskSD sdev
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
-        (pack host) (pack enclosureName)
-        ((\(StorageDevice sn) -> pack sn) $ aDiskSD sdev) (fromIntegral devIdx)
-        (pack $ aDiskPath sdev)
-        (pack $ aDiskWWN sdev)
-        True True
+        (T.pack host) (T.pack enclosureName) sn (fromIntegral devIdx)
+        (aDiskPath sdev) (aDiskWWN sdev) True True
   withSubscription [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveInserted) $ do
     _rmq_publishSensorMsg (_ts_rmq ts) message
     let isOurDI (DriveInserted _ _ slot' sdev' (Just True)) = slot' == slot && sdev' == aDiskSD sdev
@@ -305,7 +279,6 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
 failDrive :: TestSetup -> ThatWhichWeCallADisk -> Process ()
 failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
 failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
-  let tserial = pack serial
   sayTest "failDrive"
   preResetSt <- HA.Resources.Mero.Note.getState sdev <$> G.getGraph (_ts_mm ts)
   -- We a drive failure note to the RC.
@@ -322,7 +295,7 @@ failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
   _ :: HAEvent ResetAttempt <- expectPublished
   -- We should see `DriveReset` and LED set messages go out to SSPL
   let cmd = ActuatorRequestMessageActuator_request_typeNode_controller
-          $ nodeCmdString (DriveReset tserial)
+          $ nodeCmdString (DriveReset serial)
   expectNodeMsgCommands "failDrive" [cmd] ssplTimeout >>= \case
     [] -> return ()
     ms -> fail $ "failDrive: SSPL wasn't sent " ++ show ms
@@ -335,9 +308,8 @@ resetComplete :: ProcessId -- ^ RC
               -> M0.SDevState -- ^ State of the device after smart completes.
               -> Process ()
 resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) success expSt = do
-  let tserial = pack serial
-      resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
-      smartComplete = CommandAck Nothing (Just $ SmartTest tserial) success
+  let resetCmd = CommandAck Nothing (Just $ DriveReset serial) AckReplyPassed
+      smartComplete = CommandAck Nothing (Just $ SmartTest serial) success
   sayTest "resetComplete"
   -- Send 'SpielDeviceDetached' to the RC
   forM_ m0sdev $ \sd -> usend rc $ SpielDeviceDetached sd (Right ())
@@ -354,7 +326,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
   _ <- usend rc $ DriveOK uuid node slot stord
   sendRC (getInterface sspl) $ CAck resetCmd
   let smartTestRequest = ActuatorRequestMessageActuator_request_typeNode_controller
-                       $ nodeCmdString (SmartTest tserial)
+                       $ nodeCmdString (SmartTest serial)
   sayTest "Waiting for SMART request."
   liftIO . assertEqual "RC requested smart test." (Just smartTestRequest)
               =<< expectNodeMsg ssplTimeout
@@ -457,12 +429,10 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
     G.connectedTo c M0.At rg
 
   let Just (Slot _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
+      StorageDevice sn = aDiskSD sdev
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
-                  (pack host) (pack enclosureName)
-                  (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
-                  (fromIntegral devIdx)
-                  (pack $ aDiskPath sdev)
-                  (pack $ aDiskWWN sdev)
+                  (T.pack host) (T.pack enclosureName)
+                  sn (fromIntegral devIdx) (aDiskPath sdev) (aDiskWWN sdev)
                   False True
   -- For now the device is still in the slot.
   False <- checkStorageDeviceRemoved enc devIdx <$> G.getGraph (_ts_mm ts)
@@ -509,7 +479,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
 
   sayTest "SSPL should receive a command to power off the drive"
   do
-    let sn = pack $ (\(StorageDevice sn') -> sn') (aDiskSD disk)
+    let StorageDevice sn = aDiskSD disk
         cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DrivePowerdown sn)
         cmd1 = ActuatorRequestMessageActuator_request_typeNode_controller
@@ -542,7 +512,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         adisk : _ -> return adisk
         _ -> fail "No ThatWhichWeCallADisk found for SDev."
       -- Consume LED FaultOn message caused by the state change.
-      let sn = (\(StorageDevice sn') -> pack sn') (aDiskSD adisk)
+      let StorageDevice sn = aDiskSD adisk
           cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DriveLed sn FaultOn)
       [] <- expectNodeMsgCommands "mkTestAroundReset" [cmd] ssplTimeout
@@ -598,7 +568,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   announceNewSDev enc sdev2 ts
 
   let raidDevice = "/dev/raid"
-      raidData = mkResponseRaidData (pack hostname) raidDevice
+      raidData = mkResponseRaidData (T.pack hostname) raidDevice
                                     [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
                                     , (("/dev/mddisk2", "mdserial2"), False) -- disk2 failed
                                     ]
@@ -688,7 +658,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   announceNewSDev enc' sdev2 ts
 
   let raidDevice = "/dev/raid"
-      raidData = mkResponseRaidData (pack host) raidDevice
+      raidData = mkResponseRaidData (T.pack host) raidDevice
                                       [ (("/dev/mddisk1", "mdserial1"), True) -- disk1 ok
                                       , (("/dev/mddisk2", "mdserial2"), True) -- disk2 failed
                                       ]

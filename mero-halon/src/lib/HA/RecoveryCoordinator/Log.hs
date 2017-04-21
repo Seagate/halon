@@ -1,24 +1,21 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData        #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Defines the logging type for the recovery coordinator.
-
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
 module HA.RecoveryCoordinator.Log where
 
-
+import qualified Data.Text as T
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
+import           GHC.Generics (Generic)
+import           HA.Aeson
 import qualified HA.Resources as R (Node)
-import HA.SafeCopy
-
-import HA.Aeson
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
-
-import GHC.Generics (Generic)
-
-import Network.CEP.Log (Environment)
+import           HA.SafeCopy
+import           Network.CEP.Log (Environment)
 
 data Event =
     BeginLocalContext UUID
@@ -63,7 +60,7 @@ data Scope =
     Thread UUID -- ^ Tag a "thread" of processing. This could be used to
                      --   group multiple rules all driven from a single message.
   | Node R.Node -- ^ Associated node
-  | StorageDevice String -- ^ Associated storage device.
+  | StorageDevice T.Text -- ^ Associated storage device.
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
 

@@ -160,11 +160,11 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
         (Just $ SMARTResponse sdev SRSTimeout)
       continue finish
 
-    return $ \(SMARTRequest node sdev@(StorageDevice (T.pack -> serial))) -> do
+    return $ \(SMARTRequest node sdev@(StorageDevice serial)) -> do
       isDisabled <- getHalonVar _hv_disable_smart_checks
       Log.tagContext Log.SM node Nothing
       Log.tagContext Log.SM sdev Nothing
-      modify Local $ rlens fldNode . rfield .~ (Just node)
+      modify Local $ rlens fldNode . rfield .~ Just node
       modify Local $ rlens fldDeviceInfo . rfield .~
         (Just $ DeviceInfo sdev serial)
       return . Right $

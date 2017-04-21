@@ -9,6 +9,7 @@
 -- Dealing with configurable values throughout the halon rules.
 module HA.Resources.HalonVars
   ( HalonVars(..)
+  , defaultHalonVars
   , module HA.Resources.HalonVars
   ) where
 
@@ -23,6 +24,7 @@ import HA.Resources.Castor
 import HA.SafeCopy
 import Network.CEP
 
+<<<<<<< HEAD
 -- | Default value for 'HalonVars'
 defaultHalonVars :: HalonVars
 defaultHalonVars = HalonVars
@@ -56,6 +58,8 @@ defaultHalonVars = HalonVars
   , _hv_notification_timeout = 115
   }
 
+=======
+>>>>>>> HALON-714: Teacake -> Chelsea migration
 -- | Get 'HalonVars' from RG
 getHalonVars :: PhaseM RC l HalonVars
 getHalonVars =

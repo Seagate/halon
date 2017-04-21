@@ -38,6 +38,7 @@ import           Control.Exception (SomeException, IOException)
 import           Control.Monad (forever, unless, void, when)
 import qualified Control.Monad.Catch as Catch
 import           Control.Monad.Trans.Reader
+import           Data.Bifunctor (bimap)
 import qualified Data.Bimap as BM
 import           Data.Binary
 import qualified Data.ByteString as BS
@@ -228,7 +229,7 @@ configureProcess mc run conf env needsMkfs = do
   else return $ Right p
   where
     toEnv (M0.ProcessEnvValue key val) = (key, val)
-    toEnv (M0.ProcessEnvInRange key val) = (key, show val)
+    toEnv (M0.ProcessEnvInRange key val) = (key, T.pack $ show val)
     maybeWriteConfXC (ProcessConfigLocal _ bs) = do
       liftIO $ writeConfXC bs
       return $ Just confXCPath
@@ -345,7 +346,7 @@ writeSysconfig :: MeroConf
                -> Fid -- ^ Process fid
                -> String -- ^ Endpoint address
                -> Maybe String -- ^ Confd address?
-               -> [(String, String)] -- ^ Additional environment values
+               -> [(T.Text, T.Text)] -- ^ Additional environment values
                -> IO String
 writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
     putStrLn $ "m0d: Writing sysctlFile: " ++ fileName
@@ -355,7 +356,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
       , ("MERO_PROFILE_FID", fidToStr mcProfile)
       , ("MERO_PROCESS_FID", fidToStr procFid)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
-        ++ additionalEnv
+        ++ map (bimap T.unpack T.unpack) additionalEnv
     return unit
   where
     fileName = prefix ++ "-" ++ fidToStr procFid

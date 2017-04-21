@@ -21,10 +21,12 @@ import Data.Typeable
 import HA.Encode
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.EventQueue.Types (HAEvent(..))
+import HA.Multimap
 import HA.RecoveryCoordinator.Job.Actions (startJob)
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import HA.RecoveryCoordinator.RC.Subscription
 import HA.RecoveryCoordinator.Service.Events
+import HA.ResourceGraph
 import HA.Resources
 import HA.Service
 import HA.Services.SSPL.Rabbit
@@ -188,3 +190,27 @@ purgeRmqQueues rmq qs = do
     Just{} <- receiveTimeout (5 * 1000000)
       [ matchIf (\m -> m == msg) (\_ -> return ()) ]
     return ()
+
+-- | Keep checking RG until the given predicate on it holds. Useful
+-- when notifications from RC don't cut it: for example, a
+-- notification goes out before graph sync. If we rely on notification
+-- and ask for graph, we might still see the old state.
+--
+-- Note that this works on a timeout loop: even if a change in the
+-- graph happened, we're not guaranteed to see it with this. That is,
+-- the graph might update again before we check it and we miss the
+-- update all together therefore this shouldn't be used with
+-- predicates that will only hold momentarily.
+waitUntilGraph :: StoreChan          -- ^ Where to retrieve current RG from.
+               -> Int                -- ^ Time between retries in seconds.
+               -> Int                -- ^ Number of retries before giving up.
+               -> (Graph -> Maybe a) -- ^ Predicate on the graph.
+               -> Process (Maybe a)
+waitUntilGraph _ _ tries _ | tries <= 0 = return Nothing
+waitUntilGraph mm interval tries p = do
+  rg <- getGraph mm
+  case p rg of
+    Nothing -> do
+      _ <- receiveTimeout (interval * 1000000) []
+      waitUntilGraph mm interval (tries - 1) p
+    r -> return r

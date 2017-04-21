@@ -234,7 +234,7 @@ instance A.ToJSON M0ProcessType
 --   variables in the sysconfig file for this process.
 data M0ProcessEnv =
     -- | A simple value, passed directly to the file.
-    M0PEnvValue String
+    M0PEnvValue T.Text
     -- | A unique range within the node. Each process shall be given a unique
     --   value within this range for the given environment key.
   | M0PEnvRange Int Int
@@ -257,7 +257,7 @@ data M0Process = M0Process
   -- ^ List of services this process should run.
   , m0p_boot_level :: M0ProcessType
   -- ^ Type of process, governing how it should run.
-  , m0p_environment :: Maybe [(String, M0ProcessEnv)]
+  , m0p_environment :: Maybe [(T.Text, M0ProcessEnv)]
   -- ^ Process environment - additional
   , m0p_multiplicity :: Maybe Int
   -- ^ Process multiplicity - how many instances of this process should be started?
