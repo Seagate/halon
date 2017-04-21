@@ -9,6 +9,7 @@
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE StrictData                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -20,16 +21,16 @@ module HA.Resources.Castor (
   , MI.BMC(..)
 ) where
 
-import HA.Aeson
-import HA.SafeCopy
-import HA.Resources
+import           Data.Hashable (Hashable(..))
+import qualified Data.Text as T
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
+import           GHC.Generics (Generic)
+import           HA.Aeson
+import           HA.Resources
 import qualified HA.Resources.Castor.Initial as MI
-import HA.Resources.TH
-
-import Data.Hashable (Hashable(..))
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
-import GHC.Generics (Generic)
+import           HA.Resources.TH
+import           HA.SafeCopy
 
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
@@ -82,7 +83,7 @@ instance ToJSON HostAttr
 
 -- | Representation of a storage device
 newtype StorageDevice = StorageDevice
-    String -- ^ Disk serial number. XXX: convert to ShortByteString
+    T.Text -- ^ Disk serial number. XXX: convert to ShortByteString
   deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
 
 instance FromJSON StorageDevice
@@ -92,8 +93,8 @@ storageIndex ''StorageDevice "6f7915aa-645c-42b4-b3e0-a8222c764730"
 deriveSafeCopy 0 'base ''StorageDevice
 
 data Slot = Slot
-  { slotEnclosure :: Enclosure
-  , slotIndex     :: Int
+  { slotEnclosure :: !Enclosure
+  , slotIndex     :: !Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
 instance Hashable Slot
 instance FromJSON Slot
@@ -105,7 +106,7 @@ deriveSafeCopy 0 'base ''Slot
 
 data StorageDeviceAttr
     = SDResetAttempts !Int
-    | SDPowered Bool
+    | SDPowered !Bool
     | SDOnGoingReset
     | SDRemovedFromRAID
     deriving (Eq, Ord, Show, Generic)
@@ -117,11 +118,11 @@ instance ToJSON StorageDeviceAttr
 
 -- | Arbitrary identifier for a logical or storage device
 data DeviceIdentifier =
-      DIPath String
-    | DIWWN String
-    | DIUUID String
-    | DIRaidIdx Int -- Index in RAID array
-    | DIRaidDevice String -- Device name of RAID device containing this
+      DIPath !T.Text
+    | DIWWN !T.Text
+    | DIUUID !T.Text
+    | DIRaidIdx !Int -- Index in RAID array
+    | DIRaidDevice !T.Text -- Device name of RAID device containing this
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Hashable DeviceIdentifier
@@ -130,18 +131,31 @@ instance FromJSON DeviceIdentifier
 storageIndex ''DeviceIdentifier "d4b502aa-e1d3-421a-8082-f3837aef3fdc"
 deriveSafeCopy 0 'base ''DeviceIdentifier
 
+-- | Base version of 'StorageDeviceStatus'.
+data StorageDeviceStatus_v0 = StorageDeviceStatus_v0
+    { sdsStatus_v0 :: String
+    , sdsReason_v0 :: String
+    }
+  deriving (Eq, Show, Generic, Typeable)
+deriveSafeCopy 0 'base ''StorageDeviceStatus_v0
+
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
 data StorageDeviceStatus = StorageDeviceStatus
-    { sdsStatus :: String
-    , sdsReason :: String
+    { sdsStatus :: !T.Text
+    , sdsReason :: !T.Text
     }
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable StorageDeviceStatus
 storageIndex ''StorageDeviceStatus "893b1410-6aff-4694-a6fd-19509a12d715"
-deriveSafeCopy 0 'base ''StorageDeviceStatus
+deriveSafeCopy 1 'extension ''StorageDeviceStatus
 instance ToJSON StorageDeviceStatus
+
+instance Migrate StorageDeviceStatus where
+  type MigrateFrom StorageDeviceStatus = StorageDeviceStatus_v0
+  migrate (StorageDeviceStatus_v0 v1 v2) =
+    StorageDeviceStatus (T.pack v1) (T.pack v2)
 
 -- | Marker used to indicate that a host is undergoing RAID reassembly.
 data ReassemblingRaid = ReassemblingRaid
@@ -173,6 +187,15 @@ instance Hashable ReplacedBy
 storageIndex ''ReplacedBy "5db0c0d7-59d0-4750-84f6-c4b140a190df"
 deriveSafeCopy 0 'base ''ReplacedBy
 instance ToJSON ReplacedBy
+
+-- | Teacake version of 'HalonVars'
+data HalonVars_v0 = HalonVars_v0
+  { _hv_recovery_expiry_seconds_v0 :: Int
+  , _hv_recovery_max_retries_v0 :: Int
+  , _hv_keepalive_frequency_v0 :: Int
+  , _hv_keepalive_timeout_v0 :: Int
+  , _hv_drive_reset_max_retries_v0 :: Int
+  } deriving (Show, Eq, Ord, Typeable, Generic)
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
 -- get GC'd). Helpers elsewhere.
@@ -289,9 +312,53 @@ data HalonVars = HalonVars
   --   notifications to be acknowledged.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
+-- | Default value for 'HalonVars'
+defaultHalonVars :: HalonVars
+defaultHalonVars = HalonVars
+  { _hv_recovery_expiry_seconds = 300
+  , _hv_recovery_max_retries = (-5)
+  , _hv_keepalive_frequency = 30
+  , _hv_keepalive_timeout = 115
+  , _hv_drive_reset_max_retries = 3
+  , _hv_process_configure_timeout = 300
+  , _hv_process_start_cmd_timeout = 300
+  , _hv_process_start_timeout = 180
+  , _hv_process_stop_timeout = 600
+  , _hv_process_max_start_attempts = 5
+  , _hv_process_restart_retry_interval = 5
+  , _hv_mero_kernel_start_timeout = 300
+  , _hv_clients_start_timeout = 600
+  , _hv_node_stop_barrier_timeout = 600
+  , _hv_drive_insertion_timeout = 10
+  , _hv_drive_removal_timeout = 60
+  , _hv_drive_unpowered_timeout = 300
+  , _hv_drive_transient_timeout = 300
+  , _hv_expander_node_up_timeout = 460
+  , _hv_expander_sspl_ack_timeout = 180
+  , _hv_monitoring_angel_delay = 2
+  , _hv_mero_workers_allowed = True
+  , _hv_disable_smart_checks = False
+  , _hv_service_stop_timeout = 30
+  , _hv_m0dixinit_timeout = 30
+  , _hv_expander_reset_threshold = 8
+  , _hv_expander_reset_reset_timeout = 300
+  , _hv_notification_timeout = 115
+  }
+
+instance Migrate HalonVars where
+  type MigrateFrom HalonVars = HalonVars_v0
+  migrate v0 = defaultHalonVars
+    { _hv_recovery_expiry_seconds = _hv_recovery_expiry_seconds_v0 v0
+    , _hv_recovery_max_retries = _hv_recovery_max_retries_v0 v0
+    , _hv_keepalive_frequency = _hv_keepalive_frequency_v0 v0
+    , _hv_keepalive_timeout = _hv_keepalive_timeout_v0 v0
+    , _hv_drive_reset_max_retries = _hv_drive_reset_max_retries_v0 v0
+    }
+
 instance Hashable HalonVars
 storageIndex ''HalonVars "46828e80-3122-45e1-88b9-1ba3edea13ae"
-deriveSafeCopy 0 'base ''HalonVars
+deriveSafeCopy 0 'base ''HalonVars_v0
+deriveSafeCopy 1 'extension ''HalonVars
 instance ToJSON HalonVars
 
 --------------------------------------------------------------------------------

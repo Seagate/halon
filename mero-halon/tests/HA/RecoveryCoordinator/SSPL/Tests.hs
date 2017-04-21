@@ -19,7 +19,8 @@ import           Data.Binary
 import           Data.Bool (bool)
 import qualified Data.ByteString.Lazy.Char8 as B8
 import           Data.List (intercalate)
-import           Data.Text (Text, pack)
+import           Data.Monoid ((<>))
+import qualified Data.Text as T
 import           Data.Typeable
 import           Data.UUID.V4 (nextRandom)
 import           GHC.Generics
@@ -86,7 +87,7 @@ utTests transport pg =
    $ testDMRequest transport pg
    ]
 
-dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
+dmRequest :: T.Text -> T.Text -> T.Text -> Int -> T.Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 dmRequest status reason serial num path = mkResponseDriveManager "enclosure_15" serial (fromIntegral num) status reason path
 
 mkHpiTest ::(Typeable g, RGroup g)
@@ -206,15 +207,15 @@ instance Binary GiveMeEnclosureName
 genericHpiTest :: (Typeable g, RGroup g) => HpiTestInfo -> Transport -> Proxy g -> IO ()
 genericHpiTest HTI{..} = mkHpiTest rules test
   where
+    takeEncId (Enclosure encN) = T.stripPrefix "enclosure_" $ T.pack encN
     rules _self = do
       define "init-drive" $ do
         ph0 <- phaseHandle "init"
         ph1 <- phaseHandle "finish"
         directly ph0 $ do
            [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
-           let Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
-           let serial = "serial" ++ ide ++ "_1"
-           let sdev = StorageDevice serial
+           let Just ide = takeEncId e
+           let sdev = StorageDevice $ "serial" <> ide <> "_1"
            unless hpiWasInstalled $ do
              loc <- StorageDevice.mkLocation e 1
              _   <- StorageDevice.insertTo sdev loc
@@ -231,12 +232,13 @@ genericHpiTest HTI{..} = mkHpiTest rules test
     test rc = do
       self <- getSelfPid
       usend rc (GiveMeEnclosureName, self)
-      Enclosure e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
-      let serial = "serial" ++ ide ++ "_1"
-      let (enc, serial', idx, devid, wwn, _sdev) =
+      (enc, Just ide) <- expect >>= \enc@(Enclosure e) ->
+        return (T.pack e, takeEncId enc)
+      let serial = "serial" <> ide <> "_1"
+      let (serial', idx, devid, wwn) =
             if hpiIsNew
-            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", StorageDevice $ serial++"new")
-            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", StorageDevice serial)
+            then (serial <> "new", 1, "/dev/loop" <> ide <> "_new", "wwn" <> ide <> "_1new")
+            else (serial, 1, "/dev/loop" <> ide <> "_1", "wwn" <> ide <> "_1")
 
       subscribe rc (Proxy :: Proxy HpiRuleMsg)
       subscribe rc (Proxy :: Proxy DrivePowerChange)
@@ -246,8 +248,8 @@ genericHpiTest HTI{..} = mkHpiTest rules test
       -- Send HPI message:
       me   <- getSelfNode
       uuid <- liftIO nextRandom
-      hostname <- liftIO getHostName
-      let request = mkHpiMessage (pack hostname) enc (pack serial') idx devid wwn hpiIsInstalled hpiIsPowered
+      hostname <- T.pack <$> liftIO getHostName
+      let request = mkHpiMessage hostname enc serial' idx devid wwn hpiIsInstalled hpiIsPowered
       usend rc . HAEvent uuid $ DiskHpi me request
       hpiUserCallback uuid
 

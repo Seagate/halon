@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -13,17 +14,18 @@ module HA.RecoveryCoordinator.Castor.Commands.Events
   , CommandStorageDeviceStatusResult(..)
   ) where
 
-import           Data.Binary
-import           Data.Typeable
 import           Control.Distributed.Process
+import           Data.Binary
+import qualified Data.Text as T
+import           Data.Typeable
 import           GHC.Generics
 import           HA.Resources.Castor
 import           HA.SafeCopy
 
 -- | Request to create new storage device.
 data CommandStorageDeviceCreate = CommandStorageDeviceCreate
-      { csdcSerial :: String
-      , csdcPath   :: String
+      { csdcSerial :: T.Text
+      , csdcPath   :: T.Text
       , csscReplyTo :: SendPort CommandStorageDeviceCreateResult
       } deriving (Eq, Show, Generic, Ord)
 
@@ -34,10 +36,10 @@ data CommandStorageDeviceCreateResult
       deriving (Eq, Show, Generic, Typeable)
 
 instance Binary CommandStorageDeviceCreateResult
-    
+
 -- | Update  information about known drive.
 data CommandStorageDevicePresence = CommandStorageDevicePresence
-      { csdpSerial :: String
+      { csdpSerial :: T.Text
       , csdpSlot   :: Slot
       , csdpIsInstalled :: Bool
       , csdpIsPowered   :: Bool
@@ -56,10 +58,10 @@ instance Binary CommandStorageDevicePresenceResult
 
 -- | Update status of the known drive.
 data CommandStorageDeviceStatus = CommandStorageDeviceStatus
-      { csdsSerial :: String
+      { csdsSerial :: T.Text
       , csdsSlot :: Slot
-      , csdsStatus :: String
-      , csdsReason :: String
+      , csdsStatus :: T.Text
+      , csdsReason :: T.Text
       , csdsReplyTo :: SendPort CommandStorageDeviceStatusResult
       } deriving (Eq, Show, Generic, Ord)
 

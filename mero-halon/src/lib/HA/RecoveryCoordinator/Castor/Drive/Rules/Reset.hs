@@ -136,7 +136,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
           Log.rcLog' Log.DEBUG "Drive is physically removed, skipping reset."
         _ | not isDrivePowered ->
           Log.rcLog' Log.DEBUG "Drive is not powered, skipping reset."
-        "EMPTY" ->
+        (T.unpack -> "EMPTY") ->
           Log.rcLog' Log.DEBUG "Possible expander reset in progress, skipping reset."
         _ -> do
           st <- getState m0sdev <$> getLocalGraph
@@ -178,7 +178,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
               modify Local $ rlens fldNode . rfield .~ Just node
               modify Local $ rlens fldRep  . rfield .~ Just (ResetFailure sdev)
               modify Local $ rlens fldDeviceInfo . rfield .~
-                Just (DeviceInfo sdev (T.pack serial))
+                Just (DeviceInfo sdev serial)
 
               isStorageDriveRemoved sdev >>= \case
                 True ->

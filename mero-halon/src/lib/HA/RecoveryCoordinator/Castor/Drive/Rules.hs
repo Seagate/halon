@@ -230,18 +230,18 @@ mkCheckAndHandleDriveReady smartLens next = do
     StorageDeviceStatus status _ <- StorageDevice.status disk
 
     StorageDevice.location disk >>= \case
-      Just loc | not reset && powered && status == "OK" -> do
+      Just loc | not reset && powered && status == T.pack "OK" -> do
         current_m0sdev <- lookupStorageDeviceSDev disk
         disk_path <- StorageDevice.path disk
         rg <- getLocalGraph
         case  current_m0sdev of
-          Just sdev | Just (M0.d_path sdev) == disk_path
+          Just sdev | Just (T.pack $ M0.d_path sdev) == disk_path
                     , SDSUnknown == getState sdev rg
                     -> do
             Log.rcLog' Log.DEBUG "Device is already attached."
             _ <- applyStateChanges [ stateSet sdev Tr.sdevReady]
             onFailure
-          Just sdev | Just (M0.d_path sdev) == disk_path
+          Just sdev | Just (T.pack $ M0.d_path sdev) == disk_path
                     , SDSOnline == getState sdev rg
                     -> do
             Log.rcLog' Log.DEBUG "Device is already attached and online."
@@ -260,7 +260,7 @@ mkCheckAndHandleDriveReady smartLens next = do
         Log.rcLog' Log.DEBUG [ ("Device not ready", show disk)
                              , ("Reset ongoing", show reset)
                              , ("Powered:", show powered)
-                             , ("Status:", status)
+                             , ("Status:", show status)
                              ]
         onFailure
 
@@ -400,19 +400,17 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       continue post_power_removed
 
   (device_detached, detachDisk) <- mkDetachDisk
-    (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
+    (fmap join . traverse (\(_,d,_) -> lookupStorageDeviceSDev d) . fst)
     (\sdev e -> do Log.rcLog' Log.WARN e
                    post_process sdev) post_process
 
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
     fork CopyNewerBuffer $ do
       let Node nid = dpcNode
-          StorageDevice serial = dpcDevice
-          dpcSerial = T.pack serial
       Log.tagContext Log.SM dpcDevice Nothing
       Log.tagContext Log.SM dpcUUID   Nothing
       Log.tagContext Log.SM dpcNode   Nothing
-      put Local $ (Just (dpcUUID, dpcDevice, nid, dpcSerial), Nothing)
+      put Local $ (Just (dpcUUID, dpcDevice, nid), Nothing)
       StorageDevice.poweroff dpcDevice
 
       -- Mark Mero device as transient
@@ -423,7 +421,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       continue post_power_removed
 
   directly post_power_removed $ do
-      (Just (_, _, nid, serial), _) <- get Local
+      (Just (_, StorageDevice serial, nid), _) <- get Local
       -- Attempt to power the disk back on
       sent <- sendNodeCmd [Node nid] Nothing (DrivePoweron serial)
       if sent
@@ -481,8 +479,8 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
 
   start handle (Nothing, Nothing)
   where
-    isRealFailure (StorageDeviceStatus "HALON-FAILED" _) = True
-    isRealFailure (StorageDeviceStatus "FAILED" _) = True
+    isRealFailure (StorageDeviceStatus (T.unpack -> "HALON-FAILED") _) = True
+    isRealFailure (StorageDeviceStatus (T.unpack -> "FAILED") _) = True
     isRealFailure _ = False
     m0failed (SDSTransient _) = True
     m0failed SDSFailed = True
@@ -545,7 +543,7 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
         (Just node, Just sdev@(StorageDevice serial)) -> do
           Log.tagContext Log.SM node $ Just "Node hosting this disk."
           Log.tagContext Log.SM sdev Nothing
-          sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)
+          sent <- sendNodeCmd [node] Nothing (DrivePowerdown serial)
           if sent
           then Log.rcLog' Log.DEBUG "Powering off failed device."
           else Log.rcLog' Log.WARN "Unable to power off failed device."

@@ -147,6 +147,7 @@ Library
                    HA.Resources.Mero.Note
                    -- Other resources
                    HA.Resources.Castor
+                   HA.Resources.Castor.Old
                    HA.Resources.Castor.Initial
                    HA.Resources.Castor.Initial.Old
                    HA.Resources.HalonVars

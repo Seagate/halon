@@ -230,7 +230,7 @@ ruleReassembleRaid =
         forM_ raidDevs $ \dev -> do
           cmdUUID <- liftIO $ nextRandom
           sent <- sendNodeCmd [node] (Just cmdUUID)
-                  $ NodeRaidCmd (T.pack dev) RaidStop
+                  $ NodeRaidCmd dev RaidStop
 
           if sent
           then
@@ -341,7 +341,7 @@ ruleReassembleRaid =
     -- Enclosure, node
     fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
     -- RAID devices
-    fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
+    fldRaidDevices = Proxy :: Proxy '("raidDevices", [T.Text])
     -- Using Mero?
     fldM0 = Proxy :: Proxy '("meroStuff", Maybe (M0.Enclosure, M0.Node))
     -- We're waiting for processes on node to stop

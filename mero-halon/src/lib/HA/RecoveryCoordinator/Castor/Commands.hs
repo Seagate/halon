@@ -22,7 +22,7 @@ import           Network.CEP
 
 -- | List of rules.
 rules :: Definitions RC ()
-rules = sequence_ 
+rules = sequence_
   [ driveNew
   , drivePresence
   , driveStatus
@@ -66,7 +66,7 @@ driveStatus = defineSimpleTask "castor::command::update-drive-status" $
                   _ <- Drive.updateStorageDeviceStatus uuid node sd slot status reason
                   liftProcess $ sendChan chan StorageDeviceStatusUpdated
       else liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchDevice
- 
+
 
 
 -- | Create new drive and store that in RG.
@@ -78,5 +78,5 @@ driveNew = defineSimpleTask "castor::command::new-drive" $
      if not $ isConnected Cluster Has sd rg
      then do modifyGraph $ G.connect Cluster Has sd
                       >>> G.connect sd Has (DIPath path)
-             liftProcess $ sendChan chan StorageDeviceCreated 
+             liftProcess $ sendChan chan StorageDeviceCreated
      else liftProcess $ sendChan chan StorageDeviceErrorAlreadyExists

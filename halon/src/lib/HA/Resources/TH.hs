@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns    #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -10,6 +11,7 @@ module HA.Resources.TH (
     storageIndex
   , mkUUID
   , mkDicts
+  , mkOldRels
   , mkResRel
   , mkResource
   , mkRelation
@@ -47,6 +49,14 @@ import Data.Rank1Dynamic
 import qualified Data.UUID as UUID
 
 import Language.Haskell.TH
+
+mkOldRels :: [Name] -> [(Name, Name, Name)] -> Q [Dec]
+mkOldRels res rels = do
+  (resN, concat -> resD) <- unzip <$> mapM mkStorageResource res
+  (relN, concat -> relD) <- unzip <$> mapM mkStorageRelation rels
+  remD <- remotable $ resN ++ relN
+  resTableD <- mkStorageResourceTable res rels
+  return $ resD ++ relD ++ remD ++ resTableD
 
 -- | Generate UUID from string in compile time. This method can't fail in runtime.
 mkUUID :: String -> Q Exp

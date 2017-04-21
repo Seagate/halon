@@ -1,5 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData        #-}
 -- |
 -- Module    : Handler.Mero.Drive
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -13,6 +14,7 @@ module Handler.Mero.Drive
 import           Control.Distributed.Process
 import           Data.Foldable
 import           Data.Monoid ((<>))
+import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Castor.Commands.Events
 import qualified HA.Resources.Castor as Castor
 import           Handler.Mero.Helpers (clusterCommand)
@@ -46,13 +48,13 @@ parser = asum
      parseDriveStatus = DriveStatus
         <$> optSerial
         <*> parseSlot
-        <*> strOption (long "status"
+        <*> option auto (long "status"
                       <> metavar "[EMPTY|OK]"
                       <> help "Set drive status")
 
 
-optSerial :: Parser String
-optSerial = strOption $ mconcat
+optSerial :: Parser T.Text
+optSerial = option auto $ mconcat
    [ long "serial"
    , short 's'
    , help "Drive serial number"
@@ -73,8 +75,8 @@ parseSlot = Castor.Slot
                             ])
 
 
-optPath :: Parser String
-optPath = strOption $ mconcat
+optPath :: Parser T.Text
+optPath = option auto $ mconcat
   [ long "path"
   , short 'p'
   , help "Drive path"
@@ -83,9 +85,9 @@ optPath = strOption $ mconcat
 
 
 data Options
-  = DrivePresence String Castor.Slot Bool Bool
-  | DriveStatus   String Castor.Slot String
-  | DriveNew      String String
+  = DrivePresence T.Text Castor.Slot Bool Bool
+  | DriveStatus   T.Text Castor.Slot T.Text
+  | DriveNew      T.Text T.Text
   deriving (Eq, Show)
 
 
@@ -93,7 +95,7 @@ run :: [NodeId] -> Options -> Process ()
 run nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
   clusterCommand nids Nothing (CommandStorageDeviceStatus serial slot status "NONE") $ \case
     StorageDeviceStatusErrorNoSuchDevice -> liftIO $ do
-      putStrLn $ "Unkown drive " ++ serial
+      putStrLn $ "Unkown drive " ++ show serial
     StorageDeviceStatusErrorNoSuchEnclosure -> liftIO $ do
       putStrLn $ "can't find an enclosure " ++ show enc ++ " or node associated with it"
     StorageDeviceStatusUpdated -> liftIO $ do
@@ -101,7 +103,7 @@ run nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
 run nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
   clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
     StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do
-      putStrLn $ "Unknown drive " ++ serial
+      putStrLn $ "Unknown drive " ++ show serial
       exitFailure
     StorageDevicePresenceErrorNoSuchEnclosure -> liftIO $ do
       putStrLn $ "No enclosure " ++ show enc
@@ -111,7 +113,7 @@ run nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
 run nids (DriveNew serial path) =
   clusterCommand nids Nothing (CommandStorageDeviceCreate serial path) $ \case
    StorageDeviceErrorAlreadyExists -> liftIO $ do
-     putStrLn $ "Drive already exists: " ++ serial
+     putStrLn $ "Drive already exists: " ++ show serial
      exitFailure
    StorageDeviceCreated -> liftIO $ do
      putStrLn $ "Storage device created."

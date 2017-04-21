@@ -121,5 +121,5 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  ]
          for_ l $ \(StorageDevice sn, mled) -> do
            let ledSt = fromMaybe FaultOff mled
-           void $ sendNodeCmd nid Nothing (DriveLed (T.pack sn) ledSt)
+           void $ sendNodeCmd nid Nothing (DriveLed sn ledSt)
        _ -> return ()

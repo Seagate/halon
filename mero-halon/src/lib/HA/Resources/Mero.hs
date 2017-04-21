@@ -53,6 +53,7 @@ import Mero.ConfC
   , PDClustAttr(..)
   , ServiceParams
   , ServiceType
+  , m0_fid0
   )
 import Mero.Lnet (Endpoint, readEndpoint)
 import qualified Mero.Lnet as Lnet
@@ -216,6 +217,13 @@ instance ConfObj Profile where
 storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
+-- | Base version of 'Filesystem'.
+data Filesystem_v0 = Filesystem_v0 {
+    f_fid_v0 :: Fid
+  , f_mdpool_fid_v0 :: Fid -- ^ Fid of filesystem metadata pool
+} deriving (Eq, Ord, Generic, Show, Typeable)
+deriveSafeCopy 0 'base ''Filesystem_v0
+
 data Filesystem = Filesystem {
     f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
@@ -226,11 +234,19 @@ instance Hashable Filesystem
 instance ToJSON Filesystem
 instance FromJSON Filesystem
 
+-- | 'f_imeta_fid' set to 'm0_fid0'.
+instance Migrate Filesystem where
+  type MigrateFrom Filesystem = Filesystem_v0
+  migrate v0 = Filesystem
+    { f_fid = f_fid_v0 v0
+    , f_mdpool_fid = f_mdpool_fid_v0 v0
+    , f_imeta_fid = m0_fid0 }
+
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
 storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
-deriveSafeCopy 0 'base ''Filesystem
+deriveSafeCopy 1 'extension ''Filesystem
 
 -- | Marker to indicate the DIX subsystem has been initialised.
 data DIXInitialised = DIXInitialised
@@ -719,9 +735,7 @@ data HostHardwareInfo = HostHardwareInfo
        -- ^ @lnet@ address
        }
    deriving (Eq, Show, Typeable, Generic)
-
 instance Hashable HostHardwareInfo
-storageIndex ''HostHardwareInfo "7b81d801-ff8f-4364-b635-6648fc8614b2"
 deriveSafeCopy 0 'base ''HostHardwareInfo
 instance ToJSON HostHardwareInfo
 
@@ -819,8 +833,8 @@ instance Migrate ProcessLabel where
 -- | Process environment. Values stored here will be added to the environment
 --   file for the process.
 data ProcessEnv =
-    ProcessEnvValue String String
-  | ProcessEnvInRange String Int
+    ProcessEnvValue T.Text T.Text
+  | ProcessEnvInRange T.Text Int
   deriving (Eq, Ord, Show, Generic, Typeable)
 instance Hashable ProcessEnv
 storageIndex ''ProcessEnv "9a713802-a47b-4abb-97f6-2cbc35c95431"
@@ -937,7 +951,7 @@ $(mkDicts
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1010,7 +1024,7 @@ $(mkResRel
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState

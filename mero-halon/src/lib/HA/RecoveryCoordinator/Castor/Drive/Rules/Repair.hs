@@ -51,14 +51,15 @@ import           Data.Either (partitionEithers)
 import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
-import qualified Data.Set as Set
 import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe)
-import           Data.Proxy
-import           Data.Traversable (for)
 import           Data.Monoid ((<>))
+import           Data.Proxy
+import qualified Data.Set as Set
+import qualified Data.Text as T
+import           Data.Traversable (for)
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
-import           Data.Vinyl hiding ((:~:))
 import           Data.UUID (UUID)
+import           Data.Vinyl hiding ((:~:))
 import           GHC.Generics (Generic)
 
 import           HA.Encode
@@ -487,7 +488,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
           return ( sd
                  , G.isConnected disk Is M0.Replaced rg
                  , G.isConnected sd Has (SDPowered True) rg
-                 , sds
+                 , T.unpack sds
                  )
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRebalanceRequest)
