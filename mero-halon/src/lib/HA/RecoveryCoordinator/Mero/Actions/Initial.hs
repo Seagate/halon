@@ -279,7 +279,9 @@ createIMeta fs = do
             , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
             ]
       attrs = PDClustAttr {
-                _pa_N = fromIntegral $ length cas
+                _pa_N = 1 -- For CAS service `N` must always be equal to `1` as
+                          -- CAS records are indivisible pieces of data:  the
+                          -- whole CAS record is always stored on one node.
               , _pa_K = 0
               , _pa_P = 0 -- Will be overridden
               , _pa_unit_size = 4096
