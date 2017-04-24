@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -33,7 +34,6 @@ module HA.ResourceGraph.UGraph
   , getGraphValues
   ) where
 
-import Control.Arrow ((***))
 import Control.Distributed.Static
   ( RemoteTable
   , Static
@@ -43,22 +43,27 @@ import Control.Lens
 import Data.Binary
 import Data.ByteString.Lazy (toStrict)
 import Data.Constraint ( Dict(..) )
-import Data.Maybe (fromMaybe)
-import Data.Monoid ((<>))
-import Data.Proxy
-import Data.Typeable
-import Data.Word (Word8)
-import Data.Hashable
+import Data.Either (partitionEithers)
+import Data.Foldable (foldl')
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
+import Data.Hashable
+import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>))
+import Data.Proxy
+import qualified Data.Sequence as Seq
 import Data.Serialize.Put (runPutLazy)
+import qualified Data.Text as T
+import Data.Typeable
+import Data.Word (Word8)
 import HA.Multimap
   ( Key
   , Value
   , MetaInfo(..)
   , StoreChan
+  , StoreUpdate(..)
   )
 import HA.ResourceGraph
   ( GraphGCInfo(..)
@@ -74,10 +79,7 @@ import HA.ResourceGraph
   , genStorageRelationKeyName
   , StorageIndex(..)
   )
-import HA.ResourceGraph.GraphLike
-  ( Edge(..)
-  , emptyChangeLog
-  )
+import HA.ResourceGraph.GraphLike (Edge(..), emptyChangeLog)
 import qualified HA.ResourceGraph.GraphLike as GL
 import HA.SafeCopy
 
@@ -217,16 +219,53 @@ connectedTo a _ g = map (\(Edge _ _ d :: Edge a r b) -> d) $ GL.edgesFromSrc a g
 connectedFrom :: forall r a b . StorageRelation r a b =>  r -> b -> UGraph -> [a]
 connectedFrom _ b g = map (\(Edge s _ _ :: Edge a r b) -> s) $ GL.edgesToDst b g
 
-buildUGraph :: StoreChan -> RemoteTable -> (MetaInfo, [(Key, [Value])]) -> UGraph
-buildUGraph mmchan rt (mi, kvs) = (\hm -> UGraph mmchan emptyChangeLog hm gcInfo)
-  . M.fromList
-  . map (GL.decodeUniversalResource rt *** S.fromList
-        . map (GL.decodeUniversalRelation rt))
-  $ kvs
+-- | Build up a 'UGraph' from the given binary information. Collects
+-- any decoding errors.
+buildUGraph :: StoreChan -- ^ MM
+            -> RemoteTable
+            -> (MetaInfo, [(Key, [Value])])
+            -- ^ (Starting metainfo, graph values)
+            -> (Seq.Seq T.Text, UGraph)
+            -- ^ (errors, rest of graph)
+buildUGraph mmchan rt (mi, kvs) =
+  let (ers, m) = foldl' go (Seq.empty, M.empty) kvs
+  in (ers Seq.>< rootErs, UGraph mmchan (freshLog m) m gcInfo)
   where
-    gcInfo = GraphGCInfo (_miSinceGC mi)
-                         (_miGCThreshold mi)
-                         (map (GL.decodeUniversalResource rt) (_miRootNodes mi))
+    go (!ers, !m) (k, vs) = case GL.decodeUniversalResource rt k of
+      Left e -> (ers Seq.|> e, m)
+      Right res ->
+        let (es, rels) = partitionEithers $ map (GL.decodeUniversalRelation rt) vs
+        in (ers Seq.>< Seq.fromList es, M.insert res (S.fromList rels) m)
+
+    (rootErs, gcInfo) =
+      let (e, rs) = partitionEithers $ map (GL.decodeUniversalResource rt) (_miRootNodes mi)
+      in (Seq.fromList e, GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) rs)
+
+    -- We're reading in a UGraph with possibly old, discarded
+    -- relations. Create a changelog that completely wipes the whole
+    -- graph then insert back the items we actually decoded and care
+    -- about. This allows us to get rid of stale data in the MM. Note
+    -- that we won't necessarily end up with a large update:
+    -- 'updateChangeLog' compresses the diff so shared resources will
+    -- not require an update.
+    --
+    -- [performance]: It would be faster to remember which resources
+    -- we failed to decode and only remove those. If performance is
+    -- ever a problem here, that's a cheap improvement. Another one is
+    -- to not build a UGraph above at all but instead work over binary
+    -- resources as in the end we have to decode it again after in
+    -- constrained RG anyway as part of migration.
+    freshLog m =
+          -- Propose everything for deletion
+      let allGone = GL.updateChangeLog (DeleteValues kvs) emptyChangeLog
+          -- Get binary (MM) representation of every resource we care about.
+          binaryRes = [ (key, vals)
+                      | (k', vs') <- M.toList m
+                      , let key = GL.encodeUniversalResource k'
+                            vals = map GL.encodeUniversalRelation (S.toList vs')
+                      ]
+         -- Merge the two
+      in GL.updateChangeLog (InsertMany binaryRes) allGone
 
 getChangeLog :: UGraph -> GL.ChangeLog
 getChangeLog = _grUChangeLog
