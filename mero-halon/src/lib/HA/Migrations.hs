@@ -21,14 +21,17 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
     (remoteTable, processNode)
 import           Control.Distributed.Static (RemoteTable)
+import           Control.Monad (unless)
 import qualified Control.Monad.Catch as C
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader (ask)
-import           Data.Foldable (foldl')
+import           Data.Foldable (foldl', for_)
 import           Data.Maybe (listToMaybe)
 import           Data.Monoid
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import           Data.Time.Clock
 import           Data.Time.Format
 import           Data.Version (parseVersion, versionBranch)
@@ -141,8 +144,11 @@ migrateOrQuit mm = do
              liftIO . putStrLn $ "Persistent state backed up to " <> backupDir
              rt <- fmap (remoteTable . processNode) ask
              storeVal@(mi, _) <- getStoreValue mm
-             let ug = _m_migration m $! U.buildUGraph mm rt storeVal
-             g <- return $! castGraph rt mi ug
+             let (ers, ug) = U.buildUGraph mm rt storeVal
+             unless (Seq.null ers) . liftIO $ do
+               putStrLn "Found errors when reading old state, continuing anyway."
+               for_ ers T.putStrLn
+             g <- return $! castGraph rt mi (_m_migration m ug)
              liftIO $ putStrLn "Persistent state migrated!"
              return g
   where

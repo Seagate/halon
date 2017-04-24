@@ -53,37 +53,39 @@ module HA.ResourceGraph.GraphLike
   )
   where
 
-import Control.Arrow ((***))
-import Control.Distributed.Static
+import           Control.Arrow ((***))
+import           Control.Distributed.Static
   ( RemoteTable
   , unstatic
   , staticLabel
   )
-import Control.Lens (Lens', (^.), over)
-import Data.Binary
-import Data.Binary.Get (runGetOrFail)
-import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy ( fromStrict )
-import Data.Constraint ( Dict(..) )
-import Data.Hashable (Hashable)
-import Data.HashMap.Strict (HashMap)
+import           Control.Lens (Lens', (^.), over)
+import           Data.Binary
+import           Data.Binary.Get (runGetOrFail)
+import           Data.ByteString ( ByteString )
+import           Data.ByteString.Lazy ( fromStrict )
+import           Data.Constraint ( Dict(..) )
+import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
-import Data.HashSet (HashSet)
+import           Data.HashSet (HashSet)
 import qualified Data.HashSet as S
-import Data.List (foldl')
-import Data.Proxy (Proxy(..))
-import Data.Maybe (isJust, mapMaybe, maybeToList)
-import Data.Serialize.Get (runGetLazy)
-import Data.Typeable (Typeable, cast)
-import Data.UUID (UUID)
-import Data.Word (Word8)
-import GHC.Exts (Constraint, IsList(..))
-import HA.Multimap
+import           Data.Hashable (Hashable)
+import           Data.List (foldl')
+import           Data.Maybe (isJust, mapMaybe, maybeToList)
+import           Data.Monoid ((<>))
+import           Data.Proxy (Proxy(..))
+import           Data.Serialize.Get (runGetLazy)
+import qualified Data.Text as T
+import           Data.Typeable (Typeable, cast)
+import           Data.UUID (UUID)
+import           Data.Word (Word8)
+import           GHC.Exts (Constraint, IsList(..))
+import           HA.Multimap
   ( Key, Value, MetaInfo, StoreChan, StoreUpdate(..) )
-import HA.Multimap.Implementation
-import HA.SafeCopy
+import           HA.Multimap.Implementation
+import           HA.SafeCopy
 
-import Prelude hiding (null)
+import           Prelude hiding (null)
 
 --------------------------------------------------------------------------------
 -- * ChangeLog
@@ -184,10 +186,10 @@ class ( DirectedEdge (UniversalRelation g)
                           -> ByteString
   decodeUniversalResource :: RemoteTable
                           -> ByteString
-                          -> UniversalResource g
+                          -> Either T.Text (UniversalResource g)
   decodeUniversalRelation :: RemoteTable
                           -> ByteString
-                          -> UniversalRelation g
+                          -> Either T.Text (UniversalRelation g)
 
   decodeRes :: Resource g a => UniversalResource g -> Maybe a
   encodeIRes :: InsertableRes g a => a -> UniversalResource g
@@ -484,29 +486,29 @@ decodeAnyResource :: forall p t f . Typeable f
                   -> (forall a . p a => a -> t) -- ^ Converter that create requrired value.
                   -> RemoteTable
                   -> ByteString                 -- ^ Wire message.
-                  -> t
+                  -> Either T.Text t
 decodeAnyResource _p rewrap mkResKeyName create rt bs =
     case runGetOrFail get $ fromStrict bs of
       Right (rest,_,d)
        | d == staticLabel "" -> new rest
        | otherwise -> old rest d
-      Left (_,_,err) -> error $ "decodeRes: " ++ err
+      Left (_,_,err) -> Left $! T.pack $ "decodeRes: " <> err
     where
       new rest0 = case runGetOrFail get rest0 of
         Right (rest,_,uuid) ->
            case fmap rewrap (unstatic rt (staticLabel $ mkResKeyName uuid)) of
              Right (A (Dict :: Dict (p s))) ->
                case runGetLazy safeGet rest of
-                 Right r -> create (r :: s)
-                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
-             Left err -> error $ "decodeRes: " ++ err
-        _ -> error $ "decodeRes: can't decode."
+                 Right r -> Right $! create (r :: s)
+                 Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> show err
+             Left err -> Left $! T.pack $ "decodeRes: " <> err
+        _ -> Left $! T.pack "decodeRes: can't decode."
       old rest d = case fmap rewrap (unstatic rt d) of
         Right (A (Dict :: Dict (p s))) ->
           case runGetLazy safeGet rest of
-            Right r -> create (r :: s)
-            Left err -> error $ "decodeRes: runGetLazy: " ++ err
-        Left err -> error $ "decodeRes: " ++ err
+            Right r -> Right $! create (r :: s)
+            Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> err
+        Left err -> Left $! T.pack $ "decodeRes: " <> err
 
 
 data AnySafeCopyDict3 (c :: * -> * -> * -> Constraint) = forall r a b .
@@ -521,12 +523,12 @@ decodeAnyRelation :: forall p t f . Typeable f
    -> (forall r a b . p r a b => r -> a -> b -> t) -- ^ Function to create Out relation
    -> RemoteTable
    -> ByteString                                   -- ^ Wire message
-   -> t
+   -> Either T.Text t
 decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail get $ fromStrict bs of
     Right (rest,_,d)
       | d == staticLabel "" -> new rest
       | otherwise -> old rest d
-    Left (_,_,err) -> error $ "decodeRel: " ++ err
+    Left (_,_,err) -> Left $! T.pack $ "decodeRel: " <> err
     where
       new rest0 = case runGetOrFail get rest0 of
         Right (rest,_,(ur,ua,ub)) ->
@@ -534,21 +536,21 @@ decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail
              Right (A3 (Dict :: Dict (p r a b))) ->
                case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
                  Right (b, r, x, y) -> case b of
-                   0 -> createIn r x y
-                   1 -> createOut r x y
-                   _ -> error $ "decodeRel: Invalid direction bit."
-                 Left err -> error $ "decodeRes: runGetLazy: " ++ show err
-             Left err -> error $ "decodeRes: " ++ err
-        _ -> error $ "decodeRes: can't decode."
+                   0 -> Right $! createIn r x y
+                   1 -> Right $! createOut r x y
+                   _ -> Left $! T.pack $ "decodeRel: Invalid direction bit."
+                 Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> show err
+             Left err -> Left $! T.pack $ "decodeRes: " <> err
+        _ -> Left $! T.pack $ "decodeRes: can't decode."
       old rest d = case fmap rewrap (unstatic rt d) of
         Right (A3 (Dict :: Dict (p r a b))) ->
           case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
             Right (b, r, x, y) -> case b of
-              (0 :: Word8) -> createIn r x y
-              (1 :: Word8) -> createOut r x y
-              _ -> error $ "decodeRel: Invalid direction bit."
-            Left err -> error $ "decodeRel: runGetLazy: " ++ err
-        Left err -> error $ "decodeRel: " ++ err
+              (0 :: Word8) -> Right $! createIn r x y
+              (1 :: Word8) -> Right $! createOut r x y
+              _ -> Left $! T.pack $ "decodeRel: Invalid direction bit."
+            Left err -> Left $! T.pack $ "decodeRel: runGetLazy: " <> err
+        Left err -> Left $! T.pack $ "decodeRel: " <> err
 
 -- | Encode full graph into @[('Key', ['Value'])]@ format. Useful as a
 -- middle-ground for 'GraphLike' conversions.

@@ -152,7 +152,7 @@ import Control.Distributed.Process.Closure
 import Data.Constraint ( Dict(..) )
 
 import Prelude hiding (null)
-import Control.Arrow ( (***), (>>>), second )
+import Control.Arrow ( (>>>), second )
 import Control.Monad ( liftM3 )
 import Control.Lens (makeLenses)
 import Control.Monad.Reader ( ask )
@@ -661,17 +661,22 @@ takeChangeLog g = ( _grChangeLog g
                   )
 
 -- | Creates a graph from key value pairs.
--- No key is duplicated in the input and no value appears twice for a given key.
+--
+-- No key is duplicated in the input and no value appears twice for a
+-- given key. Any decoding errors are silently ignored.
 buildGraph :: StoreChan -> RemoteTable -> (MetaInfo, [(Key,[Value])]) -> Graph
 buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
     . M.fromList
-    . map ( GL.decodeUniversalResource rt *** S.fromList
-          . map (GL.decodeUniversalRelation rt))
-    $ kvs
+    $ [ (k', S.fromList vs')
+      | (k, vs) <- kvs
+      , Right k' <- [GL.decodeUniversalResource rt k]
+      , let vs' = [ v | Right v <- map (GL.decodeUniversalRelation rt) vs ]
+      ]
   where
+    rootNodes = [ res | Right res <- map (GL.decodeUniversalResource rt) (_miRootNodes mi) ]
     gcInfo = GraphGCInfo (_miSinceGC mi)
                          (_miGCThreshold mi)
-                         (map (GL.decodeUniversalResource rt) (_miRootNodes mi))
+                         rootNodes
 
 -- | Builds an empty 'Graph' with the given 'StoreChan'.
 emptyGraph :: StoreChan -> Graph
