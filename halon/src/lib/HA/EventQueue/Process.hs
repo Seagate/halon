@@ -12,7 +12,7 @@
 {-# LANGUAGE TypeOperators      #-}
 module HA.EventQueue.Process
   ( EventQueue(_eqMap)
-  , HA.EventQueue.Process.__remoteTable
+  , remoteTable
   , eventQueueLabel
   , TrimDone(..)
   , TrimUnknown(..)
@@ -25,19 +25,23 @@ import           Control.Concurrent (yield)
 import           Control.Concurrent.STM
 import           Control.Distributed.Process hiding (catch, mask_, try)
 import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Monitor (withMonitoring)
 import           Control.Distributed.Process.Pool.Bounded
 import           Control.Distributed.Process.Scheduler (schedulerIsEnabled)
 import qualified Control.Distributed.Process.Scheduler.Raw as DP
-import           Control.Distributed.Process.Monitor (withMonitoring)
 import           Control.Monad (when)
 import           Control.Monad.Catch
-import           Data.Foldable (for_)
-import           Data.Functor (void)
-import           Data.Function (fix)
-import           Data.Int (Int64)
-import qualified Data.Map.Strict as M
-import           Data.PersistMessage
 import           Data.Binary (Binary)
+import           Data.Dynamic
+import           Data.Foldable (for_)
+import           Data.Function (fix)
+import           Data.Functor (void)
+import           Data.Int (Int64)
+import           Data.List (foldl')
+import qualified Data.Map as ML
+import qualified Data.Map.Strict as M
+import           Data.Monoid ((<>))
+import           Data.PersistMessage
 import qualified Data.Set as S
 import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
@@ -51,8 +55,11 @@ import           HA.Replicator ( RGroup
                                , retryRGroup
                                , updateStateWith
                                )
+import           Language.Haskell.TH.Syntax (Name, nameBase)
 import           Network.CEP
 import           System.Clock
+import           Text.Printf (printf)
+import           Unsafe.Coerce
 
 -- | Tells how many microseconds to wait between polls of the replicated state
 -- for new events.
@@ -156,6 +163,7 @@ eqReadStats sp (EventQueue _sn uuidMap _snMap) =
 dummyRead :: EventQueue -> Process ()
 dummyRead _ = return ()
 
+-- When updating this list, update remoteTable as well.
 remotable [ 'addSerializedEvent
           , 'filterEvent
           , 'clearQueue
@@ -163,6 +171,46 @@ remotable [ 'addSerializedEvent
           , 'eqReadStats
           , 'dummyRead
           ]
+
+-- | Remote table for this module inserting old aliases for remotable
+-- functions that have previously lived in different modules.
+--
+-- That is, functions that were previously in "HA.EventQueue" are in
+-- persisted state with @HA.EventQueue@ prefix but they are now in
+-- "HA.EventQueue.Process" resulting in new version of halon not being
+-- able to load in old state. We recover old definitions by splicing
+-- them into the 'RemoteTable' manually as aliases.
+--
+-- This function uses 'unsafeCoerce' on 'RemoteTable'. We should be
+-- careful about 'RemoteTable' changing implementation.
+remoteTable :: RemoteTable -> RemoteTable
+remoteTable = wrap . run . unwrap . HA.EventQueue.Process.__remoteTable
+  where
+    -- Ugly but RemoteTable constructor is hidden. It's @RemoteTable
+    -- (M.Map String Dynamic)@. Okay because RemoteTable is just a newtype.
+    unwrap :: RemoteTable -> ML.Map String Dynamic
+    unwrap = unsafeCoerce
+
+    -- Back into RemoteTable.
+    wrap :: ML.Map String Dynamic -> RemoteTable
+    wrap = unsafeCoerce
+
+    -- Given a function name, add entries from
+    -- HA.EventQueue.Process.%s to the RT, aliasing.
+    reInsert :: Name -> ML.Map String Dynamic -> ML.Map String Dynamic
+    reInsert f rtMap =
+      let procMod = printf "HA.EventQueue.Process.%s" (nameBase f)
+          topMod = printf "HA.EventQueue.%s" (nameBase f)
+          names = [ (procMod, topMod)
+                  , (procMod <> "__sdict", topMod <> "__sdict")
+                  , (procMod <> "__tdict", topMod <> "__tdict")
+                  ]
+          ins n o m = maybe m (\v -> ML.insert o v m) (ML.lookup n m)
+      in foldl' (\m (n, o) -> ins n o m) rtMap names
+
+    run m = foldl' (flip reInsert) m [ 'addSerializedEvent, 'filterEvent
+                                     , 'clearQueue, 'eqReadEvents
+                                     , 'eqReadStats, 'dummyRead ]
 
 -- | Amount of microseconds between retries of requests for the replicated
 -- state

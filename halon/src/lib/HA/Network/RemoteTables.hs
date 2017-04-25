@@ -14,7 +14,7 @@ import HA.Services.Noisy ( __remoteTable, __remoteTableDecl, __resourcesTable )
 import HA.Services.Ping ( __remoteTable, __remoteTableDecl, __resourcesTable )
 import HA.Service ( __remoteTable, __resourcesTable )
 import HA.Startup ( __remoteTable, __remoteTableDecl)
-import HA.EventQueue.Process ( __remoteTable)
+import HA.EventQueue.Process (remoteTable)
 import HA.EQTracker.Process ( __remoteTable)
 import HA.Multimap.Process ( __remoteTable)
 import HA.Replicator.Log (__remoteTable, __remoteTableDecl)
@@ -50,7 +50,7 @@ haRemoteTable next =
    HA.Service.__remoteTable $
    HA.Startup.__remoteTable $
    HA.Startup.__remoteTableDecl $
-   HA.EventQueue.Process.__remoteTable $
+   HA.EventQueue.Process.remoteTable $
    HA.EQTracker.Process.__remoteTable $
    HA.Multimap.Process.__remoteTable $
    HA.Replicator.Log.__remoteTable $

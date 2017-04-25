@@ -40,8 +40,8 @@ import           Control.Lens
 import GHC.Generics
 #ifdef VERSION_ghc_datasize
 import GHC.DataSize (recursiveSize)
-#endif
 import System.IO.Unsafe (unsafePerformIO)
+#endif
 import System.Clock
 
 import Data.PersistMessage
@@ -334,7 +334,7 @@ defaultHandler st _ (Query (GetSetting s)) =
       EngineInitRulePassed -> _machInitRulePassed st
       EngineIsRunning      -> not (null (_machRunningSM st))
       EngineNextEvent      -> (\(_,x,_) -> x) <$> PSQ.findMin (_machEvents st)
-defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
+defaultHandler st _ (Query (GetRuntimeInfo _mem RuntimeInfoTotal)) =
     let running = _machRunningSM st
         suspended = _machSuspendedSM st
         mRunning = M.fromListWith (+)
@@ -344,7 +344,7 @@ defaultHandler st _ (Query (GetRuntimeInfo mem RuntimeInfoTotal)) =
         nRunning = length running
         nSuspended = length suspended
 #ifdef VERSION_ghc_datasize
-        minfo = if mem
+        minfo = if _mem
                 then Just $ MemoryInfo
                   { minfoTotalSize = unsafePerformIO $ recursiveSize st
                   , minfoSMSize = unsafePerformIO (recursiveSize running)
