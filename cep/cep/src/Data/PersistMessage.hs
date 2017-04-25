@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StrictData #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- stability: experimental
@@ -58,9 +59,9 @@ stableprintTypeRep = StablePrint . encodeUtf8 . T.pack . flip go ""
 -- | PersistMessages are identified with a UUID and can be decoded
 -- by any program that agrees on the stableprint of the encoded values.
 data PersistMessage = PersistMessage
-  { persistMessageId :: UUID
-  , persistMessagePrint :: StablePrint
-  , persistMessagePayload :: ByteString
+  { persistMessageId :: !UUID
+  , persistMessagePrint :: !StablePrint
+  , persistMessagePayload :: !ByteString
   } deriving (Typeable, Generic)
 
 instance Binary PersistMessage
