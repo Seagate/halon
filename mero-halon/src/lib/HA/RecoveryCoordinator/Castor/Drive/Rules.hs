@@ -33,6 +33,7 @@ import           Control.Lens
 import           Control.Monad
 import           Data.Foldable (for_)
 import           Data.Maybe
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.UUID as UUID
 import           Data.UUID.V4 (nextRandom)
@@ -43,6 +44,7 @@ import           HA.RecoveryCoordinator.Castor.Drive.Actions
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl as LedControl
+import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Failure as Failure
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Raid as Raid
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair as Repair
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Reset as Reset
@@ -78,6 +80,7 @@ rules = sequence_
   , ruleDriveBlip
   , ruleDriveOK
   , rulePowerDownDriveOnFailure
+  , Failure.rules
   , LedControl.rules
   , Raid.rules
   , Repair.rules
@@ -267,13 +270,10 @@ ruleDriveRemoved :: Definitions RC ()
 ruleDriveRemoved = define "drive-removed" $ do
   pinit   <- phaseHandle "init"
   finish   <- phaseHandle "finish"
-  reinsert <- phaseHandle "reinsert"
-  removal  <- phaseHandle "removal"
 
   let post_process m0sdev = do
         _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
-        t <- getHalonVar _hv_drive_removal_timeout
-        switch [reinsert, timeout t removal]
+        continue finish
 
   (device_detached, detachDisk) <- mkDetachDisk
     (return . fmap (\(_,_,_,d) -> d))
@@ -290,23 +290,7 @@ ruleDriveRemoved = define "drive-removed" $ do
       detachDisk m0sdev
       continue device_detached
 
-  setPhaseIf reinsert
-   (\(DriveInserted{diLocation=Slot enc loc}) _ (Just (enc', _, loc', _)) -> do
-      if enc == enc' && loc == loc'
-         then return (Just ())
-         else return Nothing
-      )
-   $ \() -> do
-      Log.rcLog' Log.DEBUG "cancel drive removal procedure"
-      continue finish
-
   directly finish $ stop
-
-  directly removal $ do
-    Just (_, _, _, m0sdev) <- get Local
-    Log.rcLog' Log.DEBUG "Notifying M0_NC_FAILED for sdev"
-    _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
-    continue finish
 
   startFork pinit Nothing
 
@@ -405,27 +389,16 @@ ruleDriveFailed = defineSimple "drive-failed" $ \(DriveFailed uuid _ _ disk) -> 
 ruleDrivePoweredOff :: Definitions RC ()
 ruleDrivePoweredOff = define "drive-powered-off" $ do
   power_removed <- phaseHandle "power_removed"
-  power_returned <- phaseHandle "power_returned"
-  power_removed_duration <- phaseHandle "power_removed_duration"
   post_power_removed <- phaseHandle "post-power-removed"
   finish <- phaseHandle "finish"
 
   let
-    power_down_timeout = 300 -- seconds
     power_off evt@(DrivePowerChange{..}) _ _ =
       if dpcPowered then return Nothing else return (Just evt)
-    power_on evt@(DrivePowerChange{..}) _ _ =
-      if dpcPowered then return (Just evt) else return Nothing
-    matching_device evt@(DrivePowerChange{..}) _ (Just (_,dev, _, _), Nothing) =
-      if dev == dpcDevice then return (Just evt) else return Nothing
-    matching_device _ _ _ = return Nothing
-    x `gAnd` y = \a g l -> x a g l >>= \case
-      Nothing -> return Nothing
-      Just b -> y b g l
+    post_process m0sdev = do
+      _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
+      continue post_power_removed
 
-  let post_process m0sdev = do
-        _ <- applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
-        continue post_power_removed
   (device_detached, detachDisk) <- mkDetachDisk
     (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
     (\sdev e -> do Log.rcLog' Log.WARN e
@@ -438,6 +411,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
           dpcSerial = T.pack serial
       Log.tagContext Log.SM dpcDevice Nothing
       Log.tagContext Log.SM dpcUUID   Nothing
+      Log.tagContext Log.SM dpcNode   Nothing
       put Local $ (Just (dpcUUID, dpcDevice, nid, dpcSerial), Nothing)
       StorageDevice.poweroff dpcDevice
 
@@ -453,42 +427,18 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
       -- Attempt to power the disk back on
       sent <- sendNodeCmd [Node nid] Nothing (DrivePoweron serial)
       if sent
-      then switch [ power_returned
-                  , timeout power_down_timeout power_removed_duration
-                  ]
+      then do
+        Log.rcLog' Log.DEBUG "Attempting to repower drive."
+        continue finish
       else do
         -- Unable to send drive power on message - go straight to
         -- power_removed_duration
         -- TODO Send some sort of 'CannotTalkToSSPL' message?
         Log.rcLog' Log.WARN $ "Cannot send poweron message to "
-                          ++ (show nid)
-                          ++ " for disk with s/n "
-                          ++ (show serial)
-        continue power_removed_duration
-
-  checkAndHandleDriveReady <-
-    mkCheckAndHandleDriveReady _2
-      $ \_ -> do
-        (Just (uuid, _, _, _), _) <- get Local
-        done uuid
+                          <> (show nid)
+                          <> " for disk with s/n "
+                          <> (show serial)
         continue finish
-
-  setPhaseIf power_returned (power_on `gAnd` matching_device)
-    $ \(DrivePowerChange{..}) -> do
-      Log.rcLog' Log.DEBUG "Device has been repowered."
-      StorageDevice.poweron dpcDevice
-      (Just (uuid, _, _, _), _) <- get Local
-      checked <- checkAndHandleDriveReady dpcNode dpcDevice (done uuid >> return [finish])
-      switch checked
-
-  directly power_removed_duration $ do
-    (Just (_, dpcDevice, _, _), _) <- get Local
-
-    -- Mark Mero device as permanently failed
-    mm0sdev <- lookupStorageDeviceSDev dpcDevice
-    forM_ mm0sdev $ \m0sdev -> do
-      applyStateChanges [stateSet m0sdev Tr.sdevFailFailed]
-    continue finish
 
   directly finish stop
 
@@ -534,6 +484,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
     isRealFailure (StorageDeviceStatus "HALON-FAILED" _) = True
     isRealFailure (StorageDeviceStatus "FAILED" _) = True
     isRealFailure _ = False
+    m0failed (SDSTransient _) = True
     m0failed SDSFailed = True
     m0failed SDSRepairing = True
     m0failed SDSRepaired = True

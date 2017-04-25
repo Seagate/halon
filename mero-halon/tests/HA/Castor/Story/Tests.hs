@@ -371,6 +371,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
     -- right device then check it's the expected reply.
     _ <- expectPublishedIf $ \case
       ResetSuccess stord' -> stord == stord' && success == AckReplyPassed
+      ResetAborted _ -> False
       ResetFailure stord' -> stord == stord' && success /= AckReplyPassed
 
     Just{} <- waitState sdev mm 2 10 (== expSt)
@@ -389,22 +390,35 @@ testDiskFailure transport pg = run transport pg [] $ \ts -> do
   resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
 
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testHitResetLimit transport pg = run transport pg [] $ \ts -> do
-  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
-  subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
-  sdev <- G.getGraph (_ts_mm ts) >>= findSDev
-  let resetAttemptThreshold = _hv_drive_reset_max_retries defaultHalonVars
-  replicateM_ (resetAttemptThreshold + 1) $ do
-    sayTest "============== FAILURE START ================================"
-    failDrive ts sdev
-    resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
-    sayTest "============== FAILURE Finish ================================"
+testHitResetLimit transport pg = do
+  dopts <- mkDefaultTestOptions
+  run' transport pg [] (opts dopts) $ \ts -> do
+    subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
+    subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
+    sdev <- G.getGraph (_ts_mm ts) >>= findSDev
+    let resetAttemptThreshold = _hv_drive_reset_max_retries defaultHalonVars
+        isTransient (M0.SDSTransient _) = True
+        isTransient _ = False
+    replicateM_ (resetAttemptThreshold + 1) $ do
+      sayTest "============== FAILURE START ================================"
+      failDrive ts sdev
+      resetComplete (_ts_rc ts) (_ts_mm ts) sdev AckReplyPassed M0.SDSOnline
+      sayTest "============== FAILURE Finish ================================"
 
-  forM_ (aDiskMero sdev) $ \m0sdev -> do
-    -- Fail the drive one more time
-    void . promulgateEQ [processNodeId $ _ts_rc ts] $ mkSDevFailedMsg m0sdev
-    Just M0.SDSFailed <- waitState m0sdev (_ts_mm ts) 2 10 (== M0.SDSFailed)
-    return ()
+    forM_ (aDiskMero sdev) $ \m0sdev -> do
+      -- Fail the drive one more time
+      void . promulgateEQ [processNodeId $ _ts_rc ts] $ mkSDevFailedMsg m0sdev
+      -- Drive should go transient and then failed
+      Just {} <- waitState m0sdev (_ts_mm ts) 2 10 isTransient
+      Just M0.SDSFailed <- waitState m0sdev (_ts_mm ts) 2 10 (== M0.SDSFailed)
+      return ()
+  where
+    opts = \o -> o {
+      _to_modify_halon_vars = \vars -> vars {
+          -- Set a low transient drive timeout to ensure we go to FAILED state
+          _hv_drive_transient_timeout = 2
+        }
+      }
 
 testFailedSMART :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailedSMART transport pg = run transport pg [] $ \ts -> do

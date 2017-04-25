@@ -180,7 +180,7 @@ rcLog lvl x = let
     contexts = [Rule, SM, Phase] ++ (Local <$> unLocalContext ?ctx)
     evt = EvtInContexts contexts . CE_UserEvent lvl srcLoc $ toUserEvent x
     srcLoc = extractSrcLoc . snd <$> (find (isPrefixOf "rcLog" . fst)
-                                  $ reverse . getCallStack $ cs)
+                                  . reverse . getCallStack $ cs)
     extractSrcLoc !sl = SourceLoc (srcLocModule sl) (srcLocStartLine sl)
   in appLog evt
 

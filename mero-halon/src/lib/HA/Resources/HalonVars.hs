@@ -42,6 +42,8 @@ defaultHalonVars = HalonVars
   , _hv_node_stop_barrier_timeout = 600
   , _hv_drive_insertion_timeout = 10
   , _hv_drive_removal_timeout = 60
+  , _hv_drive_unpowered_timeout = 300
+  , _hv_drive_transient_timeout = 300
   , _hv_expander_node_up_timeout = 460
   , _hv_expander_sspl_ack_timeout = 180
   , _hv_monitoring_angel_delay = 2
@@ -49,6 +51,8 @@ defaultHalonVars = HalonVars
   , _hv_disable_smart_checks = False
   , _hv_service_stop_timeout = 30
   , _hv_m0dixinit_timeout = 30
+  , _hv_expander_reset_threshold = 8
+  , _hv_expander_reset_reset_timeout = 300
   }
 
 -- | Get 'HalonVars' from RG

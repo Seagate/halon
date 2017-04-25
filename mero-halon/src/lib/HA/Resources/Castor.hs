@@ -239,6 +239,12 @@ data HalonVars = HalonVars
   , _hv_drive_removal_timeout :: !Int
   -- ^ How many seconds should we wait for drive re-insertion before
   -- giving up and considering drive as removed.
+  , _hv_drive_unpowered_timeout :: !Int
+  -- ^ How many seconds should we allow for a drive to re-power before
+  --   giving up and attempting to mark the drive as failed.
+  , _hv_drive_transient_timeout :: !Int
+  -- ^ How many seconds should we allow for a drive to sit in transient state
+  --   before attempting to move it to a permanent failure.
   , _hv_expander_node_up_timeout :: !Int
   -- ^ How many seconds to wait for a node to finish restarting
   -- processes during expander reset.
@@ -270,6 +276,12 @@ data HalonVars = HalonVars
   , _hv_m0dixinit_timeout :: !Int
   -- ^ How long to wait for m0dixinit to complete before the calling
   --   rule decides that it has failed.
+  , _hv_expander_reset_threshold :: !Int
+  -- ^ Minimum number of drives we would expect to see failing in the case of
+  --   an expander reset.
+  , _hv_expander_reset_reset_timeout :: !Int
+  -- ^ Number of seconds to wait following an inferred expander reset for drives
+  --   to come back online before attempting to reset them.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

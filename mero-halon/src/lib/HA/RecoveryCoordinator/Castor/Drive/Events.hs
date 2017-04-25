@@ -47,6 +47,8 @@ deriveSafeCopy 0 'base ''ResetAttempt
 -- | Result for 'ResetAttempt'
 data ResetAttemptResult = ResetFailure StorageDevice
                         | ResetSuccess StorageDevice
+                        -- | Reset attempt was aborted for some reason.
+                        | ResetAborted StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ResetAttemptResult
@@ -63,8 +65,8 @@ data DrivePowerChange = DrivePowerChange
 instance Hashable DrivePowerChange
 instance Binary DrivePowerChange
 
--- | DriveRemoved event is emmited when somebody need to trigger
--- event that should happen when any drive have failed.
+-- | DriveRemoved event is emmited when HPI indicates that a device has been
+--   physically removed from the system.
 data DriveRemoved = DriveRemoved
        { drUUID :: UUID -- ^ Threaad UUID.
        , drNode :: Node -- ^ Node where event happens.
@@ -75,8 +77,11 @@ data DriveRemoved = DriveRemoved
 instance Hashable DriveRemoved
 instance Binary DriveRemoved
 
--- | 'DriveInserted' event should be emitted in order to trigger
--- drive insertion rule.
+-- | 'DriveInserted' event indicates that a drive is physically present within
+--   its slot. It can be emitted in two cases:
+--   - As a result of HPI indicating the drive is physically present.
+--   - As a result of DM data indicating that the OS can see the drive. In this
+--     case we may safely infer that the drive is present and powered.
 data DriveInserted = DriveInserted
        { diUUID :: UUID -- ^ Thread UUID.
        , diNode :: Node -- ^ Node where event happens.
@@ -88,15 +93,16 @@ data DriveInserted = DriveInserted
 instance Hashable DriveInserted
 instance Binary DriveInserted
 
--- | 'DriveFailed' event emitted in order to trigger drive failure rule.
+-- | 'DriveFailed' event indicates that an underlying system has identified a
+--   failed drive. Currently this is sent when a SMART test fails on a drive.
 data DriveFailed = DriveFailed UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
 instance Binary DriveFailed
 
--- | Event emitted when we get transient failure indication for the drive
---   from drive manager.
+-- | Event emitted when drive manager indicates that a device is no longer
+--   visible to the system.
 data DriveTransient = DriveTransient UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 

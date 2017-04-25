@@ -31,12 +31,7 @@ import HA.Resources.Castor
 import HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..), getState)
-import HA.Services.SSPL.CEP
-  ( sendNodeCmd
-  , updateDriveManagerWithFailure
-  , sendInterestingEvent
-  )
-import HA.Services.SSPL.IEM (logFailureOverK)
+import HA.Services.SSPL.CEP ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)
@@ -44,20 +39,16 @@ import HA.Services.SSPL.LL.Resources
   , commandAck
   , SsplLlFromSvc(..)
   )
-import HA.Services.SSPL.LL.Resources (InterestingEventMessage(..))
-import Mero.ConfC (fidToStr)
 import Mero.Notification (Set(..))
 import Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 
 import Control.Distributed.Process
   ( Process )
 import Control.Lens
-import Control.Monad (forM_, when, unless, join, void)
-import Data.Either (isRight)
+import Control.Monad (forM_, unless, join, void)
 import Data.Foldable (for_)
 import Data.Proxy (Proxy(..))
 import Data.Maybe (mapMaybe)
-import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Vinyl
 import Data.UUID (UUID)
@@ -146,7 +137,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
         _ | not isDrivePowered ->
           Log.rcLog' Log.DEBUG "Drive is not powered, skipping reset."
         "EMPTY" ->
-          Log.rcLog' Log.DEBUG "Expander reset in progress, skipping reset."
+          Log.rcLog' Log.DEBUG "Possible expander reset in progress, skipping reset."
         _ -> do
           st <- getState m0sdev <$> getLocalGraph
 
@@ -155,33 +146,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
             if ongoing
             then Log.rcLog' Log.DEBUG $ "Reset ongoing on a drive - ignoring message"
             else do
-              ratt <- getDiskResetAttempts sdev
-              resetAttemptThreshold <- getHalonVar _hv_drive_reset_max_retries
-              let m0status = if ratt <= resetAttemptThreshold
-                             then M0.sdsFailTransient st
-                             else M0.SDSFailed
-
-              sdevTransition <- checkDiskFailureWithinTolerance m0sdev m0status <$> getLocalGraph
-              when (ratt > resetAttemptThreshold) $ do
-                Log.rcLog' Log.WARN "drive have failed to reset too many times => marking as failed."
-                when (isRight sdevTransition) $
-                  updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-
-              -- Multiple things can happen here. If we're under reset
-              -- threshold, we'll try to 'M0.sdsFailTransient'. If
-              -- we're over, checkdiskFailureWithinTolerance will
-              -- either move the disk into failure state (if we're
-              -- under allowed failure tolerance) or it will
-              -- 'M0.sdsFailTransient' if we're over, either making
-              -- the disk transient or keeping it in its current
-              -- state.
-              either
-                (\failedTransition -> do
-                  iemFailureOverTolerance m0sdev
-                  void $ applyStateChanges [ failedTransition ])
-                (\okTransition -> void $ applyStateChanges [ okTransition ])
-                sdevTransition
-
+              void $ applyStateChanges [stateSet m0sdev Tr.sdevFailTransient]
               promulgateRC $ ResetAttempt sdev
 
     _ -> do
@@ -208,6 +173,8 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
 
       let home (ResetAttempt sdev@(StorageDevice serial)) = getSDevNode sdev >>= \case
             (node : _) -> do
+              Log.tagContext Log.SM sdev Nothing
+              Log.tagContext Log.SM node Nothing
               modify Local $ rlens fldNode . rfield .~ Just node
               modify Local $ rlens fldRep  . rfield .~ Just (ResetFailure sdev)
               modify Local $ rlens fldDeviceInfo . rfield .~
@@ -221,7 +188,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
                   return $ Right (ResetFailure sdev, [drive_removed, reset])
             [] -> do
                -- XXX: send IEM message
-               return $ Left $  "Can't perform query to SSPL as node can't be found"
+               return $ Left $ "Can't perform query to SSPL as node can't be found"
 
       (disk_detached, detachDisk) <- mkDetachDisk
         (\l -> fmap join $ traverse
@@ -316,30 +283,12 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
             continue failure
 
       directly failure $ do
-        Just (DeviceInfo sdev _) <- gets Local (^. rlens fldDeviceInfo . rfield)
-        Log.rcLog' Log.DEBUG $ "Drive reset failure for " ++ show sdev
-        sd <- lookupStorageDeviceSDev sdev
-        forM_ sd $ \m0sdev -> do
-          sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed <$> getLocalGraph
-          when (isRight sdevTransition) $
-            updateDriveManagerWithFailure sdev "HALON-FAILED" (Just "MERO-Timeout")
-
-            -- Let note handler deal with repair logic
-          getLocalGraph <&> getState m0sdev >>= \case
-            M0.SDSTransient _ -> do
-              either (\failedTransition -> do
-                         iemFailureOverTolerance m0sdev
-                         void $ applyStateChanges [ failedTransition ])
-                     (\okTransition -> void $ applyStateChanges [ okTransition ])
-                     sdevTransition
-            x -> do
-              Log.rcLog' Log.DEBUG $ "Cannot bring drive Failed from state "
-                              ++ show x
+        Log.rcLog' Log.DEBUG "Drive reset failure"
         continue finalize
 
       setPhaseIf drive_removed onDriveRemoved $ \sdev -> do
         Log.rcLog' Log.DEBUG "Cancelling drive reset as drive removed."
-        modify Local $ rlens fldRep . rfield .~ Just (ResetSuccess sdev)
+        modify Local $ rlens fldRep . rfield .~ Just (ResetAborted sdev)
         continue finalize
 
       directly finalize $ do
@@ -411,10 +360,3 @@ driveOKSdev (DriveOK _ _ _ x) _ l =
   return $ case l ^. rlens fldDeviceInfo . rfield of
     Just (DeviceInfo sdev _) | sdev == x -> Just ()
     _ -> Nothing
-
--- | Send an IEM about 'M0.SDev' failure transition being prevented by
--- maximum allowed failure tolerance.
-iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
-iemFailureOverTolerance sdev =
-  sendInterestingEvent . InterestingEventMessage $ logFailureOverK $ T.pack
-      (" {'failedDevice':" <> fidToStr (M0.fid sdev) <> "}")
