@@ -36,6 +36,7 @@ import           Data.Time.Clock
 import           Data.Time.Format
 import           Data.Version (parseVersion, versionBranch)
 import           Filesystem.Path.CurrentOS (decodeString)
+import           HA.EventQueue (DoClearEQ(..))
 import           HA.Multimap
 import qualified HA.RecoverySupervisor as RS
 import           HA.Replicator.Log (replicasDir, storageDir)
@@ -72,6 +73,7 @@ pprHalonVersion (HalonVersion major minor) = printf "v%d.%d" major minor
 data Migration = Migration
   { _m_versionFrom :: !HalonVersion
   , _m_versionTo :: !HalonVersion
+  , _m_clearEq :: !Bool
   , _m_migration :: U.UGraph -> U.UGraph
   }
 
@@ -96,8 +98,8 @@ writeCurrentVersionFile = liftIO $ writeFile versionFile gitDescribe
 --
 -- * Try loading the data as 'G.Graph'
 --
--- * If it works then return as 'G.Graph' and let RC initialisation
---   sync it.
+-- * If it works then return as 'G.Graph'. Clear EQ if migration
+--   requires it. Return RG and let RC initialisation sync it.
 --
 -- * If it doesn't then quit. Note we don't change the state on
 --   disk in this case.
@@ -106,8 +108,8 @@ writeCurrentVersionFile = liftIO $ writeFile versionFile gitDescribe
 --   already verified we can load the graph.
 --
 -- If any step fails, throws 'RS.ReallyDie'.
-migrateOrQuit :: StoreChan -> Process G.Graph
-migrateOrQuit mm = do
+migrateOrQuit :: StoreChan -> ProcessId -> Process G.Graph
+migrateOrQuit mm eq = do
   haveData <- liftIO $
     liftA2 (&&) (doesFileExist versionFile) (doesDirectoryExist replicasDir)
   if not haveData
@@ -150,7 +152,18 @@ migrateOrQuit mm = do
                for_ ers T.putStrLn
              g <- return $! castGraph rt mi (_m_migration m ug)
              liftIO $ putStrLn "Persistent state migrated!"
-             return g
+             case _m_clearEq m of
+               True -> do
+                 liftIO $ putStrLn "Migration requires EQ clear, running..."
+                 (sp, rp) <- newChan
+                 usend eq $ DoClearEQ sp
+                 receiveChanTimeout 5000000 rp >>= \case
+                   Nothing -> C.throwM . RS.ReallyDie $
+                     T.pack "Could not clear the EQ in 5 seconds, giving up on migration."
+                   Just () -> do
+                     liftIO $ putStrLn "EQ cleared successfully."
+                     return g
+               False -> return g
   where
     castGraph :: RemoteTable -> MetaInfo -> U.UGraph -> G.Graph
     castGraph rt mi u = G.setChangeLog (U.getChangeLog u) $!
@@ -180,12 +193,17 @@ data VersionMatch =
   | Numeric !HalonVersion !HalonVersion
   deriving (Show, Eq)
 
-
 -- | Compose two 'Migration's together if their versions line up.
 mcomp :: Migration -> Migration -> Maybe Migration
-mcomp (Migration fr' to' f') (Migration fr to'' f)
+mcomp old new
   -- Versions line up and increase.
-  | to'' == fr', fr < to' = Just (Migration fr to' (f' . f))
+  | _m_versionTo old == _m_versionFrom new
+  , _m_versionFrom old < _m_versionTo new = Just $! Migration
+      { _m_versionFrom = _m_versionFrom old
+      , _m_versionTo = _m_versionTo new
+      , _m_clearEq = _m_clearEq old || _m_clearEq new
+      , _m_migration = _m_migration new . _m_migration old
+      }
   | otherwise = Nothing
 
 migrations :: [Migration]
@@ -323,7 +341,7 @@ writeNewStorageDevice NewStorageDevice{..} =
       in maybe rg (\st -> U.connect _nsd_dev Castor.Is st rg) oldStatus
 
 teacakeToChelsea :: Migration
-teacakeToChelsea = Migration teacakeVersion chelseaVersion $ \rg ->
+teacakeToChelsea = Migration teacakeVersion chelseaVersion True $ \rg ->
   let storeDevs :: Set.Set (Maybe Castor.Enclosure, CastorOld.StorageDevice)
       storeDevs = Set.fromList $
         [ (Nothing, s) | h :: Castor.Host <- U.connectedTo R.Cluster R.Has rg

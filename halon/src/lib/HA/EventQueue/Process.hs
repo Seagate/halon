@@ -318,7 +318,7 @@ eqRules rg pool groupMonitor = do
 
     -- When the RC requests to clear the queue, we submit such a task to the
     -- thread pool.
-    defineSimple "clearing" $ \(DoClearEQ pid) -> do
+    defineSimple "clearing" $ \(DoClearEQ sp) -> do
       (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
         -- Insist here in a loop until it works.
         fix $ \loop -> do
@@ -338,7 +338,7 @@ eqRules rg pool groupMonitor = do
           mr <- withMonitoring (monitor rgMonitor) $
             updateStateWith rg $ $(mkStaticClosure 'clearQueue)
           case mr of
-            Just True -> usend pid DoneClearEQ
+            Just True -> sendChan sp ()
             _         -> loop
 
     -- Deals with monitor notifications from the RGroup and from the workers.
