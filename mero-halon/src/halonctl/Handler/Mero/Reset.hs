@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StrictData #-}
 -- |
 -- Module    : Handler.Mero.Reset
@@ -14,7 +15,7 @@ import           Control.Monad
 import           Control.Monad.Fix (fix)
 import           Data.Foldable
 import           Data.Monoid ((<>))
-import           HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..) )
+import           HA.EventQueue (eventQueueLabel, DoClearEQ(..))
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
@@ -42,18 +43,18 @@ run :: [NodeId]
              -> Process ()
 run eqnids (Options hard unstick) = if unstick
   then do
-    self <- getSelfPid
     eqs <- findEQFromNodes 1000000 eqnids
     case eqs of
       [] -> liftIO $ putStrLn "Cannot find EQ."
       eq:_ -> do
-        nsendRemote eq eventQueueLabel $ DoClearEQ self
-        msg <- expectTimeout 1000000
-        case msg of
+        (sp, rp) <- newChan
+        nsendRemote eq eventQueueLabel $ DoClearEQ sp
+        receiveChanTimeout 1000000 rp >>= \case
           Nothing -> liftIO $ putStrLn "No reply from EQ."
-          Just DoneClearEQ -> liftIO $ putStrLn "EQ cleared."
+          Just () -> liftIO $ putStrLn "EQ cleared."
     -- Attempt to kill the RC
     for_ eqnids $ \nid -> whereisRemoteAsync nid labelRecoveryCoordinator
+    self <- getSelfPid
     void . spawnLocal $ receiveTimeout 3000000 [] >> usend self ()
     fix $ \loop -> do
       void $ receiveWait

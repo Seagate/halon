@@ -10,7 +10,6 @@ module HA.EventQueue.Types
     , PersistMessage
     , persistMessageId
     , DoClearEQ(..)
-    , DoneClearEQ(..)
     , EQStatReq(..)
     , EQStatResp(..)
     , PoolStats(..)
@@ -54,15 +53,9 @@ newPersistMessage msg = liftIO $ do
     return $ persistMessage uuid evt
 
 -- | Request to the EQ to remove all messages.
-data DoClearEQ = DoClearEQ ProcessId deriving (Typeable, Generic)
-
+newtype DoClearEQ = DoClearEQ (SendPort ())
+  deriving (Typeable, Generic)
 instance Binary DoClearEQ
-
--- | Returned by the EQ when messages have been cleared.
-data DoneClearEQ = DoneClearEQ deriving (Typeable, Generic)
-
-instance Binary DoneClearEQ
-
 
 -- | Request for EQ statistics
 data EQStatReq = EQStatReq ProcessId

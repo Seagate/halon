@@ -30,7 +30,6 @@ module HA.EventQueue
     -- * Debug utilities.
     -- ** Queue control
   , DoClearEQ(..)
-  , DoneClearEQ(..)
     -- ** Gather statistics
   , EQStatResp(..)
   , PoolStats(..)

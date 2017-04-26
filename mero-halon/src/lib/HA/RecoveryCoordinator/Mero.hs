@@ -71,10 +71,10 @@ timeoutHost h = hasHostAttr M0.HA_TRANSIENT h >>= \case
 ack :: ProcessId -> PhaseM RC l ()
 ack pid = liftProcess $ usend pid ()
 
-initialize :: StoreChan -> Process G.Graph
-initialize mm = do
+initialize :: StoreChan -> ProcessId -> Process G.Graph
+initialize mm eq = do
    -- Migrate replicated state before doing anything else if necessary.
-    rg <- migrateOrQuit mm
+    rg <- migrateOrQuit mm eq
     -- Empty graph means cluster initialization.
     if G.null rg
     then do
@@ -92,7 +92,7 @@ initialize mm = do
 -- have to be specified.
 buildRCState :: StoreChan -> ProcessId -> Process LoopState
 buildRCState mm eq = do
-    rg      <- HA.RecoveryCoordinator.Mero.initialize mm
+    rg      <- HA.RecoveryCoordinator.Mero.initialize mm eq
     startRG <- G.sync rg $ writeCurrentVersionFile
     return $ LoopState startRG mm eq Map.empty Storage.empty
 

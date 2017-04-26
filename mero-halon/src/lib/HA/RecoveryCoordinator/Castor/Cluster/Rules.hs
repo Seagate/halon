@@ -462,14 +462,13 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     then do
       syncGraphBlocking
       Log.rcLog' Log.DEBUG "Clearing event queue."
-      self <- liftProcess $ getSelfPid
+      (sp, rp) <- liftProcess newChan
       eqPid <- lsEQPid <$> get Global
-      liftProcess $ usend eqPid (DoClearEQ self)
+      liftProcess $ usend eqPid (DoClearEQ sp)
       -- Actually properly block the RC here - we do not want to allow
       -- other events to occur in the meantime.
-      msg <- liftProcess $ expectTimeout (1*1000000) -- 1s
-      case msg of
-        Just DoneClearEQ -> Log.rcLog' Log.DEBUG "EQ cleared"
+      liftProcess (receiveChanTimeout (1*1000000) rp) >>= \case
+        Just () -> Log.rcLog' Log.DEBUG "EQ cleared"
         Nothing -> do
           Log.rcLog' Log.ERROR "Unable to clear the EQ!"
           -- Attempt to ack this message to avoid a reset loop
