@@ -28,11 +28,12 @@ import           GHC.Generics
 import           HA.EventQueue (promulgateWait)
 import           HA.Resources (Node)
 import           HA.SafeCopy
+import           Mero.Lnet
 import           System.Process
 import           System.SystemD.API
 
 -- | Hardware information about a 'Node'.
-data LnetInfo = LnetInfo !Node !T.Text
+data LnetInfo = LnetInfo !Node !LNid
   deriving (Eq, Show, Typeable, Generic)
 
 -- | Load information about system hardware. Reply is sent via 'promulgate'.
@@ -45,7 +46,7 @@ getLnetInfo nid = do
 -- | Start @lnet@ service, query node IDs and return the first one reported.
 --
 -- Errors if service fails to start or no IDs are returned.
-getLNetID :: IO T.Text
+getLNetID :: IO LNid
 getLNetID = do
   rc <- startService "lnet"
   unless (isRight rc) $ error "failed start lnet module"
@@ -53,7 +54,9 @@ getLNetID = do
   unless (null rest) $ putStrLn "lctl reports many interfaces, but only first will be used"
   -- Hey, if we're going to blow up, we might as well blow up here and
   -- not in caller.
-  return $! T.pack nid
+  case readLNid $ T.pack nid of
+    Right lnid -> return lnid
+    Left err -> error $ "Failed to parse LNid: " ++ show err
 
 deriveSafeCopy 0 'base ''LnetInfo
 remotable [ 'getLnetInfo ]

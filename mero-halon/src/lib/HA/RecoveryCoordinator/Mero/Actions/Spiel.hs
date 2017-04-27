@@ -71,6 +71,7 @@ import Mero.ConfC
   ( PDClustAttr(..)
   , confPVerLvlDisks
   )
+import Mero.Lnet
 import Mero.Notification hiding (notifyMero)
 import Mero.Spiel
 import Mero.ConfC (Fid)
@@ -85,6 +86,7 @@ import Control.Lens
 import Data.Binary (Binary)
 import qualified Data.ByteString as BS
 import Data.Foldable (traverse_, for_)
+import qualified Data.Text as T
 import Data.Traversable (for)
 import Data.Typeable
 import Data.Hashable (hash)
@@ -107,8 +109,13 @@ import GHC.Exts
 import Prelude hiding (id)
 
 -- | Default HA process endpoint listen address.
-haAddress :: String
-haAddress = ":12345:34:101"
+haAddress :: LNid -> Endpoint
+haAddress lnid = Endpoint {
+    network_id = lnid
+  , process_id = 12345
+  , portal_number = 34
+  , transfer_machine_id = 101
+  }
 
 -- | Confiuration update state.
 data ConfSyncState = ConfSyncState
@@ -688,13 +695,15 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
+        ep2s = T.unpack . encodeEndpoint
     for_ procs $ \(proc@M0.Process{..}) -> do
       m0synchronously lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
-                            r_endpoint
+                            (T.unpack . encodeEndpoint $ r_endpoint)
       let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
       for_ servs $ \(serv@M0.Service{..}) -> do
-        m0synchronously lift $ addService t s_fid r_fid (ServiceInfo s_type s_endpoints)
+        m0synchronously lift $ addService t s_fid r_fid
+          (ServiceInfo s_type $ fmap ep2s s_endpoints)
         let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
           let disk = G.connectedTo sdev M0.IsOnHardware g :: Maybe M0.Disk

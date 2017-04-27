@@ -49,6 +49,7 @@ import           Mero.ConfC
   ( Fid
   , ServiceType(..)
   )
+import           Mero.Lnet
 import           Network.CEP
 
 -- | Lookup a configuration object by its Mero FID.
@@ -120,14 +121,15 @@ lookupEnclosureM0 enc =
 --   endpoint for the HA service hosted by processes on that node. Whilst in
 --   theory different processes might have different HA endpoints, in
 --   practice this should not happen.
-lookupHostHAAddress :: Host -> PhaseM RC l (Maybe String)
+lookupHostHAAddress :: Host -> PhaseM RC l (Maybe Endpoint)
 lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
-  [ ep | node <- G.connectedTo host Runs rg :: [M0.Node]
-        , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
-        , svc <- G.connectedTo ps M0.IsParentOf rg :: [M0.Service]
-        , M0.s_type svc == CST_HA
-        , ep <- M0.s_endpoints svc
-        ]
+  [ ep
+  | node <- G.connectedTo host Runs rg :: [M0.Node]
+  , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
+  , svc <- G.connectedTo ps M0.IsParentOf rg :: [M0.Service]
+  , M0.s_type svc == CST_HA
+  , ep <- M0.s_endpoints svc
+  ]
 
 -- | Get all children of the conf object.
 getChildren :: forall a b l. G.Relation M0.IsParentOf a b

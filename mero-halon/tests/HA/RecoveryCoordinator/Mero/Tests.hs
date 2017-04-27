@@ -13,13 +13,16 @@ import           Control.Distributed.Process
 import           Control.Monad (unless, void, when)
 import           Data.Binary (Binary)
 import           Data.Function (on)
-import           Data.List (isInfixOf, isPrefixOf, sortBy, sort, tails)
+import           Data.List
+  (isInfixOf, isPrefixOf, partition, sortBy, sort, tails)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Typeable
 import           GHC.Generics
 import           HA.EventQueue.Producer (promulgateEQ)
 import           HA.NodeUp (nodeUp)
 import           HA.RecoveryCoordinator.Castor.Drive.Events (DriveOK)
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.RecoveryCoordinator.Mero.Events (stateSet)
@@ -41,11 +44,12 @@ import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..), LoggerCmd(..)
 import           Helper.InitialData
 import qualified Helper.Runner as H
 import           Helper.SSPL
+import           Mero.Lnet
 import           Mero.Notification
 import           Mero.Notification.HAState
 import           Network.CEP
 import           Network.Transport (Transport(..))
-import           Prelude hiding ((<$>), (<*>))
+import           Prelude hiding ((<*>))
 import           Test.Framework
 import           Test.Tasty.HUnit (assertEqual, assertBool, testCase)
 import           TestRunner
@@ -56,6 +60,7 @@ tests transport pg =
   , testCase "testConfObjectStateQuery" $ testConfObjectStateQuery transport pg
   , testMero "good-conf-loads" $ testGoodConfLoads transport pg
   , testMero "bad-conf-does-not-load" $ testBadConfDoesNotLoad transport pg
+  , testMero "testProcessMultiplicity" $ testProcessMultiplicity transport pg
   ]
 
 -- | Used by 'testDriveManagerUpdate'
@@ -187,7 +192,6 @@ testConfLoads :: (Typeable g, RGroup g)
               -> (InitialDataLoaded -> Bool) -- ^ Expected load result
               -> IO ()
 testConfLoads iData transport pg expectedResultP = do
-
   runDefaultTest transport $ do
     nid <- getSelfNode
     sayTest $ "tests node: " ++ show nid
@@ -216,10 +220,46 @@ testBadConfDoesNotLoad t pg = do
   where
     mkData = do
       iData <- liftIO defaultInitialData
-      return $ iData { CI.id_m0_servers = map invalidateHost $ CI.id_m0_servers iData }
+      return $ iData { CI.id_m0_servers = invalidateHost <$> CI.id_m0_servers iData }
 
     -- Set endpoints of processes for the host to invalid value,
     -- making conf fail validation.
     invalidateHost :: CI.M0Host -> CI.M0Host
-    invalidateHost h = h { CI.m0h_processes = map (\p -> p { CI.m0p_endpoint = "@tcp:12345:41:901" })
-                                              $ CI.m0h_processes h }
+    invalidateHost h =
+      h { CI.m0h_processes =
+            (\p -> p { CI.m0p_endpoint = invalidEP $ CI.m0p_endpoint p})
+              <$> CI.m0h_processes h
+        }
+
+    invalidEP ep = ep {
+      process_id = 00000
+    }
+
+-- | Test that we can load processes with multiplicity > 1, and that they show
+--   up correctly in the resource graph.
+testProcessMultiplicity :: (Typeable g, RGroup g)
+                        => Transport -> Proxy g -> IO ()
+testProcessMultiplicity t pg = runDefaultTest t $ do
+    nid <- getSelfNode
+    iData <- mkData
+    sayTest $ "tests node: " ++ show nid
+    withTrackingStation pg [] $ \ta -> do
+      nodeUp [nid]
+      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded)
+      void $ promulgateEQ [nid] iData
+      r <- expectPublished
+      unless (r == InitialDataLoaded) $ do
+        fail $ "Initial data loaded unexpectedly with " ++ show r
+      graph <- G.getGraph $ ta_mm ta
+      let procs = Process.getLabeled M0.PLM0t1fs graph
+      liftIO $ assertEqual "Three m0t1fs processes" 3 (length procs)
+  where
+    mkData = do
+      iData <- liftIO defaultInitialData
+      return $ iData { CI.id_m0_servers = mult <$> CI.id_m0_servers iData }
+    mult :: CI.M0Host -> CI.M0Host
+    mult h = let
+        (m0t1fs, others) = partition ((==) CI.PLM0t1fs . CI.m0p_boot_level)
+                                     (CI.m0h_processes h)
+        m0t1fs' = (\p -> p {CI.m0p_multiplicity = Just 3}) <$> m0t1fs
+      in h { CI.m0h_processes = m0t1fs' <> others}

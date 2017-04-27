@@ -13,6 +13,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Initial
   ) where
 
 import           Control.Category ((>>>))
+import           Control.Monad (replicateM_)
 import           Data.Foldable (foldl', for_)
 import           Data.List (notElem, scanl')
 import           Data.Maybe (fromMaybe)
@@ -21,6 +22,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
+import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
   ( getFilesystem
@@ -43,6 +45,7 @@ import           Mero.ConfC
   , bitmapFromArray
   , m0_fid0
   )
+import           Mero.Lnet
 import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
@@ -139,62 +142,14 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
         devs <- mapM (goDev enc ctrl)
                      (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
-        mapM_ (goProc node devs) m0h_processes
+        mapM_ (addProcess node devs) m0h_processes
 
 
         modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
                   >>> G.connect node M0.IsOnHardware ctrl
       else
-        mapM_ (goProc node []) m0h_processes
-
-  goProc node devs CI.M0Process{..} = let
-      cores = bitmapFromArray
-        . fmap (> 0)
-        $ m0p_cores
-      mkProc fid = M0.Process fid m0p_mem_as m0p_mem_rss
-                              m0p_mem_stack m0p_mem_memlock
-                              cores m0p_endpoint
-      procLabel = case m0p_boot_level of
-        CI.PLM0t1fs -> M0.PLM0t1fs
-        CI.PLClovis a b -> M0.PLClovis a b
-        CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
-        CI.PLHalon -> M0.PLHalon
-      procEnv rg = (mkProcEnv rg) <$> fromMaybe [] m0p_environment
-      mkProcEnv _ (key, CI.M0PEnvValue val) = M0.ProcessEnvValue key val
-      mkProcEnv rg (key, CI.M0PEnvRange from to) = let
-          used = [ i | (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
-                     , M0.ProcessEnvInRange k i <- G.connectedTo proc Has rg
-                     , k == key
-                 ]
-          fstUnused = case filter (flip notElem used) [from .. to] of
-            (x:_) -> x
-            [] -> error $ "Specified range for " ++ show key ++ " is insufficient."
-        in M0.ProcessEnvInRange key fstUnused
-    in do
-      rg <- getLocalGraph
-      proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
-      mapM_ (goSrv proc devs) m0p_services
-
-      modifyGraph $ G.connect node M0.IsParentOf proc
-                >>> G.connect proc Has procLabel
-
-      for_ (procEnv rg) $ \pe -> modifyGraph $
-        G.connect proc Has pe
-
-  goSrv proc devs CI.M0Service{..} = let
-      filteredDevs = maybe
-        devs
-        (\x -> filter (\y -> M0.d_path y =~ x) devs)
-        m0s_pathfilter
-      mkSrv fid = M0.Service fid m0s_type m0s_endpoints
-      linkDrives svc = case m0s_type of
-        CST_IOS -> foldl' (.) id
-                    $ fmap (G.connect svc M0.IsParentOf) filteredDevs
-        _ -> id
-    in do
-      svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
-      modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
+        mapM_ (addProcess node []) m0h_processes
 
   goDev enc ctrl (CI.M0Device{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
@@ -221,6 +176,73 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         >>> G.connect enc Has slot
         >>> G.connect Cluster Has sdev
       return m0sdev
+
+-- | Add a process into the resource graph.
+--   Where multiplicity is greater than 1, this will add multiple processes
+--   into the RG.
+addProcess :: M0.Node -- ^ Node hosting the Process.
+           -> [M0.SDev] -- ^ Devices attached to this process.
+           -> CI.M0Process -- ^ Initial process configuration.
+           -> PhaseM RC l ()
+addProcess node devs CI.M0Process{..} = let
+    cores = bitmapFromArray
+      . fmap (> 0)
+      $ m0p_cores
+    mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss
+                            m0p_mem_stack m0p_mem_memlock
+                            cores ep
+    procLabel = case m0p_boot_level of
+      CI.PLM0t1fs -> M0.PLM0t1fs
+      CI.PLClovis a b -> M0.PLClovis a b
+      CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
+      CI.PLHalon -> M0.PLHalon
+    mkEndpoint = do
+        exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getLocalGraph
+        return $ findEP m0p_endpoint exProcEps
+      where
+        findEP ep eps =
+          if ep `notElem` eps
+          then ep
+          else findEP (increment ep) eps
+        increment ep = ep
+          { transfer_machine_id = transfer_machine_id ep + 1 }
+    procEnv rg = mkProcEnv rg <$> fromMaybe [] m0p_environment
+    mkProcEnv _ (key, CI.M0PEnvValue val) = M0.ProcessEnvValue key val
+    mkProcEnv rg (key, CI.M0PEnvRange from to) = let
+        used = [ i | proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+                   , M0.ProcessEnvInRange k i <- G.connectedTo proc Has rg
+                   , k == key
+               ]
+        fstUnused = case filter (flip notElem used) [from .. to] of
+          (x:_) -> x
+          [] -> error $ "Specified range for " ++ show key ++ " is insufficient."
+      in M0.ProcessEnvInRange key fstUnused
+    goSrv proc ep CI.M0Service{..} = let
+        filteredDevs = maybe
+          devs
+          (\x -> filter (\y -> M0.d_path y =~ x) devs)
+          m0s_pathfilter
+        mkSrv fid = M0.Service fid m0s_type [ep]
+        linkDrives svc = case m0s_type of
+          CST_IOS -> foldl' (.) id
+                      $ fmap (G.connect svc M0.IsParentOf) filteredDevs
+          _ -> id
+      in do
+        svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
+        modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
+  in do
+    rg <- getLocalGraph
+    replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
+      ep <- mkEndpoint
+      proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
+                     <*> return ep
+      mapM_ (goSrv proc ep) m0p_services
+
+      modifyGraph $ G.connect node M0.IsParentOf proc
+                >>> G.connect proc Has procLabel
+
+      for_ (procEnv rg) $ \pe -> modifyGraph $
+        G.connect proc Has pe
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.

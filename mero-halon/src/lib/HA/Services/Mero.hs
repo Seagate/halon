@@ -43,6 +43,7 @@ import           Data.Binary
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
 import           Data.Maybe (maybeToList)
+import qualified Data.Text as T
 import qualified Data.UUID as UUID
 import           HA.Debug
 import           HA.Logger
@@ -53,6 +54,7 @@ import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid, fidToStr)
+import           Mero.Lnet
 import qualified Mero.Notification
 import           Mero.Notification (NIRef)
 import           Mero.Notification.HAState
@@ -214,7 +216,9 @@ configureProcess mc run conf env needsMkfs = do
   putStrLn $ "m0d: configureProcess: " ++ show procFid
            ++ " with type(s) " ++ show run
   confXC <- maybeWriteConfXC conf
-  _unit  <- writeSysconfig mc run procFid (M0.r_endpoint p) confXC (toEnv <$> env)
+  _unit  <- writeSysconfig mc run procFid
+                            (T.unpack . encodeEndpoint $ M0.r_endpoint p)
+                            confXC (toEnv <$> env)
   if needsMkfs
   then do
     ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid

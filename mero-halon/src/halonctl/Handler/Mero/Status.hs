@@ -14,12 +14,14 @@ import           Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import           Data.Foldable
 import           Data.Monoid ((<>))
+import qualified Data.Text as T
 import qualified HA.Aeson
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.Mero as M0
 import           Handler.Mero.Helpers
 import           Mero.ConfC (fidToStr)
+import           Mero.Lnet (encodeEndpoint)
 import           Mero.Spiel (FSStats(..))
 import qualified Options.Applicative as Opt
 import           Text.Printf (printf)
@@ -91,7 +93,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
            let (pst,proc_extSt) = M0.displayProcessState proc_st
            printf proc_pattern pst
                                (fidToStr rfid)
-                               endpoint
+                               (T.unpack . encodeEndpoint $ endpoint)
                                ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _) sdevs) -> do

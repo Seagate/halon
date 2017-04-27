@@ -64,6 +64,7 @@ import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero
 import           Mero.ConfC hiding (Process)
+import           Mero.Lnet
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
 
@@ -82,14 +83,19 @@ noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
     Nothing -> return Nothing
 
 -- | Default RM service address: @":12345:41:301"@.
-rmsAddress :: String
-rmsAddress = ":12345:41:301"
+rmsAddress :: LNid -> Endpoint
+rmsAddress lnid = Endpoint {
+    network_id = lnid
+  , process_id = 12345
+  , portal_number = 41
+  , transfer_machine_id = 301
+  }
 
 -- | Create the necessary configuration in the resource graph to support
 -- loading the Mero kernel. Currently this consists of creating a unique node
 -- UUID and storing the LNet nid.
 createMeroKernelConfig :: Castor.Host
-                       -> String -- ^ LNet interface address
+                       -> LNid -- ^ LNet interface address
                        -> PhaseM RC a ()
 createMeroKernelConfig host lnid = do
   uuid <- liftIO nextRandom
@@ -103,7 +109,7 @@ createMeroClientConfig :: M0.Filesystem
                        -> Castor.Host
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
-createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt (T.unpack -> lnid)) = do
+createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
   createMeroKernelConfig host lnid
   modifyLocalGraph $ \rg -> do
     -- Check if node is already defined in RG
@@ -114,7 +120,7 @@ createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt (T.unpack -> 
       Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
     -- Check if process is already defined in RG
     let mprocess = listToMaybe
-          $ filter (\(M0.Process _ _ _ _ _ _ a) -> a == lnid ++ rmsAddress)
+          . filter (\(M0.Process _ _ _ _ _ _ a) -> a == rmsAddress lnid)
           $ G.connectedTo m0node M0.IsParentOf rg
     process <- case mprocess of
       Just process -> return process
@@ -124,25 +130,25 @@ createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt (T.unpack -> 
                             <*> pure memsize
                             <*> pure memsize
                             <*> pure (bitmapFromArray (replicate cpucnt True))
-                            <*> pure (lnid ++ rmsAddress)
+                            <*> pure (rmsAddress lnid)
     -- Check if RMS service is already defined in RG
     let mrmsService = listToMaybe
-          $ filter (\(M0.Service _ x _) -> x == CST_RMS)
+          . filter (\(M0.Service _ x _) -> x == CST_RMS)
           $ G.connectedTo process M0.IsParentOf rg
     rmsService <- case mrmsService of
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_RMS
-                            <*> pure [lnid ++ rmsAddress]
+                            <*> pure [rmsAddress lnid]
     -- Check if HA service is already defined in RG
     let mhaService = listToMaybe
-          $ filter (\(M0.Service _ x _) -> x == CST_HA)
+          . filter (\(M0.Service _ x _) -> x == CST_HA)
           $ G.connectedTo process M0.IsParentOf rg
     haService <- case mhaService of
       Just service -> return service
       Nothing -> M0.Service <$> newFidRC (Proxy :: Proxy M0.Service)
                             <*> pure CST_HA
-                            <*> pure [lnid ++ haAddress]
+                            <*> pure [haAddress lnid]
     -- Create graph
     let rg' = G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService
@@ -321,9 +327,9 @@ startMeroService host node = do
     -- if there is no HA service running to give us an endpoint, pass
     -- the lnid to mkHAAddress instead of the host address: trust user
     -- setting
-    Nothing -> case listToMaybe $ -- TODO: Don't ignore the other addresses?
+    Nothing -> case listToMaybe . -- TODO: Don't ignore the other addresses?
                       G.connectedTo host Has $ rg of
-      Just (M0.LNid lnid) -> return . Just $ lnid ++ haAddress
+      Just (M0.LNid lnid) -> return . Just $ haAddress lnid
       Nothing -> return Nothing
 
   minfo <- return $! do
@@ -340,11 +346,12 @@ startMeroService host node = do
                   , M0.s_type srvRM == CST_RMS
                   ]
     mconf <&> \(p, srvHA,srvRM) ->
-      let conf = MeroConf haAddr (M0.fid profile) (M0.fid p)
-                                 (M0.fid srvHA)
-                                 (M0.fid srvRM)
-                                 kaFreq kaTimeout
-                                 (MeroKernelConf uuid)
+      let conf = MeroConf (T.unpack . encodeEndpoint $ haAddr)
+                          (M0.fid profile) (M0.fid p)
+                          (M0.fid srvHA)
+                          (M0.fid srvRM)
+                          kaFreq kaTimeout
+                          (MeroKernelConf uuid)
       in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], p)
   for_ minfo $ \(msg, p) -> do
     _ <- applyStateChanges [ stateSet p Tr.processStarting ]

@@ -67,6 +67,7 @@ import           Data.IORef
 import qualified Data.Map as Map
 import           Data.Monoid ((<>))
 import qualified Data.Set as S
+import qualified Data.Text as T
 import           Data.Tuple (swap)
 import qualified Data.UUID as UUID (toString, UUID)
 import qualified Data.UUID.V4 as UUID (nextRandom)
@@ -80,6 +81,7 @@ import           HA.Service.Interface
 import           HA.Services.Mero ( confXCPath, InternalStarted(..), unitString )
 import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid(..), fidToStr, ServiceType(..))
+import           Mero.Lnet (encodeEndpoint)
 import           Mero.Notification.HAState
 import qualified "distributed-process-scheduler" System.Clock as C
 import           System.IO.Unsafe (unsafePerformIO)
@@ -398,7 +400,9 @@ controlProcess conf master pcChan = do
           p = case pconf of
             ProcessConfigLocal p' _ -> p'
             ProcessConfigRemote p' -> p'
-      writeSysconfig runType (M0.fid p) (M0.r_endpoint p) confxc
+      writeSysconfig runType (M0.fid p)
+                     (T.unpack . encodeEndpoint $ M0.r_endpoint p)
+                     confxc
       if needsMkfs
       then mockRunCmd "start" ("mero-mkfs@" ++ fidToStr (M0.fid p)) Nothing <&> \case
         Right{} -> Right p

@@ -32,6 +32,7 @@ import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
 import           Mero.ConfC (ServiceParams, ServiceType)
+import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
 
@@ -244,7 +245,7 @@ instance A.ToJSON M0ProcessEnv
 
 -- | Information about mero process on the host
 data M0Process = M0Process
-  { m0p_endpoint :: String
+  { m0p_endpoint :: Endpoint
   -- ^ Endpoint the process should listen on
   , m0p_mem_as :: Word64
   , m0p_mem_rss :: Word64
@@ -258,6 +259,8 @@ data M0Process = M0Process
   -- ^ Type of process, governing how it should run.
   , m0p_environment :: Maybe [(String, M0ProcessEnv)]
   -- ^ Process environment - additional
+  , m0p_multiplicity :: Maybe Int
+  -- ^ Process multiplicity - how many instances of this process should be started?
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Process
@@ -267,7 +270,7 @@ instance A.ToJSON M0Process
 -- | Information about a service
 data M0Service = M0Service {
     m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
-  , m0s_endpoints :: [String]
+  , m0s_endpoints :: [Endpoint]
   -- ^ Listen endpoints for the service itself.
   , m0s_params :: ServiceParams
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN

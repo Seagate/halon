@@ -31,6 +31,7 @@ import HA.Resources.TH
 import HA.Aeson (FromJSON, ToJSON)
 import HA.SafeCopy
 import Mero.ConfC (Fid(..), fidToStr)
+import Mero.Lnet
 
 import Control.Distributed.Static (Static, staticPtr)
 import Control.Monad (join)
@@ -113,7 +114,7 @@ instance ToJSON PrincipalRM
 -- | A notification for the following end-points has failed. We use
 -- this message to fail the processes that failed to receive a
 -- notification.
-newtype NotifyFailureEndpoints = NotifyFailureEndpoints [String]
+newtype NotifyFailureEndpoints = NotifyFailureEndpoints [Endpoint]
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable NotifyFailureEndpoints

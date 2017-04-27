@@ -159,6 +159,7 @@ import           HA.Services.SSPL.CEP ( sendInterestingEvent )
 import           HA.Services.SSPL.IEM ( logMeroBEError )
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import           Mero.ConfC (ServiceType(..))
+import           Mero.Lnet
 import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
 import           Network.CEP
 import           System.Lnet
@@ -326,18 +327,18 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                    -- Take LNid address. If we don't have it, take the
                    -- address from the CST_HA service as the listen
                    -- address.
-                   let meroAddr = [ ip | M0.LNid ip <- G.connectedTo host R.Has rg ]
-                               ++ [ ip | ha_p <- maybeToList $ Process.getHA m0node rg
+                   let meroAddr = [ ep | M0.LNid ep <- G.connectedTo host R.Has rg ]
+                               ++ [ ep | ha_p <- maybeToList $ Process.getHA m0node rg
                                        , svc <- G.connectedTo ha_p M0.IsParentOf rg
                                        , M0.s_type svc == CST_HA
-                                       , ip <- map (takeWhile (/= '@')) $ M0.s_endpoints svc
+                                       , ep <- map network_id $ M0.s_endpoints svc
                                        ]
                    case meroAddr of
                      [] ->
                        Log.rcLog' Log.ERROR $ "Unable to determine mero address for host " ++ show host
                      addr : _ -> do
                        Log.rcLog' Log.DEBUG $ "node.addr = " ++ show addr
-                       createMeroKernelConfig host $ addr ++ "@tcp"
+                       createMeroKernelConfig host addr
                        startMeroService host node
                  Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show node
              Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show m0node

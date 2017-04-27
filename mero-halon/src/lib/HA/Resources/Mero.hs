@@ -27,6 +27,7 @@ import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
 import Data.Char (ord)
+import Data.Either (rights)
 import Data.Hashable (Hashable(..))
 import Data.Int (Int64)
 import Data.Maybe (listToMaybe)
@@ -53,6 +54,8 @@ import Mero.ConfC
   , ServiceParams
   , ServiceType
   )
+import Mero.Lnet (Endpoint, readEndpoint)
+import qualified Mero.Lnet as Lnet
 import Mero.Spiel (FSStats)
 import qualified "distributed-process-scheduler" System.Clock as C
 --------------------------------------------------------------------------------
@@ -306,7 +309,7 @@ data Process = Process {
   , r_mem_stack :: !Word64
   , r_mem_memlock :: !Word64
   , r_cores :: !Bitmap
-  , r_endpoint :: String
+  , r_endpoint :: !Endpoint
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable Process
@@ -330,12 +333,13 @@ data Service_v0 = Service_v0 {
 data Service = Service {
     s_fid :: Fid
   , s_type :: ServiceType -- ^ e.g. ioservice, haservice
-  , s_endpoints :: [String]
+  , s_endpoints :: [Endpoint]
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Migrate Service where
   type MigrateFrom Service = Service_v0
-  migrate v0 = Service (s_fid_v0 v0) (s_type_v0 v0) (s_endpoints_v0 v0)
+  migrate v0 = Service (s_fid_v0 v0) (s_type_v0 v0)
+                       (rights $ readEndpoint . T.pack <$> s_endpoints_v0 v0)
 
 instance Ord Service where
   compare = comparing s_fid
@@ -699,7 +703,7 @@ deriveSafeCopy 0 'base ''DiskFailureVector
 instance ToJSON DiskFailureVector
 
 -- | @lnet@ address associated with a host.
-newtype LNid = LNid String
+newtype LNid = LNid Lnet.LNid
   deriving (Eq, Generic, Hashable, Show, Typeable)
 storageIndex ''LNid "c46ca6b1-e84a-4981-8aa9-ed2223c91bff"
 deriveSafeCopy 0 'base ''LNid
@@ -711,7 +715,7 @@ data HostHardwareInfo = HostHardwareInfo
        -- ^ Memory size in MiB
        , hhCpuCount    :: !Int
        -- ^ Number of CPUs
-       , hhLNidAddress :: !T.Text
+       , hhLNidAddress :: !Lnet.LNid
        -- ^ @lnet@ address
        }
    deriving (Eq, Show, Typeable, Generic)

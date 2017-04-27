@@ -193,6 +193,7 @@
           m0s_params:
             tag: SPUnused
             contents: []
+      m0p_multiplicity: 3
 - name: "s3server"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:303"

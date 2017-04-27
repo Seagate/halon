@@ -15,12 +15,18 @@ custom-setup
 library
   exposed-modules:     Mero
                        Mero.Concurrent
+                       Mero.Lnet
                        Network.RPC.RPCLite
   build-depends:       base >=4.7
+                     , aeson
+                     , attoparsec
                      , binary >= 0.6
                      , bytestring
                      , containers >= 0.5
                      , filepath >= 1.3
+                     , hashable
+                     , safecopy
+                     , text
 
   ghc-options: -O -Wall -Werror -fprof-auto -fprof-auto-calls
   pkgconfig-depends:   mero >= 0.1.0

@@ -326,7 +326,8 @@ Executable halonctl
                       unordered-containers,
                       uuid,
                       network >= 2.4,
-                      network-transport-tcp >= 0.3
+                      network-transport-tcp >= 0.3,
+                      rpclite
 
 Executable haloninfo
   Hs-Source-Dirs:     src/haloninfo

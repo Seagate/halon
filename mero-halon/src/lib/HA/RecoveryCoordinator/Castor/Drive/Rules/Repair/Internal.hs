@@ -14,6 +14,7 @@ import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_IOS))
+import           Mero.Lnet
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
 
@@ -55,7 +56,7 @@ anyIOSFailed = any (p . Spiel._sss_state)
 
 -- | Find the processes associated with IOS services that have the
 -- given endpoint(s).
-failedNotificationIOS :: [String] -- ^ List of endpoints to check against
+failedNotificationIOS :: [Endpoint] -- ^ List of endpoints to check against
                       -> G.Graph -> [M0.Process]
 failedNotificationIOS eps rg =
   [ p | p <- Process.getAll rg

@@ -24,6 +24,7 @@ import           GHC.Word (Word8)
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
 import           Mero.ConfC (ServiceParams(..), ServiceType(..))
+import           Mero.Lnet
 import           Network.BSD (getHostName)
 import           Text.Printf
 import           Text.Read
@@ -78,6 +79,19 @@ defaultGlobals = CI.M0Globals {
 -- | Helper for IP addresses formatted as a quadruple of 'Word8's.
 showIP :: (Word8, Word8, Word8, Word8) -> String
 showIP (x,y,z,w) = printf "%d.%d.%d.%d" x y z w
+
+-- | Helper to make Endpoints from an IP
+mkEP :: (Word8, Word8, Word8, Word8)
+     -> Int -- ^ Process
+     -> Int -- ^ portal_number
+     -> Int -- ^ transfer_machine_id
+     -> Endpoint
+mkEP ip proc port tmid = Endpoint {
+    network_id = IPNet (T.pack $ showIP ip) TCP
+  , process_id = proc
+  , portal_number = port
+  , transfer_machine_id = tmid
+  }
 
 initialData :: InitialDataSettings -> IO CI.InitialData
 initialData InitialDataSettings{..}
@@ -171,7 +185,7 @@ defaultInitialData = defaultInitialDataSettings >>= initialData
 haProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
              -> CI.M0Process
 haProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:34:101"
+  { CI.m0p_endpoint = mkEP ifaddr 12345 34 101
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLHalon
   , CI.m0p_mem_rss = 1
@@ -181,23 +195,24 @@ haProcess ifaddr = CI.M0Process
   , CI.m0p_services =
     [ CI.M0Service
       { CI.m0s_type = CST_HA
-      , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:34:101"]
+      , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
       , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
       { CI.m0s_type = CST_RMS
-      , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:34:101"]
+      , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
       , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
+  , CI.m0p_multiplicity = Nothing
   }
 
 -- | Create a confd 'CI.M0Process'
 confdProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
              -> CI.M0Process
 confdProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:44:101"
+  { CI.m0p_endpoint = mkEP ifaddr 12345 44 101
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
@@ -207,23 +222,24 @@ confdProcess ifaddr = CI.M0Process
   , CI.m0p_services =
     [ CI.M0Service
         { CI.m0s_type = CST_MGS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:44:101"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
         , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:44:101"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
+  , CI.m0p_multiplicity = Nothing
   }
 
 -- | Create an mds 'CI.M0Process'
 mdsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
            -> CI.M0Process
 mdsProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:201"
+  { CI.m0p_endpoint = mkEP ifaddr 12345 41 201
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
@@ -233,28 +249,29 @@ mdsProcess ifaddr = CI.M0Process
   , CI.m0p_services =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_MDS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_ADDB2
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:201"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
+  , CI.m0p_multiplicity = Nothing
   }
 
 -- | Create an IOS 'CI.M0Process'
 iosProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
            -> CI.M0Process
 iosProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
+  { CI.m0p_endpoint = mkEP ifaddr 12345 41 401
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 1
   , CI.m0p_mem_rss = 1
@@ -264,31 +281,32 @@ iosProcess ifaddr = CI.M0Process
   , CI.m0p_services =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_IOS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_SNS_REP
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
             , CI.M0Service
         { CI.m0s_type = CST_SNS_REB
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_ADDB2
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
+  , CI.m0p_multiplicity = Nothing
   }
 
 
@@ -296,7 +314,7 @@ iosProcess ifaddr = CI.M0Process
 m0t1fsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
            -> CI.M0Process
 m0t1fsProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = showIP ifaddr ++ "@tcp:12345:41:401"
+  { CI.m0p_endpoint = mkEP ifaddr 12345 41 401
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0t1fs
   , CI.m0p_mem_rss = 1
@@ -306,9 +324,10 @@ m0t1fsProcess ifaddr = CI.M0Process
   , CI.m0p_services =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [showIP ifaddr ++ "@tcp:12345:41:401"]
+        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
+  , CI.m0p_multiplicity = Nothing
   }
