@@ -22,6 +22,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
@@ -118,6 +119,8 @@ module HA.ResourceGraph
       -- * Migration
     , setChangeLog
     , buildGraph
+    , SomeStatic(..)
+    , UpgradeMap
     ) where
 
 import HA.Logger
@@ -151,34 +154,35 @@ import Control.Distributed.Static
 import Control.Distributed.Process.Closure
 import Data.Constraint ( Dict(..) )
 
-import Prelude hiding (null)
 import Control.Arrow ( (>>>), second )
-import Control.Monad ( liftM3 )
 import Control.Lens (makeLenses)
+import Control.Monad ( liftM3 )
 import Control.Monad.Reader ( ask )
 import Data.Binary ( encode )
-import qualified Data.ByteString as Strict ( concat )
 import Data.ByteString ( ByteString )
-import Data.ByteString.Lazy as Lazy ( toChunks )
+import qualified Data.ByteString as Strict ( concat )
 import qualified Data.ByteString.Lazy as Lazy ( ByteString )
+import Data.ByteString.Lazy as Lazy ( toChunks )
+import Data.Function (on)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as M
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as S
 import Data.Hashable
 import Data.List (foldl', delete, intercalate)
-import Data.UUID (UUID, fromString)
-import qualified Data.UUID as UUID
 import Data.Maybe
 import Data.Monoid
 import Data.Proxy
 import Data.Serialize.Put (runPutLazy)
 import Data.Singletons.TH
 import Data.Typeable
+import Data.UUID (UUID, fromString)
+import qualified Data.UUID as UUID
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import HA.SafeCopy
 import qualified HA.Aeson as A
+import HA.SafeCopy
+import Prelude hiding (null)
 
 rgTrace :: String -> Process ()
 rgTrace = mkHalonTracer "RG"
@@ -371,6 +375,25 @@ data SomeStorageRelationDict = forall r a b. SomeStorageRelationDict (Dict (Stor
 data SomeRelationDict = forall r a b. SomeRelationDict (Dict (Relation r a b))
     deriving Typeable
 
+-- | Existential for 'Static' values used by 'FromTeacake'.
+data SomeStatic = forall a. SomeStatic { _unSomeStatic :: !(Static a) }
+
+instance Show SomeStatic where
+  show (SomeStatic x) = "SomeStatic (" ++ show x ++ ")"
+
+instance Hashable SomeStatic where
+  hashWithSalt s (SomeStatic x) = hashWithSalt s (show x)
+
+instance Eq SomeStatic where
+  (==) = (==) `on` show
+
+-- | Order by 'Show' instance because we always have it (eww).
+instance Ord SomeStatic where
+  compare = compare `on` hash
+
+-- | Mappings for 'FromTeacake'.
+type UpgradeMap a = M.HashMap SomeStatic a
+
 -- | Information about graph garbage collection. This is an internal
 -- structure which is hidden away from the user in the graph itself,
 -- allowing it to persist through multimap updates.
@@ -500,17 +523,19 @@ instance GL.GraphLike Graph where
     <> runPutLazy (safePut (1 :: Word8, r, x, y))
 
   -- | Decodes a Res from a 'Lazy.ByteString'.
-  decodeUniversalResource = GL.decodeAnyResource
+  decodeUniversalResource rt bs f = GL.decodeAnyResource
      (Proxy :: Proxy Resource)
      (\(SomeResourceDict (Dict :: Dict (Resource a))) -> GL.A (Dict :: Dict (Resource a)))
      genResourceKeyName
-     Res
-  decodeUniversalRelation = GL.decodeAnyRelation
+     f
+     Res rt bs
+  decodeUniversalRelation rt bs f = GL.decodeAnyRelation
      (Proxy :: Proxy Relation)
      (\(SomeRelationDict (Dict :: Dict (Relation r a b))) -> GL.A3 (Dict :: Dict (Relation r a b)))
      genRelationKeyName
+     f
      InRel
-     OutRel
+     OutRel rt bs
 
   decodeRes :: forall a. Resource a => Res -> Maybe a
   decodeRes (Res a) = cast a :: Maybe a
@@ -669,11 +694,14 @@ buildGraph mmchan rt (mi, kvs) = (\hm -> Graph mmchan emptyChangeLog hm gcInfo)
     . M.fromList
     $ [ (k', S.fromList vs')
       | (k, vs) <- kvs
-      , Right k' <- [GL.decodeUniversalResource rt k]
-      , let vs' = [ v | Right v <- map (GL.decodeUniversalRelation rt) vs ]
+      , Right k' <- [decodeUnivRes k]
+      , let vs' = [ v | Right v <- map decodeUnivRel vs ]
       ]
   where
-    rootNodes = [ res | Right res <- map (GL.decodeUniversalResource rt) (_miRootNodes mi) ]
+    decodeUnivRel b = GL.decodeUniversalRelation rt b (const Nothing)
+    decodeUnivRes b = GL.decodeUniversalResource rt b (const Nothing)
+
+    rootNodes = [ res | Right res <- map decodeUnivRes (_miRootNodes mi) ]
     gcInfo = GraphGCInfo (_miSinceGC mi)
                          (_miGCThreshold mi)
                          rootNodes

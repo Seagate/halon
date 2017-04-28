@@ -9,7 +9,6 @@ module Mero.RemoteTables (meroRemoteTable) where
 
 import HA.Resources.Castor(__remoteTable, __resourcesTable)
 import HA.Resources.Castor.Old(__remoteTable, __resourcesTable)
-import HA.Resources.Castor.Initial.Old(__remoteTable, __resourcesTable)
 import HA.Resources.RC(__remoteTable, __resourcesTable)
 import HA.Resources.Mero(__remoteTable, __resourcesTable)
 import HA.Resources.Mero.Note ( __remoteTable, __resourcesTable)
@@ -41,8 +40,6 @@ meroRemoteTable next =
    HA.Resources.Castor.__remoteTable $
    HA.Resources.Castor.Old.__resourcesTable $
    HA.Resources.Castor.Old.__remoteTable $
-   HA.Resources.Castor.Initial.Old.__resourcesTable $
-   HA.Resources.Castor.Initial.Old.__remoteTable $
    HA.Resources.RC.__remoteTable $
    HA.Resources.Mero.__remoteTable $
    HA.Resources.Mero.Note.__remoteTable $

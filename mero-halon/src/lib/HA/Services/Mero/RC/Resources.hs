@@ -33,11 +33,17 @@ data StateDiff = StateDiff
 instance Hashable StateDiff
 instance ToJSON StateDiff
 
+data StateDiffIndex_v0 = StateDiffIndex_v0 Word64
+
 -- | Graph index for 'StateDiff's.
 newtype StateDiffIndex = StateDiffIndex Word64
   deriving (Eq, Ord, Generic, Typeable, Show)
 instance Hashable StateDiffIndex
 instance ToJSON StateDiffIndex
+
+instance Migrate StateDiffIndex where
+  type MigrateFrom StateDiffIndex = StateDiffIndex_v0
+  migrate (StateDiffIndex_v0 v) = StateDiffIndex v
 
 -- | Action that should happen when notifications were delivered.
 data OnCommit = DoSyncGraph
@@ -50,7 +56,8 @@ storageIndex ''StateDiffIndex "f8e1b7e0-aedd-4783-a10f-af4cdf85652a"
 storageIndex ''OnCommit "1ca007a0-181a-4d35-a6e9-bde3295b9941"
 deriveSafeCopy 0 'base ''OnCommit
 deriveSafeCopy 0 'base ''StateDiff
-deriveSafeCopy 0 'base ''StateDiffIndex
+deriveSafeCopy 0 'base ''StateDiffIndex_v0
+deriveSafeCopy 1 'extension ''StateDiffIndex
 
 -- | The 'StateDiff' was delivered to the process.
 data DeliveredTo = DeliveredTo

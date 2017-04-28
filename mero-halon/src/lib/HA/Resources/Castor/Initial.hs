@@ -3,6 +3,7 @@
 {-# LANGUAGE StrictData        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module    : HA.Resources.Castor.Initial
@@ -14,6 +15,7 @@
 
 module HA.Resources.Castor.Initial where
 
+import qualified Control.Exception as E
 import           Control.Monad (forM)
 import           Data.Data
 import           Data.Either (partitionEithers)
@@ -29,6 +31,7 @@ import           Data.Word (Word32, Word64)
 import qualified Data.Yaml as Y
 import           GHC.Generics (Generic)
 import qualified HA.Aeson as A
+import qualified HA.RecoverySupervisor as RS
 import           HA.Resources.TH
 import           HA.SafeCopy
 import           Mero.ConfC (ServiceParams, ServiceType)
@@ -116,6 +119,12 @@ instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
 
+-- | Teacake version of 'FailureSetScheme'.
+data FailureSetScheme_v0 =
+    Preloaded_v0 Word32 Word32 Word32
+  | Dynamic_v0
+  | Formulaic_v0 [[Word32]]
+  deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Failure set schemes. Define how failure sets are determined.
 --
@@ -128,6 +137,20 @@ data FailureSetScheme =
 instance Hashable FailureSetScheme
 instance A.FromJSON FailureSetScheme
 instance A.ToJSON FailureSetScheme
+
+-- | Drop 'Dynamic_v0' from 'FailureSetScheme'. Note that this is done
+-- by throwing 'RS.ReallyDie' (from pure code). Intention is that if
+-- we do hit this case in some scenario during migration off Teacake,
+-- it will bubble up to to migration code and get caught by RS which
+-- will kill halon rather than making RC restart over and over.
+--
+-- In practice we never expect to hit that case.
+instance Migrate FailureSetScheme where
+  type MigrateFrom FailureSetScheme = FailureSetScheme_v0
+  migrate (Preloaded_v0 v1 v2 v3) = Preloaded v1 v2 v3
+  migrate (Formulaic_v0 v) = Formulaic v
+  migrate Dynamic_v0 = E.throw . RS.ReallyDie $! T.pack
+    "Encountered Dynamic when migrating from FailureSetScheme_v0"
 
 -- | Halon config for a host
 data HalonRole = HalonRole
@@ -521,7 +544,8 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
          >> check (length ns == length (nub ns))
                   "Enclosures with non-unique enc_id exist."
 
-deriveSafeCopy 0 'base ''FailureSetScheme
+deriveSafeCopy 0 'base ''FailureSetScheme_v0
+deriveSafeCopy 1 'extension ''FailureSetScheme
 storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device
 storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"

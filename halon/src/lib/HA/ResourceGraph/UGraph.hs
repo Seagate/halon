@@ -57,6 +57,7 @@ import qualified Data.Sequence as Seq
 import Data.Serialize.Put (runPutLazy)
 import qualified Data.Text as T
 import Data.Typeable
+import Data.UUID (UUID)
 import Data.Word (Word8)
 import HA.Multimap
   ( Key
@@ -78,6 +79,8 @@ import HA.ResourceGraph
   , genStorageResourceKeyName
   , genStorageRelationKeyName
   , StorageIndex(..)
+  , UpgradeMap
+  , SomeStatic(..)
   )
 import HA.ResourceGraph.GraphLike (Edge(..), emptyChangeLog)
 import qualified HA.ResourceGraph.GraphLike as GL
@@ -162,20 +165,24 @@ instance GL.GraphLike UGraph where
               , typeKey (proxy y))
     <> runPutLazy (safePut (1 :: Word8, r, x, y))
 
-  decodeUniversalResource = GL.decodeAnyResource
+  decodeUniversalResource rt bs f = GL.decodeAnyResource
     (Proxy :: Proxy StorageResource)
     (\(SomeStorageResourceDict (Dict :: Dict (StorageResource a))) ->
       GL.A (Dict :: Dict (StorageResource a)))
     genStorageResourceKeyName
+    f
     URes
+    rt bs
 
-  decodeUniversalRelation = GL.decodeAnyRelation
+  decodeUniversalRelation rt bs f = GL.decodeAnyRelation
     (Proxy :: Proxy StorageRelation)
     (\(SomeStorageRelationDict (Dict :: Dict (StorageRelation r a b))) ->
       GL.A3 (Dict :: Dict (StorageRelation r a b)))
     genStorageRelationKeyName
+    f
     InURel
     OutURel
+    rt bs
 
   decodeRes :: forall a. StorageResource a => URes -> Maybe a
   decodeRes (URes a) = cast a :: Maybe a
@@ -225,20 +232,31 @@ buildUGraph :: StoreChan -- ^ MM
             -> RemoteTable
             -> (MetaInfo, [(Key, [Value])])
             -- ^ (Starting metainfo, graph values)
+            -> UpgradeMap UUID
+            -- ^ Additional lookups for old resources
+            -> UpgradeMap (UUID, UUID, UUID)
+            -- ^ Additional lookups for old relations
             -> (Seq.Seq T.Text, UGraph)
             -- ^ (errors, rest of graph)
-buildUGraph mmchan rt (mi, kvs) =
+buildUGraph mmchan rt (mi, kvs) um umr =
   let (ers, m) = foldl' go (Seq.empty, M.empty) kvs
   in (ers Seq.>< rootErs, UGraph mmchan (freshLog m) m gcInfo)
   where
-    go (!ers, !m) (k, vs) = case GL.decodeUniversalResource rt k of
+    f :: forall a. Static a -> Maybe UUID
+    f s = M.lookup (SomeStatic s) um
+    f' :: forall a. Static a -> Maybe (UUID, UUID, UUID)
+    f' s = M.lookup (SomeStatic s) umr
+
+
+    go (!ers, !m) (k, vs) = case GL.decodeUniversalResource rt k f of
       Left e -> (ers Seq.|> e, m)
       Right res ->
-        let (es, rels) = partitionEithers $ map (GL.decodeUniversalRelation rt) vs
+        let (es, rels) = partitionEithers $ map (\n -> GL.decodeUniversalRelation rt n f') vs
         in (ers Seq.>< Seq.fromList es, M.insert res (S.fromList rels) m)
 
     (rootErs, gcInfo) =
-      let (e, rs) = partitionEithers $ map (GL.decodeUniversalResource rt) (_miRootNodes mi)
+      let (e, rs) = partitionEithers $
+            map (\n -> GL.decodeUniversalResource rt n f) (_miRootNodes mi)
       in (Seq.fromList e, GraphGCInfo (_miSinceGC mi) (_miGCThreshold mi) rs)
 
     -- We're reading in a UGraph with possibly old, discarded

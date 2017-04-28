@@ -68,6 +68,7 @@ Library
   Exposed-Modules: Mero.Messages
                    Mero.RemoteTables
                    HA.Migrations
+                   HA.Migrations.Teacake
                    HA.Services.DecisionLog
                    HA.Services.Ekg.RC
                    HA.Services.SSPL
@@ -149,7 +150,6 @@ Library
                    HA.Resources.Castor
                    HA.Resources.Castor.Old
                    HA.Resources.Castor.Initial
-                   HA.Resources.Castor.Initial.Old
                    HA.Resources.HalonVars
                    HA.Resources.Update
                    Mero.Epoch
