@@ -151,10 +151,18 @@ instance Eq AnyStateChange where
 newtype InternalObjectStateChange = InternalObjectStateChange [AnyStateChange]
   deriving (Monoid, Typeable, Show)
 
+newtype InternalObjectStateChangeMsg_v0 = InternalObjectStateChangeMsg_v0 BS.ByteString
+  deriving (Typeable, Eq, Show, Ord, Hashable, Generic)
+
 -- | Encoded version of 'InternalObjectStateChange'.
 newtype InternalObjectStateChangeMsg = InternalObjectStateChangeMsg ByteString64
   deriving (Typeable, Eq, Show, Ord, Hashable, Generic)
 instance ToJSON InternalObjectStateChangeMsg
+
+instance Migrate InternalObjectStateChangeMsg where
+  type MigrateFrom InternalObjectStateChangeMsg = InternalObjectStateChangeMsg_v0
+  migrate (InternalObjectStateChangeMsg_v0 v) =
+    InternalObjectStateChangeMsg . BS64 $! BS.toStrict v
 
 instance ProcessEncode InternalObjectStateChange where
   type BinRep InternalObjectStateChange = InternalObjectStateChangeMsg
@@ -249,7 +257,8 @@ deriveSafeCopy 0 'base ''ForceObjectStateUpdateReply
 deriveSafeCopy 0 'base ''ForceObjectStateUpdateRequest
 deriveSafeCopy 0 'base ''GetFailureVector
 deriveSafeCopy 0 'base ''GetSpielAddress
-deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg
+deriveSafeCopy 0 'base ''InternalObjectStateChangeMsg_v0
+deriveSafeCopy 1 'extension ''InternalObjectStateChangeMsg
 deriveSafeCopy 0 'base ''QuiesceSNSOperation
 deriveSafeCopy 0 'base ''RestartSNSOperationRequest
 deriveSafeCopy 0 'base ''UpdateResult

@@ -23,6 +23,7 @@ module HA.Resources.Mero
   ) where
 
 import Control.Distributed.Process (ProcessId)
+import qualified Control.Exception as E
 import Data.Binary (Binary(..))
 import Data.Bits
 import qualified Data.ByteString as BS
@@ -41,6 +42,7 @@ import qualified Data.Vector as V
 import Data.Word ( Word32, Word64 )
 import GHC.Generics (Generic)
 import HA.Aeson
+import qualified HA.RecoverySupervisor as RS
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
@@ -59,6 +61,8 @@ import Mero.Lnet (Endpoint, readEndpoint)
 import qualified Mero.Lnet as Lnet
 import Mero.Spiel (FSStats)
 import qualified "distributed-process-scheduler" System.Clock as C
+import Text.Printf (printf)
+
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
@@ -318,6 +322,17 @@ instance ConfObj Pool where
 storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
+data Process_v0 = Process_v0 {
+    r_fid_v0 :: !Fid
+  , r_mem_as_v0 :: !Word64
+  , r_mem_rss_v0 :: !Word64
+  , r_mem_stack_v0 :: !Word64
+  , r_mem_memlock_v0 :: !Word64
+  , r_cores_v0 :: !Bitmap
+  , r_endpoint_v0 :: !String
+} deriving (Eq, Generic, Show, Typeable)
+deriveSafeCopy 0 'base ''Process_v0
+
 data Process = Process {
     r_fid :: !Fid
   , r_mem_as :: !Word64
@@ -328,6 +343,22 @@ data Process = Process {
   , r_endpoint :: !Endpoint
 } deriving (Eq, Generic, Show, Typeable)
 
+instance Migrate Process where
+  type MigrateFrom Process = Process_v0
+  migrate v0 = Process
+    { r_fid = r_fid_v0 v0
+    , r_mem_as = r_mem_as_v0 v0
+    , r_mem_rss = r_mem_rss_v0 v0
+    , r_mem_stack = r_mem_stack_v0 v0
+    , r_mem_memlock = r_mem_memlock_v0 v0
+    , r_cores = r_cores_v0 v0
+    , r_endpoint = case readEndpoint . T.pack $ r_endpoint_v0 v0 of
+        Left err -> E.throw . RS.ReallyDie $! T.pack $ printf
+         "Process.r_endpoint: couldn't parse %s: %s"
+         (r_endpoint_v0 v0) err
+        Right v -> v
+    }
+
 instance Hashable Process
 instance ToJSON Process
 instance FromJSON Process
@@ -337,7 +368,7 @@ instance ConfObj Process where
 instance Ord Process where
   compare = comparing r_fid
 storageIndex ''Process "7d76bc51-c2ee-4cbf-bbfc-19276403e500"
-deriveSafeCopy 0 'base ''Process
+deriveSafeCopy 1 'extension ''Process
 
 data Service_v0 = Service_v0 {
     s_fid_v0 :: Fid

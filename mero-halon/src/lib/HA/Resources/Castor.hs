@@ -1,18 +1,18 @@
--- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
---
--- Castor specific resources.
-
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StrictData                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+-- |
+-- Module    : HA.Resources.Castor
+-- Copyright : (C) 2013-2017 Seagate Technology Limited.
+-- License   : All rights reserved.
+--
+-- Castor specific resources.
 -- XXX: for graph instances:
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 

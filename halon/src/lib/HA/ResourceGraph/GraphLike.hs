@@ -59,6 +59,7 @@ import           Control.Distributed.Static
   , unstatic
   , staticLabel
   )
+import           Control.Distributed.Static (Static)
 import           Control.Lens (Lens', (^.), over)
 import           Data.Binary
 import           Data.Binary.Get (runGetOrFail)
@@ -186,9 +187,11 @@ class ( DirectedEdge (UniversalRelation g)
                           -> ByteString
   decodeUniversalResource :: RemoteTable
                           -> ByteString
+                          -> (forall a. Static a -> Maybe UUID)
                           -> Either T.Text (UniversalResource g)
   decodeUniversalRelation :: RemoteTable
                           -> ByteString
+                          -> (forall a. Static a -> Maybe (UUID, UUID, UUID))
                           -> Either T.Text (UniversalRelation g)
 
   decodeRes :: Resource g a => UniversalResource g -> Maybe a
@@ -483,16 +486,18 @@ decodeAnyResource :: forall p t f . Typeable f
                   => Proxy (p :: * -> Constraint) -- ^ Describe the constraints we want to get.
                   -> (f -> AnySafeCopyDict p) -- ^ Function that wraps wire message to dict carry message.
                   -> (UUID -> String) -- ^ Converted from UUID to the label in static table.
-                  -> (forall a . p a => a -> t) -- ^ Converter that create requrired value.
+                  -> (forall a. Static a -> Maybe UUID)
+                  -- ^ If resource is old, maybe we can find its UUID anyway (see 'FromTeacake')
+                  -> (forall a . p a => a -> t) -- ^ Converter that create required value.
                   -> RemoteTable
                   -> ByteString                 -- ^ Wire message.
                   -> Either T.Text t
-decodeAnyResource _p rewrap mkResKeyName create rt bs =
+decodeAnyResource _p rewrap mkResKeyName getUUID create rt bs =
     case runGetOrFail get $ fromStrict bs of
       Right (rest,_,d)
        | d == staticLabel "" -> new rest
        | otherwise -> old rest d
-      Left (_,_,err) -> Left $! T.pack $ "decodeRes: " <> err
+      Left (_,_,err) -> Left $! T.pack $ "decodeRes, couldn't get static label: " <> err
     where
       new rest0 = case runGetOrFail get rest0 of
         Right (rest,_,uuid) ->
@@ -501,14 +506,19 @@ decodeAnyResource _p rewrap mkResKeyName create rt bs =
                case runGetLazy safeGet rest of
                  Right r -> Right $! create (r :: s)
                  Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> show err
-             Left err -> Left $! T.pack $ "decodeRes: " <> err
-        _ -> Left $! T.pack "decodeRes: can't decode."
-      old rest d = case fmap rewrap (unstatic rt d) of
-        Right (A (Dict :: Dict (p s))) ->
-          case runGetLazy safeGet rest of
-            Right r -> Right $! create (r :: s)
-            Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> err
-        Left err -> Left $! T.pack $ "decodeRes: " <> err
+             Left err -> Left $! T.pack $ "decodeRes, unstatic key name: " <> err
+        _ -> Left $! T.pack "decodeRes, new run get: can't decode."
+
+      old rest d =
+        let runUnstatic = fmap rewrap $ case getUUID d of
+              Nothing -> unstatic rt d
+              Just uuid -> unstatic rt (staticLabel $ mkResKeyName uuid)
+        in case runUnstatic of
+          Right (A (Dict :: Dict (p s))) ->
+            case runGetLazy safeGet rest of
+              Right r -> Right $! create (r :: s)
+              Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> err <> " ; bytes: " <> show rest
+          Left err -> Left $! T.pack $ "decodeRes, old rewrap: " <> err <> " " <> show d
 
 
 data AnySafeCopyDict3 (c :: * -> * -> * -> Constraint) = forall r a b .
@@ -519,17 +529,20 @@ decodeAnyRelation :: forall p t f . Typeable f
    => Proxy (p :: * -> * -> * -> Constraint) -- ^ Proxy that carry constraints that we wish to attach
    -> (f -> AnySafeCopyDict3 p) -- ^ A way to convert generic message to the messag that carry constraints.
    -> (UUID -> UUID -> UUID -> String) -- ^ Function to create resource label
+   -> (forall a. Static a -> Maybe (UUID, UUID, UUID))
+   -- ^ If resource is old, maybe we can find its UUID anyway (see 'FromTeacake')
    -> (forall r a b . p r a b => r -> a -> b -> t) -- ^ Function to create In relation
    -> (forall r a b . p r a b => r -> a -> b -> t) -- ^ Function to create Out relation
    -> RemoteTable
    -> ByteString                                   -- ^ Wire message
    -> Either T.Text t
-decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail get $ fromStrict bs of
+decodeAnyRelation _p rewrap genName getUUIDs createIn createOut rt bs =
+  case runGetOrFail get $ fromStrict bs of
     Right (rest,_,d)
       | d == staticLabel "" -> new rest
       | otherwise -> old rest d
     Left (_,_,err) -> Left $! T.pack $ "decodeRel: " <> err
-    where
+  where
       new rest0 = case runGetOrFail get rest0 of
         Right (rest,_,(ur,ua,ub)) ->
            case fmap rewrap (unstatic rt (staticLabel $ genName ur ua ub)) of
@@ -542,15 +555,19 @@ decodeAnyRelation _p rewrap genName createIn createOut rt bs = case runGetOrFail
                  Left err -> Left $! T.pack $ "decodeRes: runGetLazy: " <> show err
              Left err -> Left $! T.pack $ "decodeRes: " <> err
         _ -> Left $! T.pack $ "decodeRes: can't decode."
-      old rest d = case fmap rewrap (unstatic rt d) of
-        Right (A3 (Dict :: Dict (p r a b))) ->
-          case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
-            Right (b, r, x, y) -> case b of
-              (0 :: Word8) -> Right $! createIn r x y
-              (1 :: Word8) -> Right $! createOut r x y
-              _ -> Left $! T.pack $ "decodeRel: Invalid direction bit."
-            Left err -> Left $! T.pack $ "decodeRel: runGetLazy: " <> err
-        Left err -> Left $! T.pack $ "decodeRel: " <> err
+      old rest d =
+        let runUnstatic = fmap rewrap $ case getUUIDs d of
+              Nothing -> unstatic rt d
+              Just (ur, ua, ub) -> unstatic rt (staticLabel $ genName ur ua ub)
+        in case runUnstatic of
+          Right (A3 (Dict :: Dict (p r a b))) ->
+            case runGetLazy safeGet rest :: Either String (Word8, r, a, b) of
+              Right (b, r, x, y) -> case b of
+                (0 :: Word8) -> Right $! createIn r x y
+                (1 :: Word8) -> Right $! createOut r x y
+                _ -> Left $! T.pack $ "decodeRel: Invalid direction bit."
+              Left err -> Left $! T.pack $ "decodeRel: runGetLazy: " <> err <> " " <> show d <> " ; bytes: " <> show rest
+          Left err -> Left $! T.pack $ "decodeRel: " <> err <> " " <> show d
 
 -- | Encode full graph into @[('Key', ['Value'])]@ format. Useful as a
 -- middle-ground for 'GraphLike' conversions.

@@ -1,10 +1,5 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StrictData          #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE StrictData #-}
 -- |
 -- Module    : HA.Migrations
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -16,20 +11,18 @@ module HA.Migrations
   , writeCurrentVersionFile
   ) where
 
-import           Control.Applicative (liftA2, (<|>), Alternative(..))
+import           Control.Applicative (liftA2)
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Internal.Types
-    (remoteTable, processNode)
-import           Control.Distributed.Static (RemoteTable)
+    ( processNode
+    , remoteTable )
 import           Control.Monad (unless)
 import qualified Control.Monad.Catch as C
 import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader (ask)
-import           Data.Foldable (foldl', for_)
-import           Data.Maybe (listToMaybe)
+import           Data.Foldable (for_)
 import           Data.Monoid
 import qualified Data.Sequence as Seq
-import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Data.Time.Clock
@@ -37,23 +30,18 @@ import           Data.Time.Format
 import           Data.Version (parseVersion, versionBranch)
 import           Filesystem.Path.CurrentOS (decodeString)
 import           HA.EventQueue (DoClearEQ(..))
+import           HA.Migrations.Teacake
 import           HA.Multimap
 import qualified HA.RecoverySupervisor as RS
 import           HA.Replicator.Log (replicasDir, storageDir)
 import qualified HA.ResourceGraph as G
 import           HA.ResourceGraph.GraphLike (toKeyValue)
 import qualified HA.ResourceGraph.UGraph as U
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as Castor
-import qualified HA.Resources.Castor.Old as CastorOld
-import qualified HA.Resources.Mero as M0
-import qualified HA.Services.SSPL.LL.Resources as SSPL
 import qualified Shelly as Sh
 import           System.Directory
     ( doesFileExist
     , doesDirectoryExist
-    , createDirectoryIfMissing
-    )
+    , createDirectoryIfMissing )
 import           System.FilePath ((</>))
 import           Text.ParserCombinators.ReadP
 import           Text.Printf (printf)
@@ -146,7 +134,7 @@ migrateOrQuit mm eq = do
              liftIO . putStrLn $ "Persistent state backed up to " <> backupDir
              rt <- fmap (remoteTable . processNode) ask
              storeVal@(mi, _) <- getStoreValue mm
-             let (ers, ug) = U.buildUGraph mm rt storeVal
+             let (ers, ug) = U.buildUGraph mm rt storeVal teacakeMapRes teacakeMapRel
              unless (Seq.null ers) . liftIO $ do
                putStrLn "Found errors when reading old state, continuing anyway."
                for_ ers T.putStrLn
@@ -234,163 +222,5 @@ teacakeVersion = HalonVersion 1 0
 chelseaVersion :: HalonVersion
 chelseaVersion = HalonVersion 1 1
 
-data OldStorageDevice = OldStorageDevice
-  { _osd_enclosure :: !(Maybe Castor.Enclosure)
-  , _osd_sdev :: !CastorOld.StorageDevice
-  , _osd_ids :: !(Set.Set CastorOld.DeviceIdentifier)
-  , _osd_attrs :: !(Set.Set CastorOld.StorageDeviceAttr)
-  } deriving (Show, Eq, Ord)
-
-data NewStorageDevice dev = NewStorageDevice
-  { -- | If the device is in a 'Castor.Slot', which one? If none, it's
-    -- attached to 'R.Cluster' only.
-    _nsd_slot :: !(Maybe Castor.Slot)
-  , _nsd_dev :: !dev
-  , _nsd_ids :: !(Set.Set Castor.DeviceIdentifier)
-  , _nsd_oldDev :: !CastorOld.StorageDevice
-  , _nsd_disk :: !(Maybe M0.Disk)
-  , _nsd_replaced :: !Bool
-  , _nsd_attrs :: !(Set.Set Castor.StorageDeviceAttr)
-  , _nsd_removed :: !Bool
-  } deriving (Show, Eq, Ord)
-
-defaultNewStorageDevice :: Alternative m
-                        => CastorOld.StorageDevice
-                        -> NewStorageDevice (m Castor.StorageDevice)
-defaultNewStorageDevice oldDev = NewStorageDevice
-  { _nsd_slot = Nothing
-  , _nsd_dev = empty
-  , _nsd_ids = mempty
-  , _nsd_oldDev = oldDev
-  , _nsd_disk = Nothing
-  , _nsd_replaced = False
-  , _nsd_attrs = mempty
-  , _nsd_removed = False
-  }
-
-writeNewStorageDevice :: NewStorageDevice Castor.StorageDevice
-                      -> U.UGraph -> U.UGraph
-writeNewStorageDevice NewStorageDevice{..} =
-    connectCluster
-  . connectSlot
-  . connectIdentifiers
-  . connectAttributes
-  . collapseStorageDeviceStatus
-  where
-    -- All StorageDevices should be connected to Cluster element so
-    -- even if we're temporarily removing them in hardware, we still
-    -- can keep information about them.
-    connectCluster = U.connect R.Cluster R.Has _nsd_dev
-
-    -- Connect Slot out of inferred information. If the Disk is marked
-    -- as replaced, give it the Replaced marker and do nothing else.
-    -- If not, it must be in a Slot. Make the connection between the
-    -- Slot and Enclosure, SDev, StorageDevice and LedControlState.
-    connectSlot rg = maybe rg withSlot _nsd_slot
-      where
-        withSlot slot =
-            U.connect (Castor.slotEnclosure slot) R.Has slot
-          . connectStorageDevice
-          . connectDisk
-          . connectLed
-          $ rg
-          where
-            -- Connect StorageDevice to slot unless it was marked as removed.
-            connectStorageDevice rg'
-              | not _nsd_removed = U.connect _nsd_dev R.Has slot rg'
-              | otherwise = rg'
-
-            -- If the StorageDevice has been marked as replaced
-            -- through an identifier in the past, mark relevant Disk
-            -- as Replaced.
-            maybeMarkReplaced disk rg'
-              | _nsd_replaced = U.connect disk Castor.Is M0.Replaced rg'
-              | otherwise = rg'
-
-            -- Connect SDev to Slot and mark associated Disk as
-            -- Replaced if needed.
-            connectDisk :: U.UGraph -> U.UGraph
-            connectDisk rg' = maybe rg'
-              (\disk -> let msdev :: Maybe M0.SDev
-                            msdev = listToMaybe $ U.connectedFrom M0.IsOnHardware disk rg'
-                        in maybeMarkReplaced disk
-                           . U.connect disk M0.At _nsd_dev
-                           $ maybe rg' (\sdev -> U.connect sdev M0.At slot rg') msdev
-              ) _nsd_disk
-
-            -- Led states are now connected to the slots directly
-            -- rather that to drives.
-            connectLed rg' = maybe rg' (\(led :: SSPL.LedControlState) -> U.connect slot R.Has led rg')
-                                       (listToMaybe $ U.connectedTo _nsd_oldDev R.Has rg')
-
-    -- Connect every device identifier to the new StorageDevice
-    connectIdentifiers rg =
-      foldl' (\g0 i -> U.connect _nsd_dev R.Has i g0) rg _nsd_ids
-
-    -- Attach the update device to all the new attributes.
-    connectAttributes rg =
-      foldl' (\g0 attr -> U.connect _nsd_dev R.Has attr g0) rg _nsd_attrs
-
-    -- Find all StorageDeviceStatus that exists in the old graph for
-    -- the device and pick the first one as the authoritative one.
-    collapseStorageDeviceStatus :: U.UGraph -> U.UGraph
-    collapseStorageDeviceStatus rg =
-      let oldStatus :: Maybe Castor.StorageDeviceStatus
-          oldStatus = listToMaybe $ U.connectedTo _nsd_oldDev R.Has rg
-                                 ++ U.connectedTo _nsd_oldDev Castor.Is rg
-      in maybe rg (\st -> U.connect _nsd_dev Castor.Is st rg) oldStatus
-
 teacakeToChelsea :: Migration
-teacakeToChelsea = Migration teacakeVersion chelseaVersion True $ \rg ->
-  let storeDevs :: Set.Set (Maybe Castor.Enclosure, CastorOld.StorageDevice)
-      storeDevs = Set.fromList $
-        [ (Nothing, s) | h :: Castor.Host <- U.connectedTo R.Cluster R.Has rg
-                       , s <- U.connectedTo h R.Has rg ]
-        ++
-        [ (Just enc, s) | r :: Castor.Rack <- U.connectedTo R.Cluster R.Has rg
-                        , enc :: Castor.Enclosure <- U.connectedTo r R.Has rg
-                        , s <- U.connectedTo enc R.Has rg ]
-      stIds :: Set.Set OldStorageDevice
-      stIds = Set.map (\(e, s) -> OldStorageDevice e s (ids s) (attrs s)) storeDevs
-        where
-          attrs s = Set.fromList $ U.connectedTo s R.Has rg
-          ids s = Set.fromList $ U.connectedTo s R.Has rg ++ U.connectedTo s Castor.Is rg
-
-      -- Apply updates resulting from old storage devs
-      throughStoreDevs :: OldStorageDevice -> U.UGraph -> U.UGraph
-      throughStoreDevs osd =
-
-        let exInfo (CastorOld.DIPath v) = \x ->
-              x { _nsd_ids = Set.insert (Castor.DIPath $ T.pack v) (_nsd_ids x) }
-            exInfo (CastorOld.DIIndexInEnclosure v) = \x ->
-              x { _nsd_slot = _nsd_slot x <|> maybe Nothing (\e -> Just $! Castor.Slot e v) (_osd_enclosure osd) }
-            exInfo (CastorOld.DIWWN v) = \x ->
-              x { _nsd_ids = Set.insert (Castor.DIWWN $ T.pack v) (_nsd_ids x) }
-            exInfo (CastorOld.DIUUID v) = \x ->
-              x { _nsd_ids = Set.insert (Castor.DIUUID $ T.pack v) (_nsd_ids x) }
-            exInfo (CastorOld.DISerialNumber v) = \x ->
-              x { _nsd_dev = _nsd_dev x <|> pure (Castor.StorageDevice $ T.pack v) }
-            exInfo (CastorOld.DIRaidIdx v) = \x ->
-              x { _nsd_ids = Set.insert (Castor.DIRaidIdx v) (_nsd_ids x) }
-            exInfo (CastorOld.DIRaidDevice v) = \x ->
-              x { _nsd_ids = Set.insert (Castor.DIRaidDevice $ T.pack v) (_nsd_ids x) }
-
-            exAttr (CastorOld.SDResetAttempts v) = \x ->
-              x { _nsd_attrs = Set.insert (Castor.SDResetAttempts v) (_nsd_attrs x) }
-            exAttr (CastorOld.SDPowered v) = \x ->
-              x { _nsd_attrs = Set.insert (Castor.SDPowered v) (_nsd_attrs x) }
-            exAttr CastorOld.SDOnGoingReset = \x ->
-              x { _nsd_attrs = Set.insert Castor.SDOnGoingReset (_nsd_attrs x) }
-            exAttr CastorOld.SDRemovedAt = \x -> x { _nsd_removed = True }
-            exAttr CastorOld.SDReplaced = \x -> x { _nsd_replaced = True }
-            exAttr CastorOld.SDRemovedFromRAID = \x ->
-              x { _nsd_attrs = Set.insert Castor.SDRemovedFromRAID (_nsd_attrs x) }
-
-            extractedState :: NewStorageDevice (Maybe Castor.StorageDevice)
-            extractedState =
-                 (\acc -> foldl' (flip exAttr) acc (_osd_attrs osd))
-               $ foldl' (flip exInfo) (defaultNewStorageDevice (_osd_sdev osd)) (_osd_ids osd)
-        in case _nsd_dev extractedState of
-          Just sdev -> writeNewStorageDevice (extractedState { _nsd_dev = sdev })
-          Nothing -> id
-  in foldl' (flip throughStoreDevs) rg stIds
+teacakeToChelsea = Migration teacakeVersion chelseaVersion True teacakeUpdate

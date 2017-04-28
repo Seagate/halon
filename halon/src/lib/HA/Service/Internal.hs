@@ -54,6 +54,7 @@ import           Control.Monad.Catch ( try, mask, onException )
 import           Control.Monad.Fix (fix)
 import           Control.Monad.Reader ( asks )
 import           Data.Binary as Binary
+import qualified Data.ByteString.Lazy as BS
 import           Data.Function (on)
 import           Data.Functor (void)
 import           Data.Hashable (Hashable, hashWithSalt)
@@ -195,13 +196,23 @@ instance ToJSON Supports
 data ServiceInfo = forall a. Configuration a => ServiceInfo (Service a) a
   deriving (Typeable)
 
+-- | Teacake version of 'ServiceInfoMsg'.
+newtype ServiceInfoMsg_v0 = ServiceInfoMsg_v0 BS.ByteString
+  deriving (Typeable, Eq, Hashable, Show, Generic)
+
 -- | Monomorphised 'ServiceInfo' info about service, is used in messages sent over the network
 -- and resource graph.
 -- See 'ProcessEncode' for additional details.
 newtype ServiceInfoMsg = ServiceInfoMsg ByteString64 -- XXX: memoize StaticSomeConfigurationDict
   deriving (Typeable, Eq, Hashable, Show, Generic)
+
+instance Migrate ServiceInfoMsg where
+  type MigrateFrom ServiceInfoMsg = ServiceInfoMsg_v0
+  migrate (ServiceInfoMsg_v0 v) = ServiceInfoMsg . BS64 $! BS.toStrict v
+
 storageIndex ''ServiceInfoMsg "c935f0fc-064e-4c75-be10-106b9ff3da43"
-deriveSafeCopy 0 'base ''ServiceInfoMsg
+deriveSafeCopy 0 'base ''ServiceInfoMsg_v0
+deriveSafeCopy 1 'extension ''ServiceInfoMsg
 instance ToJSON ServiceInfoMsg
 
 instance ProcessEncode ServiceInfo where
