@@ -80,11 +80,6 @@ import           SSPL.Bindings
   , SensorResponseMessageSensor_response_typeRaid_data
   , SensorResponseMessageSensor_response_typeService_watchdog
   )
-import           System.IO.Unsafe (unsafePerformIO)
-import           System.Process (readProcess)
-
-
-
 
 --------------------------------------------------------------------------------
 -- SSPL Control messages                                                      --
@@ -365,11 +360,9 @@ commandAckSchema = genericBindConf ("sspl_command_ack", "command_ack_exchange")
 
 -- | DCS 'Schema'. See also 'sensorSchema'.
 dcsSchema :: Schema Rabbit.BindConf
-dcsSchema = genericBindConf ("sspl_halon_sensor", "dcs_exchange")
+dcsSchema = genericBindConf ("sspl_halon", "dcs_exchange")
                             ("sspl_ll", "dcs_routingKey")
-                            (shortHostName, "dcs_queue")
-  where
-    shortHostName = unsafePerformIO $ readProcess "hostname" ["-s"] ""
+                            ("sspl_halon_sensor", "dcs_queue")
 
 -- | Generic 'Schema' creating 'Rabbit.BindConf' on the given
 -- @genericBindConf exchange route queue@.
