@@ -14,7 +14,7 @@ import           Control.Distributed.Process
 import           Control.Monad (unless, void)
 import           Data.Binary (Binary)
 import           Data.Function (on)
-import           Data.List (sortBy, sort)
+import           Data.List (partition, sortBy, sort)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Typeable
