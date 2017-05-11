@@ -156,6 +156,7 @@ startSensors :: Network.AMQP.Channel -- ^ AMQP Channel.
              -> Process ()
 startSensors chan monChan SensorConf{..} keepRunning = do
   let qName = T.pack . fromDefault $ Rabbit.bcQueueName scDCS
+  liftIO $ Rabbit.setupBind chan scDCS
   Rabbit.receive chan qName keepRunning NoAck (msgHandler monChan)
 
 startActuators :: Network.AMQP.Channel
