@@ -1,7 +1,8 @@
 [Unit]
 Description=Halon Daemon
 Documentation=https://github.com/tweag/halon
-After=network.target
+Wants=rabbitmq-server.service 
+After=network.target rabbitmq-server.service
 
 [Service]
 EnvironmentFile=/etc/sysconfig/halond
