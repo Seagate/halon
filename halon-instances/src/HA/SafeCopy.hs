@@ -109,4 +109,7 @@ instance Serializable a => SafeCopy (SendPort a) where
   getCopy = contain $ decode <$> get
   kind = primitive
 
-concat <$> mapM (SC.deriveSafeCopy 0 'primitive) [''EndPointAddress, ''NodeId]
+-- 'primitive is a better choice, but it turns out that we set this to 
+-- base in teacake, so it's easier to leave this as base at the cost
+-- of a couple of extra bytes
+concat <$> mapM (SC.deriveSafeCopy 0 'base) [''EndPointAddress, ''NodeId]
