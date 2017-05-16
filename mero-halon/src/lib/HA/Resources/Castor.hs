@@ -282,6 +282,11 @@ data HalonVars = HalonVars
   , _hv_expander_reset_reset_timeout :: !Int
   -- ^ Number of seconds to wait following an inferred expander reset for drives
   --   to come back online before attempting to reset them.
+  , _hv_notification_timeout :: !Int
+  -- ^ Number of seconds to wait for all notifications to be acknowledged by 
+  --   the system (or for them to be cancelled due to process failure).
+  --   This should be lower than any timeout which waits (in a rule) for all
+  --   notifications to be acknowledged.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars

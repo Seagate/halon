@@ -615,7 +615,6 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
              , Set.fromList $ Map.elems info)
    for_ (filter (`Set.notMember` known) fids) $ onFail
 
-
 -- | Send a ping on every known 'HALink': we should have at least one
 -- known 'HALink' per process.
 runPing :: NIRef -> Fid -> Fid -> IO ()

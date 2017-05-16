@@ -53,7 +53,6 @@ import qualified HA.Resources.RC as R
 import           HA.Service (ServiceFailed(..))
 import           Network.CEP
 
-
 -- | Current RC.
 currentRC :: R.RC
 currentRC = R.RC 0 -- XXX: use version from the package/git version info?
