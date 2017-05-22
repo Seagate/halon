@@ -9,7 +9,6 @@
 -- Dealing with configurable values throughout the halon rules.
 module HA.Resources.HalonVars
   ( HalonVars(..)
-  , defaultHalonVars
   , module HA.Resources.HalonVars
   ) where
 
@@ -24,42 +23,6 @@ import HA.Resources.Castor
 import HA.SafeCopy
 import Network.CEP
 
-<<<<<<< HEAD
--- | Default value for 'HalonVars'
-defaultHalonVars :: HalonVars
-defaultHalonVars = HalonVars
-  { _hv_recovery_expiry_seconds = 300
-  , _hv_recovery_max_retries = (-5)
-  , _hv_keepalive_frequency = 30
-  , _hv_keepalive_timeout = 115
-  , _hv_drive_reset_max_retries = 3
-  , _hv_process_configure_timeout = 300
-  , _hv_process_start_cmd_timeout = 300
-  , _hv_process_start_timeout = 180
-  , _hv_process_stop_timeout = 600
-  , _hv_process_max_start_attempts = 5
-  , _hv_process_restart_retry_interval = 5
-  , _hv_mero_kernel_start_timeout = 300
-  , _hv_clients_start_timeout = 600
-  , _hv_node_stop_barrier_timeout = 600
-  , _hv_drive_insertion_timeout = 10
-  , _hv_drive_removal_timeout = 60
-  , _hv_drive_unpowered_timeout = 300
-  , _hv_drive_transient_timeout = 300
-  , _hv_expander_node_up_timeout = 460
-  , _hv_expander_sspl_ack_timeout = 180
-  , _hv_monitoring_angel_delay = 2
-  , _hv_mero_workers_allowed = True
-  , _hv_disable_smart_checks = False
-  , _hv_service_stop_timeout = 30
-  , _hv_m0dixinit_timeout = 30
-  , _hv_expander_reset_threshold = 8
-  , _hv_expander_reset_reset_timeout = 300
-  , _hv_notification_timeout = 115
-  }
-
-=======
->>>>>>> HALON-714: Teacake -> Chelsea migration
 -- | Get 'HalonVars' from RG
 getHalonVars :: PhaseM RC l HalonVars
 getHalonVars =

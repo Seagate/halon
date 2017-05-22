@@ -45,7 +45,7 @@ import           GHC.Generics (Generic)
 import           HA.Aeson hiding (encode, decode)
 import           HA.ResourceGraph
 import qualified HA.Resources as R
-import           HA.Resources.HalonVars
+import           HA.Resources.Castor (HalonVars(..), defaultHalonVars)
 import           HA.Resources.Mero as M0
 import           HA.SafeCopy
 import qualified HA.Service
