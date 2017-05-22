@@ -6,8 +6,8 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.Services.Mero.RC.Actions
-     -- * Notifications system
-  ( mkStateDiff
+  ( -- * Notifications system
+    mkStateDiff
   , getStateDiffByEpoch
   , markNotificationDelivered
   , markNotificationFailed
