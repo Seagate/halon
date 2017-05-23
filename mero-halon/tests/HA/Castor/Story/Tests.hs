@@ -130,12 +130,12 @@ getHostName ts nid = do
 waitUntilGraph :: StoreChan            -- ^ Where to retrieve current RG from.
                -> Int                  -- ^ Time between retries in seconds.
                -> Int                  -- ^ Number of retries before giving up.
-               -> (G.Graph -> Maybe a) -- ^ Predicate on the graph.
+               -> (G.Graph -> Process (Maybe a)) -- ^ Predicate on the graph.
                -> Process (Maybe a)
 waitUntilGraph _ _ tries _ | tries <= 0 = return Nothing
 waitUntilGraph mm interval tries p = do
   rg <- G.getGraph mm
-  case p rg of
+  p rg >>= \case
     Nothing -> do
       _ <- receiveTimeout (interval * 1000000) []
       waitUntilGraph mm interval (tries - 1) p
@@ -152,7 +152,9 @@ waitState :: HasConfObjectState a
           -> Process (Maybe (StateCarrier a))
 waitState obj mm interval ts p = waitUntilGraph mm interval ts $ \rg ->
   let st = HA.Resources.Mero.Note.getState obj rg
-  in if p st then Just st else Nothing
+  in if p st then return $ Just st else do
+    sayTest $ "waitState: st=" ++ show st
+    return Nothing
 
 -- | Construct a 'ThatWhichWeCallADisk' per every 'M0.SDev' found in
 -- RG.
@@ -473,7 +475,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
     let devs = [ d | slot'@Slot{} <- G.connectedTo enc Has rg'
                    , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
-    in if aDiskSD sdev `notElem` devs then Just () else Nothing
+    in return $! if aDiskSD sdev `notElem` devs then Just () else Nothing
 
   -- ruleDriveRemoved.mkDetachDisk.detachDisk can't work without mero
   -- worker. Simply emit the event as if the device got detached.

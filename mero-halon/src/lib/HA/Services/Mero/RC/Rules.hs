@@ -48,6 +48,7 @@ rules = sequence_
   [ ruleCheckCleanup
   , ruleNotificationsDeliveredToM0d
   , ruleNotificationsFailedToBeDeliveredToM0d
+  , ruleNotificationTimeoutReached
   , ruleHalonM0dFailed
   , ruleHalonM0dExit
   , ruleHalonM0dException
@@ -103,15 +104,16 @@ ruleCheckCleanup = define "service::m0d::check-cleanup" $ do
 --   the process.
 ruleGenericNotification :: Definitions RC ()
 ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
-  \(Notified epoch msg _ fails) -> do
+  \(Notified epoch msg _ fails timeouts) -> do
+    Log.tagContext Log.SM [("epoch", show epoch)] Nothing
     promulgateRC msg
-    unless (null fails) $ do
-      ps <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getLocalGraph
-      unless (null ps) $ do
-        Log.rcLog' Log.WARN "Some services were marked online but notifications failed to be delivered"
-        Log.rcLog' Log.WARN $ "epoch = " ++ show epoch
-        for_ ps $ \p -> Log.rcLog' Log.WARN $ "fid = " ++ show (M0.fid p)
-        promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> ps)
+    unless (null fails && null timeouts) $ do
+      psF <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getLocalGraph
+      psT <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) timeouts) <$> getLocalGraph
+      unless (null psF && null psT) $ do
+        for_ psF $ \p -> Log.rcLog' Log.WARN $ "Delivery failed to: " ++ show (M0.fid p)
+        for_ psT $ \p -> Log.rcLog' Log.WARN $ "Delivery timed out to: " ++ show (M0.fid p)
+        promulgateRC $ NotifyFailureEndpoints (M0.r_endpoint <$> psF ++ psT)
 
 -- | When notification Set was delivered to some process we should mark that
 -- in graph and check if there are some other pending processes, if not -
@@ -175,6 +177,18 @@ ruleAnnounceEvent = defineSimpleIf "service::m0d::notification::announce" g $
   where
     g (HAEvent uid (AnnounceEvent v)) _ = return $! Just (uid, v)
     g _ _ = return Nothing
+
+-- | Fired when the period of time for notifications to be sent has elapsed.
+--   This does not necessarily indicate a problem, since this will fire for every
+--   notification.
+ruleNotificationTimeoutReached :: Definitions RC ()
+ruleNotificationTimeoutReached = defineSimple "service::m0d::notification::timeout" $ \(EpochTimeout epoch) -> do
+  Log.tagContext Log.SM [("epoch", show epoch)] Nothing
+  mdiff <- getStateDiffByEpoch epoch
+  for_ mdiff $ \diff -> do
+    Log.rcLog' Log.WARN "Epoch timed out with unhandled notifications."
+    forceCompleteStateDiff diff
+
 
 -- | Handle event from regular monitor about halon:m0d service death.
 -- This means that there is some problem with halon service (possibly non fatal

@@ -53,6 +53,7 @@ defaultHalonVars = HalonVars
   , _hv_m0dixinit_timeout = 30
   , _hv_expander_reset_threshold = 8
   , _hv_expander_reset_reset_timeout = 300
+  , _hv_notification_timeout = 115
   }
 
 -- | Get 'HalonVars' from RG
