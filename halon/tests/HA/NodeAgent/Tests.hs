@@ -10,7 +10,7 @@
 module HA.NodeAgent.Tests (tests, __remoteTable) where
 
 import HA.EventQueue
-import HA.EventQueue.Process hiding (__remoteTable)
+import HA.EventQueue.Process hiding (remoteTable)
 import HA.EQTracker.Process hiding (__remoteTable)
 import HA.Replicator ( RGroup(..) )
 import RemoteTables ( remoteTable )

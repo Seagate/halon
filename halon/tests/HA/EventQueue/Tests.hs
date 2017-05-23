@@ -12,7 +12,7 @@ import Test.Framework
 import Test.Transport
 
 import HA.EventQueue
-import HA.EventQueue.Process
+import HA.EventQueue.Process hiding (remoteTable)
 import HA.EventQueue.Producer
 import HA.EventQueue.Types
 import HA.EQTracker
