@@ -298,7 +298,7 @@ ssplProcess conf@(SSPLConf{..}) = makeConnection >>= \case
         | otherwise -> C.try (liftIO $ Rabbit.openConnection scConnectionConf) >>= \case
             Right x -> return $! Right x
             Left (_ :: C.SomeException) -> do
-              _ <- receiveTimeout 1000000 []
+              _ <- receiveTimeout 5000000 []
               tryAgain $! n - 1
 
     -- Open RMQ channel and register exception handlers.
