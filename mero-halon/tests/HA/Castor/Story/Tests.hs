@@ -72,7 +72,7 @@ data ThatWhichWeCallADisk = ADisk
   { aDiskSD :: StorageDevice -- ^ Has a storage device
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
   , aDiskPath :: T.Text -- ^ Has a path
-  , aDiskWWN :: T.Text -- ^ Has a WWN
+  , aDiskWWN :: ~ T.Text -- ^ Has a WWN
   } deriving (Show)
 
 mkTests :: (Typeable g, RGroup g) => Proxy g -> IO (Transport -> [TestTree])
