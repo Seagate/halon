@@ -4,12 +4,12 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
--- Module    : HA.Services.SSPL.CEP.
+-- Module    : HA.Services.SSPL.LL.CEP.
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- @halon:sspl@ service rules
-module HA.Services.SSPL.CEP
+module HA.Services.SSPL.LL.CEP
   ( DriveLedUpdate(..)
   , sendLedUpdate
   , sendNodeCmd
@@ -19,7 +19,6 @@ module HA.Services.SSPL.CEP
   ) where
 
 import           Control.Applicative
-import           Control.Distributed.Process
 import           Control.Monad
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Maybe
@@ -32,7 +31,6 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics
-import qualified HA.Aeson as Aeson
 import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
@@ -53,7 +51,6 @@ import           HA.Resources.Mero.Note
 import           HA.Service hiding (configDict)
 import           HA.Service.Interface
 import           HA.Services.SSPL (sspl)
-import           HA.Services.SSPLHL (SsplHlFromSvc(..))
 import           HA.Services.SSPL.IEM
 import           HA.Services.SSPL.LL.Resources
 import           Mero.ConfC (strToFid)
@@ -174,7 +171,6 @@ ssplRules = sequence_
   [ ruleMonitorDriveManager
   , ruleMonitorStatusHpi
   , ruleMonitorRaidData
-  , ruleHlNodeCmd
   , ruleThreadController
   , ruleSSPLTimeout
   , ruleSSPLConnectFailure
@@ -519,35 +515,6 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
   where
     extract (HAEvent uid (ThreadController nid v)) _ = return $! Just (uid, nid, v)
     extract _ _ = return Nothing
-
-ruleHlNodeCmd :: Definitions RC ()
-ruleHlNodeCmd = defineSimpleIf "sspl-hl-node-cmd" (\(HAEvent uuid (CRequest cr)) _ ->
-    return . fmap (uuid,) .  commandRequestMessageNodeStatusChangeRequest
-              . commandRequestMessage
-              $ cr
-    ) $ \(uuid,sr) ->
-      let
-        command = commandRequestMessageNodeStatusChangeRequestCommand sr
-        nodeFilter = case commandRequestMessageNodeStatusChangeRequestNodes sr of
-          Just foo -> T.unpack foo
-          Nothing -> "."
-      in do
-        rg <- getLocalGraph
-        let nodes = [ n | n <- connectedTo Cluster Has rg
-                        , Just m0n <- [M0.nodeToM0Node n rg]
-                        , getState m0n rg == M0.NSOnline ]
-        hosts <- fmap catMaybes $ findHosts nodeFilter >>= mapM findBMCAddress
-        case command of
-          Aeson.String "poweroff" -> do
-            Log.rcLog' Log.DEBUG $ "Powering off hosts " ++ show hosts
-            forM_ hosts $ \nodeIp -> do
-              sendNodeCmd nodes Nothing $ IPMICmd IPMI_OFF (T.pack nodeIp)
-          Aeson.String "poweron" -> do
-            Log.rcLog' Log.DEBUG $ "Powering on hosts " ++ show hosts
-            forM_ hosts $ \nodeIp -> do
-              sendNodeCmd nodes Nothing $ IPMICmd IPMI_ON (T.pack nodeIp)
-          x -> liftProcess . say $ "Unsupported node command: " ++ show x
-        messageProcessed uuid
 
 -- | Send update to SSPL that the given 'StorageDevice' changed its status.
 updateDriveManagerWithFailure :: StorageDevice

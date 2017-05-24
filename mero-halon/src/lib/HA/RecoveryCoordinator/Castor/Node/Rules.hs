@@ -155,7 +155,7 @@ import qualified HA.Resources.Mero.Note as M0
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero
-import           HA.Services.SSPL.CEP ( sendInterestingEvent )
+import           HA.Services.SSPL.LL.CEP ( sendInterestingEvent )
 import           HA.Services.SSPL.IEM ( logMeroBEError )
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import           Mero.ConfC (ServiceType(..))

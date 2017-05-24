@@ -65,7 +65,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
 import           HA.Resources.Mero.Note
 import           HA.Services.SSPL
-import           HA.Services.SSPL.CEP (sendNodeCmd)
+import           HA.Services.SSPL.LL.CEP (sendNodeCmd)
 import           Network.CEP
 
 -- | Set of all rules related to the disk livetime. It's reexport to be

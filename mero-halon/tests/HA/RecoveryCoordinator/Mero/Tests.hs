@@ -39,7 +39,7 @@ import           HA.Resources.Mero.Note
 import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.SSPL (sspl)
-import           HA.Services.SSPL.CEP
+import           HA.Services.SSPL.LL.CEP
 import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..), LoggerCmd(..))
 import           Helper.InitialData
 import qualified Helper.Runner as H

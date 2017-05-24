@@ -145,6 +145,7 @@ traceSSPLHL = mkHalonTracer "ssplhl-service"
 logSSPL :: String -> IO ()
 logSSPL s = putStrLn $ "[service:sspl-hl] " ++ s
 
+-- | Listens for commands sent from SSPL-HL. 
 cmdHandler :: ProcessId -- ^ Status handler
            -> SendPort CommandResponseMessage -- ^ Response channel
            -> ProcessId -- ^ Supervisor handler

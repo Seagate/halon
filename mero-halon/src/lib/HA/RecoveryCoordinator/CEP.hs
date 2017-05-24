@@ -54,7 +54,7 @@ import           HA.Service.Interface
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
 import           HA.Services.Mero.RC (rules)
 import           HA.Services.Ping
-import qualified HA.Services.SSPL.CEP (sendInterestingEvent, sendNodeCmd, ssplRules)
+import qualified HA.Services.SSPL.LL.CEP (sendInterestingEvent, sendNodeCmd, ssplRules)
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
@@ -125,7 +125,7 @@ rcRules argv additionalRules = do
               ]
     HA.RecoveryCoordinator.Service.Rules.rules
     Info.rules argv
-    HA.Services.SSPL.CEP.ssplRules
+    HA.Services.SSPL.LL.CEP.ssplRules
     castorRules
     ssplHLRules
     HA.RecoveryCoordinator.RC.Rules.rules
@@ -370,13 +370,13 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
         _ | isClient -> let msg = InterestingEventMessage $ logMeroClientFailed $ T.pack
                                   ( "{ 'hostname': \"" <> hst <> "\", "
                                   <> " 'reason': \"Lost connection to RC\" }")
-                        in HA.Services.SSPL.CEP.sendInterestingEvent msg
+                        in HA.Services.SSPL.LL.CEP.sendInterestingEvent msg
           | isServer -> do
               nodesOnHost host >>= \case
                 [] -> do
                   RCLog.rcLog' RCLog.WARN ("Cannot find nodes on host." :: String)
                 nodes -> void $ do
-                  HA.Services.SSPL.CEP.sendNodeCmd nodes Nothing $
+                  HA.Services.SSPL.LL.CEP.sendNodeCmd nodes Nothing $
                     IPMICmd IPMI_CYCLE (T.pack hst)
           | otherwise ->
               RCLog.rcLog' RCLog.WARN ("Host not labeled as server or client" :: String)

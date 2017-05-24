@@ -31,7 +31,7 @@ import HA.Resources.Castor
 import HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (ConfObjectState(..), getState)
-import HA.Services.SSPL.CEP ( sendNodeCmd )
+import HA.Services.SSPL.LL.CEP ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)

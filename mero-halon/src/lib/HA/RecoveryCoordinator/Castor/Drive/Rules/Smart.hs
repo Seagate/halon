@@ -42,7 +42,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node(..))
 import HA.Resources.HalonVars
 import HA.Resources.Castor (StorageDevice(..))
-import HA.Services.SSPL.CEP
+import HA.Services.SSPL.LL.CEP
   ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
   ( AckReply(..)
