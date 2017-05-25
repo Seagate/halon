@@ -292,13 +292,13 @@ ssplProcess conf@(SSPLConf{..}) = makeConnection >>= \case
         ]
   where
     makeConnection :: Process (Either C.SomeException Network.AMQP.Connection)
-    makeConnection = flip fix (10 :: Int) $ \tryAgain n -> case n of
+    makeConnection = flip fix (20 :: Int) $ \tryAgain n -> case n of
       _ | n <= 0 -> error "SSPL.makeConnection underflow"
         | n == 1 -> C.try (liftIO $ Rabbit.openConnection scConnectionConf)
         | otherwise -> C.try (liftIO $ Rabbit.openConnection scConnectionConf) >>= \case
             Right x -> return $! Right x
             Left (_ :: C.SomeException) -> do
-              _ <- receiveTimeout 5000000 []
+              _ <- receiveTimeout 6000000 []
               tryAgain $! n - 1
 
     -- Open RMQ channel and register exception handlers.
