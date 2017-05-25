@@ -148,6 +148,21 @@ openConnection ConnectionConf{..} =
     un = T.pack ccLoginName
     pw = T.pack ccPassword
 
+-- | Repeatedly attempt to connect to a RabbitMQ process.
+openConnectionRetry :: ConnectionConf -- ^ Connection configuration
+                    -> Int -- ^ Number of attempts to make
+                    -> Int -- ^ Time between attempts (µs)
+                    -> Process (Either SomeException Network.AMQP.Connection)
+openConnectionRetry conf attempts sleep = 
+  flip fix (attempts :: Int) $ \tryAgain n -> case n of
+    _ | n <= 0 -> error "Rabbit.openConnectionRetry underflow"
+      | n == 1 -> try (liftIO $ HA.Services.SSPL.Rabbit.openConnection conf)
+      | otherwise -> try (liftIO $ HA.Services.SSPL.Rabbit.openConnection conf) >>= \case
+          Right x -> return $! Right x
+          Left (_ :: SomeException) -> do
+            _ <- DP.receiveTimeout sleep []
+            tryAgain $! n - 1
+
 -- | Create a @topic@ exchange, queue and bind the two together with
 -- the given routing key. This should be ran before trying to send a
 -- message through the exchange.
@@ -167,7 +182,6 @@ setupBind chan BindConf{..} = mask_ $ do
     exchangeName = T.pack $ fromDefault bcExchangeName
     queueName = T.pack $ fromDefault bcQueueName
     routingKey = T.pack $ fromDefault bcRoutingKey
-
 
 -- | Read the given channel until we're signalled to stop. If process
 -- dies without being signalled, it's restarted.
