@@ -85,7 +85,8 @@ mkRPCTransport argv = do
       -- Invoke again with root privileges
       putStrLn $ "Calling test with sudo ..."
       mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
-      mtl <- fmap ("TEST_LISTEN=" ++) <$> lookupEnv "TEST_LISTEN"
+      mtl <- fmap ("TEST_LISTEN=" ++) . fromMaybe "127.0.0.1:0" <$>
+        lookupEnv "TEST_LISTEN"
       callProcess "sudo" $ catMaybes [mld, mtl] ++ prog : argv
       exitSuccess
     addr <- getTestListen

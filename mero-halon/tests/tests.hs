@@ -63,7 +63,7 @@ main :: IO ()
 main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
-  Just (host0, p0)<- getTestListenSplit
+  (host0, p0) <- getTestListenSplit
   let addr0 = host0 ++ ":" ++ show p0
 
   let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0

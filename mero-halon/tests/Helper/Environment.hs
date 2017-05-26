@@ -17,6 +17,7 @@ import Data.List.Split (splitOn)
 import GHC.Word (Word8)
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
+import Data.Foldable (for_)
 
 withMeroRoot :: (String -> IO a) -> IO a
 withMeroRoot f = lookupEnv "MERO_ROOT" >>= \case
@@ -26,18 +27,19 @@ withMeroRoot f = lookupEnv "MERO_ROOT" >>= \case
 -- | Return the value of the @TEST_LISTEN@ environment variable split
 -- into host and port. Perform a minor check for formatting. 'Nothing'
 -- if we variable unset or we couldn't parse @address:port@ pair.
-getTestListenSplit :: IO (Maybe (String, Int))
-getTestListenSplit = fmap (splitOn ":") <$> lookupEnv "TEST_LISTEN" >>= \case
-  Just [ip, p] -> case (traverse readMaybe (splitOn "." ip), readMaybe p) of
-    (Just ([_, _, _, _] :: [Word8]), Just p') -> return $ Just (ip, p')
-    _ -> return Nothing
-  _ -> return Nothing
+getTestListenSplit :: IO (String, Int)
+getTestListenSplit =
+  lookupEnv "TEST_LISTEN" >>= \val -> case (splitOn ":") <$> val of
+    Just [ip, p] -> case (traverse readMaybe (splitOn "." ip), readMaybe p) of
+      (Just ([_, _, _, _] :: [Word8]), Just p') -> return (ip, p')
+      _ -> warn val
+    _ -> warn val
+  where
+    warn val = do
+      for_ val $ putStrLn . ("Malformed TEST_LISTEN environment variable: " ++)
+      return ("127.0.0.1", 0)
 
 -- | Retrieve an IP for the current host from @TEST_LISTEN@
 -- ('getTestListenSplit') env variable.
 testListenName :: IO String
-testListenName = do
-  mhost <- fmap fst <$> getTestListenSplit
-  case mhost of
-    Nothing -> fail "Couldn't retrieve host IP from TEST_LISTEN env var."
-    Just h  -> return h
+testListenName = fst <$> getTestListenSplit

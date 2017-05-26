@@ -114,10 +114,8 @@ sudo systemctl start mero-mkfs
 sudo systemctl start mero
 
 # Nothing special should be needed to run the USE_MERO tests
-# themselves. Make sure TEST_LISTEN is set: the 127.0.0.1 address in
-# stack.yml might not be good enough as IIRC mero (or RPClite?) is
-# unhappy with it. 'stack test --flag mero:mero-halon' should be
-# enough to run things. If you're using stack + docker, you may need
+# themselves. 'stack test --flag mero:mero-halon' should be enough
+# to run things. If you're using stack + docker, you may need
 # ‘--docker-persist’ flag for the above commands.
 ```
 
