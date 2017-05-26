@@ -44,6 +44,7 @@ processKeepaliveTimeout ts = Transition $ \case
 processFailed :: (?loc :: CallStack) => String -> Transition M0.Process
 processFailed m = Transition $ \case
   st@M0.PSOffline -> transitionErr ?loc st
+  (M0.PSFailed _) -> NoTransition
   _ -> TransitionTo $ M0.PSFailed m
 
 -- | HA 'M0.Process' online.
