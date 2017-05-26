@@ -230,19 +230,18 @@ addProcess node devs CI.M0Process{..} = let
       in do
         svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
         modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
-  in do
+  in replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
+    ep <- mkEndpoint
+    proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
+                   <*> return ep
+    mapM_ (goSrv proc ep) m0p_services
+
+    modifyGraph $ G.connect node M0.IsParentOf proc
+              >>> G.connect proc Has procLabel
+
     rg <- getLocalGraph
-    replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
-      ep <- mkEndpoint
-      proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
-                     <*> return ep
-      mapM_ (goSrv proc ep) m0p_services
-
-      modifyGraph $ G.connect node M0.IsParentOf proc
-                >>> G.connect proc Has procLabel
-
-      for_ (procEnv rg) $ \pe -> modifyGraph $
-        G.connect proc Has pe
+    for_ (procEnv rg) $ \pe -> modifyGraph $
+      G.connect proc Has pe
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
