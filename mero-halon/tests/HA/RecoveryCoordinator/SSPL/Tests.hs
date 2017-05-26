@@ -38,7 +38,7 @@ import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
-import           HA.Services.SSPL.CEP (ssplRules)
+import           HA.Services.SSPL.LL.CEP (ssplRules)
 import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..))
 import           Helper.InitialData
 import           Helper.RC

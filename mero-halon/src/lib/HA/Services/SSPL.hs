@@ -30,7 +30,6 @@ import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static ( staticApply, RemoteTable )
 import qualified Control.Exception as E
-import qualified Control.Monad.Catch as C
 import           Control.Monad.State.Strict hiding (mapM_)
 import           Control.Monad.Trans.Maybe
 import           Data.Binary (Binary)
@@ -258,7 +257,7 @@ instance Binary StopServiceInternal
 
 -- | Main daemon for SSPL halon service
 ssplProcess :: SSPLConf -> Process ()
-ssplProcess conf@(SSPLConf{..}) = makeConnection >>= \case
+ssplProcess conf@(SSPLConf{..}) = Rabbit.openConnectionRetry scConnectionConf 20 6000000 >>= \case
   Left e -> do
     saySSPL $ "Failed to connect to RabbitMQ: " ++ show e
     node <- getSelfNode
@@ -290,17 +289,8 @@ ssplProcess conf@(SSPLConf{..}) = makeConnection >>= \case
             saySSPL $ "tearing server down"
             runTeardown
         ]
-  where
-    makeConnection :: Process (Either C.SomeException Network.AMQP.Connection)
-    makeConnection = flip fix (20 :: Int) $ \tryAgain n -> case n of
-      _ | n <= 0 -> error "SSPL.makeConnection underflow"
-        | n == 1 -> C.try (liftIO $ Rabbit.openConnection scConnectionConf)
-        | otherwise -> C.try (liftIO $ Rabbit.openConnection scConnectionConf) >>= \case
-            Right x -> return $! Right x
-            Left (_ :: C.SomeException) -> do
-              _ <- receiveTimeout 6000000 []
-              tryAgain $! n - 1
 
+  where
     -- Open RMQ channel and register exception handlers.
     startRmqChannel :: Network.AMQP.Connection -> Process Network.AMQP.Channel
     startRmqChannel conn = do

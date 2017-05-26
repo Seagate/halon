@@ -72,7 +72,7 @@ Library
                    HA.Services.Ekg.RC
                    HA.Services.SSPL
                    HA.Services.SSPL.Rabbit
-                   HA.Services.SSPL.CEP
+                   HA.Services.SSPL.LL.CEP
                    HA.Services.SSPLHL
                    HA.Services.SSPL.LL.Resources
                    HA.Services.SSPL.IEM

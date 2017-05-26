@@ -47,7 +47,7 @@ import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.Services.SSPL
-import           HA.Services.SSPL.CEP
+import           HA.Services.SSPL.LL.CEP
   ( sendInterestingEvent
   , updateDriveManagerWithFailure
   )

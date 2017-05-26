@@ -40,7 +40,7 @@ import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           HA.Services.SSPL.CEP (sendNodeCmd)
+import           HA.Services.SSPL.LL.CEP (sendNodeCmd)
 import           HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
 import           Network.CEP

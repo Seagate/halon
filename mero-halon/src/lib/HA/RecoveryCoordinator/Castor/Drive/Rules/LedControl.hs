@@ -22,7 +22,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
-import           HA.Services.SSPL.CEP (DriveLedUpdate(..), sendLedUpdate, sendNodeCmd)
+import           HA.Services.SSPL.LL.CEP (DriveLedUpdate(..), sendLedUpdate, sendNodeCmd)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(DriveLed), LedControlState(..))
 import           Network.CEP
 import           SSPL.Bindings
