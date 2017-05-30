@@ -13,6 +13,8 @@ import           Control.Distributed.Process
 import           Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import           Data.Foldable
+import           Data.List (intercalate)
+import           Data.List.Split (chunksOf)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified HA.Aeson
@@ -69,13 +71,19 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
       putStrLn $ "    profile:    " ++ fidToStr pfid
       putStrLn $ "    filesystem: " ++ fidToStr ffid
       forM_ mstats $ \stats -> do
-        putStrLn $ "    Filesystem stats:"
-        putStrLn $ "      Total space: " ++ show (_fss_total_disk . M0._fs_stats $ stats)
-        putStrLn $ "      Free space: " ++ show (_fss_free_disk . M0._fs_stats $ stats)
-        putStrLn $ "      Total segments: " ++ show (_fss_total_seg . M0._fs_stats $ stats)
-        putStrLn $ "      Free segments: " ++ show (_fss_free_seg . M0._fs_stats $ stats)
+        putStrLn "    Filesystem stats:"
+        let fss = M0._fs_stats stats
+        let entries =
+              [ ("      Total space:    ", showGrouped $ _fss_total_disk fss)
+              , ("      Free space:     ", showGrouped $ _fss_free_disk fss)
+              , ("      Total segments: ", showGrouped $ _fss_total_seg fss)
+              , ("      Free segments:  ", showGrouped $ _fss_free_seg fss)
+              ]
+        let width = maximum $ map (\(_, val) -> length val) entries
+        forM_ entries $ \(label, val) -> do
+          putStrLn $ label ++ printf ("%" ++ show width ++ "s") val
       unless (null sns) $ do
-         putStrLn $ "    sns operations:"
+         putStrLn "    sns operations:"
          forM_ sns $ \(M0.Pool pool_fid, s) -> do
            putStrLn $ "      pool:" ++ fidToStr pool_fid ++ " => " ++ show (M0.prsType s)
            putStrLn $ "      uuid:" ++ show (M0.prsRepairUUID s)
@@ -83,7 +91,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
              putStrLn $ "      time of start: " ++ show (M0.priTimeOfSnsStart i)
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
-      putStrLn $ "\nHosts:"
+      putStrLn "\nHosts:"
       forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
          printf node_pattern nst (showNodeFid m0fid) qfdn
@@ -115,12 +123,19 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
    where
      showNodeFid Nothing = ""
      showNodeFid (Just (M0.Node fid)) = show fid
+
+     -- E.g. showGrouped 1234567 ==> "1,234,567"
+     showGrouped = reverse . intercalate "," . chunksOf 3 . reverse . show
+
      node_pattern  = "  [%9s] %-24s  %s\n"
      node_pattern_ext  = "  %13s Extended state: %s\n"
+
      proc_pattern  = "  [%9s] %-24s    %s %s\n"
      proc_pattern_ext  = "  %13s Extended state: %s\n"
+
      serv_pattern  = "  [%9s] %-24s      %s\n"
      serv_pattern_ext  = "  %13s Extended state: %s\n"
+
      sdev_pattern  = "  [%9s] %-24s        %s %s\n"
      sdev_pattern_ext  = "  %13s Extended state: %s\n"
      sdev_patterni = "  %13s %s\n"
