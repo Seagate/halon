@@ -892,8 +892,13 @@ ruleFailedNotificationFailsProcess =
     -- handler for failed notifications so there isn't anything sane
     -- we could do here anyway.
     unless (null procs) $ do
-      void . applyStateChanges $
+      failProcs <- getHalonVar _hv_failed_notification_fails_process
+      if failProcs 
+      then void . applyStateChanges $
         map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
+      else do
+        Log.rcLog' Log.WARN $ "Failing process due to notification failure is disabled."
+        for_ procs $ \proc -> Log.tagContext Log.SM proc Nothing
   where
     isProcFailed (M0.PSFailed _) = True
     isProcFailed _ = False

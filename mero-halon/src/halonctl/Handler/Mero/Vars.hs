@@ -33,6 +33,7 @@ data Options
           , keepaliveTimeout      :: Maybe Int
           , driveResetMaxRetries  :: Maybe Int
           , disableSmartCheck     :: Maybe Bool
+          , disableNotificationFailure :: Maybe Bool
           }
        deriving (Show, Eq)
 
@@ -54,6 +55,7 @@ run nids VarsSet{..} = do
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_timeout = s}) keepaliveTimeout
                  , maybe id (\s -> \x -> x{Castor._hv_drive_reset_max_retries = s}) driveResetMaxRetries
                  , maybe id (\s -> \x -> x{Castor._hv_disable_smart_checks = s}) disableSmartCheck
+                 , maybe id (\s -> \x -> x{Castor._hv_failed_notification_fails_process = not s}) disableNotificationFailure
                  ]
       in promulgateEQ nids (Castor.SetHalonVars hv) >>= flip withMonitor wait
   where
@@ -72,6 +74,7 @@ parser = Opt.subparser $ mconcat
                      <*> keepaliveTimeout
                      <*> driveResetMax
                      <*> disableSmartCheck
+                     <*> disableNotificationFailure
      recoveryExpiry = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "recovery-expiry"
        <> Opt.metavar "[SECONDS]"
@@ -94,5 +97,9 @@ parser = Opt.subparser $ mconcat
        <> Opt.help "Number of times we could try to reset drive.")
      disableSmartCheck = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "disable-smart-check"
-       <>  Opt.metavar "[TRUE|FALSE]"
+       <>  Opt.metavar "[True|False]"
        <>  Opt.help "Disable smart check by sspl.")
+     disableNotificationFailure = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "disable-notification-failure"
+       <> Opt.metavar "[True|False]"
+       <> Opt.help "Disable failing a process when notification sending to it fails.")

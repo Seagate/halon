@@ -54,6 +54,7 @@ defaultHalonVars = HalonVars
   , _hv_expander_reset_threshold = 8
   , _hv_expander_reset_reset_timeout = 300
   , _hv_notification_timeout = 115
+  , _hv_failed_notification_fails_process = True
   }
 
 -- | Get 'HalonVars' from RG

@@ -287,6 +287,10 @@ data HalonVars = HalonVars
   --   the system (or for them to be cancelled due to process failure).
   --   This should be lower than any timeout which waits (in a rule) for all
   --   notifications to be acknowledged.
+  , _hv_failed_notification_fails_process :: !Bool
+  -- ^ Determine whether a process should be considered as failed if we cannot
+  --   send a notification to it. Generally we want this, but it can sometimes
+  --   cause problems.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars
