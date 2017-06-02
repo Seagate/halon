@@ -167,7 +167,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
 
               waitClear
               waitFor notifier
-              onTimeout 20 starting_notify_timed_out
+              onTimeout 120 starting_notify_timed_out
 
               -- It may seem risky doing this check early but it
               -- should be OK: if it's not configured now, it's not
