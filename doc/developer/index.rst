@@ -9,6 +9,8 @@ Table of Contents
 .. toctree::
 
    index.rst
+   overview.md
+   concepts/logging.rst
    components/event-queue.rst
    components/resource-graph.rst
    components/replicator.rst

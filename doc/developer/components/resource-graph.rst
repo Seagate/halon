@@ -10,7 +10,7 @@ Context
 -------
 
 The :abbr:`RG (resource graph)` is the core database used by the :ref:`recovery-coordinator` when deciding upon actions to be taken. The :ref:`recovery-coordinator` both reads and writes to the resource graph, 
-reading current system information and updating it to reflect changes of state or condition. It is one of the three components replicated by the :ref:`replicator`.
+reading current system information and updating it to reflect changes of state or condition. It is one of the two components replicated by the :ref:`replicator`.
 
 Detail
 ------
@@ -117,3 +117,20 @@ Garbage Collection
 When working with the resource graph, one does not delete resources directly. This would potentially be expensive and annoying, since one would have to verify that a given resource wasn't connected to anything else whenever removing a connection from it. Instead, the resource graph has its own garbage collector which will automatically remove resources not connected to the roots of the RG (in Halon, the `Cluster` resource.)
 
 The resource graph keeps a record of the number of times disconnections have happened in the graph; this is checked each time `sync` (which synchronises the RG with the replicator) is called, and if greater than a certain threshold, GC is performed before syncing the graph.
+
+Code pointers
+-------------
+
+- The general interface to graph communication is in `halon/src/lib/HA/ResourceGraph/GraphLike.hs`.
+- The implementation of the `GraphLike` interface for standard RG operations is in `halon/src/lib/HA/ResourceGraph.hs`.
+- The unconstrained graph used for migrating between multiple versions of the resource graph is in `halon/src/lib/HA/ResourceGraph/UGraph.hs`
+
+Initial resources are defined in:
+
+- `halon/src/lib/HA/Resources.hs`
+- `mero-halon/src/lib/HA/Resources/Castor.hs`
+- `mero-halon/src/lib/HA/Resources/Mero.hs`
+
+Template haskell used to generate `Resource` and `Relation` interfaces is defined in:
+
+- `halon/src/lib/HA/Resources/TH.hs`

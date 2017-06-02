@@ -137,6 +137,9 @@ Code pointers:
   location of nodes running the EQ. This is used to simplify sending messages to
   the EQ.
 
+Further reading:
+[Event Queue component](components/event-queue.rst)
+
 ### Recovery
 
 The recovery layer consists of a single process known as the recovery
