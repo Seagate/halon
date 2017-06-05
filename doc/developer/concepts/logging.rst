@@ -3,10 +3,10 @@ Concept: Logging
 
 Trace logging is used to get detailed logging information from individual components of Halon. Trace logging messages go to journald on whichever node the messages are logged on (or to stdout if halon is started outside of systemd control).
 
+Logging is defined and enabled per subsystem, so the user may control which components they receive trace logs for.
+
 Enabling
 --------
-
-Multiple componets in Halon have trace logging defined.
 
 A logger for a subsystem takes the form of a function `String -> Process ()`. Loggers are created through calling `mkHalonTracer foo`, where `foo` is a name identifying the subsystem.
 

@@ -20,7 +20,7 @@ recovery coordinator in the event of its failure.
 
 Further reading:
 [Paxos (Wikipedia)](https://en.wikipedia.org/wiki/Paxos_(computer_science))
-[Replication HLD](../replication/hld.rst)
+[Replication HLD](../hld/replication/hld.rst)
 
 ### Cloud Haskell
 
@@ -147,9 +147,9 @@ coordinator and a collection of processes which stand ready to respawn the
 recovery coordinator should it die, known as recovery supervisors.
 
 The recovery coordinator implements the central logic of Halon; it takes a
-stream of messages from the EQ and runs a set of business rules which embody
+stream of messages from the EQ and runs a set of rules which embody
 our failure handling logic. In order to do this, the recovery coordinator
-additionaly has access to shared state (the 'Resource Graph') which is held
+additionally has access to shared state (the 'Resource Graph') which is held
 consistent amongst multiple nodes through use of the replicator.
 
 In addition to the single recovery coordinator, we have multiple recovery
