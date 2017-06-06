@@ -799,8 +799,8 @@ jobSNSAbort = Job "castor::node::sns::abort"
 -- See diagram: 'sns-operation-abort'
 ruleSNSOperationAbort :: Definitions RC ()
 ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
-  entry <- phaseHandle "entry"
-  ok    <- phaseHandle "ok"
+  entry   <- phaseHandle "entry"
+  ok      <- phaseHandle "ok"
   failure <- phaseHandle "SNS abort failed."
 
   let route (AbortSNSOperation pool uuid) = getPoolRepairStatus pool >>= \case
@@ -895,6 +895,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
         <+> fldRepairUUID =: Nothing
+        <+> fldSNSOperationRetryState =: defaultSNSOperationRetryState
 
 -- | 'Job' used by 'ruleSNSOperationQuiesce'.
 jobSNSQuiesce :: Job QuiesceSNSOperation QuiesceSNSOperationResult
@@ -964,6 +965,7 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -
         <+> fldRep  =: Nothing
         <+> fldPrt  =: Nothing
         <+> fldUUID =: Nothing
+        <+> fldSNSOperationRetryState =: defaultSNSOperationRetryState
 
 jobSNSOperationRestart :: Job RestartSNSOperationRequest RestartSNSOperationResult
 jobSNSOperationRestart = Job "castor::sns::restart"

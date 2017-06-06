@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Actions.Spiel
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
@@ -30,6 +31,10 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , mkRebalanceQuiesceOperation
   , mkRebalanceAbortOperation
   , mkRebalanceStatusRequestOperation
+  , SNSOperationRetryState(..)
+  , FldSNSOperationRetryState
+  , fldSNSOperationRetryState
+  , defaultSNSOperationRetryState
     -- * Sync operation
   , defaultConfSyncState
   , fldConfSyncState
@@ -96,6 +101,7 @@ import Data.Maybe (catMaybes, listToMaybe)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 import Data.Bifunctor
+import Data.Vinyl
 
 import Network.CEP
 
@@ -117,7 +123,7 @@ haAddress lnid = Endpoint {
   , transfer_machine_id = 101
   }
 
--- | Confiuration update state.
+-- | Configuration update state.
 data ConfSyncState = ConfSyncState
       { _cssHash :: Maybe Int -- ^ Hash of the graph sync request.
       , _cssForce :: Bool     -- ^ Should we force synchronization.
@@ -134,6 +140,28 @@ defaultConfSyncState :: ConfSyncState
 defaultConfSyncState = ConfSyncState Nothing False [] []
 
 makeLenses ''ConfSyncState
+
+-- | SNS operation retry state.
+data SNSOperationRetryState = SNSOperationRetryState
+  { _sorStatusAttempts :: Int
+  -- ^ How many times to ask for the status of SNS operation before giving up
+  --   and retrying.
+  , _sorRetryAttempts :: Int
+  -- ^ How many attempts to execute SNS operation to make before giving up
+  --   and failing.
+  } deriving (Generic, Show)
+
+-- | Default 'SNSOperationRetryState'.
+defaultSNSOperationRetryState :: SNSOperationRetryState
+defaultSNSOperationRetryState = SNSOperationRetryState 0 0
+
+makeLenses ''SNSOperationRetryState
+
+type FldSNSOperationRetryState = '("snsOperationRetryState", SNSOperationRetryState)
+
+-- | Field for 'SNSOperationRetryState'.
+fldSNSOperationRetryState :: Proxy FldSNSOperationRetryState
+fldSNSOperationRetryState = Proxy
 
 -- | Try to connect to spiel and run the 'PhaseM' on the
 -- 'SpielContext'.
@@ -259,7 +287,11 @@ mkSimpleSNSOperation _ action onFailure onResult = do
 -- Tier 3
 
 -- | Generate function that query status until operation will complete.
-mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
+mkStatusCheckingSNSOperation :: forall l' l n .
+    ( FldSNSOperationRetryState ∈ l'
+    , l ~ FieldRec l'
+    , KnownSymbol n
+    , Typeable n)
   => Proxy n
   -> (    (M0.Pool -> String -> PhaseM RC l ())
        -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
@@ -271,28 +303,48 @@ mkStatusCheckingSNSOperation :: forall l n . (KnownSymbol n, Typeable n)
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
-mkStatusCheckingSNSOperation name mk action interesting n getter onFailure onSuccess = do
+mkStatusCheckingSNSOperation name mk action interesting dt getter onFailure onSuccess = do
   next_request <- phaseHandle $ symbolVal name ++ "::next request"
+  operation_done <- phaseHandle $ symbolVal name ++ "::operation_done"
   (status_received, statusRequest) <- mk onFailure $ \pool xs -> do
      if all (`elem` interesting) (map _sss_state xs)
      then onSuccess pool (map ((,) <$> _sss_fid <*> _sss_state) xs)
-     else continue (timeout n next_request)
-  operation_done <- handleReply onFailure $ \pool _ -> do
+     else do
+       nqa <- gets Local (^. rlens fldSNSOperationRetryState . rfield . sorStatusAttempts)
+       nqaMax <- getHalonVar _hv_sns_operation_status_attempts
+       if nqa == nqaMax
+       then do
+         nra <- gets Local (^. rlens fldSNSOperationRetryState . rfield . sorRetryAttempts)
+         nraMax <- getHalonVar _hv_sns_operation_retry_attempts
+         if nra == nraMax
+         then onFailure pool "Exceeded maximum number of retry attempts."
+         else do
+           modify Local $ rlens fldSNSOperationRetryState . rfield .~ (SNSOperationRetryState (nra +1) 0)
+           operation pool
+           continue operation_done
+       else do
+         modify Local $ rlens fldSNSOperationRetryState . rfield . sorStatusAttempts %~ (+ 1)
+         continue (timeout dt next_request)
+  handleReply operation_done onFailure $ \pool _ -> do
     statusRequest pool
     continue status_received
   directly next_request $ do
     pool <- gets Local getter
     statusRequest pool
     continue status_received
-  return ( operation_done
-         , mkGenericSNSOperationSimple p action)
+  return (operation_done, operation)
   where
     p :: Proxy# n
     p = proxy#
-    handleReply :: (M0.Pool -> String -> PhaseM RC l ())
+    operation = mkGenericSNSOperationSimple p action
+    handleReply :: Jump PhaseHandle
+                -> (M0.Pool -> String -> PhaseM RC l ())
                 -> (M0.Pool -> ()     -> PhaseM RC l ())
-                -> RuleM RC l (Jump PhaseHandle)
-    handleReply = mkGenericSNSReplyHandlerSimple p
+                -> RuleM RC l ()
+    handleReply ph onError' onSuccess' =
+        setPhase ph $ \(GenericSNSOperationResult pool er :: GenericSNSOperationResult n ()) -> do
+          Log.tagContext Log.SM [ ("pool.fid", show (M0.fid pool)) ] Nothing
+          either (onError' pool) (onSuccess' pool) er
 
 -------------------------------------------------------------------------------
 -- SNS Operations
@@ -357,7 +409,7 @@ mkRepairStatusRequestOperation ::
   -> (M0.Pool -> [SnsStatus] -> PhaseM RC l ())
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairStatusRequestOperation =
-  mkSimpleSNSOperation  (Proxy :: Proxy "Repair status request") poolRepairStatus
+  mkSimpleSNSOperation (Proxy :: Proxy "Repair status request") poolRepairStatus
 
 -- | Continue the rebalance operation.
 mkRepairContinueOperation ::
@@ -386,7 +438,9 @@ mkRebalanceStatusRequestOperation = do
 
 -- | Create code that allow to quisce repair operation.
 mkRepairQuiesceOperation ::
-     Int                        -- ^ Timeout between retries (in seconds).
+    ( FldSNSOperationRetryState ∈ l'
+    , l ~ FieldRec l')
+  => Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
@@ -403,7 +457,9 @@ mkRepairQuiesceOperation =
 -- | Create an action and helper phases that will allow to abort SNS operation
 -- and wait until it will be really aborted.
 mkRepairAbortOperation ::
-     Int
+    ( FldSNSOperationRetryState ∈ l'
+    , l ~ FieldRec l')
+  => Int
   -> (l -> M0.Pool)
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
@@ -419,7 +475,9 @@ mkRepairAbortOperation =
 
 -- | Create code that allow to quisce repair operation.
 mkRebalanceQuiesceOperation ::
-     Int                        -- ^ Timeout between retries (in seconds).
+    ( FldSNSOperationRetryState ∈ l'
+    , l ~ FieldRec l')
+  => Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
@@ -435,7 +493,9 @@ mkRebalanceQuiesceOperation = do
 
 -- | Generate code to call abort operation.
 mkRebalanceAbortOperation ::
-     Int
+    ( FldSNSOperationRetryState ∈ l'
+    , l ~ FieldRec l')
+  => Int
   -> (l -> M0.Pool)
   -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
   -> (M0.Pool -> [(Fid, SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success

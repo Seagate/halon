@@ -283,7 +283,7 @@ data HalonVars = HalonVars
   -- ^ Number of seconds to wait following an inferred expander reset for drives
   --   to come back online before attempting to reset them.
   , _hv_notification_timeout :: !Int
-  -- ^ Number of seconds to wait for all notifications to be acknowledged by 
+  -- ^ Number of seconds to wait for all notifications to be acknowledged by
   --   the system (or for them to be cancelled due to process failure).
   --   This should be lower than any timeout which waits (in a rule) for all
   --   notifications to be acknowledged.
@@ -291,6 +291,12 @@ data HalonVars = HalonVars
   -- ^ Determine whether a process should be considered as failed if we cannot
   --   send a notification to it. Generally we want this, but it can sometimes
   --   cause problems.
+  , _hv_sns_operation_status_attempts :: !Int
+  -- ^ How many times to ask for the status of SNS operation before giving up
+  --   and retrying.
+  , _hv_sns_operation_retry_attempts :: !Int
+  -- ^ How many attempts to execute SNS operation to make before giving up
+  --   and failing.
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars
