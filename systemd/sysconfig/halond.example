@@ -7,3 +7,6 @@
 # version that it was built with. This is not often necessary. Set
 # DISABLE_MERO_COMPAT_CHECK to disable this check.
 #DISABLE_MERO_COMPAT_CHECK=1
+
+# Enable halon tracing of halon:m0d by default
+#HALON_TRACING="halon:m0d m0:notification"
