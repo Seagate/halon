@@ -150,6 +150,8 @@ returnSvcMsg Interface{..} wf = liftProcess $! case wfServiceNode wf of
     wf { wfReceiverVersion = Just ifVersion, wfServiceNode = Nothing }
     `asTypeOf` wf
 
+-- | Send a message from the service to the RC over the service interface.
+--   This should handle differing versions between the RC and the service.
 sendRC :: (Typeable fromSvc, Show fromSvc)
        => Interface a fromSvc -> fromSvc -> Process ()
 sendRC Interface{..} fromSvc = case ifEncodeFromSvc ifVersion fromSvc of
