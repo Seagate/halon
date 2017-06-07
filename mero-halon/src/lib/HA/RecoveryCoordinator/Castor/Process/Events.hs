@@ -6,7 +6,8 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Castor.Process.Events
-  ( ProcessStartRequest(..)
+  ( ProcessAddRequest(..)
+  , ProcessStartRequest(..)
   , ProcessStartResult(..)
   , StopProcessRequest(..)
   , StopProcessResult(..)
@@ -20,9 +21,20 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           GHC.Generics
 import           HA.RecoveryCoordinator.Job.Actions (ListenerId)
+import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
 import           Mero.ConfC (Fid)
+
+-- | Request that a new process be added to the system.
+data ProcessAddRequest = ProcessAddRequest M0.Fid CI.M0Process
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
+-- | Request that a new process be added to the system.
+data ProcessAddResult =
+    ProcessAddSuccess [M0.Process]
+  | ProcessAddInvalidNode M0.Fid
+  deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Request that given 'M0.Process' be started.
 newtype ProcessStartRequest = ProcessStartRequest M0.Process

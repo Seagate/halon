@@ -10,6 +10,8 @@ module HA.RecoveryCoordinator.Mero.Actions.Initial
   , loadMeroServers
   , createMDPoolPVer
   , createIMeta
+    -- * Adding specific conf elements
+  , addProcess
   ) where
 
 import           Control.Category ((>>>))
@@ -183,7 +185,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 addProcess :: M0.Node -- ^ Node hosting the Process.
            -> [M0.SDev] -- ^ Devices attached to this process.
            -> CI.M0Process -- ^ Initial process configuration.
-           -> PhaseM RC l ()
+           -> PhaseM RC l [M0.Process]
 addProcess node devs CI.M0Process{..} = let
     cores = bitmapFromArray
       . fmap (> 0)
@@ -230,7 +232,7 @@ addProcess node devs CI.M0Process{..} = let
       in do
         svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
         modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
-  in replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
+  in replicateM (fromMaybe 1 m0p_multiplicity) $ do
     ep <- mkEndpoint
     proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
                    <*> return ep
@@ -242,6 +244,7 @@ addProcess node devs CI.M0Process{..} = let
     rg <- getLocalGraph
     for_ (procEnv rg) $ \pe -> modifyGraph $
       G.connect proc Has pe
+    return proc
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.

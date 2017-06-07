@@ -35,6 +35,8 @@ import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
+import           HA.RecoveryCoordinator.Mero.Actions.Initial (addProcess)
+import qualified HA.RecoveryCoordinator.Mero.Actions.Spiel as Spiel
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
@@ -58,7 +60,8 @@ import           Text.Printf
 -- | Set of rules used for mero processes.
 rules :: Definitions RC ()
 rules = sequence_ [
-    ruleProcessStarting
+    ruleProcessAdd
+  , ruleProcessStarting
   , ruleProcessOnline
   , ruleProcessStopping
   , ruleProcessStopped
@@ -70,6 +73,48 @@ rules = sequence_ [
   , ruleProcessKeepaliveReply
   , ruleRpcEvent
   ]
+
+-- | Job handle for @ruleProcessAdd@
+jobProcessAdd :: Job ProcessAddRequest ProcessAddResult
+jobProcessAdd = Job "castor::process::add"
+
+-- | Add a process to a running system.
+ruleProcessAdd :: Definitions RC ()
+ruleProcessAdd = mkJobRule jobProcessAdd args $ \(JobHandle getRequest finish) -> do
+    add_process <- phaseHandle "add_process"
+    -- XXX We'd like to return unsuccessful result if syncing to confd fails...
+    (syncToConfd, syncAwait) <- mkSyncToConfd (rlens fldConfSyncState) finish
+
+    directly add_process $ do
+      Just node <- gets Local (^. rlens fldNode . rfield)
+      Just (ProcessAddRequest _ proc) <- gets Local (^. rlens fldReq . rfield)
+      procs <- addProcess node proc
+      modify Local $ rlens fldRep . rfield .~ Just (ProcessAddSuccess procs)
+      syncToConfd
+      continue syncAwait
+
+    return $ \(ProcessAddRequest hostFid proc) -> do
+      mnode <- lookupConfObjByFid hostFid
+      case mnode of
+        Nothing -> do
+          modify Local $ rlens fldRep . rfield .~ Just (ProcessAddInvalidNode hostFid)
+          continue finish
+        Just node -> do
+          modify Local $ rlens rldNode .~ Just node
+          continue add_process
+
+  where
+    fldReq :: Proxy '("request", Maybe ProcessAddRequest)
+    fldReq = Proxy
+    fldRep :: Proxy '("reply", Maybe ProcessAddResult)
+    fldRep = Proxy
+    fldNode :: Proxy '("m0node", Maybe M0.Node)
+    fldNode = Proxy
+
+    args = fldReq =: Nothing
+        <+> fldRep =: Nothing
+        <+> fldNode =: Nothing
+        <+> fldConfSyncState := defaultConfSyncState
 
 -- | Catch 'InternalObjectStateChange's flying by and dispatch
 -- 'ProcessRestartRequest' for every failed process, allowing
@@ -893,7 +938,7 @@ ruleFailedNotificationFailsProcess =
     -- we could do here anyway.
     unless (null procs) $ do
       failProcs <- getHalonVar _hv_failed_notification_fails_process
-      if failProcs 
+      if failProcs
       then void . applyStateChanges $
         map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
       else do
