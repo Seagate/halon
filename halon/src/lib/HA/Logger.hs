@@ -15,6 +15,7 @@
 module HA.Logger
   ( -- * Public API
     mkHalonTracer
+  , mkHalonTracerIO
   , silenceLogger
   , verboseLogger
     -- * D-p internals
@@ -47,7 +48,9 @@ loggers :: MVar (Map String (IORef Bool))
 loggers = unsafePerformIO $ newMVar Map.empty
 
 -- | Internal function to update (or create) certain logger.
-updateLogger :: String -> Bool -> IO (IORef Bool)
+updateLogger :: String -- ^ Subsystem name
+             -> Bool -- ^ Enable logging subsystem?
+             -> IO (IORef Bool)
 updateLogger s b = modifyMVar loggers $ \m -> do
   case Map.lookup s m of
     Nothing -> do
@@ -109,5 +112,39 @@ mkHalonTracer subsystem = unsafePerformIO $ do
            self <- getSelfPid
            liftIO $ hPutStrLn stderr $ show self ++ ": " ++ tagged
     else return $ check . say
+
+-- | Create a logger in IO that could be enabled by setting
+-- proper environment variable
+--
+-- Examples:
+--
+-- @
+-- logger :: String -> IO ()
+-- logger = mkHalonTracer "EQ.producer"
+-- @
+--
+-- Now we could run program with:
+--
+-- @
+-- HALON_TRACING="EQ.producer smth-else" ./program-name
+-- @
+--
+-- and get logging enabled, it's possible to use @*@ in
+-- @HALON_TRACING@ variable, then all subsystems will be enabled
+mkHalonTracerIO :: String
+                -> (String -> IO ())
+mkHalonTracerIO subsystem = unsafePerformIO $ do
+    mx  <- lookupEnv "HALON_TRACING"
+    let status = case mx of
+             Nothing -> False
+             Just ss ->
+               let subsystems = words $ map toLower ss
+               in (map toLower subsystem) `elem` subsystems || "*" `elem` subsystems
+    ref <- updateLogger subsystem status
+    let check f = do
+          b <- liftIO $ readIORef ref
+          when b f
+        prependSubsystem x = subsystem ++ ": " ++ x
+    return $ check . hPutStrLn stderr . prependSubsystem
 
 remotable ['silenceLogger, 'verboseLogger]

@@ -50,6 +50,7 @@ import qualified Mero.Notification.HAState as HAState
 import Mero.Engine
 import Mero.M0Worker
 import HA.EventQueue (promulgateWait)
+import HA.Logger (mkHalonTracerIO)
 import HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
@@ -96,6 +97,10 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Clock
 import Debug.Trace (traceEventIO)
 
+import Prelude hiding (log)
+
+log :: String -> IO ()
+log = mkHalonTracerIO "m0:notification"
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -602,9 +607,15 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
    known <- sendM0Task $ modifyMVar (_ni_links ref) $ \links -> do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
-                    for_ (Map.lookup l r) onOk
+                    for_ (Map.lookup l r) $ \fid -> do
+                      log $ "Notification acknowledged on link " 
+                          ++ show l ++ " from " ++ show fid
+                      onOk fid
           fail' l = do r <- readIORef (_ni_info ref)
-                       for_ (Map.lookup l r) onFail
+                       for_ (Map.lookup l r) $ \fid -> do
+                         log $ "Notification cancelled on link "
+                             ++ show l ++ " for " ++ show fid
+                         onFail fid
       tags <- ifor links $ \l _ ->
         Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid
                       <*> pure (mkCallback l)
@@ -613,7 +624,9 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
       info <- readIORef (_ni_info ref)
       return ( Map.unionWith (Map.unionWith (<>)) links tags
              , Set.fromList $ Map.elems info)
-   for_ (filter (`Set.notMember` known) fids) $ onFail
+   for_ (filter (`Set.notMember` known) fids) $ \fid -> do
+    log $ "Notification failed due to no link for " ++ show fid
+    onFail fid
 
 -- | Send a ping on every known 'HALink': we should have at least one
 -- known 'HALink' per process.

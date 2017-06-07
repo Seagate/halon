@@ -88,13 +88,19 @@ statusProcess niRef ha_pfid ha_sfid pid rp = do
     forever $ do
       msg@(NotificationMessage epoch set ps) <- receiveChan rp
       traceM0d $ "statusProcess: notification msg received: " ++ show msg
-      -- We crecreate process, this is highly unsafe and it's not allowed
+      -- We recreate process, this is highly unsafe and it's not allowed
       -- to do receive read calls. also this thread will not be killed when
       -- status process is killed.
       lproc <- DI.Process ask
       Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid
-            (DI.runLocalProcess lproc . sendRC interface . NotificationAck epoch)
-            (DI.runLocalProcess lproc . sendRC interface . NotificationFailure epoch)
+            (\fid -> DI.runLocalProcess lproc $ do
+              traceM0d $ "Sending notification ack for fid " ++ show fid
+                      ++ " in epoch " ++ show epoch
+              sendRC interface $ NotificationAck epoch fid)
+            (\fid -> DI.runLocalProcess lproc $ do
+              traceM0d $ "Sending notification failure for fid " ++ show fid
+                      ++ " in epoch " ++ show epoch
+              sendRC interface $ NotificationFailure epoch fid)
    `catchExit` (\_ reason -> traceM0d $ "statusProcess exiting: " ++ reason)
    `Catch.catch` \(e :: SomeException) -> do
       traceM0d $ "statusProcess terminated: " ++ show (pid, e)
