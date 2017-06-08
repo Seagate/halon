@@ -350,7 +350,7 @@ iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
 commandSchema :: Schema Rabbit.BindConf
 commandSchema = genericBindConf ("sspl_halon_command","systemd_exchange")
                                 ("sspl_ll", "systemd_routingKey")
-                                ("sspl_halon", "systemd_queue")
+                                ("SSPL-LL", "systemd_queue")
 
 -- | 'Schema' for command ack bind configuration
 commandAckSchema :: Schema Rabbit.BindConf
