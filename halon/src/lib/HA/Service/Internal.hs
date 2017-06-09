@@ -318,11 +318,11 @@ remoteStartService (replyCh, msg) = do
         ServiceStarted (Left e) -> do
           let node = processNodeId self
           serviceLog $ "exception during start: " ++ e
-          promulgateWait $ ServiceFailed (Node node) msg self
+          void . promulgateWait $ ServiceFailed (Node node) msg self
         ServiceStarted (Right r) -> do
           let notify :: forall a . (SafeCopy a, Typeable a)
                      => (Node -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
-              notify f = promulgateWait $ f (Node (processNodeId self)) msg self
+              notify f = void . promulgateWait $ f (Node (processNodeId self)) msg self
           confirmStarted conf r
           fix (\loop !b -> do
               next <- runMainloop mainloop conf b

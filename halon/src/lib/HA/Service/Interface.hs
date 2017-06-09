@@ -48,6 +48,7 @@ import           Data.Functor
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Serialize.Get as S
 import qualified Data.Serialize.Put as S
+import           Data.UUID (UUID)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Word (Word8)
@@ -153,13 +154,15 @@ returnSvcMsg Interface{..} wf = liftProcess $! case wfServiceNode wf of
 -- | Send a message from the service to the RC over the service interface.
 --   This should handle differing versions between the RC and the service.
 sendRC :: (Typeable fromSvc, Show fromSvc)
-       => Interface a fromSvc -> fromSvc -> Process ()
+       => Interface a fromSvc -> fromSvc -> Process (Maybe UUID)
 sendRC Interface{..} fromSvc = case ifEncodeFromSvc ifVersion fromSvc of
-  Nothing -> say $ printf "Unable to send %s to RC from %s with version %s."
-                          (show fromSvc) ifServiceName (show ifVersion)
+  Nothing -> do
+    say $ printf "Unable to send %s to RC from %s with version %s."
+                  (show fromSvc) ifServiceName (show ifVersion)
+    return Nothing
   Just !wf -> do
     nid <- getSelfNode
-    promulgateWait . void $ wf { wfServiceNode = Just nid }
+    fmap Just . promulgateWait . void $ wf { wfServiceNode = Just nid }
 
 receiveSvcIf :: (Typeable toSvc, Show toSvc)
              => Interface toSvc a -> (toSvc -> Bool) -> (toSvc -> Process b) -> Match b
@@ -227,7 +230,7 @@ returnedFromSvc Interface{..} act = matchIf reencodeRequest $ \wf -> do
   reencodeWireFormat wf ifDecodeFromSvc ifEncodeFromSvc >>= \case
     Just !wf' -> do
       nid <- getSelfNode
-      promulgateWait . void $ wf' { wfServiceNode = Just nid }
+      void . promulgateWait . void $ wf' { wfServiceNode = Just nid }
     -- We can't re-encode, just give up.
     Nothing -> say $ printf "%s.returnedFromSvc couldn't re-encode %s"
                             ifServiceName (show wf)
@@ -270,12 +273,12 @@ receiveSvcFailure Interface{..} act = matchIf predicates $ \wf -> do
                , wfServiceNode = Just nid }
   if ifVersion < wfSenderVersion wf
   -- Don't even waste time trying to decode
-  then requestReencode
+  then void $ requestReencode
   else case ifDecodeToSvc wf of
     -- We are within version bounds but the service decoder raised
     -- version mismatch. Shouldn't really happen but just handle
     -- normally.
-    DecodeVersionMismatch -> requestReencode
+    DecodeVersionMismatch -> void $ requestReencode
     -- We can't do anything, print message and do nothing more.
     DecodeFailed err -> do
       say $ printf "%s failed to decode %s: %s" ifServiceName (show wf) err

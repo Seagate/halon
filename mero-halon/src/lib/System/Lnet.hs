@@ -20,7 +20,7 @@ module System.Lnet
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure (remotable)
-import           Control.Monad (unless)
+import           Control.Monad (unless, void)
 import           Data.Either (isRight)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
@@ -40,7 +40,7 @@ data LnetInfo = LnetInfo !Node !LNid
 getLnetInfo :: Node -> Process ()
 getLnetInfo nid = do
   say "Getting lnet info."
-  liftIO (LnetInfo nid <$> getLNetID) >>= promulgateWait
+  liftIO (LnetInfo nid <$> getLNetID) >>= void . promulgateWait
   say "Got lnet info."
 
 -- | Start @lnet@ service, query node IDs and return the first one reported.

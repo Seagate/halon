@@ -17,7 +17,7 @@ import           Control.Concurrent.STM
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Distributed.Static ( staticApply )
-import           Control.Monad (mapM_)
+import           Control.Monad (mapM_, void)
 import qualified Control.Monad.Catch as C
 import           Control.Monad.State.Strict hiding (mapM_)
 import           Data.Binary (Binary)
@@ -320,7 +320,7 @@ ssplProcess (conf@SSPLHLConf{..}) =
             | isJust . commandRequestMessageServiceRequest
                      . commandRequestMessage $ cr -> do
               traceSSPL $ "Received: " ++ show cr
-              sendRC interface $ CRequest cr
+              void . sendRC interface $ CRequest cr
               let (CommandRequestMessage _ _ _ msgId) = commandRequestMessage cr
               uuid <- liftIO nextRandom
               liftIO . atomically . writeTChan responseChan $ CommandResponseMessage

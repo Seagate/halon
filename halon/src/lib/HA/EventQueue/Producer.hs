@@ -78,25 +78,26 @@ promulgateEQPref peqnids eqnids x = spawnLocal $ do
 -- | Add an event to the event queue, and don't die yet. This uses the local
 --   event tracker to identify the list of EQ nodes.
 -- FIXME: Use a well-defined timeout.
-promulgate :: (SafeCopy a, Typeable a) => a -> Process ProcessId
+promulgate :: (SafeCopy a, Typeable a) => a -> Process (ProcessId, UUID)
 promulgate x = do
     m <- newPersistMessage x
     producerTrace $ "promulgate: " ++ show (typeOf x, persistMessageId m)
-    promulgateEvent m
+    pid <- promulgateEvent m
+    return (pid, persistMessageId m)
 
 -- | Send message and wait until it will be acknowledged, this method is
 -- blocking. Main difference with non-blocking promulgate function is that
 -- 'promulgateWait' will cancel promulgate call in case if caller thread
 -- will receive an exception, if this is not desired behaviour - use
 -- 'promulgate' instead.
-promulgateWait :: (SafeCopy a, Typeable a) => a -> Process ()
+promulgateWait :: (SafeCopy a, Typeable a) => a -> Process UUID
 promulgateWait x =
    bracket (promulgate x)
-           (flip kill "caller was killed")
-           $ \sender -> do
+           (\(sender, _) -> kill sender "caller was killed")
+           $ \(sender, uuid) -> do
      mref <- monitor sender
      receiveWait [matchIf (\(ProcessMonitorNotification p _ _) -> p == mref)
-                          (const $ return ())
+                          (const $ return uuid)
                  ]
 
 -- | Add an event to the event queue. This form takes the HAEvent directly.
