@@ -302,7 +302,7 @@ data HAStateCallbacks = HSC
     -- received.
   , hscFailureVector :: HAMsgPtr -> HALink -> Cookie -> Fid -> IO ()
     -- ^ Failure vector request.
-  , hscKeepalive :: HALink -> IO ()
+  , hscKeepalive :: HALink -> Word128 -> Word64 -> IO ()
     -- ^ Process keepalive reply
   , hscRPCEvent :: HAMsgPtr -> HALink -> HAMsgMeta -> RpcEvent -> IO ()
   }
@@ -410,7 +410,10 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
              cookie <- #{peek struct m0_ha_msg_failure_vec_req, mfq_cookie} pl
              hscFailureVector hsc p hl cookie pool
         #{const M0_HA_MSG_KEEPALIVE_REP} -> do
-             hscKeepalive hsc hl
+             let pl = #{ptr struct m0_ha_msg_data, u.hed_keepalive_rep} payload :: Ptr ()
+             kap_id <- #{peek struct m0_ha_msg_keepalive_rep, kap_id} pl
+             kap_counter <- #{peek struct m0_ha_msg_keepalive_rep, kap_counter} pl
+             hscKeepalive hsc hl kap_id kap_counter
              delivered hl p
         #{const M0_HA_MSG_EVENT_PROCESS} -> do
              pevent <- #{peek struct m0_ha_msg_data, u.hed_event_process} payload

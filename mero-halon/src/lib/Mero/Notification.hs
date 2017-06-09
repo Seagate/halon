@@ -525,8 +525,13 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
       for_ mv onCancelled
 
     -- Update the last seen time for the link the keepalive reply is coming on
-    ha_keepalive_reply :: NIRef -> HALink -> IO ()
-    ha_keepalive_reply ni hlink = do
+    ha_keepalive_reply :: NIRef -> HALink
+                       -> Word128 -- ^ kap_id (matching the request)
+                       -> Word64 -- ^ kap_counter (should increment)
+                       -> IO ()
+    ha_keepalive_reply ni hlink kap_id kap_counter = do
+      log $ "ha_keepalive_reply: kap_id=" ++ show kap_id
+          ++ " kap_counter=" ++ show kap_counter
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
@@ -608,7 +613,7 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
                     for_ (Map.lookup l r) $ \fid -> do
-                      log $ "Notification acknowledged on link " 
+                      log $ "Notification acknowledged on link "
                           ++ show l ++ " from " ++ show fid
                       onOk fid
           fail' l = do r <- readIORef (_ni_info ref)
