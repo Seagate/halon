@@ -153,7 +153,7 @@ openConnectionRetry :: ConnectionConf -- ^ Connection configuration
                     -> Int -- ^ Number of attempts to make
                     -> Int -- ^ Time between attempts (µs)
                     -> Process (Either SomeException Network.AMQP.Connection)
-openConnectionRetry conf attempts sleep = 
+openConnectionRetry conf attempts sleep =
   flip fix (attempts :: Int) $ \tryAgain n -> case n of
     _ | n <= 0 -> error "Rabbit.openConnectionRetry underflow"
       | n == 1 -> try (liftIO $ HA.Services.SSPL.Rabbit.openConnection conf)
@@ -176,7 +176,7 @@ setupBind chan BindConf{..} = mask_ $ do
     , exchangeDurable = False
     }
   ignoreException $ void $
-    declareQueue chan newQueue { queueName = queueName }
+    declareQueue chan newQueue { queueName = queueName, queueDurable = False }
   ignoreException $ bindQueue chan queueName exchangeName routingKey
   where
     exchangeName = T.pack $ fromDefault bcExchangeName

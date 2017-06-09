@@ -344,7 +344,7 @@ instance (Typeable a, Binary a) => SafeCopy (Channel a) where
 iemSchema :: Schema Rabbit.BindConf
 iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
                             ("sspl_ll",  "iem_routingKey")
-                            ("sspl_iem", "dcs_queue")
+                            ("sspl_iem", "iem_queue")
 
 -- | 'Schema' for command bind configuration
 commandSchema :: Schema Rabbit.BindConf
