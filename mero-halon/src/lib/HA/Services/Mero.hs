@@ -96,7 +96,10 @@ statusProcess niRef ha_pfid ha_sfid pid rp = do
             (\fid -> DI.runLocalProcess lproc $ do
               traceM0d $ "Sending notification ack for fid " ++ show fid
                       ++ " in epoch " ++ show epoch
-              sendRC interface $ NotificationAck epoch fid)
+              sendRC interface $ NotificationAck epoch fid
+              traceM0d $ "Sent notification ack for fid " ++ show fid
+                      ++ " in epoch " ++ show epoch
+            )
             (\fid -> DI.runLocalProcess lproc $ do
               traceM0d $ "Sending notification failure for fid " ++ show fid
                       ++ " in epoch " ++ show epoch
