@@ -106,6 +106,8 @@ getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
 -- | Mark that notification was delivered to process.
 markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationDelivered diff process = do
+  Log.actLog "markNotificationDelivered"
+    [("diff", show diff), ("process", M0.showFid process)]
   isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
   isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getLocalGraph
   unless (isDelivered) $ do
@@ -140,6 +142,7 @@ markNotificationFailed diff process = do
 -- state change is still sent out throughout RC.
 tryCompleteStateDiff :: StateDiff -> PhaseM RC l ()
 tryCompleteStateDiff diff = do
+  Log.actLog "tryCompleteStateDiff" [("diff", show diff)]
   rc <- getCurrentRC
   -- If the diff is connected it means we haven't entered past the
   -- guard below yet: this ensures we only send result of

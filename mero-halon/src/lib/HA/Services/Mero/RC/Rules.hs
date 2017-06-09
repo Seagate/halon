@@ -124,10 +124,15 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
 
   setPhaseIf notification_delivered g $ \(uid, epoch, fid) -> do
     todo uid
+    Log.tagContext Log.SM [ ("epoch", show epoch)
+                          , ("fid", show fid)
+                          ] Nothing
     mdiff <- getStateDiffByEpoch epoch
     for_ mdiff $ \diff -> do
       mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
-      for_ mp $ markNotificationDelivered diff
+      for_ mp $ \p -> do
+        Log.tagContext Log.SM p Nothing
+        markNotificationDelivered diff p
     done uid
 
   start notification_delivered ()
