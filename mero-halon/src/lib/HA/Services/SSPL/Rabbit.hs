@@ -248,7 +248,7 @@ receive chan queue keepRunning doAck handle = do
   where
     initRmq lChan = liftIO $ do
       mask_ . ignoreException . void $
-        declareQueue chan newQueue{ queueName = queue }
+        declareQueue chan newQueue{ queueName = queue, queueDurable = False  }
       tag <- consumeMsgs chan queue doAck $
         atomically . writeTChan lChan
       return tag
@@ -374,7 +374,8 @@ rabbitMQProxy conf = run
             | otherwise = return exchanges
           queuesIfMissing queues name
             | Set.notMember name queues = do
-                _ <- liftIO $ declareQueue chan newQueue{queueName = name}
+                _ <- liftIO $ declareQueue chan newQueue
+                  { queueName = name, queueDurable = False }
                 return (Set.insert name queues)
             | otherwise = return queues
           loop state = receiveWait
