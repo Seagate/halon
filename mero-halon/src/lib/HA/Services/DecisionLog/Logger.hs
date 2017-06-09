@@ -109,14 +109,14 @@ ppLog (Log loc evts ctts) =
   where
     ppLoc (Location r s p) =
       text r <> char '/' <> text p <+> parens (text . show $ s)
-    ppEvt PhaseEntry = fillSep [rangle]
+    ppEvt PhaseEntry = rangle
     ppEvt (Fork finfo) = text $ "Fork: " ++ show (f_buffer_type finfo)
                               ++ " " ++ show (f_sm_child_id finfo)
     ppEvt (Continue info) = text $ "Continue: " ++ show (c_continue_phase info)
     ppEvt (Switch info) = text "Switch:" <+> semiBraces (text . show <$> s_switch_phases info)
-    ppEvt Stop = fillSep [langle]
-    ppEvt Suspend = fillSep [char '~']
-    ppEvt (Restart _) = fillSep [char '^']
+    ppEvt Stop = langle
+    ppEvt Suspend = char '~'
+    ppEvt (Restart _) = char '^'
     ppEvt (StateLog (StateLogInfo env)) = ppEnv env
     ppEvt (ApplicationLog (ApplicationLogInfo value)) = char '§' <> ppAL value
 
