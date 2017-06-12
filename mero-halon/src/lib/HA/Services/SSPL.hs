@@ -174,6 +174,7 @@ startActuators chan ac monitorChan iemKr commandKr replyKr = do
     liftIO $ Rabbit.setupBind chan (acSystemd ac)
     commandProcess (acSystemd ac) systemdChan
 
+    liftIO $ Rabbit.setupBind chan (acCommandAck ac)
     _ <- replyProcess (acCommandAck ac)
     return $! ActuatorChannels iemChan systemdChan
   where
