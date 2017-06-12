@@ -28,30 +28,24 @@ module HA.Services.DecisionLog.Logger
   , dumpBinaryToFile
   ) where
 
-import Control.Distributed.Process
-import Control.Lens hiding (Context, Level)
-
-import Data.Aeson (ToJSON, FromJSON, encode)
+import           Control.Distributed.Process
+import           Control.Lens hiding (Context, Level)
+import           Data.Aeson (ToJSON, FromJSON, encode)
 import qualified Data.ByteString.Lazy as B
-import Data.ByteString.Lazy (ByteString)
-import Data.Int
-import Data.List (insert)
-import Data.Map (Map)
+import           Data.ByteString.Lazy (ByteString)
+import           Data.Int
+import           Data.List (insert)
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
-import Data.Time
-import Data.Typeable (Typeable)
-import Data.UUID
-
-import GHC.Generics
-
-import Network.CEP.Log as CEP
-
-import HA.RecoveryCoordinator.Log as RC
-
-import System.IO
-
-import Text.PrettyPrint.Leijen hiding ((<$>))
+import           Data.Maybe
+import           Data.Time
+import           Data.Typeable (Typeable)
+import           Data.UUID hiding (null)
+import           GHC.Generics
+import           HA.RecoveryCoordinator.Log as RC
+import           Network.CEP.Log as CEP
+import           System.IO
+import           Text.PrettyPrint.Leijen hiding ((<$>))
 
 type SmId = Int64
 
