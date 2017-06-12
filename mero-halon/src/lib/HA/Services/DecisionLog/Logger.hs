@@ -102,23 +102,27 @@ mkTextPrinter emit close = self where
 ppLog :: Log -> Doc
 ppLog (Log loc evts ctts) =
     ppLoc loc <$$> indent 4
-      ( (vsep $ ppEvt <$> evts)
+      ( (vsep . catMaybes $ ppEvt <$> evts)
       <$$> text "----------"
-      <$$> (vsep $ ppCtt <$> ctts)
+      <$$> (let docs = ppCtt <$> ctts
+            -- Ensure that contexts section ends with a blank line.
+            in vsep $ if null docs then [] else docs ++ [empty])
       )
   where
     ppLoc (Location r s p) =
       text r <> char '/' <> text p <+> parens (text . show $ s)
-    ppEvt PhaseEntry = rangle
-    ppEvt (Fork finfo) = text $ "Fork: " ++ show (f_buffer_type finfo)
-                              ++ " " ++ show (f_sm_child_id finfo)
-    ppEvt (Continue info) = text $ "Continue: " ++ show (c_continue_phase info)
-    ppEvt (Switch info) = text "Switch:" <+> semiBraces (text . show <$> s_switch_phases info)
-    ppEvt Stop = langle
-    ppEvt Suspend = char '~'
-    ppEvt (Restart _) = char '^'
-    ppEvt (StateLog (StateLogInfo env)) = ppEnv env
-    ppEvt (ApplicationLog (ApplicationLogInfo value)) = char '§' <> ppAL value
+    ppEvt PhaseEntry = Nothing  -- Logging PhaseEntry is pointless: we wouldn't
+                                -- be able to log anything without entering
+                                -- some phase first.
+    ppEvt (Fork finfo) = Just . text $ "Fork: " ++ show (f_buffer_type finfo)
+                                     ++ " " ++ show (f_sm_child_id finfo)
+    ppEvt (Continue info) = Just . text $ "Continue: " ++ show (c_continue_phase info)
+    ppEvt (Switch info) = Just $ text "Switch:" <+> semiBraces (text . show <$> s_switch_phases info)
+    ppEvt Stop = Just langle
+    ppEvt Suspend = Just $ char '~'
+    ppEvt (Restart _) = Just $ char '^'
+    ppEvt (StateLog (StateLogInfo env)) = Just $ ppEnv env
+    ppEvt (ApplicationLog (ApplicationLogInfo value)) = Just $ char '§' <> ppAL value
 
     ppAL (EvtInContexts ctxs' evt) = ppALC evt <+> ppCtxs ctxs'
     ppAL _ = empty
@@ -144,7 +148,9 @@ ppLog (Log loc evts ctts) =
 
     ppALC _ = empty
 
-    ppCtt (TagContextInfo ctx dat _) = text (show ctx) <> line <> indent 4 (ppDat dat)
+    ppCtt (TagContextInfo ctx dat _) = case ctx of
+        Local _ -> text (show ctx) <> line <> indent 4 (ppDat dat)
+        _       -> ppDat dat
       where
         ppDat (TagString str) = text str
         ppDat (TagEnv env) = ppEnv env
