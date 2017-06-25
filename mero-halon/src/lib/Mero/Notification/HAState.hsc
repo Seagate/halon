@@ -59,7 +59,7 @@ import Mero.ConfC             (Cookie, Fid, Word128, ServiceType)
 import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, liftM3, liftM4, void )
+import Control.Monad          ( liftM2, liftM3, liftM5, void )
 import Control.Monad.Catch    ( catch )
 
 import Data.ByteString as B   ( useAsCString )
@@ -99,6 +99,7 @@ data HAMsgMeta = HAMsgMeta
   , _hm_source_process :: Fid
   , _hm_source_service :: Fid
   , _hm_time :: Word64
+  , _hm_epoch :: Word64
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HAMsgMeta
@@ -390,6 +391,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
                  <*> (#{peek struct m0_ha_msg, hm_source_process} msg)
                  <*> (#{peek struct m0_ha_msg, hm_source_service} msg)
                  <*> (#{peek struct m0_ha_msg, hm_time} msg)
+                 <*> (#{peek struct m0_ha_msg, hm_epoch} msg)
       let payload = #{ptr struct m0_ha_msg, hm_data} msg :: Ptr ()
       mtype <- #{peek struct m0_ha_msg_data, hed_type} payload :: IO Word64
       case mtype of
@@ -527,8 +529,8 @@ foreign import capi safe ha_state_fini :: IO ()
 
 -- | Notifies mero at the remote address that the state of some objects has
 -- changed.
-notify :: HALink -> Word64 -> NVec -> Fid -> Fid -> IO Word64
-notify (HALink hl) idx nvec ha_pfid ha_sfid =
+notify :: HALink -> Word64 -> NVec -> Fid -> Fid -> Word64 -> IO Word64
+notify (HALink hl) idx nvec ha_pfid ha_sfid epoch =
   allocaBytesAligned #{size struct m0_ha_msg_nvec}
                      #{alignment struct m0_ha_msg_nvec} $ \pnvec -> do
     #{poke struct m0_ha_msg_nvec, hmnv_type} pnvec (0 :: Word64)
@@ -537,10 +539,10 @@ notify (HALink hl) idx nvec ha_pfid ha_sfid =
         (fromIntegral $ length nvec :: Word64)
     pokeArray (#{ptr struct m0_ha_msg_nvec, hmnv_arr} pnvec) nvec
     with ha_pfid $ \ha_pfid_ptr -> with ha_sfid $ \ha_sfid_ptr -> do
-      ha_state_notify hl pnvec ha_pfid_ptr ha_sfid_ptr
+      ha_state_notify hl pnvec ha_pfid_ptr ha_sfid_ptr epoch
 
 foreign import capi safe "hastate.h ha_state_notify"
-  ha_state_notify :: Ptr HALink -> Ptr NVec -> Ptr Fid -> Ptr Fid -> IO Word64
+  ha_state_notify :: Ptr HALink -> Ptr NVec -> Ptr Fid -> Ptr Fid -> Word64 -> IO Word64
 
 -- | Disconnects a link.
 disconnect :: HALink -> IO ()
@@ -765,17 +767,19 @@ instance Storable HAMsgMeta where
   sizeOf _ = #{size ha_msg_metadata_t}
   alignment _ = #{alignment ha_msg_metadata_t}
 
-  peek p = liftM4 HAMsgMeta
+  peek p = liftM5 HAMsgMeta
       (#{peek ha_msg_metadata_t, ha_hm_fid} p)
       (#{peek ha_msg_metadata_t, ha_hm_source_process} p)
       (#{peek ha_msg_metadata_t, ha_hm_source_service} p)
       (#{peek ha_msg_metadata_t, ha_hm_time} p)
+      (#{peek ha_msg_metadata_t, ha_hm_epoch} p)
 
-  poke p (HAMsgMeta fid' sp ss t) = do
+  poke p (HAMsgMeta fid' sp ss t e) = do
       #{poke ha_msg_metadata_t, ha_hm_fid} p fid'
       #{poke ha_msg_metadata_t, ha_hm_source_process} p sp
       #{poke ha_msg_metadata_t, ha_hm_source_service} p ss
       #{poke ha_msg_metadata_t, ha_hm_time} p t
+      #{poke ha_msg_metadata_t, ha_hm_epoch} p e
 
 instance Storable ProcessEvent where
   sizeOf _ = #{size struct m0_conf_ha_process}

@@ -22,6 +22,7 @@ typedef struct ha_msg_metadata {
   struct m0_fid          ha_hm_source_process; /**< source process fid */
   struct m0_fid          ha_hm_source_service; /**< source service fid */
   m0_time_t              ha_hm_time;           /**< event timestamp */
+  uint64_t               ha_hm_epoch;          /**< message epoch */
 } ha_msg_metadata_t;
 
 /// Callbacks for handling requests made with m0_ha_state_get and m0_ha_state_set.
@@ -115,7 +116,8 @@ void ha_state_fini();
 /// changed. Returns the tag of the message.
 uint64_t ha_state_notify( struct m0_ha_link *hl, struct m0_ha_msg_nvec *note
                         , const struct m0_fid *src_process_fid
-                        , const struct m0_fid *src_service_fid);
+                        , const struct m0_fid *src_service_fid
+                        , uint64_t epoch);
 
 /// Notifies mero through the given link that the state of some objects has
 /// changed. Returns the tag of the message.

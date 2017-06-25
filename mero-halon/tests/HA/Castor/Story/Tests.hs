@@ -300,6 +300,7 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
       , _hm_source_process = Fid 0x7200000000000000 0x99
       , _hm_source_service = Fid 0x7300000000000000 0x99
       , _hm_time = 0
+      , _hm_epoch = 0
       }
 
 

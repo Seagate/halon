@@ -111,6 +111,7 @@ void ha_state_fini() {
 uint64_t ha_state_notify( struct m0_ha_link *hl, struct m0_ha_msg_nvec *note
                         , const struct m0_fid *src_process_fid
                         , const struct m0_fid *src_service_fid
+                        , uint64_t epoch
                         ) {
     uint64_t tag;
     struct m0_ha_msg msg = (struct m0_ha_msg){
@@ -120,6 +121,7 @@ uint64_t ha_state_notify( struct m0_ha_link *hl, struct m0_ha_msg_nvec *note
         .hm_source_process = *src_process_fid,
         .hm_source_service = *src_service_fid,
         .hm_time           = m0_time_now(),
+        .hm_epoch          = epoch,
         .hm_data = { .hed_type = M0_HA_MSG_NVEC
                    , .u.hed_nvec = *note
                    },
@@ -140,6 +142,7 @@ uint64_t ha_state_failure_vec_reply( struct m0_ha_link *hl, struct m0_ha_msg_fai
         .hm_source_process = *src_process_fid,
         .hm_source_service = *src_service_fid,
         .hm_time           = m0_time_now(),
+        .hm_epoch          = 'f',  // dummy epoch
         .hm_data = { .hed_type = M0_HA_MSG_FAILURE_VEC_REP
                    , .u.hed_fvec_rep = *fvec
                    },
@@ -159,6 +162,7 @@ uint64_t ha_state_ping_process( struct m0_ha_link *hl, struct m0_uint128 *req_id
     .hm_source_process = *src_process_fid,
     .hm_source_service = *src_service_fid,
     .hm_time           = m0_time_now(),
+    .hm_epoch          = 'p',  // dummy epoch
     .hm_data = { .hed_type = M0_HA_MSG_KEEPALIVE_REQ
                , .u.hed_keepalive_req.kaq_id = *req_id
                },

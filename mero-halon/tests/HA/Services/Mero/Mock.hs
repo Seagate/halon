@@ -223,7 +223,8 @@ sendProcessEvents p petype setype pid = do
           meta = HAMsgMeta { _hm_fid = M0.fid p
                            , _hm_source_process = Fid 0 0
                            , _hm_source_service = Fid 0 0
-                           , _hm_time = fromIntegral t }
+                           , _hm_time = fromIntegral t
+                           , _hm_epoch = 0 }
       promulgateWait $ HAMsg ev meta
 
     sendServiceEvent :: M0.Service -> Process ()
@@ -235,7 +236,8 @@ sendProcessEvents p petype setype pid = do
           meta = HAMsgMeta { _hm_fid = M0.fid s
                            , _hm_source_process = Fid 0 0
                            , _hm_source_service = Fid 0 0
-                           , _hm_time = fromIntegral t }
+                           , _hm_time = fromIntegral t
+                           , _hm_epoch = 0 }
       promulgateWait $ HAMsg ev meta
 
 -- | Mock-exclusive global state.
@@ -602,7 +604,8 @@ remotableDecl [ [d|
                    let meta = HAMsgMeta { _hm_fid = mcProcess conf
                                         , _hm_source_process = mcProcess conf
                                         , _hm_source_service = mcHA conf
-                                        , _hm_time = t }
+                                        , _hm_time = t
+                                        , _hm_epoch = 0 }
                        evt = ProcessEvent { _chp_event = TAG_M0_CONF_HA_PROCESS_STARTED
                                           , _chp_type = TAG_M0_CONF_HA_PROCESS_M0D
                                           , _chp_pid = sys_pid }

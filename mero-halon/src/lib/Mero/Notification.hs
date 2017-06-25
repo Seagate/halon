@@ -307,8 +307,11 @@ data NIRef = NIRef
 -- | Notify mero using notification interface thread.
 -- Action is executed asynchronously.
 notifyNi :: NIRef -> HALink -> Word64 -> NVec -> Fid -> Fid -> Process ()
-notifyNi ref hl w v ha_pfid ha_sfid = liftIO
-  $ atomically $ writeTChan (_ni_worker ref) $ void $ notify hl w v ha_pfid ha_sfid
+notifyNi ref hl w v ha_pfid ha_sfid =
+    liftIO . atomically . writeTChan (_ni_worker ref) . void $
+    notify hl w v ha_pfid ha_sfid dummy_epoch
+  where
+    dummy_epoch = 0
 
 -- | Run generic action on notification interface. Use with great care
 -- as this code may heavily impact performance, as notificaion interface
@@ -337,7 +340,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                    <*> newIORef Map.empty
                    <*> pure taskPool
     let hsc = HSC
-         { hscStateGet = ha_state_get niRef
+         { hscStateGet      = ha_state_get niRef
          , hscProcessEvent  = ha_process_event_set niRef
          , hscStobIoqError  = ha_stob_ioq_error niRef
          , hscServiceEvent  = ha_service_event_set niRef
@@ -605,10 +608,11 @@ notifyMero :: NIRef -- ^ Internal storage with information about connections.
            -> Set   -- ^ Set of notifications to be send.
            -> Fid   -- ^ HA process 'Fid'
            -> Fid   -- ^ HA service 'Fid'
+           -> Word64 -- ^ HA message epoch
            -> (Fid -> IO ()) -- ^ What to do when all messages are delivered.
            -> (Fid -> IO ()) -- ^ What to do when any of messages failed to be delivered.
            -> Process ()
-notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
+notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
    known <- sendM0Task $ modifyMVar (_ni_links ref) $ \links -> do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
@@ -622,7 +626,7 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid onOk onFail = liftIO $ do
                              ++ show l ++ " for " ++ show fid
                          onFail fid
       tags <- ifor links $ \l _ ->
-        Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid
+        Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid epoch
                       <*> pure (mkCallback l)
       -- send failed notification for all processes that have no connection
       -- to the interface.

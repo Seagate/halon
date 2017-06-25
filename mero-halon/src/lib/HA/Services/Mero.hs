@@ -92,7 +92,7 @@ statusProcess niRef ha_pfid ha_sfid pid rp = do
       -- to do receive read calls. also this thread will not be killed when
       -- status process is killed.
       lproc <- DI.Process ask
-      Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid
+      Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid epoch
             (\fid -> DI.runLocalProcess lproc $ do
               traceM0d $ "Sending notification ack for fid " ++ show fid
                       ++ " in epoch " ++ show epoch
@@ -492,7 +492,8 @@ remotableDecl [ [d|
                    let meta = HAMsgMeta { _hm_fid = mcProcess conf
                                         , _hm_source_process = mcProcess conf
                                         , _hm_source_service = mcHA conf
-                                        , _hm_time = t }
+                                        , _hm_time = t
+                                        , _hm_epoch = 0 }  -- dummy epoch
                        evt = ProcessEvent { _chp_event = TAG_M0_CONF_HA_PROCESS_STARTED
                                           , _chp_type = TAG_M0_CONF_HA_PROCESS_M0D
                                           , _chp_pid = sys_pid }
