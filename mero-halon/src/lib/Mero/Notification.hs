@@ -96,6 +96,7 @@ import GHC.Generics (Generic)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Clock
 import Debug.Trace (traceEventIO)
+import Text.Printf (printf)
 
 import Prelude hiding (log)
 
@@ -515,6 +516,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
 
     ha_delivered :: NIRef -> HALink -> Word64 -> IO ()
     ha_delivered ni hlink tag = do
+      log $ printf "ha_delivered: hlink=%s tag=%u" (show hlink) tag
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
       mv <- modifyMVar (_ni_links ni) $ \links ->
@@ -533,8 +535,8 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                        -> Word64 -- ^ kap_counter (should increment)
                        -> IO ()
     ha_keepalive_reply ni hlink kap_id kap_counter = do
-      log $ "ha_keepalive_reply: kap_id=" ++ show kap_id
-          ++ " kap_counter=" ++ show kap_counter
+      log $ printf "ha_keepalive_reply: hlink=%s kap_id=%s kap_counter=%u"
+            (show hlink) (show kap_id) kap_counter
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
@@ -625,7 +627,9 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
                          log $ "Notification cancelled on link "
                              ++ show l ++ " for " ++ show fid
                          onFail fid
-      tags <- ifor links $ \l _ ->
+      tags <- ifor links $ \l _ -> do
+        log $ printf "notifyMero.notify: l=%s ha_pfid=%s epoch=%u"
+              (show l) (show ha_pfid) epoch
         Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid epoch
                       <*> pure (mkCallback l)
       -- send failed notification for all processes that have no connection

@@ -342,9 +342,12 @@ initHAState :: RPCAddress
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
             ha_state_entrypoint_cb
-            ha_state_link_connected ha_state_link_reused
-            ha_state_link_disconnecting ha_state_link_disconnected
-            ha_state_is_delivered ha_state_is_cancelled =
+            ha_state_link_connected
+            ha_state_link_reused
+            ha_state_link_disconnecting
+            ha_state_link_disconnected
+            ha_state_is_delivered
+            ha_state_is_cancelled =
     useAsCString rpcAddr $ \cRPCAddr ->
     allocaBytesAligned #{size ha_state_callbacks_t}
                        #{alignment ha_state_callbacks_t}$ \pcbs -> do
@@ -450,7 +453,7 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
         catch (ha_state_link_connected (ReqId w128) (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapConnectedCB: " ++ show (e :: SomeException)
-    wrapReconnectedCB = cwrapConnectedCB $ \wptr hl -> do
+    wrapReconnectedCB = cwrapConnectedCB {-sic-} $ \wptr hl -> do
         w128 <- peek wptr
         catch (ha_state_link_reused (ReqId w128) (HALink hl)) $ \e ->
           hPutStrLn stderr $
@@ -459,18 +462,18 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
         catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
-    wrapDisconnectedCB = cwrapDisconnectingCB $ \hl ->
+    wrapDisconnectedCB = cwrapDisconnectingCB {-sic-} $ \hl ->
         catch (ha_state_link_disconnected (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapDisconnectedCB: " ++ show (e :: SomeException)
     wrapIsDeliveredCB = cwrapIsDeliveredCB $ \hl tag ->
         catch (ha_state_is_delivered (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
-            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
-    wrapIsCancelledCB = cwrapIsDeliveredCB $ \hl tag ->
+            "initHAState.wrapIsDeliveredCB: " ++ show (e :: SomeException)
+    wrapIsCancelledCB = cwrapIsDeliveredCB {-sic-} $ \hl tag ->
         catch (ha_state_is_cancelled (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
-            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+            "initHAState.wrapIsCancelledCB: " ++ show (e :: SomeException)
 
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
