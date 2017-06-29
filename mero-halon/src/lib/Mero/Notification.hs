@@ -38,70 +38,65 @@ module Mero.Notification
     , getM0Worker
     ) where
 
-import Control.Distributed.Process
+import           Control.Distributed.Process
 
-import Network.CEP (liftProcess, MonadProcess)
+import           Network.CEP (liftProcess, MonadProcess)
 
-import Mero
-import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
-import Mero.Notification.HAState hiding (getRPCMachine)
-import Mero.Concurrent
+import           Mero
+import           Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
+import           Mero.Notification.HAState hiding (getRPCMachine)
+import           Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
-import Mero.Engine
-import Mero.M0Worker
-import HA.EventQueue (promulgateWait)
-import HA.Logger (mkHalonTracerIO)
-import HA.ResourceGraph (Graph)
+import           Mero.Engine
+import           Mero.Lnet
+import           Mero.M0Worker
+import           Network.RPC.RPCLite (RPCAddress, RPCMachine)
+import           HA.EventQueue (promulgateWait)
+import           HA.Logger (mkHalonTracerIO)
+import           HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
-import HA.Resources.Mero (Service(..), SpielAddress(..))
+import           HA.Resources.Mero (Service(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (lookupConfObjectStates)
+import           HA.Resources.Mero.Note (lookupConfObjectStates)
 import qualified HA.Resources.Mero.Note as M0
-import Network.RPC.RPCLite
-  ( RPCAddress
-  , RPCMachine
-  )
-import HA.RecoveryCoordinator.Mero.Events (GetSpielAddress(..),GetFailureVector(..))
-import HA.SafeCopy
-import Mero.Lnet
+import           HA.RecoveryCoordinator.Mero.Events (GetSpielAddress(..), GetFailureVector(..))
+import           HA.SafeCopy
 
-import Control.Arrow ((***))
-import Control.Lens
-import Control.Concurrent.MVar
-import Control.Concurrent.STM
-import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
+import           Control.Arrow ((***))
+import           Control.Lens
+import           Control.Concurrent.MVar
+import           Control.Concurrent.STM
+import           Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad (void, when)
-import Control.Monad.Trans (MonadIO)
-import Control.Monad.Catch (MonadCatch, SomeException)
-import Control.Monad.Reader (ask)
-import Control.Monad.Fix (fix)
+import           Control.Monad (void, when)
+import           Control.Monad.Trans (MonadIO)
+import           Control.Monad.Catch (MonadCatch, SomeException)
+import           Control.Monad.Reader (ask)
+import           Control.Monad.Fix (fix)
 import qualified Control.Monad.Catch as Catch
-import Data.Foldable (for_, traverse_)
-import Data.Binary (Binary(..))
-import Data.Hashable (Hashable)
-import Data.List (nub)
+import           Data.Foldable (for_, traverse_)
+import           Data.Binary (Binary(..))
+import           Data.Hashable (Hashable)
+import           Data.List (nub)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import Data.Maybe (listToMaybe, fromMaybe)
-import Data.Monoid ((<>))
+import           Data.Maybe (listToMaybe, fromMaybe)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import Data.Tuple (swap)
-import Data.Typeable (Typeable)
-import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef')
-import Data.Word
-import GHC.Generics (Generic)
-import System.IO.Unsafe (unsafePerformIO)
-import System.Clock
-import Debug.Trace (traceEventIO)
-import Text.Printf (printf)
+import           Data.Tuple (swap)
+import           Data.Typeable (Typeable)
+import           Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
+import           Data.Word
+import           GHC.Generics (Generic)
+import           System.IO.Unsafe (unsafePerformIO)
+import           System.Clock
+import           Debug.Trace (traceEventIO)
+import           Text.Printf (printf)
 
-import Prelude hiding (log)
-
-log :: String -> IO ()
-log = mkHalonTracerIO "m0:notification"
+m0NotifTrace :: String -> IO ()
+m0NotifTrace = mkHalonTracerIO "m0:notification"
 
 -- | This message is sent to the RC when Mero informs of a state change.
 --
@@ -516,7 +511,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
 
     ha_delivered :: NIRef -> HALink -> Word64 -> IO ()
     ha_delivered ni hlink tag = do
-      log $ printf "ha_delivered: hlink=%s tag=%u" (show hlink) tag
+      m0NotifTrace $ printf "ha_delivered: hlink=%s tag=%u" (show hlink) tag
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
       mv <- modifyMVar (_ni_links ni) $ \links ->
@@ -535,8 +530,9 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
                        -> Word64 -- ^ kap_counter (should increment)
                        -> IO ()
     ha_keepalive_reply ni hlink kap_id kap_counter = do
-      log $ printf "ha_keepalive_reply: hlink=%s kap_id=%s kap_counter=%u"
-            (show hlink) (show kap_id) kap_counter
+      m0NotifTrace $ printf
+                     "ha_keepalive_reply: hlink=%s kap_id=%s kap_counter=%u"
+                     (show hlink) (show kap_id) kap_counter
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
@@ -616,29 +612,28 @@ notifyMero :: NIRef -- ^ Internal storage with information about connections.
            -> Process ()
 notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
    known <- sendM0Task $ modifyMVar (_ni_links ref) $ \links -> do
-      let mkCallback l = Callback (ok l) (fail' l)
-          ok l = do r <- readIORef (_ni_info ref)
+      let ok l = do r <- readIORef (_ni_info ref)
                     for_ (Map.lookup l r) $ \fid -> do
-                      log $ "Notification acknowledged on link "
-                          ++ show l ++ " from " ++ show fid
+                      m0NotifTrace $ "Notification acknowledged on link "
+                                   ++ show l ++ " from " ++ show fid
                       onOk fid
           fail' l = do r <- readIORef (_ni_info ref)
                        for_ (Map.lookup l r) $ \fid -> do
-                         log $ "Notification cancelled on link "
-                             ++ show l ++ " for " ++ show fid
+                         m0NotifTrace $ "Notification cancelled on link "
+                                      ++ show l ++ " for " ++ show fid
                          onFail fid
       tags <- ifor links $ \l _ -> do
-        log $ printf "notifyMero.notify: l=%s ha_pfid=%s epoch=%u"
-              (show l) (show ha_pfid) epoch
+        m0NotifTrace $ printf "notifyMero.notify: l=%s ha_pfid=%s epoch=%u"
+                       (show l) (show ha_pfid) epoch
         Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid epoch
-                      <*> pure (mkCallback l)
+                      <*> pure (Callback (ok l) (fail' l))
       -- send failed notification for all processes that have no connection
       -- to the interface.
       info <- readIORef (_ni_info ref)
       return ( Map.unionWith (Map.unionWith (<>)) links tags
              , Set.fromList $ Map.elems info)
    for_ (filter (`Set.notMember` known) fids) $ \fid -> do
-    log $ "Notification failed due to no link for " ++ show fid
+    m0NotifTrace $ "Notification failed due to no link for " ++ show fid
     onFail fid
 
 -- | Send a ping on every known 'HALink': we should have at least one
