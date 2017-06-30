@@ -18,18 +18,18 @@ module Data.PersistMessage
   , unwrapMessage
   ) where
 
-import Control.Distributed.Process.Serializable (Serializable)
-import Data.ByteString.Lazy (ByteString)
+import           Control.Distributed.Process.Serializable (Serializable)
+import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString as BS (ByteString)
-import Data.Binary (Binary(..), encode, decode)
+import           Data.Binary (Binary(..), encode, decode)
 import qualified Data.Text as T (pack, unpack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Typeable
-import Data.List
-import Data.UUID (UUID)
-import Data.Function (on)
-import GHC.Generics
-import HA.SafeCopy
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Typeable
+import           Data.List
+import           Data.UUID (UUID)
+import           Data.Function (on)
+import           GHC.Generics
+import           HA.SafeCopy
 
 
 -- | 'GHC.Fingerprint' analogue that identifies the modules and type names
@@ -81,6 +81,7 @@ instance Ord PersistMessage where
 persistMessage :: (SafeCopy a, Serializable a) => UUID -> a -> PersistMessage
 persistMessage u a = PersistMessage u (stableprint a) (encode a)
 
+-- XXX Similarly named function is exported by Control.Distributed.Process.
 unwrapMessage :: forall a. Serializable a => PersistMessage -> Maybe a
 unwrapMessage msg =
     if persistMessagePrint msg == stableprint (undefined :: a)

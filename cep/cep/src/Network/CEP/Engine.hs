@@ -36,6 +36,7 @@ import           Data.UUID (UUID)
 import qualified Data.IntPSQ as PSQ
 import           Data.ByteString.Lazy (ByteString)
 import           Control.Lens
+import           Debug.Trace
 
 import GHC.Generics
 #ifdef VERSION_ghc_datasize
@@ -44,14 +45,12 @@ import GHC.DataSize (recursiveSize)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Clock
 
-import Data.PersistMessage
-import Network.CEP.Buffer
-import Network.CEP.Execution
+import           Data.PersistMessage
+import           Network.CEP.Buffer
+import           Network.CEP.Execution
 import qualified Network.CEP.Log as Log
-import Network.CEP.SM
-import Network.CEP.Types
-
-import Debug.Trace
+import           Network.CEP.SM
+import           Network.CEP.Types
 
 data Input
     = NoMessage
@@ -322,10 +321,15 @@ defaultHandler st next (Run (TimeoutArrived t)) =
     return (0, Engine $ next st{_machTimestamp=t})
 defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
   case M.lookup sfp (_machSFingerprint st) of
-    Nothing -> do for_ (_machDefaultHandler st) $ \handler ->
-                    handler uuid sfp payload (_machState st)
-                  return (RunInfo 0 MsgIgnored, Engine $ next st)
+    Nothing -> do
+      for_ (_machDefaultHandler st) $ \handler ->
+        handler uuid sfp payload (_machState st)
+      return (RunInfo 0 MsgIgnored, Engine $ next st)
     Just fp -> do
+      -- XXX DELETEME <<<<<<<
+      liftIO . putStrLn $ "XXX [defaultHandler] PersistMessage " ++ show uuid
+                        ++ "; " ++ show sfp ++ " -> " ++ show fp
+      -- XXX >>>>>>>
       liftIO $ traceMarkerIO $ "cep: smessage: " ++ show sfp ++ " -> " ++ show fp
       next st (rawIncoming (EncodedMessage fp payload))
 defaultHandler st _ (Query (GetSetting s)) =
@@ -379,7 +383,12 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
               msg_count = _machTotalProcMsgs + 1 in
           go msg msg_count
       Incoming _ -> defaultHandler st (cepInitRule ir) req
-      _ -> defaultHandler st (cepInitRule ir) req
+      -- XXX DELETEME <<<<<<<
+      Unpersist (PersistMessage uuid _ _) -> do
+        liftIO . putStrLn $ "XXX [cepInitRule] PersistMessage " ++ show uuid
+        defaultHandler st (cepInitRule ir) req
+      -- XXX >>>>>>>
+      _          -> defaultHandler st (cepInitRule ir) req
   where
     go (GotMessage ty m) msg_count = do
       let stack' = runSM (_ruleStack rd) (SMMessage ty m)

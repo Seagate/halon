@@ -100,6 +100,8 @@ module Network.CEP
 import           Control.Monad
 import           Data.Dynamic
 import           Data.Foldable (for_)
+import           Debug.Trace (traceMarkerIO)
+import           System.Clock
 
 import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
@@ -109,17 +111,14 @@ import qualified Data.MultiMap   as MM
 import qualified Data.Map.Strict as M
 import qualified Data.Set        as Set
 
-import Network.CEP.Buffer
-import Network.CEP.Engine
-import Network.CEP.Execution
+import           Data.PersistMessage
+import           Network.CEP.Buffer
+import           Network.CEP.Engine
+import           Network.CEP.Execution
 import qualified Network.CEP.Log as Log
-import Network.CEP.SM
-import Network.CEP.Types
-import Network.CEP.Utils
-import Data.PersistMessage
-
-import System.Clock
-import Debug.Trace (traceMarkerIO)
+import           Network.CEP.SM
+import           Network.CEP.Types
+import           Network.CEP.Utils
 
 -- | Fills type tracking map with every type of messages needed by the engine
 --   rules.
@@ -240,10 +239,10 @@ runItForever start_eng = do
         then do
           when debug_mode $ liftIO $ do
             putStrLn "<~~~~~~~~~~ INIT RULE FINISHED ~~~~~~~~~~>"
-
           p <- liftIO $ getTime Monotonic
           cruise debug_mode 2 . snd =<< stepForward (timeoutMsg p) nxt_eng
         else bootstrap debug_mode ms 2 nxt_eng
+
     bootstrap debug_mode ms loop eng = do
       msg <- receiveWait
                [ match (return . SubMsg)
@@ -282,6 +281,7 @@ runItForever start_eng = do
                   let lefts = reverse (m:ms) in
                   forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
                 else bootstrap debug_mode (m:ms) (succ loop) nxt_eng
+
     forwardLeftOvers debug_mode loop eng [] = do
       p <- liftIO $ getTime Monotonic
       cruise debug_mode loop . snd =<< stepForward (timeoutMsg p) eng
@@ -341,6 +341,13 @@ runItForever start_eng = do
           cruise debug_mode (succ loop) nxt_eng
         go inner (Just other)  = do
           liftIO $ traceMarkerIO "cep loop: incomming message"
+          -- XXX DELETEME <<<<<<<
+          case other of
+            SomeSMsg x ->
+              liftIO . putStrLn $ "XXX loop=" ++ show loop
+                                ++ " SomeSMsg " ++ show (persistMessageId x)
+            _ -> return ()
+          -- XXX >>>>>>>
           let m :: Request 'Write (Process (RunInfo, Engine))
               m = case other of
                     SomeSMsg x   -> rawPersisted x
