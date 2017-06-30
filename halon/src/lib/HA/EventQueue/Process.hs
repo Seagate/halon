@@ -231,6 +231,8 @@ eqRules rg pool groupMonitor = do
             traceMarkerP $ "sending to RC: " ++ show (persistMessageId sm)
             eqTrace $ "Sending to RC: " ++ show (persistMessageId sm)
             usend rc sm
+            traceMarkerP $ "sent to RC: " ++ show (persistMessageId sm)
+            eqTrace $ "Sent to RC: " ++ show (persistMessageId sm)
           tf <- liftIO $ getTime Monotonic
           -- Wait if any time remains to reach the minimum polling delay.
           let timeSpecToMicro :: TimeSpec -> Int64
