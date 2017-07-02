@@ -5,12 +5,12 @@
 --
 -- Wrapper to generate trace log subsystem. Trace logs - are
 -- special kind of logs that logs internal state. By default
--- loggers are disabled as may have negative perfomance impact 
+-- loggers are disabled as may have negative perfomance impact
 -- and may make logs unusable, because they will generate too
 -- much logs, that are not useful unless debuging.
 --
 -- Such logs can be enabled either statically via setting
--- environment labels or in runtime with 'silenceLogger', 
+-- environment labels or in runtime with 'silenceLogger',
 -- 'verboseLogger' calls.
 module HA.Logger
   ( -- * Public API
@@ -61,7 +61,7 @@ updateLogger s b = modifyMVar loggers $ \m -> do
       return (m, ref)
 
 -- | Disable log output in certain subsystem.
--- 
+--
 -- This method can be called remotely.
 silenceLogger :: String -> Process ()
 silenceLogger subsystem = liftIO $ withMVar loggers $ \m ->
@@ -69,7 +69,7 @@ silenceLogger subsystem = liftIO $ withMVar loggers $ \m ->
     writeIORef ref False
 
 -- | Enable log output in certain subsystem.
--- 
+--
 -- This method can be called remotely.
 verboseLogger :: String -> Process ()
 verboseLogger subsystem = liftIO $ withMVar loggers $ \m ->
@@ -92,12 +92,12 @@ verboseLogger subsystem = liftIO $ withMVar loggers $ \m ->
 -- HALON_TRACING="EQ.producer smth-else" ./program-name
 -- @
 --
--- and get logging enabled, it's possible to use @*@ in
--- @HALON_TRACING@ variable, then all subsystems will be enabled
+-- and get logging enabled.  It is also possible to use @*@ in
+-- @HALON_TRACING@ variable, then all subsystems will be enabled.
 mkHalonTracer :: String
               -> (String -> Process ())
 mkHalonTracer subsystem = unsafePerformIO $ do
-    mx  <- lookupEnv "HALON_TRACING"
+    mx <- lookupEnv "HALON_TRACING"
     let status = case mx of
              Nothing -> False
              Just ss ->
@@ -120,21 +120,21 @@ mkHalonTracer subsystem = unsafePerformIO $ do
 --
 -- @
 -- logger :: String -> IO ()
--- logger = mkHalonTracer "EQ.producer"
+-- logger = mkHalonTracerIO "m0:notification"
 -- @
 --
 -- Now we could run program with:
 --
 -- @
--- HALON_TRACING="EQ.producer smth-else" ./program-name
+-- HALON_TRACING="m0:notification smth-else" ./program-name
 -- @
 --
--- and get logging enabled, it's possible to use @*@ in
+-- and get logging enabled.  It is also possible to use @*@ in
 -- @HALON_TRACING@ variable, then all subsystems will be enabled
 mkHalonTracerIO :: String
                 -> (String -> IO ())
 mkHalonTracerIO subsystem = unsafePerformIO $ do
-    mx  <- lookupEnv "HALON_TRACING"
+    mx <- lookupEnv "HALON_TRACING"
     let status = case mx of
              Nothing -> False
              Just ss ->
