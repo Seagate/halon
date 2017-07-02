@@ -228,9 +228,9 @@ data AcceptedMsg
 -- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
-  let debug_mode = stepForward debugModeSetting start_eng
-  p <- liftIO $ getTime Monotonic
-  bootstrap debug_mode [] (1 :: Integer) . snd =<< stepForward (timeoutMsg p) start_eng
+    let debug_mode = stepForward debugModeSetting start_eng
+    p <- liftIO $ getTime Monotonic
+    bootstrap debug_mode [] (1 :: Integer) . snd =<< stepForward (timeoutMsg p) start_eng
   where
     bootstrap debug_mode ms 1 eng = do
       (ri, nxt_eng) <- stepForward tick eng
