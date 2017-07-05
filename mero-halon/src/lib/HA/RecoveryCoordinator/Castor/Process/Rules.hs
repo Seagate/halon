@@ -54,6 +54,7 @@ import           Mero.ConfC (ServiceType(..))
 import           Mero.Notification.HAState
 import           Network.CEP
 import           Text.Printf
+import           Debug.Trace (trace) -- XXX DELETEME
 
 -- | Set of rules used for mero processes.
 rules :: Definitions RC ()
@@ -165,7 +166,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
             Nothing -> do
               forM_ (runWarnings p rg) $ Log.rcLog' Log.WARN
 
-              waitClear
+              trace "XXX [ruleProcessStart] waitClear" waitClear
               waitFor notifier
               onTimeout 120 starting_notify_timed_out
 
@@ -893,7 +894,7 @@ ruleFailedNotificationFailsProcess =
     -- we could do here anyway.
     unless (null procs) $ do
       failProcs <- getHalonVar _hv_failed_notification_fails_process
-      if failProcs 
+      if failProcs
       then void . applyStateChanges $
         map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
       else do
