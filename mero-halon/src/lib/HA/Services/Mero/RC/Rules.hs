@@ -37,10 +37,9 @@ import           HA.Service.Interface
 import Control.Monad (unless)
 import Data.Foldable (for_)
 import Data.Typeable (cast)
+import Debug.Trace (traceM) -- XXX DELETEME
 
 import Network.CEP
-
-import Prelude hiding (id)
 
 -- | Rules that are needed to support halon:m0d service in RC.
 rules :: Definitions RC ()
@@ -137,7 +136,9 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
 
   start notification_delivered ()
   where
-    g (HAEvent uid (NotificationAck epoch fid)) _ _ = return $! Just (uid, epoch, fid)
+    g (HAEvent uid (NotificationAck epoch fid)) _ _ = do
+      traceM $ "XXX [ruleNotificationsDeliveredToM0d.g] uuid=" ++ show uid
+      return $! Just (uid, epoch, fid)
     g _ _ _ = return Nothing
 
 -- | When notification was failed to be delivered to mero we mark it

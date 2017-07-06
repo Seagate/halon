@@ -441,27 +441,28 @@ cepCruise !st req@(Run t) =
         in loop 0 st{_machTimestamp = ts}
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
-            keyInfos = MM.lookup fpt $ _machTypeMap st
+            keyInfos = trace ("XXX [cepCruise.Incoming:444] m=" ++ (if isEncoded m then "<EncodedMessage>" else show m) ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
             (upd,running') = mapAccumL
               (\u (SMData idx key rd) ->
-                case key `lookup` keyInfos of
+                trace ("XXX [cepCruise.Incoming:447] smid=" ++ show idx ++ " key=" ++ show key ++ " rule=" ++ _ruleDataName rd) $ case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m) in
+                    let stack' = trace "XXX [cepCruise.Incoming:450]" $ runSM (_ruleStack rd) (SMMessage info m) in
                     (u+1, (SMData idx key rd{_ruleStack=stack'}))
-                  Nothing   -> (u,SMData idx key rd)) 0 (_machRunningSM st)
+                  Nothing   -> trace "XXX [cepCruise.Incoming:451] Nothing" $ (u,SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
               \(SMData idx key rd) ->
-                case key `lookup` keyInfos of
+                trace ("XXX [cepCruise.Incoming:454] smid=" ++ show idx ++ " key=" ++ show key ++ " rule=" ++ _ruleDataName rd) $ case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m) in
+                    let stack' = trace "XXX [cepCruise.Incoming:456]" $ runSM (_ruleStack rd) (SMMessage info m) in
                     Right (SMData idx key rd{_ruleStack=stack'})
-                  Nothing   -> Left (SMData idx key rd)
+                  Nothing   -> trace "XXX [cepCruise.Incoming:459] Nothing" $ Left (SMData idx key rd)
             (susp,running) = partitionEithers splitted
             rinfo = RunInfo (upd+length running)
               $ if upd+length running == 0
                   then MsgIgnored
                   else RulesBeenTriggered []
         liftIO $ traceMarkerIO $ "cep: message: " ++ show fpt
+        liftIO $ traceM $ "XXX [cepCruise.Incoming:465] rinfo=" ++ show rinfo
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
