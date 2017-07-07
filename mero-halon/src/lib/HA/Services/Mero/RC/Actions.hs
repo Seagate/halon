@@ -52,6 +52,7 @@ import qualified Mero.Notification
 import           Mero.Notification.HAState             (Note (..))
 import           Network.CEP
 import           Prelude                               hiding (id, (.))
+import           Debug.Trace (trace) -- XXX DELETEME
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.
@@ -168,7 +169,7 @@ forceCompleteStateDiff diff = do
   registerSyncGraph $ do
     for_ (stateDiffOnCommit diff) applyOnCommit
     promulgateWait $
-      Notified
+      (\n -> trace ("XXX [forceCompleteStateDiff:171] " ++ show n) n) $ Notified
         (stateEpoch diff)
         (stateDiffMsg diff)
         okProcesses

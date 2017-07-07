@@ -83,7 +83,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
       let Just (a :: e) = runIdentity $ trace ("XXX [newSM.interpretInput:82] smId=" ++ show smId' ++ " a=" ++ (show $ typeOf a) ++ " msg=" ++ (if isEncoded msg then "<EncodedMessage>" else show msg)) $ unwrapMessage msg in
       SM (interpretInput smId' l (bufferInsert a b) phs)
     interpretInput smId' l b phs (SMExecute subs) =
-      executeStack logger subs smId' l b id id phs
+      trace ("XXX [newSM.interpretInput:86] smId=" ++ show smId') $ executeStack logger subs smId' l b id id phs
 
     -- We use '[Phase app l] -> [Phase app l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of

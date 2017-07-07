@@ -422,7 +422,7 @@ cepCruise !st req@(Run t) =
         -- XXX: currently only runnable SM are started, so if rule has
         --      an effectfull requirements to pass this could be a problem
         --      for the rule.
-        (infos, nxt_st) <- State.runStateT executeTick st
+        (infos, nxt_st) <- trace "XXX [cepCruise:425] Tick" $ State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->
@@ -441,21 +441,21 @@ cepCruise !st req@(Run t) =
         in loop 0 st{_machTimestamp = ts}
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
         let fpt = messageFingerprint m
-            keyInfos = trace ("XXX [cepCruise.Incoming:444] m=" ++ (if isEncoded m then "<EncodedMessage>" else show m) ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
+            keyInfos = trace ("XXX [cepCruise.Incoming:444]----- m=" ++ (if isEncoded m then "<EncodedMessage>" else show m) ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
             (upd,running') = mapAccumL
               (\u (SMData idx key rd) ->
                 trace ("XXX [cepCruise.Incoming:447] smid=" ++ show idx ++ " key=" ++ show key ++ " rule=" ++ _ruleDataName rd) $ case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = trace "XXX [cepCruise.Incoming:450]" $ runSM (_ruleStack rd) (SMMessage info m) in
+                    let stack' = trace ("XXX [cepCruise.Incoming:450] Just info smid=" ++ show idx) $ runSM (_ruleStack rd) (SMMessage info m) in
                     (u+1, (SMData idx key rd{_ruleStack=stack'}))
-                  Nothing   -> trace "XXX [cepCruise.Incoming:451] Nothing" $ (u,SMData idx key rd)) 0 (_machRunningSM st)
+                  Nothing   -> trace ("XXX [cepCruise.Incoming:451] Nothing smid=" ++ show idx) $ (u,SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
               \(SMData idx key rd) ->
                 trace ("XXX [cepCruise.Incoming:454] smid=" ++ show idx ++ " key=" ++ show key ++ " rule=" ++ _ruleDataName rd) $ case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = trace "XXX [cepCruise.Incoming:456]" $ runSM (_ruleStack rd) (SMMessage info m) in
+                    let stack' = trace ("XXX [cepCruise.Incoming:456] Just info smid=" ++ show idx) $ runSM (_ruleStack rd) (SMMessage info m) in
                     Right (SMData idx key rd{_ruleStack=stack'})
-                  Nothing   -> trace "XXX [cepCruise.Incoming:459] Nothing" $ Left (SMData idx key rd)
+                  Nothing   -> trace ("XXX [cepCruise.Incoming:459] Nothing smid=" ++ show idx) $ Left (SMData idx key rd)
             (susp,running) = partitionEithers splitted
             rinfo = RunInfo (upd+length running)
               $ if upd+length running == 0
@@ -483,6 +483,7 @@ executeTick = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
+    execute (SMData smid key (RuleData rn _ _)) | trace ("XXX [executeTick.execute:486] smid=" ++ show smid ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
     execute (SMData _ key sm) =
       bracket_ (liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key)
                (liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key)
