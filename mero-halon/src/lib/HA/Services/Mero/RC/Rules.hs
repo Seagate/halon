@@ -37,7 +37,7 @@ import           HA.Service.Interface
 import Control.Monad (unless)
 import Data.Foldable (for_)
 import Data.Typeable (cast)
-import Debug.Trace (traceM) -- XXX DELETEME
+import Debug.Trace (traceM, trace) -- XXX DELETEME
 
 import Network.CEP
 
@@ -122,6 +122,7 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
   notification_delivered <- phaseHandle "notification_delivered"
 
   setPhaseIf notification_delivered g $ \(uid, epoch, fid) -> do
+    traceM $ "XXX [ruleNotificationsDeliveredToM0d:125] uuid=" ++ show uid ++ " epoch=" ++ show epoch ++ " fid=" ++ show fid
     todo uid
     Log.tagContext Log.SM [ ("epoch", show epoch)
                           , ("fid", show fid)
@@ -136,10 +137,10 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
 
   start notification_delivered ()
   where
-    g (HAEvent uid (NotificationAck epoch fid)) _ _ = do
-      traceM $ "XXX [ruleNotificationsDeliveredToM0d.g] uuid=" ++ show uid
+    g ev@(HAEvent uid (NotificationAck epoch fid)) _ _ = do
+      traceM $ "XXX [ruleNotificationsDeliveredToM0d.g:141] " ++ show ev
       return $! Just (uid, epoch, fid)
-    g _ _ _ = return Nothing
+    g ev _ _ = return $ (trace $ "XXX [ruleNotificationsDeliveredToM0d.g:143] " ++ show ev) Nothing
 
 -- | When notification was failed to be delivered to mero we mark it
 -- as not delivered, so other services who rely on that notification
