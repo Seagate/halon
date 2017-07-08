@@ -344,7 +344,7 @@ runItForever start_eng = do
           -- XXX DELETEME <<<<<<<
           case other of
             SomeSMsg x ->
-              liftIO . putStrLn $ "XXX loop=" ++ show loop
+              liftIO . putStrLn $ "XXX [runItForever.cruise.go:347] loop=" ++ show loop
                                 ++ " SomeSMsg " ++ show (persistMessageId x)
             _ -> return ()
           -- XXX >>>>>>>

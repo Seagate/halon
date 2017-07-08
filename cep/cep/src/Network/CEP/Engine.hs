@@ -327,7 +327,7 @@ defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
       return (RunInfo 0 MsgIgnored, Engine $ next st)
     Just fp -> do
       -- XXX DELETEME <<<<<<<
-      liftIO . putStrLn $ "XXX [defaultHandler] PersistMessage " ++ show uuid
+      liftIO . putStrLn $ "XXX [defaultHandler:330] PersistMessage " ++ show uuid
                         ++ "; " ++ show sfp ++ " -> " ++ show fp
       -- XXX >>>>>>>
       liftIO $ traceMarkerIO $ "cep: smessage: " ++ show sfp ++ " -> " ++ show fp
