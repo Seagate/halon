@@ -424,7 +424,7 @@ cepCruise !st req@(Run t) =
         --      for the rule.
         (infos, nxt_st) <- State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
-        traceM $ "XXX [cepCruise:427] Tick; RulesBeenTriggered " ++ show infos
+        traceM "XXX [cepCruise:427] Tick"
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->
         let loop !c nst = case PSQ.findMin (_machEvents nst) of
@@ -486,8 +486,10 @@ executeTick = do
       return (_machRunningSM st)
     execute (SMData smid key (RuleData rn _ _)) | trace ("XXX [executeTick.execute:487] smid=" ++ show smid ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
     execute (SMData _ key sm) =
-      bracket_ (liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key)
-               (liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key)
+      bracket_ (do { liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key;
+               traceM $ "XXX [executeTick.execute:490] start " ++ _ruleKeyName key })
+               (do { liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key;
+               traceM $ "XXX [executeTick.execute:492] stop " ++ _ruleKeyName key })
                $ do
       sti <- State.get
       let exe  = SMExecute (_machSubs sti)

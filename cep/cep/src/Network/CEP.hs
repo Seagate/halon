@@ -363,7 +363,7 @@ runItForever start_eng = do
         go inner Nothing = do
           liftIO $ traceMarkerIO "cep loop: tick"
           (ri, nxt_eng) <- stepForward tick inner
-          say $ "XXX [runItForever.go:366] loop=" ++ show loop ++ "; tick; runResult=" ++ show (runResult ri)
+          say $ "XXX [runItForever.go:366] loop=" ++ show loop ++ "; tick"
           let act = requestAction tick
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           cruise debug_mode (succ loop) nxt_eng

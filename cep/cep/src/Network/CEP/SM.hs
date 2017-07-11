@@ -66,8 +66,9 @@ newSM :: forall app l. Application app
       -> l                               -- ^ Initial local state.
       -> Maybe (SMLogger app l)          -- ^ Logger
       -> SM app
+newSM key _ rn _ _ _ _ | trace ("XXX [newSM:69] key=" ++ show key ++ " rn=" ++ rn) False = undefined
 newSM key startPhase rn ps initialBuffer initialL logger =
-    trace ("XXX [newSM:70] rn=" ++ rn) $ SM $ bootstrap initialBuffer
+    trace ("XXX [newSM:71] rn=" ++ rn) $ SM $ bootstrap initialBuffer
   where
     bootstrap :: Buffer -> SMIn app a -> a
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
@@ -87,21 +88,21 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     -- XXX DELETEME <<<<<<<
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) | False =
       let Just (a :: e) = runIdentity $
-            trace ("XXX [newSM.interpretInput:89] smId=" ++ show smId'
+            trace ("XXX [newSM.interpretInput:91] rn=" ++ rn ++ " smId=" ++ show smId'
                    ++ (if show (typeOf a) == "HAEvent MeroFromSvc"
                        then " a=<" ++ show (let x = unsafeCoerce a :: HAEventXXX () in eventId x) ++ ">"
                        else " a :: " ++ show (typeOf a))
                    ++ " msg=" ++ (if isEncoded msg
                                   then "<EncodedMessage>"
                                   else show msg))
-            $ unwrapMessage msg in
-      SM (interpretInput smId' l (bufferInsert a b) phs)
+            $ unwrapMessage msg
+      in SM (interpretInput smId' l (bufferInsert a b) phs)
     -- XXX DELETEME >>>>>>>
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
-      in SM (interpretInput smId' l (bufferInsert a b) phs)
+      in trace ("XXX [newSM.interpretInput:103] rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
     interpretInput smId' l b phs (SMExecute subs) =
-      trace ("XXX [newSM.interpretInput:92] smId=" ++ show smId') $ executeStack logger subs smId' l b id id phs
+      trace ("XXX [newSM.interpretInput:105] rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
 
     -- We use '[Phase app l] -> [Phase app l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -125,9 +126,9 @@ newSM key startPhase rn ps initialBuffer initialL logger =
         case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (trace ("XXX [interpretInput.executeStack:123] i=" ++ show i) i:)) phs
+            executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (trace ("XXX [newSM.executeStack:129] rn=" ++ rn ++ " smId=" ++ show smId' ++ " i=" ++ show i) i:)) phs
           Right ph -> do
-            m <- trace ("XXX [interpretInput.executeStack:125] rn=" ++ rn) $ runPhase rn subs logs smId' l b ph
+            m <- trace ("XXX [newSM.executeStack:131] rn=" ++ rn ++ " smId=" ++ show smId') $ runPhase rn subs logs smId' l b ph
             concat <$> traverse (next ph) m
       where
         -- Interpret results of the state machine execution. We have phase that was executed
@@ -155,7 +156,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                                          g
 
                 fin_phs <- jumpEmitTimeout key startPhase
-                liftIO $ traceIO $ "XXX [interpretInput.executeStack.next:153] pname=" ++ pname ++ " result=" ++ show result
+                traceM $ "XXX [newSM.executeStack.next:159] pname=" ++ pname
                 return [(result, SM $ interpretInput idm initialL buffer [fin_phs])]
               -- Rule completed sucessfully and there are next steps to run. In this case
               -- we continue.
@@ -163,17 +164,17 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                 liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
                 let result = SMResult idm SMRunning (info [SuccessExe pname b buffer])
                 fin_phs <- traverse (jumpEmitTimeout key) $ fmap mkPhase ph'
-                liftIO $ traceIO $ "XXX [interpretInput.executeStack.next:161] pname=" ++ pname ++ " result=" ++ show result
+                traceM $ "XXX [newSM.executeStack.next:167] pname=" ++ pname
                 return [(result, SM $ interpretInput idm l' buffer fin_phs)]
               -- Rule is suspended. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Suspend -> trace ("XXX [interpretInput.executeStack.next:165] pname=" ++ pname) $ executeStack logs subs smId' l b
+              SM_Suspend -> trace ("XXX [newSM.executeStack.next:171] pname=" ++ pname) $ executeStack logs subs smId' l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))
                                 phs
               -- Rule is stopped. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Stop -> trace ("XXX [interpretInput.executeStack.next:171] pname=" ++ pname) $ executeStack logs subs smId' l b
+              SM_Stop -> trace ("XXX [newSM.executeStack.next:177] pname=" ++ pname) $ executeStack logs subs smId' l b
                              f
                              (info . ((FailExe pname StopExe b):))
                              phs
