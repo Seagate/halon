@@ -235,7 +235,7 @@ returnedFromSvc Interface{..} act = matchIf reencodeRequest $ \wf -> do
   where
     reencodeRequest = isJust . wfReceiverVersion
 
--- | RC sent a message to service but it the service was unable to
+-- | RC sent a message to service but the service was unable to
 -- process it and asked for RC to re-send it re-encoded.
 returnToSvc :: (MonadProcess m, Typeable toSvc, Show toSvc)
               => Interface toSvc a -> WireFormat toSvc -> m ()
