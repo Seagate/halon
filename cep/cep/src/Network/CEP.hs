@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-} -- XXX DELETEME
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
@@ -310,13 +311,13 @@ runItForever start_eng = do
         else case stepForward engineNextEvent eng of
           Nothing -> do
             liftIO $ traceMarkerIO "cep loop: blocked until next event"
-            say $ "XXX [runItForever.cruise:314] Blocked until next event"
+            say $ showXXX "runItForever.cruise" __LINE__ "Blocked until next event"
             go eng . Just =<< receiveWait all_events
           Just t  -> do
             p' <- liftIO $ getTime Monotonic
             let tm = (\(TimeSpec s ns) -> (s*10^(9::Int) + ns) `div` 1000 ) $ p' `diffTimeSpec` t
             liftIO $ traceMarkerIO $ "cep loop: blocked for " ++ show tm ++ "ms"
-            say $ "XXX [runItForever.cruise:319] Blocked for " ++ show tm ++ "ms"
+            say $ showXXX "runItForever.cruise" __LINE__ $ "Blocked for " ++ show tm ++ "ms"
             mmsg <- receiveTimeout (fromIntegral tm) all_events
             case mmsg of
               Nothing -> do eng'' <- snd <$> stepForward (timeoutMsg p') eng
@@ -350,7 +351,7 @@ runItForever start_eng = do
                     _            -> error "impossible: runItForever" --XXX
           (ri, nxt_eng) <- stepForward m inner
           -- XXX DELETEME <<<<<<<
-          say $ "XXX [runItForever.go:353] loop=" ++ show loop
+          say $ showXXX "runItForever.go" __LINE__ $ "loop=" ++ show loop
               ++ "; incoming message"
               ++ (case other of
                     SomeSMsg (PersistMessage uuid _ _) -> " " ++ show uuid
@@ -363,7 +364,7 @@ runItForever start_eng = do
         go inner Nothing = do
           liftIO $ traceMarkerIO "cep loop: tick"
           (ri, nxt_eng) <- stepForward tick inner
-          say $ "XXX [runItForever.go:366] loop=" ++ show loop ++ "; tick"
+          say $ showXXX "runItForever.go" __LINE__ $ "loop=" ++ show loop ++ "; tick"
           let act = requestAction tick
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           cruise debug_mode (succ loop) nxt_eng

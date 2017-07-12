@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-} -- XXX DELETEME
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -38,6 +39,13 @@ import qualified Network.CEP.Log as Log
 import           Data.Foldable (for_)
 import           Debug.Trace
 
+-- XXX DELETEME <<<<<<<
+showXXX :: String -> Integer -> String -> String
+showXXX func line rest = "XXX [" ++ func ++ ":" ++ show line ++ "]" ++ rest'
+  where
+    rest' = if null rest then "" else ' ':rest
+-- XXX DELETEME >>>>>>>
+
 newtype SM app = SM { runSM :: forall a. SMIn app a -> a }
 
 -- | Input to 'SM' (Stack Machine).
@@ -66,9 +74,9 @@ newSM :: forall app l. Application app
       -> l                               -- ^ Initial local state.
       -> Maybe (SMLogger app l)          -- ^ Logger
       -> SM app
-newSM key _ rn _ _ _ _ | trace ("XXX [newSM:69] key=" ++ show key ++ " rn=" ++ rn) False = undefined
+newSM key _ rn _ _ _ _ | trace (showXXX "newSM" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn) False = undefined
 newSM key startPhase rn ps initialBuffer initialL logger =
-    trace ("XXX [newSM:71] rn=" ++ rn) $ SM $ bootstrap initialBuffer
+    trace (showXXX "newSM" __LINE__ $ "rn=" ++ rn) $ SM $ bootstrap initialBuffer
   where
     bootstrap :: Buffer -> SMIn app a -> a
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
@@ -88,7 +96,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     -- XXX DELETEME <<<<<<<
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) | False =
       let Just (a :: e) = runIdentity $
-            trace ("XXX [newSM.interpretInput:91] rn=" ++ rn ++ " smId=" ++ show smId'
+            trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId'
                    ++ (if show (typeOf a) == "HAEvent MeroFromSvc"
                        then " a=<" ++ show (let x = unsafeCoerce a :: HAEventXXX () in eventId x) ++ ">"
                        else " a :: " ++ show (typeOf a))
@@ -100,9 +108,9 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     -- XXX DELETEME >>>>>>>
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
-      in trace ("XXX [newSM.interpretInput:103] rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
+      in trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
     interpretInput smId' l b phs (SMExecute subs) =
-      trace ("XXX [newSM.interpretInput:105] rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
+      trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
 
     -- We use '[Phase app l] -> [Phase app l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -125,10 +133,10 @@ newSM key startPhase rn ps initialBuffer initialL logger =
         res <- jumpApplyTime key jmp
         case res of
           Left nxt_jmp ->
-            let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (trace ("XXX [newSM.executeStack:129] rn=" ++ rn ++ " smId=" ++ show smId' ++ " i=" ++ show i) i:)) phs
+            let i = FailExe (jumpPhaseName jmp) SuspendExe b
+            in trace (showXXX "newSM.executeStack" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ " i=" ++ show i) $ executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
-            m <- trace ("XXX [newSM.executeStack:131] rn=" ++ rn ++ " smId=" ++ show smId') $ runPhase rn subs logs smId' l b ph
+            m <- trace (showXXX "newSM.executeStack" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId') $ runPhase rn subs logs smId' l b ph
             concat <$> traverse (next ph) m
       where
         -- Interpret results of the state machine execution. We have phase that was executed
@@ -156,7 +164,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                                          g
 
                 fin_phs <- jumpEmitTimeout key startPhase
-                traceM $ "XXX [newSM.executeStack.next:159] pname=" ++ pname
+                traceM $ showXXX "newSM.executeStack.next" __LINE__ $ "pname=" ++ pname
                 return [(result, SM $ interpretInput idm initialL buffer [fin_phs])]
               -- Rule completed sucessfully and there are next steps to run. In this case
               -- we continue.
@@ -164,17 +172,17 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                 liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
                 let result = SMResult idm SMRunning (info [SuccessExe pname b buffer])
                 fin_phs <- traverse (jumpEmitTimeout key) $ fmap mkPhase ph'
-                traceM $ "XXX [newSM.executeStack.next:167] pname=" ++ pname
+                traceM $ showXXX "newSM.executeStack.next" __LINE__ $ "pname=" ++ pname
                 return [(result, SM $ interpretInput idm l' buffer fin_phs)]
               -- Rule is suspended. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Suspend -> trace ("XXX [newSM.executeStack.next:171] pname=" ++ pname) $ executeStack logs subs smId' l b
+              SM_Suspend -> trace (showXXX "newSM.executeStack.next" __LINE__ $ "pname=" ++ pname) $ executeStack logs subs smId' l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))
                                 phs
               -- Rule is stopped. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Stop -> trace ("XXX [newSM.executeStack.next:177] pname=" ++ pname) $ executeStack logs subs smId' l b
+              SM_Stop -> trace (showXXX "newSM.executeStack.next" __LINE__ $ "pname=" ++ pname) $ executeStack logs subs smId' l b
                              f
                              (info . ((FailExe pname StopExe b):))
                              phs
