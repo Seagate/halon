@@ -28,6 +28,7 @@ import           Control.Distributed.Process.Serializable
 import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Monad.Trans
 import           Control.Monad.Catch (bracket_)
+import           Control.Exception (assert) -- XXX DELETEME
 import qualified Data.MultiMap       as MM
 import qualified Data.Map.Strict     as M
 import qualified Data.Set            as Set
@@ -89,8 +90,9 @@ data Select a = GetSetting (EngineSetting a)
 
 data Action a where
     Tick           :: Action RunInfo
-    Incoming       :: Message   -> Action RunInfo
-    Unpersist      :: PersistMessage  -> Action RunInfo
+    Incoming       :: Message -> Action RunInfo
+    IncomingXXX    :: (UUID, Message) -> Action RunInfo
+    Unpersist      :: PersistMessage -> Action RunInfo
     NewSub         :: Subscribe -> Action ()
     Unsub          :: Unsubscribe -> Action ()
     TimeoutArrived :: TimeSpec -> Action Int
@@ -153,6 +155,9 @@ rawUnsubRequest = Run . Unsub
 
 rawIncoming :: Message -> Request 'Write (Process (RunInfo, Engine))
 rawIncoming = Run . Incoming
+
+rawIncomingXXX :: (UUID, Message) -> Request 'Write (Process (RunInfo, Engine))
+rawIncomingXXX = Run . IncomingXXX
 
 rawPersisted :: PersistMessage -> Request 'Write (Process (RunInfo, Engine))
 rawPersisted = Run . Unpersist
@@ -315,22 +320,24 @@ defaultHandler st next (Run (Unsub sub)) =
     return ((), Engine $ next $ cepUnsubRequest st sub)
 defaultHandler st next (Run Tick) =
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
+defaultHandler _ _ (Run (IncomingXXX _)) = error "Impossible happened!"
 defaultHandler st next (Run (Incoming _)) = do
     return (RunInfo (_machTotalProcMsgs st) MsgIgnored, Engine $ next st)
 defaultHandler st next (Run (TimeoutArrived t)) =
     return (0, Engine $ next st{_machTimestamp=t})
-defaultHandler _ _ (Run (Unpersist (PersistMessage uuid _ _))) | trace ("XXX [defaultHandler:322] PersistMessage " ++ show uuid) False = undefined
+defaultHandler _ _ (Run (Unpersist (PersistMessage uuid _ _))) | trace ("XXX [defaultHandler:328] PersistMessage " ++ show uuid) False = undefined
 defaultHandler st next (Run (Unpersist (PersistMessage uuid sfp payload))) = do
   case M.lookup sfp (_machSFingerprint st) of
     Nothing -> do
-      traceM $ "XXX [defaultHandler:326] PersistMessage " ++ show uuid ++ "; sftp=" ++ show sfp ++ " not found ==> MsgIgnored"
+      traceM $ "XXX [defaultHandler:332] PersistMessage " ++ show uuid ++ "; sftp=" ++ show sfp ++ " not found ==> MsgIgnored"
       for_ (_machDefaultHandler st) $ \handler ->
         handler uuid sfp payload (_machState st)
       return (RunInfo 0 MsgIgnored, Engine $ next st)
     Just fp -> do
-      traceM $ "XXX [defaultHandler:331] PersistMessage " ++ show uuid ++ "; " ++ show sfp ++ " -> " ++ show fp
+      traceM $ "XXX [defaultHandler:337] PersistMessage " ++ show uuid ++ "; " ++ show sfp ++ " -> " ++ show fp
       liftIO $ traceMarkerIO $ "cep: smessage: " ++ show sfp ++ " -> " ++ show fp
-      next st (rawIncoming (EncodedMessage fp payload))
+      next st $ rawIncomingXXX (uuid, EncodedMessage fp payload)
+      -- next st $ rawIncoming $ EncodedMessage fp payload
 defaultHandler st _ (Query (GetSetting s)) =
     case s of
       EngineDebugMode      -> _machDebugMode st
@@ -384,7 +391,7 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       Incoming _ -> defaultHandler st (cepInitRule ir) req
       -- XXX DELETEME <<<<<<<
       Unpersist (PersistMessage uuid _ _) -> do
-        liftIO . putStrLn $ "XXX [cepInitRule:388] PersistMessage " ++ show uuid
+        liftIO . putStrLn $ "XXX [cepInitRule:394] PersistMessage " ++ show uuid
         defaultHandler st (cepInitRule ir) req
       -- XXX >>>>>>>
       _          -> defaultHandler st (cepInitRule ir) req
@@ -423,7 +430,7 @@ cepCruise !st req@(Run t) =
         --      for the rule.
         (infos, nxt_st) <- State.runStateT executeTick st
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
-        traceM "XXX [cepCruise:426] Tick"
+        traceM "XXX [cepCruise:433] Tick"
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->
         let loop !c nst = case PSQ.findMin (_machEvents nst) of
@@ -439,19 +446,30 @@ cepCruise !st req@(Run t) =
                                    , _machEvents = PSQ.deleteMin (_machEvents nst)}
                    in loop (c+1) nxt_st
         in loop 0 st{_machTimestamp = ts}
+      IncomingXXX (uuid, m) -> do
+        let isInteresting = interestingMsg (MM.member (_machTypeMap st)) m
+            interestedRules =
+              fst <$> messageFingerprint m `MM.lookup` _machTypeMap st
+        assert (isInteresting == null interestedRules) pure ()
+        traceM $ "XXX [cepCruise:454] " ++ show uuid
+               ++ (if isInteresting
+                   then " is interesting; interestedRules="
+                        ++ show interestedRules
+                   else " is NOT interesting")
+        cepCruise st (Run $ Incoming m)
       Incoming m | not (interestingMsg (MM.member (_machTypeMap st)) m) -> do
-        traceM $ "XXX [cepCruise:443] Incoming, but NOT interesting!"
+        traceM $ "XXX [cepCruise:461] Incoming, but NOT interesting!"
         defaultHandler st cepCruise req
       Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
-        traceM $ "XXX [cepCruise:446] Incoming; interested_rules=" ++ show (fst <$> messageFingerprint m `MM.lookup` _machTypeMap st)
+        traceM $ "XXX [cepCruise:464] Incoming; interested_rules=" ++ show (fst <$> messageFingerprint m `MM.lookup` _machTypeMap st)
         let fpt = messageFingerprint m
-            keyInfos = trace ("XXX [cepCruise.Incoming:448]----- m=" ++ (if isEncoded m then "<EncodedMessage>" else show m) ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
+            keyInfos = trace ("XXX [cepCruise.Incoming:466]----- m=" ++ (if isEncoded m then "<EncodedMessage>" else show m) ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
             (upd,running') = mapAccumL
               (\u (SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
-                    in trace ("XXX [cepCruise.Incoming:454] SM has been run; idx=" ++ show idx ++ " key= " ++ show key ++ " rd=" ++ _ruleDataName rd)
+                    in trace ("XXX [cepCruise.Incoming:472] SM has been run; idx=" ++ show idx ++ " key= " ++ show key ++ " rd=" ++ _ruleDataName rd)
                        (u+1, (SMData idx key rd{_ruleStack=stack'}))
                   Nothing   -> (u,SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
@@ -459,7 +477,7 @@ cepCruise !st req@(Run t) =
                 case key `lookup` keyInfos of
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
-                    in trace ("XXX [cepCruise.Incoming:462] SM has been run; idx=" ++ show idx ++ " key= " ++ show key ++ " rd=" ++ _ruleDataName rd)
+                    in trace ("XXX [cepCruise.Incoming:480] SM has been run; idx=" ++ show idx ++ " key= " ++ show key ++ " rd=" ++ _ruleDataName rd)
                        $ Right (SMData idx key rd{_ruleStack=stack'})
                   Nothing   -> Left (SMData idx key rd)
             (susp,running) = partitionEithers splitted
@@ -468,7 +486,7 @@ cepCruise !st req@(Run t) =
                   then MsgIgnored
                   else RulesBeenTriggered []
         liftIO $ traceMarkerIO $ "cep: message: " ++ show fpt
-        traceM $ "XXX [cepCruise.Incoming:471] running_SMs_triggered=" ++ show upd ++ " suspended_SMs_triggered=" ++ show (length running)
+        traceM $ "XXX [cepCruise.Incoming:489] running_SMs_triggered=" ++ show upd ++ " suspended_SMs_triggered=" ++ show (length running)
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
@@ -489,12 +507,12 @@ executeTick = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute (SMData smid key (RuleData rn _ _)) | trace ("XXX [executeTick.execute:492] smid=" ++ show smid ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
+    execute (SMData smid key (RuleData rn _ _)) | trace ("XXX [executeTick.execute:510] smid=" ++ show smid ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
     execute (SMData _ key sm) =
       bracket_ (do { liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ "XXX [executeTick.execute:495] start " ++ _ruleKeyName key })
+               traceM $ "XXX [executeTick.execute:513] start " ++ _ruleKeyName key })
                (do { liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ "XXX [executeTick.execute:497] stop " ++ _ruleKeyName key })
+               traceM $ "XXX [executeTick.execute:515] stop " ++ _ruleKeyName key })
                $ do
       sti <- State.get
       let exe  = SMExecute (_machSubs sti)
