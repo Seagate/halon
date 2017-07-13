@@ -450,25 +450,25 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
     lookupIfaceAndSend _ uid _ | trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) False = undefined
     lookupIfaceAndSend wf uid rg = if
       | serviceName (Mero.lookupM0d rg) == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf (Mero.lookupM0d rg) uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf (Mero.lookupM0d rg) uid
       | serviceName DLog.decisionLog == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf DLog.decisionLog uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf DLog.decisionLog uid
       | serviceName SSPL.sspl == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf SSPL.sspl uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf SSPL.sspl uid
       | serviceName Ekg.ekg == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf Ekg.ekg uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf Ekg.ekg uid
       | serviceName Ping.ping == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf Ping.ping uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf Ping.ping uid
       | serviceName Noisy.noisy == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf Noisy.noisy uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf Noisy.noisy uid
       | serviceName SSPLHL.sspl == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf SSPLHL.sspl uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf SSPLHL.sspl uid
       | serviceName Dummy.dummy == wfServiceName wf ->
-          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ "") $ decodeAndSend wf Dummy.dummy uid
+          trace (showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid) $ decodeAndSend wf Dummy.dummy uid
       | otherwise -> do
           let msg :: String
               msg = printf "No interface found for %s" (wfServiceName wf)
-          traceM $ showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ ""
+          traceM $ showXXX "ruleServiceMessageReceived.lookupIfaceAndSend" __LINE__ $ show uid
           Log.rcLog' Log.WARN msg
 
     decodeAndSend (coerce -> wf) svc uid = case wfReceiverVersion wf of
@@ -478,7 +478,7 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
       Just{} -> do
         -- We have to coerce to toSvc because it turned out to be our
         -- message returned to us.
-        traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ ""
+        traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid
         returnToSvc (getInterface svc) (coerce wf)
         -- TODO: It's a bug that we have this here. We should add
         -- UUIDs of undecoded messages back into WireFormat so that we
@@ -492,7 +492,7 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
       Nothing -> do
         -- TODO: We should be able to rely on interface performing this
         -- check. See TODO on 'Interface'.
-        traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ ""
+        traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid
         if ifVersion (getInterface svc) >= wfSenderVersion wf
         then case ifDecodeFromSvc (getInterface svc) wf of
           -- We send an non-persisted HAEvent. This is okay because it
@@ -502,12 +502,12 @@ ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
           -- processed. It also means SafeCopy can be bypassed: the
           -- sender is not required to give instances for the types it
           -- uses if it doesn't wish to do so.
-          DecodeOk msg -> trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ "") $ selfMessage $! HAEvent uid msg
-          DecodeVersionMismatch -> trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ "") $ returnSvcMsg (getInterface svc) wf
+          DecodeOk msg -> trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid) $ selfMessage $! HAEvent uid msg
+          DecodeVersionMismatch -> trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid) $ returnSvcMsg (getInterface svc) wf
           DecodeFailed err -> do
             let msg :: String
                 msg = printf "%s interface failed to decode %s: %s"
                              (wfServiceName wf) (show wf) err
-            traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ ""
+            traceM $ showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid
             Log.rcLog' Log.ERROR msg
-        else trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ "") $ returnSvcMsg (getInterface svc) wf
+        else trace (showXXX "ruleServiceMessageReceived.decodeAndSend" __LINE__ $ show uid) $ returnSvcMsg (getInterface svc) wf
