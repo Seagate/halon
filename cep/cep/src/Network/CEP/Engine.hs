@@ -462,50 +462,73 @@ cepCruise !st req@(Run t) =
           ++ (if isInteresting
               then " is interesting; interestedRules=" ++ show interestedRules
               else " is NOT interesting")
+#if 0 /* XXX */
         cepCruise st $ Run (Incoming m)
-      Incoming m | not (interestingMsg (MM.member (_machTypeMap st)) m) -> do
-        traceM $ showXXX "cepCruise" __LINE__ "Incoming, but NOT interesting!"
-        defaultHandler st cepCruise req
-      Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
-        traceM $ showXXX "cepCruise" __LINE__ $ "Incoming; interested_rules=" ++ show (fst <$> messageFingerprint m `MM.lookup` _machTypeMap st)
+#else
+        traceM $ showXXX "cepCruise" __LINE__ $ show uuid ++ " m :: " ++ (if isEncoded m then "EncodedMessage" else show m)
+        traceM $ showXXX "cepCruise" __LINE__ $ show uuid ++ " interested_rules=" ++ show (fst <$> messageFingerprint m `MM.lookup` _machTypeMap st)
         let fpt = messageFingerprint m
-            keyInfos = trace (showXXX "cepCruise.Incoming" __LINE__ $
-                              "----- m="
-                              ++ (if isEncoded m
-                                  then "<EncodedMessage>"
-                                  else show m)
-                              ++ " fpt=" ++ show fpt) $ MM.lookup fpt $ _machTypeMap st
-            (upd,running') = mapAccumL
-              (\u (SMData idx key rd) ->
+            keyInfos = fpt `MM.lookup` _machTypeMap st
+        traceM $ showXXX "cepCruise" __LINE__ $ show uuid ++ " fpt=" ++ show fpt ++ " keyInfos=" ++ show (fst <$> keyInfos)
+        let smdataXXX (SMData smid rkey rdata) = "smid=" ++ show smid ++ " rkey=" ++ show rkey ++ " rd=" ++ _ruleDataName rdata
+            (upd, running') = mapAccumL
+              (\u smdata@(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
-                    in trace (showXXX "cepCruise.Incoming" __LINE__ $
-                              "SM has been run; idx=" ++ show idx
-                              ++ " key= " ++ show key
-                              ++ " rd=" ++ _ruleDataName rd)
-                       (u+1, SMData idx key rd{_ruleStack=stack'})
-                  Nothing -> (u, SMData idx key rd)) 0 (_machRunningSM st)
+                    in trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " SM has been run! " ++ smdataXXX smdata) (u+1, SMData idx key rd{_ruleStack=stack'})
+                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " key not in keyInfos; " ++ smdataXXX smdata) (u, SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
-              \(SMData idx key rd) ->
+              \smdata@(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
-                    in trace (showXXX "cepCruise.Incoming" __LINE__ $
-                              "SM has been run; idx=" ++ show idx
-                              ++ " key= " ++ show key
-                              ++ " rd=" ++ _ruleDataName rd)
-                       $ Right (SMData idx key rd{_ruleStack=stack'})
-                  Nothing -> Left (SMData idx key rd)
-            (susp,running) = partitionEithers splitted
+                    in trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " SM has been run! " ++ smdataXXX smdata) $ Right (SMData idx key rd{_ruleStack=stack'})
+                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " key not in keyInfos; " ++ smdataXXX smdata) $ Left (SMData idx key rd)
+            (susp, running) = partitionEithers splitted
             rinfo = RunInfo (upd + length running)
               $ if upd + length running == 0
                   then MsgIgnored
                   else RulesBeenTriggered []
         liftIO $ traceMarkerIO $ "cep: message: " ++ show fpt
-        traceM $ showXXX "cepCruise.Incoming" __LINE__ $
-          "running_SMs_triggered=" ++ show upd
-          ++ " suspended_SMs_triggered=" ++ show (length running)
+        traceM $ showXXX "cepCruise" __LINE__ $ show uuid ++ " running_SMs_triggered=" ++ show upd ++ " suspended_SMs_triggered=" ++ show (length running)
+        return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
+                                            ,_machSuspendedSM = susp
+                                            })
+#endif
+      -- XXX DELETEME <<<<<<<
+      Incoming m | not (interestingMsg (MM.member (_machTypeMap st)) m) -> do
+        traceM $ showXXX "cepCruise" __LINE__ "Incoming, but NOT interesting!"
+        defaultHandler st cepCruise req
+      -- XXX DELETEME >>>>>>>
+      Incoming m | interestingMsg (MM.member (_machTypeMap st)) m -> do
+        traceM $ showXXX "cepCruise" __LINE__ $ "m :: " ++ (if isEncoded m then "EncodedMessage" else show m)
+        traceM $ showXXX "cepCruise" __LINE__ $ "interested_rules=" ++ show (fst <$> messageFingerprint m `MM.lookup` _machTypeMap st)
+        let fpt = messageFingerprint m
+            keyInfos = fpt `MM.lookup` _machTypeMap st
+        traceM $ showXXX "cepCruise" __LINE__ $ "fpt=" ++ show fpt ++ " keyInfos=" ++ show (fst <$> keyInfos)
+        let smdataXXX (SMData smid rkey rdata) = "smid=" ++ show smid ++ " rkey=" ++ show rkey ++ " rd=" ++ _ruleDataName rdata
+            (upd, running') = mapAccumL
+              (\u smdata@(SMData idx key rd) ->
+                case key `lookup` keyInfos of
+                  Just info ->
+                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    in trace (showXXX "cepCruise" __LINE__ $ "SM has been run! " ++ smdataXXX smdata) (u+1, SMData idx key rd{_ruleStack=stack'})
+                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata) (u, SMData idx key rd)) 0 (_machRunningSM st)
+            splitted = foreach (_machSuspendedSM st) $
+              \smdata@(SMData idx key rd) ->
+                case key `lookup` keyInfos of
+                  Just info ->
+                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    in trace (showXXX "cepCruise" __LINE__ $ "SM has been run! " ++ smdataXXX smdata) $ Right (SMData idx key rd{_ruleStack=stack'})
+                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata) $ Left (SMData idx key rd)
+            (susp, running) = partitionEithers splitted
+            rinfo = RunInfo (upd + length running)
+              $ if upd + length running == 0
+                  then MsgIgnored
+                  else RulesBeenTriggered []
+        liftIO $ traceMarkerIO $ "cep: message: " ++ show fpt
+        traceM $ showXXX "cepCruise" __LINE__ $ "running_SMs_triggered=" ++ show upd ++ " suspended_SMs_triggered=" ++ show (length running)
         return (rinfo, Engine $ cepCruise st{_machRunningSM   = running' ++ running
                                             ,_machSuspendedSM = susp
                                             })
