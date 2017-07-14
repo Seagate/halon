@@ -2,7 +2,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric #-} -- XXX DELETEME
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -21,12 +20,6 @@ import           Data.Typeable
 import           Control.Monad.Trans (lift)
 import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
--- XXX DELETEME <<<<<<<
-import           GHC.Generics (Generic)
-import           Control.Distributed.Process.Internal.Types (isEncoded)
-import           Data.UUID (UUID)
-import           Unsafe.Coerce (unsafeCoerce)
--- XXX >>>>>>>
 import           Control.Lens
 import qualified Data.Map.Strict as M
 
@@ -93,24 +86,11 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                    -> [Jump (Phase app l)]
                    -> SMIn app a
                    -> a
-    -- XXX DELETEME <<<<<<<
-    interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) | False =
-      let Just (a :: e) = runIdentity $
-            trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId'
-                   ++ (if show (typeOf a) == "HAEvent MeroFromSvc"
-                       then " a=<" ++ show (let x = unsafeCoerce a :: HAEventXXX () in eventId x) ++ ">"
-                       else " a :: " ++ show (typeOf a))
-                   ++ " msg=" ++ (if isEncoded msg
-                                  then "<EncodedMessage>"
-                                  else show msg))
-            $ unwrapMessage msg
-      in SM (interpretInput smId' l (bufferInsert a b) phs)
-    -- XXX DELETEME >>>>>>>
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
-      in trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
+      in trace (showXXX "newSM.interpretInput" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
     interpretInput smId' l b phs (SMExecute subs) =
-      trace (showXXX "newSM.interpretInput" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
+      trace (showXXX "newSM.interpretInput" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
 
     -- We use '[Phase app l] -> [Phase app l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -127,16 +107,16 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                  -> State.StateT (EngineState (GlobalState app)) Process [(SMResult, SM app)]
     executeStack _ _ smId' l b f info [] = case f [] of
       [] -> return [stoppedSM info smId']
-      ph -> return [(SMResult smId' SMSuspended (info [])
-                    , SM $ interpretInput smId' l b ph)]
+      ph -> return [( SMResult smId' SMSuspended (info [])
+                    , SM $ interpretInput smId' l b ph )]
     executeStack logs subs smId' l b f info (jmp:phs) = do
         res <- jumpApplyTime key jmp
         case res of
           Left nxt_jmp ->
             let i = FailExe (jumpPhaseName jmp) SuspendExe b
-            in trace (showXXX "newSM.executeStack" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId' ++ " i=" ++ show i) $ executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
+            in trace (showXXX "newSM.executeStack" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ " i=" ++ show i) $ executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
-            m <- trace (showXXX "newSM.executeStack" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show smId') $ runPhase rn subs logs smId' l b ph
+            m <- trace (showXXX "newSM.executeStack" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ runPhase rn subs logs smId' l b ph
             concat <$> traverse (next ph) m
       where
         -- Interpret results of the state machine execution. We have phase that was executed
@@ -195,9 +175,3 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     stoppedSM mkInfo smId'
       = ( SMResult smId' SMStopped (mkInfo [])
         , SM $ error "trying to run stack that was stopped")
-
--- XXX DELETEME
-data HAEventXXX a = HAEventXXX
-    { eventId      :: {-# UNPACK #-} !UUID
-    , _eventPayload :: a
-    } deriving (Generic, Typeable, Show)

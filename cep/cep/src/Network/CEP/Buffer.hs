@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-} -- XXX DELETEME
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE Rank2Types #-}
 -- |
@@ -24,8 +25,15 @@ module Network.CEP.Buffer
 import Prelude hiding (length)
 import Data.Dynamic
 import Data.Foldable (toList)
+import Data.Sequence hiding (null)
+import Debug.Trace (trace) -- XXX DELETEME
 
-import Data.Sequence
+-- XXX DELETEME <<<<<<<
+showXXX :: String -> Integer -> String -> String
+showXXX func line rest = "XXX [" ++ func ++ ":" ++ show line ++ "]" ++ rest'
+  where
+    rest' = if null rest then "" else ' ':rest
+-- XXX DELETEME >>>>>>>
 
 data Input a where
     Insert  :: Typeable e => e -> Input Buffer
@@ -44,6 +52,7 @@ data FIFOType
     | Bounded Int
       -- ^ `Bounded i` when `i` messages are already in the buffer, discards
       --   the older one when a new message is inserted.
+  deriving Show
 
 type Index = Int
 
@@ -51,6 +60,7 @@ initIndex :: Index
 initIndex = (-1)
 
 fifoBuffer :: FIFOType -> Buffer
+fifoBuffer tpe | trace (showXXX "fifoBuffer" __LINE__ $ show tpe) False = undefined
 fifoBuffer tpe = Buffer $ go empty 0
   where
     go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a

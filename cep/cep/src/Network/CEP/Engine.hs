@@ -436,8 +436,8 @@ cepCruise !st req@(Run t) =
         --      an effectfull requirements to pass this could be a problem
         --      for the rule.
         (infos, nxt_st) <- State.runStateT executeTick st
+        traceM $ showXXX "cepCruise" __LINE__ $ "Tick executed: messages_processed=" ++ show (_machTotalProcMsgs nxt_st) ++ " rules_triggered=" ++ show ((\ri -> (ruleName ri, "[XXX_ruleResults]")) <$> infos)
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
-        traceM $ showXXX "cepCruise" __LINE__ "Tick"
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->
         let loop !c nst = case PSQ.findMin (_machEvents nst) of
@@ -549,12 +549,12 @@ executeTick = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute (SMData smid key (RuleData rn _ _)) | trace (showXXX "executeTick.execute" __LINE__ $ "smid=" ++ show smid ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
-    execute (SMData _ key sm) =
+    execute (SMData smid key (RuleData rn _ _)) | trace (showXXX "executeTick.execute" __LINE__ $ "smid=" ++ show (getSMId smid) ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
+    execute (SMData smid key sm) =
       bracket_ (do { liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ showXXX "executeTick.execute" __LINE__ $ "start " ++ _ruleKeyName key })
+               traceM $ showXXX "executeTick.execute" __LINE__ $ "START smid=" ++ show (getSMId smid) ++ " key=" ++ show key })
                (do { liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ showXXX "executeTick.execute" __LINE__ $ "stop " ++ _ruleKeyName key })
+               traceM $ showXXX "executeTick.execute" __LINE__ $ "STOP smid=" ++ show (getSMId smid) ++ " key=" ++ show key })
                $ do
       sti <- State.get
       let exe  = SMExecute (_machSubs sti)

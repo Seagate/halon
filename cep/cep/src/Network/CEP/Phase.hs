@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-} -- XXX DELETEME
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,24 +13,30 @@ module Network.CEP.Phase
   , PhaseOut(..)
   ) where
 
-import Data.Foldable (for_)
-import Data.Typeable
-
 import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Serializable
-import           Control.Monad.Operational
 import           Control.Exception (fromException, throwIO)
-import qualified Control.Monad.Catch as Catch
+import           Control.Lens hiding (Index)
 import           Control.Monad (unless)
+import qualified Control.Monad.Catch as Catch
+import           Control.Monad.Operational
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
+import           Data.Foldable (for_, traverse_)
 import qualified Data.Map as M
-import           Data.Foldable (traverse_)
-import           Control.Lens hiding (Index)
+import           Data.Typeable
+import           Debug.Trace (trace) -- XXX DELETEME
 
-import Network.CEP.Buffer
+import           Network.CEP.Buffer
 import qualified Network.CEP.Log as Log
-import Network.CEP.Types
+import           Network.CEP.Types
+
+-- XXX DELETEME <<<<<<<
+showXXX :: String -> Integer -> String -> String
+showXXX func line rest = "XXX [" ++ func ++ ":" ++ show line ++ "]" ++ rest'
+  where
+    rest' = if null rest then "" else ' ':rest
+-- XXX DELETEME >>>>>>>
 
 -- | 'SM_Complete': The phase has finished processing, yielding a new
 -- set of SMs to run.
@@ -150,14 +157,15 @@ extractSeqMsg s sbuf = go (-1) sbuf s
 --   Call is evaluated until a safe point that is either final 'return'
 --   or 'suspend' or 'commit'.
 runPhase :: (Application app, g ~ GlobalState app)
-         => String -- ^ Rule name
+         => String        -- ^ Rule name
          -> Subscribers   -- ^ Subscribers.
          -> Maybe (SMLogger app l) -- ^ Current logger.
          -> SMId          -- ^ State machine id.
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
-         -> Phase app l     -- ^ Phase handle to interpret.
+         -> Phase app l   -- ^ Phase handle to interpret.
          -> State.StateT (EngineState g) Process [(SMId, (Buffer,PhaseOut l))]
+runPhase rn _ _ idm _ _ ph | trace (showXXX "runPhase" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ show (_phName ph)) False = undefined
 runPhase rn subs logs idm l buf ph =
     case _phCall ph of
       DirectCall action -> runPhaseM rn pname subs logs idm l Nothing buf action
