@@ -225,7 +225,7 @@ data AcceptedMsg
     | SomeMsg Message
     | SomeSMsg PersistMessage
 
--- | A CEP 'Engine' driver that run an 'Engine' until the end of the universe.
+-- | A CEP 'Engine' driver that runs an 'Engine' until the end of the universe.
 runItForever :: Engine -> Process ()
 runItForever start_eng = do
     let debug_mode = stepForward debugModeSetting start_eng

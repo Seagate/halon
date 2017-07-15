@@ -475,14 +475,14 @@ cepCruise !st req@(Run t) =
               (\u smdata@(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    let stack' = runSM (_ruleStack rd) (SMMessageXXX info (uuid, m))
                     in trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " SM has been run! " ++ smdataXXX smdata) (u+1, SMData idx key rd{_ruleStack=stack'})
                   Nothing -> trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " key not in keyInfos; " ++ smdataXXX smdata) (u, SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
               \smdata@(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    let stack' = runSM (_ruleStack rd) (SMMessageXXX info (uuid, m))
                     in trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " SM has been run! " ++ smdataXXX smdata) $ Right (SMData idx key rd{_ruleStack=stack'})
                   Nothing -> trace (showXXX "cepCruise" __LINE__ $ show uuid ++ " key not in keyInfos; " ++ smdataXXX smdata) $ Left (SMData idx key rd)
             (susp, running) = partitionEithers splitted

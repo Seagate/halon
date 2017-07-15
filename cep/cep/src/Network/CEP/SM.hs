@@ -22,6 +22,7 @@ import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
 import           Control.Lens
 import qualified Data.Map.Strict as M
+import           Data.UUID (UUID) -- XXX DELETEME
 
 import           Network.CEP.Buffer
 import           Network.CEP.Execution
@@ -56,6 +57,7 @@ data SMIn app a where
                               Process [(SMResult, SM app)]
                           )
     SMMessage :: TypeInfo -> Message -> SMIn app (SM app)
+    SMMessageXXX :: TypeInfo -> (UUID, Message) -> SMIn app (SM app)
 
 -- | Create CEP state machine
 newSM :: forall app l. Application app
@@ -72,6 +74,12 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     trace (showXXX "newSM" __LINE__ $ "rn=" ++ rn) $ SM $ bootstrap initialBuffer
   where
     bootstrap :: Buffer -> SMIn app a -> a
+    -- XXX DELETEME <<<<<<<
+    bootstrap _ (SMMessageXXX _ (uuid, _)) | trace (showXXX "newSM.bootstrap" __LINE__ $ show uuid) False = undefined
+    bootstrap b (SMMessageXXX (TypeInfo _ (_ :: Proxy e)) (_, msg)) =
+      let Just (a :: e) = runIdentity $ unwrapMessage msg in
+      SM (bootstrap (bufferInsert a b))
+    -- XXX DELETEME >>>>>>>
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg in
       SM (bootstrap (bufferInsert a b))
@@ -86,9 +94,14 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                    -> [Jump (Phase app l)]
                    -> SMIn app a
                    -> a
+    -- XXX DELETEME <<<<<<<
+    interpretInput smId' l b phs (SMMessageXXX (TypeInfo _ (_::Proxy e)) (uuid, msg)) =
+      let Just (a :: e) = runIdentity $ unwrapMessage msg
+      in trace (showXXX "newSM.interpretInput" __LINE__ $ "SMMessage " ++ show uuid ++ " key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ SM (interpretInput smId' l (bufferInsert a b) phs)
+    -- XXX DELETEME >>>>>>>
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
-      in trace (showXXX "newSM.interpretInput" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ "; SMMessage") $ SM (interpretInput smId' l (bufferInsert a b) phs)
+      in SM (interpretInput smId' l (bufferInsert a b) phs)
     interpretInput smId' l b phs (SMExecute subs) =
       trace (showXXX "newSM.interpretInput" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ "; SMExecute") $ executeStack logger subs smId' l b id id phs
 
