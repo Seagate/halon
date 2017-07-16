@@ -127,7 +127,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
         case res of
           Left nxt_jmp ->
             let i = FailExe (jumpPhaseName jmp) SuspendExe b
-            in trace (showXXX "newSM.executeStack" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId') ++ " i=" ++ show i) $ executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
+            in trace (showXXX "newSM.executeStack" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
             m <- trace (showXXX "newSM.executeStack" __LINE__ $ "key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ runPhase rn subs logs smId' l b ph
             concat <$> traverse (next ph) m
