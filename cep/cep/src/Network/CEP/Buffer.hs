@@ -11,6 +11,7 @@ module Network.CEP.Buffer
     , Index
     , initIndex
     , bufferInsert
+    , bufferInsertXXX -- XXX DELETEME
     , bufferGetWithIndex
     , bufferGet
     , bufferLength
@@ -26,6 +27,7 @@ import Prelude hiding (length)
 import Data.Dynamic
 import Data.Foldable (toList)
 import Data.Sequence hiding (null)
+import Data.UUID (UUID) -- XXX DELETEME
 import Debug.Trace (trace) -- XXX DELETEME
 
 -- XXX DELETEME <<<<<<<
@@ -37,6 +39,7 @@ showXXX func line rest = "XXX [" ++ func ++ ":" ++ show line ++ "]" ++ rest'
 
 data Input a where
     Insert  :: Typeable e => e -> Input Buffer
+    InsertXXX :: Typeable e => (UUID, e) -> Input Buffer
     Get     :: Typeable e => Index -> Input (Maybe (Index, e, Buffer))
     Length  :: Input Int
     Display :: Input String
@@ -64,6 +67,26 @@ fifoBuffer tpe | trace (showXXX "fifoBuffer" __LINE__ $ show tpe) False = undefi
 fifoBuffer tpe = Buffer $ go empty 0
   where
     go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a
+    -- XXX DELETEME <<<<<<<
+    go _ idx (InsertXXX (uuid, e)) | trace (showXXX "fifoBuffer.go" __LINE__ $ show uuid ++ " Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) False = undefined
+    go xs idx (InsertXXX (uuid, e)) =
+        trace (showXXX "fifoBuffer.go" __LINE__ $ show uuid ++ " Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) $ case tpe of
+          Bounded limit
+            | length xs == limit ->
+              let _ :< rest = viewl xs
+                  nxt_xs    = rest |> (idx, toDyn e)
+                  nxt_idx   = succ idx in
+              Buffer $ go nxt_xs nxt_idx
+            | otherwise ->
+              let nxt_xs  = xs |> (idx, toDyn e)
+                  nxt_idx = succ idx in
+              Buffer $ go nxt_xs nxt_idx
+          Unbounded ->
+            let nxt_xs  = xs |> (idx, toDyn e)
+                nxt_idx = succ idx in
+            Buffer $ go nxt_xs nxt_idx
+    -- XXX DELETEME >>>>>>>
+    go _ idx (Insert e) | trace (showXXX "fifoBuffer.go" __LINE__ $ "Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) False = undefined
     go xs idx (Insert e) =
         case tpe of
           Bounded limit
@@ -112,6 +135,9 @@ merelyEqual (Buffer ka) (Buffer kb) = ka Indexes == kb Indexes
 -- | Inserts a new message.
 bufferInsert :: Typeable a => a -> Buffer -> Buffer
 bufferInsert a (Buffer k) = k (Insert a)
+
+bufferInsertXXX :: Typeable a => (UUID, a) -> Buffer -> Buffer
+bufferInsertXXX (uuid, a) (Buffer k) = k $ InsertXXX (uuid, a)
 
 -- | Gets the first matching type message along with its order of appearance.
 --   Returned message is removed from the buffer.

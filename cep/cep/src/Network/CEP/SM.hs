@@ -97,7 +97,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
     -- XXX DELETEME <<<<<<<
     interpretInput smId' l b phs (SMMessageXXX (TypeInfo _ (_::Proxy e)) (uuid, msg)) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
-      in trace (showXXX "newSM.interpretInput" __LINE__ $ "SMMessage " ++ show uuid ++ " key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ SM (interpretInput smId' l (bufferInsert a b) phs)
+      in trace (showXXX "newSM.interpretInput" __LINE__ $ "SMMessage " ++ show uuid ++ " key=" ++ show key ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId smId')) $ SM (interpretInput smId' l (bufferInsertXXX (uuid, a) b) phs)
     -- XXX DELETEME >>>>>>>
     interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg
