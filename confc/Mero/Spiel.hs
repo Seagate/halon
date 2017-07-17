@@ -509,7 +509,7 @@ instance Spliceable Node where
     mapM_ (spliceTree t (cn_fid n)) procs
 
 instance Spliceable Pool where
-  splice t p o = addPool t (pl_fid o) p (pl_order o)
+  splice t p o = addPool t (pl_fid o) p (pl_pver_policy o)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [PVer]

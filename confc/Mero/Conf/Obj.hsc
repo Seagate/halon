@@ -155,18 +155,18 @@ getFilesystem po = do
 data Pool = Pool {
     pl_ptr   :: Ptr Obj
   , pl_fid   :: Fid
-  , pl_order :: Word32
+  , pl_pver_policy :: Word32
 } deriving (Show)
 
 getPool :: Ptr Obj -> IO Pool
 getPool po = do
   pl <- confc_cast_pool po
   fid <- #{peek struct m0_conf_obj, co_id} po
-  o <- #{peek struct m0_conf_pool, pl_order} pl
+  o <- #{peek struct m0_conf_pool, pl_pver_policy} pl
   return Pool
     { pl_ptr = po
     , pl_fid = fid
-    , pl_order = o
+    , pl_pver_policy = o
   }
 
 data PVerKind = PVerKindActual
