@@ -16,6 +16,7 @@ StartLimitInterval=5
 StartLimitBurst=1
 WorkingDirectory=/var/log
 Environment=HALON_PERSISTENCE=/var/lib/halon
+LimitCORE=infinity
 
 [Install]
 WantedBy=multi-user.target
