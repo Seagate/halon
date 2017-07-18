@@ -25,7 +25,7 @@ import qualified Control.Monad.Trans.State.Strict as State
 import           Data.Foldable (for_, traverse_)
 import qualified Data.Map as M
 import           Data.Typeable
-import           Debug.Trace (trace) -- XXX DELETEME
+import           Debug.Trace -- XXX DELETEME
 
 import           Network.CEP.Buffer
 import qualified Network.CEP.Log as Log
@@ -173,7 +173,16 @@ runPhase rn subs logs idm l buf ph =
         res <- zoom engineStateGlobal $ extractMsg tpe l buf
         case res of
           Just (Extraction new_buf b idx) -> do
+            traceM $ showXXX "runPhase" __LINE__ $ "BEFORE b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ _phName ph
             result <- runPhaseM rn pname subs logs idm l (Just idx) new_buf (k b)
+            traceM $ showXXX "runPhase" __LINE__ $ "AFTER b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ _phName ph
+            -- XXX DELETEME <<<<<<<
+            for_ result $ \(smid, (_, out)) ->
+              case out of
+                SM_Complete{} -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Complete smid=" ++ show (getSMId smid)
+                SM_Suspend    -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Suspend smid=" ++ show (getSMId smid)
+                SM_Stop       -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Stop smid=" ++ show (getSMId smid)
+            -- XXX DELETEME >>>>>>>
             for_ (snd <$> result) $ \(_,out) ->
               case out of
                 SM_Complete{} -> lift $ notifySubscribers subs b
@@ -198,12 +207,15 @@ runPhaseM :: forall app g l. (Application app, g ~ GlobalState app)
           -> Buffer              -- ^ Buffer
           -> PhaseM app l ()
           -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
+runPhaseM rname pname _ _ idx _ mindex _ _ | trace (showXXX "runPhaseM" __LINE__ $ "rname=" ++ rname ++ " pname=" ++ pname ++ " smId=" ++ show (getSMId idx) ++ " mindex=" ++ show mindex) False = undefined
 runPhaseM rname pname subs logger idx pl mindex pb action = do
     g <- use engineStateGlobal
     for_ logger $ \lf -> lift $ (sml_logger lf)
                                 (Log.Event (Log.Location rname (getSMId idx) pname) Log.PhaseEntry) g
     consume [(idx,pb,pl,action)]
   where
+    consume :: [(SMId, Buffer, l, PhaseM app l ())]
+            -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
     consume []     = return []
     consume ((idm,b,l,p):ps) = do
       (t,phases,_) <- reverseOn (\x -> case x ^. _1 . _2 of SM_Complete{} -> True ; _ -> False)
@@ -284,6 +296,7 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
                     CopyBuffer -> buf
                     CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
         in do
+          traceM $ showXXX "runPhaseM.inner" __LINE__ $ "Fork typ=" ++ show typ ++ " rname=" ++ rname ++ " smId=" ++ show (getSMId ids) ++ " pname=" ++ pname
           ((b', out), sm, s) <- go ids l buf (k ())
           smId@(SMId i) <- nextSmId
           logIt $ Log.Fork $ Log.ForkInfo (logForkType typ) i

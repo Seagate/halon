@@ -69,8 +69,8 @@ fifoBuffer tpe = Buffer $ go empty 0
     go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a
     -- XXX DELETEME <<<<<<<
     go _ idx (InsertXXX (uuid, e)) | trace (showXXX "fifoBuffer.go" __LINE__ $ show uuid ++ " Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) False = undefined
-    go xs idx (InsertXXX (uuid, e)) =
-        trace (showXXX "fifoBuffer.go" __LINE__ $ show uuid ++ " Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) $ case tpe of
+    go xs idx (InsertXXX (_, e)) =
+        case tpe of
           Bounded limit
             | length xs == limit ->
               let _ :< rest = viewl xs

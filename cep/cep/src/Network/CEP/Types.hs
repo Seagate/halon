@@ -502,6 +502,7 @@ data Scope g l a where
 --   parent 'Buffer' or starting with an empty one, another option is to drop
 --   all messages that are older than one you work with.
 data ForkType = NoBuffer | CopyBuffer | CopyNewerBuffer
+  deriving Show
 
 -- | 'Phase' state machine.
 --
