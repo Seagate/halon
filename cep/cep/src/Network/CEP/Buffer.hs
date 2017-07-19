@@ -27,6 +27,7 @@ import Prelude hiding (length)
 import Data.Dynamic
 import Data.Foldable (toList)
 import Data.Sequence hiding (null)
+import qualified Data.Sequence as S -- XXX DELETEME
 import Data.UUID (UUID) -- XXX DELETEME
 import Debug.Trace (trace) -- XXX DELETEME
 
@@ -66,9 +67,18 @@ fifoBuffer :: FIFOType -> Buffer
 fifoBuffer tpe | trace (showXXX "fifoBuffer" __LINE__ $ show tpe) False = undefined
 fifoBuffer tpe = Buffer $ go empty 0
   where
-    go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a
+    showBufferXXX :: Seq (Index, Dynamic) -> String
+    showBufferXXX xs = "Buffer length=" ++ show (length xs) ++ " range=" ++ showRange (start, end)
+      where
+        showRange _ | S.null xs   = "[]"
+        showRange (x, y) | x == y = "[" ++ show x ++ "]"
+        showRange (x, y)          = "[" ++ show x ++ ".." ++ show y ++ "]"
+        start = let (i, _) :< _ = viewl xs in i
+        end   = let _ :> (i, _) = viewr xs in i
+
+    go :: forall a. Seq (Index, Dynamic) -> Index -> Input a -> a
     -- XXX DELETEME <<<<<<<
-    go _ idx (InsertXXX (uuid, e)) | trace (showXXX "fifoBuffer.go" __LINE__ $ show uuid ++ " Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) False = undefined
+    go xs idx (InsertXXX (uuid, e)) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Insert (e :: " ++ show (typeOf e) ++ "); " ++ show uuid) False = undefined
     go xs idx (InsertXXX (_, e)) =
         case tpe of
           Bounded limit
@@ -86,7 +96,7 @@ fifoBuffer tpe = Buffer $ go empty 0
                 nxt_idx = succ idx in
             Buffer $ go nxt_xs nxt_idx
     -- XXX DELETEME >>>>>>>
-    go _ idx (Insert e) | trace (showXXX "fifoBuffer.go" __LINE__ $ "Insert (e :: " ++ show (typeOf e) ++ "); idx=" ++ show idx) False = undefined
+    go xs idx (Insert e) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Insert (e :: " ++ show (typeOf e) ++ ")") False = undefined
     go xs idx (Insert e) =
         case tpe of
           Bounded limit
@@ -103,6 +113,7 @@ fifoBuffer tpe = Buffer $ go empty 0
             let nxt_xs  = xs |> (idx, toDyn e)
                 nxt_idx = succ idx in
             Buffer $ go nxt_xs nxt_idx
+    go xs idx (Get i) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i) False = undefined
     go xs idx (Get i) =
         let loop acc cur =
               case viewl cur of
@@ -117,6 +128,7 @@ fifoBuffer tpe = Buffer $ go empty 0
     go xs _ Length = length xs
     go xs _ Display = show $ toList xs
     go xs _ Indexes = toList $ fmap fst xs
+    go xs idx (Drop i) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Drop " ++ show i) False = undefined
     go xs idx (Drop i) =
         let loop cur =
               case viewl cur of
