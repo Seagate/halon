@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE CPP #-} -- XXX DELETEME
 -- |
 -- Module    : HA.RecoveryCoordinator.CEP
 -- Copyright : (C) 2013-2017 Seagate Technology Limited.
@@ -106,7 +107,7 @@ rcRules argv additionalRules = do
     -- XXX: we don't have any callback when buffer is full, so we will just
     -- remove oldest messages out of the buffer, this may not be good, and
     -- ideally we want something that is more clever.
-    setBuffer $ fifoBuffer (Bounded 64)
+    setBuffer $ fifoBuffer ("rcRules:" ++ show (__LINE__ :: Int)) (Bounded 64)
 
     enableRCDebug
 

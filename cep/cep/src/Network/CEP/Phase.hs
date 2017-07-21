@@ -292,7 +292,7 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
         return ((buf, SM_Stop), [], Nothing)
       inner (Fork typ naction :>>= k) =
         let buf' = case typ of
-                    NoBuffer -> emptyFifoBuffer
+                    NoBuffer -> emptyFifoBuffer $ "runPhaseM.inner.Fork:" ++ show (__LINE__ :: Int)
                     CopyBuffer -> buf
                     CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
         in do
@@ -300,7 +300,7 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
           ((b', out), sm, s) <- go ids l buf (k ())
           smId@(SMId i) <- nextSmId
           logIt $ Log.Fork $ Log.ForkInfo (logForkType typ) i
-          return ((b', out), (smId, buf',l,naction):sm, s)
+          return ((b', out), (smId, buf', l, naction):sm, s)
       inner (Lift m :>>= k) = do
         a' <- lift m
         go ids l buf (k a')

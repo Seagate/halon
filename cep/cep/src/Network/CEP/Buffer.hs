@@ -64,18 +64,18 @@ type Index = Int
 initIndex :: Index
 initIndex = -1
 
-fifoBuffer :: FIFOType -> Buffer
-fifoBuffer tpe | trace (showXXX "fifoBuffer" __LINE__ $ show tpe) False = undefined
-fifoBuffer tpe = Buffer $ go empty 0
+fifoBuffer :: String -> FIFOType -> Buffer
+fifoBuffer bufId tpe | trace (showXXX "fifoBuffer" __LINE__ $ "id=" ++ bufId ++ " type=" ++ show tpe) False = undefined
+fifoBuffer bufId tpe = Buffer $ go empty 0
   where
     showBufferXXX :: Seq (Index, Dynamic) -> String
-    showBufferXXX xs = "Buffer length=" ++ show (length xs) ++ " range=" ++ showRange (start, end)
+    showBufferXXX xs = "Buffer id=" ++ bufId ++ " type=" ++ show tpe ++ " len=" ++ show (length xs) ++ showFirstLast (first, last')
       where
-        showRange _ | S.null xs   = "[]"
-        showRange (x, y) | x == y = "[" ++ show x ++ "]"
-        showRange (x, y)          = "[" ++ show x ++ ".." ++ show y ++ "]"
-        start = let (i, _) :< _ = viewl xs in i
-        end   = let _ :> (i, _) = viewr xs in i
+        showFirstLast _ | S.null xs   = ""
+        showFirstLast (x, y) | x == y = " first=" ++ show x
+        showFirstLast (x, y)          = " first=" ++ show x ++ " last=" ++ show y
+        first = let (i, _) :< _ = viewl xs in i
+        last' = let _ :> (i, _) = viewr xs in i
     -- showBufferXXXL :: Seq (Index, Dynamic) -> String
     -- showBufferXXXL xs = "Buffer length=" ++ show (length xs) ++ " " ++ show (toList xs)
 
@@ -183,5 +183,5 @@ bufferLength (Buffer k) = k Length
 bufferEmpty :: Buffer -> Bool
 bufferEmpty b = bufferLength b == 0
 
-emptyFifoBuffer :: Buffer
-emptyFifoBuffer = fifoBuffer Unbounded
+emptyFifoBuffer :: String -> Buffer
+emptyFifoBuffer bufId = fifoBuffer bufId Unbounded

@@ -162,8 +162,7 @@ buildMachine s defs = go (emptyMachine s) $ view defs
                      } in
         go st' $ view $ k ()
     go st (Init m :>>= k) =
-        let buf  = _machPhaseBuf st
-            dat  = buildRuleData "init" (newSM initRuleKey) m buf (_machLogger st)
+        let dat  = buildRuleData "init" (newSM initRuleKey) m (_machPhaseBuf st) (_machLogger st)
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
             st'  = st { _machInitRule = Just ir } in

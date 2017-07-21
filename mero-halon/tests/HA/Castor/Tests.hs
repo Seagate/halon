@@ -397,7 +397,7 @@ run :: forall app g. (Application app, g ~ GlobalState app)
     => g
     -> PhaseM app Int ()
     -> Process (g, [(Buffer, Int)])
-run ls = runPhase ls (0 :: Int) emptyFifoBuffer
+run ls = runPhase ls (0 :: Int) (emptyFifoBuffer "run:400")
 
 runGet :: forall app g a. (Application app, g ~ GlobalState app)
        => g -> PhaseM app (Maybe a) a -> Process a

@@ -41,7 +41,7 @@ runPhaseGet :: forall app g a. (Application app, g ~ GlobalState app)
             -> PhaseM app (Maybe a) a
             -> Process a
 runPhaseGet g p = do
-    (_, xs) <- runPhase g Nothing emptyFifoBuffer augPhase
+    (_, xs) <- runPhase g Nothing (emptyFifoBuffer "runPhaseGet:44") augPhase
     return . head . catMaybes . fmap snd $ xs
   where
     augPhase = p >>= put Local . Just
