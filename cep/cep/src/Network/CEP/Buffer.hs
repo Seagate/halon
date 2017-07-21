@@ -7,7 +7,11 @@
 -- Buffer data structure used to store CEP engine message
 module Network.CEP.Buffer
     ( FIFOType(..)
+#if 0 /* XXX RESTOREME */
     , Buffer
+#else
+    , Buffer(..)
+#endif
     , Index
     , initIndex
     , bufferInsert

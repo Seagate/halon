@@ -95,6 +95,7 @@ extractMatchMsg :: Serializable a
                 -> l
                 -> Buffer
                 -> State.StateT g Process (Maybe (Extraction b))
+extractMatchMsg _ _ (Buffer _ bufId) | trace (showXXX "extractMatchMsg" __LINE__ $ "bufId=" ++ bufId) False = undefined
 extractMatchMsg p l buf = go (-1)
   where
     go lastIdx =
@@ -120,6 +121,7 @@ extractNormalMsg :: forall a. Serializable a
                  => Proxy a
                  -> Buffer
                  -> Maybe (Extraction a)
+extractNormalMsg _ (Buffer _ bufId) | trace (showXXX "extractNormalMsg" __LINE__ $ "bufId=" ++ bufId) False = undefined
 extractNormalMsg _ buf =
     case bufferGet buf of
       Just (newIdx, a, buf') ->
@@ -135,10 +137,12 @@ extractNormalMsg _ buf =
 extractSeqMsg :: PhaseStep a b -> Buffer -> Maybe (Extraction b)
 extractSeqMsg s sbuf = go (-1) sbuf s
   where
+    go _ (Buffer _ bufId) (Await _) | trace (showXXX "extractSeqMsg.go.Await" __LINE__ $ "bufId=" ++ bufId) False = undefined
     go lastIdx buf (Await k) =
         case bufferGetWithIndex lastIdx buf of
           Just (idx, i, buf') -> go idx buf' $ k i
           _                   -> Nothing
+    go _ (Buffer _ bufId) (Emit _) | trace (showXXX "extractSeqMsg.go.Emit" __LINE__ $ "bufId=" ++ bufId) False = undefined
     go lastIdx buf (Emit b) =
         let ext = Extraction
                   { _extractBuf = buf
@@ -146,6 +150,7 @@ extractSeqMsg s sbuf = go (-1) sbuf s
                   , _extractIndex = lastIdx
                   } in
         Just ext
+    go _ (Buffer _ bufId) _ | trace (showXXX "extractSeqMsg.go.Error" __LINE__ $ "bufId=" ++ bufId) False = undefined
     go _ _ _ = Nothing
 
 -- | Execute a single 'Phase'
