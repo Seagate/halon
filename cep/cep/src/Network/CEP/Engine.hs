@@ -514,14 +514,14 @@ cepCruise !st req@(Run t) =
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
                     in trace (showXXX "cepCruise" __LINE__ $ "SM has been run! " ++ smdataXXX smdata) (u+1, SMData idx key rd{_ruleStack=stack'})
-                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata) (u, SMData idx key rd)) 0 (_machRunningSM st)
+                  Nothing -> {-trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata)-} (u, SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
               \smdata@(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
                     let stack' = runSM (_ruleStack rd) (SMMessage info m)
                     in trace (showXXX "cepCruise" __LINE__ $ "SM has been run! " ++ smdataXXX smdata) $ Right (SMData idx key rd{_ruleStack=stack'})
-                  Nothing -> trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata) $ Left (SMData idx key rd)
+                  Nothing -> {-trace (showXXX "cepCruise" __LINE__ $ "key not in keyInfos; " ++ smdataXXX smdata) $-} Left (SMData idx key rd)
             (susp, running) = partitionEithers splitted
             rinfo = RunInfo (upd + length running)
               $ if upd + length running == 0
@@ -549,12 +549,12 @@ executeTick = do
       st <- State.get
       State.put st{_machRunningSM=[]}
       return (_machRunningSM st)
-    execute (SMData smid key (RuleData rn _ _)) | trace (showXXX "executeTick.execute" __LINE__ $ "smid=" ++ show (getSMId smid) ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
+    execute (SMData smid key (RuleData rn _ _)) | trace (showXXX "executeTick.execute" __LINE__ $ "smId=" ++ show (getSMId smid) ++ " key=" ++ show key ++ " rn=" ++ rn) False = undefined
     execute (SMData smid key sm) =
       bracket_ (do { liftIO $ traceEventIO $ "START cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ showXXX "executeTick.execute" __LINE__ $ "START smid=" ++ show (getSMId smid) ++ " key=" ++ show key })
+               traceM $ showXXX "executeTick.execute" __LINE__ $ "START smId=" ++ show (getSMId smid) ++ " key=" ++ show key })
                (do { liftIO $ traceEventIO $ "STOP cep:engine:execute:" ++ _ruleKeyName key;
-               traceM $ showXXX "executeTick.execute" __LINE__ $ "STOP smid=" ++ show (getSMId smid) ++ " key=" ++ show key })
+               traceM $ showXXX "executeTick.execute" __LINE__ $ "STOP smId=" ++ show (getSMId smid) ++ " key=" ++ show key })
                $ do
       sti <- State.get
       let exe  = SMExecute (_machSubs sti)

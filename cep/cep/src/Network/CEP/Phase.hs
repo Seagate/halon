@@ -165,7 +165,7 @@ runPhase :: (Application app, g ~ GlobalState app)
          -> Buffer        -- ^ Current buffer.
          -> Phase app l   -- ^ Phase handle to interpret.
          -> State.StateT (EngineState g) Process [(SMId, (Buffer,PhaseOut l))]
-runPhase rn _ _ idm _ _ ph | trace (showXXX "runPhase" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ show (_phName ph)) False = undefined
+runPhase rn _ _ idm _ _ ph | trace (showXXX "runPhase" __LINE__ $ "rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ _phName ph) False = undefined
 runPhase rn subs logs idm l buf ph =
     case _phCall ph of
       DirectCall action -> runPhaseM rn pname subs logs idm l Nothing buf action
@@ -173,15 +173,15 @@ runPhase rn subs logs idm l buf ph =
         res <- zoom engineStateGlobal $ extractMsg tpe l buf
         case res of
           Just (Extraction new_buf b idx) -> do
-            traceM $ showXXX "runPhase" __LINE__ $ "BEFORE b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ _phName ph
+            traceM $ showXXX "runPhase" __LINE__ $ "BEFORE b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ pname
             result <- runPhaseM rn pname subs logs idm l (Just idx) new_buf (k b)
-            traceM $ showXXX "runPhase" __LINE__ $ "AFTER b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ _phName ph
+            traceM $ showXXX "runPhase" __LINE__ $ "AFTER b :: " ++ show (typeOf b) ++ "; idx=" ++ show idx ++ " rn=" ++ rn ++ " smId=" ++ show (getSMId idm) ++ " ph=" ++ pname
             -- XXX DELETEME <<<<<<<
-            for_ result $ \(smid, (_, out)) ->
+            for_ result $ \(smId, (_, out)) ->
               case out of
-                SM_Complete{} -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Complete smid=" ++ show (getSMId smid)
-                SM_Suspend    -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Suspend smid=" ++ show (getSMId smid)
-                SM_Stop       -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Stop smid=" ++ show (getSMId smid)
+                SM_Complete{} -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Complete; rn=" ++ rn ++ " smId=" ++ show (getSMId smId) ++ " ph=" ++ pname
+                SM_Suspend    -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Suspend; rn=" ++ rn ++ " smId=" ++ show (getSMId smId) ++ " ph=" ++ pname
+                SM_Stop       -> traceM $ showXXX "runPhase" __LINE__ $ "SM_Stop; rn=" ++ rn ++ " smId=" ++ show (getSMId smId) ++ " ph=" ++ pname
             -- XXX DELETEME >>>>>>>
             for_ (snd <$> result) $ \(_,out) ->
               case out of

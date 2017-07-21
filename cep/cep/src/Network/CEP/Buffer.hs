@@ -41,6 +41,7 @@ showXXX func line rest = "XXX [" ++ func ++ ":" ++ show line ++ "]" ++ rest'
 data Input a where
     Insert  :: Typeable e => e -> Input Buffer
     InsertXXX :: Typeable e => (UUID, e) -> Input Buffer
+    -- | @Get i@ pops the first (leftmost) element with index > @i@ and matching type signature.
     Get     :: Typeable e => Index -> Input (Maybe (Index, e, Buffer))
     Length  :: Input Int
     Display :: Input String
@@ -61,7 +62,7 @@ data FIFOType
 type Index = Int
 
 initIndex :: Index
-initIndex = (-1)
+initIndex = -1
 
 fifoBuffer :: FIFOType -> Buffer
 fifoBuffer tpe | trace (showXXX "fifoBuffer" __LINE__ $ show tpe) False = undefined
@@ -75,6 +76,8 @@ fifoBuffer tpe = Buffer $ go empty 0
         showRange (x, y)          = "[" ++ show x ++ ".." ++ show y ++ "]"
         start = let (i, _) :< _ = viewl xs in i
         end   = let _ :> (i, _) = viewr xs in i
+    -- showBufferXXXL :: Seq (Index, Dynamic) -> String
+    -- showBufferXXXL xs = "Buffer length=" ++ show (length xs) ++ " " ++ show (toList xs)
 
     go :: forall a. Seq (Index, Dynamic) -> Index -> Input a -> a
     -- XXX DELETEME <<<<<<<
@@ -117,12 +120,12 @@ fifoBuffer tpe = Buffer $ go empty 0
     go xs idx (Get i) =
         let loop acc cur =
               case viewl cur of
-                EmptyL -> Nothing
+                EmptyL -> trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i ++ " ==> Nothing") Nothing
                 elm@(ei, e) :< rest
                   | i < ei
                   , Just a <- fromDynamic e ->
-                    let nxt_xs =  acc >< rest in
-                    Just (ei, a, Buffer $ go nxt_xs idx)
+                    let nxt_xs = acc >< rest in
+                    trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i ++ " ==> Just (" ++ show ei ++ ", a :: " ++ show (typeOf a) ++ ", _)") $ Just (ei, a, Buffer $ go nxt_xs idx)
                   | otherwise -> loop (acc |> elm) rest in
         loop empty xs
     go xs _ Length = length xs
