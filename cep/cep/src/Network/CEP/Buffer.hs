@@ -48,7 +48,8 @@ data Input a where
     Indexes :: Input [Index]
     Drop    :: Index -> Input Buffer
 
-newtype Buffer = Buffer (forall a. Input a -> a)
+-- newtype Buffer = Buffer (forall a. Input a -> a)
+data Buffer = Buffer (forall a. Input a -> a) String
 
 -- | FIFO insert strategies.
 data FIFOType
@@ -66,7 +67,7 @@ initIndex = -1
 
 fifoBuffer :: String -> FIFOType -> Buffer
 fifoBuffer bufId tpe | trace (showXXX "fifoBuffer" __LINE__ $ "id=" ++ bufId ++ " type=" ++ show tpe) False = undefined
-fifoBuffer bufId tpe = Buffer $ go empty 0
+fifoBuffer bufId tpe = Buffer (go empty 0) bufId
   where
     showBufferXXX :: Seq (Index, Dynamic) -> String
     showBufferXXX xs = "Buffer id=" ++ bufId ++ " type=" ++ show tpe ++ " len=" ++ show (length xs) ++ showFirstLast (first, last')
@@ -89,15 +90,15 @@ fifoBuffer bufId tpe = Buffer $ go empty 0
               let _ :< rest = viewl xs
                   nxt_xs    = rest |> (idx, toDyn e)
                   nxt_idx   = succ idx in
-              Buffer $ go nxt_xs nxt_idx
+              Buffer (go nxt_xs nxt_idx) bufId
             | otherwise ->
               let nxt_xs  = xs |> (idx, toDyn e)
                   nxt_idx = succ idx in
-              Buffer $ go nxt_xs nxt_idx
+              Buffer (go nxt_xs nxt_idx) bufId
           Unbounded ->
             let nxt_xs  = xs |> (idx, toDyn e)
                 nxt_idx = succ idx in
-            Buffer $ go nxt_xs nxt_idx
+            Buffer (go nxt_xs nxt_idx) bufId
     -- XXX DELETEME >>>>>>>
     go xs idx (Insert e) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Insert (e :: " ++ show (typeOf e) ++ ")") False = undefined
     go xs idx (Insert e) =
@@ -107,15 +108,15 @@ fifoBuffer bufId tpe = Buffer $ go empty 0
               let _ :< rest = viewl xs
                   nxt_xs    = rest |> (idx, toDyn e)
                   nxt_idx   = succ idx in
-              Buffer $ go nxt_xs nxt_idx
+              Buffer (go nxt_xs nxt_idx) bufId
             | otherwise ->
               let nxt_xs  = xs |> (idx, toDyn e)
                   nxt_idx = succ idx in
-              Buffer $ go nxt_xs nxt_idx
+              Buffer (go nxt_xs nxt_idx) bufId
           Unbounded ->
             let nxt_xs  = xs |> (idx, toDyn e)
                 nxt_idx = succ idx in
-            Buffer $ go nxt_xs nxt_idx
+            Buffer (go nxt_xs nxt_idx) bufId
     go xs idx (Get i) | trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i) False = undefined
     go xs idx (Get i) =
         let loop acc cur =
@@ -125,7 +126,7 @@ fifoBuffer bufId tpe = Buffer $ go empty 0
                   | i < ei
                   , Just a <- fromDynamic e ->
                     let nxt_xs = acc >< rest in
-                    trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i ++ " ==> Just (" ++ show ei ++ ", a :: " ++ show (typeOf a) ++ ", _)") $ Just (ei, a, Buffer $ go nxt_xs idx)
+                    trace (showXXX "fifoBuffer.go" __LINE__ $ showBufferXXX xs ++ "; idx=" ++ show idx ++ "; Get " ++ show i ++ " ==> Just (" ++ show ei ++ ", a :: " ++ show (typeOf a) ++ ", _)") $ Just (ei, a, Buffer (go nxt_xs idx) bufId)
                   | otherwise -> loop (acc |> elm) rest in
         loop empty xs
     go xs _ Length = length xs
@@ -135,24 +136,24 @@ fifoBuffer bufId tpe = Buffer $ go empty 0
     go xs idx (Drop i) =
         let loop cur =
               case viewl cur of
-                EmptyL -> Buffer $ go empty idx
+                EmptyL -> Buffer (go empty idx) bufId
                 elm@(ei, _) :< rest
                   | ei < i -> loop rest
-                  | otherwise -> Buffer $ go (elm <| rest) idx in
+                  | otherwise -> Buffer (go (elm <| rest) idx) bufId in
         loop xs
 
 instance Show Buffer where
-    show (Buffer k) = k Display
+    show (Buffer k _) = k Display
 
 merelyEqual :: Buffer -> Buffer -> Bool
-merelyEqual (Buffer ka) (Buffer kb) = ka Indexes == kb Indexes
+merelyEqual (Buffer ka _) (Buffer kb _) = ka Indexes == kb Indexes
 
 -- | Inserts a new message.
 bufferInsert :: Typeable a => a -> Buffer -> Buffer
-bufferInsert a (Buffer k) = k (Insert a)
+bufferInsert a (Buffer k _) = k (Insert a)
 
 bufferInsertXXX :: Typeable a => (UUID, a) -> Buffer -> Buffer
-bufferInsertXXX (uuid, a) (Buffer k) = k $ InsertXXX (uuid, a)
+bufferInsertXXX (uuid, a) (Buffer k _) = k $ InsertXXX (uuid, a)
 
 -- | Gets the first matching type message along with its order of appearance.
 --   Returned message is removed from the buffer.
@@ -160,7 +161,7 @@ bufferGetWithIndex :: Typeable a
                    => Index
                    -> Buffer
                    -> Maybe (Index, a, Buffer)
-bufferGetWithIndex idx (Buffer k) = k (Get idx)
+bufferGetWithIndex idx (Buffer k _) = k (Get idx)
 
 -- | Gets the first matching type message. Returned message is removed from the
 --   buffer.
@@ -174,11 +175,11 @@ bufferPeek idx = fmap go . bufferGetWithIndex idx
 
 -- | Drop all messages with index lower then current.
 bufferDrop :: Index -> Buffer -> Buffer
-bufferDrop idx (Buffer k) = k (Drop idx)
+bufferDrop idx (Buffer k _) = k (Drop idx)
 
 -- | Gets the buffer's length.
 bufferLength :: Buffer -> Int
-bufferLength (Buffer k) = k Length
+bufferLength (Buffer k _) = k Length
 
 bufferEmpty :: Buffer -> Bool
 bufferEmpty b = bufferLength b == 0
