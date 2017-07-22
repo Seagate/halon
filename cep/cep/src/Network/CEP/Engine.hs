@@ -436,7 +436,7 @@ cepCruise !st req@(Run t) =
         --      an effectfull requirements to pass this could be a problem
         --      for the rule.
         (infos, nxt_st) <- State.runStateT executeTick st
-        traceM $ showXXX "cepCruise" __LINE__ $ "Tick executed: messages_processed=" ++ show (_machTotalProcMsgs nxt_st) ++ " rules_triggered=" ++ show ((\ri -> (ruleName ri, "[XXX_ruleResults]")) <$> infos)
+        traceM $ showXXX "cepCruise" __LINE__ $ "Tick executed: messages_processed=" ++ show (_machTotalProcMsgs nxt_st) ++ " rules_triggered=" ++ show ((\ri -> ruleName ri) <$> infos)
         let rinfo = RunInfo (_machTotalProcMsgs nxt_st) (RulesBeenTriggered infos)
         return (rinfo, Engine $ cepCruise nxt_st)
       TimeoutArrived ts ->

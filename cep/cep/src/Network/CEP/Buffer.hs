@@ -31,7 +31,7 @@ import Prelude hiding (length)
 import Data.Dynamic
 import Data.Foldable (toList)
 import Data.Sequence hiding (null)
-import qualified Data.Sequence as S -- XXX DELETEME
+-- import qualified Data.Sequence as S -- XXX DELETEME
 import Data.UUID (UUID) -- XXX DELETEME
 import Debug.Trace (trace) -- XXX DELETEME
 
@@ -74,7 +74,9 @@ fifoBuffer bufId tpe | trace (showXXX "fifoBuffer" __LINE__ $ "id=" ++ bufId ++ 
 fifoBuffer bufId tpe = Buffer (go empty 0) bufId
   where
     showBufferXXX :: Seq (Index, Dynamic) -> String
-    showBufferXXX xs = "Buffer id=" ++ bufId ++ " type=" ++ show tpe ++ " len=" ++ show (length xs) ++ showFirstLast (first, last')
+    showBufferXXX xs = "Buffer id=" ++ bufId ++ " type=<" ++ show tpe ++ "> len=" ++ show (length xs) ++ " indexes=" ++ show (toList $ fmap fst xs)
+{-
+    showBufferXXX xs = "Buffer id=" ++ bufId ++ " type=<" ++ show tpe ++ "> len=" ++ show (length xs) ++ showFirstLast (first, last')
       where
         showFirstLast _ | S.null xs   = ""
         showFirstLast (x, y) | x == y = " first=" ++ show x
@@ -83,6 +85,7 @@ fifoBuffer bufId tpe = Buffer (go empty 0) bufId
         last' = let _ :> (i, _) = viewr xs in i
     -- showBufferXXXL :: Seq (Index, Dynamic) -> String
     -- showBufferXXXL xs = "Buffer length=" ++ show (length xs) ++ " " ++ show (toList xs)
+-}
 
     go :: forall a. Seq (Index, Dynamic) -> Index -> Input a -> a
     -- XXX DELETEME <<<<<<<
