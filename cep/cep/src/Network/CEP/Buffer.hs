@@ -94,10 +94,10 @@ fifoBuffer bufId tpe = Buffer (go empty 0) bufId
         case tpe of
           Bounded limit
             | length xs == limit ->
-              let _ :< rest = viewl xs
+              let (ei, _) :< rest = viewl xs
                   nxt_xs    = rest |> (idx, toDyn e)
                   nxt_idx   = succ idx in
-              Buffer (go nxt_xs nxt_idx) bufId
+              trace (showXXX "fifoBuffer.go.Insert" __LINE__ $ "LOST ei=" ++ show ei) $ Buffer (go nxt_xs nxt_idx) bufId
             | otherwise ->
               let nxt_xs  = xs |> (idx, toDyn e)
                   nxt_idx = succ idx in
@@ -112,10 +112,10 @@ fifoBuffer bufId tpe = Buffer (go empty 0) bufId
         case tpe of
           Bounded limit
             | length xs == limit ->
-              let _ :< rest = viewl xs
+              let (ei, _) :< rest = viewl xs
                   nxt_xs    = rest |> (idx, toDyn e)
                   nxt_idx   = succ idx in
-              Buffer (go nxt_xs nxt_idx) bufId
+              trace (showXXX "fifoBuffer.go.Insert" __LINE__ $ "LOST ei=" ++ show ei) $ Buffer (go nxt_xs nxt_idx) bufId
             | otherwise ->
               let nxt_xs  = xs |> (idx, toDyn e)
                   nxt_idx = succ idx in
