@@ -168,6 +168,7 @@ bufferGetWithIndex :: Typeable a
                    => Index
                    -> Buffer
                    -> Maybe (Index, a, Buffer)
+bufferGetWithIndex idx _ | trace (showXXX "bufferGetWithIndex" __LINE__ $ "idx=" ++ show idx) False = undefined
 bufferGetWithIndex idx (Buffer k _) = k (Get idx)
 
 -- | Gets the first matching type message. Returned message is removed from the
@@ -176,12 +177,14 @@ bufferGet :: Typeable a => Buffer -> Maybe (Index, a, Buffer)
 bufferGet = bufferGetWithIndex initIndex
 
 bufferPeek :: Typeable a => Index -> Buffer -> Maybe (Index, a)
+bufferPeek idx | trace (showXXX "bufferPeek" __LINE__ $ "idx=" ++ show idx) False = undefined
 bufferPeek idx = fmap go . bufferGetWithIndex idx
   where
     go (i, a, _) = (i, a)
 
 -- | Drop all messages with index lower then current.
 bufferDrop :: Index -> Buffer -> Buffer
+bufferDrop idx | trace (showXXX "bufferDrop" __LINE__ $ "idx=" ++ show idx) False = undefined
 bufferDrop idx (Buffer k _) = k (Drop idx)
 
 -- | Gets the buffer's length.
