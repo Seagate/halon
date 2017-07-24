@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP        #-}
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE Rank2Types #-}
 -- |
@@ -24,8 +25,8 @@ module Network.CEP.Buffer
 import Prelude hiding (length)
 import Data.Dynamic
 import Data.Foldable (toList)
-
 import Data.Sequence
+import Debug.Trace (trace)
 
 data Input a where
     Insert  :: Typeable e => e -> Input Buffer
@@ -58,10 +59,18 @@ fifoBuffer tpe = Buffer $ go empty 0
         case tpe of
           Bounded limit
             | length xs == limit ->
-              let _ :< rest = viewl xs
+              let elm :< rest = viewl xs  -- `elm' gets lost!
                   nxt_xs    = rest |> (idx, toDyn e)
                   nxt_idx   = succ idx in
-              Buffer $ go nxt_xs nxt_idx
+              -- XXX Until we have a proper solution, let's at least report
+              -- the problem to stderr.
+              --
+              -- See also the "XXX" comment in `rcRules'.
+              trace ("[fifoBuffer.go.Insert:" ++ show (__LINE__ :: Int)
+                     ++ "] *WARNING* Insertion into full 'Bounded "
+                     ++ show limit ++ "' buffer. The oldest element is LOST: "
+                     ++ show elm) $
+                Buffer $ go nxt_xs nxt_idx
             | otherwise ->
               let nxt_xs  = xs |> (idx, toDyn e)
                   nxt_idx = succ idx in
