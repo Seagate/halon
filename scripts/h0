@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+# set -x
+export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
+
+die() { echo "$@" >&2; exit 1; }
+
+## ===================================================================
+## Configurable section
+
+export M0_SRC_DIR=${M0_SRC_DIR:-$HOME/src/mero}
+[[ -d $M0_SRC_DIR ]]                || die "$M0_SRC_DIR: No such directory"
+[[ -d $M0_SRC_DIR/mero ]]           || die "$M0_SRC_DIR: No Mero sources found"
+[[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
+## ===================================================================
+
+H0_SRC_DIR="$(readlink -f $0)"
+H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+STACK='stack --no-docker --allow-different-user'
+
+cmd_make() {
+    cd "$H0_SRC_DIR"
+    PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+        MERO_ROOT=$M0_SRC_DIR \
+        $STACK build mero-halon --ghc-options='-g -j4' --test --no-run-tests
+}
+
+cmd_test() {
+    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+        $H0_SRC_DIR/mero-halon/$($STACK path --dist-dir)/build/tests/tests
+}
+
+cmd_bootstrap() {
+    local BIN=$(cd $H0_SRC_DIR && $STACK path --local-install-root)/bin
+
+    cd "$M0_SRC_DIR"
+    HALOND=$BIN/halond HALONCTL=$BIN/halonctl \
+        HALON_SOURCES=${HALON_SOURCES:-$H0_SRC_DIR} \
+        st/bootstrap.sh -c "$1"
+}
+
+USAGE="Usage: ${0##*/} {setup|rebuild|make|test|start|stop}..."
+
+[[ $# -gt 0 ]] || die "$USAGE"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        setup)
+            $STACK setup;;
+        rebuild)
+            cd "$H0_SRC_DIR"
+            # XXX TODO: The script should be able to determine automatically
+            # whether Mero has been updated since last Halon compilation.
+            # One possible solution is to reimplement this script as a
+            # Makefile.
+            $STACK clean rpclite
+            cmd_make;;
+        make)
+            cmd_make;;
+        test)
+            cmd_test;;
+        start|stop)
+            cmd_bootstrap "cluster_$1";;
+        *)
+            die "$USAGE";;
+    esac
+    shift
+done
