@@ -106,10 +106,11 @@ rcInitRule argv = do
 rcRules :: IgnitionArguments -> [Definitions LoopState ()] -> Definitions LoopState ()
 rcRules argv additionalRules = do
 
-    -- XXX: we don't have any callback when buffer is full, so we will just
-    -- remove oldest messages out of the buffer, this may not be good, and
-    -- ideally we want something that is more clever.
-    setBuffer $ fifoBuffer (Bounded 64)
+    -- When new message is added into a *full* Bounded buffer, the oldest
+    -- message of that buffer is discarded (see fifoBuffer.go.Insert).
+    -- We use Unbounded buffer, because we prefer running out of memory
+    -- to losing messages.
+    setBuffer $ fifoBuffer Unbounded
 
     enableRCDebug
 
