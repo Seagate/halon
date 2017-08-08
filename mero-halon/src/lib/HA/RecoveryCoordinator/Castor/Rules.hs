@@ -54,25 +54,27 @@ castorRules = sequence_
 --
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions RC ()
-ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
-  rg  <- getLocalGraph
-  let racks  = G.connectedTo Cluster Has rg :: [Rack]
-      runValidateConf = validateTransactionCache >>= \case
-        Left e -> do
-          Log.rcLog' Log.ERROR $ "Exception during conf validation: " ++ show e
-          putLocalGraph rg
-          notify $ InitialDataLoadFailed (show e)
-        Right Nothing -> do
-          Log.rcLog' Log.DEBUG "Initial data loaded."
-          notify InitialDataLoaded
-        Right (Just e) -> do
-          Log.rcLog' Log.ERROR $ "Conf failed to validate: " ++ e
-          putLocalGraph rg
-          notify $ InitialDataLoadFailed e
-  if null racks
-  then do
-      mapM_ goRack id_racks
-      (do filesystem <- initialiseConfInRG
+ruleInitialDataLoad =
+  defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
+    rg <- getLocalGraph
+    let err logPrefix msg = do
+          Log.rcLog' Log.ERROR $ logPrefix ++ msg
+          notify $ InitialDataLoadFailed msg
+
+        validateConf = validateTransactionCache >>= \case
+          Left e -> do
+            putLocalGraph rg
+            err "Exception during conf validation: " $ show e
+          Right (Just e) -> do
+            putLocalGraph rg
+            err "Conf failed to validate: " e
+          Right Nothing -> do
+            Log.rcLog' Log.DEBUG "Initial data loaded."
+            notify InitialDataLoaded
+
+        load = do
+          mapM_ goRack id_racks
+          filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers filesystem id_m0_servers
           graph <- getLocalGraph
@@ -80,8 +82,7 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           case updateType of
             Iterative update -> do
               Log.rcLog' Log.WARN "iterative graph population - can't test sanity prior to update."
-              let mupdate = update graph
-              for_ mupdate $ \updateGraph -> do
+              for_ (update graph) $ \updateGraph -> do
                 graph' <- updateGraph $ \rg' -> do
                   putLocalGraph rg'
                   syncGraphBlocking
@@ -100,13 +101,12 @@ ruleInitialDataLoad = defineSimpleTask "castor::initial-data-load" $ \CI.Initial
           -- devices later works.
           createMDPoolPVer filesystem
           createIMeta filesystem
-          runValidateConf
-        ) `catch` (\e -> do
-            Log.rcLog' Log.ERROR $ "Failure during initial data load: " ++ show (e::SomeException)
-            notify $ InitialDataLoadFailed (show e))
-  else do
-    Log.rcLog' Log.ERROR "Initial data is already loaded."
-    notify $ InitialDataLoadFailed "Initial data is already loaded."
+          validateConf
+
+    if null (G.connectedTo Cluster Has rg :: [Rack])
+    then load `catch` ( err "Failure during initial data load: "
+                      . (show :: SomeException -> String) )
+    else err "" "Initial data is already loaded."
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
