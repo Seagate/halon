@@ -79,28 +79,27 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect root M0.IsParentOf profile
 
       rg <- getLocalGraph
-      let re = [ (r, G.connectedTo r Has rg)
-               | r <- G.connectedTo Cluster Has rg
+      let re = [ (rack, G.connectedTo rack Has rg)
+               | rack <- G.connectedTo Cluster Has rg
                ]
       mapM_ (mirrorRack fs) re
       return fs
   where
     mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM RC l ()
-    mirrorRack fs (r, encls) = do
+    mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
-      m0e <- mapM mirrorEncl encls
+      m0es <- mapM mirrorEncl encls
       modifyGraph
-          $ G.connect m0r M0.At r
+          $ G.connect m0r M0.At rack
         >>> G.connect fs M0.IsParentOf m0r
-        >>> ( foldl' (.) id
-              $ fmap (G.connect m0r M0.IsParentOf) m0e)
+        >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
     mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
-    mirrorEncl r = lookupEnclosureM0 r >>= \case
-      Just k -> return k
+    mirrorEncl encl = lookupEnclosureM0 encl >>= \case
+      Just m0e -> return m0e
       Nothing -> do
-         m0r <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
-         modifyGraph $ G.connect m0r M0.At r
-         return m0r
+         m0e <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
+         modifyGraph $ G.connect m0e M0.At encl
+         return m0e
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.
@@ -135,7 +134,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       if not (null m0h_devices) then do
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getLocalGraph
-        let (m0enc,enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
+        let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
               e <- G.connectedFrom Has host rg :: Maybe Enclosure
               m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
               return (m0e, e)
@@ -143,7 +142,6 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         devs <- mapM (goDev enc ctrl)
                      (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
         mapM_ (addProcess node devs) m0h_processes
-
 
         modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
