@@ -321,19 +321,23 @@ getProcess po = do
           <*> (#{peek struct m0_conf_process, pc_endpoint} pp >>= peekCString)
 
 data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
-    = CST_MDS
-    | CST_IOS
-    | CST_MGS
-    | CST_RMS
-    | CST_STS
-    | CST_HA
-    | CST_SSS
-    | CST_SNS_REP -- ^ Repair
-    | CST_SNS_REB -- ^ Rebalance
-    | CST_ADDB2
-    | CST_DS1 -- ^ Dummy service 1
-    | CST_DS2 -- ^ Dummy service 2
-    | CST_CAS -- ^ Catalog service
+    = CST_MDS     -- ^ Meta-data service
+    | CST_IOS     -- ^ IO service
+    | CST_MGS     -- ^ Management service (confd)
+    | CST_RMS     -- ^ Resource management
+    | CST_STS     -- ^ Stats service
+    | CST_HA      -- ^ HA service
+    | CST_SSS     -- ^ Start/stop service
+    | CST_SNS_REP -- ^ SNS repair
+    | CST_SNS_REB -- ^ SNS rebalance
+    | CST_ADDB2   -- ^ ADDB service
+    | CST_CAS     -- ^ Catalogue service
+    | CST_DIX_REP -- ^ Dix repair
+    | CST_DIX_REB -- ^ Dix rebalance
+    | CST_DS1     -- ^ Dummy service 1
+    | CST_DS2     -- ^ Dummy service 2
+    | CST_FIS     -- ^ Fault injection service
+    | CST_FDMI    -- ^ FDMI service
     | CST_UNKNOWN Int
   deriving (Data, Eq, Generic, Ord, Read, Show )
 
@@ -353,9 +357,13 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_SNS_REP}  = CST_SNS_REP
   toEnum #{const M0_CST_SNS_REB}  = CST_SNS_REB
   toEnum #{const M0_CST_ADDB2}    = CST_ADDB2
+  toEnum #{const M0_CST_CAS}      = CST_CAS
+  toEnum #{const M0_CST_DIX_REP}  = CST_DIX_REP
+  toEnum #{const M0_CST_DIX_REB}  = CST_DIX_REB
   toEnum #{const M0_CST_DS1}      = CST_DS1
   toEnum #{const M0_CST_DS2}      = CST_DS2
-  toEnum #{const M0_CST_CAS}      = CST_CAS
+  toEnum #{const M0_CST_FIS}      = CST_FIS
+  toEnum #{const M0_CST_FDMI}     = CST_FDMI
   toEnum i                        = CST_UNKNOWN i
 
   fromEnum CST_MDS          = #{const M0_CST_MDS}
@@ -368,9 +376,13 @@ instance Enum ServiceType where
   fromEnum CST_SNS_REP      = #{const M0_CST_SNS_REP}
   fromEnum CST_SNS_REB      = #{const M0_CST_SNS_REB}
   fromEnum CST_ADDB2        = #{const M0_CST_ADDB2}
+  fromEnum CST_CAS          = #{const M0_CST_CAS}
+  fromEnum CST_DIX_REP      = #{const M0_CST_DIX_REP}
+  fromEnum CST_DIX_REB      = #{const M0_CST_DIX_REB}
   fromEnum CST_DS1          = #{const M0_CST_DS1}
   fromEnum CST_DS2          = #{const M0_CST_DS2}
-  fromEnum CST_CAS          = #{const M0_CST_CAS}
+  fromEnum CST_FIS          = #{const M0_CST_FIS}
+  fromEnum CST_FDMI         = #{const M0_CST_FDMI}
   fromEnum (CST_UNKNOWN i)  = i
 
 data ServiceParams =
