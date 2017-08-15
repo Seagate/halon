@@ -9,7 +9,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Core
     newFid
   , newFidRC
   , uniquePVerCounter
-  , mkVirtualFid
   , getM0Globals
   , loadMeroGlobals
     -- * Mero actions execution
@@ -30,7 +29,6 @@ import qualified Control.Distributed.Process.Internal.Types as DI
 import           Control.Monad.Catch (SomeException, try, throwM)
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Reader (ask)
-import           Data.Bits (setBit)
 import           Data.Functor (void)
 import           Data.Proxy
 import           Data.Word ( Word64, Word32 )
@@ -42,7 +40,7 @@ import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Services.Mero (getM0Worker)
-import           Mero.ConfC ( Fid(..) )
+import           Mero.ConfC (Fid(..))
 import           Mero.M0Worker
 import           Network.CEP
 
@@ -78,9 +76,6 @@ uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
    Nothing -> (0, G.connect Cluster Has (M0.PVerCounter 0) rg)
    Just (M0.PVerCounter !i) ->
      (i+1, G.connect Cluster Has (M0.PVerCounter (i+1)) rg)
-
-mkVirtualFid :: Fid -> Fid
-mkVirtualFid (Fid container key) = Fid (setBit container (63-9)) key
 
 --------------------------------------------------------------------------------
 -- Core configuration

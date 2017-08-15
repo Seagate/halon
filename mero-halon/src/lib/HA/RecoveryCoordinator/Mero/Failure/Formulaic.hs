@@ -2,10 +2,13 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-module HA.RecoveryCoordinator.Mero.Failure.Formulaic where
+module HA.RecoveryCoordinator.Mero.Failure.Formulaic
+  ( formulaicUpdate
+  ) where
 
 import           Control.Monad.Trans.State (execState, modify, state)
 import           Data.Bifunctor (first)
+import           Data.Bits (setBit, testBit)
 import           Data.Foldable (for_)
 import           Data.Maybe (listToMaybe)
 import           Data.Proxy (Proxy(..))
@@ -17,10 +20,16 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import           Mero.ConfC
-  ( PDClustAttr(..)
-  , Word128(..)
-  )
+import           Mero.ConfC (Fid(..), PDClustAttr(..), Word128(..))
+
+-- | Sets "kind" bit of a pver fid, making it a formulaic pver.
+--
+-- See https://github.com/seagate-ssg/mero/blob/master/doc/formulaic-pvers.org#fid-formats
+mkPVerFormulaicFid :: Fid -> Either String Fid
+mkPVerFormulaicFid fid@(Fid container key)
+  | not $ M0.fidIsType (Proxy :: Proxy M0.PVer) fid = Left "Invalid fid type"
+  | container `testBit` 55                          = Left "Invalid container"
+  | otherwise = Right $ Fid (container `setBit` 54) key
 
 -- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
@@ -36,7 +45,6 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                 , _pa_unit_size = 4096
                 , _pa_seed = Word128 101 102
                 }
-
       mdpool = M0.Pool (M0.f_mdpool_fid fs)
       imeta_pver = M0.f_imeta_fid fs
       n = CI.m0_data_units globs
@@ -63,7 +71,8 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
           for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsRealOf g) $
             \(pver::M0.PVer) -> do
             for_ formulas $ \formula -> do
-              pvf <- M0.PVer <$> state (first mkVirtualFid . newFid (Proxy :: Proxy M0.PVer))
+              let f = either error id . mkPVerFormulaicFid
+              pvf <- M0.PVer <$> state (first f . newFid (Proxy :: Proxy M0.PVer))
                              <*> (M0.PVerFormulaic <$> state uniquePVerCounter
                                                    <*> pure formula
                                                    <*> pure (M0.fid pver))
