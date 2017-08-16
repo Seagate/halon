@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
-
 # set -x
 export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
+
+### --------------------------------------------------------------------
+### Halon helper script
+###
+### Installation:
+###     ln -s /path/to/halon/scripts/h0 ~/bin/h0
+###
+### Type `h0 help' for usage.
+### --------------------------------------------------------------------
 
 die() { echo "$@" >&2; exit 1; }
 
@@ -15,9 +23,14 @@ export M0_SRC_DIR=${M0_SRC_DIR:-$HOME/src/mero}
 [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
 ## ===================================================================
 
+PROG="${0##*/}"
 H0_SRC_DIR="$(readlink -f $0)"
 H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
 STACK='stack --no-docker --allow-different-user'
+
+cmd_setup() {
+    $STACK setup
+}
 
 cmd_make() {
     cd "$H0_SRC_DIR"
@@ -26,12 +39,21 @@ cmd_make() {
         $STACK build mero-halon --ghc-options='-g -j4' --test --no-run-tests
 }
 
-cmd_test() {
-    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        $H0_SRC_DIR/mero-halon/$($STACK path --dist-dir)/build/tests/tests
+cmd_rebuild() {
+    cd "$H0_SRC_DIR"
+    # XXX TODO: The script should be able to determine automatically
+    # whether Mero has been updated since last Halon compilation.
+    # One possible solution is to reimplement this script as a Makefile.
+    $STACK clean rpclite
+    cmd_make
 }
 
-cmd_bootstrap() {
+cmd_test() {
+    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+        $H0_SRC_DIR/mero-halon/$($STACK path --dist-dir)/build/tests/tests "$@"
+}
+
+_bootstrap() {
     local BIN=$(cd $H0_SRC_DIR && $STACK path --local-install-root)/bin
 
     cd "$M0_SRC_DIR"
@@ -40,29 +62,63 @@ cmd_bootstrap() {
         st/bootstrap.sh -c "$1"
 }
 
-USAGE="Usage: ${0##*/} {setup|rebuild|make|test|start|stop}..."
+cmd_start() {
+    _bootstrap cluster_start
+}
 
-[[ $# -gt 0 ]] || die "$USAGE"
+cmd_stop() {
+    _bootstrap cluster_stop
+}
+
+cmd_help() {
+    local RET=${1:-0}
+
+    [ $RET -eq 0 ] && usage || usage >&2
+    exit $RET
+}
+
+_exec() {
+    [ $1 = 'cmd_help' ] || echo "----- ${@#cmd_} -----" >&2
+    "$@"
+}
+
+usage() {
+    cat <<EOF
+Usage: $PROG {COMMAND [OPTION]...}...
+
+Commands:
+    setup             Get the appropriate GHC to build Halon. Rarely needed.
+    make              Build Halon. Use \`$PROG rebuild' if Mero was updated.
+    rebuild           Clean 'rpclite' module and build Halon.
+    test [OPTION]...  Run unit tests.
+    start             Start cluster.
+    stop              Stop cluster.
+    help              Show this help and exit.
+
+Environment variables:
+    M0_SRC_DIR    Path to Mero sources directory.
+EOF
+}
+
+CMD=
+OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup)
-            $STACK setup;;
-        rebuild)
-            cd "$H0_SRC_DIR"
-            # XXX TODO: The script should be able to determine automatically
-            # whether Mero has been updated since last Halon compilation.
-            # One possible solution is to reimplement this script as a
-            # Makefile.
-            $STACK clean rpclite
-            cmd_make;;
-        make)
-            cmd_make;;
-        test)
-            cmd_test;;
-        start|stop)
-            cmd_bootstrap "cluster_$1";;
+        setup|make|rebuild|test|start|stop|help)
+            [[ -z $CMD ]] || _exec $CMD $OPTS
+            CMD=cmd_${1//-/_}
+            OPTS=;;
         *)
-            die "$USAGE";;
+            [[ -n $CMD ]] || {
+                echo "Invalid command: $1" >&2
+                die "Type \`$PROG help' for usage."
+            }
+            OPTS+=" $1";;
     esac
     shift
 done
+if [[ -n $CMD ]]; then
+    _exec $CMD $OPTS
+else
+    cmd_help 1
+fi
