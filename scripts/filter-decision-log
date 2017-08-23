@@ -1,0 +1,24 @@
+#!/usr/bin/env awk -f
+
+BEGIN {
+    invert_match = 1
+    ## ^ 0 - print records that match any of the specified patterns;
+    ##   1 - invert the search (useful for removing noisy records).
+}
+
+## Patterns:
+/^castor::filesystem::stats::fetch/     { head(1); next }
+/^castor::cluster::entry-point-request/ { head(1); next }
+
+function head(match_p) {
+    show_p = (match_p && !invert_match) || (!match_p && invert_match)
+    if (show_p) {
+        print timestamp
+        print
+    }
+    timestamp = ""
+}
+
+/^20/ { timestamp = $0; next }
+/^[a-z]/ { head(0); next }
+/^ / && show_p { print }
