@@ -54,31 +54,46 @@ mco castor puppet --off
 ## 3. Stop all `halond` processes.  Restart cluster nodes with
 ##    'echo b >/proc/sysrq-trigger'.
 
-pdsh -w $ALL_NODES systemctl halond stop
+pdsh -w $ALL_NODES systemctl stop halond
 pdsh -w $CLUSTER_NODES 'echo b >/proc/sysrq-trigger'
 
 ## -------------------------------------------------------------------
 ## 4. Backup Halon persistent state.
 
 DATE="$(date +%Y%m%d)"
-ARC="/var/mero/halon-persistence_${DATE}.tar.xz"
-pdsh -w $RC_NODE "cd /var/lib/halon/ && tar -cvJf $ARC halon-persistence"
+ARC="/var/mero/halon-persistence_${DATE}.tar"
+time pdsh -w $RC_NODE "cd /var/lib/halon/ && tar -Scvf $ARC halon-persistence"
+unset ARC
 
 ## -------------------------------------------------------------------
 ## 5. Backup Mero persistent state.
 
-ARC="/var/mero/mero-persistence_${DATE}.tar.xz"
-pdsh -w $CLUSTER_NODES \
-     "cd /var && tar --exclude=mero-persistence_* -cvJf $ARC mero"
-unset ARC
+DIR="/var/mero/mero-persistence_${DATE}"
+time pdsh -w $SSU_NODES \
+     "mkdir $DIR && ls /var/mero | grep -v persistence | xargs -L1 -I{} cp -avr /var/mero/{} $DIR/{}"
+unset DIR
 
 ## -------------------------------------------------------------------
-## 6. Re-insert the failed drive back into its original slot (if we
+## 6. Delete Halon persistent state at all cluster nodes.
+##    Delete Halon decision log at RC node.
+
+pdsh -w $ALL_NODES rm -rvf /var/lib/halon/halon-persistence
+pdsh -w $RC_NODE rm -rvf /var/log/halon.decision.log
+
+## -------------------------------------------------------------------
+## 7. Blink the LED of "our" device to help human operator locate it.
+
+sgnum=$(sg_map -x -i | awk '/8435/ { print $1 }')  # XXX What is `8435`?
+wbcli $sgnum "hid_set_led 13 0"  # XXX What is `13`?
+# fwdownloader -d 0 -cli hid_set_led 13 0
+
+## -------------------------------------------------------------------
+## 8. Re-insert the failed drive back into its original slot (if we
 ##    don't do this, SNS rebalance won't start, because Halon needs
 ##    disk's serial number to change in order to start rebalance).
 
 ## -------------------------------------------------------------------
-## 7. Start (bootstrap) the cluster *using `mkfs-done` option*.
+## 9. Start (bootstrap) the cluster *using `mkfs-done` option*.
 
 # The output of `hctl bootstrap cluster --dry-run` with carefully
 # injected `mkfs-done`.
@@ -133,33 +148,33 @@ unset RC
 unset -f _hctl
 
 ## -------------------------------------------------------------------
-## 8. Pull out the replacement disk (RD).
+## 10. Pull out the replacement disk (RD).
 
 ## -------------------------------------------------------------------
-## 9. Wait for SNS repair to complete.
+## 11. Wait for SNS repair to complete.
 
 ## -------------------------------------------------------------------
-## 10. Insert the RD back into its slot.
+## 12. Insert the RD back into its slot.
 
 ## -------------------------------------------------------------------
-## 11. Wait for SNS rebalance to complete.
+## 13. Wait for SNS rebalance to complete.
 
 ## -------------------------------------------------------------------
-## 12. *Stop* the cluster once again (similarly to step 3 above).
+## 14. *Stop* the cluster once again (similarly to step 3 above).
 
 ## -------------------------------------------------------------------
-## 13. Update disk info in halon_facts.yaml --- overwrite attributes
+## 15. Update disk info in halon_facts.yaml --- overwrite attributes
 ##     of the failed disk with those of its replacement.
 
 ## -------------------------------------------------------------------
-## 14. Build new Halon & Mero rpms. Copy them to cluster nodes.
+## 16. Build new Halon & Mero rpms. Copy them to cluster nodes.
 
 ## -------------------------------------------------------------------
-## 15. Perform software upgrade of Mero and Halon. (Requires
+## 17. Perform software upgrade of Mero and Halon. (Requires
 ##     provisioner to be off.)
 
 ## -------------------------------------------------------------------
-## 16. Start the cluster *using `mkfs-done`*.
+## 18. Start the cluster *using `mkfs-done`*.
 
 ## -------------------------------------------------------------------
-## 17. Start the IO (data movers).
+## 19. Start the IO (data movers).
