@@ -7,12 +7,12 @@ export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 ### https://docs.google.com/document/d/1kINppVHzCxegrJrNxhVoKhk7PHaMITBFhRym2H8JOeQ/edit
 
 ## pdsh hostlists:
-CMU_NODE='172.16.0.41'
-RC_NODE='172.16.1.1'
-SSU_NODES='172.16.[1,2].[1-6]'  # includes RC_NODE
-CLIENT_NODES='172.16.200.[39-54]'
-CLUSTER_NODES="${SSU_NODES}${CLIENT_NODES:+,${CLIENT_NODES}}"  # w/o CMU
-ALL_NODES="${CLUSTER_NODES},${CMU_NODE}"  # with CMU
+export CMU_NODE='172.16.0.41'
+export RC_NODE='172.16.1.1'
+export SSU_NODES='172.16.[1,2].[1-6]'  # includes RC_NODE
+export CLIENT_NODES='172.19.200.[39-54]'
+export CLUSTER_NODES="${SSU_NODES}${CLIENT_NODES:+,${CLIENT_NODES}}"  # w/o CMU
+export ALL_NODES="${CLUSTER_NODES},${CMU_NODE}"  # with CMU
 
 ## -------------------------------------------------------------------
 ## 1. Write down the info needed to identify the failed disk and its
@@ -37,6 +37,8 @@ ALL_NODES="${CLUSTER_NODES},${CMU_NODE}"  # with CMU
 #     Enclosure Model: 5U84
 #     Enclosure Location: 21U
 #     Enclosure Bay: 14
+#
+# IP: 172.16.2.5
 
 # *Replacement disk*
 #
@@ -62,7 +64,7 @@ pdsh -w $CLUSTER_NODES 'echo b >/proc/sysrq-trigger'
 
 DATE="$(date +%Y%m%d)"
 ARC="/var/mero/halon-persistence_${DATE}.tar"
-time pdsh -w $RC_NODE "cd /var/lib/halon/ && tar -Scvf $ARC halon-persistence"
+time pdsh -w $RC_NODE "cd /var/lib/halon/ && tar -cvf $ARC halon-persistence"
 unset ARC
 
 ## -------------------------------------------------------------------
@@ -70,7 +72,7 @@ unset ARC
 
 DIR="/var/mero/mero-persistence_${DATE}"
 time pdsh -w $SSU_NODES \
-     "mkdir $DIR && ls /var/mero | grep -v persistence | xargs -L1 -I{} cp -avr /var/mero/{} $DIR/{}"
+     "mkdir $DIR && ls /var/mero | grep -vE 'persistence|lost\+found' | xargs -I{} cp -avr /var/mero/{} $DIR/{}"
 unset DIR
 
 ## -------------------------------------------------------------------
@@ -83,9 +85,16 @@ pdsh -w $RC_NODE rm -rvf /var/log/halon.decision.log
 ## -------------------------------------------------------------------
 ## 7. Blink the LED of "our" device to help human operator locate it.
 
-sgnum=$(sg_map -x -i | awk '/8435/ { print $1 }')  # XXX What is `8435`?
-wbcli $sgnum "hid_set_led 13 0"  # XXX What is `13`?
-# fwdownloader -d 0 -cli hid_set_led 13 0
+# sgnum=$(sg_map -x -i | awk '/8435/ { print $1 }')  # XXX What is `8435`?
+# wbcli $sgnum "hid_set_led 13 0"  # XXX What is `13`?
+## fwdownloader -d 0 -cli hid_set_led 13 0
+
+# Turn LED on:
+sg_ses --dev-slot-num=14 --set=ident /dev/sg0
+# sg_ses --dev-slot-num=14 --get=ident /dev/sg0
+
+# Turn LED off:
+sg_ses --dev-slot-num=14 --clear=ident /dev/sg0
 
 ## -------------------------------------------------------------------
 ## 8. Re-insert the failed drive back into its original slot (if we
