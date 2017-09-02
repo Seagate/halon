@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+DEBUG_MODE=0  # Output format: 0 - dot; 1 - org mode.
+
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [DIR]
+       ${0##*/} {-h|--help}
+
+Generate Halon resource graph schema in DOT format.
+
+Optional parameter \`DIR' specifies the path to Halon sources directory,
+which resources information will be read from. \`DIR' defaults to current
+directory.
+
+Example:
+    dot -Tpng -o /tmp/rg.png <(scripts/${0##*/}) && open /tmp/rg.png
+EOF
+}
+
+die() { echo "$@" >&2; exit 1; }
+
+## contains abc b -> 1
+## contains abc d -> 0
+contains() {
+    local str="$1" pat="$2"
+    [ "${str/$pat/}" = "$str" ] && return 1 || return 0
+}
+
+# XXX TODO: Use cardinality info instead of throwing it away.
+drop_cardinality() {
+    awk '
+NF == 5 { print $1, $3, $5; next }
+NF != 3 {
+    print "Unexpected number of fields:", NF > "/dev/stderr"
+    print "Input:", $0 > "/dev/stderr"
+    exit 1
+}
+{ print }
+'
+}
+
+RESOURCE_DIRS='halon/src/lib mero-halon/src/lib'
+
+edit_prefixes() {
+    local src rel dst
+    case "$1" in
+        mero-halon/src/lib/HA/Resources/Mero.hs)
+            while read -r src rel dst; do
+                if contains "$src" .; then
+                    src="${src/#R./}"
+                else
+                    src="M0.$src"
+                fi
+                rel="${rel/#R./}"
+                if contains "$dst" .; then
+                    dst="${dst/#R./}"
+                else
+                    dst="M0.$dst"
+                fi
+                echo $src $rel $dst
+            done;;
+        mero-halon/src/lib/HA/Resources/RC.hs| \
+        mero-halon/src/lib/HA/Services/Mero/RC/Resources.hs)
+            while read -r src rel dst; do
+                src="$(echo $src | sed -E 's/^RC?\.//')"
+                rel="$(echo $rel | sed -E 's/^RC?\.//')"
+                dst="$(echo $dst | sed -E 's/^RC?\.//')"
+                echo $src $rel $dst
+            done;;
+        mero-halon/src/lib/HA/Resources/Castor/Initial/Old.hs)
+            while read -r src rel dst; do
+                src="${src/#C./}"
+                rel="${rel/#R./}"
+                echo $src $rel $dst
+            done;;
+        *)
+            cat;;
+    esac
+}
+
+body() {
+    git grep -l "(''" -- $RESOURCE_DIRS | while read -r f; do
+        [ $DEBUG_MODE -eq 1 ] && echo "* $f" || echo "# [$f]"
+        sed -n 's/^import qualified.*Resources.* as /# &/p' $f
+        sed -n "s/.*(''//p" $f | tr -d ",()[]'" | tr -s ' ' |
+            sed -Ee 's/^ +//' -e 's/ +$//' |
+            if [ $DEBUG_MODE -eq 1 ]; then
+                cat
+            else
+                drop_cardinality | edit_prefixes $f
+            fi
+    done
+}
+
+## -------------------------------------------------------------------
+## main()
+
+case "${1:-}" in
+    -h|--help) usage; exit;;
+esac
+[ -z "${1:-}" ] || cd "$1"
+git rev-parse --show-toplevel >/dev/null  # fail if PWD is not a git repository
+for d in $RESOURCE_DIRS; do
+    [ -d "$d" ] || die "No Halon sources found in $PWD"
+done
+
+if [ $DEBUG_MODE -eq 1 ]; then
+    # org-mode output
+    body
+else
+    # dot output
+    echo 'digraph RG {'
+    body | sed -e 's/#.*//' -e '/^ *$/d' | sort -u | awk '
+{ printf("    \"%s\" -> \"%s\" [label=\"%s\"];\n", $1, $3, $2) }
+'
+    echo '}'
+fi
