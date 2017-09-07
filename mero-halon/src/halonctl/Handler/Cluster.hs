@@ -332,7 +332,7 @@ parseStopOptions = StopOptions
     ( Opt.metavar "TIMEOUT(µs)"
     <> Opt.long "timeout"
     <> Opt.help "How long to wait for successful cluster stop before halonctl gives up on waiting."
-    <> Opt.value 300000000
+    <> Opt.value 600000000
     <> Opt.showDefault )
 
 parseMkfsDoneOptions :: Opt.Parser MkfsDoneOptions
