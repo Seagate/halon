@@ -1,0 +1,485 @@
+#!/usr/bin/env python
+"""
+This script generates halon_facts.yaml file for a fictional cluster.
+The resulting file can be used for Halon testing.
+"""
+
+from __future__ import print_function
+
+import argparse
+import os
+import random
+import string
+import sys
+from errno import EPIPE
+
+
+defaults = {
+    'Disk.bsize': 4096,
+    'Disk.size': 8001563222016,
+    'Encl.memsize': 64230,
+    'Encl.cpucount': 20,
+    'Profile.md_redundancy': 2,
+    'Profile.pa_unit_size': 4096,
+    'Profile.pa_N': 8,
+    'Profile.pa_K': 2,
+    'Profile.pa_seed': [101, 102],
+}
+
+
+def indent(depth):
+    return '  ' * depth
+
+
+class Default(object):
+
+    @classmethod
+    def default(cls, name):
+        return defaults[cls.__name__ + '.' + name]
+
+
+class ToYaml(object):
+
+    def to_yaml(self, depth):
+        raise NotImplementedError
+
+
+class Profile(Default, ToYaml):
+
+    def __init__(self, id):
+        self.id = id
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- prof_id: "{}"'.format(self.id))
+        lines.append(indent(depth+1) + 'prof_md_redundancy: {}'.format(
+            self.default('md_redundancy')))
+        lines.append(indent(depth+1) + 'prof_pools:')
+        lines.append(indent(depth+2) + '- pool_id: "{}.IO"'.format(self.id))
+        lines.append(indent(depth+3) + 'pool_pdclust_attr:')
+        lines.append(indent(depth+4) + 'pa_unit_size: {}'.format(
+            self.default('pa_unit_size')))
+        lines.append(indent(depth+4) + 'pa_N: {}'.format(self.default('pa_N')))
+        lines.append(indent(depth+4) + 'pa_K: {}'.format(self.default('pa_K')))
+        lines.append(indent(depth+4) + 'pa_P: 0')
+        lines.append(indent(depth+4) + 'pa_seed: {}'.format(
+            self.default('pa_seed')))
+        lines.append(indent(depth+3) + 'pool_vers_gen:')
+        lines.append(indent(depth+4) + 'tag: Formulaic')
+        lines.append(indent(depth+4) + 'contents:')
+        lines.append(indent(depth+5) + '- [0, 0, 0, 0, 1]')
+        lines.append(indent(depth+5) + '- [0, 0, 0, 0, 2]')
+        lines.append(indent(depth+5) + '- [0, 0, 0, 1, 0]')
+        lines.append(indent(depth+5) + '- [0, 0, 0, 1, 1]')
+        lines.append(indent(depth+3) + 'pool_ver_policy: 0')
+        return lines
+
+
+class Iface(ToYaml):
+
+    def __init__(self, mac, ip, network):
+        self.mac, self.ip, self.network = mac, ip, network
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- if_macAddress: "{}"'.format(self.mac))
+        lines.append(indent(depth+1) + 'if_network: {}'.format(self.network))
+        lines.append(indent(depth+1) + 'if_ipAddrs: [{}]'.format(self.ip))
+        return lines
+
+
+class Disk(Default, ToYaml):
+
+    def __init__(self, wwn, serial, slot, pool_id):
+        self.wwn, self.serial, self.slot = wwn, serial, slot
+        self.pool_id = pool_id
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- d_wwn: "{}"'.format(self.wwn))
+        lines.append(indent(depth+1) + 'd_serial: "{}"'.format(self.serial))
+        lines.append(indent(depth+1) + 'd_bsize: {}'.format(
+            self.default('bsize')))
+        lines.append(indent(depth+1) + 'd_size: {}'.format(
+            self.default('size')))
+        lines.append(indent(depth+1) + 'd_path: "{}"'.format(
+            '/dev/disk/by-id/wwn-' + self.wwn))
+        lines.append(indent(depth+1) + 'd_slot: {}'.format(self.slot))
+        lines.append(indent(depth+1) + 'd_pool: "{}"'.format(self.pool_id))
+        return lines
+
+
+def gen_disk():
+    used_wwn, used_serial = set(), set()
+    alnum = string.digits + string.ascii_uppercase
+    while True:
+        while True:
+            wwn = '0x5000c5007{:x}'.format(random.randrange(0x10000000))
+            if wwn not in used_wwn:
+                used_wwn.add(wwn)
+                break
+        while True:
+            serial = 'Z840' + random.choice('45') + \
+                     ''.join(random.sample(3*alnum, 3))
+            if serial not in used_serial:
+                used_serial.add(serial)
+                break
+        yield wwn, serial
+
+
+def gen_encl_disks(pool_id):
+    slots = [x for x in range(0, 84) if x not in (28, 70)]
+    random.shuffle(slots)
+    gd = gen_disk()
+    for slot in slots:
+        wwn, serial = next(gd)
+        yield Disk(wwn, serial, slot, pool_id)
+
+
+class Encl(Default, ToYaml):
+
+    def __init__(self, idx, id, bmc, fqdn, interfaces, disks, role,
+                 confd_p=False, memsize=None, cpucount=None):
+        assert tuple(x.network for x in interfaces) == ('Management', 'Data')
+        self.iface_mgmt, self.iface_data = interfaces
+        self.idx, self.id, self.bmc = idx, id, bmc
+        self.fqdn, self.disks = fqdn, disks
+        self.memsize = memsize is None and self.default('memsize') or memsize
+        self.cpucount = cpucount is None and self.default('cpucount') or \
+            cpucount
+        self.roles_halon, self.roles_mero = {
+            'cmu': (['cmu'], []),
+            'storage': (['ssu'], ['storage']),
+            'datamover': (['dm'], ['m0t1fs'])
+        }[role]
+        if confd_p:
+            self.roles_halon.insert(0, 'station')  # prepend
+            self.roles_mero.append('confd')
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- enc_idx: {}'.format(self.idx))
+        lines.append(indent(depth+1) + 'enc_id: "{}"'.format(self.id))
+        lines.append(indent(depth+1) + 'enc_bmc:')
+        assert self.bmc
+        for x in self.bmc:
+            lines.append(indent(depth+2) + '- bmc_addr: "{}"'.format(x))
+            lines.append(indent(depth+3) + 'bmc_user: "admin"')
+            lines.append(indent(depth+3) + 'bmc_pass: "admin"')
+        lines.append(indent(depth+1) + 'enc_controllers:')
+        lines.append(indent(depth+2) + '- c_fqdn: "{}"'.format(self.fqdn))
+        lines.append(indent(depth+3) + 'c_memsize: {}'.format(self.memsize))
+        lines.append(indent(depth+3) + 'c_cpucount: {}'.format(self.cpucount))
+        lines.append(indent(depth+3) + 'c_interfaces:')
+        for x in self.iface_mgmt, self.iface_data:
+            lines.extend(x.to_yaml(depth+4))
+        lines.append(indent(depth+3) + 'c_disks:{}'.format('' if self.disks
+                                                           else ' []'))
+        for x in self.disks:
+            lines.extend(x.to_yaml(depth+4))
+        lines.append(indent(depth+3) + 'c_halon:')
+        lines.append(indent(depth+4) + 'halon_address: "{}:9000"'.format(
+            self.iface_data.ip))
+        lines.append(indent(depth+4) + 'halon_roles:')
+        for x in self.roles_halon:
+            lines.append(indent(depth+5) + '- r_name: ' + x)
+        return lines
+
+
+class Rack(ToYaml):
+
+    def __init__(self, idx, encls):
+        self.idx, self.encls = idx, encls
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- rack_idx: {}'.format(self.idx))
+        lines.append(indent(depth+1) + 'rack_enclosures:')
+        assert self.encls
+        for x in self.encls:
+            lines.extend(x.to_yaml(depth+2))
+        return lines
+
+
+class Facts(ToYaml):
+
+    def __init__(self, profiles, racks):
+        self.profiles, self.racks = profiles, racks
+
+    def to_yaml(self, depth):
+        lines = []
+        for section in ('profiles', 'racks'):
+            lines.append(indent(depth) + section + ':')
+            xs = getattr(self, section)
+            assert xs, section + ': non-empty list expected'
+            for x in xs:
+                lines.extend(x.to_yaml(depth+1))
+        lines.append(indent(depth) + 'nodes:')
+        for rack in self.racks:
+            for encl in rack.encls:
+                lines.append(indent(depth+1) + '- n_fqdn: "{}"'.format(
+                    encl.fqdn))
+                lines.append(indent(depth+2) + 'n_lnid: "{}@tcp"'.format(
+                    encl.iface_data.ip))
+                lines.append(indent(depth+2) + 'n_mero_roles:')
+                lines.append(indent(depth+3) + '- r_name: ha')
+                for role in encl.roles_mero:
+                    lines.append(indent(depth+3) + '- r_name: ' + role)
+        return lines
+
+
+def sample_facts():
+    encl_cc1 = Encl(
+        idx=41,
+        id='SHX0951731XXXXX',
+        bmc=['10.230.178.21', '0.0.0.0'],
+        fqdn='castor-dev2-1-cc1.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:b8:d3', '172.16.0.41', 'Management'),
+                    Iface('00:50:cc:79:b8:d3', '172.18.0.41', 'Data')],
+        disks=[],
+        role='cmu')
+    rack_0 = Rack(idx=0, encls=[encl_cc1])
+
+    encl_ssu11 = Encl(
+        idx=1,
+        id='HLM1002010G2YD5',
+        bmc=['172.16.1.101', '172.16.1.121'],
+        fqdn='castor-dev2-1-ssu-1-1.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:be:39', '172.16.1.1', 'Management'),
+                    Iface('00:50:cc:79:be:3d', '172.18.1.1', 'Data')],
+        disks=list(gen_encl_disks(pool_id='tier1.IO')),
+        role='storage',
+        confd_p=True)
+    encl_ssu13 = Encl(
+        idx=3,
+        id='HLM1002010G2YD8',
+        bmc=['172.16.1.103', '172.16.1.123'],
+        fqdn='castor-dev2-1-ssu-1-3.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:f4:ff', '172.16.1.3', 'Management'),
+                    Iface('00:50:cc:79:f5:03', '172.18.1.3', 'Data')],
+        disks=list(gen_encl_disks(pool_id='tier2.IO')),
+        role='storage')
+    encl_ssu14 = Encl(
+        idx=4,
+        id='HLM1002010G2YDP',
+        bmc=['172.16.1.104', '172.16.1.124'],
+        fqdn='castor-dev2-1-ssu-1-4.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:b9:b3', '172.16.1.4', 'Management'),
+                    Iface('00:50:cc:79:b9:b7', '172.18.1.4', 'Data')],
+        disks=list(gen_encl_disks(pool_id='tier2.IO')),
+        role='storage')
+    encl_ssu16 = Encl(
+        idx=6,
+        id='HLM1002010G2YDN',
+        bmc=['172.16.1.106', '172.16.1.126'],
+        fqdn='castor-dev2-1-ssu-1-6.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:b9:35', '172.16.1.6', 'Management'),
+                    Iface('00:50:cc:79:b9:39', '172.18.1.6', 'Data')],
+        disks=list(gen_encl_disks(pool_id='tier3.IO')),
+        role='storage')
+    encl_ssu17 = Encl(
+        idx=7,
+        id='HLM1002010G2XKL',
+        bmc=['172.16.1.107', '172.16.1.127'],
+        fqdn='castor-dev2-1-ssu-1-7.dco.colo.seagate.com',
+        interfaces=[Iface('00:50:cc:79:b8:db', '172.16.1.7', 'Management'),
+                    Iface('00:50:cc:79:b8:df', '172.18.1.7', 'Data')],
+        disks=list(gen_encl_disks(pool_id='tier4.IO')),
+        role='storage')
+    encl_c191 = Encl(
+        idx=191,
+        id='client-191',
+        bmc=['0.0.0.0', '0.0.0.0'],
+        fqdn='s3-client-191',
+        interfaces=[Iface('00:1e:67:66:e7:f0', '10.230.177.175', 'Management'),
+                    Iface('00:1e:67:9f:4b:96', '172.18.3.191', 'Data')],
+        disks=[],
+        role='datamover',
+        memsize=127812,
+        cpucount=32)
+    encl_c192 = Encl(
+        idx=192,
+        id='client-192',
+        bmc=['0.0.0.0', '0.0.0.0'],
+        fqdn='s3-client-192',
+        interfaces=[Iface('00:1e:67:66:fb:38', '10.230.177.176', 'Management'),
+                    Iface('00:1e:67:b5:cb:2c', '172.18.3.192', 'Data')],
+        disks=[],
+        role='datamover',
+        memsize=127812,
+        cpucount=32)
+    encl_c193 = Encl(
+        idx=193,
+        id='client-193',
+        bmc=['0.0.0.0', '0.0.0.0'],
+        fqdn='s3-client-193',
+        interfaces=[Iface('00:1e:67:66:ed:80', '10.230.177.177', 'Management'),
+                    Iface('00:1e:67:9f:48:ca', '172.18.3.193', 'Data')],
+        disks=[],
+        role='datamover',
+        memsize=127812,
+        cpucount=32)
+    encl_c194 = Encl(
+        idx=194,
+        id='client-194',
+        bmc=['0.0.0.0', '0.0.0.0'],
+        fqdn='s3-client-194',
+        interfaces=[
+            Iface('00:1e:67:66:ec:e1', '10.230.177.178', 'Management'),
+            Iface('00:1e:67:9f:48:c2', '172.18.3.194', 'Data')],
+        disks=[],
+        role='datamover',
+        memsize=127812,
+        cpucount=32)
+    rack_1 = Rack(
+        idx=1,
+        encls=[encl_ssu11, encl_ssu13, encl_ssu14, encl_ssu16, encl_ssu17,
+               encl_c191, encl_c192, encl_c193, encl_c194])
+
+    return '\n'.join(Facts(profiles=[Profile('tier' + i) for i in '1234'],
+                           racks=[rack_0, rack_1]).to_yaml(0)) + '\n'
+
+
+class RoleMero(ToYaml):
+
+    def __init__(self, name, proc_tag, proc_contents, lnet_portal, lnet_tmid):
+        self.name = name
+        self.proc_tag, self.proc_contents = proc_tag, proc_contents
+        self.endpoint = '{{{{ n_lnid }}}}:12345:{}:{}'.format(lnet_portal,
+                                                              lnet_tmid)
+        self.services = {
+            'ha': ('HA', 'RMS'),
+            'confd': ('MGS', 'RMS'),
+            'mds': ('RMS', 'MDS', 'ADDB2'),
+            'storage': ('RMS', 'IOS', 'SNS_REP', 'SNS_REB', 'ADDB2'),
+            'm0t1fs': ('RMS',)
+        }[name]
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- mr_name: "{}"'.format(self.name))
+        lines.append(indent(depth+1) + 'mr_content:')
+        lines.append(indent(depth+2) +
+                     '- p_endpoint: "{}"'.format(self.endpoint))
+        lines.append(indent(depth+3) + 'p_mem_as: 0')
+        lines.append(indent(depth+3) + 'p_mem_rss: 0')
+        lines.append(indent(depth+3) + 'p_mem_stack: 0')
+        lines.append(indent(depth+3) + 'p_mem_memlock: 0')
+        lines.append(indent(depth+3) + 'p_cores: {!r}'.format([1]*20))
+        lines.append(indent(depth+3) + 'p_boot_level:')
+        lines.append(indent(depth+4) + 'tag: PT{}'.format(self.proc_tag))
+        lines.append(indent(depth+4) +
+                     'contents: {!r}'.format(self.proc_contents))
+        lines.append(indent(depth+3) + 'p_services:')
+        for svc in self.services:
+            lines.append(indent(depth+4) + '- s_type:')
+            lines.append(indent(depth+6) + 'tag: CST_{}'.format(svc))
+            lines.append(indent(depth+6) + 'contents: []')
+            lines.append(indent(depth+5) +
+                         's_endpoints: ["{}"]'.format(self.endpoint))
+            lines.append(indent(depth+5) + 's_params:')
+            lines.append(indent(depth+6) + 'tag: SP{}'.format(
+                'ConfDBPath' if svc in ('HA', 'MGS') else 'Unused'))
+            lines.append(indent(depth+6) + 'contents: {}'.format(
+                '"/var/mero/confd"' if svc in ('HA', 'MGS') else '[]'))
+        return lines
+
+
+def sample_roles_mero():
+    lines = []
+    for role in [RoleMero('ha', 'Halon', [], 34, 101),
+                 RoleMero('confd', 'M0d', 0, 44, 101),
+                 RoleMero('mds', 'M0d', 1, 41, 201),
+                 RoleMero('storage', 'M0d', 1, 41, 401),
+                 RoleMero('m0t1fs', 'M0t1fs', [], 41, 301)]:
+        lines.extend(role.to_yaml(0))
+    return '\n'.join(lines) + '\n'
+
+
+def sample_roles_halon():
+    decision_log_cmd = 'decision-log start' \
+                       ' --log-text {dir}/halon.decision.log' \
+                       ' --trace-file {dir}/halon.trace.log'.format(
+                           dir='/var/log')
+    return """\
+- hr_name: station
+  hr_bootstrap_station: True
+  hr_services:
+    - "{}"
+
+- hr_name: ssu
+  hr_bootstrap_station: False
+  hr_services:
+    - "sspl start -u sspluser -p sspl4ever"
+
+- hr_name: cmu
+  hr_bootstrap_station: False
+  hr_services:
+    - "sspl-hl start -u sspluser -p sspl4ever"
+    - "sspl start -u sspluser -p sspl4ever"
+
+- hr_name: dm
+  hr_bootstrap_station: False
+  hr_services: []
+""".format(decision_log_cmd)
+
+
+def mk_runner(target, output_dir=None):
+    assert target in ('facts', 'roles_mero', 'roles_halon')
+    assert output_dir is None or type(output_dir) is str
+
+    def write(outfile=sys.stdout):
+        sample = globals().get('sample_' + target)
+        outfile.write(sample())
+
+    def run():
+        if output_dir:
+            outpath = os.path.join(output_dir,
+                                   'h0fabricated-{}.yaml'.format(target))
+            with open(outpath, 'w') as f:
+                write(f)
+        else:
+            write()
+
+    return run
+
+
+def main():
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage='%(prog)s [OPTION]',
+        description='Generate initial cluster configuration.',
+        epilog="""\
+Examples:
+    %(prog)s          # Show Halon facts data.
+    %(prog)s -r mero  # Show Mero role mapping.
+    %(prog)s -o /tmp  # Store facts file and role mappings in /tmp directory.
+""")
+    p._optionals.title = 'Options'
+    g = p.add_mutually_exclusive_group()
+    g.add_argument('-o', '--output-directory', metavar='DIR',
+                   help='Store facts file and both role mappings in DIR.')
+    g.add_argument('-r', '--roles', metavar='TYPE', choices=('mero', 'halon'),
+                   help='Generate role mapping of a particular TYPE:'
+                   " 'mero' or 'halon'.")
+    args = p.parse_args()
+
+    if args.output_directory:
+        runners = [mk_runner(target, args.output_directory)
+                   for target in ('facts', 'roles_mero', 'roles_halon')]
+    elif args.roles:
+        runners = [mk_runner('roles_' + args.roles)]
+    else:
+        runners = [mk_runner('facts')]
+
+    for run in runners:
+        try:
+            run()
+        except IOError as e:
+            if e.errno == EPIPE:
+                return e.errno
+            raise
+
+
+if __name__ == '__main__':
+    sys.exit(main())
