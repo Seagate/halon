@@ -21,8 +21,8 @@ import           Network.Transport (Transport, EndPointAddress)
 import qualified Network.Transport.TCP as TCP
 import           System.IO (hSetBuffering, BufferMode(..), stdout, stderr)
 import           Test.Framework
-import           Test.Tasty.Ingredients.Basic (consoleTestReporter)
 import           Test.Tasty.Ingredients.FileReporter (fileTestReporter)
+import           Test.Tasty.Runners (consoleTestReporter, listingTests)
 
 import qualified HA.RecoveryCoordinator.SSPL.Tests
 import qualified HA.Test.InternalStateChanges
@@ -86,5 +86,7 @@ main = do
           TCP.socketBetween internals here there >>= TCP.close
         ignoreSyncExceptions $
           TCP.socketBetween internals there here >>= TCP.close
-  defaultMainWithIngredients [fileTestReporter [consoleTestReporter]]
+  defaultMainWithIngredients [ listingTests
+                             , fileTestReporter [consoleTestReporter]
+                             ]
     =<< tests transport connectionBreak
