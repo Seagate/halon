@@ -8,13 +8,8 @@ import           Control.Concurrent (forkIO)
 import           Control.Concurrent.MVar
 import           Control.Exception
 import           Data.Proxy
-import qualified HA.Autoboot.Tests
 import qualified HA.Network.Socket as TCP
-import qualified HA.RecoveryCoordinator.Tests
 import           HA.Replicator.Log
-import qualified HA.Test.Cluster
-import qualified HA.Test.Disconnect
-import qualified HA.Test.SSPL
 import           Helper.Environment
 import qualified Network.Socket as TCP
 import           Network.Transport (Transport, EndPointAddress)
@@ -24,13 +19,18 @@ import           Test.Framework
 import           Test.Tasty.Ingredients.FileReporter (fileTestReporter)
 import           Test.Tasty.Runners (consoleTestReporter, listingTests)
 
+import qualified HA.Autoboot.Tests
+import qualified HA.Castor.Story.Process
+import qualified HA.Castor.Story.Tests
+import qualified HA.Castor.Tests
+import qualified HA.RecoveryCoordinator.Mero.Tests
 import qualified HA.RecoveryCoordinator.SSPL.Tests
+import qualified HA.RecoveryCoordinator.Tests
+import qualified HA.Test.Cluster
+import qualified HA.Test.Disconnect
 import qualified HA.Test.InternalStateChanges
 import qualified HA.Test.NotificationSort
-import qualified HA.Castor.Story.Process
-import qualified HA.RecoveryCoordinator.Mero.Tests
-import qualified HA.Castor.Tests
-import qualified HA.Castor.Story.Tests
+import qualified HA.Test.SSPL
 import qualified HA.Test.ServiceInterface
 
 tests :: Transport -> (EndPointAddress -> EndPointAddress -> IO ()) -> IO TestTree
