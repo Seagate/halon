@@ -27,8 +27,8 @@ This requires changes of both Halon and Mero code.
 
 Halon obtains cluster configuration data from `halon_facts.yaml` file.
 Current schema of the facts file does not include pool information.
-Halon thinks this info up, assigning one disk of each controller to
-the meta-data pool and the rest of disks --- to the only IO pool.
+Halon thinks this info up, assigning all of the disks to the only IO
+pool.
 
 In order to support multiple pools, we need to modify the schema of
 facts file.  New schema contains pools specification and tags each
@@ -49,37 +49,43 @@ an item of sequence `foo`.)
     (rationale: Halon can deduce these values from
     `racks/%/rack_enclosures/%/enc_hosts/%/h_{memsize,cpucount}`);
   - move disks specification (formerly accessible via
-    `id_m0_servers/%/m0h_devices`) to `h_disks` field of host descriptors,
-    accessible via `racks/%/rack_enclosures/%/enc_hosts/%/h_disks`.
+    `id_m0_servers/%/m0h_devices`) to `h_disks` field of host descriptors
+    (`racks/%/rack_enclosures/%/enc_hosts/%/h_disks`);
+  - rename `n_roles` to `n_mero_roles` and rename its `name` field to
+    `mr_name`.
+- Host descriptor (`racks/%/rack_enclosures/%/enc_hosts/%`) changes:
+  - move `h_halon/address` to `h_halon_address`;
+  - move `h_halon/roles` to `h_halon_roles` and rename its `name` field
+    to `hr_name`;
+  - `h_halon` is empty now --- delete it.
 - Disk descriptor (`racks/%/rack_enclosures/%/enc_hosts/%/h_disks/%`)
   changes:
   - substitute `m0d_` prefix with `d_`;
   - add `d_pool` attribute --- a string, equal to
-    `profiles/%/pools/%/pool_id` of the pool which this disk
+    `profiles/%/prof_pools/%/pool_id` of the pool which this disk
     belongs to.
 - Drop `id_m0_globals` section.  Some of its settings (`pdclust_attr` and
-  `failure_set_gen`) are moved to `profiles/%/pools/%`, the rest are
+  `failure_set_gen`) are moved to `profiles/%/prof_pools/%`, the rest are
   not used.
 
 ### New facts schema
 
 ```
----
 profiles:
-  - profile_id: <string>  # Unique name of profile.
-    md_redundancy: <integer>  # Meta-data redundancy (`m0_conf_filesystem::cf_redundancy` in Mero).
-    pools:
+  - prof_id: <string>  # Unique name of profile.
+    prof_md_redundancy: <integer>  # Meta-data redundancy (`m0_conf_filesystem::cf_redundancy` in Mero).
+    prof_pools:
       - pool_id: <string>  # Unique name of pool.
-        pdclust_attr:  # Parity de-clustering attributes.
+        pool_pdclust_attr: # Parity de-clustering attributes.
           pa_unit_size: <integer>  # Stripe unit size (`m0_pdclust_attr::pa_unit_size` in Mero).
           pa_N: <integer>  # Number of data units in a parity group (`m0_pdclust_attr::pa_N` in Mero).
           pa_K: <integer>  # Number of parity units in a parity group (`m0_pdclust_attr::pa_K` in Mero).
           pa_seed: [<integer>, <integer>]  # Seed for tile column permutations generator (`m0_pdclust_attr::pa_seed` in Mero).
-        failure_set_gen:
+        pool_failure_set_gen:
           tag: Formulaic  # Supported values: `Formulaic`, `Preloaded`.
           contents:       # see Note-1
             - [<integer>, <integer>, <integer>, <integer>, <integer>]
-        pver_policy: <integer>  # Pool version selection policy (`m0_conf_pool::pl_pver_policy` in Mero).
+        pool_ver_policy: <integer>  # Pool version selection policy (`m0_conf_pool::pl_pver_policy` in Mero).
 racks:
   - rack_idx: <integer>
     rack_enclosures:
@@ -104,16 +110,15 @@ racks:
                 d_size: <integer>
                 d_path: <string>
                 d_slot: <integer>
-                d_pool: <string>  # = `profiles/%/profile_id`
-            h_halon:
-              address: <string>
-              roles:
-                - name: <string>  # Reference to an item in "halon\_role\_mappings".
+                d_pool: <string>  # = `profiles/%/prof_pools/%/pool_id`
+            h_halon_address: <string>
+            h_halon_roles:
+              - hr_name: <string>  # Reference to an item in "halon\_role\_mappings".
 nodes:
   - n_fqdn: <string>  # = `racks/%/rack_enclosures/%/enc_hosts/%/h_fqdn`
     n_lnid: <string>
-    n_roles:
-      - name: <string>  # Reference to an item in "mero\_role\_mappings".
+    n_mero_roles:
+      - mr_name: <string>  # Reference to an item in "mero\_role\_mappings".
 ```
 
 #### Note-1:
