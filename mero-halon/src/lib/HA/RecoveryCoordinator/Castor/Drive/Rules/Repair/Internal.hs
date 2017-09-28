@@ -97,7 +97,7 @@ allIOSOnline pool = do
 -- We use this helper both in repair module and spiel module so it lives here.
 getIOServices :: M0.Pool -> PhaseM RC l [M0.Service]
 getIOServices pool = getLocalGraph >>= \g -> return $ nub
-  [ svc | pv <- G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+  [ svc | pv <- G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
         , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
         , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]

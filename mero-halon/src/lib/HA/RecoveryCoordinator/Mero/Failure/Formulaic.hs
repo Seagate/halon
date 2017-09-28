@@ -68,7 +68,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       addFormulas g = flip execState g $ do
         for_ (filter (/= mdpool) $
           G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
-          for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsRealOf g) $
+          for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsParentOf g) $
             \(pver::M0.PVer) -> do
             for_ formulas $ \formula -> do
               let f = either error id . mkPVerFormulaicFid
@@ -76,6 +76,6 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                              <*> (M0.PVerFormulaic <$> state uniquePVerCounter
                                                    <*> pure formula
                                                    <*> pure (M0.fid pver))
-              modify (G.connect pool M0.IsRealOf pvf)
+              modify (G.connect pool M0.IsParentOf pvf)
   Just (addFormulas $ createPoolVersions fs
                         [PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)

@@ -103,7 +103,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                         <*> pure (M0.PVerActual (failuresToArray failures)
                                                 (attrs { _pa_P = fromIntegral width }))
         rg0 <- S.get
-        S.modify' $ G.connect pool M0.IsRealOf pver
+        S.modify' $ G.connect pool M0.IsParentOf pver
         i <- for (filter (test fids)
                  $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack]) $ \rack -> do
                rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
@@ -158,7 +158,7 @@ createPoolVersions fs pvers invert rg =
     imeta_pools =
       [ pool
       | Just (pver :: M0.PVer) <- [M0.lookupConfObjByFid (M0.f_imeta_fid fs) rg]
-      , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsRealOf pver rg]
+      , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
       ]
     pools = filter (/= mdpool)
           . filter (\x -> not $ elem x imeta_pools)

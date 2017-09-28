@@ -47,7 +47,7 @@ getSDevs pool rg =
   -- Find SDevs for every single pool version belonging to the disk.
   let sdevs =
         [ sd
-        | pv <- G.connectedTo pool M0.IsRealOf rg :: [M0.PVer]
+        | pv <- G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
         , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
         , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]

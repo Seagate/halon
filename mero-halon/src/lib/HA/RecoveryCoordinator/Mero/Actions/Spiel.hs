@@ -778,7 +778,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) f_fid 0
-    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsRealOf g :: [M0.PVer]
+    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_type pver of
         pva@M0.PVerActual{} -> do

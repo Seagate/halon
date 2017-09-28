@@ -177,7 +177,7 @@ deriveSafeCopy 0 'base ''IsParentOf
 instance ToJSON IsParentOf
 
 -- | Relationship between virtual and real entities in confd.
---   Directed from real to virtual (e.g. pool IsRealOf pver)
+--   Directed from real to virtual (e.g. rack IsRealOf rackv)
 data IsRealOf = IsRealOf
    deriving (Eq, Generic, Show, Typeable)
 
@@ -967,12 +967,12 @@ $(mkDicts
   , (''Rack, ''IsParentOf, ''Enclosure)
   , (''Enclosure, ''IsParentOf, ''Controller)
   , (''Controller, ''IsParentOf, ''Disk)
+  , (''Pool, ''IsParentOf, ''PVer)
   , (''PVer, ''IsParentOf, ''RackV)
   , (''RackV, ''IsParentOf, ''EnclosureV)
   , (''EnclosureV, ''IsParentOf, ''ControllerV)
   , (''ControllerV, ''IsParentOf, ''DiskV)
     -- Virtual relationships between conf entities
-  , (''Pool, ''IsRealOf, ''PVer)
   , (''Rack, ''IsRealOf, ''RackV)
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
@@ -1041,12 +1041,12 @@ $(mkResRel
   , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
   , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
+  , (''Pool, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
   , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
   , (''EnclosureV, AtMostOne, ''IsParentOf, Unbounded, ''ControllerV)
   , (''ControllerV, AtMostOne, ''IsParentOf, Unbounded, ''DiskV)
     -- Virtual relationships between conf entities
-  , (''Pool, AtMostOne, ''IsRealOf, Unbounded, ''PVer)
   , (''Rack, AtMostOne, ''IsRealOf, Unbounded, ''RackV)
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)

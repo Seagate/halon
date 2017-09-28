@@ -258,9 +258,9 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , cntrl <- connectedFromList M0.IsParentOf disk  rg :: [M0.Controller]
                , encl  <- connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
                , rack  <- connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
-               , rackv <- G.connectedTo  rack M0.IsRealOf         rg :: [M0.RackV]
+               , rackv <- G.connectedTo rack M0.IsRealOf        rg :: [M0.RackV]
                , pver  <- connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
-               , pool  <- connectedFromList M0.IsRealOf   pver  rg :: [M0.Pool]
+               , pool  <- connectedFromList M0.IsParentOf pver  rg :: [M0.Pool]
                -- exclude metadata pools
                , M0.fid pool `notElem` mdFids
                ]

@@ -98,7 +98,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
         [] -> return True -- No errors here, unexpected fast path!!
         [Failures 0 0 0 0 0] -> return True
         ss -> fmap (getAny . mconcat) . for pools $ \pool -> do
-                let rs = G.connectedTo pool M0.IsRealOf rg
+                let rs = G.connectedTo pool M0.IsParentOf rg
                 return $ mconcat [Any result
                                  | r <- rs
                                  , let result = case r of

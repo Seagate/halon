@@ -182,7 +182,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                                 , Just (profile :: M0.Profile) <- [connectedTo root M0.IsParentOf g]
                                 , fs :: M0.Filesystem <- connectedTo profile M0.IsParentOf g
                                 , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
-                                , let pvers :: [M0.PVer] = connectedTo pool M0.IsRealOf g
+                                , let pvers :: [M0.PVer] = connectedTo pool M0.IsParentOf g
                                 ]
     for_ ppvers $ \(_, pvers) -> do
       unless (Prelude.null pvers) $ do -- skip metadata pool
@@ -231,7 +231,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"
     let g = lsGraph ls'
-        pvers = connectedTo pool M0.IsRealOf g :: [M0.PVer]
+        pvers = connectedTo pool M0.IsParentOf g :: [M0.PVer]
         racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
         encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls

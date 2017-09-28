@@ -100,7 +100,7 @@ getSDevPool sdev = do
           , Just (ev :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ct rg]
           , Just rv <- [G.connectedFrom M0.IsParentOf ev rg :: Maybe M0.RackV]
           , Just pv <- [G.connectedFrom M0.IsParentOf rv rg :: Maybe M0.PVer]
-          , Just (p :: M0.Pool) <- [G.connectedFrom M0.IsRealOf pv rg]
+          , Just (p :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pv rg]
           , Just (fs :: M0.Filesystem) <- [G.connectedFrom M0.IsParentOf p rg]
           , M0.fid p /= M0.f_mdpool_fid fs
           ]
