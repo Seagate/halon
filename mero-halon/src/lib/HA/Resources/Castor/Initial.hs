@@ -15,6 +15,8 @@
 module HA.Resources.Castor.Initial where
 
 import           Control.Monad (forM)
+import           Control.Monad.Trans.Except (ExceptT(..), runExceptT)
+import           Data.Bifunctor (first)
 import           Data.Data
 import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
@@ -416,12 +418,15 @@ instance A.FromJSON UnexpandedHost where
 instance A.ToJSON UnexpandedHost where
   toJSON = A.genericToJSON unexpandedHostJSONOptions
 
+mkException :: String -> String -> Y.ParseException
+mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
+
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
 resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts
              -> FilePath -- ^ Role map file
              -> IO (Either Y.ParseException InitialData)
-resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>= \case
+resolveRoles InitialWithRoles{..} rf = EDE.eitherParseFile rf >>= \case
   Left err -> return $ mkExc err
   Right template ->
     let procRoles uh env = mkProc template env <$> _uhost_m0h_roles uh
@@ -447,15 +452,14 @@ resolveRoles InitialWithRoles{..} cf = EDE.eitherResult <$> EDE.parseFile cf >>=
                              , m0h_processes = procs
                              , m0h_devices = _uhost_m0h_devices uh
                              }
+    mkExc :: String -> Either Y.ParseException a
+    mkExc = Left . mkException "resolveRoles"
+
     findRoleProcess :: RoleName -> [Role] -> Either String [M0Process]
     findRoleProcess rn roles = case find (\r -> _role_name r == rn) roles of
       Nothing ->
         Left $ "resolveRoles: role " ++ show rn ++ " not found in map file"
       Just r -> Right $ _role_content r
-
--- | Helper for exception creation
-mkExc :: String -> Either Y.ParseException a
-mkExc = Left . Y.AesonException . ("resolveRoles: " ++)
 
 -- | Expand a role from the given template and env.
 mkRole :: A.FromJSON a
@@ -488,37 +492,36 @@ mkHalonRoles template roles =
       Just a -> Right [a]
 
 -- | Entry point into 'InitialData' parsing.
-parseInitialData :: FilePath -- ^ Halon facts
-                 -> FilePath -- ^ Role map file
-                 -> FilePath -- ^ Halon role map file
+parseInitialData :: FilePath -- ^ Halon facts.
+                 -> FilePath -- ^ Role map file.
+                 -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-
-parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
-  Left err -> return $ Left err
-  Right initialWithRoles -> EDE.eitherResult <$> EDE.parseFile halonMaps >>= \case
-    Left err -> return $ mkExc err
-    Right obj -> resolveRoles initialWithRoles maps >>= \case
-      Left err -> return $ Left err
-      Right initialD -> return $ case validateData initialD of
-        Left err -> Left $ Y.AesonException err
-        Right initialD' -> Right (initialD', obj)
+parseInitialData facts roles halonRoles = runExceptT parse
   where
-    validateData :: InitialData -> Either String InitialData
-    validateData idata =
-      let encs = [ (r, rack_enclosures r) | r <- id_racks idata ]
-          ns = enc_id <$> (encs >>= snd)
+    parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
+    parse = do
+        initialWithRoles <- ExceptT (Y.decodeFileEither facts)
+        template <- ExceptT $ first (mkException "parseInitialData")
+            <$> EDE.eitherParseFile halonRoles
+        initialData <- ExceptT (resolveRoles initialWithRoles roles)
+        ExceptT . pure $ validateInitialData initialData
+        pure (initialData, template)
 
-          check True _ = return idata
-          check False m = Left m
-      in check ( all (\(fmap enc_idx -> idx)
-                        -> (length (nub idx) == length idx)
-                        )
-                      (snd <$> encs)
-                )
-               "Enclosures with non-unique enc_idx exist inside a rack."
-         >> check (all (not . null) ns) "Enclosure without enc_id specified."
-         >> check (length ns == length (nub ns))
-                  "Enclosures with non-unique enc_id exist."
+validateInitialData :: InitialData -> Either Y.ParseException ()
+validateInitialData idata = do
+    check (allUnique $ map rack_idx $ id_racks idata)
+        "Racks with non-unique rack_idx exist"
+    check (all (\(fmap enc_idx -> idxs) -> allUnique idxs) enclsPerRack)
+        "Enclosures with non-unique enc_idx exist inside a rack"
+    check (all (not . null) enclIds) "Enclosure without enc_id specified"
+    check (length enclIds == length (nub enclIds))
+        "Enclosures with non-unique enc_id exist"
+  where
+    check cond msg =
+        if cond then Right () else Left (mkException "validateInitialData" msg)
+    allUnique xs = length (nub xs) == length xs
+    enclsPerRack = [rack_enclosures rack | rack <- id_racks idata]
+    enclIds = enc_id <$> concat enclsPerRack
 
 deriveSafeCopy 0 'base ''FailureSetScheme
 storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
