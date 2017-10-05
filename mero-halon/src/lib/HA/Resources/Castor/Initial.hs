@@ -516,8 +516,7 @@ parseInitialData facts maps halonMaps = Y.decodeFileEither facts >>= \case
                       (snd <$> encs)
                 )
                "Enclosures with non-unique enc_idx exist inside a rack."
-         >> check (null ns || any (not . null) ns)
-                  "Enclosure without enc_id specified."
+         >> check (all (not . null) ns) "Enclosure without enc_id specified."
          >> check (length ns == length (nub ns))
                   "Enclosures with non-unique enc_id exist."
 
