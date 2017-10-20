@@ -115,13 +115,13 @@ initialiseConfInRG = getFilesystem >>= \case
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: M0.Filesystem
-                -> [CI.M0Host]
+                -> [CI.M0Host_XXX0]
                 -> PhaseM RC l ()
 loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
-    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
-  goHost (CI.M0Host{..}, hostIdx) = let
-      host = Host $! T.unpack m0h_fqdn
+    (scanl' (\acc h -> acc + (length $ CI.m0h_devices_XXX0 h)) (0 :: Int) hosts)
+  goHost (CI.M0Host_XXX0{..}, hostIdx) = let
+      host = Host $! T.unpack m0h_fqdn_XXX0
     in do
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
@@ -131,7 +131,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect host Runs node
 
-      if not (null m0h_devices) then do
+      if not (null m0h_devices_XXX0) then do
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getLocalGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
@@ -140,14 +140,14 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
               return (m0e, e)
 
         devs <- mapM (goDev enc ctrl)
-                     (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
-        mapM_ (addProcess node devs) m0h_processes
+                     (zip m0h_devices_XXX0 [hostIdx..length m0h_devices_XXX0 + hostIdx])
+        mapM_ (addProcess node devs) m0h_processes_XXX0
 
         modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
                   >>> G.connect node M0.IsOnHardware ctrl
       else
-        mapM_ (addProcess node []) m0h_processes
+        mapM_ (addProcess node []) m0h_processes_XXX0
 
   goDev enc ctrl (CI.M0Device_XXX0{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size_XXX0 m0d_bsize_XXX0 m0d_path_XXX0

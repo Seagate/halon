@@ -317,7 +317,7 @@ run' transport pg extraRules to test = do
     -- Wipe the halon:m0d state from any previous test runs.
     liftIO Mock.clearMockState
     sayTest $ "Starting setup for a " ++ show numNodes ++ " node test."
-    let lnWithHosts = zip lnodes $ map CI.m0h_fqdn (CI.id_m0_servers_XXX0 idata)
+    let lnWithHosts = zip lnodes $ map CI.m0h_fqdn_XXX0 (CI.id_m0_servers_XXX0 idata)
         nids = map localNodeId lnodes
         ts_nodes = take (fromIntegral $ _to_ts_nodes to) lnodes
 

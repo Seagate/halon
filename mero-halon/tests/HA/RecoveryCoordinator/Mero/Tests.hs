@@ -78,7 +78,7 @@ testDriveManagerUpdate transport pg = do
   H.run' transport pg [testRule] tos' $ \ts -> do
     self <- getSelfPid
     let interestingSN : _ = [ CI.m0d_serial_XXX0 d | s <- CI.id_m0_servers_XXX0 iData
-                                              , d <- CI.m0h_devices s ]
+                                              , d <- CI.m0h_devices_XXX0 s ]
         enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks_XXX0 iData
                                    , enc' <- CI.rack_enclosures_XXX0 r ]
         respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
@@ -224,11 +224,11 @@ testBadConfDoesNotLoad t pg = do
 
     -- Set endpoints of processes for the host to invalid value,
     -- making conf fail validation.
-    invalidateHost :: CI.M0Host -> CI.M0Host
+    invalidateHost :: CI.M0Host_XXX0 -> CI.M0Host_XXX0
     invalidateHost h =
-      h { CI.m0h_processes =
+      h { CI.m0h_processes_XXX0 =
             (\p -> p { CI.m0p_endpoint = invalidEP $ CI.m0p_endpoint p})
-              <$> CI.m0h_processes h
+              <$> CI.m0h_processes_XXX0 h
         }
 
     invalidEP ep = ep {
@@ -257,9 +257,9 @@ testProcessMultiplicity t pg = runDefaultTest t $ do
     mkData = do
       iData <- liftIO defaultInitialData
       return $ iData { CI.id_m0_servers_XXX0 = mult <$> CI.id_m0_servers_XXX0 iData }
-    mult :: CI.M0Host -> CI.M0Host
+    mult :: CI.M0Host_XXX0 -> CI.M0Host_XXX0
     mult h = let
         (m0t1fs, others) = partition ((==) CI.PLM0t1fs . CI.m0p_boot_level)
-                                     (CI.m0h_processes h)
+                                     (CI.m0h_processes_XXX0 h)
         m0t1fs' = (\p -> p {CI.m0p_multiplicity = Just 3}) <$> m0t1fs
-      in h { CI.m0h_processes = m0t1fs' <> others}
+      in h { CI.m0h_processes_XXX0 = m0t1fs' <> others}

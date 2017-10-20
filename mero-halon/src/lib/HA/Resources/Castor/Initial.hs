@@ -202,18 +202,18 @@ instance A.ToJSON M0Device_XXX0
 -- | Represents an aggregation of three Mero concepts, which we don't
 -- necessarily need for the castor implementation - nodes,
 -- controllers, and processes.
-data M0Host = M0Host
-  { m0h_fqdn :: !T.Text
+data M0Host_XXX0 = M0Host_XXX0
+  { m0h_fqdn_XXX0 :: !T.Text
   -- ^ Fully qualified domain name of host this server is running on
-  , m0h_processes :: ![M0Process]
+  , m0h_processes_XXX0 :: ![M0Process]
   -- ^ Processes that should run on the host.
-  , m0h_devices :: ![M0Device_XXX0]
+  , m0h_devices_XXX0 :: ![M0Device_XXX0]
   -- ^ Information about devices attached to the host.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable M0Host
-instance A.FromJSON M0Host
-instance A.ToJSON M0Host
+instance Hashable M0Host_XXX0
+instance A.FromJSON M0Host_XXX0
+instance A.ToJSON M0Host_XXX0
 
 data M0ProcessType =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
@@ -284,7 +284,7 @@ instance A.ToJSON M0Service
 -- about the cluster from.
 data InitialData_XXX0 = InitialData_XXX0 {
     id_racks_XXX0 :: [Rack_XXX0]
-  , id_m0_servers_XXX0 :: [M0Host]
+  , id_m0_servers_XXX0 :: [M0Host_XXX0]
   , id_m0_globals_XXX0 :: M0Globals_XXX0
 } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -397,9 +397,9 @@ instance A.ToJSON InitialWithRoles_XXX0 where
 -- don't have present and use them in their roles, without updating
 -- the source here.
 data UnexpandedHost = UnexpandedHost
-  { _uhost_m0h_fqdn :: !T.Text
+  { _uhost_m0h_fqdn_XXX0 :: !T.Text
   , _uhost_m0h_roles :: ![RoleSpec]
-  , _uhost_m0h_devices :: ![M0Device_XXX0]
+  , _uhost_m0h_devices_XXX0 :: ![M0Device_XXX0]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.
@@ -424,9 +424,9 @@ resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
 resolveMeroRoles InitialWithRoles{..} template =
     case partitionEithers ehosts of
         ([], hosts) ->
-            Right $ InitialData_XXX0 { id_racks = _rolesinit_id_racks
-                                , id_m0_servers = hosts
-                                , id_m0_globals = _rolesinit_id_m0_globals
+            Right $ InitialData_XXX0 { id_racks_XXX0 = _rolesinit_id_racks
+                                , id_m0_servers_XXX0 = hosts
+                                , id_m0_globals_XXX0 = _rolesinit_id_m0_globals
                                 }
         (errs, _) -> Left . mkException func . intercalate ", " $ concat errs
   where
@@ -442,9 +442,9 @@ resolveMeroRoles InitialWithRoles{..} template =
             eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
         in case partitionEithers eprocs of
             ([], procs) ->
-                Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
-                               , m0h_processes = concat procs
-                               , m0h_devices = _uhost_m0h_devices uhost
+                Right $ M0Host_XXX0 { m0h_fqdn_XXX0 = _uhost_m0h_fqdn_XXX0 uhost
+                               , m0h_processes_XXX0 = concat procs
+                               , m0h_devices_XXX0 = _uhost_m0h_devices_XXX0 uhost
                                }
             (errs, _) -> Left errs
 
@@ -544,7 +544,7 @@ deriveSafeCopy 0 'base ''M0Device_XXX0
 storageIndex           ''M0Device_XXX0 "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals_XXX0
 storageIndex           ''M0Globals_XXX0 "4978783e-e7ff-48fe-ab83-85759d822622"
-deriveSafeCopy 0 'base ''M0Host
+deriveSafeCopy 0 'base ''M0Host_XXX0
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process

@@ -238,7 +238,7 @@ facts host = unlines $
   , "        - auto"
   , "    enc_id_XXX0: enclosure1"
   , "id_m0_servers_XXX0:"
-  , "- m0h_processes:"
+  , "- m0h_processes_XXX0:"
   , "  - m0p_services:"
   , "    - m0s_endpoints:"
   , "      - auto:12345:44:101"
@@ -271,8 +271,8 @@ facts host = unlines $
   , "    - 1"
   , "    m0p_mem_stack: 1"
   , "    m0p_endpoint: auto:12345:41:201"
-  , "  m0h_devices: []"
-  , "  m0h_fqdn: " ++ host
+  , "  m0h_devices_XXX0: []"
+  , "  m0h_fqdn_XXX0: " ++ host
   , "id_m0_globals_XXX0:"
   , "  m0_max_rpc_msg_size: 65536"
   , "  m0_parity_units_XXX0: 1"

@@ -137,11 +137,11 @@ initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
          let host = if _id_servers > 1
                     then _id_hostname <> "_" <> T.pack (show w)
                     else _id_hostname
-        in CI.M0Host {
-            CI.m0h_fqdn = host
-          , CI.m0h_processes = map ($ ifaddr)
+        in CI.M0Host_XXX0 {
+            CI.m0h_fqdn_XXX0 = host
+          , CI.m0h_processes_XXX0 = map ($ ifaddr)
               [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
-          , CI.m0h_devices = fmap
+          , CI.m0h_devices_XXX0 = fmap
               (\j -> CI.M0Device_XXX0
                       ("wwn" ++ show w ++ "_" ++ show j)
                       ("serial" ++ show w ++ "_" ++ show j)
