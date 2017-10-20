@@ -77,7 +77,7 @@ testDriveManagerUpdate transport pg = do
                  , H._to_initial_data = iData }
   H.run' transport pg [testRule] tos' $ \ts -> do
     self <- getSelfPid
-    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers_XXX0 iData
+    let interestingSN : _ = [ CI.m0d_serial_XXX0 d | s <- CI.id_m0_servers_XXX0 iData
                                               , d <- CI.m0h_devices s ]
         enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks_XXX0 iData
                                    , enc' <- CI.rack_enclosures_XXX0 r ]

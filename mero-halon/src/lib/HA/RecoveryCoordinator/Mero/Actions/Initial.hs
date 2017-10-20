@@ -149,14 +149,14 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
       else
         mapM_ (addProcess node []) m0h_processes
 
-  goDev enc ctrl (CI.M0Device{..}, idx) = let
-      mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
-      devIds = [ DIWWN m0d_wwn
-               , DIPath m0d_path
+  goDev enc ctrl (CI.M0Device_XXX0{..}, idx) = let
+      mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size_XXX0 m0d_bsize_XXX0 m0d_path_XXX0
+      devIds = [ DIWWN m0d_wwn_XXX0
+               , DIPath m0d_path_XXX0
                ]
     in do
-      let sdev = StorageDevice m0d_serial
-          slot = Slot enc m0d_slot
+      let sdev = StorageDevice m0d_serial_XXX0
+          slot = Slot enc m0d_slot_XXX0
       StorageDevice.identify sdev devIds
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case
         Just m0sdev -> return m0sdev

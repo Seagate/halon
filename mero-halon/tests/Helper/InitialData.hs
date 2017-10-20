@@ -142,7 +142,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
           , CI.m0h_processes = map ($ ifaddr)
               [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
           , CI.m0h_devices = fmap
-              (\j -> CI.M0Device
+              (\j -> CI.M0Device_XXX0
                       ("wwn" ++ show w ++ "_" ++ show j)
                       ("serial" ++ show w ++ "_" ++ show j)
                       4 64000

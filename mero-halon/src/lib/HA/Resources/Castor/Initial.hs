@@ -186,18 +186,18 @@ instance A.FromJSON M0Globals_XXX0
 instance A.ToJSON M0Globals_XXX0
 
 -- | Devices attached to a 'M0Host'
-data M0Device = M0Device {
-    m0d_wwn :: String -- ^ World Wide Name of the device
-  , m0d_serial :: String -- ^ Serial number of the device
-  , m0d_bsize :: Word32 -- ^ Block size
-  , m0d_size :: Word64 -- ^ Size of disk (in MB)
-  , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
-  , m0d_slot :: Int -- ^ Slot within the enclosure the device is in
+data M0Device_XXX0 = M0Device_XXX0 {
+    m0d_wwn_XXX0 :: String -- ^ World Wide Name of the device
+  , m0d_serial_XXX0 :: String -- ^ Serial number of the device
+  , m0d_bsize_XXX0 :: Word32 -- ^ Block size
+  , m0d_size_XXX0 :: Word64 -- ^ Size of disk (in MB)
+  , m0d_path_XXX0 :: String -- ^ Path to the device (e.g. /dev/disk...)
+  , m0d_slot_XXX0 :: Int -- ^ Slot within the enclosure the device is in
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable M0Device
-instance A.FromJSON M0Device
-instance A.ToJSON M0Device
+instance Hashable M0Device_XXX0
+instance A.FromJSON M0Device_XXX0
+instance A.ToJSON M0Device_XXX0
 
 -- | Represents an aggregation of three Mero concepts, which we don't
 -- necessarily need for the castor implementation - nodes,
@@ -207,7 +207,7 @@ data M0Host = M0Host
   -- ^ Fully qualified domain name of host this server is running on
   , m0h_processes :: ![M0Process]
   -- ^ Processes that should run on the host.
-  , m0h_devices :: ![M0Device]
+  , m0h_devices :: ![M0Device_XXX0]
   -- ^ Information about devices attached to the host.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -399,7 +399,7 @@ instance A.ToJSON InitialWithRoles_XXX0 where
 data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn :: !T.Text
   , _uhost_m0h_roles :: ![RoleSpec]
-  , _uhost_m0h_devices :: ![M0Device]
+  , _uhost_m0h_devices :: ![M0Device_XXX0]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.
@@ -540,8 +540,8 @@ maybeToEither e Nothing = Left e
 
 deriveSafeCopy 0 'base ''FailureSetScheme
 storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
-deriveSafeCopy 0 'base ''M0Device
-storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
+deriveSafeCopy 0 'base ''M0Device_XXX0
+storageIndex           ''M0Device_XXX0 "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals_XXX0
 storageIndex           ''M0Globals_XXX0 "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Host
