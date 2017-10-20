@@ -160,30 +160,30 @@ instance A.ToJSON HalonRole where
   toJSON = A.genericToJSON halonConfigOptions
 
 -- | Facts about the cluster.
-data M0Globals = M0Globals {
-    m0_data_units :: Word32 -- ^ As in genders
-  , m0_parity_units :: Word32  -- ^ As in genders
-  , m0_md_redundancy :: Word32 -- ^ Metadata redundancy count
-  , m0_failure_set_gen :: FailureSetScheme
-  , m0_be_ios_seg_size :: Maybe Word64
-  , m0_be_log_size :: Maybe Word64
-  , m0_be_seg_size :: Maybe Word64
-  , m0_be_tx_payload_size_max :: Maybe Word64
-  , m0_be_tx_reg_nr_max :: Maybe Word32
-  , m0_be_tx_reg_size_max :: Maybe Word32
-  , m0_be_txgr_freeze_timeout_max :: Maybe Word64
-  , m0_be_txgr_freeze_timeout_min :: Maybe Word64
-  , m0_be_txgr_payload_size_max :: Maybe Word64
-  , m0_be_txgr_reg_nr_max :: Maybe Word64
-  , m0_be_txgr_reg_size_max :: Maybe Word64
-  , m0_be_txgr_tx_nr_max :: Maybe Word32
-  , m0_block_size :: Maybe Word32
-  , m0_min_rpc_recvq_len :: Maybe Word32
+data M0Globals_XXX0 = M0Globals_XXX0 {
+    m0_data_units_XXX0 :: Word32 -- ^ As in genders
+  , m0_parity_units_XXX0 :: Word32  -- ^ As in genders
+  , m0_md_redundancy_XXX0 :: Word32 -- ^ Metadata redundancy count
+  , m0_failure_set_gen_XXX0 :: FailureSetScheme
+  , m0_be_ios_seg_size_XXX0 :: Maybe Word64
+  , m0_be_log_size_XXX0 :: Maybe Word64
+  , m0_be_seg_size_XXX0 :: Maybe Word64
+  , m0_be_tx_payload_size_max_XXX0 :: Maybe Word64
+  , m0_be_tx_reg_nr_max_XXX0 :: Maybe Word32
+  , m0_be_tx_reg_size_max_XXX0 :: Maybe Word32
+  , m0_be_txgr_freeze_timeout_max_XXX0 :: Maybe Word64
+  , m0_be_txgr_freeze_timeout_min_XXX0 :: Maybe Word64
+  , m0_be_txgr_payload_size_max_XXX0 :: Maybe Word64
+  , m0_be_txgr_reg_nr_max_XXX0 :: Maybe Word64
+  , m0_be_txgr_reg_size_max_XXX0 :: Maybe Word64
+  , m0_be_txgr_tx_nr_max_XXX0 :: Maybe Word32
+  , m0_block_size_XXX0 :: Maybe Word32
+  , m0_min_rpc_recvq_len_XXX0 :: Maybe Word32
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable M0Globals
-instance A.FromJSON M0Globals
-instance A.ToJSON M0Globals
+instance Hashable M0Globals_XXX0
+instance A.FromJSON M0Globals_XXX0
+instance A.ToJSON M0Globals_XXX0
 
 -- | Devices attached to a 'M0Host'
 data M0Device = M0Device {
@@ -285,7 +285,7 @@ instance A.ToJSON M0Service
 data InitialData_XXX0 = InitialData_XXX0 {
     id_racks_XXX0 :: [Rack_XXX0]
   , id_m0_servers_XXX0 :: [M0Host]
-  , id_m0_globals_XXX0 :: M0Globals
+  , id_m0_globals_XXX0 :: M0Globals_XXX0
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable InitialData_XXX0
@@ -362,7 +362,7 @@ data InitialWithRoles_XXX0 = InitialWithRoles_XXX0
     -- ^ The list of unexpanded host as well as the full object that
     -- the host was parsed out from, used as environment given during
     -- template expansion.
-  , _rolesinit_id_m0_globals_XXX0 :: M0Globals
+  , _rolesinit_id_m0_globals_XXX0 :: M0Globals_XXX0
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance A.FromJSON InitialWithRoles_XXX0 where
@@ -542,8 +542,8 @@ deriveSafeCopy 0 'base ''FailureSetScheme
 storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device
 storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
-deriveSafeCopy 0 'base ''M0Globals
-storageIndex           ''M0Globals "4978783e-e7ff-48fe-ab83-85759d822622"
+deriveSafeCopy 0 'base ''M0Globals_XXX0
+storageIndex           ''M0Globals_XXX0 "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType

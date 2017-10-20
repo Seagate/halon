@@ -82,13 +82,13 @@ uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
 --------------------------------------------------------------------------------
 
 -- | Retrieve 'CI.M0Globals' from the RG.
-getM0Globals :: PhaseM RC l (Maybe CI.M0Globals)
+getM0Globals :: PhaseM RC l (Maybe CI.M0Globals_XXX0)
 getM0Globals = getLocalGraph >>= \rg -> do
   Log.rcLog' Log.TRACE $ "Looking for Mero globals."
   return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph
-loadMeroGlobals :: CI.M0Globals
+loadMeroGlobals :: CI.M0Globals_XXX0
                 -> PhaseM RC l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 

@@ -40,11 +40,11 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
         prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
         fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
                 G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-        globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+        globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
         let fsets = generateFailureSets df cf cfe rg globs
             attrs = PDClustAttr {
-                      _pa_N = CI.m0_data_units globs
-                    , _pa_K = CI.m0_parity_units globs
+                      _pa_N = CI.m0_data_units_XXX0 globs
+                    , _pa_K = CI.m0_parity_units_XXX0 globs
                     , _pa_P = 0
                     , _pa_unit_size = 4096
                     , _pa_seed = Word128 101 102
@@ -70,11 +70,11 @@ generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
                     -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                     -> G.Graph
-                    -> CI.M0Globals
+                    -> CI.M0Globals_XXX0
                     -> [(Failures, Set Fid)]
 generateFailureSets df cf cfe rg globs = let
-    n = CI.m0_data_units globs
-    k = CI.m0_parity_units globs
+    n = CI.m0_data_units_XXX0 globs
+    k = CI.m0_parity_units_XXX0 globs
     allCtrls =
       [ ctrl
       | (host :: Host) <- G.connectedTo Cluster Has rg

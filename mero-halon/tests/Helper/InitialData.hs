@@ -47,33 +47,33 @@ data InitialDataSettings = InitialDataSettings
   -- @'_id_hostname'_i@.
   , _id_drives :: !Int
   -- ^ Number of drives __per enclosure__ to insert into the data.
-  , _id_globals :: !CI.M0Globals
+  , _id_globals :: !CI.M0Globals_XXX0
   -- ^ Various global settings usually provided by the provisioner.
   -- See 'defaultGlobals'.
   } deriving (Show, Eq)
 
 -- | Defaults taken from
 -- <http://es-gerrit.xyus.xyratex.com:8080/#/c/10913/1/modules/stx_halon/manifests/facts.pp>
-defaultGlobals :: CI.M0Globals
-defaultGlobals = CI.M0Globals {
-    CI.m0_data_units = 8
-  , CI.m0_parity_units = 2
-  , CI.m0_md_redundancy = 1
-  , CI.m0_failure_set_gen = CI.Preloaded 0 0 1
-  , CI.m0_be_ios_seg_size = Nothing
-  , CI.m0_be_log_size = Nothing
-  , CI.m0_be_seg_size = Nothing
-  , CI.m0_be_tx_payload_size_max = Nothing
-  , CI.m0_be_tx_reg_nr_max = Nothing
-  , CI.m0_be_tx_reg_size_max = Nothing
-  , CI.m0_be_txgr_freeze_timeout_max = Nothing
-  , CI.m0_be_txgr_freeze_timeout_min = Nothing
-  , CI.m0_be_txgr_payload_size_max = Nothing
-  , CI.m0_be_txgr_reg_nr_max = Nothing
-  , CI.m0_be_txgr_reg_size_max = Nothing
-  , CI.m0_be_txgr_tx_nr_max = Nothing
-  , CI.m0_block_size = Nothing
-  , CI.m0_min_rpc_recvq_len = Nothing
+defaultGlobals :: CI.M0Globals_XXX0
+defaultGlobals = CI.M0Globals_XXX0 {
+    CI.m0_data_units_XXX0 = 8
+  , CI.m0_parity_units_XXX0 = 2
+  , CI.m0_md_redundancy_XXX0 = 1
+  , CI.m0_failure_set_gen_XXX0 = CI.Preloaded 0 0 1
+  , CI.m0_be_ios_seg_size_XXX0 = Nothing
+  , CI.m0_be_log_size_XXX0 = Nothing
+  , CI.m0_be_seg_size_XXX0 = Nothing
+  , CI.m0_be_tx_payload_size_max_XXX0 = Nothing
+  , CI.m0_be_tx_reg_nr_max_XXX0 = Nothing
+  , CI.m0_be_tx_reg_size_max_XXX0 = Nothing
+  , CI.m0_be_txgr_freeze_timeout_max_XXX0 = Nothing
+  , CI.m0_be_txgr_freeze_timeout_min_XXX0 = Nothing
+  , CI.m0_be_txgr_payload_size_max_XXX0 = Nothing
+  , CI.m0_be_txgr_reg_nr_max_XXX0 = Nothing
+  , CI.m0_be_txgr_reg_size_max_XXX0 = Nothing
+  , CI.m0_be_txgr_tx_nr_max_XXX0 = Nothing
+  , CI.m0_block_size_XXX0 = Nothing
+  , CI.m0_min_rpc_recvq_len_XXX0 = Nothing
 }
 
 -- | Helper for IP addresses formatted as a quadruple of 'Word8's.
@@ -102,8 +102,8 @@ initialData InitialDataSettings{..}
          ++ show (d + 2 * p)
          ++ ")."
   where
-    d = CI.m0_data_units _id_globals
-    p = CI.m0_parity_units _id_globals
+    d = CI.m0_data_units_XXX0 _id_globals
+    p = CI.m0_parity_units_XXX0 _id_globals
 initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
     CI.id_m0_globals_XXX0 = _id_globals
   , CI.id_racks_XXX0 = [

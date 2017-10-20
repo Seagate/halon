@@ -19,7 +19,7 @@
 -- @import qualified HA.Resources.Mero as M0@
 module HA.Resources.Mero
   ( module HA.Resources.Mero
-  , CI.M0Globals
+  , CI.M0Globals_XXX0
   ) where
 
 import Control.Distributed.Process (ProcessId)
@@ -936,7 +936,7 @@ $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''CI.M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -984,7 +984,7 @@ $(mkDicts
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
-  , (''R.Cluster, ''R.Has, ''CI.M0Globals)
+  , (''R.Cluster, ''R.Has, ''CI.M0Globals_XXX0)
   , (''R.Cluster, ''RunLevel, ''BootLevel)
   , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
@@ -1009,7 +1009,7 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''CI.M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -1057,7 +1057,7 @@ $(mkResRel
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
     -- Other things!
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''FidSeq)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals_XXX0)
   , (''R.Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)

@@ -97,7 +97,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings
                { _id_drives = 8
-               , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
+               , _id_globals = defaultGlobals { CI.m0_data_units_XXX0 = 4 } }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
@@ -167,7 +167,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings
                { _id_servers = 4
                , _id_drives = 4
-               , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
+               , _id_globals = defaultGlobals { CI.m0_failure_set_gen_XXX0 = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
@@ -258,8 +258,8 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
                       , _pa_K = paK
                       , _pa_P = paP
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
-      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals_XXX0 iData) == paN
-      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals_XXX0 iData) == paK
+      assertMsg "N in PVer" $ CI.m0_data_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paK
       let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
                          , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
@@ -369,7 +369,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
       ls0 <- emptyLoopState pid (nullProcessId me)
       settings <- liftIO defaultInitialDataSettings
       iData' <- liftIO . initialData $ settings { _id_servers = 3, _id_drives = 4 }
-      let iData = iData'{CI.id_m0_globals_XXX0 = (CI.id_m0_globals_XXX0 iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
+      let iData = iData'{CI.id_m0_globals_XXX0 = (CI.id_m0_globals_XXX0 iData'){CI.m0_failure_set_gen_XXX0=CI.Formulaic [[0,0,0,1,0]
                                                                                                          ,[0,0,0,0,1]
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do

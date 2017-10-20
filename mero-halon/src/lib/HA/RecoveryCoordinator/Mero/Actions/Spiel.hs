@@ -677,7 +677,7 @@ txSyncToConfd f luuid lift t = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
+data TxConfData = TxConfData M0.M0Globals_XXX0 M0.Profile M0.Filesystem
 
 loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
@@ -706,7 +706,7 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData CI.M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
@@ -716,10 +716,10 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf g
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
                              ]
-      fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
+      fsParams = printf "%d %d %d" m0_pool_width m0_data_units_XXX0 m0_parity_units_XXX0
   m0synchronously lift $ do
     addProfile t pfid
-    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
+    addFilesystem t f_fid pfid m0_md_redundancy_XXX0 pfid f_mdpool_fid f_imeta_fid [fsParams]
   Log.rcLog' Log.DEBUG "Added profile, filesystem, mdpool objects."
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]

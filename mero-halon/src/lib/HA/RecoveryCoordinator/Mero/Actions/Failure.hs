@@ -20,7 +20,7 @@ import Network.CEP
 
 -- | Load current strategy from resource graph.
 getCurrentGraphUpdateType :: Monad m => PhaseM RC l (Maybe (UpdateType m))
-getCurrentGraphUpdateType = fmap (mkUpdateType . m0_failure_set_gen) <$> getM0Globals
+getCurrentGraphUpdateType = fmap (mkUpdateType . m0_failure_set_gen_XXX0) <$> getM0Globals
    where
      mkUpdateType (Preloaded df cf cfe) = simpleUpdate df cf cfe
      mkUpdateType (Formulaic fs) = formulaicUpdate fs

@@ -37,18 +37,18 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
   prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
   fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
     G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
-  globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
+  globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
   let attrs = PDClustAttr
-                { _pa_N = CI.m0_data_units globs
-                , _pa_K = CI.m0_parity_units globs
+                { _pa_N = CI.m0_data_units_XXX0 globs
+                , _pa_K = CI.m0_parity_units_XXX0 globs
                 , _pa_P = 0
                 , _pa_unit_size = 4096
                 , _pa_seed = Word128 101 102
                 }
       mdpool = M0.Pool (M0.f_mdpool_fid fs)
       imeta_pver = M0.f_imeta_fid fs
-      n = CI.m0_data_units globs
-      k = CI.m0_parity_units globs
+      n = CI.m0_data_units_XXX0 globs
+      k = CI.m0_parity_units_XXX0 globs
       noCtlrs = length
         [ cntr
         | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
