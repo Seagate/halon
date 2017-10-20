@@ -108,10 +108,10 @@ ruleInitialDataLoad =
                       . (show :: SomeException -> String) )
     else err "" "Initial data is already loaded."
 
-goRack :: CI.Rack -> PhaseM RC l ()
-goRack CI.Rack{..} = let rack = Rack rack_idx in do
+goRack :: CI.Rack_XXX0 -> PhaseM RC l ()
+goRack CI.Rack_XXX0{..} = let rack = Rack rack_idx_XXX0 in do
   registerRack rack
-  mapM_ (goEnc rack) rack_enclosures
+  mapM_ (goEnc rack) rack_enclosures_XXX0
 
 goEnc :: Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc rack CI.Enclosure_XXX0{..} = let

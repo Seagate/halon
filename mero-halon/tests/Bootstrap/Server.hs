@@ -220,8 +220,8 @@ m0dAtUnitFile = unlines $
 facts :: String -> String
 facts host = unlines $
   [ "id_racks_XXX0:"
-  , "- rack_idx: 1"
-  , "  rack_enclosures:"
+  , "- rack_idx_XXX0: 1"
+  , "  rack_enclosures_XXX0:"
   , "  - enc_idx_XXX0: 1"
   , "    enc_bmc_XXX0:"
   , "    - bmc_user: admin"

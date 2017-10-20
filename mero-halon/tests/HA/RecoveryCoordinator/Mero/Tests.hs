@@ -80,7 +80,7 @@ testDriveManagerUpdate transport pg = do
     let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers_XXX0 iData
                                               , d <- CI.m0h_devices s ]
         enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks_XXX0 iData
-                                   , enc' <- CI.rack_enclosures r ]
+                                   , enc' <- CI.rack_enclosures_XXX0 r ]
         respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
 
     registerInterceptor $ \case

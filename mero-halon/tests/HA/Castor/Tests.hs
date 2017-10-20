@@ -392,7 +392,6 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
         liftIO . putMVar box =<< calculateClusterLiveness rg
       liftIO $ test =<< takeMVar box
 
-
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g
     -> PhaseM app Int ()
@@ -403,11 +402,11 @@ runGet :: forall app g a. (Application app, g ~ GlobalState app)
        => g -> PhaseM app (Maybe a) a -> Process a
 runGet = runPhaseGet
 
-goRack :: forall l. CI.Rack
+goRack :: forall l. CI.Rack_XXX0
        -> PhaseM RC l ()
-goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
+goRack CI.Rack_XXX0{..} = let rack = Rack rack_idx_XXX0 in do
   registerRack rack
-  mapM_ (goEnc rack) rack_enclosures
+  mapM_ (goEnc rack) rack_enclosures_XXX0
 goEnc :: forall l. Rack
       -> CI.Enclosure_XXX0
       -> PhaseM RC l ()
@@ -420,7 +419,7 @@ goEnc rack (CI.Enclosure_XXX0{..}) = let
 goHost :: forall l. Enclosure
        -> CI.Host_XXX0
        -> PhaseM RC l ()
-goHost enc (CI.Host_XXX0{..}) = let
+goHost enc CI.Host_XXX0{..} = let
     host = Host $ T.unpack h_fqdn_XXX0
   in do
     registerHost host

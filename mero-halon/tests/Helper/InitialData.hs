@@ -107,9 +107,9 @@ initialData InitialDataSettings{..}
 initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
     CI.id_m0_globals_XXX0 = _id_globals
   , CI.id_racks_XXX0 = [
-      CI.Rack {
-        CI.rack_idx = 1
-      , CI.rack_enclosures = fmap
+      CI.Rack_XXX0 {
+        CI.rack_idx_XXX0 = 1
+      , CI.rack_enclosures_XXX0 = fmap
           (\ifaddr@(x,y,z,w) ->
             let host = if _id_servers > 1
                        then _id_hostname <> "_" <> T.pack (show w)

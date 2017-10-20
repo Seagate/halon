@@ -126,7 +126,7 @@ mkValidatedConfig racks mkRoles stationOpts =
 
     hosts :: [(CI.Host_XXX0, CI.HalonSettings)]
     hosts = [ (h, hs) | rack <- racks
-                      , enc <- CI.rack_enclosures rack
+                      , enc <- CI.rack_enclosures_XXX0 rack
                       , h <- CI.enc_hosts_XXX0 enc
                       , Just hs <- [CI.h_halon_XXX0 h] ]
 
