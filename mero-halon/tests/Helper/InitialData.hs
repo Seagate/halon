@@ -183,16 +183,16 @@ defaultInitialData = defaultInitialDataSettings >>= initialData
 
 -- | Create halon 'CI.M0Process'.
 haProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-             -> CI.M0Process
-haProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = mkEP ifaddr 12345 34 101
-  , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = CI.PLHalon
-  , CI.m0p_mem_rss = 1
-  , CI.m0p_mem_stack = 1
-  , CI.m0p_mem_memlock = 1
-  , CI.m0p_cores = [1]
-  , CI.m0p_services =
+             -> CI.M0Process_XXX0
+haProcess ifaddr = CI.M0Process_XXX0
+  { CI.m0p_endpoint_XXX0 = mkEP ifaddr 12345 34 101
+  , CI.m0p_mem_as_XXX0 = 1
+  , CI.m0p_boot_level_XXX0 = CI.PLHalon
+  , CI.m0p_mem_rss_XXX0 = 1
+  , CI.m0p_mem_stack_XXX0 = 1
+  , CI.m0p_mem_memlock_XXX0 = 1
+  , CI.m0p_cores_XXX0 = [1]
+  , CI.m0p_services_XXX0 =
     [ CI.M0Service
       { CI.m0s_type = CST_HA
       , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
@@ -204,22 +204,22 @@ haProcess ifaddr = CI.M0Process
       , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     ]
-  , CI.m0p_environment = Nothing
-  , CI.m0p_multiplicity = Nothing
+  , CI.m0p_environment_XXX0 = Nothing
+  , CI.m0p_multiplicity_XXX0 = Nothing
   }
 
 -- | Create a confd 'CI.M0Process'
 confdProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-             -> CI.M0Process
-confdProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = mkEP ifaddr 12345 44 101
-  , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = CI.PLM0d 0
-  , CI.m0p_mem_rss = 1
-  , CI.m0p_mem_stack = 1
-  , CI.m0p_mem_memlock = 1
-  , CI.m0p_cores = [1]
-  , CI.m0p_services =
+             -> CI.M0Process_XXX0
+confdProcess ifaddr = CI.M0Process_XXX0
+  { CI.m0p_endpoint_XXX0 = mkEP ifaddr 12345 44 101
+  , CI.m0p_mem_as_XXX0 = 1
+  , CI.m0p_boot_level_XXX0 = CI.PLM0d 0
+  , CI.m0p_mem_rss_XXX0 = 1
+  , CI.m0p_mem_stack_XXX0 = 1
+  , CI.m0p_mem_memlock_XXX0 = 1
+  , CI.m0p_cores_XXX0 = [1]
+  , CI.m0p_services_XXX0 =
     [ CI.M0Service
         { CI.m0s_type = CST_CONFD
         , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
@@ -231,22 +231,22 @@ confdProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
-  , CI.m0p_environment = Nothing
-  , CI.m0p_multiplicity = Nothing
+  , CI.m0p_environment_XXX0 = Nothing
+  , CI.m0p_multiplicity_XXX0 = Nothing
   }
 
 -- | Create an mds 'CI.M0Process'
 mdsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-           -> CI.M0Process
-mdsProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = mkEP ifaddr 12345 41 201
-  , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = CI.PLM0d 0
-  , CI.m0p_mem_rss = 1
-  , CI.m0p_mem_stack = 1
-  , CI.m0p_mem_memlock = 1
-  , CI.m0p_cores = [1]
-  , CI.m0p_services =
+           -> CI.M0Process_XXX0
+mdsProcess ifaddr = CI.M0Process_XXX0
+  { CI.m0p_endpoint_XXX0 = mkEP ifaddr 12345 41 201
+  , CI.m0p_mem_as_XXX0 = 1
+  , CI.m0p_boot_level_XXX0 = CI.PLM0d 0
+  , CI.m0p_mem_rss_XXX0 = 1
+  , CI.m0p_mem_stack_XXX0 = 1
+  , CI.m0p_mem_memlock_XXX0 = 1
+  , CI.m0p_cores_XXX0 = [1]
+  , CI.m0p_services_XXX0 =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
@@ -263,22 +263,22 @@ mdsProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
-  , CI.m0p_environment = Nothing
-  , CI.m0p_multiplicity = Nothing
+  , CI.m0p_environment_XXX0 = Nothing
+  , CI.m0p_multiplicity_XXX0 = Nothing
   }
 
 -- | Create an IOS 'CI.M0Process'
 iosProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-           -> CI.M0Process
-iosProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = mkEP ifaddr 12345 41 401
-  , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = CI.PLM0d 1
-  , CI.m0p_mem_rss = 1
-  , CI.m0p_mem_stack = 1
-  , CI.m0p_mem_memlock = 1
-  , CI.m0p_cores = [1]
-  , CI.m0p_services =
+           -> CI.M0Process_XXX0
+iosProcess ifaddr = CI.M0Process_XXX0
+  { CI.m0p_endpoint_XXX0 = mkEP ifaddr 12345 41 401
+  , CI.m0p_mem_as_XXX0 = 1
+  , CI.m0p_boot_level_XXX0 = CI.PLM0d 1
+  , CI.m0p_mem_rss_XXX0 = 1
+  , CI.m0p_mem_stack_XXX0 = 1
+  , CI.m0p_mem_memlock_XXX0 = 1
+  , CI.m0p_cores_XXX0 = [1]
+  , CI.m0p_services_XXX0 =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
@@ -305,29 +305,29 @@ iosProcess ifaddr = CI.M0Process
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
-  , CI.m0p_environment = Nothing
-  , CI.m0p_multiplicity = Nothing
+  , CI.m0p_environment_XXX0 = Nothing
+  , CI.m0p_multiplicity_XXX0 = Nothing
   }
 
 
 -- | Create an M0T1FS 'CI.M0Process'
 m0t1fsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-           -> CI.M0Process
-m0t1fsProcess ifaddr = CI.M0Process
-  { CI.m0p_endpoint = mkEP ifaddr 12345 41 401
-  , CI.m0p_mem_as = 1
-  , CI.m0p_boot_level = CI.PLM0t1fs
-  , CI.m0p_mem_rss = 1
-  , CI.m0p_mem_stack = 1
-  , CI.m0p_mem_memlock = 1
-  , CI.m0p_cores = [1]
-  , CI.m0p_services =
+           -> CI.M0Process_XXX0
+m0t1fsProcess ifaddr = CI.M0Process_XXX0
+  { CI.m0p_endpoint_XXX0 = mkEP ifaddr 12345 41 401
+  , CI.m0p_mem_as_XXX0 = 1
+  , CI.m0p_boot_level_XXX0 = CI.PLM0t1fs
+  , CI.m0p_mem_rss_XXX0 = 1
+  , CI.m0p_mem_stack_XXX0 = 1
+  , CI.m0p_mem_memlock_XXX0 = 1
+  , CI.m0p_cores_XXX0 = [1]
+  , CI.m0p_services_XXX0 =
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
         , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
-  , CI.m0p_environment = Nothing
-  , CI.m0p_multiplicity = Nothing
+  , CI.m0p_environment_XXX0 = Nothing
+  , CI.m0p_multiplicity_XXX0 = Nothing
   }

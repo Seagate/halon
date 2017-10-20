@@ -227,7 +227,7 @@ testBadConfDoesNotLoad t pg = do
     invalidateHost :: CI.M0Host_XXX0 -> CI.M0Host_XXX0
     invalidateHost h =
       h { CI.m0h_processes_XXX0 =
-            (\p -> p { CI.m0p_endpoint = invalidEP $ CI.m0p_endpoint p})
+            (\p -> p { CI.m0p_endpoint_XXX0 = invalidEP $ CI.m0p_endpoint_XXX0 p})
               <$> CI.m0h_processes_XXX0 h
         }
 
@@ -259,7 +259,7 @@ testProcessMultiplicity t pg = runDefaultTest t $ do
       return $ iData { CI.id_m0_servers_XXX0 = mult <$> CI.id_m0_servers_XXX0 iData }
     mult :: CI.M0Host_XXX0 -> CI.M0Host_XXX0
     mult h = let
-        (m0t1fs, others) = partition ((==) CI.PLM0t1fs . CI.m0p_boot_level)
+        (m0t1fs, others) = partition ((==) CI.PLM0t1fs . CI.m0p_boot_level_XXX0)
                                      (CI.m0h_processes_XXX0 h)
-        m0t1fs' = (\p -> p {CI.m0p_multiplicity = Just 3}) <$> m0t1fs
+        m0t1fs' = (\p -> p {CI.m0p_multiplicity_XXX0 = Just 3}) <$> m0t1fs
       in h { CI.m0h_processes_XXX0 = m0t1fs' <> others}

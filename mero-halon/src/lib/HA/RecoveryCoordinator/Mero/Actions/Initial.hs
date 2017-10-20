@@ -180,23 +180,23 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 --   into the RG.
 addProcess :: M0.Node -- ^ Node hosting the Process.
            -> [M0.SDev] -- ^ Devices attached to this process.
-           -> CI.M0Process -- ^ Initial process configuration.
+           -> CI.M0Process_XXX0 -- ^ Initial process configuration.
            -> PhaseM RC l ()
-addProcess node devs CI.M0Process{..} = let
+addProcess node devs CI.M0Process_XXX0{..} = let
     cores = bitmapFromArray
       . fmap (> 0)
-      $ m0p_cores
-    mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss
-                            m0p_mem_stack m0p_mem_memlock
+      $ m0p_cores_XXX0
+    mkProc fid ep = M0.Process fid m0p_mem_as_XXX0 m0p_mem_rss_XXX0
+                            m0p_mem_stack_XXX0 m0p_mem_memlock_XXX0
                             cores ep
-    procLabel = case m0p_boot_level of
+    procLabel = case m0p_boot_level_XXX0 of
       CI.PLM0t1fs -> M0.PLM0t1fs
       CI.PLClovis a b -> M0.PLClovis a b
       CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
       CI.PLHalon -> M0.PLHalon
     mkEndpoint = do
         exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getLocalGraph
-        return $ findEP m0p_endpoint exProcEps
+        return $ findEP m0p_endpoint_XXX0 exProcEps
       where
         findEP ep eps =
           if ep `notElem` eps
@@ -204,7 +204,7 @@ addProcess node devs CI.M0Process{..} = let
           else findEP (increment ep) eps
         increment ep = ep
           { transfer_machine_id = transfer_machine_id ep + 1 }
-    procEnv rg = mkProcEnv rg <$> fromMaybe [] m0p_environment
+    procEnv rg = mkProcEnv rg <$> fromMaybe [] m0p_environment_XXX0
     mkProcEnv _ (key, CI.M0PEnvValue val) = M0.ProcessEnvValue key val
     mkProcEnv rg (key, CI.M0PEnvRange from to) = let
         used = [ i | proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
@@ -228,11 +228,11 @@ addProcess node devs CI.M0Process{..} = let
       in do
         svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
         modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
-  in replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
+  in replicateM_ (fromMaybe 1 m0p_multiplicity_XXX0) $ do
     ep <- mkEndpoint
     proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
                    <*> return ep
-    mapM_ (goSrv proc ep) m0p_services
+    mapM_ (goSrv proc ep) m0p_services_XXX0
 
     modifyGraph $ G.connect node M0.IsParentOf proc
               >>> G.connect proc Has procLabel

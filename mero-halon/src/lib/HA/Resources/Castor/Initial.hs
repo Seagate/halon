@@ -205,7 +205,7 @@ instance A.ToJSON M0Device_XXX0
 data M0Host_XXX0 = M0Host_XXX0
   { m0h_fqdn_XXX0 :: !T.Text
   -- ^ Fully qualified domain name of host this server is running on
-  , m0h_processes_XXX0 :: ![M0Process]
+  , m0h_processes_XXX0 :: ![M0Process_XXX0]
   -- ^ Processes that should run on the host.
   , m0h_devices_XXX0 :: ![M0Device_XXX0]
   -- ^ Information about devices attached to the host.
@@ -244,28 +244,28 @@ instance A.FromJSON M0ProcessEnv
 instance A.ToJSON M0ProcessEnv
 
 -- | Information about mero process on the host
-data M0Process = M0Process
-  { m0p_endpoint :: Endpoint
+data M0Process_XXX0 = M0Process_XXX0
+  { m0p_endpoint_XXX0 :: Endpoint
   -- ^ Endpoint the process should listen on
-  , m0p_mem_as :: Word64
-  , m0p_mem_rss :: Word64
-  , m0p_mem_stack :: Word64
-  , m0p_mem_memlock :: Word64
-  , m0p_cores :: [Word64]
+  , m0p_mem_as_XXX0 :: Word64
+  , m0p_mem_rss_XXX0 :: Word64
+  , m0p_mem_stack_XXX0 :: Word64
+  , m0p_mem_memlock_XXX0 :: Word64
+  , m0p_cores_XXX0 :: [Word64]
   -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use
-  , m0p_services :: [M0Service]
+  , m0p_services_XXX0 :: [M0Service]
   -- ^ List of services this process should run.
-  , m0p_boot_level :: M0ProcessType
+  , m0p_boot_level_XXX0 :: M0ProcessType
   -- ^ Type of process, governing how it should run.
-  , m0p_environment :: Maybe [(String, M0ProcessEnv)]
+  , m0p_environment_XXX0 :: Maybe [(String, M0ProcessEnv)]
   -- ^ Process environment - additional
-  , m0p_multiplicity :: Maybe Int
+  , m0p_multiplicity_XXX0 :: Maybe Int
   -- ^ Process multiplicity - how many instances of this process should be started?
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable M0Process
-instance A.FromJSON M0Process
-instance A.ToJSON M0Process
+instance Hashable M0Process_XXX0
+instance A.FromJSON M0Process_XXX0
+instance A.ToJSON M0Process_XXX0
 
 -- | Information about a service
 data M0Service = M0Service {
@@ -340,7 +340,7 @@ instance Binary RoleSpec where
 -- 'InitialData'.
 data Role = Role
   { _role_name :: RoleName
-  , _role_content :: [M0Process]
+  , _role_content :: [M0Process_XXX0]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for the 'Role' JSON parser.
@@ -436,9 +436,9 @@ resolveMeroRoles InitialWithRoles{..} template =
     ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
 
     -- | Expand a host.
-    mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host
+    mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host_XXX0
     mkHost env uhost =
-        let eprocs :: [Either String [M0Process]]
+        let eprocs :: [Either String [M0Process_XXX0]]
             eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
         in case partitionEithers eprocs of
             ([], procs) ->
@@ -449,13 +449,13 @@ resolveMeroRoles InitialWithRoles{..} template =
             (errs, _) -> Left errs
 
     -- | Find a list of processes corresponding to the given role.
-    roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process]
+    roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process_XXX0]
     roleToProcesses env role =
         mkRole template env role (findProcesses $ _rolespec_name role)
 
     -- | Find a role among the others by its name and return the list
     -- of this role's processes.
-    findProcesses :: RoleName -> [Role] -> Either String [M0Process]
+    findProcesses :: RoleName -> [Role] -> Either String [M0Process_XXX0]
     findProcesses rname roles =
         maybeToEither errMsg (_role_content <$> findRole)
       where
@@ -547,7 +547,7 @@ storageIndex           ''M0Globals_XXX0 "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Host_XXX0
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
-deriveSafeCopy 0 'base ''M0Process
+deriveSafeCopy 0 'base ''M0Process_XXX0
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC
 storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
