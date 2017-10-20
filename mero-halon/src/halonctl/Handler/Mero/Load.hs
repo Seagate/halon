@@ -79,7 +79,7 @@ run eqnids (Options cf maps halonMaps verify _t) = do
     Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
-    Right ((datum :: CI.InitialData), _) -> do
+    Right ((datum :: CI.InitialData_XXX0), _) -> do
       subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
       promulgateEQ eqnids datum >>= flip withMonitor wait
       expectTimeout (_t * 1000000) >>= \v -> do

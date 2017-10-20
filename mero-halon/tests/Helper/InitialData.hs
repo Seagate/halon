@@ -93,7 +93,7 @@ mkEP ip proc port tmid = Endpoint {
   , transfer_machine_id = tmid
   }
 
-initialData :: InitialDataSettings -> IO CI.InitialData
+initialData :: InitialDataSettings -> IO CI.InitialData_XXX0
 initialData InitialDataSettings{..}
   | (fromIntegral _id_servers * _id_drives) < fromIntegral (d + 2 * p) =
      fail $ "initialData: the given number of devices ("
@@ -104,9 +104,9 @@ initialData InitialDataSettings{..}
   where
     d = CI.m0_data_units _id_globals
     p = CI.m0_parity_units _id_globals
-initialData InitialDataSettings{..} = return $ CI.InitialData {
-    CI.id_m0_globals = _id_globals
-  , CI.id_racks = [
+initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
+    CI.id_m0_globals_XXX0 = _id_globals
+  , CI.id_racks_XXX0 = [
       CI.Rack {
         CI.rack_idx = 1
       , CI.rack_enclosures = fmap
@@ -132,7 +132,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
           serverAddrs
       }
     ]
-  , CI.id_m0_servers = fmap
+  , CI.id_m0_servers_XXX0 = fmap
       (\ifaddr@(_,_,_,w) ->
          let host = if _id_servers > 1
                     then _id_hostname <> "_" <> T.pack (show w)
@@ -176,7 +176,7 @@ defaultInitialDataSettings = do
 -- data, either use 'initialData' with custom 'InitialDataSettings' or
 -- work directly on modifying 'CI.InitialData' if you have already
 -- produced some.
-defaultInitialData :: IO CI.InitialData
+defaultInitialData :: IO CI.InitialData_XXX0
 defaultInitialData = defaultInitialDataSettings >>= initialData
 
 -- * Processes

@@ -282,15 +282,15 @@ instance A.ToJSON M0Service
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
-data InitialData = InitialData {
-    id_racks :: [Rack]
-  , id_m0_servers :: [M0Host]
-  , id_m0_globals :: M0Globals
+data InitialData_XXX0 = InitialData_XXX0 {
+    id_racks_XXX0 :: [Rack]
+  , id_m0_servers_XXX0 :: [M0Host]
+  , id_m0_globals_XXX0 :: M0Globals
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable InitialData
-instance A.FromJSON InitialData
-instance A.ToJSON InitialData
+instance Hashable InitialData_XXX0
+instance A.FromJSON InitialData_XXX0
+instance A.ToJSON InitialData_XXX0
 
 -- | Handy synonym for role names
 type RoleName = String
@@ -356,37 +356,37 @@ instance A.ToJSON Role where
 
 -- | Parse a halon_facts file into a structure indicating roles for
 -- each given host.
-data InitialWithRoles = InitialWithRoles
-  { _rolesinit_id_racks :: [Rack]
-  , _rolesinit_id_m0_servers :: [(UnexpandedHost, Y.Object)]
+data InitialWithRoles_XXX0 = InitialWithRoles_XXX0
+  { _rolesinit_id_racks_XXX0 :: [Rack]
+  , _rolesinit_id_m0_servers_XXX0 :: [(UnexpandedHost, Y.Object)]
     -- ^ The list of unexpanded host as well as the full object that
     -- the host was parsed out from, used as environment given during
     -- template expansion.
-  , _rolesinit_id_m0_globals :: M0Globals
+  , _rolesinit_id_m0_globals_XXX0 :: M0Globals
   } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance A.FromJSON InitialWithRoles where
-  parseJSON (A.Object v) = InitialWithRoles <$>
-                           v A..: "id_racks" <*>
+instance A.FromJSON InitialWithRoles_XXX0 where
+  parseJSON (A.Object v) = InitialWithRoles_XXX0 <$>
+                           v A..: "id_racks_XXX0" <*>
                            parseServers <*>
-                           v A..: "id_m0_globals"
+                           v A..: "id_m0_globals_XXX0"
 
     where
       parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
       parseServers = do
-        objs <- v A..: "id_m0_servers"
+        objs <- v A..: "id_m0_servers_XXX0"
         forM objs $ \obj -> (,obj) <$> A.parseJSON (A.Object obj)
 
-  parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
+  parseJSON invalid = A.typeMismatch "InitialWithRoles_XXX0" invalid
 
-instance A.ToJSON InitialWithRoles where
-  toJSON InitialWithRoles{..} = A.object
-    [ "id_racks" A..= _rolesinit_id_racks
+instance A.ToJSON InitialWithRoles_XXX0 where
+  toJSON InitialWithRoles_XXX0{..} = A.object
+    [ "id_racks_XXX0" A..= _rolesinit_id_racks_XXX0
     -- Dump out the full object into the file rather than our parsed
     -- and trimmed structure. This means we won't lose any information
     -- with @fromJSON . toJSON@
-    , "id_m0_servers" A..= map snd _rolesinit_id_m0_servers
-    , "id_m0_globals" A..= _rolesinit_id_m0_globals
+    , "id_m0_servers_XXX0" A..= map snd _rolesinit_id_m0_servers_XXX0
+    , "id_m0_globals_XXX0" A..= _rolesinit_id_m0_globals_XXX0
     ]
 
 -- | Hosts section of halon_facts
@@ -420,11 +420,11 @@ mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 -- provide full 'InitialData'.
 resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
                  -> EDE.Template -- ^ Parsed Mero roles template.
-                 -> Either Y.ParseException InitialData
+                 -> Either Y.ParseException InitialData_XXX0
 resolveMeroRoles InitialWithRoles{..} template =
     case partitionEithers ehosts of
         ([], hosts) ->
-            Right $ InitialData { id_racks = _rolesinit_id_racks
+            Right $ InitialData_XXX0 { id_racks = _rolesinit_id_racks
                                 , id_m0_servers = hosts
                                 , id_m0_globals = _rolesinit_id_m0_globals
                                 }
@@ -498,10 +498,10 @@ mkHalonRoles template roles =
 parseInitialData :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Role map file.
                  -> FilePath -- ^ Halon role map file.
-                 -> IO (Either Y.ParseException (InitialData, EDE.Template))
+                 -> IO (Either Y.ParseException (InitialData_XXX0, EDE.Template))
 parseInitialData facts meroRoles halonRoles = runExceptT parse
   where
-    parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
+    parse :: ExceptT Y.ParseException IO (InitialData_XXX0, EDE.Template)
     parse = do
         initialWithRoles <- ExceptT (Y.decodeFileEither facts)
         m0roles <- parseFile meroRoles
@@ -516,9 +516,9 @@ parseInitialData facts meroRoles halonRoles = runExceptT parse
 
     mkExc = mkException "parseInitialData"
 
-validateInitialData :: InitialData -> Either Y.ParseException ()
+validateInitialData :: InitialData_XXX0 -> Either Y.ParseException ()
 validateInitialData idata = do
-    check (allUnique $ map rack_idx $ id_racks idata)
+    check (allUnique $ map rack_idx $ id_racks_XXX0 idata)
         "Racks with non-unique rack_idx exist"
     check (all (\(fmap enc_idx_XXX0 -> idxs) -> allUnique idxs) enclsPerRack)
         "Enclosures with non-unique enc_idx exist inside a rack"
@@ -529,7 +529,7 @@ validateInitialData idata = do
     check cond msg =
         if cond then Right () else Left (mkException "validateInitialData" msg)
     allUnique xs = length (nub xs) == length xs
-    enclsPerRack = [rack_enclosures rack | rack <- id_racks idata]
+    enclsPerRack = [rack_enclosures rack | rack <- id_racks_XXX0 idata]
     enclIds = enc_id_XXX0 <$> concat enclsPerRack
 
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
@@ -554,7 +554,7 @@ storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
 deriveSafeCopy 0 'base ''Enclosure_XXX0
 deriveSafeCopy 0 'base ''HalonSettings
 deriveSafeCopy 0 'base ''Host_XXX0
-deriveSafeCopy 0 'base ''InitialData
+deriveSafeCopy 0 'base ''InitialData_XXX0
 deriveSafeCopy 0 'base ''Rack
 storageIndex           ''Rack "fe43cf82-adcd-40b5-bf74-134902424229"
 deriveSafeCopy 0 'base ''RoleSpec

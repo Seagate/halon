@@ -219,7 +219,7 @@ m0dAtUnitFile = unlines $
 -- facts file for use in the test
 facts :: String -> String
 facts host = unlines $
-  [ "id_racks:"
+  [ "id_racks_XXX0:"
   , "- rack_idx: 1"
   , "  rack_enclosures:"
   , "  - enc_idx_XXX0: 1"
@@ -237,7 +237,7 @@ facts host = unlines $
   , "        if_ipAddrs:"
   , "        - auto"
   , "    enc_id_XXX0: enclosure1"
-  , "id_m0_servers:"
+  , "id_m0_servers_XXX0:"
   , "- m0h_processes:"
   , "  - m0p_services:"
   , "    - m0s_endpoints:"
@@ -273,7 +273,7 @@ facts host = unlines $
   , "    m0p_endpoint: auto:12345:41:201"
   , "  m0h_devices: []"
   , "  m0h_fqdn: " ++ host
-  , "id_m0_globals:"
+  , "id_m0_globals_XXX0:"
   , "  m0_max_rpc_msg_size: 65536"
   , "  m0_parity_units: 1"
   , "  m0_md_redundancy: 2"

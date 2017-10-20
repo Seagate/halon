@@ -77,9 +77,9 @@ testDriveManagerUpdate transport pg = do
                  , H._to_initial_data = iData }
   H.run' transport pg [testRule] tos' $ \ts -> do
     self <- getSelfPid
-    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
+    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers_XXX0 iData
                                               , d <- CI.m0h_devices s ]
-        enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks iData
+        enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks_XXX0 iData
                                    , enc' <- CI.rack_enclosures r ]
         respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
 
@@ -186,7 +186,7 @@ testConfObjectStateQuery transport pg = do
 
 -- | Helper for conf validation tests.
 testConfLoads :: (Typeable g, RGroup g)
-              => CI.InitialData -- ^ Initial data to load
+              => CI.InitialData_XXX0 -- ^ Initial data to load
               -> Transport -- ^ Transport
               -> Proxy g -- ^ Replicated group type
               -> (InitialDataLoaded -> Bool) -- ^ Expected load result
@@ -220,7 +220,7 @@ testBadConfDoesNotLoad t pg = do
   where
     mkData = do
       iData <- liftIO defaultInitialData
-      return $ iData { CI.id_m0_servers = invalidateHost <$> CI.id_m0_servers iData }
+      return $ iData { CI.id_m0_servers_XXX0 = invalidateHost <$> CI.id_m0_servers_XXX0 iData }
 
     -- Set endpoints of processes for the host to invalid value,
     -- making conf fail validation.
@@ -256,7 +256,7 @@ testProcessMultiplicity t pg = runDefaultTest t $ do
   where
     mkData = do
       iData <- liftIO defaultInitialData
-      return $ iData { CI.id_m0_servers = mult <$> CI.id_m0_servers iData }
+      return $ iData { CI.id_m0_servers_XXX0 = mult <$> CI.id_m0_servers_XXX0 iData }
     mult :: CI.M0Host -> CI.M0Host
     mult h = let
         (m0t1fs, others) = partition ((==) CI.PLM0t1fs . CI.m0p_boot_level)

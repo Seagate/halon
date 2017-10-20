@@ -99,19 +99,19 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
                { _id_drives = 8
                , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+      loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
     -- 8 disks, tolerating one disk failure at a time
     let g = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
@@ -126,33 +126,33 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings
                { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+      loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
     -- 16 disks, tolerating one disk failure at a time
     let g = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 17
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 16 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 137
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
 
-    let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals iData)
+    let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
     assertMsg "Smallest failure set is empty (010)"
       $ fsSize (head failureSets010) == 0
     assertMsg "Next smallest failure set has 4 disks and one controller (010)"
       $ fsSize (failureSets010 !! 1) == 5
 
-    let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals iData)
+    let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals_XXX0 iData)
     assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
     assertMsg "Smallest failure set is empty (110)"
       $ fsSize (head failureSets110) == 0
@@ -169,10 +169,10 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                , _id_drives = 4
                , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+      loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       Just (Monolithic update) <- getCurrentGraphUpdateType
       modifyLocalGraph update
 
@@ -207,10 +207,10 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+      loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       rg <- getLocalGraph
       let Iterative update = simpleUpdate 0 1 0
       let Just updateGraph = update rg
@@ -258,8 +258,8 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
                       , _pa_K = paK
                       , _pa_P = paP
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
-      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
-      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
+      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals_XXX0 iData) == paN
+      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals_XXX0 iData) == paK
       let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
                          , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
                          , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
@@ -274,10 +274,10 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goRack (CI.id_racks_XXX0 iData)
       filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+      loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       RC.initialRule (IgnitionArguments [])
 
     let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
@@ -369,14 +369,14 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
       ls0 <- emptyLoopState pid (nullProcessId me)
       settings <- liftIO defaultInitialDataSettings
       iData' <- liftIO . initialData $ settings { _id_servers = 3, _id_drives = 4 }
-      let iData = iData'{CI.id_m0_globals = (CI.id_m0_globals iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
+      let iData = iData'{CI.id_m0_globals_XXX0 = (CI.id_m0_globals_XXX0 iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
                                                                                                          ,[0,0,0,0,1]
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do
-         mapM_ goRack (CI.id_racks iData)
+         mapM_ goRack (CI.id_racks_XXX0 iData)
          filesystem <- initialiseConfInRG
-         loadMeroGlobals (CI.id_m0_globals iData)
-         loadMeroServers filesystem (CI.id_m0_servers iData)
+         loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
+         loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
          Just (Monolithic update) <- getCurrentGraphUpdateType
          modifyLocalGraph update
          RC.initialRule (IgnitionArguments [])

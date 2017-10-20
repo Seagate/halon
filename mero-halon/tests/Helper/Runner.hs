@@ -77,7 +77,7 @@ import           TestRunner
 -- | Set of configuration options used for environment setup and test
 -- execution. This is provided to the test runner.
 data TestOptions = TestOptions
-  { _to_initial_data :: !CI.InitialData
+  { _to_initial_data :: !CI.InitialData_XXX0
   -- ^ Initial data to use for cluster setup and test environment.
   , _to_run_decision_log :: !Bool
   -- ^ Should we run decision-log service?
@@ -309,7 +309,7 @@ run' :: (Typeable g, RGroup g)
      -> Assertion
 run' transport pg extraRules to test = do
   let idata = _to_initial_data to
-      numNodes = length (CI.id_m0_servers idata)
+      numNodes = length (CI.id_m0_servers_XXX0 idata)
       rt = _to_remote_table to
       runs = _to_scheduler_runs to
 
@@ -317,7 +317,7 @@ run' transport pg extraRules to test = do
     -- Wipe the halon:m0d state from any previous test runs.
     liftIO Mock.clearMockState
     sayTest $ "Starting setup for a " ++ show numNodes ++ " node test."
-    let lnWithHosts = zip lnodes $ map CI.m0h_fqdn (CI.id_m0_servers idata)
+    let lnWithHosts = zip lnodes $ map CI.m0h_fqdn (CI.id_m0_servers_XXX0 idata)
         nids = map localNodeId lnodes
         ts_nodes = take (fromIntegral $ _to_ts_nodes to) lnodes
 

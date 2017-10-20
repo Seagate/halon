@@ -55,7 +55,7 @@ castorRules = sequence_
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad =
-  defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
+  defineSimpleTask "castor::initial-data-load" $ \CI.InitialData_XXX0{..} -> do
     rg <- getLocalGraph
     let err logPrefix msg = do
           Log.rcLog' Log.ERROR $ logPrefix ++ msg
@@ -73,10 +73,10 @@ ruleInitialDataLoad =
             notify InitialDataLoaded
 
         load = do
-          mapM_ goRack id_racks
+          mapM_ goRack id_racks_XXX0
           filesystem <- initialiseConfInRG
-          loadMeroGlobals id_m0_globals
-          loadMeroServers filesystem id_m0_servers
+          loadMeroGlobals id_m0_globals_XXX0
+          loadMeroServers filesystem id_m0_servers_XXX0
           graph <- getLocalGraph
           Just updateType <- getCurrentGraphUpdateType
           case updateType of

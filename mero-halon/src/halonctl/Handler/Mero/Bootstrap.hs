@@ -124,11 +124,11 @@ mkValidatedConfig racks mkRoles stationOpts =
                                           -- string?
                             in (text,) <$> parseHelper NodeAdd.parser text
 
-    hosts :: [(CI.Host, CI.HalonSettings)]
+    hosts :: [(CI.Host_XXX0, CI.HalonSettings)]
     hosts = [ (h, hs) | rack <- racks
                       , enc <- CI.rack_enclosures rack
-                      , h <- CI.enc_hosts enc
-                      , Just hs <- [CI.h_halon h] ]
+                      , h <- CI.enc_hosts_XXX0 enc
+                      , Just hs <- [CI.h_halon_XXX0 h] ]
 
     ehosts :: AccValidation [String] [Host]
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
@@ -164,7 +164,7 @@ run Options{..} = do
     Right (initialData, halonRoleObj) -> do
       stationOpts <- fmap (fromMaybe "") . liftIO
           $ lookupEnv "HALOND_STATION_OPTIONS"
-      let evConfig = mkValidatedConfig (CI.id_racks initialData)
+      let evConfig = mkValidatedConfig (CI.id_racks_XXX0 initialData)
                                        (CI.mkHalonRoles halonRoleObj)
                                        stationOpts
       case evConfig of
