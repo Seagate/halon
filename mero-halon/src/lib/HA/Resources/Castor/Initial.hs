@@ -39,7 +39,7 @@ import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
 
--- | Halon-specific settings for the 'Host'.
+-- | Halon-specific settings for the 'Host_XXX0'.
 data HalonSettings = HalonSettings
   { _hs_address :: String
   -- ^ Address on which Halon should listen on, including port. e.g.
@@ -63,18 +63,18 @@ instance A.ToJSON HalonSettings where
   toJSON = A.genericToJSON halonSettingsOptions
 
 -- | Information about a mero host.
-data Host = Host
-  { h_fqdn :: !T.Text
+data Host_XXX0 = Host_XXX0
+  { h_fqdn_XXX0 :: !T.Text
   -- ^ Fully-qualified domain name.
-  , h_halon :: !(Maybe HalonSettings)
+  , h_halon_XXX0 :: !(Maybe HalonSettings)
   -- ^ Halon settings, if any. Note that if unset, the node is ignored
   -- during @hctl bootstrap cluster@ command. This does not imply that
   -- the host is not loaded as part of the initial data.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable Host
-instance A.FromJSON Host
-instance A.ToJSON Host
+instance Hashable Host_XXX0
+instance A.FromJSON Host_XXX0
+instance A.ToJSON Host_XXX0
 
 -- | Information about @BMC@ interface, used to commands to the
 -- hardware.
@@ -92,33 +92,32 @@ instance A.FromJSON BMC
 instance A.ToJSON BMC
 
 -- | Information about enclosures.
-data Enclosure = Enclosure
-  { enc_idx :: Int
+data Enclosure_XXX0 = Enclosure_XXX0
+  { enc_idx_XXX0 :: Int
   -- ^ Enclosure index
-  , enc_id :: String
+  , enc_id_XXX0 :: String
   -- ^ Enclosure name
-  , enc_bmc :: [BMC]
+  , enc_bmc_XXX0 :: [BMC]
   -- ^ List of 'BMC' interfaces.
-  , enc_hosts :: [Host]
-  -- ^ List of 'Host's in the enclosure.
+  , enc_hosts_XXX0 :: [Host_XXX0]
+  -- ^ List of 'Host_XXX0's in the enclosure.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable Enclosure
-instance A.FromJSON Enclosure
-instance A.ToJSON Enclosure
+instance Hashable Enclosure_XXX0
+instance A.FromJSON Enclosure_XXX0
+instance A.ToJSON Enclosure_XXX0
 
 -- | Rack information
 data Rack = Rack
   { rack_idx :: Int
   -- ^ Rack index
-  , rack_enclosures :: [Enclosure]
-  -- ^ List of 'Enclosure's in the index.
+  , rack_enclosures :: [Enclosure_XXX0]
+  -- ^ List of 'Enclosure_XXX0's in the index.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
-
 
 -- | Failure set schemes. Define how failure sets are determined.
 --
@@ -280,7 +279,6 @@ data M0Service = M0Service {
 instance Hashable M0Service
 instance A.FromJSON M0Service
 instance A.ToJSON M0Service
-
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
@@ -522,7 +520,7 @@ validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData idata = do
     check (allUnique $ map rack_idx $ id_racks idata)
         "Racks with non-unique rack_idx exist"
-    check (all (\(fmap enc_idx -> idxs) -> allUnique idxs) enclsPerRack)
+    check (all (\(fmap enc_idx_XXX0 -> idxs) -> allUnique idxs) enclsPerRack)
         "Enclosures with non-unique enc_idx exist inside a rack"
     check (all (not . null) enclIds) "Enclosure without enc_id specified"
     check (length enclIds == length (nub enclIds))
@@ -532,7 +530,7 @@ validateInitialData idata = do
         if cond then Right () else Left (mkException "validateInitialData" msg)
     allUnique xs = length (nub xs) == length xs
     enclsPerRack = [rack_enclosures rack | rack <- id_racks idata]
-    enclIds = enc_id <$> concat enclsPerRack
+    enclIds = enc_id_XXX0 <$> concat enclsPerRack
 
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
 -- value for the 'Left' should the value be 'Nothing'.
@@ -553,9 +551,9 @@ deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC
 storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
-deriveSafeCopy 0 'base ''Enclosure
+deriveSafeCopy 0 'base ''Enclosure_XXX0
 deriveSafeCopy 0 'base ''HalonSettings
-deriveSafeCopy 0 'base ''Host
+deriveSafeCopy 0 'base ''Host_XXX0
 deriveSafeCopy 0 'base ''InitialData
 deriveSafeCopy 0 'base ''Rack
 storageIndex           ''Rack "fe43cf82-adcd-40b5-bf74-134902424229"

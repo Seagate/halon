@@ -13,7 +13,7 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules (castorRules,goRack) where
+module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack) where
 
 import           Control.Monad.Catch
 import           Data.Foldable (for_)
@@ -109,21 +109,21 @@ ruleInitialDataLoad =
     else err "" "Initial data is already loaded."
 
 goRack :: CI.Rack -> PhaseM RC l ()
-goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
+goRack CI.Rack{..} = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
 
-goEnc :: Rack -> CI.Enclosure -> PhaseM RC l ()
-goEnc rack (CI.Enclosure{..}) = let
-    enclosure = Enclosure enc_id
+goEnc :: Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc rack CI.Enclosure_XXX0{..} = let
+    enclosure = Enclosure enc_id_XXX0
   in do
     registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc
-    mapM_ (goHost enclosure) enc_hosts
+    mapM_ (registerBMC enclosure) enc_bmc_XXX0
+    mapM_ (goHost_XXX0 enclosure) enc_hosts_XXX0
 
-goHost :: Enclosure -> CI.Host -> PhaseM RC l ()
-goHost enc (CI.Host{..}) = let
-    host = Host $ T.unpack h_fqdn
+goHost_XXX0 :: Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
+goHost_XXX0 enc CI.Host_XXX0{..} = let
+    host = Host $ T.unpack h_fqdn_XXX0
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
     remAttrs = [HA_M0CLIENT]
   in do

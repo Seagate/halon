@@ -115,14 +115,14 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
                        then _id_hostname <> "_" <> T.pack (show w)
                        else _id_hostname
                 ifaddrBMC = showIP (x, y, z + 10, w)
-            in CI.Enclosure {
-                  CI.enc_idx = fromIntegral w
-                , CI.enc_id = "enclosure_" ++ show w
-                , CI.enc_bmc = [CI.BMC ifaddrBMC "admin" "admin"]
-                , CI.enc_hosts = [
-                    CI.Host {
-                      CI.h_fqdn = host
-                    , CI.h_halon = Just $ CI.HalonSettings {
+            in CI.Enclosure_XXX0 {
+                  CI.enc_idx_XXX0 = fromIntegral w
+                , CI.enc_id_XXX0 = "enclosure_" ++ show w
+                , CI.enc_bmc_XXX0 = [CI.BMC ifaddrBMC "admin" "admin"]
+                , CI.enc_hosts_XXX0 = [
+                    CI.Host_XXX0 {
+                      CI.h_fqdn_XXX0 = host
+                    , CI.h_halon_XXX0 = Just $ CI.HalonSettings {
                         CI._hs_address = showIP ifaddr ++ ":9000"
                       , CI._hs_roles = []
                       }

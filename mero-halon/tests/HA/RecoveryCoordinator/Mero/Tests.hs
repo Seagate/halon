@@ -79,7 +79,7 @@ testDriveManagerUpdate transport pg = do
     self <- getSelfPid
     let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
                                               , d <- CI.m0h_devices s ]
-        enc : _ = [ CI.enc_id enc' | r <- CI.id_racks iData
+        enc : _ = [ CI.enc_id_XXX0 enc' | r <- CI.id_racks iData
                                    , enc' <- CI.rack_enclosures r ]
         respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
 
