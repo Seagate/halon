@@ -85,7 +85,7 @@ initialiseConfInRG = getFilesystem >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
-    mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM RC l ()
+    mirrorRack :: M0.Filesystem -> (Rack_XXX1, [Enclosure]) -> PhaseM RC l ()
     mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0es <- mapM mirrorEncl encls

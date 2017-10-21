@@ -35,12 +35,12 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
-newtype Rack = Rack
+newtype Rack_XXX1 = Rack_XXX1
   Int -- ^ Rack index
   deriving (Eq, Show, Generic, Typeable, Hashable)
-storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
-deriveSafeCopy 0 'base ''Rack
-instance ToJSON Rack
+storageIndex ''Rack_XXX1 "227a4ae1-529b-40b0-a0b4-7466605764c2"
+deriveSafeCopy 0 'base ''Rack_XXX1
+instance ToJSON Rack_XXX1
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
@@ -310,17 +310,17 @@ instance ToJSON HalonVars
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
-  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack_XXX1, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, ''Has, ''Rack)
+  [ (''Cluster, ''Has, ''Rack_XXX1)
   , (''Cluster, ''Has, ''Host)
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice)
-  , (''Rack, ''Has, ''Enclosure)
+  , (''Rack_XXX1, ''Has, ''Enclosure)
   , (''Host, ''Has, ''HostAttr)
   , (''Enclosure, ''Has, ''Slot)
   , (''StorageDevice, ''Has, ''Slot)
@@ -337,18 +337,18 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack_XXX1, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
-  , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
+  , (''Rack_XXX1, AtMostOne, ''Has, Unbounded, ''Enclosure)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)

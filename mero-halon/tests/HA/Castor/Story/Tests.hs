@@ -558,7 +558,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         rg <- getLocalGraph
         -- Find a single SDev
         let msdev = listToMaybe
-              [ sdev | rack :: Rack <- G.connectedTo Cluster Has rg
+              [ sdev | rack :: Rack_XXX1 <- G.connectedTo Cluster Has rg
                      , enc :: Enclosure <- G.connectedTo rack Has rg
                      , slot :: Slot <- G.connectedTo enc Has rg
                      , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
@@ -711,7 +711,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   sayTest "RAID devices established"
 
   rg <- G.getGraph (_ts_mm ts)
-  let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack]
+  let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack_XXX1]
                    , enc <- G.connectedTo rack Has rg]
 
   sayTest $ "Enclosures: " ++ show encs

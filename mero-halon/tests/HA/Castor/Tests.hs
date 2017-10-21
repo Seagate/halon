@@ -404,10 +404,10 @@ runGet = runPhaseGet
 
 goRack :: forall l. CI.Rack_XXX0
        -> PhaseM RC l ()
-goRack CI.Rack_XXX0{..} = let rack = Rack rack_idx_XXX0 in do
+goRack CI.Rack_XXX0{..} = let rack = Rack_XXX1 rack_idx_XXX0 in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures_XXX0
-goEnc :: forall l. Rack
+goEnc :: forall l. Rack_XXX1
       -> CI.Enclosure_XXX0
       -> PhaseM RC l ()
 goEnc rack (CI.Enclosure_XXX0{..}) = let

@@ -60,14 +60,14 @@ import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
 -- | Register a new rack in the system.
-registerRack :: Rack
+registerRack :: Rack_XXX1
              -> PhaseM RC l ()
 registerRack rack = do
   actLog "registerRack" [("rack", show rack)]
   modifyGraph $ G.connect Cluster Has rack
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.
-registerEnclosure :: Rack
+registerEnclosure :: Rack_XXX1
                   -> Enclosure
                   -> PhaseM RC l ()
 registerEnclosure rack enc = do

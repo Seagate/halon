@@ -103,17 +103,17 @@ ruleInitialDataLoad =
           createIMeta filesystem
           validateConf
 
-    if null (G.connectedTo Cluster Has rg :: [Rack])
+    if null (G.connectedTo Cluster Has rg :: [Rack_XXX1])
     then load `catch` ( err "Failure during initial data load: "
                       . (show :: SomeException -> String) )
     else err "" "Initial data is already loaded."
 
 goRack :: CI.Rack_XXX0 -> PhaseM RC l ()
-goRack CI.Rack_XXX0{..} = let rack = Rack rack_idx_XXX0 in do
+goRack CI.Rack_XXX0{..} = let rack = Rack_XXX1 rack_idx_XXX0 in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures_XXX0
 
-goEnc :: Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc :: Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc rack CI.Enclosure_XXX0{..} = let
     enclosure = Enclosure enc_id_XXX0
   in do
