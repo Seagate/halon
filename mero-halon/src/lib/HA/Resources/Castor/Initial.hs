@@ -253,7 +253,7 @@ data M0Process_XXX0 = M0Process_XXX0
   , m0p_mem_memlock_XXX0 :: Word64
   , m0p_cores_XXX0 :: [Word64]
   -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use
-  , m0p_services_XXX0 :: [M0Service]
+  , m0p_services_XXX0 :: [M0Service_XXX0]
   -- ^ List of services this process should run.
   , m0p_boot_level_XXX0 :: M0ProcessType
   -- ^ Type of process, governing how it should run.
@@ -268,17 +268,17 @@ instance A.FromJSON M0Process_XXX0
 instance A.ToJSON M0Process_XXX0
 
 -- | Information about a service
-data M0Service = M0Service {
-    m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
-  , m0s_endpoints :: [Endpoint]
+data M0Service_XXX0 = M0Service_XXX0 {
+    m0s_type_XXX0 :: ServiceType -- ^ e.g. ioservice, haservice
+  , m0s_endpoints_XXX0 :: [Endpoint]
   -- ^ Listen endpoints for the service itself.
-  , m0s_params :: ServiceParams
-  , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN
+  , m0s_params_XXX0 :: ServiceParams
+  , m0s_pathfilter_XXX0 :: Maybe String -- ^ For IOS, filter on disk WWN
 } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance Hashable M0Service
-instance A.FromJSON M0Service
-instance A.ToJSON M0Service
+instance Hashable M0Service_XXX0
+instance A.FromJSON M0Service_XXX0
+instance A.ToJSON M0Service_XXX0
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
@@ -370,7 +370,6 @@ instance A.FromJSON InitialWithRoles_XXX0 where
                            v A..: "id_racks_XXX0" <*>
                            parseServers <*>
                            v A..: "id_m0_globals_XXX0"
-
     where
       parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
       parseServers = do
@@ -548,7 +547,7 @@ deriveSafeCopy 0 'base ''M0Host_XXX0
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process_XXX0
-deriveSafeCopy 0 'base ''M0Service
+deriveSafeCopy 0 'base ''M0Service_XXX0
 deriveSafeCopy 0 'base ''BMC
 storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
 deriveSafeCopy 0 'base ''Enclosure_XXX0

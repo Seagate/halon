@@ -215,13 +215,13 @@ addProcess node devs CI.M0Process_XXX0{..} = let
           (x:_) -> x
           [] -> error $ "Specified range for " ++ show key ++ " is insufficient."
       in M0.ProcessEnvInRange key fstUnused
-    goSrv proc ep CI.M0Service{..} = let
+    goSrv proc ep CI.M0Service_XXX0{..} = let
         filteredDevs = maybe
           devs
           (\x -> filter (\y -> M0.d_path y =~ x) devs)
-          m0s_pathfilter
-        mkSrv fid = M0.Service fid m0s_type [ep]
-        linkDrives svc = case m0s_type of
+          m0s_pathfilter_XXX0
+        mkSrv fid = M0.Service fid m0s_type_XXX0 [ep]
+        linkDrives svc = case m0s_type_XXX0 of
           CST_IOS -> foldl' (.) id
                       $ fmap (G.connect svc M0.IsParentOf) filteredDevs
           _ -> id

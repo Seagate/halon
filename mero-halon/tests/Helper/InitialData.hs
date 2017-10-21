@@ -193,16 +193,16 @@ haProcess ifaddr = CI.M0Process_XXX0
   , CI.m0p_mem_memlock_XXX0 = 1
   , CI.m0p_cores_XXX0 = [1]
   , CI.m0p_services_XXX0 =
-    [ CI.M0Service
-      { CI.m0s_type = CST_HA
-      , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
-      , CI.m0s_params = SPUnused
-      , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-      { CI.m0s_type = CST_RMS
-      , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
-      , CI.m0s_params = SPUnused
-      , CI.m0s_pathfilter = Nothing }
+    [ CI.M0Service_XXX0
+      { CI.m0s_type_XXX0 = CST_HA
+      , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 34 101]
+      , CI.m0s_params_XXX0 = SPUnused
+      , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+      { CI.m0s_type_XXX0 = CST_RMS
+      , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 34 101]
+      , CI.m0s_params_XXX0 = SPUnused
+      , CI.m0s_pathfilter_XXX0 = Nothing }
     ]
   , CI.m0p_environment_XXX0 = Nothing
   , CI.m0p_multiplicity_XXX0 = Nothing
@@ -220,16 +220,16 @@ confdProcess ifaddr = CI.M0Process_XXX0
   , CI.m0p_mem_memlock_XXX0 = 1
   , CI.m0p_cores_XXX0 = [1]
   , CI.m0p_services_XXX0 =
-    [ CI.M0Service
-        { CI.m0s_type = CST_CONFD
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
-        , CI.m0s_params = SPConfDBPath "/var/mero/confd"
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
+    [ CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_CONFD
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 44 101]
+        , CI.m0s_params_XXX0 = SPConfDBPath "/var/mero/confd"
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_RMS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 44 101]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
     ]
   , CI.m0p_environment_XXX0 = Nothing
   , CI.m0p_multiplicity_XXX0 = Nothing
@@ -247,21 +247,21 @@ mdsProcess ifaddr = CI.M0Process_XXX0
   , CI.m0p_mem_memlock_XXX0 = 1
   , CI.m0p_cores_XXX0 = [1]
   , CI.m0p_services_XXX0 =
-    [ CI.M0Service
-        { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_MDS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_ADDB2
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
+    [ CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_RMS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 201]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_MDS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 201]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_ADDB2
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 201]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
     ]
   , CI.m0p_environment_XXX0 = Nothing
   , CI.m0p_multiplicity_XXX0 = Nothing
@@ -279,31 +279,31 @@ iosProcess ifaddr = CI.M0Process_XXX0
   , CI.m0p_mem_memlock_XXX0 = 1
   , CI.m0p_cores_XXX0 = [1]
   , CI.m0p_services_XXX0 =
-    [ CI.M0Service
-        { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_IOS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_SNS_REP
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-            , CI.M0Service
-        { CI.m0s_type = CST_SNS_REB
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
-    , CI.M0Service
-        { CI.m0s_type = CST_ADDB2
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
+    [ CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_RMS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_IOS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_SNS_REP
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+            , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_SNS_REB
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
+    , CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_ADDB2
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
     ]
   , CI.m0p_environment_XXX0 = Nothing
   , CI.m0p_multiplicity_XXX0 = Nothing
@@ -322,11 +322,11 @@ m0t1fsProcess ifaddr = CI.M0Process_XXX0
   , CI.m0p_mem_memlock_XXX0 = 1
   , CI.m0p_cores_XXX0 = [1]
   , CI.m0p_services_XXX0 =
-    [ CI.M0Service
-        { CI.m0s_type = CST_RMS
-        , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
-        , CI.m0s_pathfilter = Nothing }
+    [ CI.M0Service_XXX0
+        { CI.m0s_type_XXX0 = CST_RMS
+        , CI.m0s_endpoints_XXX0 = [mkEP ifaddr 12345 41 401]
+        , CI.m0s_params_XXX0 = SPUnused
+        , CI.m0s_pathfilter_XXX0 = Nothing }
     ]
   , CI.m0p_environment_XXX0 = Nothing
   , CI.m0p_multiplicity_XXX0 = Nothing
