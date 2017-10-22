@@ -32,8 +32,8 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import qualified HA.ResourceGraph as G
-import           HA.Resources
-import           HA.Resources.Castor
+import           HA.Resources (Cluster(..), Has(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import           Network.CEP
 
@@ -103,29 +103,29 @@ ruleInitialDataLoad =
           createIMeta filesystem
           validateConf
 
-    if null (G.connectedTo Cluster Has rg :: [Rack_XXX1])
+    if null (G.connectedTo Cluster Has rg :: [R.Rack_XXX1])
     then load `catch` ( err "Failure during initial data load: "
                       . (show :: SomeException -> String) )
     else err "" "Initial data is already loaded."
 
 goRack :: CI.Rack_XXX0 -> PhaseM RC l ()
-goRack CI.Rack_XXX0{..} = let rack = Rack_XXX1 rack_idx_XXX0 in do
+goRack CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures_XXX0
 
-goEnc :: Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc rack CI.Enclosure_XXX0{..} = let
-    enclosure = Enclosure enc_id_XXX0
+    enclosure = R.Enclosure_XXX1 enc_id_XXX0
   in do
     registerEnclosure rack enclosure
     mapM_ (registerBMC enclosure) enc_bmc_XXX0
     mapM_ (goHost_XXX0 enclosure) enc_hosts_XXX0
 
-goHost_XXX0 :: Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
+goHost_XXX0 :: R.Enclosure_XXX1 -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost_XXX0 enc CI.Host_XXX0{..} = let
-    host = Host $ T.unpack h_fqdn_XXX0
+    host = R.Host $ T.unpack h_fqdn_XXX0
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-    remAttrs = [HA_M0CLIENT]
+    remAttrs = [R.HA_M0CLIENT]
   in do
     registerHost host
     locateHostInEnclosure host enc

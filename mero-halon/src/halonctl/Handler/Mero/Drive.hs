@@ -14,7 +14,7 @@ import           Control.Distributed.Process
 import           Data.Foldable
 import           Data.Monoid ((<>))
 import           HA.RecoveryCoordinator.Castor.Commands.Events
-import qualified HA.Resources.Castor as Castor
+import qualified HA.Resources.Castor as R
 import           Handler.Mero.Helpers (clusterCommand)
 import           Options.Applicative
 import qualified Options.Applicative as Opt
@@ -60,9 +60,9 @@ optSerial = strOption $ mconcat
    ]
 
 
-parseSlot :: Parser Castor.Slot
-parseSlot = Castor.Slot
-   <$> (Castor.Enclosure <$>
+parseSlot :: Parser R.Slot
+parseSlot = R.Slot
+   <$> (R.Enclosure_XXX1 <$>
          strOption (mconcat [ long "slot-enclosure"
                             , help "index of the drive's enclosure"
                             , metavar "NAME"
@@ -83,14 +83,14 @@ optPath = strOption $ mconcat
 
 
 data Options
-  = DrivePresence String Castor.Slot Bool Bool
-  | DriveStatus   String Castor.Slot String
+  = DrivePresence String R.Slot Bool Bool
+  | DriveStatus   String R.Slot String
   | DriveNew      String String
   deriving (Eq, Show)
 
 
 run :: [NodeId] -> Options -> Process ()
-run nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
+run nids (DriveStatus serial slot@(R.Slot enc _) status) =
   clusterCommand nids Nothing (CommandStorageDeviceStatus serial slot status "NONE") $ \case
     StorageDeviceStatusErrorNoSuchDevice -> liftIO $ do
       putStrLn $ "Unkown drive " ++ serial
@@ -98,7 +98,7 @@ run nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
       putStrLn $ "can't find an enclosure " ++ show enc ++ " or node associated with it"
     StorageDeviceStatusUpdated -> liftIO $ do
       putStrLn $ "Command executed."
-run nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
+run nids (DrivePresence serial slot@(R.Slot enc _) isInstalled isPowered) =
   clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
     StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do
       putStrLn $ "Unknown drive " ++ serial

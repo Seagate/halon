@@ -44,8 +44,8 @@ import           HA.RecoveryCoordinator.RC.Actions.Core (getLocalGraph)
 import           HA.RecoveryCoordinator.RC.Subscription
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
-import           HA.Resources
-import           HA.Resources.Castor
+import           HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
+import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -69,7 +69,7 @@ ssplTimeout :: Int
 ssplTimeout = 10*1000000
 
 data ThatWhichWeCallADisk = ADisk
-  { aDiskSD :: StorageDevice -- ^ Has a storage device
+  { aDiskSD :: R.StorageDevice -- ^ Has a storage device
   , aDiskMero :: Maybe (M0.SDev) -- ^ Maybe has a corresponding Mero device
   , aDiskPath :: String -- ^ Has a path
   , aDiskWWN :: String -- ^ Has a WWN
@@ -114,7 +114,7 @@ getHostName :: TestSetup
 getHostName ts nid = do
   rg <- G.getGraph (_ts_mm ts)
   return $! case G.connectedFrom Runs (Node nid) rg of
-    Just (Host hn) -> Just hn
+    Just (R.Host hn) -> Just hn
     _ -> Nothing
 
 -- | Keep checking RG until the given predicate on it holds. Useful
@@ -163,9 +163,9 @@ findSDevs rg =
   [ ADisk storage (Just sdev) path wwn
   | sdev <- G.getResourcesOfType rg :: [M0.SDev]
   , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
-  , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
-  , path <- return "path" -- DIPath path <- G.connectedTo storage Has rg
-  , DIWWN wwn <- G.connectedTo storage Has rg
+  , Just (storage :: R.StorageDevice) <- [G.connectedTo disk M0.At rg]
+  , path <- return "path" -- R.DIPath path <- G.connectedTo storage Has rg
+  , R.DIWWN wwn <- G.connectedTo storage Has rg
   ]
 
 -- | Find some random 'ThatWhichWeCallADisk' in the RG.
@@ -177,17 +177,17 @@ findSDev rg = case findSDevs rg of
     error "Unreachable"
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
-findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe Enclosure
-findDiskEnclosure disk rg = slotEnclosure <$> G.connectedTo (aDiskSD disk) Has rg
+findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe R.Enclosure_XXX1
+findDiskEnclosure disk rg = R.slotEnclosure <$> G.connectedTo (aDiskSD disk) Has rg
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
   let dvs = [ ADisk storage (Just sdev) path wwn
             | sdev <- G.getResourcesOfType rg :: [M0.SDev]
             , Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
-            , Just (storage :: StorageDevice) <- [G.connectedTo disk M0.At rg]
-            , DIPath path <- G.connectedTo storage Has rg
-            , DIWWN wwn <- G.connectedTo storage Has rg
+            , Just (storage :: R.StorageDevice) <- [G.connectedTo disk M0.At rg]
+            , R.DIPath path <- G.connectedTo storage Has rg
+            , R.DIWWN wwn <- G.connectedTo storage Has rg
             ]
   in case dvs of
     _:dv:_ -> return dv
@@ -195,10 +195,10 @@ find2SDev rg =
                error "Unreachable"
 
 -- | Check if specified device have RemovedAt attribute.
-checkStorageDeviceRemoved :: Enclosure -> Int -> G.Graph -> Bool
+checkStorageDeviceRemoved :: R.Enclosure_XXX1 -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = Prelude.null $
-  [ () | slot@(Slot enc' idx') <- G.connectedTo enc Has rg
-       , Just{} <- [G.connectedFrom Has slot rg :: Maybe StorageDevice]
+  [ () | slot@(R.Slot enc' idx') <- G.connectedTo enc Has rg
+       , Just{} <- [G.connectedFrom Has slot rg :: Maybe R.StorageDevice]
        , enc == enc' && idx == idx'
        ]
 
@@ -206,15 +206,15 @@ checkStorageDeviceRemoved enc idx rg = Prelude.null $
 -- to the RC through an HPI message. This is useful when the disk is
 -- not in the initial data to begin with such as in the case of
 -- metadata/RAID drives.
-announceNewSDev :: Enclosure -> ThatWhichWeCallADisk -> TestSetup -> Process ()
-announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
+announceNewSDev :: R.Enclosure_XXX1 -> ThatWhichWeCallADisk -> TestSetup -> Process ()
+announceNewSDev enc@(R.Enclosure_XXX1 enclosureName) sdev ts = do
   rg <- G.getGraph (_ts_mm ts)
-  let Host host : _ = G.connectedTo enc Has rg
-      devIdx = succ . maximum . map slotIndex $ G.connectedTo enc Has rg
-      slot = Slot enc devIdx
+  let R.Host host : _ = G.connectedTo enc Has rg
+      devIdx = succ . maximum . map R.slotIndex $ G.connectedTo enc Has rg
+      slot = R.Slot enc devIdx
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
         (pack host) (pack enclosureName)
-        ((\(StorageDevice sn) -> pack sn) $ aDiskSD sdev) (fromIntegral devIdx)
+        ((\(R.StorageDevice sn) -> pack sn) $ aDiskSD sdev) (fromIntegral devIdx)
         (pack $ aDiskPath sdev)
         (pack $ aDiskWWN sdev)
         True True
@@ -231,7 +231,7 @@ announceNewSDev enc@(Enclosure enclosureName) sdev ts = do
   Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
     -- Check that the drive is reachable from the enclosure, through
     -- the slot.
-    let devs = [ d | slot'@Slot{} <- G.connectedTo enc Has rg'
+    let devs = [ d | slot'@R.Slot{} <- G.connectedTo enc Has rg'
                    , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
     in return $! if aDiskSD sdev `elem` devs then Just () else Nothing
   return ()
@@ -307,7 +307,7 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
 -- | Fail a drive (via Mero notification)
 failDrive :: TestSetup -> ThatWhichWeCallADisk -> Process ()
 failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."
-failDrive ts (ADisk (StorageDevice serial) (Just sdev) _ _) = do
+failDrive ts (ADisk (R.StorageDevice serial) (Just sdev) _ _) = do
   let tserial = pack serial
   sayTest "failDrive"
   preResetSt <- HA.Resources.Mero.Note.getState sdev <$> G.getGraph (_ts_mm ts)
@@ -337,7 +337,7 @@ resetComplete :: ProcessId -- ^ RC
               -> AckReply -- ^ Smart result
               -> M0.SDevState -- ^ State of the device after smart completes.
               -> Process ()
-resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) success expSt = do
+resetComplete rc mm adisk@(ADisk stord@(R.StorageDevice serial) m0sdev _ _) success expSt = do
   let tserial = pack serial
       resetCmd = CommandAck Nothing (Just $ DriveReset tserial) AckReplyPassed
       smartComplete = CommandAck Nothing (Just $ SmartTest tserial) success
@@ -350,7 +350,7 @@ resetComplete rc mm adisk@(ADisk stord@(StorageDevice serial) m0sdev _ _) succes
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD adisk) Has rg
     n <- listToMaybe $ do
-      h :: Host <- G.connectedTo (slotEnclosure slot) Has rg
+      h :: R.Host <- G.connectedTo (R.slotEnclosure slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
 
@@ -451,18 +451,18 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveRemoved)
   rg <- G.getGraph (_ts_mm ts)
   sdev <- findSDev rg
-  let Just enc@(Enclosure enclosureName) = findDiskEnclosure sdev rg
+  let Just enc@(R.Enclosure_XXX1 enclosureName) = findDiskEnclosure sdev rg
 
   -- Find the host on which this device is actually on
-  Just (Host host) <- return $ do
+  Just (R.Host host) <- return $ do
     d :: M0.Disk <- G.connectedFrom M0.At (aDiskSD sdev) rg
     c :: M0.Controller <- G.connectedFrom M0.IsParentOf d rg
     G.connectedTo c M0.At rg
 
-  let Just (Slot _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
+  let Just (R.Slot _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
                   (pack host) (pack enclosureName)
-                  (pack $ (\(StorageDevice sn) -> sn) $ aDiskSD sdev)
+                  (pack $ (\(R.StorageDevice sn) -> sn) $ aDiskSD sdev)
                   (fromIntegral devIdx)
                   (pack $ aDiskPath sdev)
                   (pack $ aDiskWWN sdev)
@@ -474,7 +474,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
 
   -- Wait until drive gets removed from the slot.
   Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
-    let devs = [ d | slot'@Slot{} <- G.connectedTo enc Has rg'
+    let devs = [ d | slot'@R.Slot{} <- G.connectedTo enc Has rg'
                    , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
     in return $! if aDiskSD sdev `notElem` devs then Just () else Nothing
 
@@ -498,7 +498,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD disk) Has rg
     n <- listToMaybe $ do
-      h :: Host <- G.connectedTo (slotEnclosure slot) Has rg
+      h :: R.Host <- G.connectedTo (R.slotEnclosure slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
   usend (_ts_rc ts) $ DriveFailed eid node slot (aDiskSD disk)
@@ -512,7 +512,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
 
   sayTest "SSPL should receive a command to power off the drive"
   do
-    let sn = pack $ (\(StorageDevice sn') -> sn') (aDiskSD disk)
+    let sn = pack $ (\(R.StorageDevice sn') -> sn') (aDiskSD disk)
         cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DrivePowerdown sn)
         cmd1 = ActuatorRequestMessageActuator_request_typeNode_controller
@@ -545,7 +545,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         adisk : _ -> return adisk
         _ -> fail "No ThatWhichWeCallADisk found for SDev."
       -- Consume LED FaultOn message caused by the state change.
-      let sn = (\(StorageDevice sn') -> pack sn') (aDiskSD adisk)
+      let sn = (\(R.StorageDevice sn') -> pack sn') (aDiskSD adisk)
           cmd = ActuatorRequestMessageActuator_request_typeNode_controller
               $ nodeCmdString (DriveLed sn FaultOn)
       [] <- expectNodeMsgCommands "mkTestAroundReset" [cmd] ssplTimeout
@@ -558,9 +558,9 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         rg <- getLocalGraph
         -- Find a single SDev
         let msdev = listToMaybe
-              [ sdev | rack :: Rack_XXX1 <- G.connectedTo Cluster Has rg
-                     , enc :: Enclosure <- G.connectedTo rack Has rg
-                     , slot :: Slot <- G.connectedTo enc Has rg
+              [ sdev | rack :: R.Rack_XXX1 <- G.connectedTo Cluster Has rg
+                     , enc :: R.Enclosure_XXX1 <- G.connectedTo rack Has rg
+                     , slot :: R.Slot <- G.connectedTo enc Has rg
                      , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
         case msdev of
           Nothing -> liftProcess $ usend caller (Nothing :: Maybe M0.SDev)
@@ -592,9 +592,9 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just hostname <- getHostName ts $ localNodeId someJoinedNode
-  Just enc <- G.connectedFrom Has (Host hostname) <$> G.getGraph (_ts_mm ts)
-  let sdev1 = ADisk (StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
-      sdev2 = ADisk (StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
+  Just enc <- G.connectedFrom Has (R.Host hostname) <$> G.getGraph (_ts_mm ts)
+  let sdev1 = ADisk (R.StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
+      sdev2 = ADisk (R.StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
 
   sayTest "Announcing metadata drives through HPI"
   announceNewSDev enc sdev1 ts
@@ -636,11 +636,11 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
-  let [sd]  = [ d |  e :: Enclosure <- maybeToList $ G.connectedFrom Has (Host hostname) rg
-                  ,  s :: Slot <- G.connectedTo e Has rg
-                  ,  d :: StorageDevice <- maybeToList $ G.connectedFrom Has s rg
+  let [sd]  = [ d |  e :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has (R.Host hostname) rg
+                  ,  s :: R.Slot <- G.connectedTo e Has rg
+                  ,  d :: R.StorageDevice <- maybeToList $ G.connectedFrom Has s rg
                   , di <- G.connectedTo d Has rg
-                  , di == DIPath "/dev/mddisk2"
+                  , di == R.DIPath "/dev/mddisk2"
                   ]
 
   let disk2 = ADisk {
@@ -682,9 +682,9 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   -- alternative would be to pick one from RG.
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just host <- getHostName ts $ localNodeId someJoinedNode
-  Just enc' <- G.connectedFrom Has (Host host) <$> G.getGraph (_ts_mm ts)
-  let sdev1 = ADisk (StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
-      sdev2 = ADisk (StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
+  Just enc' <- G.connectedFrom Has (R.Host host) <$> G.getGraph (_ts_mm ts)
+  let sdev1 = ADisk (R.StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
+      sdev2 = ADisk (R.StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
 
   sayTest "Announcing metadata drives through HPI"
   announceNewSDev enc' sdev1 ts
@@ -711,7 +711,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   sayTest "RAID devices established"
 
   rg <- G.getGraph (_ts_mm ts)
-  let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [Rack_XXX1]
+  let encs = [ enc | rack <- G.connectedTo Cluster Has rg :: [R.Rack_XXX1]
                    , enc <- G.connectedTo rack Has rg]
 
   sayTest $ "Enclosures: " ++ show encs

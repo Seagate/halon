@@ -42,7 +42,6 @@ storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
 deriveSafeCopy 0 'base ''Cluster
 instance ToJSON Cluster
 
-
 -- | A resource graph representation for nodes.
 newtype Node = Node NodeId
   deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
@@ -50,7 +49,6 @@ instance ToJSON Node
 instance FromJSON Node
 storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"
 deriveSafeCopy 0 'base ''Node
-
 
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64

@@ -36,9 +36,10 @@ import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import           HA.Replicator (RGroup(..))
-import           HA.ResourceGraph hiding (__remoteTable)
-import           HA.Resources
-import           HA.Resources.Castor
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor (Is(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -178,11 +179,11 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
 
     let g = lsGraph ls'
 
-    let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [connectedTo Cluster Has g]
-                                , Just (profile :: M0.Profile) <- [connectedTo root M0.IsParentOf g]
-                                , fs :: M0.Filesystem <- connectedTo profile M0.IsParentOf g
-                                , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
-                                , let pvers :: [M0.PVer] = connectedTo pool M0.IsParentOf g
+    let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has g]
+                                , Just (profile :: M0.Profile) <- [G.connectedTo root M0.IsParentOf g]
+                                , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf g
+                                , pool :: M0.Pool     <- G.connectedTo fs M0.IsParentOf g
+                                , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf g
                                 ]
     for_ ppvers $ \(_, pvers) -> do
       unless (Prelude.null pvers) $ do -- skip metadata pool
@@ -220,7 +221,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     Just fs <- runGet ls' getFilesystem
     let mdpool = M0.Pool (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
-      $ memberResource mdpool (lsGraph ls')
+      $ G.memberResource mdpool (lsGraph ls')
     mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
     assertMsg "MDPool is findable by Fid"
       $ mdpool_byFid == Just mdpool
@@ -231,19 +232,19 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"
     let g = lsGraph ls'
-        pvers = connectedTo pool M0.IsParentOf g :: [M0.PVer]
-        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
-        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
-        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
-        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-        enc   = catMaybes $ fmap (\r -> connectedFrom Has r g :: Maybe Enclosure) hosts
-        sdevs = join $ fmap (\r -> [ d | s <- connectedTo r Has g :: [Slot]
-                                       , d <- maybeToList (connectedFrom Has s g :: Maybe StorageDevice) ])
+        pvers = G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
+        racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
+        encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
+        ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
+        disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
+        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r g :: Maybe R.Enclosure_XXX1) hosts
+        sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has g :: [R.Slot]
+                                       , d <- maybeToList (G.connectedFrom Has s g :: Maybe R.StorageDevice) ])
                             enc
-        disksByHost = catMaybes $ fmap (\r -> connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
+        disksByHost = catMaybes $ fmap (\r -> G.connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
 
         disk1 = head disks
-        dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
+        dvers1 = G.connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
 
     assertMsg "Number of pvers" $ length pvers == 5
     assertMsg "Number of racks" $ length racks == 1
@@ -253,17 +254,17 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 16
     assertMsg "Number of disks" $ length disks == 16
     assertMsg "Number of disk versions" $ length dvers1 == 4
-    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+    forM_ (G.getResourcesOfType g :: [M0.PVer]) $ \pver -> do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK
                       , _pa_P = paP
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
       assertMsg "N in PVer" $ CI.m0_data_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paK
-      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
-                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
-                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
-                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      let dver = [ diskv | rackv <- G.connectedTo  pver M0.IsParentOf g :: [M0.RackV]
+                         , enclv <- G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+                         , cntrv <- G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+                         , diskv <- G.connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
 
 -- | Test that applying state changes works
@@ -280,18 +281,18 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       RC.initialRule (IgnitionArguments [])
 
-    let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
+    let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
 
     (ls2, _) <- run ls1 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
-      $ length (connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
+      $ length (G.connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
         length procs
 
     (ls3, _) <- run ls2 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSStopping) <$> procs
 
     assertMsg "All processes should be stopping"
-      $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
+      $ length (G.connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
         length procs
 
 testClusterLiveness :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
@@ -303,11 +304,11 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   , Tasty.testCase "on-broken-confd-quorum-no-rm"
        $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
-                                 , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
-                                       (connectedTo ps M0.IsParentOf rg)
+                                 , any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                       (G.connectedTo ps M0.IsParentOf rg)
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> confds
            )
@@ -316,11 +317,11 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   , Tasty.testCase "on-broken-confd-quorum"
        $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
-                                 , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
-                                             (connectedTo ps M0.IsParentOf rg)
+                                 , not $ any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                             (G.connectedTo ps M0.IsParentOf rg)
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
            )
@@ -329,8 +330,8 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   , Tasty.testCase "on-broken-confd-no-quorum"
        $ genericTest (do
            rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
@@ -343,8 +344,8 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   , Tasty.testCase "on-ios-failure"
        $ genericTest (do
            rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
@@ -354,8 +355,8 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   , Tasty.testCase "on-many-ios"
        $ genericTest (do
            rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
@@ -380,7 +381,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
          Just (Monolithic update) <- getCurrentGraphUpdateType
          modifyLocalGraph update
          RC.initialRule (IgnitionArguments [])
-      let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
+      let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
       (ls2, _) <- run ls1 $ do
         void . applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
         _ <- pickPrincipalRM
@@ -404,23 +405,23 @@ runGet = runPhaseGet
 
 goRack :: forall l. CI.Rack_XXX0
        -> PhaseM RC l ()
-goRack CI.Rack_XXX0{..} = let rack = Rack_XXX1 rack_idx_XXX0 in do
+goRack CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures_XXX0
-goEnc :: forall l. Rack_XXX1
+goEnc :: forall l. R.Rack_XXX1
       -> CI.Enclosure_XXX0
       -> PhaseM RC l ()
 goEnc rack (CI.Enclosure_XXX0{..}) = let
-    enclosure = Enclosure enc_id_XXX0
+    enclosure = R.Enclosure_XXX1 enc_id_XXX0
   in do
     registerEnclosure rack enclosure
     mapM_ (registerBMC enclosure) enc_bmc_XXX0
     mapM_ (goHost enclosure) enc_hosts_XXX0
-goHost :: forall l. Enclosure
+goHost :: forall l. R.Enclosure_XXX1
        -> CI.Host_XXX0
        -> PhaseM RC l ()
 goHost enc CI.Host_XXX0{..} = let
-    host = Host $ T.unpack h_fqdn_XXX0
+    host = R.Host $ T.unpack h_fqdn_XXX0
   in do
     registerHost host
     locateHostInEnclosure host enc

@@ -43,9 +43,9 @@ import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
-import           HA.ResourceGraph hiding (null)
-import           HA.Resources (Node(..), Has(..), Cluster(..))
-import           HA.Resources.Castor
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..), Node(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.Service hiding (configDict)
@@ -86,7 +86,7 @@ sendInterestingEvent :: InterestingEventMessage
                      -> PhaseM RC l ()
 sendInterestingEvent msg = do
   rg <- getLocalGraph
-  let nodes = [ n | n <- connectedTo Cluster Has rg
+  let nodes = [ n | n <- G.connectedTo Cluster Has rg
                   , Just m0n <- [M0.nodeToM0Node n rg]
                   , getState m0n rg == M0.NSOnline ]
   void . sendToSSPLSvc nodes $! SsplIem msg
@@ -120,19 +120,19 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
 -- | Send information about 'DriveLedUpdate' to the given 'Host' for
 -- the drive with the given serial number.
 sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
-              -> Host -- ^ Host we want to deal with
-              -> StorageDevice -- ^ Drive
+              -> R.Host -- ^ Host we want to deal with
+              -> R.StorageDevice -- ^ Drive
               -> PhaseM RC l Bool
-sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
+sendLedUpdate status host sd@(R.StorageDevice (T.pack -> sn)) = do
   Log.actLog "sending LED update" [ ("status", show status)
                                   , ("sn", show sn)
                                   , ("host", show host) ]
   rg <- getLocalGraph
-  let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
-      modifyLedState mledSt = case connectedTo sd Has rg of
-        Just slot@Slot{} -> modifyGraph $ case mledSt of
-          Just ledSt -> connect slot Has ledSt
-          Nothing -> disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
+  let mnode = listToMaybe $ G.connectedTo host Runs rg -- XXX: try all nodes
+      modifyLedState mledSt = case G.connectedTo sd Has rg of
+        Just slot@R.Slot{} -> modifyGraph $ case mledSt of
+          Just ledSt -> G.connect slot Has ledSt
+          Nothing -> G.disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
         _ -> Log.rcLog' Log.WARN $ "No slot found for " ++ show sd
   case mnode of
     Just (Node nid) -> case status of
@@ -178,7 +178,7 @@ ssplRules = sequence_
   , ruleMonitorServiceFailed
   ]
 
-data RuleDriveManagerDisk = RuleDriveManagerDisk StorageDevice
+data RuleDriveManagerDisk = RuleDriveManagerDisk R.StorageDevice
   deriving (Eq,Show,Generic,Typeable)
 
 instance Binary RuleDriveManagerDisk
@@ -203,7 +203,7 @@ instance Binary RuleDriveManagerDisk
 -- rule ignores such events.
 ruleMonitorDriveManager :: Definitions RC ()
 ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ \(uuid, nid, srdm) -> do
-  let enc' = Enclosure . T.unpack
+  let enc' = R.Enclosure_XXX1 . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                        $ srdm
       diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
@@ -217,7 +217,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
   todo uuid
   Log.tagContext Log.SM uuid Nothing
-  Log.tagContext Log.SM (StorageDevice sn) $ Just "sspl::monitor-drivemanager"
+  Log.tagContext Log.SM (R.StorageDevice sn) $ Just "sspl::monitor-drivemanager"
   Log.tagContext Log.SM [ ("drive.path"   :: String, show path)
                         , ("drive.diskNum" :: String, show diskNum)
                         , ("drive.status" :: String, T.unpack disk_reason)
@@ -249,12 +249,12 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
     -- If SSPL doesn't know which enclosure the drive is in, try to
     -- infer it from the drive serial number and info we may have
     -- gotten previously
-    populateEnclosure enc@(Enclosure "HPI_Data_Not_Available") sn diskNum =
-      StorageDevice.location (StorageDevice sn) >>= \case
+    populateEnclosure enc@(R.Enclosure_XXX1 "HPI_Data_Not_Available") sn diskNum =
+      StorageDevice.location (R.StorageDevice sn) >>= \case
         Nothing -> do
           Log.rcLog' Log.WARN ("No enclosure found for drive"::String)
           return enc
-        Just (Slot enc' is)
+        Just (R.Slot enc' is)
           | is == diskNum -> return enc'
           | otherwise -> do
               Log.rcLog' Log.WARN $ "Enclosure found for drive, but drive have different id " ++ show sn
@@ -268,7 +268,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
         -- happen under certain conditions, possibly only during tests
         -- on cluster where system may be in eventually inconsistent state.
         Log.rcLog' Log.WARN ("Drive manager event for the drive without HPI data available"::String)
-        let sdev = StorageDevice sn
+        let sdev = R.StorageDevice sn
         StorageDevice.setPath sdev path
         return sdev
       Just sdev -> do
@@ -302,7 +302,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
 -- | Handle information messages about drive changes from HPI system.
 ruleMonitorStatusHpi :: Definitions RC ()
 ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uuid, nid, srphi) -> do
-  let wwn = DIWWN . T.unpack
+  let wwn = R.DIWWN . T.unpack
                   . sensorResponseMessageSensor_response_typeDisk_status_hpiWwn
                   $ srphi
       diskNum = fromInteger
@@ -310,13 +310,13 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
               $ srphi
       serial = sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
              $ srphi
-      enc   = Enclosure . T.unpack
+      enc   = R.Enclosure_XXX1 . T.unpack
                    . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
                    $ srphi
       is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
       is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
-      sdev = StorageDevice $ T.unpack serial
-      sdev_loc = Slot enc diskNum
+      sdev = R.StorageDevice $ T.unpack serial
+      sdev_loc = R.Slot enc diskNum
   -- Setup context
   todo uuid
   Log.tagContext Log.SM uuid Nothing
@@ -356,13 +356,13 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
       let markFailed p updatePid = do
             Log.rcLog' Log.DEBUG $ "Failing " ++ showFid p
             when updatePid $ do
-              modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
+              modifyLocalGraph $ return . G.connect p Has (M0.PID currentPid)
             void $ applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
         Nothing -> Log.rcLog' Log.WARN $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
           rg <- getLocalGraph
-          case (getState p rg, connectedTo p Has rg) of
+          case (getState p rg, G.connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
               Log.rcLog' Log.DEBUG
                 ("Failed SSPL notification for already failed process - doing nothing." :: String)
@@ -419,10 +419,10 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
               Just ident -> let
                   path = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath ident
                   sn = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber ident
-                  sdev = StorageDevice $ T.unpack sn
-                  devIds = [ DIPath (T.unpack path)
-                           , DIRaidDevice device
-                           , DIRaidIdx idx
+                  sdev = R.StorageDevice $ T.unpack sn
+                  devIds = [ R.DIPath (T.unpack path)
+                           , R.DIRaidDevice device
+                           , R.DIRaidIdx idx
                            ]
                 in do Log.rcLog' Log.DEBUG $ "IDs: " ++ show devIds
                       StorageDevice.identify sdev devIds
@@ -442,7 +442,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
                 -- See if we can find identifiers
                 runMaybeT $ do
                   dev <- MaybeT $ findHostStorageDevices host
-                        >>= filterM (flip StorageDevice.hasIdentifier $ DIRaidIdx idx)
+                        >>= filterM (flip StorageDevice.hasIdentifier $ R.DIRaidIdx idx)
                         >>= \case
                           [] -> do
                             Log.rcLog' Log.ERROR $ "Metadata drive at index " ++ (show idx)
@@ -456,7 +456,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
                   path <- MaybeT $ fmap T.pack <$> StorageDevice.path dev
                   return (dev, path)
 
-          isReassembling <- isConnected host Is ReassemblingRaid <$> getLocalGraph
+          isReassembling <- G.isConnected host R.Is R.ReassemblingRaid <$> getLocalGraph
 
           if not isReassembling
           then promulgateRC $ RaidUpdate {
@@ -502,9 +502,9 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
                           liftA (x,) <$> fmap Just (StorageDevice.status x))
              encl' <- findHostEnclosure host
              Log.rcLog' Log.DEBUG $ "MSDS: " ++ show (catMaybes <$> msds, host, encl')
-             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(StorageDevice serial, status) ->
+             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(R.StorageDevice serial, status) ->
                case status of
-                 StorageDeviceStatus "HALON-FAILED" reason -> do
+                 R.StorageDeviceStatus "HALON-FAILED" reason -> do
                    _ <- sendNodeCmd [Node nid] Nothing (DriveLed (T.pack serial) FaultOn)
                    sendLoggingCmd (Node nid) $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                                 (T.pack serial)
@@ -517,11 +517,11 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
     extract _ _ = return Nothing
 
 -- | Send update to SSPL that the given 'StorageDevice' changed its status.
-updateDriveManagerWithFailure :: StorageDevice
+updateDriveManagerWithFailure :: R.StorageDevice
                               -> String
                               -> Maybe String
                               -> PhaseM RC l ()
-updateDriveManagerWithFailure sdev@(StorageDevice sn) st reason = getSDevHost sdev >>= \case
+updateDriveManagerWithFailure sdev@(R.StorageDevice sn) st reason = getSDevHost sdev >>= \case
   host : _ -> do
     _ <- sendLedUpdate DrivePermanentlyFailed host sdev
     nodesOnHost host >>= \case

@@ -68,14 +68,14 @@ registerRack rack = do
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.
 registerEnclosure :: R.Rack_XXX1
-                  -> R.Enclosure
+                  -> R.Enclosure_XXX1
                   -> PhaseM RC l ()
 registerEnclosure rack enc = do
   actLog "registerEnclosure" [("rack", show rack), ("enclosure", show enc)]
   modifyGraph $ G.connect rack Has enc
 
 -- | 'G.connect' the givne 'BMC' to the 'Enclosure'.
-registerBMC :: R.Enclosure
+registerBMC :: R.Enclosure_XXX1
             -> R.BMC
             -> PhaseM RC l ()
 registerBMC enc bmc = do
@@ -89,7 +89,7 @@ findBMCAddress host = do
     g <- getLocalGraph
     return . listToMaybe $
       [ R.bmc_addr bmc
-      | Just (enc :: R.Enclosure) <- [G.connectedFrom Has host g]
+      | Just (enc :: R.Enclosure_XXX1) <- [G.connectedFrom Has host g]
       , bmc <- G.connectedTo enc Has g
       ]
 
@@ -104,7 +104,7 @@ findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
 -- | Find the enclosure containing the given host.
 findHostEnclosure :: R.Host
-                  -> PhaseM RC l (Maybe R.Enclosure)
+                  -> PhaseM RC l (Maybe R.Enclosure_XXX1)
 findHostEnclosure host =
     G.connectedFrom Has host <$> getLocalGraph
 
@@ -144,7 +144,7 @@ registerOnCluster x m = modifyLocalGraph $ \rg ->
 
 -- | Record that a host is running in an enclosure.
 locateHostInEnclosure :: R.Host
-                      -> R.Enclosure
+                      -> R.Enclosure_XXX1
                       -> PhaseM RC l ()
 locateHostInEnclosure host enc = do
   actLog "locateHostInEnclosure" [("host", show host), ("enclosure", show enc)]
@@ -225,7 +225,7 @@ findHostAttrs host = do
 findHostStorageDevices :: R.Host
                        -> PhaseM RC l [R.StorageDevice]
 findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
-  [ sdev | enc  :: R.Enclosure <- maybeToList $ G.connectedFrom Has host rg
+  [ sdev | enc  :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has host rg
          , loc  :: R.Slot <- G.connectedTo enc Has rg
          , sdev :: R.StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
 

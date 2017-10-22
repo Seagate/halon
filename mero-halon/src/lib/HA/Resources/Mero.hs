@@ -954,7 +954,7 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
   , (''Rack, ''At, ''R.Rack_XXX1)
-  , (''Enclosure, ''At, ''R.Enclosure)
+  , (''Enclosure, ''At, ''R.Enclosure_XXX1)
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
   , (''Profile, ''IsParentOf, ''Filesystem)
@@ -1027,7 +1027,7 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack_XXX1)
-  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
+  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure_XXX1)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities

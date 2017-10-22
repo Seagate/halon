@@ -34,7 +34,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import           HA.Resources.Castor
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -85,7 +85,7 @@ initialiseConfInRG = getFilesystem >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
-    mirrorRack :: M0.Filesystem -> (Rack_XXX1, [Enclosure]) -> PhaseM RC l ()
+    mirrorRack :: M0.Filesystem -> (R.Rack_XXX1, [R.Enclosure_XXX1]) -> PhaseM RC l ()
     mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0es <- mapM mirrorEncl encls
@@ -93,7 +93,7 @@ initialiseConfInRG = getFilesystem >>= \case
           $ G.connect m0r M0.At rack
         >>> G.connect fs M0.IsParentOf m0r
         >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
-    mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
+    mirrorEncl :: R.Enclosure_XXX1 -> PhaseM RC l M0.Enclosure
     mirrorEncl encl = lookupEnclosureM0 encl >>= \case
       Just m0e -> return m0e
       Nothing -> do
@@ -121,13 +121,13 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices_XXX0 h)) (0 :: Int) hosts)
   goHost (CI.M0Host_XXX0{..}, hostIdx) = let
-      host = Host $! T.unpack m0h_fqdn_XXX0
+      host = R.Host $! T.unpack m0h_fqdn_XXX0
     in do
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
       modifyGraph $ G.connect Cluster Has host
-                >>> G.connect host Has HA_M0SERVER
+                >>> G.connect host Has R.HA_M0SERVER
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect host Runs node
 
@@ -135,7 +135,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getLocalGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
-              e <- G.connectedFrom Has host rg :: Maybe Enclosure
+              e <- G.connectedFrom Has host rg :: Maybe R.Enclosure_XXX1
               m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
               return (m0e, e)
 
@@ -151,12 +151,12 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
   goDev enc ctrl (CI.M0Device_XXX0{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size_XXX0 m0d_bsize_XXX0 m0d_path_XXX0
-      devIds = [ DIWWN m0d_wwn_XXX0
-               , DIPath m0d_path_XXX0
+      devIds = [ R.DIWWN m0d_wwn_XXX0
+               , R.DIPath m0d_path_XXX0
                ]
     in do
-      let sdev = StorageDevice m0d_serial_XXX0
-          slot = Slot enc m0d_slot_XXX0
+      let sdev = R.StorageDevice m0d_serial_XXX0
+          slot = R.Slot enc m0d_slot_XXX0
       StorageDevice.identify sdev devIds
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case
         Just m0sdev -> return m0sdev

@@ -127,7 +127,7 @@ deriveSafeCopy 0 'base ''DriveReady
 
 -- | Sent when an expander reset attempt happens in the enclosure. In such
 --   a case, we expect to see (or have seen) multiple drive transient events.
-newtype ExpanderReset = ExpanderReset Enclosure
+newtype ExpanderReset = ExpanderReset Enclosure_XXX1
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ExpanderReset

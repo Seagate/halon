@@ -36,7 +36,7 @@ import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
-import           HA.Resources.Castor
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Services.SSPL.LL.CEP (ssplRules)
 import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..))
@@ -212,9 +212,9 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         ph1 <- phaseHandle "finish"
         directly ph0 $ do
            [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
-           let Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
+           let R.Enclosure_XXX1 ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
            let serial = "serial" ++ ide ++ "_1"
-           let sdev = StorageDevice serial
+           let sdev = R.StorageDevice serial
            unless hpiWasInstalled $ do
              loc <- StorageDevice.mkLocation e 1
              _   <- StorageDevice.insertTo sdev loc
@@ -227,16 +227,16 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         start ph0 ()
       defineSimple "enclosure" $ \(GiveMeEnclosureName, pid) -> do
         [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
-        liftProcess $ usend pid (e::Enclosure)
+        liftProcess $ usend pid (e::R.Enclosure_XXX1)
     test rc = do
       self <- getSelfPid
       usend rc (GiveMeEnclosureName, self)
-      Enclosure e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
+      R.Enclosure_XXX1 e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
       let serial = "serial" ++ ide ++ "_1"
       let (enc, serial', idx, devid, wwn, _sdev) =
             if hpiIsNew
-            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", StorageDevice $ serial++"new")
-            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", StorageDevice serial)
+            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", R.StorageDevice $ serial++"new")
+            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", R.StorageDevice serial)
 
       subscribe rc (Proxy :: Proxy HpiRuleMsg)
       subscribe rc (Proxy :: Proxy DrivePowerChange)
@@ -257,7 +257,7 @@ testDMRequest = mkHpiTest rules test
   where
     rules self = do
       defineSimple "prepare" $ \() -> do
-        -- Just sd1 <- lookupStorageDeviceInEnclosure (Enclosure "enclosure1") (DIIndexInEnclosure 1)
+        -- Just sd1 <- lookupStorageDeviceInEnclosure (R.Enclosure_XXX1 "enclosure1") (DIIndexInEnclosure 1)
         -- markStorageDeviceRemoved sd1
         liftProcess $ usend self ()
     test rc = do

@@ -339,7 +339,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure, R.Host, R.Node))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure_XXX1, R.Host, R.Node))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?
