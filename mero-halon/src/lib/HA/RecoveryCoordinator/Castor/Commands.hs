@@ -16,13 +16,13 @@ import           HA.RecoveryCoordinator.Castor.Commands.Events
 import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.ResourceGraph as G
-import           HA.Resources
-import           HA.Resources.Castor
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import qualified HA.Resources.Castor as R
 import           Network.CEP
 
 -- | List of rules.
 rules :: Definitions RC ()
-rules = sequence_ 
+rules = sequence_
   [ driveNew
   , drivePresence
   , driveStatus
@@ -33,11 +33,11 @@ rules = sequence_
 drivePresence :: Definitions RC ()
 drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
   \(CommandStorageDevicePresence serial slot isInstalled isPowered chan) -> do
-     let sd = StorageDevice serial
-     let Slot enc _idx = slot
+     let sd = R.StorageDevice serial
+     let R.Slot enc _idx = slot
      rg <- getLocalGraph
      if isConnected Cluster Has sd rg
-     then let nodes = do host :: Host <- G.connectedTo enc Has rg
+     then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg
                          G.connectedTo host Runs rg
           in case listToMaybe nodes of
                Nothing -> liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchEnclosure
@@ -53,11 +53,11 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
 driveStatus :: Definitions RC ()
 driveStatus = defineSimpleTask "castor::command::update-drive-status" $
   \(CommandStorageDeviceStatus serial slot status reason chan) -> do
-      let sd = StorageDevice serial
-      let Slot enc _idx = slot
+      let sd = R.StorageDevice serial
+      let R.Slot enc _idx = slot
       rg <- getLocalGraph
       if isConnected Cluster Has sd rg
-      then let nodes = do host :: Host <- G.connectedTo enc Has rg
+      then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg
                           G.connectedTo host Runs rg
            in case listToMaybe nodes of
                 Nothing -> liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchEnclosure
@@ -66,17 +66,17 @@ driveStatus = defineSimpleTask "castor::command::update-drive-status" $
                   _ <- Drive.updateStorageDeviceStatus uuid node sd slot status reason
                   liftProcess $ sendChan chan StorageDeviceStatusUpdated
       else liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchDevice
- 
+
 
 
 -- | Create new drive and store that in RG.
 driveNew :: Definitions RC ()
 driveNew = defineSimpleTask "castor::command::new-drive" $
   \(CommandStorageDeviceCreate serial path chan) -> do
-     let sd = StorageDevice serial
+     let sd = R.StorageDevice serial
      rg <- getLocalGraph
      if not $ isConnected Cluster Has sd rg
      then do modifyGraph $ G.connect Cluster Has sd
-                      >>> G.connect sd Has (DIPath path)
-             liftProcess $ sendChan chan StorageDeviceCreated 
+                      >>> G.connect sd Has (R.DIPath path)
+             liftProcess $ sendChan chan StorageDeviceCreated
      else liftProcess $ sendChan chan StorageDeviceErrorAlreadyExists

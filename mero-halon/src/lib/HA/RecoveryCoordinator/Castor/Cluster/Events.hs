@@ -44,7 +44,7 @@ import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import qualified HA.Resources.Castor as Castor
+import           HA.Resources.Castor (Host_XXX1, Slot, StorageDevice)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.SafeCopy
@@ -157,16 +157,15 @@ data ReportClusterState = ReportClusterState
       -- ^ 'M0.Profile'' and 'M0.Filesystem' information.
       , csrStats      :: Maybe M0.FilesystemStats
       -- ^ 'M0.FilesystemStats' information.
-      , csrHosts      :: [(Castor.Host, ReportClusterHost)]
-      -- ^ Information about every 'Castor.Host'. See
-      -- 'ReportClusterHost' for details.
+      , csrHosts      :: [(Host_XXX1, ReportClusterHost)]
+      -- ^ Information about every 'Host'. See 'ReportClusterHost' for details.
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
 instance ToJSON ReportClusterState
 instance FromJSON ReportClusterState
 
--- | Information about a 'Castor.Host' inside the cluster.
+-- | Information about a 'Host' inside the cluster.
 data ReportClusterHost = ReportClusterHost
       { crnNodeFid    :: Maybe M0.Node
       -- ^ Associated 'M0.Node'.
@@ -203,8 +202,8 @@ data ReportClusterService = ReportClusterService
       -- ^ 'M0.Service'
       , crsDevices    :: [( M0.SDev
                           , M0.StateCarrier M0.SDev
-                          , Maybe Castor.Slot
-                          , Maybe Castor.StorageDevice
+                          , Maybe Slot
+                          , Maybe StorageDevice
                           )]
       -- ^ Information about devices attached at this particular service.
       } deriving (Eq, Show, Typeable, Generic, Ord)

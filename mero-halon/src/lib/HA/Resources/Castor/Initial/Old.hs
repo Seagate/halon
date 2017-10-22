@@ -42,12 +42,12 @@ deriveSafeCopy 0 'base ''Interface
 deriveSafeCopy 0 'base ''Network
 storageIndex ''Interface "9d4812ee-d1c9-455b-9e27-e146bb1c17e5"
 
-mkStorageDicts [''Interface] [(''C.Host, ''R.Has, ''Interface)]
+mkStorageDicts [''Interface] [(''C.Host_XXX1, ''R.Has, ''Interface)]
 
 remotable [ mkStorageResourceName ''Interface
-          , mkStorageRelationName (''C.Host, ''R.Has, ''Interface)
+          , mkStorageRelationName (''C.Host_XXX1, ''R.Has, ''Interface)
           ]
 
 snd <$> mkStorageResource ''Interface
-snd <$> mkStorageRelation (''C.Host, ''R.Has, ''Interface)
-mkStorageResourceTable [''Interface] [(''C.Host, ''R.Has, ''Interface)]
+snd <$> mkStorageRelation (''C.Host_XXX1, ''R.Has, ''Interface)
+mkStorageResourceTable [''Interface] [(''C.Host_XXX1, ''R.Has, ''Interface)]

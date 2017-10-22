@@ -17,11 +17,11 @@
 -- Related part of the resource graph:
 --
 -- @
---   R.Host --+- HostAttirbutes
---     |      |
---     |      +-- M0.Client
---     |      |
---     |      +-- M0.Server
+--   R.Host_XXX1 --+- HostAttirbutes
+--     |           |
+--     |           +-- M0.Client
+--     |           |
+--     |           +-- M0.Server
 --     |
 --     |              +-- ServiceProcess
 --     |              |
@@ -198,7 +198,7 @@ fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
 
 
-type FldHost = '("host", Maybe R.Host)
+type FldHost = '("host", Maybe R.Host_XXX1)
 fldHost :: Proxy FldHost
 fldHost = Proxy
 
@@ -340,8 +340,8 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                        Log.rcLog' Log.DEBUG $ "node.addr = " ++ show addr
                        createMeroKernelConfig host addr
                        startMeroService host node
-                 Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show node
-             Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show m0node
+                 Nothing -> Log.rcLog' Log.ERROR $ "Can't find Host for node " ++ show node
+             Nothing -> Log.rcLog' Log.ERROR $ "Can't find Host for node " ++ show m0node
 
 halonM0dStopJob :: Job StopHalonM0dRequest StopHalonM0dResult
 halonM0dStopJob = Job "castor::node::request::stop-halon-m0d"

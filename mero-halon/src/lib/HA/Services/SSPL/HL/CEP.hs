@@ -12,31 +12,33 @@ module HA.Services.SSPL.HL.CEP
   ( ssplHLRules
   ) where
 
-import           Data.Foldable                           (forM_)
-import           Data.Maybe                              (catMaybes)
-import qualified Data.Text                               as T
-import           Data.UUID                               (toString)
-import qualified HA.Aeson                                as Aeson
+import           Data.Foldable (forM_)
+import           Data.Maybe (catMaybes)
+import qualified Data.Text as T
+import           Data.UUID (toString)
+import qualified HA.Aeson as Aeson
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Hardware
-import           HA.RecoveryCoordinator.Actions.Mero     (getClusterStatus)
+import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import           HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Actions.Log   as Log
-import qualified HA.ResourceGraph                        as G
-import           HA.Resources
-import           HA.Resources.Castor
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..))
+import qualified HA.Resources.Castor as R
 import           HA.Resources.Mero
-import           HA.Resources.Mero.Note                  (getState)
-import           HA.Service                              (getInterface)
+import           HA.Resources.Mero.Note (getState)
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.SSPL.LL.CEP
 import           HA.Services.SSPL.LL.Resources
-import           HA.Services.SSPLHL                      (SsplHlFromSvc (..),
-                                                          SsplHlToSvc (..),
-                                                          sspl)
+import           HA.Services.SSPLHL
+  ( SsplHlFromSvc (..)
+  , SsplHlToSvc (..)
+  , sspl
+  )
 import           Network.CEP
 import           SSPL.Bindings
-import           Text.Regex.TDFA                         ((=~))
+import           Text.Regex.TDFA ((=~))
 
 -- | Set of SSPL HL rules. Contain rules for status queries inside a graph.
 ssplHLRules :: Definitions RC ()
@@ -102,15 +104,15 @@ clusterStatus _g = CommandResponseMessageStatusResponseItem {
 hostStatus :: G.Graph
            -> Maybe String
            -> [CommandResponseMessageStatusResponseItem]
-hostStatus rg regex = fmap (\h@(Host name) ->
+hostStatus rg regex = fmap (\h@(R.Host_XXX1 name) ->
       CommandResponseMessageStatusResponseItem {
         commandResponseMessageStatusResponseItemEntityId = T.pack name
       , commandResponseMessageStatusResponseItemStatus = status h
       }
     ) hosts
-  where hosts = [ host | host@(Host hn) <- G.connectedTo Cluster Has rg
+  where hosts = [ host | host@(R.Host_XXX1 hn) <- G.connectedTo Cluster Has rg
                        , hn =~? regex]
         a =~? (Just ef) = a =~ ef
         _ =~? Nothing = True
         status host = T.pack . show $
-          (G.connectedTo host Has rg :: [HostAttr])
+          (G.connectedTo host Has rg :: [R.HostAttr])

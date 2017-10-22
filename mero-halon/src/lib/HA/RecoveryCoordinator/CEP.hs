@@ -44,8 +44,13 @@ import qualified HA.RecoveryCoordinator.RC.Rules.Info as Info (rules)
 import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.ResourceGraph as G
 import           HA.Resources
-import           HA.Resources.Castor
-import qualified HA.Resources.Castor as M0
+  ( Cluster(..)
+  , Has(..)
+  , Node(..)
+  , RecoverNode(..)
+  , Runs(..)
+  )
+import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import           HA.Resources.Mero (nodeToM0Node)
 import           HA.SafeCopy
@@ -54,10 +59,18 @@ import           HA.Service.Interface
 import           HA.Services.DecisionLog (decisionLog, traceLogs)
 import           HA.Services.Mero.RC (rules)
 import           HA.Services.Ping
-import qualified HA.Services.SSPL.LL.CEP (sendInterestingEvent, sendNodeCmd, ssplRules)
+import qualified HA.Services.SSPL.LL.CEP
+  ( sendInterestingEvent
+  , sendNodeCmd
+  , ssplRules
+  )
 import           HA.Services.SSPL.HL.CEP (ssplHLRules)
 import           HA.Services.SSPL.IEM (logMeroClientFailed)
-import           HA.Services.SSPL.LL.Resources (NodeCmd(..), IPMIOp(..), InterestingEventMessage(..))
+import           HA.Services.SSPL.LL.Resources
+  ( NodeCmd(..)
+  , IPMIOp(..)
+  , InterestingEventMessage(..)
+  )
 import           Network.CEP
 import qualified Network.CEP.Log as Log
 import           Network.HostName
@@ -153,23 +166,23 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
   let route (NodeUp info nid _) = do
         let h = T.unpack $ _si_hostname info
             node = Node nid
-            host = Host h
+            host = R.Host_XXX1 h
         RCLog.tagContext RCLog.SM [ ("node", show node)
                                   , ("host", show h)
                                   ] Nothing
-        hasFailed <- hasHostAttr HA_TRANSIENT (Host h)
-        isDown <- hasHostAttr HA_DOWN (Host h)
+        hasFailed <- hasHostAttr R.HA_TRANSIENT (R.Host_XXX1 h)
+        isDown <- hasHostAttr R.HA_DOWN (R.Host_XXX1 h)
         isKnown <- knownResource node
         if isKnown
         then publish $ OldNodeRevival node
         else modifyGraph $
-          G.connect host Has (HA_MEMSIZE_MB $! fromIntegral $ _si_memMiB info)
-          . G.connect host Has (HA_CPU_COUNT $ _si_cpus info)
+          G.connect host Has (R.HA_MEMSIZE_MB $! fromIntegral $ _si_memMiB info)
+          . G.connect host Has (R.HA_CPU_COUNT $ _si_cpus info)
 
         when (hasFailed || isDown) $ do
           RCLog.rcLog' RCLog.DEBUG "Reviving existing node."
-          unsetHostAttr host HA_TRANSIENT
-          unsetHostAttr host HA_DOWN
+          unsetHostAttr host R.HA_TRANSIENT
+          unsetHostAttr host R.HA_DOWN
 
         registerNode node
         registerHost host
@@ -248,11 +261,11 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
             modify Local $ rlens fldHost .~ Field (Just host)
             modify Local $ rlens fldRetries .~ Field (Just 0)
             RCLog.tagContext RCLog.SM [("host" :: String, show host)] Nothing
-            hasHostAttr M0.HA_TRANSIENT host >>= \case
+            hasHostAttr R.HA_TRANSIENT host >>= \case
               -- Node not already marked as down so mark it as such and
               -- notify mero
               False -> do
-                setHostAttr host M0.HA_TRANSIENT
+                setHostAttr host R.HA_TRANSIENT
                 -- ideally we would like to unregister this when
                 -- monitor disconnects and not here: what if node came
                 -- back before recovery fired? unlikely but who knows
@@ -292,7 +305,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
 
     if maxRetries > 0 && i >= maxRetries
     then continue timeout_host
-    else hasHostAttr M0.HA_TRANSIENT h >>= \case
+    else hasHostAttr R.HA_TRANSIENT h >>= \case
            False -> do
              RCLog.rcLog' RCLog.DEBUG ("Recovery complete." :: String)
              modify Local $ rlens fldRep .~ (Field . Just $ RecoverNodeFinished node)
@@ -345,7 +358,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     fldRep = Proxy
     fldNode :: Proxy '("node", Maybe Node)
     fldNode = Proxy
-    fldHost :: Proxy '("host", Maybe M0.Host)
+    fldHost :: Proxy '("host", Maybe R.Host_XXX1)
     fldHost = Proxy
     fldRetries :: Proxy '("retries", Maybe Int)
     fldRetries = Proxy
@@ -359,11 +372,11 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
 
     -- Reboots the node if possible (if it's a server node) or logs an
     -- IEM otherwise.
-    rebootOrLogHost :: Host -> PhaseM RC l ()
-    rebootOrLogHost host@(Host hst) = do
+    rebootOrLogHost :: R.Host_XXX1 -> PhaseM RC l ()
+    rebootOrLogHost host@(R.Host_XXX1 hst) = do
       RCLog.actLog "rebootOrLogHost" [("host", show host)]
-      isServer <- hasHostAttr HA_M0SERVER host
-      isClient <- hasHostAttr HA_M0CLIENT host
+      isServer <- hasHostAttr R.HA_M0SERVER host
+      isClient <- hasHostAttr R.HA_M0CLIENT host
       RCLog.rcLog' RCLog.DEBUG [("isServer" :: String, show isServer)
                                ,("isClient" :: String, show isClient)
                                ]
@@ -408,7 +421,7 @@ sendLogs logs ls = do
    else for_ nodes $ \(Node nid) -> sendSvc (getInterface decisionLog) nid logs
   where
    rg = lsGraph ls
-   nodes = [ n | host <- G.connectedTo Cluster Has rg :: [Host]
+   nodes = [ n | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
                , n <- G.connectedTo host Runs rg :: [Node]
                , not . null $ lookupServiceInfo n decisionLog rg
                ]

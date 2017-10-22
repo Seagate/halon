@@ -952,7 +952,7 @@ $(mkDicts
   , (''Root, ''IsParentOf, ''Profile)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''R.Host)
+  , (''Controller, ''At, ''R.Host_XXX1)
   , (''Rack, ''At, ''R.Rack_XXX1)
   , (''Enclosure, ''At, ''R.Enclosure_XXX1)
   , (''Disk, ''At, ''R.StorageDevice)
@@ -989,8 +989,8 @@ $(mkDicts
   , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
-  , (''R.Host, ''R.Has, ''LNid)
-  , (''R.Host, ''R.Runs, ''Node)
+  , (''R.Host_XXX1, ''R.Has, ''LNid)
+  , (''R.Host_XXX1, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''Process, ''R.Has, ''ProcessEnv)
   , (''Process, ''R.Has, ''PID)
@@ -1025,7 +1025,7 @@ $(mkResRel
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
-  , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host_XXX1)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack_XXX1)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure_XXX1)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
@@ -1062,8 +1062,8 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
-  , (''R.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
-  , (''R.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
+  , (''R.Host_XXX1, AtMostOne, ''R.Has, Unbounded, ''LNid)
+  , (''R.Host_XXX1, AtMostOne, ''R.Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
   , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
@@ -1110,12 +1110,12 @@ lookupConfObjByFid f =
 -- 'nodeToM0Node' for inverse.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
+  [ node | Just (h :: R.Host_XXX1) <- [G.connectedFrom R.Runs m0node rg]
          , node <- G.connectedTo h R.Runs rg ]
 
 -- | Lookup 'R.Node' associated with the given 'Node'. See
 -- 'm0nodeToNode' for inverse.
 nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
-  [ m0n | Just (h :: R.Host) <- [G.connectedFrom R.Runs node rg]
+  [ m0n | Just (h :: R.Host_XXX1) <- [G.connectedFrom R.Runs node rg]
         , m0n <- G.connectedTo h R.Runs rg ]

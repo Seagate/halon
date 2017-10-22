@@ -19,7 +19,7 @@ import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified HA.Aeson
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
-import qualified HA.Resources.Castor as Castor
+import           HA.Resources.Castor (Host_XXX1(..))
 import qualified HA.Resources.Mero as M0
 import           Handler.Mero.Helpers
 import           Mero.ConfC (fidToStr)
@@ -92,7 +92,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
-      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps) -> do
+      forM_ hosts $ \(Host_XXX1 qfdn, ReportClusterHost m0fid st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
          printf node_pattern nst (showNodeFid m0fid) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)

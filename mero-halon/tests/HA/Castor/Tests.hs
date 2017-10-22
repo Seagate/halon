@@ -421,7 +421,7 @@ goHost :: forall l. R.Enclosure_XXX1
        -> CI.Host_XXX0
        -> PhaseM RC l ()
 goHost enc CI.Host_XXX0{..} = let
-    host = R.Host $ T.unpack h_fqdn_XXX0
+    host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
   in do
     registerHost host
     locateHostInEnclosure host enc

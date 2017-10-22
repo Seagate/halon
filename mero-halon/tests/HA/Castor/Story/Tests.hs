@@ -114,7 +114,7 @@ getHostName :: TestSetup
 getHostName ts nid = do
   rg <- G.getGraph (_ts_mm ts)
   return $! case G.connectedFrom Runs (Node nid) rg of
-    Just (R.Host hn) -> Just hn
+    Just (R.Host_XXX1 hn) -> Just hn
     _ -> Nothing
 
 -- | Keep checking RG until the given predicate on it holds. Useful
@@ -209,7 +209,7 @@ checkStorageDeviceRemoved enc idx rg = Prelude.null $
 announceNewSDev :: R.Enclosure_XXX1 -> ThatWhichWeCallADisk -> TestSetup -> Process ()
 announceNewSDev enc@(R.Enclosure_XXX1 enclosureName) sdev ts = do
   rg <- G.getGraph (_ts_mm ts)
-  let R.Host host : _ = G.connectedTo enc Has rg
+  let R.Host_XXX1 host : _ = G.connectedTo enc Has rg
       devIdx = succ . maximum . map R.slotIndex $ G.connectedTo enc Has rg
       slot = R.Slot enc devIdx
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
@@ -350,7 +350,7 @@ resetComplete rc mm adisk@(ADisk stord@(R.StorageDevice serial) m0sdev _ _) succ
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD adisk) Has rg
     n <- listToMaybe $ do
-      h :: R.Host <- G.connectedTo (R.slotEnclosure slot) Has rg
+      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
 
@@ -454,7 +454,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   let Just enc@(R.Enclosure_XXX1 enclosureName) = findDiskEnclosure sdev rg
 
   -- Find the host on which this device is actually on
-  Just (R.Host host) <- return $ do
+  Just (R.Host_XXX1 host) <- return $ do
     d :: M0.Disk <- G.connectedFrom M0.At (aDiskSD sdev) rg
     c :: M0.Controller <- G.connectedFrom M0.IsParentOf d rg
     G.connectedTo c M0.At rg
@@ -498,7 +498,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD disk) Has rg
     n <- listToMaybe $ do
-      h :: R.Host <- G.connectedTo (R.slotEnclosure slot) Has rg
+      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
   usend (_ts_rc ts) $ DriveFailed eid node slot (aDiskSD disk)
@@ -592,7 +592,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just hostname <- getHostName ts $ localNodeId someJoinedNode
-  Just enc <- G.connectedFrom Has (R.Host hostname) <$> G.getGraph (_ts_mm ts)
+  Just enc <- G.connectedFrom Has (R.Host_XXX1 hostname) <$> G.getGraph (_ts_mm ts)
   let sdev1 = ADisk (R.StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
       sdev2 = ADisk (R.StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
 
@@ -636,7 +636,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
-  let [sd]  = [ d |  e :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has (R.Host hostname) rg
+  let [sd]  = [ d |  e :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has (R.Host_XXX1 hostname) rg
                   ,  s :: R.Slot <- G.connectedTo e Has rg
                   ,  d :: R.StorageDevice <- maybeToList $ G.connectedFrom Has s rg
                   , di <- G.connectedTo d Has rg
@@ -682,7 +682,7 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   -- alternative would be to pick one from RG.
   someJoinedNode : _ <- return $ _ts_nodes ts
   Just host <- getHostName ts $ localNodeId someJoinedNode
-  Just enc' <- G.connectedFrom Has (R.Host host) <$> G.getGraph (_ts_mm ts)
+  Just enc' <- G.connectedFrom Has (R.Host_XXX1 host) <$> G.getGraph (_ts_mm ts)
   let sdev1 = ADisk (R.StorageDevice "mdserial1") Nothing "/dev/mddisk1" "md_no_wwn_1"
       sdev2 = ADisk (R.StorageDevice "mdserial2") Nothing "/dev/mddisk2" "md_no_wwn_2"
 

@@ -94,7 +94,7 @@ rmsAddress lnid = Endpoint {
 -- | Create the necessary configuration in the resource graph to support
 -- loading the Mero kernel. Currently this consists of creating a unique node
 -- UUID and storing the LNet nid.
-createMeroKernelConfig :: Castor.Host
+createMeroKernelConfig :: Castor.Host_XXX1
                        -> LNid -- ^ LNet interface address
                        -> PhaseM RC a ()
 createMeroKernelConfig host lnid = do
@@ -106,7 +106,7 @@ createMeroKernelConfig host lnid = do
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
 createMeroClientConfig :: M0.Filesystem
-                       -> Castor.Host
+                       -> Castor.Host_XXX1
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
 createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
@@ -314,7 +314,7 @@ configureMeroProcess sender p runType = do
 
 -- | Dispatch a request to start @halon:m0d@ on the given
 -- 'Castor.Host'.
-startMeroService :: Castor.Host -> Res.Node -> PhaseM RC a ()
+startMeroService :: Castor.Host_XXX1 -> Res.Node -> PhaseM RC a ()
 startMeroService host node = do
   Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
                       ++ show (host, node)
@@ -383,7 +383,7 @@ retriggerMeroNodeBootstrap n = do
 -- the given set of 'Castor.Host's.
 --
 -- Used during startup by 'requestClusterStart'.
-announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
+announceTheseMeroHosts :: [Castor.Host_XXX1] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
                        -> PhaseM RC a ()
 announceTheseMeroHosts hosts p = do

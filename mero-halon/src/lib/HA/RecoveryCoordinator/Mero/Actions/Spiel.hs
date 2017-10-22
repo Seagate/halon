@@ -55,64 +55,64 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , updateSnsStartTime
   ) where
 
-import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
   ( lookupDiskSDev )
-import HA.RecoveryCoordinator.Job.Actions
-import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Mero.Actions.Conf
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import HA.Resources (Has(..), Cluster(..))
-import HA.Resources.Castor
+import           HA.Resources (Has(..), Cluster(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
-import HA.Resources.HalonVars
-import HA.Resources.Mero (SyncToConfd(..))
+import           HA.Resources.HalonVars
+import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
-import Mero.ConfC
+import           Mero.ConfC
   ( PDClustAttr(..)
   , confPVerLvlDisks
   )
-import Mero.Lnet
-import Mero.Notification hiding (notifyMero)
-import Mero.Spiel
-import Mero.ConfC (Fid)
-import Mero.M0Worker
+import           Mero.Lnet
+import           Mero.Notification hiding (notifyMero)
+import           Mero.Spiel
+import           Mero.ConfC (Fid)
+import           Mero.M0Worker
 
-import Control.Applicative
+import           Control.Applicative
 import qualified Control.Distributed.Process as DP
-import Control.Monad (void, join)
-import Control.Monad.Catch
-import Control.Lens
+import           Control.Monad (void, join)
+import           Control.Monad.Catch
+import           Control.Lens
 
-import Data.Binary (Binary)
+import           Data.Binary (Binary)
 import qualified Data.ByteString as BS
-import Data.Foldable (traverse_, for_)
+import           Data.Foldable (traverse_, for_)
 import qualified Data.Text as T
-import Data.Traversable (for)
-import Data.Typeable
-import Data.Hashable (hash)
-import Data.IORef (writeIORef)
-import Data.List (sortOn, (\\))
-import Data.Maybe (catMaybes, listToMaybe)
-import Data.UUID (UUID)
-import Data.UUID.V4 (nextRandom)
-import Data.Bifunctor
-import Data.Vinyl
+import           Data.Traversable (for)
+import           Data.Typeable
+import           Data.Hashable (hash)
+import           Data.IORef (writeIORef)
+import           Data.List (sortOn, (\\))
+import           Data.Maybe (catMaybes, listToMaybe)
+import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
+import           Data.Bifunctor
+import           Data.Vinyl
 
-import Network.CEP
+import           Network.CEP
 
-import System.IO
+import           System.IO
 
-import Text.Printf (printf)
-import GHC.Generics
-import GHC.TypeLits
-import GHC.Exts
+import           Text.Printf (printf)
+import           GHC.Generics
+import           GHC.TypeLits
+import           GHC.Exts
 
-import Prelude hiding (id)
+import           Prelude hiding (id)
 
 -- | Default HA process endpoint listen address.
 haAddress :: LNid -> Endpoint
@@ -741,17 +741,17 @@ txPopulate lift (TxConfData CI.M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesy
   for_ nodes $ \node -> do
     let attrs =
           [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware g :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host]
-              , a <- G.connectedTo host Has g :: [HostAttr]]
+              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe R.Host_XXX1]
+              , a <- G.connectedTo host Has g :: [R.HostAttr]]
         defaultMem = 1024
         defCPUCount = 1
         memsize = maybe defaultMem fromIntegral
                 $ listToMaybe . catMaybes $ fmap getMem attrs
         cpucount = maybe defCPUCount fromIntegral
                  $ listToMaybe . catMaybes $ fmap getCpuCount attrs
-        getMem (HA_MEMSIZE_MB x) = Just x
+        getMem (R.HA_MEMSIZE_MB x) = Just x
         getMem _ = Nothing
-        getCpuCount (HA_CPU_COUNT x) = Just x
+        getCpuCount (R.HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]

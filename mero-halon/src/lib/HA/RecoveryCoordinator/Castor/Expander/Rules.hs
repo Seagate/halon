@@ -121,7 +121,7 @@ ruleReassembleRaid =
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe
           [ (host, node)
-          | host <- G.connectedTo enc R.Has rg :: [R.Host]
+          | host <- G.connectedTo enc R.Has rg :: [R.Host_XXX1]
           , node <- G.connectedTo host R.Runs rg
           ]
         raidDevs <- getLocalGraph <&> \rg -> let
@@ -339,7 +339,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure_XXX1, R.Host, R.Node))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure_XXX1, R.Host_XXX1, R.Node))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

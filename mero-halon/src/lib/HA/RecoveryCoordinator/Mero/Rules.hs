@@ -24,7 +24,7 @@ import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -122,12 +122,12 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
       let m0d = lookupM0d rg
           nodes = findRunningServiceOn
             [ node
-            | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-            , node <- G.connectedTo host R.Runs rg :: [R.Node]
+            | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+            , node <- G.connectedTo host Runs rg :: [Node]
             ]
             m0d rg
       case listToMaybe nodes of
-        Just node@(R.Node nid) ->
+        Just node@(Node nid) ->
           if G.isConnected fs R.Is M0.DIXInitialised rg
           then do
             Log.rcLog' Log.DEBUG "DIX subsystem already initialised."
@@ -218,7 +218,7 @@ meroRules = do
   defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
     rg <- getLocalGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
-           <$> G.connectedTo (M0.Pool pool) R.Has rg
+           <$> G.connectedTo (M0.Pool pool) Has rg
     Log.rcLog' Log.DEBUG $ "FailureVector=" ++ show mv
     liftProcess $ sendChan port mv
 

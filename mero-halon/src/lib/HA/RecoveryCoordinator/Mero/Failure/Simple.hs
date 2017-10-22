@@ -7,8 +7,8 @@ module HA.RecoveryCoordinator.Mero.Failure.Simple where
 import HA.RecoveryCoordinator.Mero.Failure.Internal
 
 import qualified HA.ResourceGraph as G
-import           HA.Resources
-import           HA.Resources.Castor
+import           HA.Resources (Cluster(..), Has(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import Mero.ConfC
@@ -77,14 +77,14 @@ generateFailureSets df cf cfe rg globs = let
     k = CI.m0_parity_units_XXX0 globs
     allCtrls =
       [ ctrl
-      | (host :: Host) <- G.connectedTo Cluster Has rg
+      | (host :: R.Host_XXX1) <- G.connectedTo Cluster Has rg
       , Just (ctrl :: M0.Controller) <-
           [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to
     allDisks = Map.fromListWith (Set.union) . fmap (fmap Set.singleton) $
         [ (M0.fid ctrl, M0.fid disk)
-        | (_host :: Host) <- G.connectedTo Cluster Has rg
+        | (_host :: R.Host_XXX1) <- G.connectedTo Cluster Has rg
         , ctrl <- allCtrls
         , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
         ]

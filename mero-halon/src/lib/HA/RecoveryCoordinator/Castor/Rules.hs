@@ -123,7 +123,7 @@ goEnc rack CI.Enclosure_XXX0{..} = let
 
 goHost_XXX0 :: R.Enclosure_XXX1 -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost_XXX0 enc CI.Host_XXX0{..} = let
-    host = R.Host $ T.unpack h_fqdn_XXX0
+    host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
     remAttrs = [R.HA_M0CLIENT]
   in do

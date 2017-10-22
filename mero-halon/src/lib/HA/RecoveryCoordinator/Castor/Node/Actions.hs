@@ -25,7 +25,7 @@ import HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
-import qualified HA.Resources.Castor as Castor
+import           HA.Resources.Castor (Host_XXX1)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -42,7 +42,7 @@ getLabeledProcesses :: R.Node
                     -> G.Graph
                     -> [M0.Process]
 getLabeledProcesses node label rg =
-   [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Castor.Host]
+   [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
        , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
        , G.isConnected p R.Has label rg
@@ -57,7 +57,7 @@ getLabeledProcessesP :: R.Node
                       -> G.Graph
                       -> [M0.Process]
 getLabeledProcessesP node labelP rg =
-  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Castor.Host]
+  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
       , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
       , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p R.Has rg]
@@ -67,7 +67,7 @@ getLabeledProcessesP node labelP rg =
 -- | Get all 'M0.Process'es on the given 'R.Node'.
 getProcesses :: R.Node -> G.Graph -> [M0.Process]
 getProcesses node rg =
-  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Castor.Host]
+  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
       , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
   ]
@@ -89,7 +89,7 @@ getUnstartedProcesses n rg =
 
 -- | Start all Mero processes labelled with the specified process label on
 -- a given node. Returns all the processes which are being started.
-startProcesses ::  Castor.Host
+startProcesses ::  Host_XXX1
                 -> (M0.ProcessLabel -> Bool)
                 -> PhaseM RC a [M0.Process]
 startProcesses host labelP = do
@@ -101,7 +101,6 @@ startProcesses host labelP = do
               , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p R.Has rg]
               , labelP lbl
               ]
-
   unless (null procs) $ do
     Log.rcLog' Log.DEBUG ("processes", show (M0.showFid <$> procs))
     for_ procs $ promulgateRC . ProcessStartRequest

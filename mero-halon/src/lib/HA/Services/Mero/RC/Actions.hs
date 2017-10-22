@@ -64,7 +64,7 @@ getNotificationNodes = do
   rg <- getLocalGraph
   let nodes =
         [ (node, m0node)
-        | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
+        | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host_XXX1]
         , node <- G.connectedTo host R.Runs rg
         , Just m0node <- [M0.nodeToM0Node node rg]
         ]

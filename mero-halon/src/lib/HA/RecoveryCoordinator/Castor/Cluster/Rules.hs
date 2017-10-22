@@ -7,14 +7,14 @@
 --
 -- Relevant part of the resource graph.
 -- @
---     R.Cluster
+--     Cluster
 --       |  |
 --       |  +-------M0.Root
 --       |           |
 --       |          M0.Profie
 --       |           |
 --       |          M0.FileSystem
---     R.Host          |
+--     R.Host_XXX1     |
 --      |  |           v
 --      |  +--------->M0.Node
 --      v
@@ -50,7 +50,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Rules
 
 import           HA.EventQueue
 import           HA.Encode
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -118,7 +118,7 @@ eventNodeFailedStart :: Definitions RC ()
 eventNodeFailedStart = defineSimpleTask "castor::cluster:node-failed-bootstrap" $ \case
   KernelStartFailure{} -> do
     Log.rcLog' Log.ERROR $ "Kernel module failed to start."
-    -- _ -> do modifyGraph $ G.connectUnique R.Cluster R.Has M0.MeroClusterFailed
+    -- _ -> do modifyGraph $ G.connectUnique Cluster Has M0.MeroClusterFailed
     -- XXX: notify $ MeroClusterFailed
     -- XXX: check if it's a client node, in that case such failure
     -- should not be a panic
@@ -183,17 +183,17 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       profile <- getProfile
       filesystem <- getFilesystem
       let status = getClusterStatus rg
-          stats = filesystem >>= \fs -> G.connectedTo fs R.Has rg
+          stats = filesystem >>= \fs -> G.connectedTo fs Has rg
           pools = Pool.getNonMD rg
       repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) pools
-      hosts <- forM (sort $ G.connectedTo R.Cluster R.Has rg) $ \host -> do
-            let nodes = sort $ G.connectedTo host R.Runs rg :: [M0.Node]
+      hosts <- forM (sort $ G.connectedTo Cluster Has rg) $ \host -> do
+            let nodes = sort $ G.connectedTo host Runs rg :: [M0.Node]
             let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
                        let st = M0.getState process rg
-                           mpl = G.connectedTo process R.Has rg
+                           mpl = G.connectedTo process Has rg
                        services  <- sort <$> getChildren process
                        let ptyp = getType mpl services
                        services' <- forM services $ \service -> do
@@ -242,7 +242,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
      rg <- getLocalGraph
      let procs =
            [ m0proc
-           | Just (m0prof :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+           | Just (m0prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
            , m0fs   <- G.connectedTo m0prof M0.IsParentOf rg :: [M0.Filesystem]
            , m0node <- G.connectedTo m0fs M0.IsParentOf rg :: [M0.Node]
            , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
@@ -269,8 +269,8 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
     let getMeroHostsNodes p = do
          rg <- getLocalGraph
          return [ (host,node)
-                | host <- G.connectedTo R.Cluster R.Has rg  :: [R.Host]
-                , node <- G.connectedTo host R.Runs rg :: [M0.Node]
+                | host <- G.connectedTo Cluster Has rg  :: [R.Host_XXX1]
+                , node <- G.connectedTo host Runs rg :: [M0.Node]
                 , p host node rg
                 ]
 
@@ -287,7 +287,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           -- Randomly select principal RM, it may be switched if another
           -- RM will appear online before this one.
           let pr = [ ps
-                   | Just (prf :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+                   | Just (prf :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                    , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
                    , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
                    , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
@@ -302,11 +302,11 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
                         ]
           -- Update cluster disposition
           Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
-          modifyGraph $ G.connect R.Cluster R.Has M0.ONLINE
+          modifyGraph $ G.connect Cluster Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host::R.Host) (node::M0.Node) rg' ->
-                   ( G.isConnected host R.Has R.HA_M0SERVER rg'
-                  || G.isConnected host R.Has R.HA_M0CLIENT rg'
+            $ \(host::R.Host_XXX1) (node::M0.Node) rg' ->
+                   ( G.isConnected host Has R.HA_M0SERVER rg'
+                  || G.isConnected host Has R.HA_M0CLIENT rg'
                    )
                 && M0.getState node rg' /= M0.NSFailed
                 && M0.getState node rg' /= M0.NSFailedUnrecoverable
@@ -331,7 +331,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
               Nothing -> do
                 Log.rcLog' Log.ERROR "graph invariant violation: cluster has no attached state"
                 fail_job $ ClusterStartFailure "Unknown cluster state." []
-              Just _ -> if (maybe False (==M0.ONLINE) $ G.connectedTo R.Cluster R.Has rg)
+              Just _ -> if (maybe False (==M0.ONLINE) $ G.connectedTo Cluster Has rg)
                             || isClusterStopped rg
                         then start_job
                         else fail_job $ ClusterStartFailure "Cluster not fully stopped." []
@@ -410,14 +410,14 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
 
   let route (ClusterStopRequest _reason ch) = do
         rg <- getLocalGraph
-        if isClusterStopped rg && maybe False (== M0.ONLINE) (G.connectedTo R.Cluster R.Has rg)
+        if isClusterStopped rg && maybe False (== M0.ONLINE) (G.connectedTo Cluster Has rg)
         then do
           liftProcess $ sendChan ch StateChangeFinished
           return $ Right (ClusterStopOk, [finish])
         else do
-          modifyGraph $ G.connect R.Cluster R.Has M0.OFFLINE
-          let nodes = [ node | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-                             , node <- G.connectedTo host R.Runs rg ]
+          modifyGraph $ G.connect Cluster Has M0.OFFLINE
+          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+                             , node <- G.connectedTo host Runs rg ]
           jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
           modify Local $ rlens fldJobs . rfield .~ jobs
           liftProcess $ sendChan ch StateChangeStarted
@@ -448,8 +448,8 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     Log.rcLog' Log.DEBUG "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getLocalGraph <&> \rg -> [ node
-              | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-              , node <- take 1 (G.connectedTo host R.Runs rg) :: [M0.Node]
+              | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+              , node <- take 1 (G.connectedTo host Runs rg) :: [M0.Node]
               ]
     procs <- getLocalGraph <&> M0.getM0Processes
     srvs <- getLocalGraph <&> \rg -> join
@@ -497,7 +497,7 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
       Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
       Just p -> do
         rg <- getLocalGraph
-        if G.isConnected p R.Has M0.PLM0t1fs rg
+        if G.isConnected p Has M0.PLM0t1fs rg
         then promulgateRC $ StopProcessRequest p
         else Log.rcLog' Log.WARN "Not a client process."
 
@@ -512,7 +512,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::sta
     Log.rcLog' Log.DEBUG $ "Start mero client requested."
     lookupConfObjByFid fid >>= \case
       Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
-      Just p -> G.isConnected p R.Has M0.PLM0t1fs <$> getLocalGraph >>= \case
+      Just p -> G.isConnected p Has M0.PLM0t1fs <$> getLocalGraph >>= \case
         True -> promulgateRC $ ProcessStartRequest p
         False -> Log.rcLog' Log.WARN "Not a client process."
 
@@ -644,7 +644,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     calculateStoppingState = do
       rg <- getLocalGraph
       let ps = [ (p, M0.getState p rg)
-               | Just (pr :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+               | Just (pr :: M0.Profile) <- [G.connectedTo Cluster Has rg]
                , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
                , mn :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
                , p  :: M0.Process  <- G.connectedTo mn M0.IsParentOf rg ]
@@ -655,7 +655,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
           doneSvs = filter ((== M0.SSOffline) . snd) svs
 
           disp :: [M0.Disposition]
-          disp = maybeToList $ G.connectedTo R.Cluster R.Has rg
+          disp = maybeToList $ G.connectedTo Cluster Has rg
           doneDisp = filter (== M0.OFFLINE) disp
 
           -- This is a bit of a hack: even if all processes and

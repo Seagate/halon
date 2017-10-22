@@ -62,8 +62,8 @@ import           GHC.Generics
 import           HA.Aeson
 import           HA.Encode (ProcessEncode(..))
 import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources
-import           HA.Resources.Castor
+import           HA.Resources (Node(..))
+import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.SafeCopy
@@ -100,7 +100,7 @@ data NewMeroServer = NewMeroServer Node
 instance Binary NewMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
-data NewMeroClientProcessed = NewMeroClientProcessed Host
+data NewMeroClientProcessed = NewMeroClientProcessed R.Host_XXX1
        deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroClientProcessed
