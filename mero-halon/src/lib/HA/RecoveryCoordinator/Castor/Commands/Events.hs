@@ -13,12 +13,14 @@ module HA.RecoveryCoordinator.Castor.Commands.Events
   , CommandStorageDeviceStatusResult(..)
   ) where
 
-import           Data.Binary
-import           Data.Typeable
-import           Control.Distributed.Process
-import           GHC.Generics
-import           HA.Resources.Castor
-import           HA.SafeCopy
+import Data.Binary
+import Data.Typeable
+import GHC.Generics
+
+import Control.Distributed.Process
+
+import HA.Resources.Castor (Slot_XXX1)
+import HA.SafeCopy
 
 -- | Request to create new storage device.
 data CommandStorageDeviceCreate = CommandStorageDeviceCreate
@@ -34,16 +36,15 @@ data CommandStorageDeviceCreateResult
       deriving (Eq, Show, Generic, Typeable)
 
 instance Binary CommandStorageDeviceCreateResult
-    
+
 -- | Update  information about known drive.
 data CommandStorageDevicePresence = CommandStorageDevicePresence
       { csdpSerial :: String
-      , csdpSlot   :: Slot
+      , csdpSlot   :: Slot_XXX1
       , csdpIsInstalled :: Bool
       , csdpIsPowered   :: Bool
       , csdpReplyTo :: SendPort CommandStorageDevicePresenceResult
       } deriving (Eq, Show, Generic, Ord)
-
 
 -- | Result of the 'CommandStorageDevicePresence'.
 data CommandStorageDevicePresenceResult
@@ -57,7 +58,7 @@ instance Binary CommandStorageDevicePresenceResult
 -- | Update status of the known drive.
 data CommandStorageDeviceStatus = CommandStorageDeviceStatus
       { csdsSerial :: String
-      , csdsSlot :: Slot
+      , csdsSlot :: Slot_XXX1
       , csdsStatus :: String
       , csdsReason :: String
       , csdsReplyTo :: SendPort CommandStorageDeviceStatusResult

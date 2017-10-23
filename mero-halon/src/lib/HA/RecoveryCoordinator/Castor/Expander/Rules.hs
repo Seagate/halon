@@ -35,13 +35,24 @@ import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Has(..), Node(..), Runs(..))
+import           HA.Resources.Castor
+  ( DeviceIdentifier(DIRaidDevice)
+  , Enclosure_XXX1
+  , Host_XXX1
+  , Is(..)
+  , ReassemblingRaid(..)
+  , Slot_XXX1
+  , StorageDevice_XXX1
+  )
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.Services.SSPL.LL.CEP (sendNodeCmd)
-import           HA.Services.SSPL.LL.RC.Actions (fldCommandAck, mkDispatchAwaitCommandAck)
+import           HA.Services.SSPL.LL.RC.Actions
+  ( fldCommandAck
+  , mkDispatchAwaitCommandAck
+  )
 import           HA.Services.SSPL.LL.Resources (NodeCmd(..), RaidCmd(..))
 import           Network.CEP
 
@@ -121,16 +132,16 @@ ruleReassembleRaid =
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe
           [ (host, node)
-          | host <- G.connectedTo enc R.Has rg :: [R.Host_XXX1]
-          , node <- G.connectedTo host R.Runs rg
+          | host <- G.connectedTo enc Has rg :: [Host_XXX1]
+          , node <- G.connectedTo host Runs rg
           ]
         raidDevs <- getLocalGraph <&> \rg -> let
-            extractRaidDev (R.DIRaidDevice x) = Just x
+            extractRaidDev (DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
           in nub $ mapMaybe extractRaidDev [
-              lbl | slot <- G.connectedTo enc R.Has rg :: [R.Slot]
-                  , Just d <- [G.connectedFrom R.Has slot rg] :: [Maybe R.StorageDevice_XXX1]
-                  , lbl <- G.connectedTo d R.Has rg :: [R.DeviceIdentifier]
+              lbl | slot <- G.connectedTo enc Has rg :: [Slot_XXX1]
+                  , Just d <- [G.connectedFrom Has slot rg] :: [Maybe StorageDevice_XXX1]
+                  , lbl <- G.connectedTo d Has rg :: [DeviceIdentifier]
                   ]
 
         -- If we don't have the node, we can't do much, but it is valid
@@ -143,7 +154,7 @@ ruleReassembleRaid =
             modify Local $ rlens fldRaidDevices . rfield .~ raidDevs
 
             -- Mark that the host is undergoing RAID reassembly
-            modifyGraph $ G.connect host R.Is R.ReassemblingRaid
+            modifyGraph $ G.connect host Is ReassemblingRaid
 
             -- Set default jump parameters. If no Mero, just stop RAID directly
             onSuccess stop_raid
@@ -331,7 +342,7 @@ ruleReassembleRaid =
       directly tidyup $ do
         Just uuid <- gets Local (^. rlens fldUUID . rfield)
         Just (_, host, _) <- gets Local (^. rlens fldHardware . rfield)
-        modifyGraph $ G.disconnect host R.Is R.ReassemblingRaid
+        modifyGraph $ G.disconnect host Is ReassemblingRaid
         waitClear
         done uuid
 
@@ -339,7 +350,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (R.Enclosure_XXX1, R.Host_XXX1, R.Node))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure_XXX1, Host_XXX1, Node))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

@@ -22,42 +22,44 @@ module HA.Resources.Mero
   , CI.M0Globals_XXX0
   ) where
 
-import Control.Distributed.Process (ProcessId)
-import Data.Binary (Binary(..))
-import Data.Bits
+import           Control.Distributed.Process (ProcessId)
+import           Data.Binary (Binary(..))
+import           Data.Bits
 import qualified Data.ByteString as BS
-import Data.Char (ord)
-import Data.Either (rights)
-import Data.Hashable (Hashable(..))
-import Data.Int (Int64)
-import Data.Maybe (listToMaybe)
-import Data.Ord (comparing)
-import Data.Proxy (Proxy(..))
-import Data.Scientific
+import           Data.Char (ord)
+import           Data.Either (rights)
+import           Data.Hashable (Hashable(..))
+import           Data.Int (Int64)
+import           Data.Maybe (listToMaybe)
+import           Data.Ord (comparing)
+import           Data.Proxy (Proxy(..))
+import           Data.Scientific
 import qualified Data.Text as T
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
 import qualified Data.Vector as V
-import Data.Word ( Word32, Word64 )
-import GHC.Generics (Generic)
-import HA.Aeson
+import           Data.Word ( Word32, Word64 )
+import           GHC.Generics (Generic)
+import           HA.Aeson
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import qualified HA.Resources as R (Node(..))
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
-import HA.Resources.TH
-import HA.SafeCopy hiding (Profile)
-import Mero.ConfC
+import           HA.Resources.TH
+import           HA.SafeCopy hiding (Profile)
+import           Mero.ConfC
   ( Bitmap
   , Fid(..)
   , PDClustAttr(..)
   , ServiceParams
   , ServiceType
   )
-import Mero.Lnet (Endpoint, readEndpoint)
+import           Mero.Lnet (Endpoint, readEndpoint)
 import qualified Mero.Lnet as Lnet
-import Mero.Spiel (FSStats)
+import           Mero.Spiel (FSStats)
 import qualified "distributed-process-scheduler" System.Clock as C
+
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
@@ -946,12 +948,12 @@ $(mkDicts
   , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''Root)
-  , (''R.Cluster, ''R.Has, ''Disposition)
-  , (''R.Cluster, ''R.Has, ''PVerCounter)
+    (''Cluster, ''Has, ''Root)
+  , (''Cluster, ''Has, ''Disposition)
+  , (''Cluster, ''Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
-  , (''R.Cluster, ''R.Has, ''Profile)
-  , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
+  , (''Cluster, ''Has, ''Profile)
+  , (''Cluster, ''Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host_XXX1)
   , (''Rack, ''At, ''R.Rack_XXX1)
   , (''Enclosure, ''At, ''R.Enclosure_XXX1)
@@ -980,27 +982,27 @@ $(mkDicts
   , (''Disk, ''R.Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
-  , (''SDev, ''At, ''R.Slot)
+  , (''SDev, ''At, ''R.Slot_XXX1)
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
-  , (''R.Cluster, ''R.Has, ''FidSeq)
-  , (''R.Cluster, ''R.Has, ''CI.M0Globals_XXX0)
-  , (''R.Cluster, ''RunLevel, ''BootLevel)
-  , (''R.Cluster, ''StopLevel, ''BootLevel)
-  , (''Pool, ''R.Has, ''PoolRepairStatus)
-  , (''Pool, ''R.Has, ''DiskFailureVector)
-  , (''R.Host_XXX1, ''R.Has, ''LNid)
-  , (''R.Host_XXX1, ''R.Runs, ''Node)
-  , (''Process, ''R.Has, ''ProcessLabel)
-  , (''Process, ''R.Has, ''ProcessEnv)
-  , (''Process, ''R.Has, ''PID)
+  , (''Cluster, ''Has, ''FidSeq)
+  , (''Cluster, ''Has, ''CI.M0Globals_XXX0)
+  , (''Cluster, ''RunLevel, ''BootLevel)
+  , (''Cluster, ''StopLevel, ''BootLevel)
+  , (''Pool, ''Has, ''PoolRepairStatus)
+  , (''Pool, ''Has, ''DiskFailureVector)
+  , (''R.Host_XXX1, ''Has, ''LNid)
+  , (''R.Host_XXX1, ''Runs, ''Node)
+  , (''Process, ''Has, ''ProcessLabel)
+  , (''Process, ''Has, ''ProcessEnv)
+  , (''Process, ''Has, ''PID)
   , (''Process, ''R.Is, ''ProcessBootstrapped)
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
   , (''Controller,    ''R.Is, ''ControllerState)
-  , (''Filesystem, ''R.Has, ''FilesystemStats)
+  , (''Filesystem, ''Has, ''FilesystemStats)
   , (''Filesystem, ''R.Is, ''DIXInitialised)
   ]
   )
@@ -1019,17 +1021,17 @@ $(mkResRel
   , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
+    (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Disposition)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''PVerCounter)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host_XXX1)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack_XXX1)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure_XXX1)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice_XXX1)
-  , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot_XXX1)
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
@@ -1056,24 +1058,24 @@ $(mkResRel
   , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
     -- Other things!
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''FidSeq)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals_XXX0)
-  , (''R.Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
-  , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
-  , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
-  , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
-  , (''R.Host_XXX1, AtMostOne, ''R.Has, Unbounded, ''LNid)
-  , (''R.Host_XXX1, AtMostOne, ''R.Runs, Unbounded, ''Node)
-  , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
-  , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
-  , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''FidSeq)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''CI.M0Globals_XXX0)
+  , (''Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
+  , (''Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
+  , (''Pool, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)
+  , (''Pool, AtMostOne, ''Has, AtMostOne, ''DiskFailureVector)
+  , (''R.Host_XXX1, AtMostOne, ''Has, Unbounded, ''LNid)
+  , (''R.Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
+  , (''Process, Unbounded, ''Has, AtMostOne, ''ProcessLabel)
+  , (''Process, Unbounded, ''Has, Unbounded, ''ProcessEnv)
+  , (''Process, Unbounded, ''Has, AtMostOne, ''PID)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)
   , (''Service, Unbounded, ''R.Is, AtMostOne, ''ServiceState)
   , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
-  , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
+  , (''Filesystem, Unbounded, ''Has, AtMostOne, ''FilesystemStats)
   , (''Filesystem, Unbounded, ''R.Is, AtMostOne, ''DIXInitialised)
   ]
   []
@@ -1090,7 +1092,7 @@ getM0Services g =
 -- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
 getM0Processes :: G.Graph -> [Process]
 getM0Processes g =
-  [ p | Just (prof :: Profile) <- [G.connectedTo R.Cluster R.Has g]
+  [ p | Just (prof :: Profile) <- [G.connectedTo Cluster Has g]
        , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
        , (node :: Node) <- G.connectedTo fs IsParentOf g
        , p <- G.connectedTo node IsParentOf g
@@ -1106,16 +1108,16 @@ lookupConfObjByFid f =
   . filter ((== f) . fid)
   . G.getResourcesOfType
 
--- | Lookup 'Node' associated with the given 'R.Node'. See
+-- | Lookup 'Node' associated with the given 'Node'. See
 -- 'nodeToM0Node' for inverse.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: R.Host_XXX1) <- [G.connectedFrom R.Runs m0node rg]
-         , node <- G.connectedTo h R.Runs rg ]
+  [ node | Just (h :: R.Host_XXX1) <- [G.connectedFrom Runs m0node rg]
+         , node <- G.connectedTo h Runs rg ]
 
--- | Lookup 'R.Node' associated with the given 'Node'. See
+-- | Lookup 'Node' associated with the given 'Node'. See
 -- 'm0nodeToNode' for inverse.
 nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
-  [ m0n | Just (h :: R.Host_XXX1) <- [G.connectedFrom R.Runs node rg]
-        , m0n <- G.connectedTo h R.Runs rg ]
+  [ m0n | Just (h :: R.Host_XXX1) <- [G.connectedFrom Runs node rg]
+        , m0n <- G.connectedTo h Runs rg ]

@@ -27,13 +27,12 @@ import           Data.Binary (Binary)
 import           Data.Char (toUpper)
 import           Data.Functor (void)
 import           Data.Function (fix)
+import           Data.List (nub)
 import           Data.Maybe (mapMaybe)
 import           Data.Typeable
 import           Data.UUID (UUID)
 import           Data.Word (Word32)
 import           GHC.Generics
-
-import           Data.List (nub)
 
 import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import           HA.RecoveryCoordinator.Castor.Drive.Events
@@ -48,7 +47,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Node)
 import           HA.Resources.Castor
-  ( Slot
+  ( Slot_XXX1
   , StorageDevice_XXX1
   , StorageDeviceAttr(..)
   , StorageDeviceStatus(..)
@@ -69,7 +68,6 @@ data SpielDeviceAttached = SpielDeviceAttached M0.SDev (Either String ())
   deriving (Eq, Show, Typeable, Generic)
 instance Binary SpielDeviceAttached
 
-
 -- | Notification that happens in case if new spiel device is detached.
 data SpielDeviceDetached = SpielDeviceDetached M0.SDev (Either String ())
   deriving (Eq, Show, Typeable, Generic)
@@ -82,7 +80,6 @@ handleSNSReply (Left se) = case fromException se of
   Just t | isAlreadyExistsError t -> Right () -- Drive was already attached - fine
          | isAlreadyInUseError  t -> Right () -- Drive was already attached - fine
   _                               -> Left (show se)
-
 
 -- | Create all code that allow to ask mero (IO services) to attach certain disk.
 --
@@ -193,7 +190,6 @@ mkDetachDisk getter onFailure onSuccess = do
         Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
 
-
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
 markRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l ()
@@ -283,12 +279,11 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
               [] -> Nothing
               xs -> Just (fromIntegral $ maximum xs, length failedDisks)
 
-
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
                             -> Node          -- ^ Node in question.
                             -> StorageDevice_XXX1 -- ^ Installed storage device.
-                            -> Slot          -- ^ Slot of the device.
+                            -> Slot_XXX1     -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.
                             -> Maybe Bool    -- ^ Is device powered.
                             -> PhaseM RC l ()
@@ -335,7 +330,7 @@ updateStorageDeviceStatus ::
      UUID  -- ^ Thread UUID.
   -> Node -- ^ Node in question.
   -> StorageDevice_XXX1 -- ^ Updated storage device.
-  -> Slot -- ^ Storage device location.
+  -> Slot_XXX1 -- ^ Storage device location.
   -> String -- ^ Storage device status.
   -> String -- ^ Status reason.
   -> PhaseM RC l Bool

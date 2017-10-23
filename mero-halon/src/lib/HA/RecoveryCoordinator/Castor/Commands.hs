@@ -34,7 +34,7 @@ drivePresence :: Definitions RC ()
 drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
   \(CommandStorageDevicePresence serial slot isInstalled isPowered chan) -> do
      let sd = R.StorageDevice_XXX1 serial
-     let R.Slot enc _idx = slot
+     let R.Slot_XXX1 enc _idx = slot
      rg <- getLocalGraph
      if isConnected Cluster Has sd rg
      then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg
@@ -54,7 +54,7 @@ driveStatus :: Definitions RC ()
 driveStatus = defineSimpleTask "castor::command::update-drive-status" $
   \(CommandStorageDeviceStatus serial slot status reason chan) -> do
       let sd = R.StorageDevice_XXX1 serial
-      let R.Slot enc _idx = slot
+      let R.Slot_XXX1 enc _idx = slot
       rg <- getLocalGraph
       if isConnected Cluster Has sd rg
       then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg

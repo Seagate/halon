@@ -178,7 +178,7 @@ findSDev rg = case findSDevs rg of
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
 findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe R.Enclosure_XXX1
-findDiskEnclosure disk rg = R.slotEnclosure <$> G.connectedTo (aDiskSD disk) Has rg
+findDiskEnclosure disk rg = R.slotEnclosure_XXX1 <$> G.connectedTo (aDiskSD disk) Has rg
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
 find2SDev rg =
@@ -197,7 +197,7 @@ find2SDev rg =
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: R.Enclosure_XXX1 -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = Prelude.null $
-  [ () | slot@(R.Slot enc' idx') <- G.connectedTo enc Has rg
+  [ () | slot@(R.Slot_XXX1 enc' idx') <- G.connectedTo enc Has rg
        , Just{} <- [G.connectedFrom Has slot rg :: Maybe R.StorageDevice_XXX1]
        , enc == enc' && idx == idx'
        ]
@@ -210,8 +210,8 @@ announceNewSDev :: R.Enclosure_XXX1 -> ThatWhichWeCallADisk -> TestSetup -> Proc
 announceNewSDev enc@(R.Enclosure_XXX1 enclosureName) sdev ts = do
   rg <- G.getGraph (_ts_mm ts)
   let R.Host_XXX1 host : _ = G.connectedTo enc Has rg
-      devIdx = succ . maximum . map R.slotIndex $ G.connectedTo enc Has rg
-      slot = R.Slot enc devIdx
+      devIdx = succ . maximum . map R.slotIndex_XXX1 $ G.connectedTo enc Has rg
+      slot = R.Slot_XXX1 enc devIdx
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
         (pack host) (pack enclosureName)
         ((\(R.StorageDevice_XXX1 sn) -> pack sn) $ aDiskSD sdev) (fromIntegral devIdx)
@@ -231,7 +231,7 @@ announceNewSDev enc@(R.Enclosure_XXX1 enclosureName) sdev ts = do
   Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
     -- Check that the drive is reachable from the enclosure, through
     -- the slot.
-    let devs = [ d | slot'@R.Slot{} <- G.connectedTo enc Has rg'
+    let devs = [ d | slot'@R.Slot_XXX1{} <- G.connectedTo enc Has rg'
                    , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
     in return $! if aDiskSD sdev `elem` devs then Just () else Nothing
   return ()
@@ -350,7 +350,7 @@ resetComplete rc mm adisk@(ADisk stord@(R.StorageDevice_XXX1 serial) m0sdev _ _)
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD adisk) Has rg
     n <- listToMaybe $ do
-      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure slot) Has rg
+      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure_XXX1 slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
 
@@ -459,7 +459,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
     c :: M0.Controller <- G.connectedFrom M0.IsParentOf d rg
     G.connectedTo c M0.At rg
 
-  let Just (R.Slot _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
+  let Just (R.Slot_XXX1 _ devIdx) = aDiskMero sdev >>= \sd -> G.connectedTo sd M0.At rg
       message = LBS.toStrict . encode . mkSensorResponse $ mkResponseHPI
                   (pack host) (pack enclosureName)
                   (pack $ (\(R.StorageDevice_XXX1 sn) -> sn) $ aDiskSD sdev)
@@ -474,7 +474,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
 
   -- Wait until drive gets removed from the slot.
   Just{} <- waitUntilGraph (_ts_mm ts) 1 10 $ \rg' ->
-    let devs = [ d | slot'@R.Slot{} <- G.connectedTo enc Has rg'
+    let devs = [ d | slot'@R.Slot_XXX1{} <- G.connectedTo enc Has rg'
                    , d <- maybeToList $ G.connectedFrom Has slot' rg' ]
     in return $! if aDiskSD sdev `notElem` devs then Just () else Nothing
 
@@ -498,7 +498,7 @@ testDrivePoweredDown transport pg = run transport pg [] $ \ts -> do
   Just (node, slot) <- return $ do
     slot <- G.connectedTo (aDiskSD disk) Has rg
     n <- listToMaybe $ do
-      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure slot) Has rg
+      h :: R.Host_XXX1 <- G.connectedTo (R.slotEnclosure_XXX1 slot) Has rg
       G.connectedTo h Runs rg
     return (n, slot)
   usend (_ts_rc ts) $ DriveFailed eid node slot (aDiskSD disk)
@@ -560,7 +560,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         let msdev = listToMaybe
               [ sdev | rack :: R.Rack_XXX1 <- G.connectedTo Cluster Has rg
                      , enc :: R.Enclosure_XXX1 <- G.connectedTo rack Has rg
-                     , slot :: R.Slot <- G.connectedTo enc Has rg
+                     , slot :: R.Slot_XXX1 <- G.connectedTo enc Has rg
                      , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
         case msdev of
           Nothing -> liftProcess $ usend caller (Nothing :: Maybe M0.SDev)
@@ -637,7 +637,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
   let [sd]  = [ d |  e :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has (R.Host_XXX1 hostname) rg
-                  ,  s :: R.Slot <- G.connectedTo e Has rg
+                  ,  s :: R.Slot_XXX1 <- G.connectedTo e Has rg
                   ,  d :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has s rg
                   , di <- G.connectedTo d Has rg
                   , di == R.DIPath "/dev/mddisk2"

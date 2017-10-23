@@ -22,7 +22,7 @@ module HA.Resources.Castor (
 
 import HA.Aeson
 import HA.SafeCopy
-import HA.Resources
+import HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import qualified HA.Resources.Castor.Initial as MI
 import HA.Resources.TH
 
@@ -94,16 +94,16 @@ instance ToJSON StorageDevice_XXX1
 storageIndex ''StorageDevice_XXX1 "6f7915aa-645c-42b4-b3e0-a8222c764730"
 deriveSafeCopy 0 'base ''StorageDevice_XXX1
 
-data Slot = Slot
-  { slotEnclosure :: Enclosure_XXX1
-  , slotIndex     :: Int
+data Slot_XXX1 = Slot_XXX1
+  { slotEnclosure_XXX1 :: Enclosure_XXX1
+  , slotIndex_XXX1     :: Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
-instance Hashable Slot
-instance FromJSON Slot
-instance ToJSON   Slot
+instance Hashable Slot_XXX1
+instance FromJSON Slot_XXX1
+instance ToJSON   Slot_XXX1
 
-storageIndex ''Slot "b0561c97-63ed-4f16-a27a-10ef04f9a023"
-deriveSafeCopy 0 'base ''Slot
+storageIndex ''Slot_XXX1 "b0561c97-63ed-4f16-a27a-10ef04f9a023"
+deriveSafeCopy 0 'base ''Slot_XXX1
 
 data StorageDeviceAttr
     = SDResetAttempts !Int
@@ -316,7 +316,7 @@ $(mkDicts
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot, ''Is, ''ReplacedBy
+  , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack_XXX1)
   , (''Cluster, ''Has, ''Host_XXX1)
@@ -324,8 +324,8 @@ $(mkDicts
   , (''Cluster, ''Has, ''StorageDevice_XXX1)
   , (''Rack_XXX1, ''Has, ''Enclosure_XXX1)
   , (''Host_XXX1, ''Has, ''HostAttr)
-  , (''Enclosure_XXX1, ''Has, ''Slot)
-  , (''StorageDevice_XXX1, ''Has, ''Slot)
+  , (''Enclosure_XXX1, ''Has, ''Slot_XXX1)
+  , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
   , (''Enclosure_XXX1, ''Has, ''Host_XXX1)
   , (''Enclosure_XXX1, ''Has, ''MI.BMC)
   , (''Host_XXX1, ''Runs, ''Node)
@@ -343,13 +343,13 @@ $(mkResRel
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot, ''Is, ''ReplacedBy
+  , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice_XXX1)
-  , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''Slot)
+  , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''Slot_XXX1)
   , (''Rack_XXX1, AtMostOne, ''Has, Unbounded, ''Enclosure_XXX1)
   , (''Host_XXX1, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host_XXX1, AtMostOne, ''Has, AtMostOne, ''UUID)
@@ -357,7 +357,7 @@ $(mkResRel
   , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''MI.BMC)
   , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''StorageDevice_XXX1, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
-  , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot)
+  , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot_XXX1)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''StorageDeviceAttr)
   , (''StorageDevice_XXX1, AtMostOne, ''ReplacedBy, AtMostOne, ''StorageDevice_XXX1)

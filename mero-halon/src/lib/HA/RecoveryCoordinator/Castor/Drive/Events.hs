@@ -29,7 +29,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   ) where
 
 import HA.Resources (Node(..))
-import HA.Resources.Castor (Enclosure_XXX1, Slot, StorageDevice_XXX1)
+import HA.Resources.Castor (Enclosure_XXX1, Slot_XXX1, StorageDevice_XXX1)
 import HA.SafeCopy
 
 import Data.UUID (UUID)
@@ -58,7 +58,7 @@ instance Binary ResetAttemptResult
 data DrivePowerChange = DrivePowerChange
   { dpcUUID :: UUID -- ^ Thread UUID
   , dpcNode :: Node
-  , dpcLocation :: Slot
+  , dpcLocation :: Slot_XXX1
   , dpcDevice :: StorageDevice_XXX1
   , dpcPowered :: Bool -- Is device now powered?
   } deriving (Eq, Show, Typeable, Generic)
@@ -70,7 +70,7 @@ instance Binary DrivePowerChange
 data DriveRemoved = DriveRemoved
        { drUUID :: UUID -- ^ Threaad UUID.
        , drNode :: Node -- ^ Node where event happens.
-       , drLocation :: Slot -- ^ Location where event happened.
+       , drLocation :: Slot_XXX1 -- ^ Location where event happened.
        , drDevice    :: StorageDevice_XXX1 -- ^ Removed device
        , drPowered :: Maybe Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
@@ -85,7 +85,7 @@ instance Binary DriveRemoved
 data DriveInserted = DriveInserted
        { diUUID :: UUID -- ^ Thread UUID.
        , diNode :: Node -- ^ Node where event happens.
-       , diLocation :: Slot -- ^ Location where event happened.
+       , diLocation :: Slot_XXX1 -- ^ Location where event happened.
        , diDevice :: StorageDevice_XXX1 -- ^ Inserted device.
        , diPowered :: Maybe Bool -- Is disk powered?
        } deriving (Eq, Show, Typeable, Generic)
@@ -95,7 +95,7 @@ instance Binary DriveInserted
 
 -- | 'DriveFailed' event indicates that an underlying system has identified a
 --   failed drive. Currently this is sent when a SMART test fails on a drive.
-data DriveFailed = DriveFailed UUID Node Slot StorageDevice_XXX1
+data DriveFailed = DriveFailed UUID Node Slot_XXX1 StorageDevice_XXX1
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
@@ -103,7 +103,7 @@ instance Binary DriveFailed
 
 -- | Event emitted when drive manager indicates that a device is no longer
 --   visible to the system.
-data DriveTransient = DriveTransient UUID Node Slot StorageDevice_XXX1
+data DriveTransient = DriveTransient UUID Node Slot_XXX1 StorageDevice_XXX1
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveTransient
@@ -111,7 +111,7 @@ instance Binary DriveTransient
 
 -- | Event emitted when we get OK indication for the drive
 --   from drive manager.
-data DriveOK = DriveOK UUID Node Slot StorageDevice_XXX1
+data DriveOK = DriveOK UUID Node Slot_XXX1 StorageDevice_XXX1
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveOK

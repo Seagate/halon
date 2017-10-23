@@ -14,7 +14,7 @@ import           Control.Distributed.Process
 import           Data.Foldable
 import           Data.Monoid ((<>))
 import           HA.RecoveryCoordinator.Castor.Commands.Events
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor (Enclosure_XXX1(..), Slot_XXX1(..))
 import           Handler.Mero.Helpers (clusterCommand)
 import           Options.Applicative
 import qualified Options.Applicative as Opt
@@ -50,7 +50,6 @@ parser = asum
                       <> metavar "[EMPTY|OK]"
                       <> help "Set drive status")
 
-
 optSerial :: Parser String
 optSerial = strOption $ mconcat
    [ long "serial"
@@ -59,10 +58,9 @@ optSerial = strOption $ mconcat
    , metavar "SERIAL"
    ]
 
-
-parseSlot :: Parser R.Slot
-parseSlot = R.Slot
-   <$> (R.Enclosure_XXX1 <$>
+parseSlot :: Parser Slot_XXX1
+parseSlot = Slot_XXX1
+   <$> (Enclosure_XXX1 <$>
          strOption (mconcat [ long "slot-enclosure"
                             , help "index of the drive's enclosure"
                             , metavar "NAME"
@@ -72,7 +70,6 @@ parseSlot = R.Slot
                             , metavar "INT"
                             ])
 
-
 optPath :: Parser String
 optPath = strOption $ mconcat
   [ long "path"
@@ -81,16 +78,14 @@ optPath = strOption $ mconcat
   , metavar "PATH"
   ]
 
-
 data Options
-  = DrivePresence String R.Slot Bool Bool
-  | DriveStatus   String R.Slot String
+  = DrivePresence String Slot_XXX1 Bool Bool
+  | DriveStatus   String Slot_XXX1 String
   | DriveNew      String String
   deriving (Eq, Show)
 
-
 run :: [NodeId] -> Options -> Process ()
-run nids (DriveStatus serial slot@(R.Slot enc _) status) =
+run nids (DriveStatus serial slot@(Slot_XXX1 enc _) status) =
   clusterCommand nids Nothing (CommandStorageDeviceStatus serial slot status "NONE") $ \case
     StorageDeviceStatusErrorNoSuchDevice -> liftIO $ do
       putStrLn $ "Unkown drive " ++ serial
@@ -98,7 +93,7 @@ run nids (DriveStatus serial slot@(R.Slot enc _) status) =
       putStrLn $ "can't find an enclosure " ++ show enc ++ " or node associated with it"
     StorageDeviceStatusUpdated -> liftIO $ do
       putStrLn $ "Command executed."
-run nids (DrivePresence serial slot@(R.Slot enc _) isInstalled isPowered) =
+run nids (DrivePresence serial slot@(Slot_XXX1 enc _) isInstalled isPowered) =
   clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
     StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do
       putStrLn $ "Unknown drive " ++ serial

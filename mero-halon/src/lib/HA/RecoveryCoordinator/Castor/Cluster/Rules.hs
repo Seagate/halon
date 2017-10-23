@@ -35,6 +35,7 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE ViewPatterns          #-}
 {-# LANGUAGE GADTs                 #-}
+
 module HA.RecoveryCoordinator.Castor.Cluster.Rules
   ( -- * All rules in one
     clusterRules
@@ -51,7 +52,13 @@ module HA.RecoveryCoordinator.Castor.Cluster.Rules
 import           HA.EventQueue
 import           HA.Encode
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor
+  ( Is(..)
+  , HostAttr(HA_M0CLIENT, HA_M0SERVER)
+  , Host_XXX1
+  , Slot_XXX1
+  , StorageDevice_XXX1
+  )
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -200,9 +207,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                           sdevs  <- sort <$> getChildren service
                           sdevs' <- forM sdevs $ \sdev -> do
                             let msd   = do disk :: M0.Disk <- G.connectedTo (sdev::M0.SDev) M0.IsOnHardware rg
-                                           sd :: R.StorageDevice_XXX1 <- G.connectedTo disk M0.At rg
+                                           sd :: StorageDevice_XXX1 <- G.connectedTo disk M0.At rg
                                            return sd
-                                slot  = G.connectedTo sdev M0.At rg :: Maybe R.Slot
+                                slot  = G.connectedTo sdev M0.At rg :: Maybe Slot_XXX1
                                 state = M0.getState sdev rg
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')
@@ -248,7 +255,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
            , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
            ]
      modifyGraph $ execState $ do
-       for_ procs $ \p -> State.modify (G.connect p R.Is M0.ProcessBootstrapped)
+       for_ procs $ \p -> State.modify (G.connect p Is M0.ProcessBootstrapped)
      registerSyncGraph $ do
        sendChan ch ()
 
@@ -269,7 +276,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
     let getMeroHostsNodes p = do
          rg <- getLocalGraph
          return [ (host,node)
-                | host <- G.connectedTo Cluster Has rg  :: [R.Host_XXX1]
+                | host <- G.connectedTo Cluster Has rg  :: [Host_XXX1]
                 , node <- G.connectedTo host Runs rg :: [M0.Node]
                 , p host node rg
                 ]
@@ -304,9 +311,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
           modifyGraph $ G.connect Cluster Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host::R.Host_XXX1) (node::M0.Node) rg' ->
-                   ( G.isConnected host Has R.HA_M0SERVER rg'
-                  || G.isConnected host Has R.HA_M0CLIENT rg'
+            $ \(host::Host_XXX1) (node::M0.Node) rg' ->
+                   ( G.isConnected host Has HA_M0SERVER rg'
+                  || G.isConnected host Has HA_M0CLIENT rg'
                    )
                 && M0.getState node rg' /= M0.NSFailed
                 && M0.getState node rg' /= M0.NSFailedUnrecoverable
@@ -416,7 +423,7 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
           return $ Right (ClusterStopOk, [finish])
         else do
           modifyGraph $ G.connect Cluster Has M0.OFFLINE
-          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
                              , node <- G.connectedTo host Runs rg ]
           jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
           modify Local $ rlens fldJobs . rfield .~ jobs
@@ -448,7 +455,7 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     Log.rcLog' Log.DEBUG "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getLocalGraph <&> \rg -> [ node
-              | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+              | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
               , node <- take 1 (G.connectedTo host Runs rg) :: [M0.Node]
               ]
     procs <- getLocalGraph <&> M0.getM0Processes

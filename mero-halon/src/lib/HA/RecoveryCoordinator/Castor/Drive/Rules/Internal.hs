@@ -17,7 +17,7 @@ import Control.Lens
 import Data.UUID (UUID)
 import HA.RecoveryCoordinator.Job.Actions (ListenerId)
 import HA.Resources (Node)
-import HA.Resources.Castor (Slot, StorageDevice_XXX1)
+import HA.Resources.Castor (Slot_XXX1, StorageDevice_XXX1)
 
 -- | State of the mkcheck rule.
 data CheckAndHandleState = CheckAndHandleState
@@ -25,7 +25,7 @@ data CheckAndHandleState = CheckAndHandleState
          -- ^ Node where disk is located.
       , _chsStorageDevice :: StorageDevice_XXX1
          -- ^ Storage device we work with.
-      , _chsLocation      :: Slot
+      , _chsLocation      :: Slot_XXX1
          -- ^ Known location of the storage device.
       , _chsSyncRequest   :: Maybe UUID
          -- ^ UUID configuration sync request

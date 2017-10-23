@@ -20,7 +20,12 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor
+  ( DeviceIdentifier(DIRaidDevice)
+  , Enclosure_XXX1
+  , Slot_XXX1(..)
+  , StorageDevice_XXX1(..)
+  )
 import qualified HA.Resources.Mero as M0
 import           HA.Services.SSPL.LL.CEP (DriveLedUpdate(..), sendLedUpdate, sendNodeCmd)
 import           HA.Services.SSPL.LL.Resources (NodeCmd(DriveLed), LedControlState(..))
@@ -50,7 +55,7 @@ ruleDriveFailed = define "castor::drive::led::ruleDriveFailed" $ do
     todo eid
     rg <- getLocalGraph
     let storDevs = [ storD | sd <- (map fst sds :: [M0.SDev])
-                           , slot@R.Slot{} <- maybeToList $ G.connectedTo sd M0.At rg
+                           , slot@Slot_XXX1{} <- maybeToList $ G.connectedTo sd M0.At rg
                            , storD <- maybeToList $ G.connectedFrom Has slot rg ]
     for_ storDevs $ \sd -> sendFailedLed sd
     done eid
@@ -65,7 +70,7 @@ ruleDriveFailed = define "castor::drive::led::ruleDriveFailed" $ do
 
     is_raid_drive msg ls _ = case msg of
       ResetFailure sd -> do
-        let extractRaid (R.DIRaidDevice _) = Just ()
+        let extractRaid (DIRaidDevice _) = Just ()
             extractRaid _ = Nothing
         case mapMaybe extractRaid $ G.connectedTo sd Has (lsGraph ls) of
           [] -> return $ Nothing
@@ -115,11 +120,11 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  , fs :: M0.Filesystem <- G.connectedTo p M0.IsParentOf rg
                  , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-                 , enc :: R.Enclosure_XXX1 <- maybeToList $ G.connectedTo m0enc M0.At rg
-                 , slot :: R.Slot <- G.connectedTo enc Has rg
-                 , sd :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
+                 , enc :: Enclosure_XXX1 <- maybeToList $ G.connectedTo m0enc M0.At rg
+                 , slot :: Slot_XXX1 <- G.connectedTo enc Has rg
+                 , sd :: StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
                  ]
-         for_ l $ \(R.StorageDevice_XXX1 sn, mled) -> do
+         for_ l $ \(StorageDevice_XXX1 sn, mled) -> do
            let ledSt = fromMaybe FaultOff mled
            void $ sendNodeCmd nid Nothing (DriveLed (T.pack sn) ledSt)
        _ -> return ()
