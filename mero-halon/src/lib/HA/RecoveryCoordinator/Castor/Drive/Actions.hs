@@ -23,43 +23,46 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , updateStorageDeviceStatus
   ) where
 
-import Data.Binary (Binary)
-import Data.Char (toUpper)
-import Data.Functor (void)
-import Data.Function (fix)
-import Data.Maybe (mapMaybe)
-import Data.Typeable
-import Data.UUID (UUID)
-import Data.Word (Word32)
-import GHC.Generics
+import           Data.Binary (Binary)
+import           Data.Char (toUpper)
+import           Data.Functor (void)
+import           Data.Function (fix)
+import           Data.Maybe (mapMaybe)
+import           Data.Typeable
+import           Data.UUID (UUID)
+import           Data.Word (Word32)
+import           GHC.Generics
 
-import Data.List (nub)
+import           Data.List (nub)
 
-import qualified HA.ResourceGraph as G
-import           HA.Resources
-import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
-import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
-import HA.RecoveryCoordinator.RC.Actions.Core
+import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+import           HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import HA.RecoveryCoordinator.Mero.Actions.Spiel
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Spiel
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
-import qualified HA.Resources as Res
-import qualified HA.Resources.Castor as Res
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..), Node)
+import           HA.Resources.Castor
+  ( Slot
+  , StorageDevice_XXX1
+  , StorageDeviceAttr(..)
+  , StorageDeviceStatus(..)
+  )
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import Mero.ConfC
+import           Mero.ConfC (_pa_K)
 import qualified Mero.Spiel as Spiel
 
-import Control.Distributed.Process hiding (try)
-import Control.Monad.Catch (SomeException, try, fromException)
-import System.IO.Error
+import           Control.Distributed.Process hiding (try)
+import           Control.Monad.Catch (SomeException, try, fromException)
+import           System.IO.Error
 
-import Network.CEP
+import           Network.CEP
 
 -- | Notification that happens in case if new spiel device is attached.
 data SpielDeviceAttached = SpielDeviceAttached M0.SDev (Either String ())
@@ -193,16 +196,16 @@ mkDetachDisk getter onFailure onSuccess = do
 
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
-markRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
+markRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l ()
 markRemovedFromRAID sdev = StorageDevice.setAttr sdev SDRemovedFromRAID
 
 -- | Remove the marker indicating that a device has been removed from the RAID
 --   array of which it is part.
-unmarkRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
+unmarkRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l ()
 unmarkRemovedFromRAID sdev = StorageDevice.unsetAttr sdev SDRemovedFromRAID
 
 -- | Check whether a device has been removed from its RAID array.
-isRemovedFromRAID :: StorageDevice -> PhaseM RC l Bool
+isRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l Bool
 isRemovedFromRAID = fmap (not . null) . StorageDevice.findAttrs go
   where
     go SDRemovedFromRAID = True
@@ -230,8 +233,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
   where
     getK :: M0.PVer -> Maybe Word32
     getK pver = case M0.v_type pver of
-      pva@M0.PVerActual{} -> case M0.v_attrs pva of
-        PDClustAttr _ k _ _ _ -> Just k
+      pva@M0.PVerActual{} -> Just . _pa_K $ M0.v_attrs pva
       _ -> Nothing
 
     failingState :: M0.SDev -> M0.SDevState -> Bool
@@ -265,10 +267,10 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , M0.fid pool `notElem` mdFids
                ]
              mdFids = [ M0.f_mdpool_fid fs
-                      | p <- connectedToList Res.Cluster Has rg :: [M0.Profile]
+                      | p <- connectedToList Cluster Has rg :: [M0.Profile]
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
-             failedDisks = [ d | prof :: M0.Profile <- connectedToList Res.Cluster Has rg
+             failedDisks = [ d | prof :: M0.Profile <- connectedToList Cluster Has rg
                                , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
                                , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                                , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
@@ -284,9 +286,9 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
-                            -> Res.Node          -- ^ Node in question.
-                            -> StorageDevice -- ^ Installed storage device.
-                            -> Res.Slot      -- ^ Slot of the device.
+                            -> Node          -- ^ Node in question.
+                            -> StorageDevice_XXX1 -- ^ Installed storage device.
+                            -> Slot          -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.
                             -> Maybe Bool    -- ^ Is device powered.
                             -> PhaseM RC l ()
@@ -331,16 +333,16 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed mis_powered = d
 -- | Update status of the storage device.
 updateStorageDeviceStatus ::
      UUID  -- ^ Thread UUID.
-  -> Res.Node -- ^ Node in question.
-  -> Res.StorageDevice -- ^ Updated storage device.
-  -> Res.Slot -- ^ Storage device location.
+  -> Node -- ^ Node in question.
+  -> StorageDevice_XXX1 -- ^ Updated storage device.
+  -> Slot -- ^ Storage device location.
   -> String -- ^ Storage device status.
   -> String -- ^ Status reason.
   -> PhaseM RC l Bool
 updateStorageDeviceStatus uuid node disk slot status reason = do
     oldDriveStatus <- StorageDevice.status disk
     case (status, reason) of
-     (s, r) | oldDriveStatus == Res.StorageDeviceStatus s r -> do
+     (s, r) | oldDriveStatus == StorageDeviceStatus s r -> do
        Log.rcLog' Log.DEBUG $ "status unchanged: " ++ show oldDriveStatus
        return True
      (map toUpper -> "FAILED", _) -> do

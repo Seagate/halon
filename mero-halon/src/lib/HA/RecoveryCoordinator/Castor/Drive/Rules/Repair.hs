@@ -42,13 +42,12 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , checkRepairOnServiceUp
   ) where
 
-import           Control.Applicative
 import           Control.Arrow (second)
 import           Control.Distributed.Process
 import           Control.Lens
-import           Control.Monad
+import           Control.Monad (forM_, unless, when)
 import           Data.Either (partitionEithers)
-import           Data.Foldable
+import           Data.Foldable (find, foldl', for_, traverse_)
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
@@ -63,7 +62,6 @@ import           GHC.Generics (Generic)
 
 import           HA.Encode
 import           HA.EventQueue
-import qualified HA.ResourceGraph as G
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions (barrierPass)
 import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Dispatch
@@ -79,36 +77,51 @@ import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges)
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal as R
-import           HA.Resources
-import           HA.Resources.Castor
-import qualified HA.Resources.Mero as M0
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Has(..))
+import           HA.Resources.Castor (Is(..))
+import qualified HA.Resources.Castor as Res
 import           HA.Resources.Mero
-  hiding (Enclosure, Process, Rack, Process, lookupConfObjByFid)
+  ( At(..)
+  , MeroClusterState(_mcs_runlevel)
+  , SDevState(SDSFailed,SDSRepaired,SDSRepairing)
+  , getTime
+  , priStateUpdates
+  , priTimeOfSnsStart
+  , prsPri
+  , prsRepairUUID
+  , prsType
+  , timeSpecToSeconds
+  )
+import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.SafeCopy
 import           Mero.Notification hiding (notifyMero)
-import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
+import           Mero.Notification.HAState
+  ( HAMsg(..)
+  , Note(..)
+  , StobIoqError(..)
+  )
 import           Mero.ConfC (ServiceType(CST_IOS))
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
-import           Prelude
 
 --------------------------------------------------------------------------------
 -- Types                                                                      --
 --------------------------------------------------------------------------------
 
 -- | Event sent when we want a 5 minute spiel query rule to fire
-data SpielQuery = SpielQuery Pool M0.PoolRepairType UUID
+data SpielQuery = SpielQuery M0.Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 deriveSafeCopy 0 'base ''SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
-data SpielQueryHourly = SpielQueryHourly Pool M0.PoolRepairType UUID
+data SpielQueryHourly = SpielQueryHourly M0.Pool M0.PoolRepairType UUID
   deriving (Eq, Ord, Show, Generic, Typeable)
 deriveSafeCopy 0 'base ''SpielQueryHourly
 
 -- | Event that hourly job finihed.
-data SpielQueryHourlyFinished = SpielQueryHourlyFinished Pool M0.PoolRepairType UUID
+data SpielQueryHourlyFinished = SpielQueryHourlyFinished M0.Pool M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
 deriveSafeCopy 0 'base ''SpielQueryHourlyFinished
@@ -148,11 +161,11 @@ queryStartHandling pool = do
   promulgateRC $ SpielQuery pool prt ruuid
 
 processSnsStatusReply ::
-      PhaseM RC l (Maybe UUID, PoolRepairType, UUID) -- ^ Get interesting info from env
+      PhaseM RC l (Maybe UUID, M0.PoolRepairType, UUID) -- ^ Get interesting info from env
    -> PhaseM RC l () -- ^ action to run before doing anything else
    -> PhaseM RC l () -- ^ action to run if SNS is not running
    -> PhaseM RC l () -- ^ action to run if action is not complete
-   -> (Either AbortSNSOperation PoolRepairInformation -> PhaseM RC l ())
+   -> (Either AbortSNSOperation M0.PoolRepairInformation -> PhaseM RC l ())
       -- ^ action to run if SNS repair is complete. SNS is considered
       -- to be complete when
       --
@@ -170,7 +183,7 @@ processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete 
   case mpri of
     Nothing -> unsetPoolRepairStatusWithUUID pool ruuid
     Just pri -> do
-      keepRunning <- maybe False ((ruuid ==) .prsRepairUUID)
+      keepRunning <- maybe False ((ruuid ==) . prsRepairUUID)
                        <$> getPoolRepairStatus pool
       when keepRunning $ do
         updatePoolRepairQueryTime pool
@@ -482,11 +495,11 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
       where
         stats = do
           (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
-          (sd :: StorageDevice) <- G.connectedTo disk At rg
-          (StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
+          (sd :: Res.StorageDevice_XXX1) <- G.connectedTo disk At rg
+          (Res.StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
           return ( sd
                  , G.isConnected disk Is M0.Replaced rg
-                 , G.isConnected sd Has (SDPowered True) rg
+                 , G.isConnected sd Has (Res.SDPowered True) rg
                  , sds
                  )
 
@@ -886,7 +899,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe AbortSNSOperationResult)
     fldRep = Proxy
-    fldPrt :: Proxy '("prt", Maybe PoolRepairType)
+    fldPrt :: Proxy '("prt", Maybe M0.PoolRepairType)
     fldPrt = Proxy
     fldRepairUUID :: Proxy '("repairUUID", Maybe UUID)
     fldRepairUUID = Proxy
@@ -959,7 +972,7 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe QuiesceSNSOperationResult)
     fldRep = Proxy
-    fldPrt :: Proxy '("prt", Maybe PoolRepairType)
+    fldPrt :: Proxy '("prt", Maybe M0.PoolRepairType)
     fldPrt = Proxy
     args =  fldReq  =: Nothing
         <+> fldRep  =: Nothing
@@ -1091,7 +1104,7 @@ quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 -- continue with the process.
 --
 -- Starts rebalance if we were repairing and have fully completed.
-completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM RC l ()
+completeRepair :: M0.Pool -> M0.PoolRepairType -> Maybe UUID -> PhaseM RC l ()
 completeRepair pool prt muid = do
   -- if no status is found for SDev, assume M0_NC_ONLINE
   let getSDevState :: M0.SDev -> PhaseM RC l' ConfObjectState
@@ -1145,7 +1158,7 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
      run (PoolInfo pool st m) = do
        Log.rcLog' Log.DEBUG $ "Processed as PoolInfo " ++ show (pool, st, m)
        mprs <- getPoolRepairStatus pool
-       forM_ mprs $ \prs@(PoolRepairStatus _prt _ mpri) ->
+       forM_ mprs $ \prs@(M0.PoolRepairStatus _prt _ mpri) ->
          forM_ mpri $ \pri -> do
            let disks = getSDevs m st
            let go ls d = case lookup d ls of
@@ -1179,7 +1192,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
       traverse_ go mdeviceOnly
     _ -> return ()
   where
-    ignoreSome :: StateCarrier SDev -> StateCarrier SDev -> Bool
+    ignoreSome :: StateCarrier M0.SDev -> StateCarrier M0.SDev -> Bool
     ignoreSome SDSRepaired  SDSFailed = False -- Should not happen.
     ignoreSome SDSRepairing SDSFailed = False -- Cancelation of the repair operation.
     ignoreSome o n | o == n = False     -- Not a change - ignoring
@@ -1388,7 +1401,7 @@ newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 -- XXX: This function is a subject of change in future, because there is no
 -- point in of hiding old state and halon state, this allowes much range
 -- of decisions that could be done by the caller.
-processDevices :: (StateCarrier SDev -> StateCarrier SDev -> Bool) -- ^ Predicate
+processDevices :: (StateCarrier M0.SDev -> StateCarrier M0.SDev -> Bool) -- ^ Predicate
                 -> [AnyStateChange]
                 -> PhaseM RC l (Maybe DevicesOnly)
 processDevices p changes = do
@@ -1400,26 +1413,26 @@ processDevices p changes = do
              . map (\(pool, (sdev,st)) -> (pool, [(st, S.singleton sdev)]))
              $ pdevs
   where
-    go :: AnyStateChange -> Maybe (Maybe (SDev, ConfObjectState))
+    go :: AnyStateChange -> Maybe (Maybe (M0.SDev, ConfObjectState))
     go (AnyStateChange (a::x) o n _) = case eqT :: Maybe (x :~: M0.Process) of
       Nothing -> case eqT :: Maybe (x :~: M0.SDev) of
         Just Refl | p o n -> Just (Just (a,toConfObjState a n))
         _ -> Nothing
       Just _  -> Just (Nothing)
-    msdevs :: Maybe [(SDev, ConfObjectState)]
+    msdevs :: Maybe [(M0.SDev, ConfObjectState)]
     msdevs = sequence (mapMaybe go changes)
 
 -- | A mapping of 'ConfObjectState's to 'M0.SDev's.
-newtype SDevStateMap = SDevStateMap (M.Map ConfObjectState (S.HashSet SDev))
+newtype SDevStateMap = SDevStateMap (M.Map ConfObjectState (S.HashSet M0.SDev))
   deriving (Show, Eq, Generic, Typeable)
 
 -- | Queries the 'SDevStateMap'.
-getSDevs :: SDevStateMap -> ConfObjectState -> S.HashSet SDev
+getSDevs :: SDevStateMap -> ConfObjectState -> S.HashSet M0.SDev
 getSDevs (SDevStateMap m) st = fromMaybe mempty $ M.lookup st m
 
 -- | Check that all 'SDev's have the given 'ConfObjectState' and if
 -- they do, return them.
-allWithState :: SDevStateMap -> ConfObjectState -> Maybe (S.HashSet SDev)
+allWithState :: SDevStateMap -> ConfObjectState -> Maybe (S.HashSet M0.SDev)
 allWithState sm@(SDevStateMap m) st =
   if M.member st m && M.size m == 1 then Just $ getSDevs sm st else Nothing
 

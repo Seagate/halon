@@ -117,9 +117,9 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                  , enc :: R.Enclosure_XXX1 <- maybeToList $ G.connectedTo m0enc M0.At rg
                  , slot :: R.Slot <- G.connectedTo enc Has rg
-                 , sd :: R.StorageDevice <- maybeToList $ G.connectedFrom Has slot rg
+                 , sd :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
                  ]
-         for_ l $ \(R.StorageDevice sn, mled) -> do
+         for_ l $ \(R.StorageDevice_XXX1 sn, mled) -> do
            let ledSt = fromMaybe FaultOff mled
            void $ sendNodeCmd nid Nothing (DriveLed (T.pack sn) ledSt)
        _ -> return ()

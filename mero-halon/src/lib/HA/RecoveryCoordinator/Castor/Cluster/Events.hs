@@ -44,7 +44,7 @@ import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import           HA.Resources.Castor (Host_XXX1, Slot, StorageDevice)
+import           HA.Resources.Castor (Host_XXX1, Slot, StorageDevice_XXX1)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.SafeCopy
@@ -203,7 +203,7 @@ data ReportClusterService = ReportClusterService
       , crsDevices    :: [( M0.SDev
                           , M0.StateCarrier M0.SDev
                           , Maybe Slot
-                          , Maybe StorageDevice
+                          , Maybe StorageDevice_XXX1
                           )]
       -- ^ Information about devices attached at this particular service.
       } deriving (Eq, Show, Typeable, Generic, Ord)

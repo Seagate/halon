@@ -27,28 +27,27 @@ module HA.RecoveryCoordinator.RC.Actions.Log
   , emptyLocalContext
   ) where
 
-import HA.RecoveryCoordinator.RC.Application
-import HA.RecoveryCoordinator.Log
-
+import           HA.RecoveryCoordinator.RC.Application
+import           HA.RecoveryCoordinator.Log
+import qualified HA.RecoveryCoordinator.Log as Log (Scope(StorageDevice))
 import qualified HA.Resources as Res (Node(..))
-import qualified HA.Resources.Castor as Res (StorageDevice(..))
-
+import qualified HA.Resources.Castor as Res (StorageDevice_XXX1(..))
 import qualified HA.Resources.Mero.Note as M0 (ShowFidObj(..))
 
-import Control.Distributed.Process (NodeId, liftIO)
+import           Control.Distributed.Process (NodeId, liftIO)
 
-import Data.List (isPrefixOf, find)
+import           Data.List (isPrefixOf, find)
 import qualified Data.Map.Strict as Map
-import Data.UUID (UUID)
-import Data.UUID.V4 (nextRandom)
+import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
 
 #if __GLASGOW_HASKELL__ < 800
-import GHC.SrcLoc
+import           GHC.SrcLoc
 #endif
-import GHC.Stack
+import           GHC.Stack
 
-import Network.CEP hiding (Local)
-import Network.CEP.Log (Environment)
+import           Network.CEP hiding (Local)
+import           Network.CEP.Log (Environment)
 
 -- $logging
 --
@@ -233,8 +232,8 @@ instance Taggable Res.Node where
 instance Taggable NodeId where
   toTagContent nid = TagScope [Node (Res.Node nid)]
 
-instance Taggable Res.StorageDevice where
-  toTagContent (Res.StorageDevice serial) = TagScope [StorageDevice serial]
+instance Taggable Res.StorageDevice_XXX1 where
+  toTagContent (Res.StorageDevice_XXX1 serial) = TagScope [Log.StorageDevice serial]
 
 -- | Note that it's safe to overlap here because we know that none of our
 --   other instances can have `M0.ShowFidObj` instances. `Taggable` isn't

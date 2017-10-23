@@ -14,49 +14,51 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
   , ruleResetInit
   ) where
 
-import HA.EventQueue (HAEvent(..))
-import HA.RecoveryCoordinator.Actions.Hardware
-import HA.RecoveryCoordinator.Castor.Drive.Actions
-import HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.EventQueue (HAEvent(..))
+import           HA.RecoveryCoordinator.Actions.Hardware
+import           HA.RecoveryCoordinator.Castor.Drive.Actions
+import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import HA.RecoveryCoordinator.Job.Actions
-import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
-import HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.Resources (Node(..))
-import HA.Resources.Castor
-import HA.Resources.HalonVars
+import           HA.Resources (Node(..))
+import           HA.Resources.Castor
+  ( StorageDevice_XXX1(..)
+  , StorageDeviceStatus(..)
+  )
+import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (ConfObjectState(..), getState)
-import HA.Services.SSPL.LL.CEP ( sendNodeCmd )
-import HA.Services.SSPL.LL.Resources
+import           HA.Resources.Mero.Note (ConfObjectState(..), getState)
+import           HA.Services.SSPL.LL.CEP (sendNodeCmd)
+import           HA.Services.SSPL.LL.Resources
   ( AckReply(..)
   , CommandAck(..)
   , NodeCmd(..)
   , commandAck
   , SsplLlFromSvc(..)
   )
-import Mero.Notification (Set(..))
-import Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
+import           Mero.Notification (Set(..))
+import           Mero.Notification.HAState (HAMsg(..), Note(..), StobIoqError(..))
 
-import Control.Distributed.Process
-  ( Process )
-import Control.Lens
-import Control.Monad (forM_, unless, join, void)
-import Data.Foldable (for_)
-import Data.Proxy (Proxy(..))
-import Data.Maybe (mapMaybe)
+import           Control.Distributed.Process (Process)
+import           Control.Lens
+import           Control.Monad (forM_, unless, join, void)
+import           Data.Foldable (for_)
+import           Data.Maybe (mapMaybe)
+import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
-import Data.Vinyl
-import Data.UUID (UUID)
+import           Data.UUID (UUID)
+import           Data.Vinyl
 
-import Network.CEP
+import           Network.CEP
 
 data DeviceInfo = DeviceInfo {
-    _diSDev :: !StorageDevice
+    _diSDev :: !StorageDevice_XXX1
   , _diSerial :: !T.Text
 }
 
@@ -171,7 +173,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
       drive_removed <- phaseHandle "drive-removed"
       finalize      <- phaseHandle "finalize"
 
-      let home (ResetAttempt sdev@(StorageDevice serial)) = getSDevNode sdev >>= \case
+      let home (ResetAttempt sdev@(StorageDevice_XXX1 serial)) = getSDevNode sdev >>= \case
             (node : _) -> do
               Log.tagContext Log.SM sdev Nothing
               Log.tagContext Log.SM node Nothing
@@ -330,7 +332,7 @@ onDriveRemoved :: forall g l. (FldDeviceInfo ∈ l)
                => DriveRemoved
                -> g
                -> FieldRec l
-               -> Process (Maybe StorageDevice)
+               -> Process (Maybe StorageDevice_XXX1)
 onDriveRemoved dr _ ((view $ rlens fldDeviceInfo . rfield)
                       -> Just (DeviceInfo sdev _)) =
     if drDevice dr == sdev

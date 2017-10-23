@@ -30,9 +30,9 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules (rules) where
 
 import           Control.Distributed.Process hiding (catch)
 import           Control.Lens
-import           Control.Monad
+import           Control.Monad (forM_, forM, join, unless, when)
 import           Data.Foldable (for_)
-import           Data.Maybe
+import           Data.Maybe (listToMaybe)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.UUID as UUID
@@ -58,8 +58,12 @@ import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.Resources
+import           HA.Resources (Node(..))
 import           HA.Resources.Castor
+  ( Slot(..)
+  , StorageDevice_XXX1(..)
+  , StorageDeviceStatus(..)
+  )
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero hiding (Enclosure, Node, Process, Rack, Process)
@@ -99,7 +103,7 @@ rules = sequence_
 mkCheckAndHandleDriveReady ::
      Lens' l (Maybe CheckAndHandleState) -- ^ Simple lens to listener ID for SMART test
   -> (M0.SDev -> PhaseM RC l ())  -- ^ Action to run when drive is handled.
-  -> RuleM RC l (Node -> StorageDevice -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
+  -> RuleM RC l (Node -> StorageDevice_XXX1 -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
 mkCheckAndHandleDriveReady smartLens next = do
 
   smart_run     <- phaseHandle "smart_run"
@@ -407,7 +411,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
     fork CopyNewerBuffer $ do
       let Node nid = dpcNode
-          StorageDevice serial = dpcDevice
+          StorageDevice_XXX1 serial = dpcDevice
           dpcSerial = T.pack serial
       Log.tagContext Log.SM dpcDevice Nothing
       Log.tagContext Log.SM dpcUUID   Nothing
@@ -542,7 +546,7 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
       msdev <- lookupStorageDevice m0sdev
       mnode <- join <$> forM msdev (fmap listToMaybe . getSDevNode)
       case (mnode, msdev) of
-        (Just node, Just sdev@(StorageDevice serial)) -> do
+        (Just node, Just sdev@(StorageDevice_XXX1 serial)) -> do
           Log.tagContext Log.SM node $ Just "Node hosting this disk."
           Log.tagContext Log.SM sdev Nothing
           sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)

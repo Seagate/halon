@@ -223,25 +223,25 @@ findHostAttrs host = do
 
 -- | Find logical devices on a host
 findHostStorageDevices :: R.Host_XXX1
-                       -> PhaseM RC l [R.StorageDevice]
+                       -> PhaseM RC l [R.StorageDevice_XXX1]
 findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
   [ sdev | enc  :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has host rg
          , loc  :: R.Slot <- G.connectedTo enc Has rg
-         , sdev :: R.StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
+         , sdev :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has loc rg ]
 
 -- | Check if the 'StorageDevice' is still attached (from halon
 -- perspective).
-isStorageDriveRemoved :: R.StorageDevice -> PhaseM RC l Bool
+isStorageDriveRemoved :: R.StorageDevice_XXX1 -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
   return . maybe True (\R.Slot{} -> False) $ G.connectedTo sd Has rg
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
-lookupStorageDevicesWithDI :: R.DeviceIdentifier -> PhaseM RC l [R.StorageDevice]
+lookupStorageDevicesWithDI :: R.DeviceIdentifier -> PhaseM RC l [R.StorageDevice_XXX1]
 lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 
 -- | Find all 'StorageDevice's with the given 'StorageDeviceAttr'.
-lookupStorageDevicesWithAttr :: R.StorageDeviceAttr -> PhaseM RC l [R.StorageDevice]
+lookupStorageDevicesWithAttr :: R.StorageDeviceAttr -> PhaseM RC l [R.StorageDevice_XXX1]
 lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getLocalGraph
 
 -- | Update a metric monitoring how many drives are currently
@@ -256,7 +256,7 @@ updateDiskResetCount = do
   runEkgMetricCmd (ModifyGauge "ongoing_disk_resets" $ GaugeSet i)
 
 -- | Test whether a given device is currently undergoing a reset operation.
-hasOngoingReset :: R.StorageDevice -> PhaseM RC l Bool
+hasOngoingReset :: R.StorageDevice_XXX1 -> PhaseM RC l Bool
 hasOngoingReset =
     fmap (not . null) . SDev.findAttrs go
   where
@@ -264,7 +264,7 @@ hasOngoingReset =
     go _                = False
 
 -- | Mark that a storage device is undergoing reset.
-markOnGoingReset :: R.StorageDevice -> PhaseM RC l ()
+markOnGoingReset :: R.StorageDevice_XXX1 -> PhaseM RC l ()
 markOnGoingReset sdev = do
     let _F R.SDOnGoingReset = True
         _F _                = False
@@ -276,7 +276,7 @@ markOnGoingReset sdev = do
       _       -> return ()
 
 -- | Mark that a storage device has completed reset.
-markResetComplete :: R.StorageDevice -> PhaseM RC l ()
+markResetComplete :: R.StorageDevice_XXX1 -> PhaseM RC l ()
 markResetComplete sdev = do
     let _F R.SDOnGoingReset = True
         _F _                = False
@@ -289,7 +289,7 @@ markResetComplete sdev = do
 
 -- | Increment the number of disk reset attempts the 'StorageDevice'
 -- has gone through.
-incrDiskResetAttempts :: R.StorageDevice -> PhaseM RC l ()
+incrDiskResetAttempts :: R.StorageDevice_XXX1 -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (R.SDResetAttempts _) = True
         _F _                     = False
@@ -302,7 +302,7 @@ incrDiskResetAttempts sdev = do
 
 -- | Number of times the given 'StorageDevice' has been tried to
 -- reset.
-getDiskResetAttempts :: R.StorageDevice -> PhaseM RC l Int
+getDiskResetAttempts :: R.StorageDevice_XXX1 -> PhaseM RC l Int
 getDiskResetAttempts sdev = do
   let _F (R.SDResetAttempts _) = True
       _F _                     = False
@@ -317,7 +317,7 @@ getDiskResetAttempts sdev = do
 -- TODO: Should be @'Maybe' 'Node'@.
 -- TODO: Is this function and are uses of this function correct?
 -- TODO: Same questions for 'getSDevHost'
-getSDevNode :: R.StorageDevice -> PhaseM RC l [Node]
+getSDevNode :: R.StorageDevice_XXX1 -> PhaseM RC l [Node]
 getSDevNode sdev = do
   rg <- getLocalGraph
   hosts <- getSDevHost sdev
@@ -328,7 +328,7 @@ getSDevNode sdev = do
 -- 'StorageDevice'.
 --
 -- TODO: See 'getSDevNode' TODOs.
-getSDevHost :: R.StorageDevice -> PhaseM RC l [R.Host_XXX1]
+getSDevHost :: R.StorageDevice_XXX1 -> PhaseM RC l [R.Host_XXX1]
 getSDevHost sdev = do
   rg <- getLocalGraph
   maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev

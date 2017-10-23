@@ -15,7 +15,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
   ) where
 
 import qualified HA.ResourceGraph as G
-import HA.Resources.Castor (StorageDevice)
+import HA.Resources.Castor (StorageDevice_XXX1)
 import HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.Resources as Res
 import qualified HA.Resources.Mero as M0
@@ -36,7 +36,7 @@ getAllSDev rg =
   ]
 
 -- | Find 'StorageDevice' associated with the given 'M0.SDev'.
-lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice)
+lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice_XXX1)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
     return $ do
@@ -44,7 +44,7 @@ lookupStorageDevice sdev = do
       G.connectedTo (dev :: M0.Disk) M0.At rg
 
 -- | Return the Mero SDev associated with the given storage device
-lookupStorageDeviceSDev :: StorageDevice -> PhaseM RC l (Maybe M0.SDev)
+lookupStorageDeviceSDev :: StorageDevice_XXX1 -> PhaseM RC l (Maybe M0.SDev)
 lookupStorageDeviceSDev sdev = do
   rg <- getLocalGraph
   return $ do
@@ -52,7 +52,7 @@ lookupStorageDeviceSDev sdev = do
     G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
 
 -- | Connect 'StorageDevice' with corresponcing 'M0.SDev'.
-attachStorageDeviceToSDev :: StorageDevice -> M0.SDev -> PhaseM RC l ()
+attachStorageDeviceToSDev :: StorageDevice_XXX1 -> M0.SDev -> PhaseM RC l ()
 attachStorageDeviceToSDev sdev m0sdev = do
   rg <- getLocalGraph
   case G.connectedTo m0sdev M0.IsOnHardware rg of

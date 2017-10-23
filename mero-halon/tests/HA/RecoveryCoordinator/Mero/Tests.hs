@@ -33,6 +33,9 @@ import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.Replicator hiding (getState)
 import qualified HA.ResourceGraph as G
 import           HA.Resources.Castor
+  ( StorageDevice_XXX1(..)
+  , StorageDeviceStatus(..)
+  )
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -64,7 +67,7 @@ tests transport pg =
   ]
 
 -- | Used by 'testDriveManagerUpdate'
-newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice
+newtype RunDriveManagerFailure = RunDriveManagerFailure StorageDevice_XXX1
   deriving (Eq, Show, Typeable, Generic, Binary)
 
 -- | Update receiving a drive failure from SSPL,
@@ -100,7 +103,7 @@ testDriveManagerUpdate transport pg = do
 
     sayTest "Checking drive status sanity"
     graph <- G.getGraph $ H._ts_mm ts
-    let drive = StorageDevice interestingSN
+    let drive = StorageDevice_XXX1 interestingSN
     liftIO . assertBool "drive is resource graph member" $ G.memberResource drive graph
     liftIO . assertBool "status is graph member" $ G.memberResource (StorageDeviceStatus "OK" "NONE") graph
 
