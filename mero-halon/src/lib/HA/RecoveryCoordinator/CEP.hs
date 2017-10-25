@@ -46,7 +46,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
   ( Cluster(..)
   , Has(..)
-  , Node(..)
+  , Node_XXX2(..)
   , RecoverNode(..)
   , Runs(..)
   )
@@ -94,9 +94,9 @@ rcInitRule argv = do
     directly boot $ do
       h   <- liftIO getHostName
       nid <- liftProcess getSelfNode
-      RCLog.sysLog' $ RCLog.RCStarted (Node nid)
+      RCLog.sysLog' $ RCLog.RCStarted (Node_XXX2 nid)
       liftProcess $ do
-         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node nid)
+         sayRC $ "My hostname is " ++ show h ++ " and nid is " ++ show (Node_XXX2 nid)
          sayRC $ "Executing on node: " ++ show nid
          -- TS may not be a node, so it needs to known EQ addresses in other to
          -- call promulgate
@@ -165,7 +165,7 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
 
   let route (NodeUp info nid _) = do
         let h = T.unpack $ _si_hostname info
-            node = Node nid
+            node = Node_XXX2 nid
             host = R.Host_XXX1 h
         RCLog.tagContext RCLog.SM [ ("node", show node)
                                   , ("host", show h)
@@ -191,7 +191,7 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
 
   directly do_register $ do
     NodeUp info nid ackChan <- getRequest
-    let node = Node nid
+    let node = Node_XXX2 nid
     liftProcess $ sendChan ackChan ()
     modify Local $ rlens fldRep . rfield .~ Just (NewNodeConnected node info)
     addNodeToCluster (eqNodes argv) node
@@ -227,7 +227,7 @@ rulePingSvcEvent = defineSimple "ping-svc-event" $ \case
       usend eqPid uuid
 
 -- | A reply used by 'recoverJob' in 'ruleRecoverNode'.
-newtype RecoverNodeFinished = RecoverNodeFinished Node
+newtype RecoverNodeFinished = RecoverNodeFinished Node_XXX2
   deriving (Eq, Show, Ord, Typeable, Generic, Binary)
 
 -- | 'Job' used in 'ruleRecoverNode'.
@@ -298,7 +298,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     -- indefinitely.
     maxRetries <- getHalonVar _hv_recovery_max_retries
     RCLog.tagContext RCLog.SM [("Max retries" :: String, show maxRetries)] Nothing
-    Just node@(Node nid) <- getField . rget fldNode <$> get Local
+    Just node@(Node_XXX2 nid) <- getField . rget fldNode <$> get Local
     Just h <- getField . rget fldHost <$> get Local
     Just i <- getField . rget fldRetries <$> get Local
     RCLog.rcLog' RCLog.DEBUG ("Current retries" :: String, show i)
@@ -356,7 +356,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     fldReq = Proxy
     fldRep :: Proxy '("reply", Maybe RecoverNodeFinished)
     fldRep = Proxy
-    fldNode :: Proxy '("node", Maybe Node)
+    fldNode :: Proxy '("node", Maybe Node_XXX2)
     fldNode = Proxy
     fldHost :: Proxy '("host", Maybe R.Host_XXX1)
     fldHost = Proxy
@@ -418,11 +418,11 @@ sendLogs :: Log.Event (LogType RC) -> LoopState -> Process ()
 sendLogs logs ls = do
    if null nodes
    then traceLogs logs
-   else for_ nodes $ \(Node nid) -> sendSvc (getInterface decisionLog) nid logs
+   else for_ nodes $ \(Node_XXX2 nid) -> sendSvc (getInterface decisionLog) nid logs
   where
    rg = lsGraph ls
    nodes = [ n | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
-               , n <- G.connectedTo host Runs rg :: [Node]
+               , n <- G.connectedTo host Runs rg :: [Node_XXX2]
                , not . null $ lookupServiceInfo n decisionLog rg
                ]
 

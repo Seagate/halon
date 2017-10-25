@@ -95,8 +95,14 @@ import           HA.Multimap (StoreChan)
 import           HA.RecoveryCoordinator.RC.Application
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
-import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node)
+import           HA.ResourceGraph
+  ( connect
+  , Graph
+  , memberResource
+  , Resource
+  , sync
+  )
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
 import           HA.SafeCopy
 import           Network.CEP
 
@@ -162,39 +168,39 @@ lookupStorageMapRC x =
     <=< Storage.get . lsStorage) <$> get Global
 
 -- | Is a given resource existent in the RG?
-knownResource :: G.Resource a => a -> PhaseM RC l Bool
-knownResource res = fmap (G.memberResource res) getLocalGraph
+knownResource :: Resource a => a -> PhaseM RC l Bool
+knownResource res = fmap (memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
-registerNode :: Node -> PhaseM RC l ()
+registerNode :: Node_XXX2 -> PhaseM RC l ()
 registerNode node = do
   Log.rcLog' Log.DEBUG $ "Registering satellite node: " ++ show node
-  modifyGraph $ G.connect Cluster Has node
+  modifyGraph $ connect Cluster Has node
 
--- | Retrieve the Resource 'G.Graph' from the 'Global' state.
-getLocalGraph :: PhaseM RC l G.Graph
+-- | Retrieve the Resource 'Graph' from the 'Global' state.
+getLocalGraph :: PhaseM RC l Graph
 getLocalGraph = fmap lsGraph $ get Global
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
-liftGraph :: (a -> G.Graph -> b) -> a -> PhaseM RC l b
+liftGraph :: (a -> Graph -> b) -> a -> PhaseM RC l b
 liftGraph op = \a -> op a <$> getLocalGraph
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
-liftGraph2 :: (a -> c -> G.Graph -> b) -> a -> c -> PhaseM RC l b
+liftGraph2 :: (a -> c -> Graph -> b) -> a -> c -> PhaseM RC l b
 liftGraph2 op = \a c -> op a c <$> getLocalGraph
 
 -- | Update the RG in the global state.
-putLocalGraph :: G.Graph -> PhaseM RC l ()
+putLocalGraph :: Graph -> PhaseM RC l ()
 putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
 
 -- | Modify the RG in the global state.
-modifyGraph :: (G.Graph -> G.Graph) -> PhaseM RC l ()
+modifyGraph :: (Graph -> Graph) -> PhaseM RC l ()
 modifyGraph k = modifyLocalGraph $ return . k
 
 -- | Modify the RG in the global state using provided action.
-modifyLocalGraph :: (G.Graph -> PhaseM RC l G.Graph) -> PhaseM RC l ()
+modifyLocalGraph :: (Graph -> PhaseM RC l Graph) -> PhaseM RC l ()
 modifyLocalGraph k = do
     rg  <- getLocalGraph
     rg' <- k rg
@@ -206,14 +212,14 @@ modifyLocalGraph k = do
 -- not throw exceptions should be used there.
 registerSyncGraph :: Process () -> PhaseM RC l ()
 registerSyncGraph callback = modifyLocalGraph $ \rg ->
-  liftProcess $ G.sync rg callback
+  liftProcess $ sync rg callback
 
 -- | Sync the graph and block the caller until this is complete. This
 --   internally uses a wait for a hidden message type.
 syncGraphBlocking :: PhaseM RC l ()
 syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
   (sp, rp) <- newChan
-  G.sync rg (sendChan sp ()) <* receiveChan rp
+  sync rg (sendChan sp ()) <* receiveChan rp
 
 -- | 'syncGraph' wrapper that will notify EQ about message beign processed.
 -- This wrapper could be used then graph synchronization is a last command

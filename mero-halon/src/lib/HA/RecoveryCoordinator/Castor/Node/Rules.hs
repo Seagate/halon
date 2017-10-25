@@ -17,7 +17,7 @@
 -- Related part of the resource graph:
 --
 -- @
---   R.Host_XXX1 --+- HostAttirbutes
+--   Host_XXX1 ----+- HostAttirbutes
 --     |           |
 --     |           +-- M0.Client
 --     |           |
@@ -28,7 +28,7 @@
 --     |      +--- Service m0d
 --     |      |
 --     |      |
---     +--- R.Node           M0.Filesystem
+--     +---- Node           M0.Filesystem
 --            |                 |
 --            |                 |
 --            +------+    +-----+
@@ -147,8 +147,8 @@ import qualified HA.RecoveryCoordinator.RC.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Has(..), Node_XXX2(..))
+import           HA.Resources.Castor (Host_XXX1)
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -198,11 +198,11 @@ fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
 
 
-type FldHost = '("host", Maybe R.Host_XXX1)
+type FldHost = '("host", Maybe Host_XXX1)
 fldHost :: Proxy FldHost
 fldHost = Proxy
 
-type FldNode = '("node", Maybe R.Node)
+type FldNode = '("node", Maybe Node_XXX2)
 fldNode :: Proxy FldNode
 fldNode = Proxy
 
@@ -234,7 +234,7 @@ eventKernelFailed = defineSimpleIf "castor::node::event::kernel-failed" g $
   \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
-    let node = R.Node nid
+    let node = Node_XXX2 nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
     let failMsg = "mero-kernel failed to start: " ++ msg
@@ -257,7 +257,7 @@ eventCleanupFailed = defineSimpleIf "castor::node::event::cleanup-failed" g $
   \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
-    let node = R.Node nid
+    let node = Node_XXX2 nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
     let failMsg = "mero-cleanup failed to start: " ++ msg
@@ -319,7 +319,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
       Just (M0.MeroClusterState M0.OFFLINE _ _) -> do
          Log.rcLog' Log.DEBUG "Cluster disposition is OFFLINE."
       _ -> case M0.m0nodeToNode m0node rg of
-             Just node@(R.Node nid) ->
+             Just node@(Node_XXX2 nid) ->
                findNodeHost node >>= \case
                  Just host -> do
                    Log.rcLog' Log.DEBUG $ "Starting new mero server."
@@ -327,7 +327,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                    -- Take LNid address. If we don't have it, take the
                    -- address from the CST_HA service as the listen
                    -- address.
-                   let meroAddr = [ ep | M0.LNid ep <- G.connectedTo host R.Has rg ]
+                   let meroAddr = [ ep | M0.LNid ep <- G.connectedTo host Has rg ]
                                ++ [ ep | ha_p <- maybeToList $ Process.getHA m0node rg
                                        , svc <- G.connectedTo ha_p M0.IsParentOf rg
                                        , M0.s_type svc == CST_HA
@@ -479,7 +479,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   directly reconnect_m0d $ do
     StartProcessNodeNew node _ <- getRequest
     rg <- getLocalGraph
-    let R.Node nid = node
+    let Node_XXX2 nid = node
     case lookupServiceInfo node (lookupM0d rg) rg of
       [] -> do
         Log.rcLog' Log.DEBUG "No halon:m0d already running."
@@ -549,7 +549,7 @@ mkQueryLnetInfo andThen orFail = do
     info_returned <- phaseHandle "queryHostInfo::info_returned"
 
     directly query_info $ do
-      Just node@(R.Node nid) <- getField . rget fldNode <$> get Local
+      Just node@(Node_XXX2 nid) <- getField . rget fldNode <$> get Local
       Log.rcLog' Log.DEBUG $ "Querying system information from " ++ show node
       liftProcess . void . spawnLocal . void
         $ spawnAsync nid $ $(mkClosure 'getLnetInfo) node
@@ -995,7 +995,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
           )
      case stillUnstopped of
        [] -> do let msg :: String
-                    msg = printf "%s R.Has no services on level %s - skipping to the next level"
+                    msg = printf "%s Has no services on level %s - skipping to the next level"
                                  (show node) (show lvl)
                 Log.rcLog' Log.DEBUG msg
                 continue lower_boot_level

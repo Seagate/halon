@@ -11,16 +11,21 @@
 -- Contains all resources for RC subsystem of the Recovery coordinator.
 module HA.Resources.RC where
 
-import           Control.Distributed.Process (ProcessId)
-import           Data.Hashable (Hashable(..))
-import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
-import           HA.Aeson
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
-import           HA.Resources.TH
-import           HA.SafeCopy
-import           HA.Service (ServiceInfoMsg)
+import Control.Distributed.Process (ProcessId)
+import Data.Hashable (Hashable(..))
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+import HA.Aeson
+import HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
+import HA.Resources.Castor (Is(..))
+import HA.Resources.TH
+  ( Cardinality(AtMostOne,Unbounded)
+  , mkDicts
+  , mkResRel
+  , storageIndex
+  )
+import HA.SafeCopy
+import HA.Service (ServiceInfoMsg)
 
 -- | Graph node representing current recovery coordinator.
 newtype RC = RC { getRCVersion :: Int }
@@ -81,11 +86,11 @@ $(mkDicts
   , ''Stopping
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, ''R.Has, ''RC)
-  , (''RC, ''R.Is, ''Active)
+    (''Cluster, ''Has, ''RC)
+  , (''RC, ''Is, ''Active)
   , (''Subscriber, ''SubscribedTo, ''RC)
   , (''SubProcessId, ''IsSubscriber, ''Subscriber)
-  , (''R.Node, ''Stopping, ''ServiceInfoMsg)
+  , (''Node_XXX2, ''Stopping, ''ServiceInfoMsg)
   ])
 
 $(mkResRel
@@ -93,10 +98,10 @@ $(mkResRel
   , ''Stopping
   ]
   [ -- Relationships connecting conf with other resources
-    (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''RC)
-  , (''RC, AtMostOne, ''R.Is, AtMostOne, ''Active)
+    (''Cluster, AtMostOne, ''Has, AtMostOne, ''RC)
+  , (''RC, AtMostOne, ''Is, AtMostOne, ''Active)
   , (''Subscriber, Unbounded, ''SubscribedTo, AtMostOne, ''RC)
   , (''SubProcessId, Unbounded, ''IsSubscriber, AtMostOne, ''Subscriber)
-  , (''R.Node, Unbounded, ''Stopping, Unbounded, ''ServiceInfoMsg)
+  , (''Node_XXX2, Unbounded, ''Stopping, Unbounded, ''ServiceInfoMsg)
   ]
   [])

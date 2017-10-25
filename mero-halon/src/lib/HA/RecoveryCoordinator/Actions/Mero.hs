@@ -53,8 +53,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..))
-import qualified HA.Resources as Res
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Castor as Castor
 import           HA.Resources.HalonVars
@@ -266,9 +265,9 @@ calculateStopLevel = do
 -- | Get an aggregate cluster status report.
 getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState
 getClusterStatus rg = let
-    dispo = G.connectedTo Res.Cluster Has rg
-    runLevel = G.connectedTo Res.Cluster M0.RunLevel rg
-    stopLevel = G.connectedTo Res.Cluster M0.StopLevel rg
+    dispo = G.connectedTo Cluster Has rg
+    runLevel = G.connectedTo Cluster M0.RunLevel rg
+    stopLevel = G.connectedTo Cluster M0.StopLevel rg
   in M0.MeroClusterState <$> dispo <*> runLevel <*> stopLevel
 
 -- | Is the cluster completely stopped?
@@ -278,7 +277,7 @@ getClusterStatus rg = let
 isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
-  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
+  | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed
@@ -314,7 +313,7 @@ configureMeroProcess sender p runType = do
 
 -- | Dispatch a request to start @halon:m0d@ on the given
 -- 'Castor.Host'.
-startMeroService :: Castor.Host_XXX1 -> Res.Node -> PhaseM RC a ()
+startMeroService :: Castor.Host_XXX1 -> Node_XXX2 -> PhaseM RC a ()
 startMeroService host node = do
   Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
                       ++ show (host, node)
@@ -368,7 +367,7 @@ startMeroService host node = do
 retriggerMeroNodeBootstrap :: M0.Node -> PhaseM RC a ()
 retriggerMeroNodeBootstrap n = do
   rg <- getLocalGraph
-  case G.connectedTo Res.Cluster Has rg of
+  case G.connectedTo Cluster Has rg of
     Just M0.ONLINE -> restartMeroOnNode
     cst -> Log.rcLog' Log.DEBUG $
              "Not trying to retrigger mero as cluster state is " ++ show cst

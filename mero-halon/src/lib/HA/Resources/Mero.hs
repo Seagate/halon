@@ -43,8 +43,15 @@ import           GHC.Generics (Generic)
 import           HA.Aeson
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources as R (Node(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Node_XXX2(..))
+import           HA.Resources.Castor
+  ( Enclosure_XXX1(..)
+  , Host_XXX1(..)
+  , Is(..)
+  , Rack_XXX1(..)
+  , Slot_XXX1(..)
+  , StorageDevice_XXX1
+  )
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.TH
 import           HA.SafeCopy hiding (Profile)
@@ -117,7 +124,6 @@ confToFidType p = fidType p `shiftL` (64 - 8)
 -- information such as through 'fidInit'.
 fidToFidType :: Fid -> Word64
 fidToFidType (Fid ctr _) = ctr .&. complement typMask
-
 
 data AnyConfObj = forall a. ConfObj a => AnyConfObj a
   deriving (Typeable)
@@ -954,10 +960,10 @@ $(mkDicts
   , (''Root, ''IsParentOf, ''Profile)
   , (''Cluster, ''Has, ''Profile)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''R.Host_XXX1)
-  , (''Rack, ''At, ''R.Rack_XXX1)
-  , (''Enclosure, ''At, ''R.Enclosure_XXX1)
-  , (''Disk, ''At, ''R.StorageDevice_XXX1)
+  , (''Controller, ''At, ''Host_XXX1)
+  , (''Rack, ''At, ''Rack_XXX1)
+  , (''Enclosure, ''At, ''Enclosure_XXX1)
+  , (''Disk, ''At, ''StorageDevice_XXX1)
     -- Parent/child relationships between conf entities
   , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Filesystem, ''IsParentOf, ''Node)
@@ -979,10 +985,10 @@ $(mkDicts
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
   , (''Disk, ''IsRealOf, ''DiskV)
-  , (''Disk, ''R.Is, ''Replaced)
+  , (''Disk, ''Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
-  , (''SDev, ''At, ''R.Slot_XXX1)
+  , (''SDev, ''At, ''Slot_XXX1)
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
   , (''Cluster, ''Has, ''FidSeq)
@@ -991,19 +997,19 @@ $(mkDicts
   , (''Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''Has, ''PoolRepairStatus)
   , (''Pool, ''Has, ''DiskFailureVector)
-  , (''R.Host_XXX1, ''Has, ''LNid)
-  , (''R.Host_XXX1, ''Runs, ''Node)
+  , (''Host_XXX1, ''Has, ''LNid)
+  , (''Host_XXX1, ''Runs, ''Node)
   , (''Process, ''Has, ''ProcessLabel)
   , (''Process, ''Has, ''ProcessEnv)
   , (''Process, ''Has, ''PID)
-  , (''Process, ''R.Is, ''ProcessBootstrapped)
-  , (''Process, ''R.Is, ''ProcessState)
-  , (''Service, ''R.Is, ''ServiceState)
-  , (''SDev, ''R.Is, ''SDevState)
-  , (''Node,    ''R.Is, ''NodeState)
-  , (''Controller,    ''R.Is, ''ControllerState)
+  , (''Process, ''Is, ''ProcessBootstrapped)
+  , (''Process, ''Is, ''ProcessState)
+  , (''Service, ''Is, ''ServiceState)
+  , (''SDev, ''Is, ''SDevState)
+  , (''Node,    ''Is, ''NodeState)
+  , (''Controller,    ''Is, ''ControllerState)
   , (''Filesystem, ''Has, ''FilesystemStats)
-  , (''Filesystem, ''R.Is, ''DIXInitialised)
+  , (''Filesystem, ''Is, ''DIXInitialised)
   ]
   )
 
@@ -1027,11 +1033,11 @@ $(mkResRel
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
-  , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host_XXX1)
-  , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack_XXX1)
-  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure_XXX1)
-  , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice_XXX1)
-  , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot_XXX1)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
+  , (''Rack, AtMostOne, ''At, AtMostOne, ''Rack_XXX1)
+  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Enclosure_XXX1)
+  , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot_XXX1)
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
@@ -1053,7 +1059,7 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)
   , (''Disk, AtMostOne, ''IsRealOf, Unbounded, ''DiskV)
-  , (''Disk, Unbounded, ''R.Is, Unbounded, ''Replaced)
+  , (''Disk, Unbounded, ''Is, Unbounded, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
@@ -1064,19 +1070,19 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, AtMostOne, ''Has, AtMostOne, ''DiskFailureVector)
-  , (''R.Host_XXX1, AtMostOne, ''Has, Unbounded, ''LNid)
-  , (''R.Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
+  , (''Host_XXX1, AtMostOne, ''Has, Unbounded, ''LNid)
+  , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''Has, AtMostOne, ''ProcessLabel)
   , (''Process, Unbounded, ''Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''Has, AtMostOne, ''PID)
-  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
-  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)
-  , (''Service, Unbounded, ''R.Is, AtMostOne, ''ServiceState)
-  , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
-  , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
-  , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
+  , (''Process, Unbounded, ''Is, AtMostOne, ''ProcessBootstrapped)
+  , (''Process, Unbounded, ''Is, AtMostOne, ''ProcessState)
+  , (''Service, Unbounded, ''Is, AtMostOne, ''ServiceState)
+  , (''SDev, Unbounded, ''Is, AtMostOne, ''SDevState)
+  , (''Node, Unbounded,    ''Is, AtMostOne, ''NodeState)
+  , (''Controller, Unbounded,    ''Is, AtMostOne, ''ControllerState)
   , (''Filesystem, Unbounded, ''Has, AtMostOne, ''FilesystemStats)
-  , (''Filesystem, Unbounded, ''R.Is, AtMostOne, ''DIXInitialised)
+  , (''Filesystem, Unbounded, ''Is, AtMostOne, ''DIXInitialised)
   ]
   []
   )
@@ -1110,14 +1116,14 @@ lookupConfObjByFid f =
 
 -- | Lookup 'Node' associated with the given 'Node'. See
 -- 'nodeToM0Node' for inverse.
-m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
+m0nodeToNode :: Node -> G.Graph -> Maybe Node_XXX2
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: R.Host_XXX1) <- [G.connectedFrom Runs m0node rg]
+  [ node | Just (h :: Host_XXX1) <- [G.connectedFrom Runs m0node rg]
          , node <- G.connectedTo h Runs rg ]
 
 -- | Lookup 'Node' associated with the given 'Node'. See
 -- 'm0nodeToNode' for inverse.
-nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
+nodeToM0Node :: Node_XXX2 -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
-  [ m0n | Just (h :: R.Host_XXX1) <- [G.connectedFrom Runs node rg]
+  [ m0n | Just (h :: Host_XXX1) <- [G.connectedFrom Runs node rg]
         , m0n <- G.connectedTo h Runs rg ]

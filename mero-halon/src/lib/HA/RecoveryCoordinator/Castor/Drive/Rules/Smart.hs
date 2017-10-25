@@ -39,7 +39,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
   , SMARTResponseStatus(..)
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.Resources (Node(..))
+import HA.Resources (Node_XXX2(..))
 import HA.Resources.HalonVars
 import HA.Resources.Castor (StorageDevice_XXX1(..))
 import HA.Services.SSPL.LL.CEP
@@ -72,7 +72,7 @@ data DeviceInfo = DeviceInfo {
 }
 makeLenses ''DeviceInfo
 
-fldNode :: Proxy '("node", Maybe Node)
+fldNode :: Proxy '("node", Maybe Node_XXX2)
 fldNode = Proxy
 
 type FldDeviceInfo = '("deviceInfo", Maybe DeviceInfo)

@@ -25,9 +25,9 @@ import HA.Encode
 import HA.RecoveryCoordinator.RC.Actions.Core
 import HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
-import HA.Resources
+import HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
 import HA.Resources.RC hiding (RC)
-import           HA.Service
+import HA.Service
   ( Configuration
   , Supports(..)
   , Service(..)
@@ -57,7 +57,7 @@ import Network.CEP hiding (get, put, start, stop)
 
 -- | Find all services on the node that are not marked as disconnecting
 -- (i.e. node marked as 'Stopping').
-findRegisteredOn :: Node -> PhaseM RC l [ServiceInfoMsg]
+findRegisteredOn :: Node_XXX2 -> PhaseM RC l [ServiceInfoMsg]
 findRegisteredOn node = go <$> getLocalGraph
   where
     go rg = [ info
@@ -78,7 +78,7 @@ declare svc = modifyGraph $ G.connect Cluster Supports svc
 -- | Register service on a given node. After this halon will know that it needs
 -- to send information to regular monitor services.
 register :: Configuration a
-         => Node
+         => Node_XXX2
          -> Service a
          -> a
          -> PhaseM RC l ()
@@ -88,7 +88,7 @@ register node svc conf =
 
 -- | Unregister service on the given node.
 unregister :: HasServiceInfoMsg si
-           => Node
+           => Node_XXX2
            -> si
            -> PhaseM RC l ()
 unregister node info =
@@ -98,7 +98,7 @@ unregister node info =
     msg = Service.serviceInfoMsg info
 
 -- | Get encoded 'ServiceInfo' for service located on 'Node'.
-lookupInfoMsg :: Node  -- ^ Node of interest.
+lookupInfoMsg :: Node_XXX2  -- ^ Node of interest.
               -> Service a -- ^ Service of interest.
               -> PhaseM RC l (Maybe ServiceInfoMsg)
 lookupInfoMsg node svc =
@@ -106,7 +106,7 @@ lookupInfoMsg node svc =
 
 -- | Lookup config of the Service that is started on the 'Node'.
 lookupConfig :: Configuration a
-             => Node  -- ^ Node of interest.
+             => Node_XXX2  -- ^ Node of interest.
              -> Service a -- ^ Service of interest.
              -> PhaseM RC l (Maybe a)
 lookupConfig node svc = do
@@ -119,7 +119,7 @@ lookupConfig node svc = do
 --
 -- This call does not modify RG data.
 start :: HasServiceInfoMsg si
-      => Node -- ^ Remote node
+      => Node_XXX2 -- ^ Remote node
       -> si -- ^ Config of the new service
       -> PhaseM RC l ()
 start node info = liftProcess $ do
@@ -132,7 +132,7 @@ start node info = liftProcess $ do
 --
 -- This call does not modify RG data.
 stop :: Configuration a
-     => Node      -- ^ Remote node
+     => Node_XXX2 -- ^ Remote node
      -> Service a -- ^ Config of the service to stop
      -> PhaseM RC l ()
 stop node svc = liftProcess $ do
@@ -144,13 +144,13 @@ stop node svc = liftProcess $ do
 -- | Asynchronously request status of the halon service.
 -- Status reply is processed in background thread.
 --
-requestStatusAsync :: Node -- ^ Node where service is running.
+requestStatusAsync :: Node_XXX2 -- ^ Node where service is running.
                    -> Service a -- ^ Service of interest.
                    -> (ServiceStatusResponseMsg -> Process ()) -- ^ What to do with status
                    -> Process () -- ^ How to cleanup enviroment after work is done. We could
                                  -- mark message as processed here.
                    -> PhaseM RC l ()
-requestStatusAsync node@(Node nid) srv onComplete finalize = do
+requestStatusAsync node@(Node_XXX2 nid) srv onComplete finalize = do
   minfo <- lookupInfoMsg node srv
   liftProcess $ do
     self <- getSelfPid
@@ -172,12 +172,12 @@ requestStatusAsync node@(Node nid) srv onComplete finalize = do
       finalize
 
 -- | Mark service as stopping
-markStopping :: HasServiceInfoMsg s => Node -> s -> PhaseM RC l ()
+markStopping :: HasServiceInfoMsg s => Node_XXX2 -> s -> PhaseM RC l ()
 markStopping node si =
   modifyGraph $ G.connect node Stopping (Service.serviceInfoMsg si) -- XXX: check "Has" relation
 
 -- | Unregister service, but only if it's currently stopping.
-unregisterIfStopping :: HasServiceInfoMsg si => Node -> si -> PhaseM RC l ()
+unregisterIfStopping :: HasServiceInfoMsg si => Node_XXX2 -> si -> PhaseM RC l ()
 unregisterIfStopping node info = do
   isStopping <- G.isConnected node Stopping msg <$> getLocalGraph
   if isStopping
@@ -186,5 +186,5 @@ unregisterIfStopping node info = do
   where msg = Service.serviceInfoMsg info
 
 -- | Check if instance of service is registered on the node.
-has :: HasServiceInfoMsg si => Node -> si -> PhaseM RC l Bool
+has :: HasServiceInfoMsg si => Node_XXX2 -> si -> PhaseM RC l Bool
 has node info = G.isConnected node Has (Service.serviceInfoMsg info) <$> getLocalGraph

@@ -30,14 +30,14 @@ import           Data.Binary (Binary)
 import           Data.Typeable (Typeable)
 import           GHC.Generics
 import           HA.RecoveryCoordinator.Service.Events (ServiceStopRequestResult)
-import qualified HA.Resources as R
+import           HA.Resources (Node_XXX2)
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
 import           Mero.ConfC (Fid)
 import           System.Posix.SysInfo
 
 -- | Request start of the 'ruleNewNode'.
-data StartProcessNodeNew = StartProcessNodeNew !R.Node !SysInfo
+data StartProcessNodeNew = StartProcessNodeNew !Node_XXX2 !SysInfo
   deriving (Eq, Show, Generic, Ord)
 
 -- | Request that @halon:m0d@ service is started on the given
@@ -46,7 +46,7 @@ newtype StartHalonM0dRequest = StartHalonM0dRequest M0.Node
   deriving (Eq, Show, Typeable, Generic)
 
 -- | Trigger 'requestStopHalonM0d'.
-newtype StopHalonM0dRequest = StopHalonM0dRequest R.Node
+newtype StopHalonM0dRequest = StopHalonM0dRequest Node_XXX2
   deriving (Eq, Show, Typeable, Generic, Ord)
 
 -- | Reply in 'requestStopHalonM0d'.
@@ -63,15 +63,15 @@ newtype StartProcessesOnNodeRequest = StartProcessesOnNodeRequest M0.Node
   deriving (Eq, Show, Generic, Ord)
 
 -- | Request start of 'ruleStopProcessesOnNode'.
-newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest R.Node
+newtype StopProcessesOnNodeRequest = StopProcessesOnNodeRequest Node_XXX2
   deriving (Eq, Show, Generic, Ord)
 
 -- | Results to 'StopProcessesOnNodeRequest'.
 data StopProcessesOnNodeResult
-       = StopProcessesOnNodeOk R.Node
-       | StopProcessesOnNodeTimeout R.Node
-       | StopProcessesOnNodeStateChanged R.Node M0.MeroClusterState
-       | StopProcessesOnNodeFailed R.Node String
+       = StopProcessesOnNodeOk Node_XXX2
+       | StopProcessesOnNodeTimeout Node_XXX2
+       | StopProcessesOnNodeStateChanged Node_XXX2 M0.MeroClusterState
+       | StopProcessesOnNodeFailed Node_XXX2 String
        deriving (Eq, Show, Generic)
 instance Binary StopProcessesOnNodeResult
 
@@ -111,29 +111,29 @@ data StopNodeUserRequest =
 
 -- | Reply to 'StopNodeUserRequest'.
 data StopNodeUserReply =
-  CantStop Fid R.Node [String]
+  CantStop Fid Node_XXX2 [String]
   -- ^ @CantStop m0nodeFid node reasons@
   --
   -- Can't stop the node as requested because it would result in the
   -- given failures of the cluster.
-  | StopInitiated Fid R.Node
+  | StopInitiated Fid Node_XXX2
   -- ^ Node stop has been started.
   | NotANode Fid
   -- ^ The given 'Fid' does not identify a known node.
   deriving (Eq, Show, Generic)
 
--- | Request that a 'R.Node' is stopped for maintenance. Replied to by
+-- | Request that a 'Node_XXX2' is stopped for maintenance. Replied to by
 -- 'MaintenanceStopNodeResult'.
-data MaintenanceStopNode = MaintenanceStopNode R.Node
+data MaintenanceStopNode = MaintenanceStopNode Node_XXX2
   deriving (Eq, Show, Generic, Ord)
 
 -- | A reply to 'MaintenanceStopNode'.
 data MaintenanceStopNodeResult
-  = MaintenanceStopNodeOk R.Node
-  -- ^ The 'R.Node' has stopped.
-  | MaintenanceStopNodeTimeout R.Node
+  = MaintenanceStopNodeOk Node_XXX2
+  -- ^ The 'Node' has stopped.
+  | MaintenanceStopNodeTimeout Node_XXX2
   -- ^ Node stop has timed out.
-  | MaintenanceStopNodeFailed R.Node String
+  | MaintenanceStopNodeFailed Node_XXX2 String
   -- ^ Node failed to stop for some reason.
   deriving (Eq, Show, Generic)
 

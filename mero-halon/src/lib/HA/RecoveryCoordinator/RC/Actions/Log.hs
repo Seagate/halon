@@ -30,7 +30,7 @@ module HA.RecoveryCoordinator.RC.Actions.Log
 import           HA.RecoveryCoordinator.RC.Application
 import           HA.RecoveryCoordinator.Log
 import qualified HA.RecoveryCoordinator.Log as Log (Scope(StorageDevice))
-import qualified HA.Resources as Res (Node(..))
+import qualified HA.Resources as Res (Node_XXX2(..))
 import qualified HA.Resources.Castor as Res (StorageDevice_XXX1(..))
 import qualified HA.Resources.Mero.Note as M0 (ShowFidObj(..))
 
@@ -226,11 +226,11 @@ instance Taggable [(String, String)] where
 instance Taggable UUID where
   toTagContent uuid = TagScope [Thread uuid]
 
-instance Taggable Res.Node where
+instance Taggable Res.Node_XXX2 where
   toTagContent node = TagScope [Node node]
 
 instance Taggable NodeId where
-  toTagContent nid = TagScope [Node (Res.Node nid)]
+  toTagContent nid = TagScope [Node (Res.Node_XXX2 nid)]
 
 instance Taggable Res.StorageDevice_XXX1 where
   toTagContent (Res.StorageDevice_XXX1 serial) = TagScope [Log.StorageDevice serial]

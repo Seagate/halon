@@ -37,8 +37,12 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph                      (Graph)
 import qualified HA.ResourceGraph                      as G
-import qualified HA.Resources                          as R
-import qualified HA.Resources.Castor                   as R
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
+import           HA.Resources.Castor
+  ( Host_XXX1
+  , Is(..)
+  , _hv_notification_timeout
+  )
 import           HA.Resources.HalonVars                (getHalonVar)
 import qualified HA.Resources.Mero                     as M0
 import qualified HA.Resources.Mero.Note                as M0
@@ -59,13 +63,13 @@ import           Prelude                               hiding (id, (.))
 -- Only 'PSOnline' processes are used as recepients for notifications:
 -- starting processes should request state themselves. Stopping
 -- processes shouldn't need any further updates.
-getNotificationNodes :: PhaseM RC l [(R.Node, [M0.Process])]
+getNotificationNodes :: PhaseM RC l [(Node_XXX2, [M0.Process])]
 getNotificationNodes = do
   rg <- getLocalGraph
   let nodes =
         [ (node, m0node)
-        | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host_XXX1]
-        , node <- G.connectedTo host R.Runs rg
+        | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
+        , node <- G.connectedTo host Runs rg
         , Just m0node <- [M0.nodeToM0Node node rg]
         ]
   things <-
@@ -93,13 +97,13 @@ mkStateDiff f msg onCommit = do
   let idx = StateDiffIndex epoch
       diff = StateDiff epoch msg onCommit
   rc <- getCurrentRC
-  modifyGraph $ G.connect idx R.Is diff >>> G.connect rc R.Has diff >>> f
+  modifyGraph $ G.connect idx Is diff >>> G.connect rc Has diff >>> f
   return diff
 
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM RC l (Maybe StateDiff)
-getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
+getStateDiffByEpoch idx = G.connectedTo epoch Is <$> getLocalGraph
   where
     epoch = StateDiffIndex idx
 
@@ -146,7 +150,7 @@ tryCompleteStateDiff diff = do
   -- If the diff is connected it means we haven't entered past the
   -- guard below yet: this ensures we only send result of
   -- notifications once.
-  notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
+  notSent <- G.isConnected rc Has diff <$> getLocalGraph
   -- Processes we haven't heard success/failure from yet
   pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
   Log.rcLog'
@@ -178,7 +182,7 @@ forceCompleteStateDiff diff = do
 -- | Mark all notifications for processes on the given node as failed.
 --
 -- This code process node even in case if it was disconnected from cluster.
-failNotificationsOnNode :: R.Node -> PhaseM RC l ()
+failNotificationsOnNode :: Node_XXX2 -> PhaseM RC l ()
 failNotificationsOnNode node
   -- Find all processes on the current target node.
  = do
@@ -213,7 +217,7 @@ notifyMeroAsync diff s = do
     [ ("notifyMeroAsynch.epoch", show (stateEpoch diff))
     , ("notifyMeroAsynch.nodes", show $ fmap (second (fmap M0.fid)) nodes)
     ]
-  for_ nodes $ \(R.Node nid, recipients) -> do
+  for_ nodes $ \(Node_XXX2 nid, recipients) -> do
     modifyGraph $
       execState $ for recipients $ State.modify . G.connect diff ShouldDeliverTo
     registerSyncGraph $
@@ -228,7 +232,7 @@ notifyMeroAsync diff s = do
   if null nodes
     then tryCompleteStateDiff diff
     else do
-      notificationTimeout <- getHalonVar R._hv_notification_timeout
+      notificationTimeout <- getHalonVar _hv_notification_timeout
       liftProcess $
       -- Fork a process which will send a timeout for this epoch
        do

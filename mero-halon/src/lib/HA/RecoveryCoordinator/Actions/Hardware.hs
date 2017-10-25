@@ -53,7 +53,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node, Runs(..))
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2, Runs(..))
 import qualified HA.Resources.Castor as R
 import           HA.Services.Ekg.RC
 import           Network.CEP
@@ -98,7 +98,7 @@ findBMCAddress host = do
 ----------------------------------------------------------
 
 -- | Find the host running the given node
-findNodeHost :: Node
+findNodeHost :: Node_XXX2
              -> PhaseM RC l (Maybe R.Host_XXX1)
 findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
@@ -119,7 +119,7 @@ findHosts regex = do
 
 -- | Find all nodes running on the given host.
 nodesOnHost :: R.Host_XXX1
-            -> PhaseM RC l [Node]
+            -> PhaseM RC l [Node_XXX2]
 nodesOnHost host = do
   fmap (G.connectedTo host Runs) getLocalGraph
 
@@ -152,7 +152,7 @@ locateHostInEnclosure host enc = do
 
 -- | Record that a node is running on a host. Does not re-connect if
 -- the 'Node' is already connected to the given 'Host'.
-locateNodeOnHost :: Node
+locateNodeOnHost :: Node_XXX2
                  -> R.Host_XXX1
                  -> PhaseM RC l ()
 locateNodeOnHost node host = modifyLocalGraph $ \rg ->
@@ -317,7 +317,7 @@ getDiskResetAttempts sdev = do
 -- TODO: Should be @'Maybe' 'Node'@.
 -- TODO: Is this function and are uses of this function correct?
 -- TODO: Same questions for 'getSDevHost'
-getSDevNode :: R.StorageDevice_XXX1 -> PhaseM RC l [Node]
+getSDevNode :: R.StorageDevice_XXX1 -> PhaseM RC l [Node_XXX2]
 getSDevNode sdev = do
   rg <- getLocalGraph
   hosts <- getSDevHost sdev

@@ -23,9 +23,9 @@ import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 -- halon dependencies
 import           HA.EventQueue.Types (HAEvent(..))
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Runs(..), Node(..))
+import           HA.Resources (Runs(..), Node_XXX2(..))
 import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Mero   as M0
+import qualified HA.Resources.Mero as M0
 import           HA.Service
   ( Service
   , ServiceInfo(..)
@@ -65,7 +65,7 @@ ruleCheckCleanup = define "service::m0d::check-cleanup" $ do
     rg <- getLocalGraph
     let msg = Cleanup . null $
           [ ()
-          | Just (host :: R.Host_XXX1) <- [G.connectedFrom Runs (Node nid) rg]
+          | Just (host :: R.Host_XXX1) <- [G.connectedFrom Runs (Node_XXX2 nid) rg]
           , m0node :: M0.Node <- G.connectedTo host Runs rg
           , p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
           , G.isConnected p R.Is M0.ProcessBootstrapped rg

@@ -25,7 +25,7 @@ import HA.RecoveryCoordinator.Job.Actions (startJob)
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import HA.RecoveryCoordinator.RC.Subscription
 import HA.RecoveryCoordinator.Service.Events
-import HA.Resources
+import HA.Resources (Node_XXX2(..))
 import HA.Service
 import HA.Services.SSPL.Rabbit
 import Network.CEP (Published(..))
@@ -65,7 +65,7 @@ serviceStarted srv = do
 serviceStart :: Configuration a => Service a -> a -> Process ()
 serviceStart svc conf = do
   nid <- getSelfNode
-  let node = Node nid
+  let node = Node_XXX2 nid
   _   <- promulgateEQ [nid] $ encodeP $ ServiceStartRequest Start node svc conf []
   return ()
 
@@ -86,11 +86,11 @@ serviceStartOnNodes :: Configuration a
                     -> Process [(NodeId, ProcessId)]
 serviceStartOnNodes eqs svc conf nids = withSubscription eqs startedEvent $ do
   for_ nids $ \nid -> do
-    void . promulgateEQ eqs . encodeP $ ServiceStartRequest Start (Node nid) svc conf []
+    void . promulgateEQ eqs . encodeP $ ServiceStartRequest Start (Node_XXX2 nid) svc conf []
 
   let loop [] results = return results
       loop waits results = do
-        ServiceStarted (Node nid) msg pid <- eventPayload . pubValue <$> expect
+        ServiceStarted (Node_XXX2 nid) msg pid <- eventPayload . pubValue <$> expect
         case nid `elem` waits of
           True -> do
             ServiceInfo svci _ <- decodeP msg
@@ -112,7 +112,7 @@ serviceStopOnNode :: Configuration a
                   -- ^ Node to stop the service on.
                   -> Process ServiceStopRequestResult
 serviceStopOnNode eqs svc nid = withSubscription eqs svcStopFinished $ do
-  l <- startJob . encodeP $ ServiceStopRequest (Node nid) svc
+  l <- startJob . encodeP $ ServiceStopRequest (Node_XXX2 nid) svc
   JobFinished _ v <- expectPublishedIf (\(JobFinished lis _) -> l `elem` lis)
   return v
   where
@@ -156,10 +156,10 @@ expectPublished = expectPublishedIf $ \(_ :: a) -> True
 -- | Gets the pid of the given service on the given node. It blocks
 -- until the service actually starts.
 getServiceProcessPid :: Configuration a
-                     => Node
+                     => Node_XXX2
                      -> Service a
                      -> Process ProcessId
-getServiceProcessPid (Node nid) sc = do
+getServiceProcessPid (Node_XXX2 nid) sc = do
   whereisRemoteAsync nid (serviceLabel sc)
   WhereIsReply _ (Just pid) <- expect
   return pid

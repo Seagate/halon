@@ -55,7 +55,7 @@ import           HA.RecoveryCoordinator.RC.Events.Cluster
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
-import           HA.Resources
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -193,7 +193,7 @@ testRules = do
 
         route (PopulateMock m0dPid nid) = do
           rg <- getLocalGraph
-          let procs = Node.getProcesses (Node nid) rg
+          let procs = Node.getProcesses (Node_XXX2 nid) rg
               pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
               ha = [ p | (p, svcs) <- pmap
                        , any (\s -> M0.s_type s == CST_HA) svcs ]
@@ -260,7 +260,7 @@ startSatellites eqs ns = withSubscription eqs (Proxy :: Proxy NewNodeConnected) 
       loop waits = receiveWait
         [ matchIf (\(pubValue -> NewNodeConnected n _) -> n `elem` waits)
                   (\(pubValue -> NewNodeConnected n _) -> loop $ filter (/= n) waits) ]
-      nodes = map (\(ln, _) -> Node $! localNodeId ln) ns
+      nodes = map (\(ln, _) -> Node_XXX2 $! localNodeId ln) ns
   sayTest $ "Waiting for following satellites: " ++ show nodes
   loop nodes
   sayTest "startSatellites finished."
@@ -409,7 +409,7 @@ run' transport pg extraRules to test = do
               e -> fail $ "Cluster fail to bootstrap with: " ++ show e
         HalonM0DOnly -> do
           rg' <- G.getGraph (ta_mm ta)
-          for_ (mapMaybe (\n -> M0.nodeToM0Node (Node n) rg') nids) $ \m0n -> do
+          for_ (mapMaybe (\n -> M0.nodeToM0Node (Node_XXX2 n) rg') nids) $ \m0n -> do
             _ <- promulgateEQ [rcNodeId] $! StartHalonM0dRequest m0n
             sayTest $ "Sent StartHalonM0dRequest for " ++ show m0n
           startM0Ds

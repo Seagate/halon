@@ -62,8 +62,8 @@ import           GHC.Generics
 import           HA.Aeson
 import           HA.Encode (ProcessEncode(..))
 import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources (Node(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Node_XXX2(..))
+import           HA.Resources.Castor (Host_XXX1)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.SafeCopy
@@ -94,13 +94,13 @@ data SyncComplete = SyncComplete UUID
 instance Binary SyncComplete
 
 -- | New mero server was connected.
-data NewMeroServer = NewMeroServer Node
-                   | NewMeroServerFailure Node
+data NewMeroServer = NewMeroServer Node_XXX2
+                   | NewMeroServerFailure Node_XXX2
       deriving (Eq, Show, Typeable, Generic)
 instance Binary NewMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
-data NewMeroClientProcessed = NewMeroClientProcessed R.Host_XXX1
+data NewMeroClientProcessed = NewMeroClientProcessed Host_XXX1
        deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroClientProcessed

@@ -46,10 +46,17 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Internal
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources
+  ( Cluster(..)
+  , EpochId(..)
+  , Has(..)
+  , Node_XXX2(..)
+  , RecoverNode(..)
+  )
 import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.RC as R
+-- import           HA.Resources.RC (RC)
 import           HA.Service (ServiceFailed(..))
 import           Network.CEP
 
@@ -81,7 +88,7 @@ makeCurrentRC update = do
   return currentRC
   where
     mkRC = modifyGraph $ G.connect currentRC R.Is R.Active
-                       . G.connect R.Cluster R.Has currentRC
+                       . G.connect Cluster Has currentRC
 
 -- | Find currenlty running RC in resource graph.
 tryGetCurrentRC :: PhaseM RC l (Maybe R.RC)
@@ -89,29 +96,29 @@ tryGetCurrentRC = do
   rg <- getLocalGraph
   return $ listToMaybe
     [ rc
-    | Just rc <- [G.connectedTo R.Cluster R.Has rg :: Maybe R.RC]
+    | Just rc <- [G.connectedTo Cluster Has rg :: Maybe R.RC]
     , G.isConnected rc R.Is R.Active rg
     ]
 
 -- | Increment epoch
-incrementEpoch :: Word64 -> R.EpochId
-incrementEpoch = R.EpochId . succ
+incrementEpoch :: Word64 -> EpochId
+incrementEpoch = EpochId . succ
 
 -- | Get current epoch
 getCurrentEpoch :: PhaseM RC l Word64
-getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i) .
-                  G.connectedTo R.Cluster R.Has <$> getLocalGraph
+getCurrentEpoch = maybe 0 (\(EpochId i) -> i) .
+                  G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Read old epoch value and update it to the next one.
 updateEpoch :: PhaseM RC l Word64
 updateEpoch = do
   old <- getCurrentEpoch
-  modifyGraph $ G.connect R.Cluster R.Has (incrementEpoch old)
+  modifyGraph $ G.connect Cluster Has (incrementEpoch old)
   return old
 
 -- | Monitor node and register callback to run when node dies.
-registerNodeMonitor :: R.Node -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
-registerNodeMonitor (R.Node node) callback = do
+registerNodeMonitor :: Node_XXX2 -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
+registerNodeMonitor (Node_XXX2 node) callback = do
   mref <- liftProcess $ monitorNode node
   mmon <- getStorageRC
   putStorageRC $ RegisteredMonitors $
@@ -144,11 +151,11 @@ unregisterMonitor mref = do
 -- | Spawn a remote process and register asynchronous callback.
 -- Callback should not be blocking as it will be executed in
 -- scope on another thread.
-registerSpawnAsync :: R.Node
+registerSpawnAsync :: Node_XXX2
                    -> Closure (Process ())
                    -> (forall v . PhaseM RC v ())
                    -> PhaseM RC l SpawnRef
-registerSpawnAsync (R.Node nid) clo callback = do
+registerSpawnAsync (Node_XXX2 nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
   Log.actLog "registerSpawnAsync" [("nid", show nid), ("ref", show ref)]
   msp <- getStorageRC
@@ -169,8 +176,8 @@ unregisterSpawnAsync ref = do
 --
 -- This call provisions node, restart services there and add required
 -- monitoring procedures.
-addNodeToCluster :: [NodeId] -> R.Node -> PhaseM RC l ()
-addNodeToCluster eqs node@(R.Node nid) = do
+addNodeToCluster :: [NodeId] -> Node_XXX2 -> PhaseM RC l ()
+addNodeToCluster eqs node@(Node_XXX2 nid) = do
   Log.actLog "addNodeToCluster" [("nid", show nid), ("eqs", show eqs)]
   is_monitored <- isMonitored node
   if not is_monitored
@@ -185,8 +192,8 @@ addNodeToCluster eqs node@(R.Node nid) = do
       stopMonitoring node
       Service.findRegisteredOn node >>=
         traverse_ (\svc -> promulgateRC $ ServiceFailed node svc (nullProcessId nid))
-      promulgateRC $ R.RecoverNode node
-      publish $ R.RecoverNode node
+      promulgateRC $ RecoverNode node
+      publish $ RecoverNode node
       unregisterSpawnAsync sr
       return ()
   else Log.rcLog' Log.DEBUG "Node is already monitored."
@@ -198,7 +205,7 @@ addNodeToCluster eqs node@(R.Node nid) = do
 labelMonitorAngel :: String
 labelMonitorAngel = "rc.angel.node-monitor"
 
-newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set R.Node}
+newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set Node_XXX2}
 
 -- [Note: monitor angel request serialisation]
 -- All requests to the node monitor should be serialised, this is needed
@@ -208,15 +215,15 @@ newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set R.Node}
 
 -- | Check if given monitor node is monitored by angel.
 -- See [Note:monitor angel request serialisation]
-isMonitored :: R.Node -> PhaseM RC l Bool
+isMonitored :: Node_XXX2 -> PhaseM RC l Bool
 isMonitored node = do
   mmns <- getStorageRC
   return $ maybe False (Set.member node . getMonitoredNodes) mmns
 
 -- | Start node monitoring using angel
 -- See [Note:monitor angel request serialisation]
-startMonitoring :: R.Node -> PhaseM RC l ()
-startMonitoring node@(R.Node nid) = do
+startMonitoring :: Node_XXX2 -> PhaseM RC l ()
+startMonitoring node@(Node_XXX2 nid) = do
   Log.actLog "startMonitoring" [("nid", show nid)]
   Log.rcLog' Log.DEBUG "Adding new node to the cluster."
   mmns <- getStorageRC
@@ -227,8 +234,8 @@ startMonitoring node@(R.Node nid) = do
 
 -- | Stop node monitoring using Angel.
 -- See [Note:monitor angel request serialisation]
-stopMonitoring :: R.Node -> PhaseM RC l ()
-stopMonitoring node@(R.Node nid) = do
+stopMonitoring :: Node_XXX2 -> PhaseM RC l ()
+stopMonitoring node@(Node_XXX2 nid) = do
   Log.actLog "stopMonitoring" [("nid", show nid)]
   mmns <- getStorageRC
   for_ mmns $ \mns -> putStorageRC $
@@ -286,7 +293,7 @@ registerNodeMonitoringAngel = do
     AngelMonUp <- expect
     return pid
   -- rg <- getLocalGraph
-  -- let nodes = (\(R.Node n) -> n) <$> G.connectedTo R.Cluster R.Has rg
+  -- let nodes = (\(Node_XXX2 n) -> n) <$> G.connectedTo Cluster Has rg
   -- liftProcess $ for_ nodes $ usend pid . AddNode
   void $ registerProcessMonitor pid $ do
      Log.rcLog' Log.WARN "Node monitor angel has died, restarting."

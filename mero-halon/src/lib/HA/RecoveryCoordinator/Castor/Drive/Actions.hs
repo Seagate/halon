@@ -45,7 +45,7 @@ import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node)
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
 import           HA.Resources.Castor
   ( Slot_XXX1
   , StorageDevice_XXX1
@@ -281,7 +281,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
-                            -> Node          -- ^ Node in question.
+                            -> Node_XXX2          -- ^ Node in question.
                             -> StorageDevice_XXX1 -- ^ Installed storage device.
                             -> Slot_XXX1     -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.
@@ -328,7 +328,7 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed mis_powered = d
 -- | Update status of the storage device.
 updateStorageDeviceStatus ::
      UUID  -- ^ Thread UUID.
-  -> Node -- ^ Node in question.
+  -> Node_XXX2 -- ^ Node in question.
   -> StorageDevice_XXX1 -- ^ Updated storage device.
   -> Slot_XXX1 -- ^ Storage device location.
   -> String -- ^ Storage device status.

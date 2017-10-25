@@ -26,7 +26,7 @@ import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Events.Info
-import           HA.Resources (Node(..))
+import           HA.Resources (Node_XXX2(..))
 import           Lookup
 import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 import qualified Options.Applicative as O
@@ -243,7 +243,7 @@ nodeStats nids (NodeStatsOptions t) = do
       liftIO $ putStrLn $ "Node: " ++ show nid
       nStats <- P.getNodeStats nid
       (sp, rp) <- newChan
-      let msg = NodeStatusRequest (Node nid) sp
+      let msg = NodeStatusRequest (Node_XXX2 nid) sp
       _ <- promulgateEQ nids msg >>= \pid -> withMonitor pid wait
       mresult <- receiveChanTimeout t rp
       display nStats mresult nid

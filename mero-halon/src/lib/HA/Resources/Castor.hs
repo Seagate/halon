@@ -17,15 +17,19 @@
 
 module HA.Resources.Castor (
     module HA.Resources.Castor
-  , MI.BMC(..)
+  , BMC(..)
 ) where
 
 import HA.Aeson
 import HA.SafeCopy
-import HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
-import qualified HA.Resources.Castor.Initial as MI
+import HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
+import HA.Resources.Castor.Initial (BMC(..))
 import HA.Resources.TH
-
+  ( Cardinality(AtMostOne,Unbounded)
+  , mkDicts
+  , mkResRel
+  , storageIndex
+  )
 import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
 import Data.UUID (UUID)
@@ -315,7 +319,7 @@ $(mkDicts
   [ ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack_XXX1)
@@ -327,8 +331,8 @@ $(mkDicts
   , (''Enclosure_XXX1, ''Has, ''Slot_XXX1)
   , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
   , (''Enclosure_XXX1, ''Has, ''Host_XXX1)
-  , (''Enclosure_XXX1, ''Has, ''MI.BMC)
-  , (''Host_XXX1, ''Runs, ''Node)
+  , (''Enclosure_XXX1, ''Has, ''BMC)
+  , (''Host_XXX1, ''Runs, ''Node_XXX2)
   , (''StorageDevice_XXX1, ''Is, ''StorageDeviceStatus)
   , (''StorageDevice_XXX1, ''Has, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, ''Has, ''StorageDeviceAttr)
@@ -342,7 +346,7 @@ $(mkResRel
   [ ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
@@ -354,8 +358,8 @@ $(mkResRel
   , (''Host_XXX1, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host_XXX1, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
-  , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''MI.BMC)
-  , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
+  , (''Enclosure_XXX1, AtMostOne, ''Has, Unbounded, ''BMC)
+  , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node_XXX2)
   , (''StorageDevice_XXX1, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
   , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot_XXX1)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)

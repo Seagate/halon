@@ -70,8 +70,8 @@ import GHC.Generics (Generic)
 import HA.Encode
 import HA.EventQueue.Producer
 import HA.Service.Internal
-import HA.ResourceGraph
-import HA.Resources
+import HA.ResourceGraph (Graph, connect, connectedTo, disconnect)
+import HA.Resources (Has(..), Node_XXX2(..), Runs(..))
 import HA.SafeCopy
 
 --------------------------------------------------------------------------------
@@ -79,12 +79,12 @@ import HA.SafeCopy
 --------------------------------------------------------------------------------
 
 -- | A notification of a failure to start a service.
-data ServiceCouldNotStart = ServiceCouldNotStart Node ServiceInfoMsg
+data ServiceCouldNotStart = ServiceCouldNotStart Node_XXX2 ServiceInfoMsg
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceCouldNotStart
 
 -- | A notification of a successful service start.
-data ServiceStarted = ServiceStarted Node ServiceInfoMsg ProcessId
+data ServiceStarted = ServiceStarted Node_XXX2 ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceStarted
 
@@ -94,7 +94,7 @@ deriveSafeCopy 0 'base ''ServiceStarted
 registerServiceOnNode :: forall a. Configuration a
                       => Service a
                       -> ServiceInfoMsg
-                      -> Node
+                      -> Node_XXX2
                       -> Graph
                       -> ([ServiceInfoMsg], Graph)
 registerServiceOnNode srv msg node = first (filter (/= msg)) .
@@ -106,18 +106,18 @@ registerServiceOnNode srv msg node = first (filter (/= msg)) .
 -- the node.
 --
 -- Returns all 'ServiceInfoMsg' that were removed.
-unregisterServicesOnNode :: Configuration a => Service a -> Node -> Graph -> ([ServiceInfoMsg], Graph)
+unregisterServicesOnNode :: Configuration a => Service a -> Node_XXX2 -> Graph -> ([ServiceInfoMsg], Graph)
 unregisterServicesOnNode service node rg = (configs, foldr (disconnect node Has) rg configs)
   where configs = lookupServiceInfo node service rg
 
 -- | Find and decode config for the given service attached to node.
-lookupServiceInfo :: Node -> Service a -> Graph -> [ServiceInfoMsg]
+lookupServiceInfo :: Node_XXX2 -> Service a -> Graph -> [ServiceInfoMsg]
 lookupServiceInfo node srv = filter (\i -> configDict srv == getServiceInfoDict i)
                            . connectedTo node Has
 
 -- | Given a set of 'Node's and a 'Service', produce a set of nodes on
 -- which the service is known to be running.
-findRunningServiceOn :: [Node] -> Service a -> Graph -> [Node]
+findRunningServiceOn :: [Node_XXX2] -> Service a -> Graph -> [Node_XXX2]
 findRunningServiceOn ns svc rg =
   filter (\n -> not . Prelude.null $ lookupServiceInfo n svc rg) ns
 
@@ -126,10 +126,10 @@ findRunningServiceOn ns svc rg =
 -- N.B. This call is does not use helper thread, so if postphoned messages
 -- may arrive into the thread where it's called.
 startRemoteService :: HasServiceInfoMsg si
-                   => Node   -- ^ Node to start service on
+                   => Node_XXX2   -- ^ Node to start service on
                    -> si -- ^ Service
                    -> Process (Maybe ProcessId)
-startRemoteService node@(Node nid) (serviceInfoMsg -> msg) = do
+startRemoteService node@(Node_XXX2 nid) (serviceInfoMsg -> msg) = do
   mref <- monitorNode nid
   (sp, rp) <- newChan
   void $ spawnAsync nid $ $(mkClosure 'remoteStartService) (sp, msg)
@@ -141,15 +141,15 @@ startRemoteService node@(Node nid) (serviceInfoMsg -> msg) = do
         promulgateWait $ ServiceStarted node msg pid
         return (Just pid)
     ]
-{-# SPECIALIZE startRemoteService :: Node -> ServiceInfoMsg -> Process (Maybe ProcessId) #-}
-{-# SPECIALIZE startRemoteService :: Node -> ServiceInfo -> Process (Maybe ProcessId) #-}
+{-# SPECIALIZE startRemoteService :: Node_XXX2 -> ServiceInfoMsg -> Process (Maybe ProcessId) #-}
+{-# SPECIALIZE startRemoteService :: Node_XXX2 -> ServiceInfo -> Process (Maybe ProcessId) #-}
 
 -- | Synchronously stop service on the remote node.
 stopRemoteService :: forall a . Configuration a
-                  => Node   -- ^ Node to stop service on
+                  => Node_XXX2   -- ^ Node to stop service on
                   -> Service a
                   -> Process ()
-stopRemoteService node@(Node nid) svc = do
+stopRemoteService node@(Node_XXX2 nid) svc = do
   mref <- monitorNode nid
   let label = serviceLabel svc
   (sp, rp) <- newChan

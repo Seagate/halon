@@ -37,7 +37,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
 import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.Resources (Node(..))
+import HA.Resources (Node_XXX2(..))
 import HA.Resources.Castor (StorageDevice_XXX1)
 import HA.Services.SSPL.LL.CEP
   ( sendInterestingEvent
@@ -64,7 +64,7 @@ import Text.Printf (printf)
 
 import Network.CEP
 
-fldNode :: Proxy '("node", Maybe Node)
+fldNode :: Proxy '("node", Maybe Node_XXX2)
 fldNode = Proxy
 
 data RaidInfo = RaidInfo {
@@ -84,7 +84,7 @@ failRaidStorageDevice :: StorageDevice_XXX1 -> PhaseM RC l ()
 failRaidStorageDevice sd = updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | Log info about the state of this operation
-logInfo :: forall l. ( '("node", Maybe Node) ∈ l
+logInfo :: forall l. ( '("node", Maybe Node_XXX2) ∈ l
                      , '("raidInfo", Maybe RaidInfo) ∈ l
                      )
         => PhaseM RC (FieldRec l) ()

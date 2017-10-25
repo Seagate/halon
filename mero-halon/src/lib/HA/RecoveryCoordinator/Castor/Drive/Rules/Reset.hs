@@ -26,7 +26,7 @@ import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.Resources (Node(..))
+import           HA.Resources (Node_XXX2(..))
 import           HA.Resources.Castor
   ( StorageDevice_XXX1(..)
   , StorageDeviceStatus(..)
@@ -62,7 +62,7 @@ data DeviceInfo = DeviceInfo {
   , _diSerial :: !T.Text
 }
 
-fldNode :: Proxy '("node", Maybe Node)
+fldNode :: Proxy '("node", Maybe Node_XXX2)
 fldNode = Proxy
 
 type FldDeviceInfo = '("deviceInfo", Maybe DeviceInfo)

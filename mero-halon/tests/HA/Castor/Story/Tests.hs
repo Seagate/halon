@@ -44,7 +44,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Core (getLocalGraph)
 import           HA.RecoveryCoordinator.RC.Subscription
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
 import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -113,7 +113,7 @@ getHostName :: TestSetup
             -> Process (Maybe String)
 getHostName ts nid = do
   rg <- G.getGraph (_ts_mm ts)
-  return $! case G.connectedFrom Runs (Node nid) rg of
+  return $! case G.connectedFrom Runs (Node_XXX2 nid) rg of
     Just (R.Host_XXX1 hn) -> Just hn
     _ -> Nothing
 

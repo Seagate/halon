@@ -45,14 +45,14 @@ import Data.Serialize.Put (runPutLazy)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
-import HA.ResourceGraph
-import HA.Resources
+import HA.ResourceGraph (Dict(..))
+import HA.Resources (Node_XXX2)
 import HA.SafeCopy
 
 -- | A request to start a service on a given node.
 data ServiceStartRequest =
     forall a. Configuration a =>
-       ServiceStartRequest ServiceStart Node (Service a) a [ProcessId] -- XXX: remove listeners
+       ServiceStartRequest ServiceStart Node_XXX2 (Service a) a [ProcessId] -- XXX: remove listeners
   deriving Typeable
 
 -- | Encoded version of 'ServiceStartRequest'.
@@ -76,8 +76,8 @@ instance ProcessEncode ServiceStartRequest where
             bcfg <- get
             rest <- get
             let (start, node, service, lis) = extract rest
-                extract :: (ServiceStart, Node, Service s, [ProcessId])
-                        -> (ServiceStart, Node, Service s, [ProcessId])
+                extract :: (ServiceStart, Node_XXX2, Service s, [ProcessId])
+                        -> (ServiceStart, Node_XXX2, Service s, [ProcessId])
                 extract = id
             case runGetLazy safeGet bcfg of
               Right cfg ->
@@ -114,7 +114,7 @@ instance Binary ServiceStartRequestResult
 
 -- | A request to stop a service.
 data ServiceStopRequest =
-    forall a. Configuration a => ServiceStopRequest Node (Service a)
+    forall a. Configuration a => ServiceStopRequest Node_XXX2 (Service a)
     deriving Typeable
 
 -- | Encoded version of 'ServiceStopRequest'.
@@ -155,7 +155,7 @@ instance Binary ServiceStopRequestResult
 -- | A request to query the status of service.
 data ServiceStatusRequest =
     forall a. Configuration a =>
-      ServiceStatusRequest Node (Service a) [ProcessId]
+      ServiceStatusRequest Node_XXX2 (Service a) [ProcessId]
     deriving Typeable
 
 -- | Encoded version of 'ServiceStatusRequest'.
@@ -251,7 +251,7 @@ instance ProcessEncode ServiceStatusResponse where
                 Left err -> error $ "decode ServiceStatusResponse: " ++ err
 
 -- | Internal notification about service being started and registered.
-data ServiceStartedInternal a = ServiceStartedInternal Node a ProcessId
+data ServiceStartedInternal a = ServiceStartedInternal Node_XXX2 a ProcessId
   deriving (Typeable, Generic, Show)
 
 instance Binary a => Binary (ServiceStartedInternal a)

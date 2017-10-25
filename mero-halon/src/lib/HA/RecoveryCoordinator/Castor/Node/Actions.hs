@@ -13,18 +13,13 @@ module HA.RecoveryCoordinator.Castor.Node.Actions
   ) where
 
 import Control.Monad (unless)
-
 import Data.Foldable (for_)
 
 import HA.RecoveryCoordinator.Castor.Process.Events (ProcessStartRequest(..))
-import HA.RecoveryCoordinator.RC.Actions.Core
-  ( RC
-  , getLocalGraph
-  , promulgateRC
-  )
+import HA.RecoveryCoordinator.RC.Actions.Core (RC, getLocalGraph, promulgateRC)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Has(..), Node_XXX2, Runs(..))
 import           HA.Resources.Castor (Host_XXX1)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -33,42 +28,42 @@ import Mero.ConfC (ServiceType(..))
 
 import Network.CEP
 
--- | Get all 'M0.Processes' associated to the given 'R.Node' with
+-- | Get all 'M0.Processes' associated to the given 'Node' with
 -- the given 'M0.ProcessLabel'.
 --
 -- For processes on any node, see 'Node.getLabeled'.
-getLabeledProcesses :: R.Node
+getLabeledProcesses :: Node_XXX2
                     -> M0.ProcessLabel
                     -> G.Graph
                     -> [M0.Process]
 getLabeledProcesses node label rg =
-   [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
-       , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
+   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
-       , G.isConnected p R.Has label rg
+       , G.isConnected p Has label rg
    ]
 
--- | Get all 'M0.Processes' associated to the given 'R.Node' with
+-- | Get all 'M0.Processes' associated to the given 'Node' with
 -- a 'M0.ProcessLabel' satisfying the predicate.
 --
 -- For processes on any node, see 'Node.getLabeledP'.
-getLabeledProcessesP :: R.Node
+getLabeledProcessesP :: Node_XXX2
                       -> (M0.ProcessLabel -> Bool)
                       -> G.Graph
                       -> [M0.Process]
 getLabeledProcessesP node labelP rg =
-  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
-      , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
+  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+      , m0node <- G.connectedTo host Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
-      , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p R.Has rg]
+      , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p Has rg]
       , labelP lbl
   ]
 
--- | Get all 'M0.Process'es on the given 'R.Node'.
-getProcesses :: R.Node -> G.Graph -> [M0.Process]
+-- | Get all 'M0.Process'es on the given 'Node'.
+getProcesses :: Node_XXX2 -> G.Graph -> [M0.Process]
 getProcesses node rg =
-  [ p | Just host <- [G.connectedFrom R.Runs node rg] :: [Maybe Host_XXX1]
-      , m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
+  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+      , m0node <- G.connectedTo host Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
   ]
 
@@ -96,9 +91,9 @@ startProcesses host labelP = do
   Log.actLog "startProcesses" [("host", show host)]
   rg <- getLocalGraph
   let procs = [ p
-              | m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
+              | m0node <- G.connectedTo host Runs rg :: [M0.Node]
               , p <- G.connectedTo m0node M0.IsParentOf rg
-              , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p R.Has rg]
+              , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p Has rg]
               , labelP lbl
               ]
   unless (null procs) $ do

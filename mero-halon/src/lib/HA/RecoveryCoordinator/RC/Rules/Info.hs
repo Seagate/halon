@@ -17,7 +17,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Info
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Info
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
 import qualified HA.Resources.Mero as M0
 import           Network.CEP
 
@@ -34,11 +34,11 @@ rules argv = sequence_ [
 -- 'NodeStatusResponse' to the interested process.
 ruleNodeStatus :: IgnitionArguments -> Definitions RC ()
 ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
-      \(NodeStatusRequest n@(R.Node nid) sp) -> do
+      \(NodeStatusRequest n@(Node_XXX2 nid) sp) -> do
         rg <- getLocalGraph
         let
           isStation = nid `elem` eqNodes argv
-          isSatellite = G.isConnected R.Cluster R.Has (R.Node nid) rg
+          isSatellite = G.isConnected Cluster Has (Node_XXX2 nid) rg
           response = NodeStatusResponse n isStation isSatellite
         liftProcess $ sendChan sp response
 

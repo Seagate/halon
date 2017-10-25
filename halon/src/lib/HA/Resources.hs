@@ -14,7 +14,7 @@ module HA.Resources
   ( Cluster(..)
   , Has(..)
   , Runs(..)
-  , Node(..)
+  , Node_XXX2(..)
   , EpochId(..)
   , RecoverNode(..)
   , HA.Resources.__remoteTable
@@ -43,12 +43,12 @@ deriveSafeCopy 0 'base ''Cluster
 instance ToJSON Cluster
 
 -- | A resource graph representation for nodes.
-newtype Node = Node NodeId
+newtype Node_XXX2 = Node_XXX2 NodeId
   deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
-instance ToJSON Node
-instance FromJSON Node
-storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"
-deriveSafeCopy 0 'base ''Node
+instance ToJSON Node_XXX2
+instance FromJSON Node_XXX2
+storageIndex ''Node_XXX2 "43ab6bb3-5bfe-4de8-838d-489584b1456c"
+deriveSafeCopy 0 'base ''Node_XXX2
 
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
@@ -87,19 +87,19 @@ instance ToJSON Runs
 -- type EpochByteString = Epoch ByteString
 
 $(mkDicts
-  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, ''Has, ''Node)
+  [''Cluster, ''Node_XXX2, ''EpochId, ''Has, ''Runs]
+  [ (''Cluster, ''Has, ''Node_XXX2)
   , (''Cluster, ''Has, ''EpochId)
   ])
 $(mkResRel
-  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
+  [''Cluster, ''Node_XXX2, ''EpochId, ''Has, ''Runs]
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node_XXX2)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
   ]
   []
   )
 
 -- | Sent when a node goes down and we need to try to recover it
-newtype RecoverNode = RecoverNode Node
+newtype RecoverNode = RecoverNode Node_XXX2
   deriving (Typeable, Generic, Show, Eq, Ord)
 deriveSafeCopy 0 'base ''RecoverNode

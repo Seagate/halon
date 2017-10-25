@@ -19,12 +19,12 @@ module HA.RecoveryCoordinator.RC.Events.Cluster
 import Data.Binary
 import Data.Typeable
 import GHC.Generics
-import HA.Resources
+import HA.Resources (Node_XXX2)
 import System.Posix.SysInfo
 
 -- | New mero server was connected. This event is emitted
 -- as a result of the new node event.
-data NewNodeConnected = NewNodeConnected !Node !SysInfo
+data NewNodeConnected = NewNodeConnected !Node_XXX2 !SysInfo
    deriving (Eq, Show, Typeable, Generic)
 instance Binary NewNodeConnected
 
@@ -38,15 +38,15 @@ instance Binary InitialDataLoaded
 -- tests).
 
 -- | A previously-connected node has announced itself again.
-newtype OldNodeRevival = OldNodeRevival Node
+newtype OldNodeRevival = OldNodeRevival Node_XXX2
   deriving (Show, Eq, Typeable, Generic)
 
 -- | Node recovery rule is trying again.
-data RecoveryAttempt = RecoveryAttempt Node Int
+data RecoveryAttempt = RecoveryAttempt Node_XXX2 Int
   deriving (Show, Eq, Typeable, Generic)
 
 -- | Node was marked transient and recovery on it is about to begin.
-newtype NodeTransient = NodeTransient Node
+newtype NodeTransient = NodeTransient Node_XXX2
   deriving (Show, Eq, Typeable, Generic)
 
 instance Binary OldNodeRevival
