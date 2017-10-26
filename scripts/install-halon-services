@@ -4,7 +4,7 @@
 
 readonly BASENAME=$(basename $0)
 
-# variables 
+# variables
 dry_run=false
 link_files=false
 action='install'
@@ -17,7 +17,7 @@ help()
 
 usage()
 {
-	cat <<USAGE_END 
+	cat <<USAGE_END
 Install systemd sscripts for development or testing use.
 Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
 
@@ -123,7 +123,7 @@ install_files()
 uninstall_files()
 {
     file_list='/etc/sysconfig/halond
-               /etc/sysconfig/halond-satellite          
+               /etc/sysconfig/halond-satellite
                '
 
     if [[ -d /usr/lib/systemd/system ]] ; then
