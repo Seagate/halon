@@ -47,7 +47,6 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
                  liftProcess $ sendChan chan StorageDevicePresenceUpdated
      else liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchDevice
 
-
 -- | Update status of the storage device. This command is analogus to
 -- the SSPL Drive-Manager request but run from the developer console.
 driveStatus :: Definitions RC ()
@@ -66,8 +65,6 @@ driveStatus = defineSimpleTask "castor::command::update-drive-status" $
                   _ <- Drive.updateStorageDeviceStatus uuid node sd slot status reason
                   liftProcess $ sendChan chan StorageDeviceStatusUpdated
       else liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchDevice
-
-
 
 -- | Create new drive and store that in RG.
 driveNew :: Definitions RC ()

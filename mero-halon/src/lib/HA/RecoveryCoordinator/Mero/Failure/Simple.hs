@@ -8,8 +8,12 @@ import HA.RecoveryCoordinator.Mero.Failure.Internal
 
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor (Host_XXX1)
+import           HA.Resources.Castor.Initial
+  ( M0Globals_XXX0
+  , m0_data_units_XXX0
+  , m0_parity_units_XXX0
+  )
 import qualified HA.Resources.Mero as M0
 import Mero.ConfC
   ( Fid
@@ -43,8 +47,8 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
         globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
         let fsets = generateFailureSets df cf cfe rg globs
             attrs = PDClustAttr {
-                      _pa_N = CI.m0_data_units_XXX0 globs
-                    , _pa_K = CI.m0_parity_units_XXX0 globs
+                      _pa_N = m0_data_units_XXX0 globs
+                    , _pa_K = m0_parity_units_XXX0 globs
                     , _pa_P = 0
                     , _pa_unit_size = 4096
                     , _pa_seed = Word128 101 102
@@ -70,21 +74,21 @@ generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
                     -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                     -> G.Graph
-                    -> CI.M0Globals_XXX0
+                    -> M0Globals_XXX0
                     -> [(Failures, Set Fid)]
 generateFailureSets df cf cfe rg globs = let
-    n = CI.m0_data_units_XXX0 globs
-    k = CI.m0_parity_units_XXX0 globs
+    n = m0_data_units_XXX0 globs
+    k = m0_parity_units_XXX0 globs
     allCtrls =
       [ ctrl
-      | (host :: R.Host_XXX1) <- G.connectedTo Cluster Has rg
+      | (host :: Host_XXX1) <- G.connectedTo Cluster Has rg
       , Just (ctrl :: M0.Controller) <-
           [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to
     allDisks = Map.fromListWith (Set.union) . fmap (fmap Set.singleton) $
         [ (M0.fid ctrl, M0.fid disk)
-        | (_host :: R.Host_XXX1) <- G.connectedTo Cluster Has rg
+        | (_host :: Host_XXX1) <- G.connectedTo Cluster Has rg
         , ctrl <- allCtrls
         , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
         ]

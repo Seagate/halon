@@ -19,7 +19,7 @@
 -- @import qualified HA.Resources.Mero as M0@
 module HA.Resources.Mero
   ( module HA.Resources.Mero
-  , CI.M0Globals_XXX0
+  , M0Globals_XXX0
   ) where
 
 import           Control.Distributed.Process (ProcessId)
@@ -52,7 +52,7 @@ import           HA.Resources.Castor
   , Slot_XXX1(..)
   , StorageDevice_XXX1
   )
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.TH
 import           HA.SafeCopy hiding (Profile)
 import           Mero.ConfC
@@ -944,7 +944,7 @@ $(mkDicts
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -992,7 +992,7 @@ $(mkDicts
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
   , (''Cluster, ''Has, ''FidSeq)
-  , (''Cluster, ''Has, ''CI.M0Globals_XXX0)
+  , (''Cluster, ''Has, ''M0Globals_XXX0)
   , (''Cluster, ''RunLevel, ''BootLevel)
   , (''Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''Has, ''PoolRepairStatus)
@@ -1017,7 +1017,7 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
+  , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -1065,7 +1065,7 @@ $(mkResRel
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
     -- Other things!
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''FidSeq)
-  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''CI.M0Globals_XXX0)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''M0Globals_XXX0)
   , (''Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
   , (''Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)

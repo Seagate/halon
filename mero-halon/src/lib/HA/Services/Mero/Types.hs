@@ -44,7 +44,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           HA.Aeson hiding (encode, decode)
 import           HA.ResourceGraph
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.HalonVars
 import           HA.Resources.Mero as M0
 import           HA.SafeCopy
@@ -298,13 +298,13 @@ mkDictsQ
   [ (mkName "resourceDictMeroServiceInstance", [t| MeroServiceInstance |])
   ]
   [ (mkName "relationDictMeroServiceInstance"
-      , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+      , ([t| Cluster |], [t| Has |], [t| MeroServiceInstance |]))
   ]
 mkStorageDictsQ
   [ (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
   ]
   [ (mkName "storageRelationDictMeroServiceInstance"
-    , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+    , ([t| Cluster |], [t| Has |], [t| MeroServiceInstance |]))
   ]
 generateDicts       ''MeroConf
 deriveService       ''MeroConf 'meroSchema
@@ -317,15 +317,15 @@ mkStorageResRelQ
   [ (mkName "storageDictMeroServiceInstance", [t| MeroServiceInstance |])
   ]
   [ (mkName "storageRelationDictMeroServiceInstance"
-    , ([t| R.Cluster |], [t| R.Has |], [t| MeroServiceInstance |]))
+    , ([t| Cluster |], [t| Has |], [t| MeroServiceInstance |]))
   ]
 
 instance Resource MeroServiceInstance where
   resourceDict = $(mkStatic 'resourceDictMeroServiceInstance)
 
-instance Relation R.Has R.Cluster MeroServiceInstance where
-  type CardinalityFrom R.Has R.Cluster MeroServiceInstance = 'AtMostOne
-  type CardinalityTo R.Has R.Cluster MeroServiceInstance   = 'AtMostOne
+instance Relation Has Cluster MeroServiceInstance where
+  type CardinalityFrom Has Cluster MeroServiceInstance = 'AtMostOne
+  type CardinalityTo Has Cluster MeroServiceInstance   = 'AtMostOne
   relationDict = $(mkStatic 'relationDictMeroServiceInstance)
 
 type instance HA.Service.ServiceState MeroConf =
@@ -334,7 +334,7 @@ type instance HA.Service.ServiceState MeroConf =
 myResourcesTable :: RemoteTable -> RemoteTable
 myResourcesTable
   = $(makeResource [t| MeroServiceInstance |])
-  . $(makeRelation [t| R.Cluster |] [t| R.Has |] [t| MeroServiceInstance |])
+  . $(makeRelation [t| Cluster |] [t| Has |] [t| MeroServiceInstance |])
   . HA.Services.Mero.Types.__resourcesTable
 
 deriveSafeCopy 0 'base ''MeroConf

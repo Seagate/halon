@@ -17,8 +17,8 @@ import           Data.Word
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
-import           HA.Resources
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor.Initial (m0_data_units_XXX0, m0_parity_units_XXX0)
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..), Word128(..))
 
@@ -39,16 +39,16 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
     G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
   let attrs = PDClustAttr
-                { _pa_N = CI.m0_data_units_XXX0 globs
-                , _pa_K = CI.m0_parity_units_XXX0 globs
+                { _pa_N = m0_data_units_XXX0 globs
+                , _pa_K = m0_parity_units_XXX0 globs
                 , _pa_P = 0
                 , _pa_unit_size = 4096
                 , _pa_seed = Word128 101 102
                 }
       mdpool = M0.Pool (M0.f_mdpool_fid fs)
       imeta_pver = M0.f_imeta_fid fs
-      n = CI.m0_data_units_XXX0 globs
-      k = CI.m0_parity_units_XXX0 globs
+      n = m0_data_units_XXX0 globs
+      k = m0_parity_units_XXX0 globs
       noCtlrs = length
         [ cntr
         | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg

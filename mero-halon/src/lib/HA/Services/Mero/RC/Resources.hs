@@ -17,8 +17,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           HA.Aeson
 import           HA.RecoveryCoordinator.Mero.Events
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Has(..))
+import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.RC as RC
 import           HA.Resources.TH
@@ -80,21 +80,21 @@ $(mkDicts
   [ ''StateDiff, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
   , ''StateDiffIndex
   ]
-  [ (''RC.RC, ''R.Has, ''StateDiff)
+  [ (''RC.RC, ''Has, ''StateDiff)
   , (''StateDiff, ''DeliveredTo, ''M0.Process)
   , (''StateDiff, ''ShouldDeliverTo, ''M0.Process)
   , (''StateDiff, ''DeliveryFailedTo, ''M0.Process)
-  , (''StateDiffIndex, ''R.Is, ''StateDiff)
+  , (''StateDiffIndex, ''Is, ''StateDiff)
   ])
 
 $(mkResRel
   [ ''StateDiff, ''DeliveredTo, ''ShouldDeliverTo, ''DeliveryFailedTo
   , ''StateDiffIndex
   ]
-  [ (''RC.RC, AtMostOne, ''R.Has, Unbounded, ''StateDiff)
+  [ (''RC.RC, AtMostOne, ''Has, Unbounded, ''StateDiff)
   , (''StateDiff, Unbounded, ''DeliveredTo, Unbounded, ''M0.Process)
   , (''StateDiff, Unbounded, ''ShouldDeliverTo, Unbounded, ''M0.Process)
   , (''StateDiff, Unbounded, ''DeliveryFailedTo, Unbounded, ''M0.Process)
-  , (''StateDiffIndex, AtMostOne, ''R.Is, AtMostOne, ''StateDiff)
+  , (''StateDiffIndex, AtMostOne, ''Is, AtMostOne, ''StateDiff)
   ]
   [])

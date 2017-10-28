@@ -37,7 +37,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor.Initial (M0Globals_XXX0)
 import qualified HA.Resources.Mero as M0
 import           HA.Services.Mero (getM0Worker)
 import           Mero.ConfC (Fid(..))
@@ -81,15 +81,14 @@ uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
 -- Core configuration
 --------------------------------------------------------------------------------
 
--- | Retrieve 'CI.M0Globals' from the RG.
-getM0Globals :: PhaseM RC l (Maybe CI.M0Globals_XXX0)
+-- | Retrieve 'M0Globals' from the RG.
+getM0Globals :: PhaseM RC l (Maybe M0Globals_XXX0)
 getM0Globals = getLocalGraph >>= \rg -> do
   Log.rcLog' Log.TRACE $ "Looking for Mero globals."
   return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph
-loadMeroGlobals :: CI.M0Globals_XXX0
-                -> PhaseM RC l ()
+loadMeroGlobals :: M0Globals_XXX0 -> PhaseM RC l ()
 loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
 
 --------------------------------------------------------------------------------

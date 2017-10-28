@@ -10,13 +10,13 @@ import           Data.Foldable (for_)
 import           HA.RecoveryCoordinator.Mero
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Update (Todo(..))
 import           Network.CEP
 
 applyTodoNode :: PhaseM RC (Maybe ProcessId) ()
 applyTodoNode = do
-  mtodo <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
+  mtodo <- G.connectedTo Cluster Has <$> getLocalGraph
   for_ mtodo $ \td@(Todo s) -> do
     Log.rcLog' Log.DEBUG "Applying Todo node."
     act <- liftProcess $ unStatic s

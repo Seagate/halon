@@ -14,7 +14,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Internal
   ) where
 
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool (getNonMD)
 
@@ -29,7 +29,7 @@ import Data.List (nub, intersect)
 -- | Record disk failure in Failure vector
 rgRecordDiskFailure :: M0.Disk -> G.Graph -> G.Graph
 rgRecordDiskFailure disk = updateDiskFailure defAction ins disk where
-  defAction pool = G.connect pool R.Has (M0.DiskFailureVector [disk])
+  defAction pool = G.connect pool Has (M0.DiskFailureVector [disk])
   ins d [] = Just [d]
   ins d (x:xs)
      | d == x = Nothing
@@ -63,8 +63,8 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
   -- Get all pools, except metadata pools.
   allPools = Pool.getNonMD graph
   apply rg pool =
-    case G.connectedTo pool R.Has rg of
+    case G.connectedTo pool Has rg of
       Nothing -> df pool rg
       Just (M0.DiskFailureVector v) -> case f disk v of
         Nothing -> rg
-        Just fv -> G.connect pool R.Has (M0.DiskFailureVector fv) rg
+        Just fv -> G.connect pool Has (M0.DiskFailureVector fv) rg

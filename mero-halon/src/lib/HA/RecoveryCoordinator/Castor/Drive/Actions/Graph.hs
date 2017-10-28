@@ -14,19 +14,19 @@ module HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
   , attachStorageDeviceToSDev
   ) where
 
+import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.ResourceGraph as G
-import HA.Resources.Castor (StorageDevice_XXX1)
-import HA.RecoveryCoordinator.RC.Actions.Core
-import qualified HA.Resources as Res
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor (StorageDevice_XXX1)
 import qualified HA.Resources.Mero as M0
 
 import Network.CEP
 
--- | Find every 'M0.SDev' in the 'Res.Cluster'.
+-- | Find every 'M0.SDev' in the 'Cluster'.
 getAllSDev :: G.Graph -> [M0.SDev]
 getAllSDev rg =
   [ sdev
-  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Res.Has rg]
+  | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
   , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
@@ -58,7 +58,6 @@ attachStorageDeviceToSDev sdev m0sdev = do
   case G.connectedTo m0sdev M0.IsOnHardware rg of
     Nothing -> return ()
     Just disk -> modifyGraph $ G.connect (disk::M0.Disk) M0.At sdev
-
 
 -- | Find 'M0.Disk' associated with the given 'M0.SDev'.
 lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)

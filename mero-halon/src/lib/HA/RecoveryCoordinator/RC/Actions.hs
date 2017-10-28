@@ -53,10 +53,9 @@ import           HA.Resources
   , Node_XXX2(..)
   , RecoverNode(..)
   )
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor (Is(..))
 import           HA.Resources.HalonVars
-import qualified HA.Resources.RC as R
--- import           HA.Resources.RC (RC)
+import qualified HA.Resources.RC as R (RC(..), Active(..))
 import           HA.Service (ServiceFailed(..))
 import           Network.CEP
 
@@ -87,7 +86,7 @@ makeCurrentRC update = do
          update old currentRC
   return currentRC
   where
-    mkRC = modifyGraph $ G.connect currentRC R.Is R.Active
+    mkRC = modifyGraph $ G.connect currentRC Is R.Active
                        . G.connect Cluster Has currentRC
 
 -- | Find currenlty running RC in resource graph.
@@ -97,7 +96,7 @@ tryGetCurrentRC = do
   return $ listToMaybe
     [ rc
     | Just rc <- [G.connectedTo Cluster Has rg :: Maybe R.RC]
-    , G.isConnected rc R.Is R.Active rg
+    , G.isConnected rc Is R.Active rg
     ]
 
 -- | Increment epoch

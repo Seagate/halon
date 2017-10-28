@@ -37,7 +37,11 @@ import           HA.RecoveryCoordinator.Mero
 import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor.Initial
+  ( id_m0_globals_XXX0
+  , id_m0_servers_XXX0
+  , id_racks_XXX0
+  )
 import           HA.Services.SSPL.LL.CEP (ssplRules)
 import           HA.Services.SSPL.LL.Resources (SsplLlFromSvc(..))
 import           Helper.InitialData
@@ -103,10 +107,10 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO defaultInitialData
     sayTest $ show iData
     (ls',_)  <- run ls $ do
-            mapM_ goRack (CI.id_racks_XXX0 iData)
+            mapM_ goRack (id_racks_XXX0 iData)
             filesystem <- initialiseConfInRG
-            loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
-            loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
+            loadMeroGlobals (id_m0_globals_XXX0 iData)
+            loadMeroServers filesystem (id_m0_servers_XXX0 iData)
     let testRule = mkTestRule self
     sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do

@@ -159,7 +159,6 @@ m0QueueWait ts io = do
     m0Queue ts $ io >>= putMVar mv
     takeMVar mv
 
-
 {-# NOINLINE rpcInitCounter #-}
 rpcInitCounter :: MVar Word32
 rpcInitCounter = unsafePerformIO$ newMVar 0
@@ -361,7 +360,6 @@ rpcReceived ts it _ = do
               writeChan (leQueue ep)$ ConnectionClosed trcid
               return True
 
-
 -- | Creating an endpoint amounts to generating a new endpoint key, an event queue
 -- and inserting them in the tsLocalEPs map of the transport state.
 rpcNewEndPoint :: TransportState -> RPCAddress -> IO (Either (TransportError NewEndPointErrorCode) EndPoint)
@@ -449,7 +447,6 @@ decodeEndPointAddress (EndPointAddress b) = case B8.elemIndexEnd ':' b of
     Just i  -> case readsPrec 0 (B8.unpack$ B.drop (i+1) b) of
       []        -> Nothing -- rpcEptReceive: invalid endpoint identifier
       (epk,_):_ -> Just (RPCAddress$ B.take i b,EndPointKey epk)
-
 
 -- | State of connections.
 --
@@ -564,7 +561,6 @@ rpcConnect ts sourceEpAddr lepk lep rcm targetEpAddr _ hints = do
                       TransportError ConnectFailed $ show st
                )
 
-
 -- | Closes a connection. It waits for all pending sends to complete, whatever
 -- time it takes, and then sends the closing message waiting with the given timeout.
 -- Finally, it disconnects the RPC connection.
@@ -614,7 +610,6 @@ rpcClose lep connMVar lcid rConnState rcm blocking timeout_s =
                )
       _ ->
         return ()
-
 
 -- | Sends a message through the RPC connection. It doesn't block waiting for an aknowledgement.
 -- Messages are considered in flight until an acknowledgement is received. If the acknowledgement

@@ -25,7 +25,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor (Host_XXX1, Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -122,13 +122,13 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
       let m0d = lookupM0d rg
           nodes = findRunningServiceOn
             [ node
-            | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+            | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
             , node <- G.connectedTo host Runs rg :: [Node_XXX2]
             ]
             m0d rg
       case listToMaybe nodes of
         Just node@(Node_XXX2 nid) ->
-          if G.isConnected fs R.Is M0.DIXInitialised rg
+          if G.isConnected fs Is M0.DIXInitialised rg
           then do
             Log.rcLog' Log.DEBUG "DIX subsystem already initialised."
             modify Local $ rlens fldRep .~
@@ -151,7 +151,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
         case res of
           Right () -> do
             Log.rcLog' Log.DEBUG "DIX subsystem initialised successfully."
-            modifyGraph $ G.connect fs R.Is M0.DIXInitialised
+            modifyGraph $ G.connect fs Is M0.DIXInitialised
             modify Local $ rlens fldRep .~
               Field (Just $ DixInitSuccess fs)
           Left err -> do

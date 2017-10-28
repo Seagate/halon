@@ -4,7 +4,7 @@
 --
 -- Module rules for Filesystem entity.
 
-{-# LANGUAGE PackageImports             #-}
+{-# LANGUAGE PackageImports #-}
 
 module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   ( rules
@@ -16,10 +16,7 @@ import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import HA.RecoveryCoordinator.Castor.Filesystem.Events ( StatsUpdated(..) )
 import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem)
 import HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
-import HA.RecoveryCoordinator.Mero.Actions.Spiel
-  ( withSpielIO
-  , withRConfIO
-  )
+import HA.RecoveryCoordinator.Mero.Actions.Spiel (withSpielIO, withRConfIO)
 import HA.RecoveryCoordinator.RC.Actions
   ( RC
   , getLocalGraph
@@ -28,7 +25,7 @@ import HA.RecoveryCoordinator.RC.Actions
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 
 import qualified Mero.Spiel as Spiel
@@ -81,7 +78,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
     status <- getClusterStatus <$> getLocalGraph
     case ((,) <$> mfs <*> status) of
       Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 1 -> do
-        mp <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
+        mp <- G.connectedTo Cluster Has <$> getLocalGraph
         void . withSpielIO . withRConfIO mp
           $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
         put Local $ Just fs
@@ -98,7 +95,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                                     ++ se
       Right stats -> do
         Just fs <- get Local
-        modifyGraph $ G.connect fs R.Has stats
+        modifyGraph $ G.connect fs Has stats
         notify $ StatsUpdated fs stats
     continue $ timeout queryInterval stats_fetch
 

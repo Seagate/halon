@@ -14,13 +14,13 @@ module HA.RecoveryCoordinator.Castor.Process.Actions
 
 import           Data.Maybe (listToMaybe)
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (ServiceType(CST_HA))
 
 -- | Get the process label, if attached.
 getLabel :: M0.Process -> G.Graph -> Maybe M0.ProcessLabel
-getLabel p rg = G.connectedTo p R.Has rg
+getLabel p rg = G.connectedTo p Has rg
 
 -- | Get all 'M0.Processes' associated the given 'M0.ProcessLabel'.
 getLabeled :: M0.ProcessLabel
@@ -35,19 +35,19 @@ getLabeledP :: (M0.ProcessLabel -> Bool)
             -> [M0.Process]
 getLabeledP labelP rg =
   [ proc
-  | Just (prof :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+  | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
-  , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo proc R.Has rg]
+  , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo proc Has rg]
   , labelP lbl
   ]
 
--- | Find every 'M0.Process' in the 'Res.Cluster'.
+-- | Find every 'M0.Process' in the 'Cluster'.
 getAll :: G.Graph -> [M0.Process]
 getAll rg =
   [ p
-  | Just (prof :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+  | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg

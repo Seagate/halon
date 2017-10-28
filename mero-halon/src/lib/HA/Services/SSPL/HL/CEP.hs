@@ -24,7 +24,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import qualified HA.Resources.Castor as R
+import           HA.Resources.Castor (Host_XXX1(..), HostAttr)
 import           HA.Resources.Mero
 import           HA.Resources.Mero.Note (getState)
 import           HA.Service (getInterface)
@@ -104,15 +104,14 @@ clusterStatus _g = CommandResponseMessageStatusResponseItem {
 hostStatus :: G.Graph
            -> Maybe String
            -> [CommandResponseMessageStatusResponseItem]
-hostStatus rg regex = fmap (\h@(R.Host_XXX1 name) ->
+hostStatus rg regex = fmap (\h@(Host_XXX1 name) ->
       CommandResponseMessageStatusResponseItem {
         commandResponseMessageStatusResponseItemEntityId = T.pack name
       , commandResponseMessageStatusResponseItemStatus = status h
       }
     ) hosts
-  where hosts = [ host | host@(R.Host_XXX1 hn) <- G.connectedTo Cluster Has rg
+  where hosts = [ host | host@(Host_XXX1 hn) <- G.connectedTo Cluster Has rg
                        , hn =~? regex]
         a =~? (Just ef) = a =~ ef
         _ =~? Nothing = True
-        status host = T.pack . show $
-          (G.connectedTo host Has rg :: [R.HostAttr])
+        status host = T.pack . show $ (G.connectedTo host Has rg :: [HostAttr])

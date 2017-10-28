@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.Castor.Pool.Actions
 import qualified Data.HashSet as S
 
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -26,7 +26,7 @@ import qualified HA.Resources.Mero.Note as M0
 getNonMD :: G.Graph -> [M0.Pool]
 getNonMD rg =
   [ pl
-  | Just p <- [G.connectedTo R.Cluster R.Has rg :: Maybe M0.Profile]
+  | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
   , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
   , pl <- G.connectedTo fs M0.IsParentOf rg
   , M0.fid pl /= M0.f_mdpool_fid fs

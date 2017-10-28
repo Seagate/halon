@@ -66,8 +66,11 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Cluster(..))
-import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor
+  ( HostAttr(HA_CPU_COUNT,HA_MEMSIZE_MB)
+  , Host_XXX1
+  )
+import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.HalonVars
 import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
@@ -706,7 +709,7 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
@@ -741,17 +744,17 @@ txPopulate lift (TxConfData CI.M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesy
   for_ nodes $ \node -> do
     let attrs =
           [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware g :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe R.Host_XXX1]
-              , a <- G.connectedTo host Has g :: [R.HostAttr]]
+              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host_XXX1]
+              , a <- G.connectedTo host Has g :: [HostAttr]]
         defaultMem = 1024
         defCPUCount = 1
         memsize = maybe defaultMem fromIntegral
                 $ listToMaybe . catMaybes $ fmap getMem attrs
         cpucount = maybe defCPUCount fromIntegral
                  $ listToMaybe . catMaybes $ fmap getCpuCount attrs
-        getMem (R.HA_MEMSIZE_MB x) = Just x
+        getMem (HA_MEMSIZE_MB x) = Just x
         getMem _ = Nothing
-        getCpuCount (R.HA_CPU_COUNT x) = Just x
+        getCpuCount (HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]

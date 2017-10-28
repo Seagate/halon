@@ -53,7 +53,7 @@ import HA.EventQueue (promulgateWait)
 import HA.Logger (mkHalonTracerIO)
 import HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources.Castor as R
+import HA.Resources.Castor (Is(..))
 import HA.Resources.Mero (Service(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
 import HA.Resources.Mero.Note (lookupConfObjectStates)
@@ -662,7 +662,7 @@ getSpielAddress b g =
                     , b || M0.getState svc g == M0.SSOnline ]
       (rmFids, rmEps) = unzip
         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
-                    , G.isConnected svc R.Is M0.PrincipalRM g]
+                    , G.isConnected svc Is M0.PrincipalRM g]
       mrmFid = listToMaybe $ nub rmFids
       mrmEp  = fmap ep2s . listToMaybe . nub $ concat rmEps
       quorum = ceiling $ fromIntegral qsize / (2::Double)

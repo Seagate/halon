@@ -17,7 +17,7 @@ import           Data.Yaml (prettyPrintParseException)
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor.Initial (InitialData_XXX0, parseInitialData)
 import           Network.CEP
 import qualified Options.Applicative as Opt
 import           System.Exit (exitFailure)
@@ -71,7 +71,7 @@ run :: [NodeId] -- ^ EQ nodes to send data to
          -> Options
          -> Process ()
 run eqnids (Options cf maps halonMaps verify _t) = do
-  initData <- liftIO $ CI.parseInitialData cf maps halonMaps
+  initData <- liftIO $ parseInitialData cf maps halonMaps
   case initData of
     Left err -> liftIO $ do
       putStrLn $ prettyPrintParseException err
@@ -79,7 +79,7 @@ run eqnids (Options cf maps halonMaps verify _t) = do
     Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
-    Right ((datum :: CI.InitialData_XXX0), _) -> do
+    Right ((datum :: InitialData_XXX0), _) -> do
       subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
       promulgateEQ eqnids datum >>= flip withMonitor wait
       expectTimeout (_t * 1000000) >>= \v -> do
