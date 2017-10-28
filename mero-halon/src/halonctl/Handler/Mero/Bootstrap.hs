@@ -136,8 +136,8 @@ mkValidatedConfig racks mkRoles stationOpts =
     expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
     expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
         Left err -> _Failure # ["Halon role failure for "
-                                ++ T.unpack (CI.h_fqdn h) ++ ": " ++ err]
-        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn h
+                                ++ T.unpack (CI.h_fqdn_XXX0 h) ++ ": " ++ err]
+        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn_XXX0 h
                                       , hIp = CI._hs_address hs
                                       , hRoles = roles
                                       , hSvcs = svcs
