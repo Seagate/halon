@@ -1,16 +1,18 @@
 Schema visualizer
-==================
+=================
 
-This script prepare an image that shows all possible
-relations between resources in the project.
+This script prepares an image that shows all possible relations
+between Halon resources.
 
 Usage:
-0. add import of instances from all modules in the
-   project on the top of the script.
-1. enter project sandbox. From a toplevel directory
-   call:
-  cabal exec sh
-2. run script:
-  run-visualize > schema.dot
-3. convert script to image:
-  dot schema.dot -Tpng -o schema.png
+
+0. Add import of instances from all modules in the project on the top
+   of `mero-halon/scripts/visualize-schema/visualize.hs`.
+1. Run the script:
+```
+scripts/visualize-schema > schema.dot
+```
+2. Convert DOT file into an image:
+```
+dot schema.dot -Tpng -o schema.png
+```

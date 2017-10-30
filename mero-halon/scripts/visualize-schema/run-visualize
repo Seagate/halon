@@ -1,3 +1,21 @@
-#!/bin/sh
-cd $(dirname $0)
-runhaskell visualize.hs
+#!/bin/bash
+set -eu -o pipefail
+
+die() { echo "$@" >&2; exit 1; }
+
+## -------------------------------------------------------------------
+## Configurable section
+
+export M0_SRC_DIR=${M0_SRC_DIR:-$HOME/src/mero}
+[[ -d $M0_SRC_DIR ]]                || die "$M0_SRC_DIR: No such directory"
+[[ -d $M0_SRC_DIR/mero ]]           || die "$M0_SRC_DIR: No Mero sources found"
+[[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
+## -------------------------------------------------------------------
+
+STACK='stack --no-docker --allow-different-user'
+
+cd "$(dirname $(readlink -f $0))"
+PKG_CONFIG_PATH=$M0_SRC_DIR \
+LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+MERO_ROOT=$M0_SRC_DIR \
+$STACK runhaskell visualize.hs
