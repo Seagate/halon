@@ -85,10 +85,10 @@ mero nids' opt = do
     ns -> return ns
   dispatch rnids opt
   where
-    dispatch _    (Bootstrap opts) = Bootstrap.run opts
+    dispatch _    (Bootstrap opts) = Bootstrap.run_XXX0 opts
     dispatch nids (Drive opts) = Drive.run nids opts
     dispatch nids (Dump opts) = Dump.run nids opts
-    dispatch nids (Load opts) = Load.run nids opts
+    dispatch nids (Load opts) = Load.run_XXX0 nids opts
     dispatch nids (MkfsDone opts) = MkfsDone.run nids opts
     dispatch nids (Node opts) = Node.run nids opts
     dispatch nids (Pool opts) = Pool.run nids opts

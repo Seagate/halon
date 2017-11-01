@@ -6,7 +6,7 @@
 module Handler.Mero.Load
   ( Options(..)
   , parser
-  , run
+  , run_XXX0
   ) where
 
 import           Control.Distributed.Process
@@ -67,10 +67,10 @@ parser = Options
     <> Opt.value 10
     <> Opt.showDefault )
 
-run :: [NodeId] -- ^ EQ nodes to send data to
-         -> Options
-         -> Process ()
-run eqnids (Options cf maps halonMaps verify _t) = do
+run_XXX0 :: [NodeId] -- ^ EQ nodes to send data to
+    -> Options
+    -> Process ()
+run_XXX0 eqnids (Options cf maps halonMaps verify _t) = do
   initData <- liftIO $ parseInitialData_XXX0 cf maps halonMaps
   case initData of
     Left err -> liftIO $ do

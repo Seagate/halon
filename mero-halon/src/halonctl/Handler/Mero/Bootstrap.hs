@@ -13,7 +13,7 @@
 module Handler.Mero.Bootstrap
   ( Options(..)
   , parser
-  , run
+  , run_XXX0
   ) where
 
 import           Control.Distributed.Process
@@ -154,8 +154,8 @@ mkValidatedConfig racks mkRoles stationOpts =
                               ++ showParseError err]
         Right conf -> _Success # (str, conf)
 
-run :: Options -> Process ()
-run Options{..} = do
+run_XXX0 :: Options -> Process ()
+run_XXX0 Options{..} = do
   einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)

@@ -460,10 +460,10 @@ mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
-resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
+resolveMeroRoles_XXX0 :: InitialWithRoles -- ^ Parsed contents of halon_facts.
                  -> EDE.Template -- ^ Parsed Mero roles template.
                  -> Either Y.ParseException InitialData_XXX0
-resolveMeroRoles InitialWithRoles{..} template =
+resolveMeroRoles_XXX0 InitialWithRoles{..} template =
     case partitionEithers ehosts of
         ([], hosts) ->
             Right $ InitialData_XXX0 { id_racks_XXX0 = _rolesinit_id_racks
@@ -472,9 +472,9 @@ resolveMeroRoles InitialWithRoles{..} template =
                                 }
         (errs, _) -> Left . mkException func . intercalate ", " $ concat errs
   where
-    func = "resolveMeroRoles"
+    func = "resolveMeroRoles_XXX0"
 
-    ehosts :: [Either [String] M0Host]
+    ehosts :: [Either [String] M0Host_XXX0]
     ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
 
     -- | Expand a host.
@@ -558,8 +558,8 @@ parseInitialData_XXX0 facts meroRoles halonRoles = runExceptT parse
 
     mkExc = mkException "parseInitialData_XXX0"
 
-validateInitialData :: InitialData_XXX0 -> Either Y.ParseException ()
-validateInitialData idata = do
+validateInitialData_XXX0 :: InitialData_XXX0 -> Either Y.ParseException ()
+validateInitialData_XXX0 idata = do
     check (allUnique $ map rack_idx_XXX0 $ id_racks_XXX0 idata)
         "Racks with non-unique rack_idx exist"
     check (all (\(fmap enc_idx_XXX0 -> idxs) -> allUnique idxs) enclsPerRack)
@@ -569,7 +569,7 @@ validateInitialData idata = do
         "Enclosures with non-unique enc_id exist"
   where
     check cond msg =
-        if cond then Right () else Left (mkException "validateInitialData" msg)
+        if cond then Right () else Left (mkException "validateInitialData_XXX0" msg)
     allUnique xs = length (nub xs) == length xs
     enclsPerRack = [rack_enclosures_XXX0 rack | rack <- id_racks_XXX0 idata]
     enclIds = enc_id_XXX0 <$> concat enclsPerRack
