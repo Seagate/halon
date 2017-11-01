@@ -3,10 +3,13 @@ set -eu -o pipefail
 
 die() { echo "$@" >&2; exit 1; }
 
+H0_SRC_DIR="$(readlink -f $0)"
+H0_SRC_DIR="${H0_SRC_DIR%/*/*/*/*}"
+
 ## -------------------------------------------------------------------
 ## Configurable section
 
-export M0_SRC_DIR=${M0_SRC_DIR:-$HOME/src/mero}
+export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 [[ -d $M0_SRC_DIR ]]                || die "$M0_SRC_DIR: No such directory"
 [[ -d $M0_SRC_DIR/mero ]]           || die "$M0_SRC_DIR: No Mero sources found"
 [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"

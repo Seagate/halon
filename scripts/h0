@@ -3,29 +3,30 @@ set -eu -o pipefail
 # set -x
 export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 
-### --------------------------------------------------------------------
+### ------------------------------------------------------------------
 ### Halon helper script
 ###
 ### Installation:
 ###     ln -s /path/to/halon/scripts/h0 ~/bin/h0
 ###
 ### Type `h0 help' for usage.
-### --------------------------------------------------------------------
+### ------------------------------------------------------------------
 
 die() { echo "$@" >&2; exit 1; }
 
-## ===================================================================
+H0_SRC_DIR="$(readlink -f $0)"
+H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+
+## -------------------------------------------------------------------
 ## Configurable section
 
-export M0_SRC_DIR=${M0_SRC_DIR:-$HOME/src/mero}
+export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 [[ -d $M0_SRC_DIR ]]                || die "$M0_SRC_DIR: No such directory"
 [[ -d $M0_SRC_DIR/mero ]]           || die "$M0_SRC_DIR: No Mero sources found"
 [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
-## ===================================================================
+## -------------------------------------------------------------------
 
 PROG="${0##*/}"
-H0_SRC_DIR="$(readlink -f $0)"
-H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
 STACK='stack --no-docker --allow-different-user'
 
 cmd_setup() {
@@ -96,7 +97,8 @@ Commands:
     help              Show this help and exit.
 
 Environment variables:
-    M0_SRC_DIR    Path to Mero sources directory.
+    M0_SRC_DIR    Path to Mero sources directory;
+                  defaults to '$M0_SRC_DIR'.
 EOF
 }
 
