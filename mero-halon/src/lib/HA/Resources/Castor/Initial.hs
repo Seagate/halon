@@ -33,11 +33,56 @@ import           GHC.Generics (Generic)
 import           Text.Printf (printf)
 import qualified HA.Aeson as A
 import           HA.Resources.TH
-import           HA.SafeCopy
+import           HA.SafeCopy (base, deriveSafeCopy)
 import           Mero.ConfC (ServiceParams, ServiceType)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
+
+-- | Parsed initial data that Halon buids its initial knowledge base
+-- about the cluster from.
+data InitialData = InitialData {
+    id_profiles :: [Profile]
+  -- , id_racks :: [Rack]
+  -- , id_nodes :: [Node]
+} deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable InitialData
+instance A.FromJSON InitialData
+instance A.ToJSON InitialData
+
+data Profile = Profile {
+    prof_id :: T.Text
+  , prof_md_redundancy :: Word32
+  -- , prof_pools :: [Pool]
+} deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Profile
+instance A.FromJSON Profile
+instance A.ToJSON Profile
+
+{-XXX
+data Rack = Rack {
+    rack_idx :: Integer
+  , rack_enclosures :: [Enclosure]
+} deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Rack
+instance A.FromJSON Rack
+instance A.ToJSON Rack
+
+data Node = Node {
+    n_fqdn :: T.Text
+    n_lnid :: T.Text
+  , n_mero_roles :: [RoleSpec]
+} deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Node
+instance A.FromJSON Node
+instance A.ToJSON Node
+-}
+
+-- XXX ---------------------------------------------------------------
 
 -- | Halon-specific settings for the 'Host_XXX0'.
 data HalonSettings = HalonSettings
@@ -47,7 +92,7 @@ data HalonSettings = HalonSettings
   , _hs_roles :: [RoleSpec]
   -- ^ List of halon roles for this host. Valid values are determined
   -- by the halon roles files passed to 'parseInitialData'.
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable HalonSettings
 
@@ -70,7 +115,7 @@ data Host_XXX0 = Host_XXX0
   -- ^ Halon settings, if any. Note that if unset, the node is ignored
   -- during @hctl bootstrap cluster@ command. This does not imply that
   -- the host is not loaded as part of the initial data.
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Host_XXX0
 instance A.FromJSON Host_XXX0
@@ -85,7 +130,7 @@ data BMC = BMC
   -- ^ Username
   , bmc_pass :: String
   -- ^ Password
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable BMC
 instance A.FromJSON BMC
@@ -101,7 +146,7 @@ data Enclosure_XXX0 = Enclosure_XXX0
   -- ^ List of 'BMC' interfaces.
   , enc_hosts_XXX0 :: [Host_XXX0]
   -- ^ List of 'Host_XXX0's in the enclosure.
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Enclosure_XXX0
 instance A.FromJSON Enclosure_XXX0
@@ -113,7 +158,7 @@ data Rack_XXX0 = Rack_XXX0
   -- ^ Rack index
   , rack_enclosures_XXX0 :: [Enclosure_XXX0]
   -- ^ List of 'Enclosure_XXX0's in the index.
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Rack_XXX0
 instance A.FromJSON Rack_XXX0
@@ -125,7 +170,7 @@ instance A.ToJSON Rack_XXX0
 data FailureSetScheme =
     Preloaded Word32 Word32 Word32
   | Formulaic [[Word32]]
-  deriving (Eq, Data, Generic, Show, Typeable)
+  deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable FailureSetScheme
 instance A.FromJSON FailureSetScheme
@@ -146,7 +191,7 @@ data HalonRole = HalonRole
   -- - "sspl-hl start -u sspluser -p sspl4ever"
   -- - "sspl start -u sspluser -p sspl4ever"
   -- @
-  } deriving (Show, Eq, Data, Ord, Generic, Typeable)
+  } deriving (Show, Data, Eq, Ord, Generic, Typeable)
 
 -- | Options for the 'HalonRole' JSON parser.
 halonConfigOptions :: A.Options
@@ -179,7 +224,7 @@ data M0Globals_XXX0 = M0Globals_XXX0 {
   , m0_be_txgr_tx_nr_max_XXX0 :: Maybe Word32
   , m0_block_size_XXX0 :: Maybe Word32
   , m0_min_rpc_recvq_len_XXX0 :: Maybe Word32
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable M0Globals_XXX0
 instance A.FromJSON M0Globals_XXX0
@@ -193,7 +238,7 @@ data M0Device_XXX0 = M0Device_XXX0 {
   , m0d_size_XXX0 :: Word64 -- ^ Size of disk (in MB)
   , m0d_path_XXX0 :: String -- ^ Path to the device (e.g. /dev/disk...)
   , m0d_slot_XXX0 :: Int -- ^ Slot within the enclosure the device is in
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable M0Device_XXX0
 instance A.FromJSON M0Device_XXX0
@@ -209,7 +254,7 @@ data M0Host_XXX0 = M0Host_XXX0
   -- ^ Processes that should run on the host.
   , m0h_devices_XXX0 :: ![M0Device_XXX0]
   -- ^ Information about devices attached to the host.
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable M0Host_XXX0
 instance A.FromJSON M0Host_XXX0
@@ -225,7 +270,7 @@ data M0ProcessType =
   | PLM0d Word64  -- ^ Process runs in m0d at the given boot level.
                   --   Currently 0 = confd, 1 = other
   | PLHalon  -- ^ Process lives inside Halon program space.
-  deriving (Eq, Data, Show, Typeable, Generic)
+  deriving (Data, Eq, Show, Typeable, Generic)
 instance Hashable M0ProcessType
 instance A.FromJSON M0ProcessType
 instance A.ToJSON M0ProcessType
@@ -238,7 +283,7 @@ data M0ProcessEnv =
     -- | A unique range within the node. Each process shall be given a unique
     --   value within this range for the given environment key.
   | M0PEnvRange Int Int
-  deriving (Eq, Data, Show, Typeable, Generic)
+  deriving (Data, Eq, Show, Typeable, Generic)
 instance Hashable M0ProcessEnv
 instance A.FromJSON M0ProcessEnv
 instance A.ToJSON M0ProcessEnv
@@ -261,7 +306,7 @@ data M0Process_XXX0 = M0Process_XXX0
   -- ^ Process environment - additional
   , m0p_multiplicity_XXX0 :: Maybe Int
   -- ^ Process multiplicity - how many instances of this process should be started?
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable M0Process_XXX0
 instance A.FromJSON M0Process_XXX0
@@ -274,19 +319,17 @@ data M0Service_XXX0 = M0Service_XXX0 {
   -- ^ Listen endpoints for the service itself.
   , m0s_params_XXX0 :: ServiceParams
   , m0s_pathfilter_XXX0 :: Maybe String -- ^ For IOS, filter on disk WWN
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable M0Service_XXX0
 instance A.FromJSON M0Service_XXX0
 instance A.ToJSON M0Service_XXX0
 
--- | Parsed initial data that halon buids its initial knowledge base
--- about the cluster from.
 data InitialData_XXX0 = InitialData_XXX0 {
     id_racks_XXX0 :: [Rack_XXX0]
   , id_m0_servers_XXX0 :: [M0Host_XXX0]
   , id_m0_globals_XXX0 :: M0Globals_XXX0
-} deriving (Eq, Data, Generic, Show, Typeable)
+} deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable InitialData_XXX0
 instance A.FromJSON InitialData_XXX0
@@ -308,7 +351,7 @@ data RoleSpec = RoleSpec
   -- (rest of the facts) in call to 'EDE.render': this allows the user
   -- to override values from the rest of the facts in case we want to
   -- tweak an existing role.
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 -- | Options for 'RoleSpec' JSON parser.
 rolespecJSONOptions :: A.Options
@@ -341,7 +384,7 @@ instance Binary RoleSpec where
 data Role = Role
   { _role_name :: RoleName
   , _role_content :: [M0Process_XXX0]
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 -- | Options for the 'Role' JSON parser.
 roleJSONOptions :: A.Options
@@ -363,7 +406,7 @@ data InitialWithRoles_XXX0 = InitialWithRoles_XXX0
     -- the host was parsed out from, used as environment given during
     -- template expansion.
   , _rolesinit_id_m0_globals_XXX0 :: M0Globals_XXX0
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance A.FromJSON InitialWithRoles_XXX0 where
   parseJSON (A.Object v) = InitialWithRoles_XXX0 <$>
@@ -399,7 +442,7 @@ data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn_XXX0 :: !T.Text
   , _uhost_m0h_roles :: ![RoleSpec]
   , _uhost_m0h_devices_XXX0 :: ![M0Device_XXX0]
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.
 unexpandedHostJSONOptions :: A.Options
@@ -537,6 +580,9 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither _ (Just a) = Right a
 maybeToEither e Nothing = Left e
 
+deriveSafeCopy 0 'base ''Profile
+storageIndex           ''Profile "229722d0-8317-48c4-a278-3c45cb992f2b"
+-- XXX ---------------------------------------------------------------
 deriveSafeCopy 0 'base ''FailureSetScheme
 storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device_XXX0
