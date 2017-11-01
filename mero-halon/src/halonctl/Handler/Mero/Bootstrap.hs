@@ -102,7 +102,7 @@ data ValidatedConfig = ValidatedConfig
   , vcHosts :: [Host]
   }
 
-mkValidatedConfig :: [CI.Rack]
+mkValidatedConfig :: [CI.Rack_XXX0]
                   -> ([CI.RoleSpec] -> Either String [CI.HalonRole])
                   -> String -- ^ Tracking station options.
                   -> AccValidation [String] ValidatedConfig
@@ -156,7 +156,7 @@ mkValidatedConfig racks mkRoles stationOpts =
 
 run :: Options -> Process ()
 run Options{..} = do
-  einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
+  einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
   case einitData of

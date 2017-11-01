@@ -537,11 +537,11 @@ mkHalonRoles template roles =
                         \ in Halon mapping file" rname
 
 -- | Entry point into 'InitialData' parsing.
-parseInitialData :: FilePath -- ^ Halon facts.
+parseInitialData_XXX0 :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData_XXX0, EDE.Template))
-parseInitialData facts meroRoles halonRoles = runExceptT parse
+parseInitialData_XXX0 facts meroRoles halonRoles = runExceptT parse
   where
     parse :: ExceptT Y.ParseException IO (InitialData_XXX0, EDE.Template)
     parse = do
@@ -556,7 +556,7 @@ parseInitialData facts meroRoles halonRoles = runExceptT parse
     parseFile :: FilePath -> ExceptT Y.ParseException IO EDE.Template
     parseFile = ExceptT . (first mkExc <$>) . EDE.eitherParseFile
 
-    mkExc = mkException "parseInitialData"
+    mkExc = mkException "parseInitialData_XXX0"
 
 validateInitialData :: InitialData_XXX0 -> Either Y.ParseException ()
 validateInitialData idata = do

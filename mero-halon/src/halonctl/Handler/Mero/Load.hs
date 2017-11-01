@@ -17,7 +17,7 @@ import           Data.Yaml (prettyPrintParseException)
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
-import           HA.Resources.Castor.Initial (InitialData_XXX0, parseInitialData)
+import           HA.Resources.Castor.Initial (InitialData_XXX0, parseInitialData_XXX0)
 import           Network.CEP
 import qualified Options.Applicative as Opt
 import           System.Exit (exitFailure)
@@ -71,7 +71,7 @@ run :: [NodeId] -- ^ EQ nodes to send data to
          -> Options
          -> Process ()
 run eqnids (Options cf maps halonMaps verify _t) = do
-  initData <- liftIO $ parseInitialData cf maps halonMaps
+  initData <- liftIO $ parseInitialData_XXX0 cf maps halonMaps
   case initData of
     Left err -> liftIO $ do
       putStrLn $ prettyPrintParseException err
