@@ -71,6 +71,19 @@ cmd_stop() {
     _bootstrap cluster_stop
 }
 
+cmd_path() {
+    cd "$H0_SRC_DIR"
+    echo "halon-bin: $($STACK path --local-install-root)/bin"
+    echo "mero-libs: $M0_SRC_DIR/mero/.libs"
+}
+
+cmd_env() {
+    cd "$H0_SRC_DIR"
+    echo "export PATH=\"$($STACK path --local-install-root)/bin:\$PATH\""
+    echo -n "export LD_LIBRARY_PATH=\"$M0_SRC_DIR/mero/.libs"
+    echo "\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
+}
+
 cmd_help() {
     local RET=${1:-0}
 
@@ -79,7 +92,7 @@ cmd_help() {
 }
 
 _exec() {
-    [ $1 = 'cmd_help' ] || echo "----- ${@#cmd_} -----" >&2
+    [[ $1 =~ ^cmd_(path|env|help)$ ]] || echo "----- ${@#cmd_} -----" >&2
     "$@"
 }
 
@@ -94,6 +107,10 @@ Commands:
     test [OPTION]...  Run unit tests.
     start             Start cluster.
     stop              Stop cluster.
+    path              Print out handy path information.
+    env               Print shell commands that, if evaluated, simplify
+                      execution of Halon binaries located in the sources
+                      directory.
     help              Show this help and exit.
 
 Environment variables:
@@ -106,7 +123,7 @@ CMD=
 OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|start|stop|help)
+        setup|make|rebuild|test|start|stop|path|env|help)
             [[ -z $CMD ]] || _exec $CMD $OPTS
             CMD=cmd_${1//-/_}
             OPTS=;;
