@@ -17,18 +17,18 @@ help()
 
 usage()
 {
-	cat <<USAGE_END
-Install systemd sscripts for development or testing use.
+    cat <<USAGE_END
+Install systemd scripts for development or testing use.
 Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
 
-	-n|--dry-run	Don't perform any action, just show what would be
-			installed/uninstalled.
+    -n|--dry-run    Don't perform any action, just show what would be
+                    installed/uninstalled.
 
-	-l|--link	Symlink files instread of copying them.
+    -l|--link       Symlink files instread of copying them.
 
-	-u|--uninstall	Remove files and directories witch were installed by this script
+    -u|--uninstall  Remove files and directories witch were installed by this script
 
-	-h|--help	Print this help.
+    -h|--help       Print this help.
 USAGE_END
 }
 
@@ -111,7 +111,7 @@ install_files()
               "
     for file in $file_list
     do
-    	[[ -s $file ]] && run "$cmd $(pwd)/$file $dir"
+        [[ -s $file ]] && run "$cmd $(pwd)/$file $dir"
     done
 
     $dry_run || {
