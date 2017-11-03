@@ -37,7 +37,8 @@ cmd_make() {
     cd "$H0_SRC_DIR"
     PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         MERO_ROOT=$M0_SRC_DIR \
-        $STACK build mero-halon --ghc-options='-g -j4' --test --no-run-tests
+        $STACK build mero-halon --ghc-options='-g -j4' --test --no-run-tests \
+        "$@"
 }
 
 cmd_rebuild() {
@@ -46,7 +47,7 @@ cmd_rebuild() {
     # whether Mero has been updated since last Halon compilation.
     # One possible solution is to reimplement this script as a Makefile.
     $STACK clean rpclite
-    cmd_make
+    cmd_make "$@"
 }
 
 cmd_test() {
@@ -101,17 +102,23 @@ usage() {
 Usage: $PROG {COMMAND [OPTION]...}...
 
 Commands:
-    setup             Get the appropriate GHC to build Halon. Rarely needed.
-    make              Build Halon. Use \`$PROG rebuild' if Mero was updated.
-    rebuild           Clean 'rpclite' module and build Halon.
-    test [OPTION]...  Run unit tests.
-    start             Start cluster.
-    stop              Stop cluster.
-    path              Print out handy path information.
-    env               Print shell commands that, if evaluated, simplify
-                      execution of Halon binaries located in the sources
-                      directory.
-    help              Show this help and exit.
+    setup                Get the appropriate GHC to build Halon.
+                         (Rarely needed.)
+    make [OPTION]...     Build Halon.
+                         (Use \`$PROG rebuild' if Mero was updated.)
+    rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
+    test [OPTION]...     Run unit tests.
+    start                Start cluster.
+    stop                 Stop cluster.
+    path                 Print out handy path information.
+    env                  Print shell commands that, if evaluated, simplify
+                         execution of Halon binaries located in the sources
+                         directory.
+    help                 Show this help and exit.
+
+Options:
+    'rebuild' and 'make' commands support stack build options
+    (e.g., \`--fast'). Type \`stack build --help' for the full list.
 
 Environment variables:
     M0_SRC_DIR    Path to Mero sources directory;
