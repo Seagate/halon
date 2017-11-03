@@ -2,7 +2,10 @@
 
 # This script is based on the isntall-mero-services-script from mero sources.
 
-readonly BASENAME=$(basename $0)
+readonly BASENAME="${0##*/}"
+
+H0_SRC_DIR="$(readlink -f $0)"
+H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
 
 # variables
 dry_run=false
@@ -70,6 +73,11 @@ die()
     exit 1
 }
 
+warn()
+{
+    echo "WARNING: $@" >&2
+}
+
 run()
 {
     local cmd="$*"
@@ -78,68 +86,149 @@ run()
     $dry_run || $cmd
 }
 
+home_of () {
+    eval echo ~${1:-$USER}
+}
+
+h0_path()
+{
+    local component=$1
+
+    # When this script is executed with `sudo`, a target user (presumably root)
+    # won't have environment. The `stack` utility, called internally by `h0`
+    # script, will attempt to download it's runtime (which is quite big in size)
+    # into $HOME/.stack first; to avoid this we just create a symlink to the
+    # existing 'stack' environment of original user who calls `sudo`.
+    if [[ -n $SUDO_USER ]] ; then
+        # Unfortunately, using of infamous `eval` in this case is the only sane
+        # way of obtaining homedir for a user whose name is stored in a variable,
+        # because of the order in which shell performs expansion (tilde
+        # expansion goes before parameter substitution), an alternative would be
+        # direct reading and parsing of '/etc/passwd' file.
+        [[ -d $(home_of $USER)/.stack ]] ||
+            ln -sf $(home_of $SUDO_USER)/.stack $(home_of $USER/).stack
+    fi
+
+    local path=$(echo $($H0_SRC_DIR/scripts/h0 path 2>/dev/null |
+                        grep $component | awk '{print $2}'))
+
+    # nodes where neither `stack setup` nor `h0 setup` has been done won't
+    # have '~/.stack' dir, in which case the above `h0 path` command won't work,
+    # so we just trying to guess the location and fail if it's not found
+    if [[ -z $path ]] ; then
+        case $component in
+            halon-bin)
+                path=$(ls -d $H0_SRC_DIR/.stack-work/install/x86_64-linux/lts-*/*/bin)
+                ;;
+            mero-libs)
+                path=$(ls -d $H0_SRC_DIR/../mero/mero/.libs)
+                ;;
+        esac
+    fi
+
+    [[ -n $path ]] ||
+        die "Not able to find '$component' location"
+
+    echo $path
+}
 
 install_files()
 {
 
     local cmd='cp -vf'
-    $link_files && cmd='ln -sfv'
-
-    dir='/usr/lib/systemd/system'
-    if [[ -d $dir ]] ; then
-        for file in 'systemd/halond.service' \
-                    'systemd/halon-satellite.service' \
-                    ;
-        do
-            run "$cmd $(pwd)/$file $dir"
-        done
+    if $link_files ; then
+        cmd='ln -sfv'
     fi
 
-    dir='/etc/sysconfig'
-    [[ ! -d $dir ]] && run "mkdir -vp $dir"
-    for file in 'systemd/sysconfig/halond' \
-                'systemd/sysconfig/halon-satellite' ;
+    local file
+    local dir='/usr/lib/systemd/system'
+    for file in 'systemd/halond.service' \
+                'systemd/halon-satellite.service' \
+                'systemd/halon-cleanup.service' ;
     do
-        run "$cmd $(pwd)/$file $dir"
+        run "$cmd $H0_SRC_DIR/$file $dir"
     done
-    run "echo LD_LIBRARY_PATH=/mero/mero/.libs >> $dir/halond"
 
-    dir="/usr/local/bin"
-    [[ ! -d $dir ]] && run "mkdir -vp $dir"
-    file_list="mero-halon/.stack-work/dist/*/*/build/halond/halond
-               mero-halon/.stack-work/dist/*/*/build/halonctl/halonctl
-              "
-    for file in $file_list
+    dir='/etc/sysconfig'
+    # always copy configs
+    run "cp -vf $H0_SRC_DIR/systemd/sysconfig/halond.example $dir/halond"
+    run "cp -vf $H0_SRC_DIR/systemd/sysconfig/halon-satellite $dir"
+    # example output of `ip address` command that is parsed below
+    #   3: eth1    inet 172.28.128.94/24 brd 172.28.128.255 scope global dynamic eth1...
+    local ip_addr=$(ip -oneline -4 address show scope global | tail -n 1 |
+                    awk '{print $4}' | cut -d/ -f1)
+    run "sed -i -r s/^#(HALOND_LISTEN=).*(:[[:digit:]]+)$/\1${ip_addr}\2/ $dir/halond"
+
+    dir='/etc/ld.so.conf.d'
+    $dry_run || echo "$(h0_path mero-libs)" > "$dir/halon.conf"
+
+    dir='/etc/halon'
+    [[ -d $dir ]] || run "mkdir -vp $dir"
+    run "$cmd $H0_SRC_DIR/mero-halon/scripts/halon_roles.yaml $dir/halon_role_mappings"
+
+    dir='/etc/halon/role_maps'
+    [[ -d $dir ]] || run "mkdir -vp $dir"
+    run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_provisioner_role_mappings.ede $dir/prov.ede"
+
+    dir='/usr/bin'
+    local halon_bin_dir=$(h0_path halon-bin)
+    for file in "$halon_bin_dir/halond" \
+                "$halon_bin_dir/halonctl" \
+                "$H0_SRC_DIR/mero-halon/scripts/hctl" ;
     do
-        [[ -s $file ]] && run "$cmd $(pwd)/$file $dir"
+        [[ -s $file ]] &&
+            run "$cmd $file $dir" ||
+            warn "skipping non-existing file '$file'"
     done
+
+    dir='/usr/libexec/halon'
+    [[ -d $dir ]] || run "mkdir -vp $dir"
+    file="$halon_bin_dir/halon-cleanup"
+    [[ -s $file ]] &&
+        run "$cmd $file $dir" ||
+        warn "skipping non-existing file '$file'"
+
+    dir='/var/lib/halon'
+    [[ -d $dir ]] || run "mkdir -vp $dir"
 
     $dry_run || {
-        [[ -x /sbin/initctl ]] && initctl reload-configuration
-        [[ -x /usr/bin/systemctl ]] && systemctl daemon-reload
+        systemctl daemon-reload
+        ldconfig
     }
 }
 
 uninstall_files()
 {
-    file_list='/etc/sysconfig/halond
-               /etc/sysconfig/halond-satellite
+    local files='
+                 /etc/ld.so.conf.d/halon.conf
+                 /etc/sysconfig/halon-satellite
+                 /etc/sysconfig/halond
+                 /usr/bin/halonctl
+                 /usr/bin/halond
+                 /usr/bin/hctl
+                 /usr/lib/systemd/system/halon-cleanup.service
+                 /usr/lib/systemd/system/halon-satellite.service
+                 /usr/lib/systemd/system/halond.service
+                 /usr/libexec/halon/halon-cleanup
+                '
+    local file
+    for file in "$files" ; do
+        run "rm -vf $file"
+    done
+
+    local dirs='
+                /etc/halon
+                /usr/libexec/halon
+                /var/lib/halon
                '
-
-    if [[ -d /usr/lib/systemd/system ]] ; then
-        file_list+='/usr/lib/systemd/system/halond.service
-                    /usr/lib/systemd/system/halon-satellite.service
-                   '
-    fi
-
-    for file in $file_list
-    do
-        [[ -s $file ]] && run "rm -v $file"
+    local dir
+    for dir in "$dirs" ; do
+        [[ ! -d $dir  ]] || run "rm -rvf $dir"
     done
 
     $dry_run || {
-        [[ -x /sbin/initctl ]] && initctl reload-configuration
-        [[ -x /usr/bin/systemctl ]] && systemctl daemon-reload
+        systemctl daemon-reload
+        ldconfig
     }
 }
 
@@ -148,7 +237,7 @@ uninstall_files()
 #
 
 # exit immediately if one the commands exits with a non-zero status
-set -e
+set -eE -o pipefail
 
 parse_cli_options $@
 
