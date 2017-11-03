@@ -89,6 +89,8 @@ rm -rf %{buildroot}
 /etc/logrotate.d/halon
 /etc/sysconfig/halond.example
 %{_tmpfilesdir}/halond.conf
+# %{_sharedstatedir} normally resolves to /var/lib
+%{_sharedstatedir}/halon
 
 %post
 systemctl daemon-reload

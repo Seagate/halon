@@ -57,12 +57,12 @@ main = do
       ExitFailure{} -> do
         log "halond service not running, killing halond manually."
         void $ readProcessWithExitCodeVerbose "kill" ("-9" : map show pids)
-    -- Remove any m0trace files under /var/log that belong to halond
+    -- Remove any m0trace files under /var/lib/halon that belong to halond
     -- PIDs we identified earlier.
     log "Removing halond m0trace files."
     for_ pids $ \p -> do
       removeFileIfExists $ printf "m0trace.%d" p
-      removeFileIfExists $ printf "/var/log/m0trace.%d" p
+      removeFileIfExists $ printf "/var/lib/halon/m0trace.%d" p
   -- Remove persistent storage, if any. Maybe we should randomly try
   -- other directories such as /var/log and /var/lib/halon too. We
   -- could do better if /etc/sysconfig/halond set HALON_PERSISTENCE

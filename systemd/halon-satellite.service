@@ -10,7 +10,7 @@ RemainAfterExit=yes
 EnvironmentFile=/etc/sysconfig/halond
 EnvironmentFile=/etc/sysconfig/halon-satellite
 ExecStart=/usr/bin/halonctl -a $HALOND_LISTEN -l $HALONCTL_LISTEN bootstrap satellite $HALON_TRACKERS
-WorkingDirectory=/var/lib
+WorkingDirectory=/var/lib/halon
 
 [Install]
 WantedBy=multi-user.target

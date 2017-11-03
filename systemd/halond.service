@@ -14,7 +14,7 @@ TimeoutStopSec=1m 3s
 Restart=on-abort
 StartLimitInterval=5
 StartLimitBurst=1
-WorkingDirectory=/var/log
+WorkingDirectory=/var/lib/halon
 Environment=HALON_PERSISTENCE=/var/lib/halon
 LimitCORE=infinity
 
