@@ -156,6 +156,9 @@ mkValidatedConfig racks mkRoles stationOpts =
 
 run_XXX0 :: Options -> Process ()
 run_XXX0 Options{..} = do
+  _einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
+                                            (fromDefault configRoles)
+                                            (fromDefault configHalonRoles)
   einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)

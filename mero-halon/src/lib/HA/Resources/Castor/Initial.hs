@@ -82,6 +82,25 @@ instance A.FromJSON Node
 instance A.ToJSON Node
 -}
 
+-- | Entry point into 'InitialData' parsing.
+parseInitialData :: FilePath -- ^ Halon facts.
+                 -> FilePath -- ^ Mero role map file.
+                 -> FilePath -- ^ Halon role map file.
+                 -> IO (Either Y.ParseException (InitialData, EDE.Template))
+parseInitialData facts _meroRoles halonRoles = runExceptT parse
+  where
+    parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
+    parse = do
+        initialWithRoles <- ExceptT (Y.decodeFileEither facts)
+        edeHalonRoles <- ExceptT $ first (mkException "parseInitialData")
+            <$> EDE.eitherParseFile halonRoles
+        let initialData = initialWithRoles -- XXX DELETEME
+        {- XXX RESTOREME
+        initialData <- ExceptT (resolveRoles initialWithRoles meroRoles)
+        ExceptT . pure $ validateInitialData initialData
+        -}
+        pure (initialData, edeHalonRoles)
+
 -- XXX ---------------------------------------------------------------
 
 -- | Halon-specific settings for the 'Host_XXX0'.
