@@ -6,7 +6,9 @@ After=network.target rabbitmq-server.service
 
 [Service]
 EnvironmentFile=/etc/sysconfig/halond
-ExecStartPre=/usr/bin/systemd-tmpfiles --remove halond.conf
+# Uncomment to perform cleanup of the old Halon m0trace.PID files on startup,
+# this can be helpful for debugging.
+#ExecStartPre=/usr/bin/systemd-tmpfiles --remove halond.conf
 ExecStart=/usr/bin/halond -l $HALOND_LISTEN +RTS -s -A32m -I0 -RTS
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -INT $MAINPID
