@@ -258,11 +258,11 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
             ]
     failures = Failures 0 0 0 1 0
     attrs = PDClustAttr {
-        _pa_N = fromIntegral $ length disks
-      , _pa_K = 0
-      , _pa_P = 0 -- Will be overridden
-      , _pa_unit_size = 4096
-      , _pa_seed = Word128 101 101
+        pa_N = fromIntegral $ length disks
+      , pa_K = 0
+      , pa_P = 0 -- Will be overridden
+      , pa_unit_size = 4096
+      , pa_seed = Word128 101 101
     }
     pver = PoolVersion Nothing fids failures attrs
   in do
@@ -298,13 +298,13 @@ createIMeta fs = do
             , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
             ]
       attrs = PDClustAttr {
-                _pa_N = 1 -- For CAS service `N` must always be equal to `1` as
+                pa_N = 1 -- For CAS service `N` must always be equal to `1` as
                           -- CAS records are indivisible pieces of data:  the
                           -- whole CAS record is always stored on one node.
-              , _pa_K = 0
-              , _pa_P = 0 -- Will be overridden
-              , _pa_unit_size = 4096
-              , _pa_seed = Word128 101 102
+              , pa_K = 0
+              , pa_P = 0 -- Will be overridden
+              , pa_unit_size = 4096
+              , pa_seed = Word128 101 102
               }
       failures = Failures 0 0 0 1 0
       maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]

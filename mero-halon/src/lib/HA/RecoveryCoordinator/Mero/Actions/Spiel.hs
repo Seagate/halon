@@ -777,7 +777,7 @@ txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesyste
   -- Pool versions
   let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
       pvNegWidth pver = case pver of
-                         M0.PVer _ a@M0.PVerActual{}    -> negate . _pa_P . M0.v_attrs $ a
+                         M0.PVer _ a@M0.PVerActual{} -> negate . pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) f_fid 0

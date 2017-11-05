@@ -255,9 +255,9 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "Number of disks" $ length disks == 16
     assertMsg "Number of disk versions" $ length dvers1 == 4
     forM_ (G.getResourcesOfType g :: [M0.PVer]) $ \pver -> do
-      let PDClustAttr { _pa_N = paN
-                      , _pa_K = paK
-                      , _pa_P = paP
+      let PDClustAttr { pa_N = paN
+                      , pa_K = paK
+                      , pa_P = paP
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
       assertMsg "N in PVer" $ CI.m0_data_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units_XXX0 (CI.id_m0_globals_XXX0 iData) == paK

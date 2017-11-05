@@ -39,11 +39,11 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
     G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
   let attrs = PDClustAttr
-                { _pa_N = m0_data_units_XXX0 globs
-                , _pa_K = m0_parity_units_XXX0 globs
-                , _pa_P = 0
-                , _pa_unit_size = 4096
-                , _pa_seed = Word128 101 102
+                { pa_N = m0_data_units_XXX0 globs
+                , pa_K = m0_parity_units_XXX0 globs
+                , pa_P = 0
+                , pa_unit_size = 4096
+                , pa_seed = Word128 101 102
                 }
       mdpool = M0.Pool (M0.f_mdpool_fid fs)
       imeta_pver = M0.f_imeta_fid fs

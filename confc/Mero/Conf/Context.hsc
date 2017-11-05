@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE CApiFFI #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -18,13 +19,14 @@ module Mero.Conf.Context where
 import Mero.Conf.Fid ( Fid(..) )
 
 import Control.Monad (when)
-import Data.Aeson
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Bits
   ( setBit
   , shiftR
   , zeroBits
   )
+import Data.Data (Data)
 import Data.Hashable (Hashable)
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -119,12 +121,14 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
   deriving (Eq, Ord, Generic, Show)
 
-instance ToJSON Word128
 instance Binary Word128
+instance Data Word128
+instance FromJSON Word128
+instance ToJSON Word128
+instance Hashable Word128
 instance Serialize Word128
 instance SafeCopy Word128 where
   kind = primitive
-instance Hashable Word128
 instance Storable Word128 where
   sizeOf _ = #{size struct m0_uint128}
   alignment _ = #{alignment struct m0_uint128}
@@ -153,14 +157,15 @@ instance Storable Cookie where
 
 -- | @pdclust.h m0_pdclust_attr@
 data PDClustAttr = PDClustAttr {
-    _pa_N :: Word32
-  , _pa_K :: Word32
-  , _pa_P :: Word32
-  , _pa_unit_size :: Word64
-  , _pa_seed :: Word128
-} deriving (Eq, Generic, Show)
+    pa_N :: Word32
+  , pa_K :: Word32
+  , pa_P :: Word32
+  , pa_unit_size :: Word64
+  , pa_seed :: Word128
+} deriving (Eq, Data, Generic, Show)
 
 instance Binary PDClustAttr
+instance FromJSON PDClustAttr
 instance Hashable PDClustAttr
 instance Storable PDClustAttr where
   sizeOf _ = #{size struct m0_pdclust_attr}

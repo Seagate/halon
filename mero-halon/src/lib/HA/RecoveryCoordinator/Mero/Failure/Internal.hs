@@ -48,7 +48,7 @@ data PoolVersion = PoolVersion !(Maybe Fid) !(Set.Set Fid) !Failures !PDClustAtt
                   -- ^ @PoolVersion fid fids fs attrs@ where @fids@ is a set of
                   -- fids, @fs@ are allowable failures in each
                   -- failure domain, and @attrs@ are the parity declustering
-                  -- attributes. Note that the value for @_pa_P@ will be
+                  -- attributes. Note that the value for @pa_P@ will be
                   -- overridden with the width of the pool.
   deriving (Eq, Show)
 
@@ -101,7 +101,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
                                 Nothing -> S.state (newFid (Proxy :: Proxy M0.PVer))
                             )
                         <*> pure (M0.PVerActual (failuresToArray failures)
-                                                (attrs { _pa_P = fromIntegral width }))
+                                                (attrs { pa_P = fromIntegral width }))
         rg0 <- S.get
         S.modify' $ G.connect pool M0.IsParentOf pver
         i <- for (filter (test fids)

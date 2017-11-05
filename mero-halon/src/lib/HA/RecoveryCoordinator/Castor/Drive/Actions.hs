@@ -54,7 +54,7 @@ import           HA.Resources.Castor
   )
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           Mero.ConfC (_pa_K)
+import           Mero.ConfC (pa_K)
 import qualified Mero.Spiel as Spiel
 
 import           Control.Distributed.Process hiding (try)
@@ -229,7 +229,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
   where
     getK :: M0.PVer -> Maybe Word32
     getK pver = case M0.v_type pver of
-      pva@M0.PVerActual{} -> Just . _pa_K $ M0.v_attrs pva
+      pva@M0.PVerActual{} -> Just . pa_K $ M0.v_attrs pva
       _ -> Nothing
 
     failingState :: M0.SDev -> M0.SDevState -> Bool

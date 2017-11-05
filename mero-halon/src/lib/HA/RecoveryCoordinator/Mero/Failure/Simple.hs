@@ -47,11 +47,11 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
         globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
         let fsets = generateFailureSets df cf cfe rg globs
             attrs = PDClustAttr {
-                      _pa_N = m0_data_units_XXX0 globs
-                    , _pa_K = m0_parity_units_XXX0 globs
-                    , _pa_P = 0
-                    , _pa_unit_size = 4096
-                    , _pa_seed = Word128 101 102
+                      pa_N = m0_data_units_XXX0 globs
+                    , pa_K = m0_parity_units_XXX0 globs
+                    , pa_P = 0
+                    , pa_unit_size = 4096
+                    , pa_seed = Word128 101 102
                     }
             -- update chunks
         return (flip unfoldr fsets $ \xs ->
