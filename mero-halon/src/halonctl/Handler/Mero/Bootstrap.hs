@@ -156,9 +156,12 @@ mkValidatedConfig racks mkRoles stationOpts =
 
 run_XXX0 :: Options -> Process ()
 run_XXX0 Options{..} = do
-  _einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
+  _einitData <- liftIO $ CI.parseInitialData "/tmp/new-facts_XXX.yaml"
                                             (fromDefault configRoles)
                                             (fromDefault configHalonRoles)
+  liftIO . putStrLn $ "XXX " ++ case _einitData of
+      Left err -> "**ERROR** " ++ show err
+      Right (initData, _) -> show initData
   einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
