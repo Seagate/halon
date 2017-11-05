@@ -1,166 +1,166 @@
 - name: "ha"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:34:101"
-      m0p_mem_as: {{ host_mem_as }}
-      m0p_mem_rss: {{ host_mem_rss }}
-      m0p_mem_stack: {{ host_mem_stack }}
-      m0p_mem_memlock: {{ host_mem_memlock }}
-      m0p_cores:
+    - m0p_endpoint_XXX0: "{{ lnid }}:12345:34:101"
+      m0p_mem_as_XXX0: {{ host_mem_as }}
+      m0p_mem_rss_XXX0: {{ host_mem_rss }}
+      m0p_mem_stack_XXX0: {{ host_mem_stack }}
+      m0p_mem_memlock_XXX0: {{ host_mem_memlock }}
+      m0p_cores_XXX0:
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level:
+      m0p_boot_level_XXX0:
         tag: PLHalon
         contents: []
-      m0p_services:
-        - m0s_type:
+      m0p_services_XXX0:
+        - m0s_type_XXX0:
             tag: CST_HA
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:34:101"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:34:101"]
+          m0s_params_XXX0:
             tag: SPConfDBPath
             contents: "/var/mero/confd"
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:34:101"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:34:101"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
 - name: "confd"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:44:101"
-      m0p_mem_as: {{ host_mem_as }}
-      m0p_mem_rss: {{ host_mem_rss }}
-      m0p_mem_stack: {{ host_mem_stack }}
-      m0p_mem_memlock: {{ host_mem_memlock }}
-      m0p_cores:
+    - m0p_endpoint_XXX0: "{{ lnid }}:12345:44:101"
+      m0p_mem_as_XXX0: {{ host_mem_as }}
+      m0p_mem_rss_XXX0: {{ host_mem_rss }}
+      m0p_mem_stack_XXX0: {{ host_mem_stack }}
+      m0p_mem_memlock_XXX0: {{ host_mem_memlock }}
+      m0p_cores_XXX0:
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level:
+      m0p_boot_level_XXX0:
         tag: PLM0d
         contents: 0
-      m0p_services:
-        - m0s_type:
+      m0p_services_XXX0:
+        - m0s_type_XXX0:
             tag: CST_CONFD
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:44:101"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:44:101"]
+          m0s_params_XXX0:
             tag: SPConfDBPath
             contents: "/var/mero/confd"
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:44:101"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:44:101"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
 - name: "mds"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:41:201"
-      m0p_mem_as: {{ host_mem_as }}
-      m0p_mem_rss: {{ host_mem_rss }}
-      m0p_mem_stack: {{ host_mem_stack }}
-      m0p_mem_memlock: {{ host_mem_memlock }}
-      m0p_cores:
+    - m0p_endpoint_XXX0: "{{ lnid }}:12345:41:201"
+      m0p_mem_as_XXX0: {{ host_mem_as }}
+      m0p_mem_rss_XXX0: {{ host_mem_rss }}
+      m0p_mem_stack_XXX0: {{ host_mem_stack }}
+      m0p_mem_memlock_XXX0: {{ host_mem_memlock }}
+      m0p_cores_XXX0:
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level:
+      m0p_boot_level_XXX0:
         tag: PLM0d
         contents: 1
-      m0p_services:
-        - m0s_type:
+      m0p_services_XXX0:
+        - m0s_type_XXX0:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:201"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_MDS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:201"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_ADDB2
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:201"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
 - name: "storage"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:41:401"
-      m0p_mem_as: {{ host_mem_as }}
-      m0p_mem_rss: {{ host_mem_rss }}
-      m0p_mem_stack: {{ host_mem_stack }}
-      m0p_mem_memlock: {{ host_mem_memlock }}
-      m0p_cores:
+    - m0p_endpoint_XXX0: "{{ lnid }}:12345:41:401"
+      m0p_mem_as_XXX0: {{ host_mem_as }}
+      m0p_mem_rss_XXX0: {{ host_mem_rss }}
+      m0p_mem_stack_XXX0: {{ host_mem_stack }}
+      m0p_mem_memlock_XXX0: {{ host_mem_memlock }}
+      m0p_cores_XXX0:
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level:
+      m0p_boot_level_XXX0:
         tag: PLM0d
         contents: 1
-      m0p_services:
-        - m0s_type:
+      m0p_services_XXX0:
+        - m0s_type_XXX0:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:401"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_IOS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:401"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_SNS_REP
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:401"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_SNS_REB
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:401"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
-        - m0s_type:
+        - m0s_type_XXX0:
             tag: CST_ADDB2
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:401"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []
 - name: "m0t1fs"
   content:
-    - m0p_endpoint: "{{ lnid }}:12345:41:301"
-      m0p_mem_as: {{ host_mem_as }}
-      m0p_mem_rss: {{ host_mem_rss }}
-      m0p_mem_stack: {{ host_mem_stack }}
-      m0p_mem_memlock: {{ host_mem_memlock }}
-      m0p_cores:
+    - m0p_endpoint_XXX0: "{{ lnid }}:12345:41:301"
+      m0p_mem_as_XXX0: {{ host_mem_as }}
+      m0p_mem_rss_XXX0: {{ host_mem_rss }}
+      m0p_mem_stack_XXX0: {{ host_mem_stack }}
+      m0p_mem_memlock_XXX0: {{ host_mem_memlock }}
+      m0p_cores_XXX0:
 {% for core in host_cores %}
        - {{ core.value }}
 {% endfor %}
-      m0p_boot_level:
+      m0p_boot_level_XXX0:
         tag: PLM0t1fs
         contents: []
-      m0p_services:
-        - m0s_type:
+      m0p_services_XXX0:
+        - m0s_type_XXX0:
             tag: CST_RMS
             contents: []
-          m0s_endpoints: ["{{ lnid }}:12345:41:301"]
-          m0s_params:
+          m0s_endpoints_XXX0: ["{{ lnid }}:12345:41:301"]
+          m0s_params_XXX0:
             tag: SPUnused
             contents: []

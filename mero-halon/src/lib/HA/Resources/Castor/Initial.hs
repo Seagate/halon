@@ -42,14 +42,22 @@ import qualified Text.EDE as EDE
 -- | Parsed initial data that Halon buids its initial knowledge base
 -- about the cluster from.
 data InitialData = InitialData {
-    id_profiles :: [Profile]
-  -- , id_racks :: [Rack]
-  -- , id_nodes :: [Node]
+    _id_profiles :: [Profile]
+  -- , _id_racks :: [Rack]
+  -- , _id_nodes :: [Node]
 } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable InitialData
-instance A.FromJSON InitialData
-instance A.ToJSON InitialData
+
+initialDataOptions :: A.Options
+initialDataOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_id_" :: String)) }
+
+instance A.FromJSON InitialData where
+    parseJSON = A.genericParseJSON initialDataOptions
+
+instance A.ToJSON InitialData where
+    toJSON = A.genericToJSON initialDataOptions
 
 data Profile = Profile {
     prof_id :: T.Text
@@ -459,7 +467,7 @@ instance A.ToJSON InitialWithRoles_XXX0 where
 -- the source here.
 data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn_XXX0 :: !T.Text
-  , _uhost_m0h_roles :: ![RoleSpec]
+  , _uhost_m0h_roles_XXX0 :: ![RoleSpec]
   , _uhost_m0h_devices_XXX0 :: ![M0Device_XXX0]
   } deriving (Data, Eq, Generic, Show, Typeable)
 
@@ -485,16 +493,16 @@ resolveMeroRoles_XXX0 :: InitialWithRoles -- ^ Parsed contents of halon_facts.
 resolveMeroRoles_XXX0 InitialWithRoles{..} template =
     case partitionEithers ehosts of
         ([], hosts) ->
-            Right $ InitialData_XXX0 { id_racks_XXX0 = _rolesinit_id_racks
+            Right $ InitialData_XXX0 { id_racks_XXX0 = _rolesinit_id_racks_XXX0
                                 , id_m0_servers_XXX0 = hosts
-                                , id_m0_globals_XXX0 = _rolesinit_id_m0_globals
+                                , id_m0_globals_XXX0 = _rolesinit_id_m0_globals_XXX0
                                 }
         (errs, _) -> Left . mkException func . intercalate ", " $ concat errs
   where
     func = "resolveMeroRoles_XXX0"
 
     ehosts :: [Either [String] M0Host_XXX0]
-    ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
+    ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers_XXX0
 
     -- | Expand a host.
     mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host_XXX0
