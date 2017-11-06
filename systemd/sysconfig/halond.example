@@ -1,7 +1,10 @@
 # Address of the halond TCP endpoint in "address:port" format.
 # Required by the halond.service. Also used by halonctl/hctl to obtain
-# correct local address for its default listen endpoint.
-#HALOND_LISTEN=10.0.2.15:9010
+# correct local address for its default listen endpoint. One can refer
+# to the following sources to check unassigned port numbers:
+#   https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
+#   https://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers
+#HALOND_LISTEN=127.0.0.1:9070
 
 # There is a check that verifies that halon runs against the same mero
 # version that it was built with. This is not often necessary. Set
