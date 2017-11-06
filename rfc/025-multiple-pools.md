@@ -42,28 +42,32 @@ an item of sequence `foo`.)
 - Add top-level `profiles` section --- list of profile descriptors
   (see [New facts schema](#new-facts-schema) below).
 - Rename `id_m0_servers` to `nodes`, `id_racks` to `racks`.
+- Rename `racks/%/enc_hosts` to `racks/%/enc_controllers`.
+- Controller descriptor (`racks/%/rack_enclosures/%/enc_controllers/%`)
+  changes:
+  - use `c_` prefix for the fields;
+  - add `halon_` prefix to the fields of `c_halon` mapping (i.e.,
+    `h_halon/address` becomes `c_halon/halon_address`,
+    `h_halon/roles` --- `c_halon/halon_roles`).
 - Node descriptor (`nodes/%`) changes:
   - use `n_` prefix for the fields (this will require updating of
     "mero\_role\_mappings");
   - delete `n_mem_{as,rss,stack,memlock}` and `n_cores` fields
     (rationale: Halon can deduce these values from
-    `racks/%/rack_enclosures/%/enc_hosts/%/h_{memsize,cpucount}`);
+    `racks/%/rack_enclosures/%/enc_controllers/%/c_{memsize,cpucount}`);
   - move disks specification (formerly accessible via
-    `id_m0_servers/%/m0h_devices`) to `h_disks` field of host descriptors
-    (`racks/%/rack_enclosures/%/enc_hosts/%/h_disks`);
-  - rename `n_roles` to `n_mero_roles` and rename its `name` field to
-    `mr_name`.
-- Host descriptor (`racks/%/rack_enclosures/%/enc_hosts/%`) changes:
-  - move `h_halon/address` to `h_halon_address`;
-  - move `h_halon/roles` to `h_halon_roles` and rename its `name` field
-    to `hr_name`;
-  - `h_halon` is empty now --- delete it.
-- Disk descriptor (`racks/%/rack_enclosures/%/enc_hosts/%/h_disks/%`)
+    `id_m0_servers/%/m0h_devices`) to `c_disks` field of controller
+    descriptors (`racks/%/rack_enclosures/%/enc_controllers/%/c_disks`);
+  - rename `n_roles` to `n_mero_roles`.
+- Disk descriptor (`racks/%/rack_enclosures/%/enc_controllers/%/c_disks/%`)
   changes:
   - substitute `m0d_` prefix with `d_`;
   - add `d_pool` attribute --- a string, equal to
     `profiles/%/prof_pools/%/pool_id` of the pool which this disk
     belongs to.
+- Role descriptors
+  (`racks/%/rack_enclosures/%/enc_controllers/%/c_halon/halon_roles`
+  and `nodes/%/n_mero_roles`): add `r_` prefix to the fields.
 - Drop `id_m0_globals` section.  Some of its settings (`pdclust_attr` and
   `failure_set_gen`) are moved to `profiles/%/prof_pools/%`, the rest are
   not used.
@@ -95,15 +99,15 @@ racks:
           - bmc_addr: <string>
             bmc_user: <string>
             bmc_pass: <string>
-        enc_hosts:
-          - h_fqdn: <string>
-            h_memsize: <float>
-            h_cpucount: <integer>
-            h_interfaces:
+        enc_controllers:
+          - c_fqdn: <string>
+            c_memsize: <float>
+            c_cpucount: <integer>
+            c_interfaces:
               - if_macAddress: <string>
                 if_network: <string>
                 if_ipAddrs: [<string>]
-            h_disks:
+            c_disks:
               - d_wwn: <string>
                 d_serial: <string>
                 d_bsize: <integer>
@@ -111,14 +115,15 @@ racks:
                 d_path: <string>
                 d_slot: <integer>
                 d_pool: <string>  # = `profiles/%/prof_pools/%/pool_id`
-            h_halon_address: <string>
-            h_halon_roles:
-              - hr_name: <string>  # Reference to an item in "halon\_role\_mappings".
+            c_halon:
+              halon_address: <string>
+              halon_roles:
+                - r_name: <string>  # Reference to an item in "halon\_role\_mappings".
 nodes:
-  - n_fqdn: <string>  # = `racks/%/rack_enclosures/%/enc_hosts/%/h_fqdn`
+  - n_fqdn: <string>  # = `racks/%/rack_enclosures/%/enc_controllers/%/c_fqdn`
     n_lnid: <string>
     n_mero_roles:
-      - mr_name: <string>  # Reference to an item in "mero\_role\_mappings".
+      - r_name: <string>  # Reference to an item in "mero\_role\_mappings".
 ```
 
 #### Note-1:
