@@ -468,11 +468,11 @@ mkRole :: A.FromJSON a
        -> RoleSpec -- ^ Role to expand
        -> (a -> Either String b) -- ^ Role post-process
        -> Either String b
-mkRole template env role f = case EDE.eitherResult $ EDE.render template env' of
-  Left err -> Left $ err
-  Right roleText -> case Y.decodeEither . T.encodeUtf8 $ T.toStrict roleText of
-    Left err -> Left $ err ++ "\n" ++ T.unpack (T.toStrict (roleText))
-    Right roles -> f roles
+mkRole template env role pp = do
+    roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
+    role' <- first (++ "\n" ++ T.unpack roleText)
+        (Y.decodeEither $ T.encodeUtf8 roleText)
+    pp role'
   where
     env' = maybe env (`M.union` env) (_rolespec_overrides role)
 
