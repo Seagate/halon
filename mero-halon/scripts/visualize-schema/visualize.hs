@@ -17,32 +17,31 @@ import HA.Resources.Castor.Initial ()
 ------------------------------------------------
 
 import TH (resources)
+import Data.List (intersperse, isPrefixOf)
 
-import Control.Monad (mapM_)
-import Data.List (isPrefixOf)
-import Data.Maybe (maybeToList)
+data OutputFormat = OutputRaw | OutputDOT
 
-data OutputRaw = OutputRaw
-data OutputDOT = OutputDOT
+type RelationInfo = (String, String, String) -- (rel, a, b)
 
-class Repr a where
-    header :: a -> Maybe String
-    line :: a -> (String, String, String) -> String
-    footer :: a -> Maybe String
+header :: OutputFormat -> [String]
+header OutputDOT = ["digraph ResourceGraphSchema {"]
+header _ = []
 
-instance Repr OutputRaw where
-    header _ = Nothing
-    line _ (rel, a, b) = unwords $ map shorten [a, rel, b]
-    footer _ = Nothing
+footer :: OutputFormat -> [String]
+footer OutputDOT = ["}"]
+footer _ = []
 
-instance Repr OutputDOT where
-    header _ = Just "digraph RG {"
-    line _ (rel, a, b) = unwords $ [ "    \"" ++ shorten a ++ "\""
-                                   , "->"
-                                   , "\"" ++ shorten b ++ "\""
-                                   , "[label=\"" ++ shorten rel ++ "\"]"
-                                   ]
-    footer _ = Just "}"
+repr :: OutputFormat -> [RelationInfo] -> String
+repr fmt rs = let doc = header fmt ++ map (repr1 fmt) rs ++ footer fmt
+              in concat . intersperse "\n" $ doc
+
+repr1 :: OutputFormat -> RelationInfo -> String
+repr1 OutputRaw (rel, a, b) = unwords $ map shorten [a, rel, b]
+repr1 OutputDOT (rel, a, b) = unwords $ [ "    \"" ++ shorten a ++ "\""
+                                        , "->"
+                                        , "\"" ++ shorten b ++ "\""
+                                        , "[label=\"" ++ shorten rel ++ "\"]"
+                                        ]
 
 shorten :: String -> String
 shorten = reprefix [ ("HA.Service.Internal.Service_HA.Services", "SvcIH")
@@ -60,8 +59,4 @@ shorten = reprefix [ ("HA.Service.Internal.Service_HA.Services", "SvcIH")
       | otherwise = reprefix rest str
 
 main :: IO ()
-main = let fmt = OutputDOT
-       in mapM_ putStrLn $ concat [ maybeToList (header fmt)
-                                  , map (line fmt) $(resources ''Relation)
-                                  , maybeToList (footer fmt)
-                                  ]
+main = putStrLn $ repr OutputDOT $(resources ''Relation)
