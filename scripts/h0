@@ -55,8 +55,12 @@ cmd_test() {
         $H0_SRC_DIR/mero-halon/$($STACK path --dist-dir)/build/tests/tests "$@"
 }
 
+local_install_root() {
+    (cd "$H0_SRC_DIR" && $STACK path --local-install-root)
+}
+
 _bootstrap() {
-    local BIN=$(cd $H0_SRC_DIR && $STACK path --local-install-root)/bin
+    local BIN=$(local_install_root)/bin
 
     cd "$M0_SRC_DIR"
     HALOND=$BIN/halond HALONCTL=$BIN/halonctl \
@@ -72,15 +76,20 @@ cmd_stop() {
     _bootstrap cluster_stop
 }
 
+check_stack_dir() {
+    [ -d ~/.stack ] ||
+        die 'Stack environment is not configured. Run `h0 setup` first.'
+}
+
 cmd_path() {
-    cd "$H0_SRC_DIR"
-    echo "halon-bin: $($STACK path --local-install-root)/bin"
+    check_stack_dir
+    echo "halon-bin: $(local_install_root)/bin"
     echo "mero-libs: $M0_SRC_DIR/mero/.libs"
 }
 
 cmd_env() {
-    cd "$H0_SRC_DIR"
-    echo "export PATH=\"$($STACK path --local-install-root)/bin:\$PATH\""
+    check_stack_dir
+    echo "export PATH=\"$(local_install_root)/bin:\$PATH\""
     echo -n "export LD_LIBRARY_PATH=\"$M0_SRC_DIR/mero/.libs"
     echo "\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
 }
