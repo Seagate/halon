@@ -122,9 +122,9 @@ initialData InitialDataSettings{..} = return $ CI.InitialData_XXX0 {
                 , CI.enc_hosts_XXX0 = [
                     CI.Host_XXX0 {
                       CI.h_fqdn_XXX0 = host
-                    , CI.h_halon_XXX0 = Just $ CI.HalonSettings {
-                        CI._hs_address = showIP ifaddr ++ ":9000"
-                      , CI._hs_roles = []
+                    , CI.h_halon_XXX0 = Just $ CI.HalonSettings_XXX0 {
+                        CI._hs_address_XXX0 = showIP ifaddr ++ ":9000"
+                      , CI._hs_roles_XXX0 = []
                       }
                     }
                   ]

@@ -43,8 +43,8 @@ import qualified Text.EDE as EDE
 -- about the cluster from.
 data InitialData = InitialData
   { _id_profiles :: [Profile]
-  -- , _id_racks :: [Rack]
-  -- , _id_nodes :: [Node]
+  , _id_racks :: [Rack]
+  , _id_nodes :: [Node]
 } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable InitialData
@@ -63,7 +63,7 @@ data Profile = Profile
   { prof_id :: T.Text
   , prof_md_redundancy :: Word32
   , prof_pools :: [Pool]
-} deriving (Data, Eq, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Profile
 instance A.FromJSON Profile
@@ -91,26 +91,119 @@ instance Hashable PoolVersGen
 instance A.FromJSON PoolVersGen
 instance A.ToJSON PoolVersGen
 
-{-XXX
 data Rack = Rack {
     rack_idx :: Integer
   , rack_enclosures :: [Enclosure]
-} deriving (Data, Eq, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
 
-data Node = Node {
-    n_fqdn :: T.Text
-    n_lnid :: T.Text
-  , n_mero_roles :: [RoleSpec]
+data Enclosure = Enclosure
+  { enc_idx :: Int
+  , enc_id :: T.Text
+  , enc_bmc :: [BMC]
+  , enc_controllers :: [Controller]
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Enclosure
+instance A.FromJSON Enclosure
+instance A.ToJSON Enclosure
+
+-- | Information about Baseboard Management Controller interface,
+-- used to send commands to the hardware.
+--
+-- See <https://en.wikipedia.org/wiki/Intelligent_Platform_Management_Interface>.
+data BMC = BMC
+  { bmc_addr :: String -- ^ Address of the interface.
+  , bmc_user :: String -- ^ Username.
+  , bmc_pass :: String -- ^ Password.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable BMC
+instance A.FromJSON BMC
+instance A.ToJSON BMC
+
+-- | Controller information.
+data Controller = Controller
+  { c_fqdn :: T.Text -- ^ Fully-qualified domain name.
+  , c_memsize :: Word32 -- ^ Memory size in MB.
+  , c_cpucount :: Word32 -- ^ Number of processors.
+  , c_disks :: [Disk] -- ^ Disks attached to this controller.
+  , c_halon :: Maybe HalonSettings -- XXX Why 'Maybe'?
+  -- ^ Halon settings, if any.  Note that if unset, the node is ignored
+  -- during @hctl bootstrap cluster@ command. This does not imply that
+  -- the controller is not loaded as part of the initial data.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Controller
+instance A.FromJSON Controller
+instance A.ToJSON Controller
+
+-- | Disk information.
+data Disk = Disk {
+    d_wwn :: T.Text -- ^ World Wide Name.
+  , d_serial :: T.Text -- ^ Serial number.
+  , d_bsize :: Word32 -- ^ Block size in bytes.
+  , d_size :: Word64 -- ^ Size in bytes.
+  , d_path :: T.Text -- ^ File name in host OS (e.g. "/dev/disk/...").
+  , d_slot :: Int -- ^ Slot within the enclosure the disk is in.
+  , d_pool :: T.Text -- ^ Name of the pool this disk belongs to.
 } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Disk
+instance A.FromJSON Disk
+instance A.ToJSON Disk
+
+data Node = Node
+  { n_fqdn :: T.Text
+  , n_lnid :: T.Text
+  , n_mero_roles :: [RoleSpec]
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Node
 instance A.FromJSON Node
 instance A.ToJSON Node
--}
+
+-- | Halon-specific settings for the 'Controller'.
+data HalonSettings = HalonSettings
+  { halon_address :: String
+  -- ^ Address on which Halon should listen on, including port
+  -- (e.g. "10.0.2.15:9000").
+  , halon_roles :: [RoleSpec]
+  -- ^ List of halon roles for this controller.  Valid values are
+  -- determined by the halon roles file passed to 'parseInitialData'.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable HalonSettings
+instance A.FromJSON HalonSettings
+instance A.ToJSON HalonSettings
+
+-- | Handy synonym for role names.
+type RoleName = String
+
+-- | Specification for mero roles. Mero roles are user-defined (or
+-- provider defined). This determines which role to look-up and reify
+-- as well as any overrides to the environment.
+data RoleSpec = RoleSpec
+  { r_name :: RoleName
+  -- ^ Role name. Valid values depend on the mero roles passed to
+  -- 'parseInitialData'.
+  , r_overrides :: Maybe Y.Object
+  -- ^ Any user-provided environment for this role. If present, this
+  -- environment is unified (with precedence) with default environment
+  -- (rest of the facts) in call to 'EDE.render': this allows the user
+  -- to override values from the rest of the facts in case we want to
+  -- tweak an existing role.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable RoleSpec where
+  hashWithSalt s (RoleSpec a v) =
+    s `H.hashWithSalt` a `H.hashWithSalt` fmap HM.toList v
+
+instance A.FromJSON RoleSpec
+instance A.ToJSON RoleSpec
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
@@ -133,34 +226,34 @@ parseInitialData facts _meroRoles halonRoles = runExceptT parse
 
 -- XXX ---------------------------------------------------------------
 
--- | Halon-specific settings for the 'Host_XXX0'.
-data HalonSettings = HalonSettings
-  { _hs_address :: String
+-- | Halon-specific settings for the 'Host'.
+data HalonSettings_XXX0 = HalonSettings_XXX0
+  { _hs_address_XXX0 :: String
   -- ^ Address on which Halon should listen on, including port. e.g.
   -- @10.0.2.15:9000@.
-  , _hs_roles :: [RoleSpec]
+  , _hs_roles_XXX0 :: [RoleSpec_XXX0]
   -- ^ List of halon roles for this host. Valid values are determined
   -- by the halon roles files passed to 'parseInitialData'.
   } deriving (Data, Eq, Generic, Show, Typeable)
 
-instance Hashable HalonSettings
+instance Hashable HalonSettings_XXX0
 
 -- | JSON parser options for 'HalonSettings'.
-halonSettingsOptions :: A.Options
-halonSettingsOptions = A.defaultOptions
+halonSettingsOptions_XXX0 :: A.Options
+halonSettingsOptions_XXX0 = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hs_" :: String)) }
 
-instance A.FromJSON HalonSettings where
-  parseJSON = A.genericParseJSON halonSettingsOptions
+instance A.FromJSON HalonSettings_XXX0 where
+  parseJSON = A.genericParseJSON halonSettingsOptions_XXX0
 
-instance A.ToJSON HalonSettings where
-  toJSON = A.genericToJSON halonSettingsOptions
+instance A.ToJSON HalonSettings_XXX0 where
+  toJSON = A.genericToJSON halonSettingsOptions_XXX0
 
 -- | Information about a mero host.
 data Host_XXX0 = Host_XXX0
   { h_fqdn_XXX0 :: !T.Text
   -- ^ Fully-qualified domain name.
-  , h_halon_XXX0 :: !(Maybe HalonSettings)
+  , h_halon_XXX0 :: !(Maybe HalonSettings_XXX0)
   -- ^ Halon settings, if any. Note that if unset, the node is ignored
   -- during @hctl bootstrap cluster@ command. This does not imply that
   -- the host is not loaded as part of the initial data.
@@ -169,21 +262,6 @@ data Host_XXX0 = Host_XXX0
 instance Hashable Host_XXX0
 instance A.FromJSON Host_XXX0
 instance A.ToJSON Host_XXX0
-
--- | Information about @BMC@ interface, used to commands to the
--- hardware.
-data BMC = BMC
-  { bmc_addr :: String
-  -- ^ Address of the interface.
-  , bmc_user :: String
-  -- ^ Username
-  , bmc_pass :: String
-  -- ^ Password
-} deriving (Data, Eq, Generic, Show, Typeable)
-
-instance Hashable BMC
-instance A.FromJSON BMC
-instance A.ToJSON BMC
 
 -- | Information about enclosures.
 data Enclosure_XXX0 = Enclosure_XXX0
@@ -230,7 +308,6 @@ data HalonRole = HalonRole
   -- @
   } deriving (Show, Data, Eq, Ord, Generic, Typeable)
 
--- | Options for the 'HalonRole' JSON parser.
 halonConfigOptions :: A.Options
 halonConfigOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hc_" :: String)) }
@@ -372,17 +449,14 @@ instance Hashable InitialData_XXX0
 instance A.FromJSON InitialData_XXX0
 instance A.ToJSON InitialData_XXX0
 
--- | Handy synonym for role names
-type RoleName = String
-
 -- | Specification for Mero or Halon role. Determines which role to
 -- look-up and reify as well as any overrides to the environment.
 -- Roles are user-defined (or provider defined).
-data RoleSpec = RoleSpec
-  { _rolespec_name :: RoleName
+data RoleSpec_XXX0 = RoleSpec_XXX0
+  { _rolespec_name_XXX0 :: RoleName
   -- ^ Role name. Valid values depend on the mero roles passed to
   -- 'parseInitialData'.
-  , _rolespec_overrides :: Maybe Y.Object
+  , _rolespec_overrides_XXX0 :: Maybe Y.Object
   -- ^ Any user-provided environment for this role. If present, this
   -- environment is unified (with precedence) with default environment
   -- (rest of the facts) in call to 'EDE.render': this allows the user
@@ -397,24 +471,14 @@ rolespecJSONOptions = A.defaultOptions
   , A.omitNothingFields = True
   }
 
-instance A.FromJSON RoleSpec where
+instance A.FromJSON RoleSpec_XXX0 where
   parseJSON = A.genericParseJSON rolespecJSONOptions
 
-instance A.ToJSON RoleSpec where
+instance A.ToJSON RoleSpec_XXX0 where
   toJSON = A.genericToJSON rolespecJSONOptions
 
-instance Hashable RoleSpec where
-  hashWithSalt s (RoleSpec a v) = s `H.hashWithSalt` a `H.hashWithSalt` fmap HM.toList v
-
-{-
--- TODO: We lose overrides here but we don't care about these in first
--- place. We should do something like we have with 'UnexpandedHost' if
--- we do care about it persisting through serialisation. This is
--- short-term for purposes of bootstrap cluster command.
-instance Binary RoleSpec where
-  put (RoleSpec a _) = B.put a
-  get = RoleSpec <$> B.get <*> pure Nothing
--}
+instance Hashable RoleSpec_XXX0 where
+  hashWithSalt s (RoleSpec_XXX0 a v) = s `H.hashWithSalt` a `H.hashWithSalt` fmap HM.toList v
 
 -- | A single parsed mero role, ready to be used for building
 -- 'InitialData'.
@@ -423,7 +487,6 @@ data Role = Role
   , _role_content :: [M0Process_XXX0]
   } deriving (Data, Eq, Generic, Show, Typeable)
 
--- | Options for the 'Role' JSON parser.
 roleJSONOptions :: A.Options
 roleJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
@@ -477,11 +540,10 @@ instance A.ToJSON InitialWithRoles_XXX0 where
 -- the source here.
 data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn_XXX0 :: !T.Text
-  , _uhost_m0h_roles_XXX0 :: ![RoleSpec]
+  , _uhost_m0h_roles_XXX0 :: ![RoleSpec_XXX0]
   , _uhost_m0h_devices_XXX0 :: ![M0Device_XXX0]
   } deriving (Data, Eq, Generic, Show, Typeable)
 
--- | Options for 'UnexpandedHost' JSON parser.
 unexpandedHostJSONOptions :: A.Options
 unexpandedHostJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_uhost_" :: String)) }
@@ -518,7 +580,7 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
     mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host_XXX0
     mkHost env uhost =
         let eprocs :: [Either String [M0Process_XXX0]]
-            eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
+            eprocs = roleToProcesses env `map` _uhost_m0h_roles_XXX0 uhost
         in case partitionEithers eprocs of
             ([], procs) ->
                 Right $ M0Host_XXX0 { m0h_fqdn_XXX0 = _uhost_m0h_fqdn_XXX0 uhost
@@ -528,9 +590,9 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
             (errs, _) -> Left errs
 
     -- | Find a list of processes corresponding to the given role.
-    roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process_XXX0]
+    roleToProcesses :: Y.Object -> RoleSpec_XXX0 -> Either String [M0Process_XXX0]
     roleToProcesses env role =
-        mkRole template env role (findProcesses $ _rolespec_name role)
+        mkRole template env role (findProcesses $ _rolespec_name_XXX0 role)
 
     -- | Find a role among the others by its name and return the list
     -- of this role's processes.
@@ -546,7 +608,7 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
 mkRole :: A.FromJSON a
        => EDE.Template -- ^ Role template
        -> Y.Object -- ^ Surrounding env
-       -> RoleSpec -- ^ Role to expand
+       -> RoleSpec_XXX0 -- ^ Role to expand
        -> (a -> Either String b) -- ^ Role post-process
        -> Either String b
 mkRole template env role pp = do
@@ -555,19 +617,18 @@ mkRole template env role pp = do
         (Y.decodeEither $ T.encodeUtf8 roleText)
     pp role'
   where
-    env' = maybe env (`M.union` env) (_rolespec_overrides role)
+    env' = maybe env (`M.union` env) (_rolespec_overrides_XXX0 role)
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
 mkHalonRoles :: EDE.Template -- ^ Role template.
-             -> [RoleSpec] -- ^ Roles to expand.
+             -> [RoleSpec_XXX0] -- ^ Roles to expand.
              -> Either String [HalonRole]
 mkHalonRoles template roles =
   fmap (nub . concat) . forM roles $ \role ->
-    mkRole template mempty role (findHalonRole $ _rolespec_name role)
+    mkRole template mempty role (findHalonRole $ _rolespec_name_XXX0 role)
   where
     findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
-    findHalonRole rname halonRoles =
-        maybeToEither errMsg ((\x -> [x]) <$> findRole)
+    findHalonRole rname halonRoles = maybeToEither errMsg (:[]) <$> findRole)
       where
         findRole = find ((rname ==) . _hc_name) halonRoles
         errMsg = printf "mkHalonRoles.findHalonRole: Role \"%s\" not found\
@@ -623,6 +684,21 @@ deriveSafeCopy 0 'base ''Pool
 storageIndex           ''Pool "ff3bef0e-25d0-49d3-96ae-7e9dd5bb7864"
 deriveSafeCopy 0 'base ''PoolVersGen
 storageIndex           ''PoolVersGen "3ad171f9-2691-4554-bef7-e6997d2698f1"
+deriveSafeCopy 0 'base ''Rack
+storageIndex           ''Rack "a4551891-4903-4778-8e96-b492389f6dc7"
+deriveSafeCopy 0 'base ''Enclosure
+storageIndex           ''Enclosure "ecc47908-646a-4457-8b84-b7712ff10c32"
+deriveSafeCopy 0 'base ''BMC
+storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
+deriveSafeCopy 0 'base ''Controller
+storageIndex           ''Controller "7744280c-f12b-4798-a334-7ad572bc2924"
+deriveSafeCopy 0 'base ''Disk
+storageIndex           ''Disk "1dfdbc1d-0f1d-4dcc-bfdb-f1cdadc8db47"
+deriveSafeCopy 0 'base ''Node
+storageIndex           ''Node "53297999-5acc-4339-8b4c-3a3bcc10d6a9"
+deriveSafeCopy 0 'base ''HalonSettings
+deriveSafeCopy 0 'base ''RoleSpec
+storageIndex           ''RoleSpec "d86682e1-d839-496f-9613-1037d42b10e5"
 -- XXX ---------------------------------------------------------------
 deriveSafeCopy 0 'base ''M0Device_XXX0
 storageIndex           ''M0Device_XXX0 "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
@@ -633,13 +709,11 @@ deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
 deriveSafeCopy 0 'base ''M0Process_XXX0
 deriveSafeCopy 0 'base ''M0Service_XXX0
-deriveSafeCopy 0 'base ''BMC
-storageIndex           ''BMC "22641893-9206-48ab-b4be-b2846acf5843"
 deriveSafeCopy 0 'base ''Enclosure_XXX0
-deriveSafeCopy 0 'base ''HalonSettings
+deriveSafeCopy 0 'base ''HalonSettings_XXX0
 deriveSafeCopy 0 'base ''Host_XXX0
 deriveSafeCopy 0 'base ''InitialData_XXX0
 deriveSafeCopy 0 'base ''Rack_XXX0
 storageIndex           ''Rack_XXX0 "fe43cf82-adcd-40b5-bf74-134902424229"
-deriveSafeCopy 0 'base ''RoleSpec
-storageIndex           ''RoleSpec "495818cc-ec20-4159-ab91-37fe449af3e0"
+deriveSafeCopy 0 'base ''RoleSpec_XXX0
+storageIndex           ''RoleSpec_XXX0 "495818cc-ec20-4159-ab91-37fe449af3e0"

@@ -124,7 +124,7 @@ mkValidatedConfig racks mkRoles stationOpts =
                                           -- string?
                             in (text,) <$> parseHelper NodeAdd.parser text
 
-    hosts :: [(CI.Host_XXX0, CI.HalonSettings)]
+    hosts :: [(CI.Host_XXX0, CI.HalonSettings_XXX0)]
     hosts = [ (h, hs) | rack <- racks
                       , enc <- CI.rack_enclosures_XXX0 rack
                       , h <- CI.enc_hosts_XXX0 enc
@@ -133,12 +133,12 @@ mkValidatedConfig racks mkRoles stationOpts =
     ehosts :: AccValidation [String] [Host]
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
 
-    expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
+    expandHost :: (CI.Host_XXX0, CI.HalonSettings_XXX0) -> AccValidation [String] Host
     expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
         Left err -> _Failure # ["Halon role failure for "
                                 ++ T.unpack (CI.h_fqdn_XXX0 h) ++ ": " ++ err]
         Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn_XXX0 h
-                                      , hIp = CI._hs_address hs
+                                      , hIp = CI._hs_address_XXX0 hs
                                       , hRoles = roles
                                       , hSvcs = svcs
                                       }
@@ -156,12 +156,12 @@ mkValidatedConfig racks mkRoles stationOpts =
 
 run_XXX0 :: Options -> Process ()
 run_XXX0 Options{..} = do
-  _einitData <- liftIO $ CI.parseInitialData "/tmp/new-facts_XXX.yaml"
-                                            (fromDefault configRoles)
-                                            (fromDefault configHalonRoles)
-  liftIO . putStrLn $ "XXX " ++ case _einitData of
-      Left err -> "**ERROR** " ++ show err
-      Right (initData, _) -> show initData
+  -- _einitData <- liftIO $ CI.parseInitialData "/tmp/new-facts_XXX.yaml"
+  --                                           (fromDefault configRoles)
+  --                                           (fromDefault configHalonRoles)
+  -- liftIO . putStrLn $ "XXX " ++ case _einitData of
+  --     Left err -> "**ERROR** " ++ show err
+  --     Right (initData, _) -> show initData
   einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
