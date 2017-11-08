@@ -20,7 +20,6 @@ import Control.Distributed.Process.Node
 
 import Data.List (isInfixOf)
 
-
 import Control.Applicative ((<$>))
 import Control.Monad (when, forM_, void)
 import Data.Maybe (catMaybes)
@@ -89,7 +88,6 @@ main =
     callProcess "sudo" $ catMaybes [mld, mtl, mmr, units, tracing] ++ prog : argv
     exitSuccess
 
-
   let fn = progName ++ ".stderr.log"
 
   putStrLn $ "Redirecting stderr to " ++ fn
@@ -132,7 +130,6 @@ main =
 
       liftIO . writeFile halonFacts $ facts host
 
-
       let m0loc = m0 ++ ":9010"
           hctlloc = m0 ++ ":9001"
 
@@ -164,7 +161,6 @@ main =
 
       expectLog [nid0] (isInfixOf "Loaded initial data")
       say "Loaded initial data, waiting for server bootstrap"
-
 
       say "Starting satellite node..."
       systemLocal (satellite

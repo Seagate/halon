@@ -47,7 +47,7 @@ import           System.Environment
 import           System.Exit
 
 data Options = Options
-  { configInitialData :: Defaultable FilePath
+  { configFacts :: Defaultable FilePath
   , configMeroRoles :: Defaultable FilePath
   , configHalonRoles :: Defaultable FilePath
   , configDryRun :: Bool
@@ -162,7 +162,7 @@ run_XXX0 Options{..} = do
   -- liftIO . putStrLn $ "XXX " ++ case _einitData of
   --     Left err -> "**ERROR** " ++ show err
   --     Right (initData, _) -> show initData
-  einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configInitialData)
+  einitData <- liftIO $ CI.parseInitialData_XXX0 (fromDefault configFacts)
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
   case einitData of
@@ -179,7 +179,7 @@ run_XXX0 Options{..} = do
           mapM_ putStrLn strs
         AccSuccess ValidatedConfig{..} -> do
           verbose "Halon facts"
-          liftIO (readFile $ fromDefault configInitialData) >>= verbose
+          liftIO (readFile $ fromDefault configFacts) >>= verbose
           verbose "Mero roles"
           liftIO (readFile $ fromDefault configMeroRoles) >>= verbose
           verbose "Halon roles"
@@ -208,7 +208,7 @@ run_XXX0 Options{..} = do
 
               loadInitialData station_hosts
                               initialData
-                              (fromDefault configInitialData)
+                              (fromDefault configFacts)
                               (fromDefault configMeroRoles)
 
               when configMkfsDone $ do

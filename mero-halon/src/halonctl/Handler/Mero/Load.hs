@@ -27,7 +27,7 @@ data Options = Options
     FilePath -- ^ Facts file
     FilePath -- ^ Mero roles file
     FilePath -- ^ Halon roles file
-    Bool -- ^ validate only
+    Bool -- ^ Validate only
     Int -- ^ Timeout (seconds)
   deriving (Eq, Show)
 
@@ -70,12 +70,12 @@ parser = Options
 run_XXX0 :: [NodeId] -- ^ EQ nodes to send data to
     -> Options
     -> Process ()
-run_XXX0 eqnids (Options cf maps halonMaps verify _t) = do
-  _initData <- liftIO $ parseInitialData cf "/tmp/new-facts_XXX.yaml" halonMaps
+run_XXX0 eqnids (Options facts meroRoles halonRoles verify _t) = do
+  _initData <- liftIO $ parseInitialData facts "/tmp/new-facts_XXX.yaml" halonRoles
   liftIO . putStrLn $ "XXX " ++ case _initData of
       Left err -> "**ERROR** " ++ show err
       Right (initData, _) -> show initData
-  initData <- liftIO $ parseInitialData_XXX0 cf maps halonMaps
+  initData <- liftIO $ parseInitialData_XXX0 facts meroRoles halonRoles
   case initData of
     Left err -> liftIO $ do
       putStrLn $ prettyPrintParseException err
