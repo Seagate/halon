@@ -34,15 +34,15 @@ import           Text.Printf (printf)
 import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy (base, deriveSafeCopy)
-import           Mero.ConfC (ServiceParams, ServiceType)
+import           Mero.ConfC (PDClustAttr, ServiceParams, ServiceType)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
 
 -- | Parsed initial data that Halon buids its initial knowledge base
 -- about the cluster from.
-data InitialData = InitialData {
-    _id_profiles :: [Profile]
+data InitialData = InitialData
+  { _id_profiles :: [Profile]
   -- , _id_racks :: [Rack]
   -- , _id_nodes :: [Node]
 } deriving (Data, Eq, Generic, Show, Typeable)
@@ -59,15 +59,37 @@ instance A.FromJSON InitialData where
 instance A.ToJSON InitialData where
     toJSON = A.genericToJSON initialDataOptions
 
-data Profile = Profile {
-    prof_id :: T.Text
+data Profile = Profile
+  { prof_id :: T.Text
   , prof_md_redundancy :: Word32
-  -- , prof_pools :: [Pool]
+  , prof_pools :: [Pool]
 } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Profile
 instance A.FromJSON Profile
 instance A.ToJSON Profile
+
+-- | Information about Mero pool.
+data Pool = Pool
+  { pool_id :: T.Text -- ^ Unique name of pool.
+  , pool_pdclust_attr :: PDClustAttr -- ^ Parity de-clustering attributes.
+  , pool_vers_gen :: PoolVersGen -- ^ Pool version generator settings.
+  , pool_ver_policy :: Word32 -- ^ Policy to be used for pool version selection.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Pool
+instance A.FromJSON Pool
+instance A.ToJSON Pool
+
+-- | Defines how pool versions are generated.
+data PoolVersGen =
+    Preloaded Word32 Word32 Word32
+  | Formulaic [[Word32]]
+  deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable PoolVersGen
+instance A.FromJSON PoolVersGen
+instance A.ToJSON PoolVersGen
 
 {-XXX
 data Rack = Rack {
@@ -191,18 +213,6 @@ instance Hashable Rack_XXX0
 instance A.FromJSON Rack_XXX0
 instance A.ToJSON Rack_XXX0
 
--- | Failure set schemes. Define how failure sets are determined.
---
--- TODO: Link to some doc here.
-data FailureSetScheme =
-    Preloaded Word32 Word32 Word32
-  | Formulaic [[Word32]]
-  deriving (Data, Eq, Generic, Show, Typeable)
-
-instance Hashable FailureSetScheme
-instance A.FromJSON FailureSetScheme
-instance A.ToJSON FailureSetScheme
-
 -- | Halon config for a host
 data HalonRole = HalonRole
   { _hc_name :: RoleName
@@ -236,7 +246,7 @@ data M0Globals_XXX0 = M0Globals_XXX0 {
     m0_data_units_XXX0 :: Word32 -- ^ As in genders
   , m0_parity_units_XXX0 :: Word32  -- ^ As in genders
   , m0_md_redundancy_XXX0 :: Word32 -- ^ Metadata redundancy count
-  , m0_failure_set_gen_XXX0 :: FailureSetScheme
+  , m0_failure_set_gen_XXX0 :: PoolVersGen
   , m0_be_ios_seg_size_XXX0 :: Maybe Word64
   , m0_be_log_size_XXX0 :: Maybe Word64
   , m0_be_seg_size_XXX0 :: Maybe Word64
@@ -609,9 +619,11 @@ maybeToEither e Nothing = Left e
 
 deriveSafeCopy 0 'base ''Profile
 storageIndex           ''Profile "229722d0-8317-48c4-a278-3c45cb992f2b"
+deriveSafeCopy 0 'base ''Pool
+storageIndex           ''Pool "ff3bef0e-25d0-49d3-96ae-7e9dd5bb7864"
+deriveSafeCopy 0 'base ''PoolVersGen
+storageIndex           ''PoolVersGen "3ad171f9-2691-4554-bef7-e6997d2698f1"
 -- XXX ---------------------------------------------------------------
-deriveSafeCopy 0 'base ''FailureSetScheme
-storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device_XXX0
 storageIndex           ''M0Device_XXX0 "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals_XXX0
