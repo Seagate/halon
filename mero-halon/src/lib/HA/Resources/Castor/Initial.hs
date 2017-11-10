@@ -205,6 +205,9 @@ instance Hashable RoleSpec where
 instance A.FromJSON RoleSpec
 instance A.ToJSON RoleSpec
 
+mkException :: String -> String -> Y.ParseException
+mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
+
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Mero role map file.
@@ -224,7 +227,7 @@ parseInitialData facts _meroRoles halonRoles = runExceptT parse
         -}
         pure (initialData, edeHalonRoles)
 
--- XXX ---------------------------------------------------------------
+-- XXX ---------------------------------------------------------------
 
 -- | Halon-specific settings for the 'Host'.
 data HalonSettings_XXX0 = HalonSettings_XXX0
@@ -501,7 +504,7 @@ instance A.ToJSON Role where
 -- each given host.
 data InitialWithRoles_XXX0 = InitialWithRoles_XXX0
   { _rolesinit_id_racks_XXX0 :: [Rack_XXX0]
-  , _rolesinit_id_m0_servers_XXX0 :: [(UnexpandedHost, Y.Object)]
+  , _rolesinit_id_m0_servers_XXX0 :: [(UnexpandedHost_XXX0, Y.Object)]
     -- ^ The list of unexpanded host as well as the full object that
     -- the host was parsed out from, used as environment given during
     -- template expansion.
@@ -514,7 +517,7 @@ instance A.FromJSON InitialWithRoles_XXX0 where
                            parseServers <*>
                            v A..: "id_m0_globals_XXX0"
     where
-      parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
+      parseServers :: A.Parser [(UnexpandedHost_XXX0, Y.Object)]
       parseServers = do
         objs <- v A..: "id_m0_servers_XXX0"
         forM objs $ \obj -> (,obj) <$> A.parseJSON (A.Object obj)
@@ -538,7 +541,7 @@ instance A.ToJSON InitialWithRoles_XXX0 where
 -- let the user specify any fields they want, including the ones we
 -- don't have present and use them in their roles, without updating
 -- the source here.
-data UnexpandedHost = UnexpandedHost
+data UnexpandedHost_XXX0 = UnexpandedHost_XXX0
   { _uhost_m0h_fqdn_XXX0 :: !T.Text
   , _uhost_m0h_roles_XXX0 :: ![RoleSpec_XXX0]
   , _uhost_m0h_devices_XXX0 :: ![M0Device_XXX0]
@@ -548,14 +551,11 @@ unexpandedHostJSONOptions :: A.Options
 unexpandedHostJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_uhost_" :: String)) }
 
-instance A.FromJSON UnexpandedHost where
+instance A.FromJSON UnexpandedHost_XXX0 where
   parseJSON = A.genericParseJSON unexpandedHostJSONOptions
 
-instance A.ToJSON UnexpandedHost where
+instance A.ToJSON UnexpandedHost_XXX0 where
   toJSON = A.genericToJSON unexpandedHostJSONOptions
-
-mkException :: String -> String -> Y.ParseException
-mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
@@ -577,7 +577,7 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
     ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers_XXX0
 
     -- | Expand a host.
-    mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host_XXX0
+    mkHost :: Y.Object -> UnexpandedHost_XXX0 -> Either [String] M0Host_XXX0
     mkHost env uhost =
         let eprocs :: [Either String [M0Process_XXX0]]
             eprocs = roleToProcesses env `map` _uhost_m0h_roles_XXX0 uhost
@@ -605,19 +605,18 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
                         \ in Mero mapping file" func rname
 
 -- | Expand a role from the given template and env.
-mkRole :: A.FromJSON a
+mkRole_XXX0 :: A.FromJSON a
        => EDE.Template -- ^ Role template
        -> Y.Object -- ^ Surrounding env
        -> RoleSpec_XXX0 -- ^ Role to expand
        -> (a -> Either String b) -- ^ Role post-process
        -> Either String b
-mkRole template env role pp = do
-    roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
-    role' <- first (++ "\n" ++ T.unpack roleText)
-        (Y.decodeEither $ T.encodeUtf8 roleText)
-    pp role'
-  where
-    env' = maybe env (`M.union` env) (_rolespec_overrides_XXX0 role)
+mkRole_XXX0 template env role pp = do
+  let env' = maybe env (`M.union` env) (_rolespec_overrides_XXX0 role)
+  roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
+  role' <- first (++ "\n" ++ T.unpack roleText)
+    (Y.decodeEither $ T.encodeUtf8 roleText)
+  pp role'
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
 mkHalonRoles :: EDE.Template -- ^ Role template.
@@ -625,7 +624,7 @@ mkHalonRoles :: EDE.Template -- ^ Role template.
              -> Either String [HalonRole]
 mkHalonRoles template roles =
   fmap (nub . concat) . forM roles $ \role ->
-    mkRole template mempty role (findHalonRole $ _rolespec_name_XXX0 role)
+    mkRole_XXX0 template mempty role (findHalonRole $ _rolespec_name_XXX0 role)
   where
     findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
     findHalonRole rname halonRoles = maybeToEither errMsg (:[]) <$> findRole)
