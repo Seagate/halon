@@ -85,7 +85,7 @@ profiles:
           pa_N: <integer>  # Number of data units in a parity group (`m0_pdclust_attr::pa_N` in Mero).
           pa_K: <integer>  # Number of parity units in a parity group (`m0_pdclust_attr::pa_K` in Mero).
           pa_seed: [<integer>, <integer>]  # Seed for tile column permutations generator (`m0_pdclust_attr::pa_seed` in Mero).
-        pool_failure_set_gen:
+        pool_vers_gen:
           tag: Formulaic  # Supported values: `Formulaic`, `Preloaded`.
           contents:       # see Note-1
             - [<integer>, <integer>, <integer>, <integer>, <integer>]
