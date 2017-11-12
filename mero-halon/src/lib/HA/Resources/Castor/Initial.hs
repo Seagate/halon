@@ -424,46 +424,68 @@ mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
-resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts
-             -> FilePath -- ^ Role map file
+resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
+             -> FilePath -- ^ Mero role map file.
              -> IO (Either Y.ParseException InitialData)
-resolveRoles InitialWithRoles{..} rf = EDE.eitherParseFile rf >>= \case
-  Left err -> return $ mkExc err
-  Right template ->
-    let procRoles uh env = mkProc template env <$> _uhost_m0h_roles uh
-        allHosts :: [Either [String] M0Host]
-        allHosts = flip map _rolesinit_id_m0_servers $ \(uh, env) ->
-                     case partitionEithers $ procRoles uh env of
-                       ([], procs) -> Right $ mkHost uh (concat procs)
-                       (errs, _) -> Left errs
-    in case partitionEithers allHosts of
-      ([], hosts) -> return $ Right $
-        InitialData { id_racks = _rolesinit_id_racks
-                    , id_m0_servers = hosts
-                    , id_m0_globals = _rolesinit_id_m0_globals
-                    }
-      (errs, _) -> return . mkExc . intercalate ", " $ concat errs
+resolveRoles InitialWithRoles{..} meroRoles = runExceptT resolve
   where
-    mkProc :: EDE.Template -> Y.Object -> RoleSpec -> Either String [M0Process]
-    mkProc template env role =
-      mkRole template env role (findProcesses $ _rolespec_name role)
+    resolve :: ExceptT Y.ParseException IO InitialData
+    resolve = do
+        template <- ExceptT $ first mkExc <$> EDE.eitherParseFile meroRoles
+        ExceptT . pure $ mkInitialData template _rolesinit_id_m0_servers
 
-    mkHost :: UnexpandedHost -> [M0Process] -> M0Host
-    mkHost uh procs = M0Host { m0h_fqdn = _uhost_m0h_fqdn uh
-                             , m0h_processes = procs
-                             , m0h_devices = _uhost_m0h_devices uh
-                             }
+    mkExc = mkException "resolveRoles"
+
+    -- | Given a list of unexpanded hosts, build 'InitialData'.
+    mkInitialData :: EDE.Template
+                  -> [(UnexpandedHost, Y.Object)]
+                  -> Either Y.ParseException InitialData
+    mkInitialData template uhosts =
+        let allHosts :: [Either [String] M0Host]
+            allHosts = map (\(uhost, env) -> mkHost template env uhost) uhosts
+        in case partitionEithers allHosts of
+            ([], hosts) -> Right $
+                InitialData { id_racks = _rolesinit_id_racks
+                            , id_m0_servers = hosts
+                            , id_m0_globals = _rolesinit_id_m0_globals
+                            }
+            (errs, _) -> Left . mkExc . intercalate ", " $ concat errs
+
+    -- | Expand a host.
+    mkHost :: EDE.Template
+           -> Y.Object
+           -> UnexpandedHost
+           -> Either [String] M0Host
+    mkHost template env uhost =
+        let eprocs :: [Either String [M0Process]]
+            eprocs =
+                roleToProcesses template env `map` _uhost_m0h_roles uhost
+        in case partitionEithers eprocs of
+            ([], procs) -> Right $
+                M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
+                       , m0h_processes = concat procs
+                       , m0h_devices = _uhost_m0h_devices uhost
+                       }
+            (errs, _) -> Left errs
+
+    -- | Find a list of processes corresponding to the given role.
+    roleToProcesses :: EDE.Template
+                    -> Y.Object
+                    -> RoleSpec
+                    -> Either String [M0Process]
+    roleToProcesses template env role =
+        mkRole template env role (findProcesses $ _rolespec_name role)
+
+    -- | Find a role among the others by its name and return the list
+    -- of this role's processes.
     findProcesses :: RoleName -> [Role] -> Either String [M0Process]
     findProcesses rname roles =
         maybeToEither errMsg (_role_content <$> findRole)
       where
         findRole = find ((rname ==) . _role_name) roles
         errMsg =
-          printf "%s: Role \"%s\" not found in Mero mapping file" func rname
+            printf "%s: Role \"%s\" not found in Mero mapping file" func rname
         func = "resolveRoles.findProcesses" :: String
-
-    mkExc :: String -> Either Y.ParseException a
-    mkExc = Left . mkException "resolveRoles"
 
 -- | Expand a role from the given template and env.
 mkRole :: A.FromJSON a
