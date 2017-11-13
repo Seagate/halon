@@ -35,7 +35,7 @@ import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy (base, deriveSafeCopy)
 import           Mero.ConfC (PDClustAttr, ServiceParams, ServiceType)
-import           Mero.Lnet
+import           Mero.Lnet (Endpoint)
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
 
@@ -45,7 +45,7 @@ data InitialData = InitialData
   { _id_profiles :: [Profile]
   , _id_racks :: [Rack]
   , _id_nodes :: [Node]
-} deriving (Data, Eq, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable InitialData
 
@@ -142,29 +142,97 @@ instance A.FromJSON Controller
 instance A.ToJSON Controller
 
 -- | Disk information.
-data Disk = Disk {
-    d_wwn :: T.Text -- ^ World Wide Name.
+data Disk = Disk
+  { d_wwn :: T.Text -- ^ World Wide Name.
   , d_serial :: T.Text -- ^ Serial number.
   , d_bsize :: Word32 -- ^ Block size in bytes.
   , d_size :: Word64 -- ^ Size in bytes.
   , d_path :: T.Text -- ^ File name in host OS (e.g. "/dev/disk/...").
   , d_slot :: Int -- ^ Slot within the enclosure the disk is in.
   , d_pool :: T.Text -- ^ Name of the pool this disk belongs to.
-} deriving (Data, Eq, Generic, Show, Typeable)
+  } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Disk
 instance A.FromJSON Disk
 instance A.ToJSON Disk
 
 data Node = Node
-  { n_fqdn :: T.Text
-  , n_lnid :: T.Text
-  , n_mero_roles :: [RoleSpec]
+  { n_fqdn :: T.Text -- ^ Fully qualified domain name.
+  , n_processes :: [Process] -- ^ Processes that should run on this node.
   } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Node
 instance A.FromJSON Node
 instance A.ToJSON Node
+
+-- | Information about Mero process.
+data Process = Process
+  { p_endpoint :: Endpoint
+  -- ^ Endpoint the process should listen on.
+  , p_mem_as :: Word64
+  , p_mem_rss :: Word64
+  , p_mem_stack :: Word64
+  , p_mem_memlock :: Word64
+  , p_cores :: [Word64]
+  -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use.
+  , p_services :: [Service]
+  -- ^ List of services this process should run.
+  , p_boot_level :: ProcessType
+  -- ^ Type of process, governing how it should run.
+  , p_environment :: Maybe [(String, ProcessEnv)]
+  -- ^ Process environment - additional.
+  , p_multiplicity :: Maybe Int
+  -- ^ Process multiplicity - how many instances of this process
+  -- should be started?
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Process
+instance A.FromJSON Process
+instance A.ToJSON Process
+
+data ProcessType =
+    PTM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
+  | PTClovis String Bool -- ^ Process lives as part of a Clovis client, with
+                         -- given name. If the second parameter is set to
+                         -- 'True', then the process is independently
+                         -- controlled and should not be started/stopped
+                         -- by Halon.
+  | PTM0d Word64 -- ^ Process runs in m0d at the given boot level.
+                 -- Currently 0 = confd, 1 = other.
+  | PTHalon  -- ^ Process lives inside Halon program space.
+  deriving (Data, Eq, Show, Typeable, Generic)
+
+instance Hashable ProcessType
+instance A.FromJSON ProcessType
+instance A.ToJSON ProcessType
+
+-- | Mero process environment.
+--
+-- Values of this type become additional environment variables in the
+-- sysconfig file for this process.
+data ProcessEnv =
+    -- | A simple value, passed directly to the file.
+    PEnvValue String
+    -- | A unique range within the node.  Each process shall be given
+    -- a unique value within this range for the given environment key.
+  | PEnvRange Int Int
+  deriving (Data, Eq, Show, Typeable, Generic)
+
+instance Hashable ProcessEnv
+instance A.FromJSON ProcessEnv
+instance A.ToJSON ProcessEnv
+
+-- | Information about a service.
+data Service = Service
+  { s_type :: ServiceType -- ^ E.g. IOS, HA service.
+  , s_endpoints :: [Endpoint] -- ^ Listen endpoints for the service itself.
+  , s_params :: ServiceParams
+  , s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance Hashable Service
+instance A.FromJSON Service
+instance A.ToJSON Service
 
 -- | Halon-specific settings for the 'Controller'.
 data HalonSettings = HalonSettings
@@ -179,6 +247,10 @@ data HalonSettings = HalonSettings
 instance Hashable HalonSettings
 instance A.FromJSON HalonSettings
 instance A.ToJSON HalonSettings
+
+----------------------------------------------------------------------
+-- Roles and their expansion
+----------------------------------------------------------------------
 
 -- | Handy synonym for role names.
 type RoleName = String
@@ -205,6 +277,152 @@ instance Hashable RoleSpec where
 instance A.FromJSON RoleSpec
 instance A.ToJSON RoleSpec
 
+-- | A single parsed mero role, ready to be used for building 'InitialData'.
+data MeroRole = MeroRole
+  { mr_name :: RoleName
+  , mr_content :: [Process]
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance A.FromJSON MeroRole
+instance A.ToJSON MeroRole
+
+-- | Parse a halon_facts file into a structure indicating roles for
+-- each given controller.
+data InitialWithRoles = InitialWithRoles
+  { _rolesinit_id_profiles :: [Profile]
+  , _rolesinit_id_racks :: [Rack]
+  , _rolesinit_id_nodes :: [(UnexpandedNode, Y.Object)]
+    -- ^ The list of unexpanded host as well as the full object that
+    -- the host was parsed out from, used as environment given during
+    -- template expansion.
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+instance A.FromJSON InitialWithRoles where
+  parseJSON (A.Object v) = InitialWithRoles <$>
+                           v A..: "id_profiles" <*>
+                           v A..: "id_racks" <*>
+                           parseNodes
+    where
+      parseNodes :: A.Parser [(UnexpandedNode, Y.Object)]
+      parseNodes = do
+        objs <- v A..: "id_nodes"
+        forM objs $ \obj -> (, obj) <$> A.parseJSON (A.Object obj)
+
+  parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
+
+instance A.ToJSON InitialWithRoles where
+  toJSON InitialWithRoles{..} = A.object
+    [ "id_profiles" A..= _rolesinit_id_profiles
+    , "id_racks" A..= _rolesinit_id_racks
+    -- Dump out the full object into the file rather than our parsed
+    -- and trimmed structure. This means we won't lose any information
+    -- with @fromJSON . toJSON@.
+    , "id_nodes" A..= map snd _rolesinit_id_nodes
+    ]
+
+-- | "nodes" section of halon_facts.
+--
+-- XXX: Perhaps we shouldn't have this structure or part of this
+-- structure and simply use 'Y.Object'. That will allow us to easily
+-- let the user specify any fields they want, including the ones we
+-- don't have present and use them in their roles, without updating
+-- the source here.
+data UnexpandedNode = UnexpandedNode
+  { _unode_n_fqdn :: T.Text
+  , _unode_n_mero_roles :: [RoleSpec]
+  } deriving (Data, Eq, Generic, Show, Typeable)
+
+unexpandedNodeJSONOptions :: A.Options
+unexpandedNodeJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("_unode_" :: String)) }
+
+instance A.FromJSON UnexpandedNode where
+  parseJSON = A.genericParseJSON unexpandedHostJSONOptions
+
+instance A.ToJSON UnexpandedNode where
+  toJSON = A.genericToJSON unexpandedHostJSONOptions
+
+-- | Having parsed the facts file, expand the roles for each node to
+-- provide full 'InitialData'.
+resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
+             -> FilePath -- ^ Mero role map file.
+             -> IO (Either Y.ParseException InitialData)
+resolveRoles InitialWithRoles{..} meroRoles = runExceptT resolve
+  where
+    resolve :: ExceptT Y.ParseException IO InitialData
+    resolve = do
+        template <- ExceptT $ first mkExc <$> EDE.eitherParseFile meroRoles
+        ExceptT . pure $ mkInitialData template _rolesinit_id_nodes
+
+    mkExc = mkException "resolveRoles"
+
+    -- | Given a list of unexpanded nodes, build 'InitialData'.
+    mkInitialData :: EDE.Template
+                  -> [(UnexpandedNode, Y.Object)]
+                  -> Either Y.ParseException InitialData
+    mkInitialData template unodes =
+        let allNodes :: [Either [String] Node]
+            allNodes = map (\(unode, env) -> mkNode template env unode) unodes
+        in case partitionEithers allNodes of
+            ([], nodes) -> Right $
+                InitialData { _id_profiles = _rolesinit_id_profiles
+                            , _id_racks = _rolesinit_id_racks
+                            , _id_nodes = nodes
+                            }
+            (errs, _) -> Left . mkExc . intercalate ", " $ concat errs
+
+    -- | Expand a node.
+    mkNode :: EDE.Template
+           -> Y.Object
+           -> UnexpandedNode
+           -> Either [String] Node
+    mkNode template env unode =
+        let eprocs :: [Either String [Process]]
+            eprocs =
+                roleToProcesses template env `map` _unode_n_mero_roles unode
+        in case partitionEithers eprocs of
+            ([], procs) -> Right $ Node { n_fqdn = _unode_n_fqdn unode
+                                        , n_processes = concat procs
+                                        }
+            (errs, _) -> Left errs
+
+    -- | Find a list of processes corresponding to the given role.
+    roleToProcesses :: EDE.Template
+                    -> Y.Object
+                    -> RoleSpec
+                    -> Either String [Process]
+    roleToProcesses template env role =
+        mkRole template env role (findProcesses $ r_name role)
+
+    -- | Find a role among the others by its name and return the list
+    -- of this role's processes.
+    findProcesses :: RoleName -> [MeroRole] -> Either String [Process]
+    findProcesses rname roles =
+        maybeToEither errMsg (mr_content <$> findRole)
+      where
+        findRole = find ((rname ==) . mr_name) roles
+        errMsg =
+            printf "%s: Role \"%s\" not found in Mero mapping file" func rname
+        func = "resolveRoles.findProcesses" :: String
+
+-- | Expand a role from the given template and env.
+mkRole :: A.FromJSON a
+       => EDE.Template -- ^ Role template.
+       -> Y.Object -- ^ Surrounding env.
+       -> RoleSpec -- ^ Role to expand.
+       -> (a -> Either String b) -- ^ Role post-process.
+       -> Either String b
+mkRole template env role pp = do
+    let env' = maybe env (`M.union` env) (r_overrides role)
+    roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
+    role' <- first (++ "\n" ++ T.unpack roleText)
+        (Y.decodeEither $ T.encodeUtf8 roleText)
+    pp role'
+
+----------------------------------------------------------------------
+-- parseInitialData
+----------------------------------------------------------------------
+
 mkException :: String -> String -> Y.ParseException
 mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 
@@ -213,20 +431,20 @@ parseInitialData :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Mero role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-parseInitialData facts _meroRoles halonRoles = runExceptT parse
+parseInitialData facts meroRoles halonRoles = runExceptT parse
   where
     parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
     parse = do
         initialWithRoles <- ExceptT (Y.decodeFileEither facts)
         edeHalonRoles <- ExceptT $ first (mkException "parseInitialData")
             <$> EDE.eitherParseFile halonRoles
-        let initialData = initialWithRoles -- XXX DELETEME
-        {- XXX RESTOREME
         initialData <- ExceptT (resolveRoles initialWithRoles meroRoles)
+        {- XXX RESTOREME
         ExceptT . pure $ validateInitialData initialData
         -}
+        -- XXX TODO: Process 'edeHalonRoles' here and return only
+        -- 'initialData'.
         pure (initialData, edeHalonRoles)
-
 -- XXX ---------------------------------------------------------------
 
 -- | Halon-specific settings for the 'Host'.
@@ -485,7 +703,7 @@ instance Hashable RoleSpec_XXX0 where
 
 -- | A single parsed mero role, ready to be used for building
 -- 'InitialData'.
-data Role = Role
+data Role_XXX0 = Role_XXX0
   { _role_name :: RoleName
   , _role_content :: [M0Process_XXX0]
   } deriving (Data, Eq, Generic, Show, Typeable)
@@ -494,10 +712,10 @@ roleJSONOptions :: A.Options
 roleJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
 
-instance A.FromJSON Role where
+instance A.FromJSON Role_XXX0 where
   parseJSON = A.genericParseJSON roleJSONOptions
 
-instance A.ToJSON Role where
+instance A.ToJSON Role_XXX0 where
   toJSON = A.genericToJSON roleJSONOptions
 
 -- | Parse a halon_facts file into a structure indicating roles for
@@ -606,10 +824,10 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
 
 -- | Expand a role from the given template and env.
 mkRole_XXX0 :: A.FromJSON a
-       => EDE.Template -- ^ Role template
-       -> Y.Object -- ^ Surrounding env
-       -> RoleSpec_XXX0 -- ^ Role to expand
-       -> (a -> Either String b) -- ^ Role post-process
+       => EDE.Template -- ^ Role template.
+       -> Y.Object -- ^ Surrounding env.
+       -> RoleSpec_XXX0 -- ^ Role to expand.
+       -> (a -> Either String b) -- ^ Role post-process.
        -> Either String b
 mkRole_XXX0 template env role pp = do
   let env' = maybe env (`M.union` env) (_rolespec_overrides_XXX0 role)
@@ -627,7 +845,7 @@ mkHalonRoles template roles =
     mkRole_XXX0 template mempty role (findHalonRole $ _rolespec_name_XXX0 role)
   where
     findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
-    findHalonRole rname halonRoles = maybeToEither errMsg (:[]) <$> findRole)
+    findHalonRole rname halonRoles = maybeToEither errMsg ((:[]) <$> findRole)
       where
         findRole = find ((rname ==) . _hc_name) halonRoles
         errMsg = printf "mkHalonRoles.findHalonRole: Role \"%s\" not found\
@@ -677,6 +895,7 @@ maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither _ (Just a) = Right a
 maybeToEither e Nothing = Left e
 
+deriveSafeCopy 0 'base ''InitialData
 deriveSafeCopy 0 'base ''Profile
 storageIndex           ''Profile "229722d0-8317-48c4-a278-3c45cb992f2b"
 deriveSafeCopy 0 'base ''Pool
@@ -695,6 +914,10 @@ deriveSafeCopy 0 'base ''Disk
 storageIndex           ''Disk "1dfdbc1d-0f1d-4dcc-bfdb-f1cdadc8db47"
 deriveSafeCopy 0 'base ''Node
 storageIndex           ''Node "53297999-5acc-4339-8b4c-3a3bcc10d6a9"
+deriveSafeCopy 0 'base ''Process
+deriveSafeCopy 0 'base ''ProcessType
+deriveSafeCopy 0 'base ''ProcessEnv
+deriveSafeCopy 0 'base ''Service
 deriveSafeCopy 0 'base ''HalonSettings
 deriveSafeCopy 0 'base ''RoleSpec
 storageIndex           ''RoleSpec "d86682e1-d839-496f-9613-1037d42b10e5"
