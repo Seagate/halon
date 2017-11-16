@@ -299,25 +299,25 @@ data InitialWithRoles = InitialWithRoles
 
 instance A.FromJSON InitialWithRoles where
   parseJSON (A.Object v) = InitialWithRoles <$>
-                           v A..: "id_profiles" <*>
-                           v A..: "id_racks" <*>
+                           v A..: "profiles" <*>
+                           v A..: "racks" <*>
                            parseNodes
     where
       parseNodes :: A.Parser [(UnexpandedNode, Y.Object)]
       parseNodes = do
-        objs <- v A..: "id_nodes"
+        objs <- v A..: "nodes"
         forM objs $ \obj -> (, obj) <$> A.parseJSON (A.Object obj)
 
   parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
 
 instance A.ToJSON InitialWithRoles where
   toJSON InitialWithRoles{..} = A.object
-    [ "id_profiles" A..= _rolesinit_id_profiles
-    , "id_racks" A..= _rolesinit_id_racks
+    [ "profiles" A..= _rolesinit_id_profiles
+    , "racks" A..= _rolesinit_id_racks
     -- Dump out the full object into the file rather than our parsed
     -- and trimmed structure. This means we won't lose any information
     -- with @fromJSON . toJSON@.
-    , "id_nodes" A..= map snd _rolesinit_id_nodes
+    , "nodes" A..= map snd _rolesinit_id_nodes
     ]
 
 -- | "nodes" section of halon_facts.
