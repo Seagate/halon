@@ -810,11 +810,11 @@ resolveMeroRoles_XXX0 InitialWithRoles{..} template =
     -- | Find a list of processes corresponding to the given role.
     roleToProcesses :: Y.Object -> RoleSpec_XXX0 -> Either String [M0Process_XXX0]
     roleToProcesses env role =
-        mkRole template env role (findProcesses $ _rolespec_name_XXX0 role)
+        mkRole_XXX0 template env role (findProcesses $ _rolespec_name_XXX0 role)
 
     -- | Find a role among the others by its name and return the list
     -- of this role's processes.
-    findProcesses :: RoleName -> [Role] -> Either String [M0Process_XXX0]
+    findProcesses :: RoleName -> [Role_XXX0] -> Either String [M0Process_XXX0]
     findProcesses rname roles =
         maybeToEither errMsg (_role_content <$> findRole)
       where
