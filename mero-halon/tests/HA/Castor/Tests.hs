@@ -22,6 +22,12 @@ import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Typeable
+import           Data.Yaml (prettyPrintParseException)
+import           System.Directory (removeFile)
+import           System.Environment (getExecutablePath)
+import           System.FilePath ((</>), joinPath, splitDirectories)
+import           System.Process (callProcess)
+
 import           HA.Multimap
 import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
@@ -87,9 +93,28 @@ tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
   , testClusterLiveness transport pg
   ]
+  ++ [testSuccess "parse-initial-data" testParseInitialData]
 
 fsSize :: (a, Set.Set b) -> Int
 fsSize (_, a) = Set.size a
+
+testParseInitialData :: IO ()
+testParseInitialData = do
+    exe <- (</> "scripts" </> "h0fabricate") <$> getH0SrcDir
+    withTmpDirectory $ do
+        callProcess exe ["--output-directory", "."]
+        let files@(facts:meroRoles:halonRoles:[]) =
+              ["h0fabricated-" ++ name ++ ".yaml"
+              | name <- ["facts", "roles_mero", "roles_halon"]]
+        res <- CI.parseInitialData facts meroRoles halonRoles
+        mapM_ removeFile files
+        case res of
+            Left err -> Tasty.assertFailure $ "ParseException:\n"
+                ++ prettyPrintParseException err
+            _ -> pure ()
+  where
+      getH0SrcDir = joinPath . reverse . drop 8 . reverse . splitDirectories
+                 <$> getExecutablePath
 
 testFailureSets :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
