@@ -513,7 +513,7 @@ instance A.FromJSON Rack_XXX0
 instance A.ToJSON Rack_XXX0
 
 -- | Halon config for a host
-data HalonRole = HalonRole
+data HalonRole_XXX0 = HalonRole_XXX0
   { _hc_name :: RoleName
   -- ^ Role name
   , _hc_h_bootstrap_station :: Bool
@@ -533,10 +533,10 @@ halonConfigOptions :: A.Options
 halonConfigOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hc_" :: String)) }
 
-instance A.FromJSON HalonRole where
+instance A.FromJSON HalonRole_XXX0 where
   parseJSON = A.genericParseJSON halonConfigOptions
 
-instance A.ToJSON HalonRole where
+instance A.ToJSON HalonRole_XXX0 where
   toJSON = A.genericToJSON halonConfigOptions
 
 -- | Facts about the cluster.
@@ -837,18 +837,18 @@ mkRole_XXX0 template env role pp = do
   pp role'
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
-mkHalonRoles :: EDE.Template -- ^ Role template.
+mkHalonRoles_XXX0 :: EDE.Template -- ^ Role template.
              -> [RoleSpec_XXX0] -- ^ Roles to expand.
-             -> Either String [HalonRole]
-mkHalonRoles template roles =
+             -> Either String [HalonRole_XXX0]
+mkHalonRoles_XXX0 template roles =
   fmap (nub . concat) . forM roles $ \role ->
     mkRole_XXX0 template mempty role (findHalonRole $ _rolespec_name_XXX0 role)
   where
-    findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
+    findHalonRole :: RoleName -> [HalonRole_XXX0] -> Either String [HalonRole_XXX0]
     findHalonRole rname halonRoles = maybeToEither errMsg ((:[]) <$> findRole)
       where
         findRole = find ((rname ==) . _hc_name) halonRoles
-        errMsg = printf "mkHalonRoles.findHalonRole: Role \"%s\" not found\
+        errMsg = printf "mkHalonRoles_XXX0.findHalonRole: Role \"%s\" not found\
                         \ in Halon mapping file" rname
 
 -- | Entry point into 'InitialData' parsing.

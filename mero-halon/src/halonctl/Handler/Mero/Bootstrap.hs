@@ -88,7 +88,7 @@ parser = let
 data Host = Host
   { hFqdn :: T.Text
   , hIp :: String
-  , hRoles :: [CI.HalonRole]
+  , hRoles :: [CI.HalonRole_XXX0]
   , hSvcs :: [( String          -- service string
               , Service.Options -- parsed service config
               )]
@@ -171,7 +171,7 @@ run_XXX0 Options{..} = do
       stationOpts <- fmap (fromMaybe "") . liftIO
           $ lookupEnv "HALOND_STATION_OPTIONS"
       let evConfig = mkValidatedConfig (CI.id_racks_XXX0 initialData)
-                                       (CI.mkHalonRoles halonRoleObj)
+                                       (CI.mkHalonRoles_XXX0 halonRoleObj)
                                        stationOpts
       case evConfig of
         AccFailure strs -> liftIO $ do
@@ -189,7 +189,7 @@ run_XXX0 Options{..} = do
             out "#!/bin/sh"
             out "set -xe"
 
-          let getIps :: ([CI.HalonRole] -> Bool) -> [String]
+          let getIps :: ([CI.HalonRole_XXX0] -> Bool) -> [String]
               getIps p = map hIp $ filter (p . hRoles) vcHosts
 
               station_hosts = getIps $ any CI._hc_h_bootstrap_station -- TS
