@@ -29,6 +29,11 @@ import           Data.Proxy
 import qualified Data.Text as T
 import           Data.Typeable
 import           Data.Validation
+  ( _Either
+  , _Failure
+  , _Success
+  , AccValidation(AccFailure,AccSuccess)
+  )
 import           GHC.Generics (Generic)
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
@@ -103,7 +108,7 @@ data ValidatedConfig = ValidatedConfig
   }
 
 mkValidatedConfig :: [CI.Rack_XXX0]
-                  -> ([CI.RoleSpec] -> Either String [CI.HalonRole])
+                  -> ([CI.RoleSpec_XXX0] -> Either String [CI.HalonRole_XXX0])
                   -> String -- ^ Tracking station options.
                   -> AccValidation [String] ValidatedConfig
 mkValidatedConfig racks mkRoles stationOpts =
@@ -134,7 +139,7 @@ mkValidatedConfig racks mkRoles stationOpts =
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
 
     expandHost :: (CI.Host_XXX0, CI.HalonSettings_XXX0) -> AccValidation [String] Host
-    expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
+    expandHost (h, hs) = case mkRoles (CI._hs_roles_XXX0 hs) of
         Left err -> _Failure # ["Halon role failure for "
                                 ++ T.unpack (CI.h_fqdn_XXX0 h) ++ ": " ++ err]
         Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn_XXX0 h
@@ -144,7 +149,7 @@ mkValidatedConfig racks mkRoles stationOpts =
                                       }
                         ) <$> parseSvcs roles
 
-    parseSvcs :: [CI.HalonRole]
+    parseSvcs :: [CI.HalonRole_XXX0]
               -> AccValidation [String] [(String, Service.Options)]
     parseSvcs = sequenceA . map parseSvc . concatMap CI._hc_h_services
 
