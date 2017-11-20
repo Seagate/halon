@@ -2,8 +2,6 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
-{-# LANGUAGE CPP #-}
-
 module Lookup
   ( conjureRemoteNodeId
   , findEQFromNodes

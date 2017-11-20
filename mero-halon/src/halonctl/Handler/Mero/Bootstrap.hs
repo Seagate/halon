@@ -34,7 +34,7 @@ import           HA.EventQueue
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
-import           HA.Resources.Castor.Initial as CI
+import qualified HA.Resources.Castor.Initial as CI
 import qualified Handler.Halon.Node.Add as NodeAdd
 import qualified Handler.Halon.Service as Service
 import qualified Handler.Halon.Station as Station
@@ -85,12 +85,74 @@ parser = let
          <> Opt.help "Do not run mkfs on a cluster."
   in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
+data Host = Host
+  { hFqdn :: T.Text
+  , hIp :: String
+  , hRoles :: [CI.HalonRole]
+  , hSvcs :: [( String          -- service string
+              , Service.Options -- parsed service config
+              )]
+  }
+
 data ValidatedConfig = ValidatedConfig
-      { vcTsConfig :: (String, Station.Options)  -- ^ Tracking station config and it's representation
-      , vcSatConfig :: (String, NodeAdd.Options) -- ^ Satellite config and it's representation
-      , vcHosts :: [(T.Text, String, [HalonRole], [(String, Service.Options)])]
-        -- ^ Addresses of hosts and their halon roles: @(fqdn, ip, roles, (servicestrings, parsedserviceconfs))@
-      }
+  { vcTsConfig :: (String, Station.Options)
+  -- ^ Tracking station config and it's representation.
+  , vcSatConfig :: (String, NodeAdd.Options)
+  -- ^ Satellite config and it's representation.
+  , vcHosts :: [Host]
+  }
+
+mkValidatedConfig :: [CI.Rack]
+                  -> ([CI.RoleSpec] -> Either String [CI.HalonRole])
+                  -> String -- ^ Tracking station options.
+                  -> AccValidation [String] ValidatedConfig
+mkValidatedConfig racks mkRoles stationOpts =
+    ValidatedConfig
+        <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
+        <*> (firstErr "satellite" validateSatelliteOpts ^. from _Either)
+        <*> ehosts
+  where
+    firstErr what = first $ \e ->
+        ["Error when reading " ++ what ++ " config: " ++ showParseError e]
+
+    validateTStationOpts :: Either Opt.ParseError (String, Station.Options)
+    validateTStationOpts = let text = stationOpts
+                           in (text,) <$> parseHelper Station.parser text
+
+    validateSatelliteOpts :: Either Opt.ParseError (String, NodeAdd.Options)
+    validateSatelliteOpts = let text = "" -- XXX Why bother parsing an empty
+                                          -- string?
+                            in (text,) <$> parseHelper NodeAdd.parser text
+
+    hosts :: [(CI.Host, CI.HalonSettings)]
+    hosts = [ (h, hs) | rack <- racks
+                      , enc <- CI.rack_enclosures rack
+                      , h <- CI.enc_hosts enc
+                      , Just hs <- [CI.h_halon h] ]
+
+    ehosts :: AccValidation [String] [Host]
+    ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
+
+    expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
+    expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
+        Left err -> _Failure # ["Halon role failure for "
+                                ++ T.unpack (CI.h_fqdn h) ++ ": " ++ err]
+        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn h
+                                      , hIp = CI._hs_address hs
+                                      , hRoles = roles
+                                      , hSvcs = svcs
+                                      }
+                        ) <$> parseSvcs roles
+
+    parseSvcs :: [CI.HalonRole]
+              -> AccValidation [String] [(String, Service.Options)]
+    parseSvcs = sequenceA . map parseSvc . concatMap CI._hc_h_services
+
+    parseSvc :: String -> AccValidation [String] (String, Service.Options)
+    parseSvc str = case parseHelper Service.parser str of
+        Left err -> _Failure # ["Failure to parse service \"" ++ str ++ "\": "
+                              ++ showParseError err]
+        Right conf -> _Success # (str, conf)
 
 run :: Options -> Process ()
 run Options{..} = do
@@ -98,47 +160,14 @@ run Options{..} = do
                                             (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
   case einitData of
-    Left err -> liftIO . putStrLn $ "Failed to load initial data: " ++ show err
+    Left err -> out $ "Failed to load initial data: " ++ show err
     Right (initialData, halonRoleObj) -> do
-      -- Check services config files
-      station_opts <- fmap (fromMaybe "") . liftIO $ lookupEnv "HALOND_STATION_OPTIONS"
-      let validateTrackingStationCfg = (text,) <$> parseHelper Station.parser text
-            where text = station_opts
-          validateSatelliteCfg = (text,) <$> parseHelper NodeAdd.parser text
-            where text = ""
-
-      -- Check halon facts and get interseting info. Throw away hosts
-      -- without halon roles.
-      let ehosts = filter (\(_, _, hrs, _) -> not $ null hrs) <$> traverse unwrap hosts
-
-          hosts :: [(Host, HalonSettings)]
-          hosts = [ (h, hs) | r <- id_racks initialData
-                            , enc <- rack_enclosures r
-                            , h <- enc_hosts enc
-                            , Just hs <- [h_halon h] ]
-
-          unwrap (h, hs) = case mkHalonRoles halonRoleObj $ _hs_roles hs of
-            Left err -> _Failure # ["Halon role failure for " ++ T.unpack (h_fqdn h) ++ ": " ++ err]
-            Right hRoles -> (\srvs -> (h_fqdn h, _hs_address hs, hRoles, srvs))
-                            <$> parseSrvs hRoles
-
-          parseSrvs = sequenceA . map parseSrv . concatMap _hc_h_services
-
-          parseSrv str = case parseHelper Service.parser str of
-            Left e -> _Failure # ["Failure to parse service \"" ++ str ++ "\": " ++ printParseError e]
-            Right conf -> _Success # (str, conf)
-
-      -- Create validated config
-      let evalidatedConfig :: AccValidation [String] ValidatedConfig
-          evalidatedConfig = ValidatedConfig
-           <$> (first (\e -> ["Error when reading tracking station config:  " ++ printParseError e])
-                  validateTrackingStationCfg ^. from _Either)
-           <*> (first (\e -> ["Error when reading satellite config: " ++ printParseError e])
-                  validateSatelliteCfg  ^. from _Either)
-           <*>  ehosts
-
-      -- run bootstrap
-      case evalidatedConfig of
+      stationOpts <- fmap (fromMaybe "") . liftIO
+          $ lookupEnv "HALOND_STATION_OPTIONS"
+      let evConfig = mkValidatedConfig (CI.id_racks initialData)
+                                       (CI.mkHalonRoles halonRoleObj)
+                                       stationOpts
+      case evConfig of
         AccFailure strs -> liftIO $ do
           putStrLn "Failed to validate settings: "
           mapM_ putStrLn strs
@@ -154,26 +183,22 @@ run Options{..} = do
             out "#!/bin/sh"
             out "set -xe"
 
-          let getRoles :: ([HalonRole] -> Bool) -> [String]
-              getRoles p = map (\(_, ip, _, _) -> ip)
-                           $ filter (\(_, _, roles, _) -> p roles) vcHosts
+          let getIps :: ([CI.HalonRole] -> Bool) -> [String]
+              getIps p = map hIp $ filter (p . hRoles) vcHosts
 
-              -- no TS, some services
-          let satellite_hosts = getRoles $ const True
-              -- TS
-              station_hosts = getRoles $ any (\(HalonRole _ ts _ ) -> ts)
+              station_hosts = getIps $ any CI._hc_h_bootstrap_station -- TS
+              satellite_hosts = getIps $ const True -- no TS, some services
 
-          case null station_hosts of
-            True -> liftIO $ putStrLn "No station hosts, can't do anything"
-            False -> do
+          if null station_hosts
+            then out "No station hosts, can't do anything"
+            else do
               bootstrapStation vcTsConfig station_hosts
               bootstrapSatellites vcSatConfig station_hosts satellite_hosts
 
               out "# Starting services"
-              for_ vcHosts $ \(fqdn, ip, _, srvs) -> do
-                unless (null srvs) . out $ "# Services for " ++ show fqdn
-                for_ srvs $ \(str, conf) -> do
-                  startService ip (str, conf) station_hosts
+              for_ vcHosts $ \Host{..} -> do
+                unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
+                for_ hSvcs $ \svc -> startService hIp svc station_hosts
 
               loadInitialData station_hosts
                               initialData
@@ -185,86 +210,82 @@ run Options{..} = do
                 then out $ "halonctl -l $IP:0 mero mkfs-done --confirm "
                         ++ intercalate " -t " station_hosts
                 else do
-                 let stnodes = conjureRemoteNodeId <$> station_hosts
-                 (schan, rchan) <- newChan
-                 _ <- promulgateEQ stnodes (MarkProcessesBootstrapped schan)
-                 void $ receiveWait [ matchChan rchan (const $ return ()) ]
+                  let stnodes = conjureRemoteNodeId <$> station_hosts
+                  (schan, rchan) <- newChan
+                  _ <- promulgateEQ stnodes (MarkProcessesBootstrapped schan)
+                  void $ receiveWait [ matchChan rchan (const $ return ()) ]
 
               startCluster station_hosts
-              unless configDryRun $
-                receiveTimeout step_delay [] >> return ()
+              unless dry $ receiveTimeout step_delay [] >> return ()
   where
     dry = configDryRun
     out = liftIO . putStrLn
     verbose = liftIO . if configVerbose then putStrLn else const (return ())
-    step_delay    = 10000000
+    step_delay = 10000000
 
     startService :: String -> (String, Service.Options) -> [String] -> Process ()
-    startService host (srvString, conf) stations
-      | dry = do
-          out $ "halonctl -l $IP:0 -a " ++ host
-             ++ " halon service " ++ srv
+    startService host (svcString, conf) stations
+      | dry =
+          let svc = svcString ++ " -t " ++ intercalate " -t " stations
+          in out $ "halonctl -l $IP:0 -a " ++ host ++ " halon service " ++ svc
       | otherwise = Service.service [conjureRemoteNodeId host] conf
-      where
-        srv = srvString ++ " -t " ++ intercalate " -t " stations
 
     -- Bootstrap all halon stations.
     bootstrapStation :: (String, Station.Options) -> [String] -> Process ()
     bootstrapStation (str, _) hosts | dry = do
-       out "# Starting stations"
-       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts ++ " halon station" ++ str
+        out "# Starting stations"
+        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
+            ++ " halon station" ++ str
     bootstrapStation (_, conf) hosts = do
-      verbose $ "Starting stations: " ++ show hosts
-      Station.start nodes conf
+        verbose $ "Starting stations: " ++ show hosts
+        Station.start nodes conf
       where
         nodes = conjureRemoteNodeId <$> hosts
-    -- Bootstrap satellites
+
+    -- Bootstrap satellites.
     bootstrapSatellites :: (String, NodeAdd.Options) -> [String] -> [String] -> Process ()
     bootstrapSatellites _ stations hosts | dry = do
-       out "# Starting satellites"
-       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
-                                     ++ " halon node add -t "
-                                     ++ intercalate " -t " stations
+        out "# Starting satellites"
+        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
+            ++ " halon node add -t " ++ intercalate " -t " stations
     bootstrapSatellites (_, cfg) st hosts = do
-      verbose $ "Starting satellites" ++ show hosts
-      NodeAdd.run nodes conf >>= \case
-        [] -> return ()
-        failures -> liftIO $ do
-          putStrLn $ "nodeUp failed on following nodes: " ++ show failures
-          exitFailure
-       where
-         nodes = conjureRemoteNodeId <$> hosts
-         conf = cfg{NodeAdd.configTrackers=Configured st}
+        verbose $ "Starting satellites" ++ show hosts
+        NodeAdd.run nodes conf >>= \case
+            [] -> return ()
+            errs -> liftIO $ do
+                putStrLn $ "nodeUp failed on following nodes: " ++ show errs
+                exitFailure
+      where
+        nodes = conjureRemoteNodeId <$> hosts
+        conf = cfg { NodeAdd.configTrackers = Configured st }
 
     loadInitialData satellites _ fn roles | dry = do
-       out $ "# load intitial data"
-       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
-             ++ " mero load -f " ++ fn ++ " -r " ++ roles
+        out $ "# load intitial data"
+        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
+            ++ " mero load -f " ++ fn ++ " -r " ++ roles
     loadInitialData satellites datum _ _ = do
         verbose "Loading initial data"
-
         subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
         promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
-
         expectTimeout step_delay >>= \v -> do
-          unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
-          case v of
-            Nothing -> liftIO $ do
-              putStrLn "Timed out waiting for initial data to load."
-              exitFailure
-            Just p -> case pubValue p of
-              InitialDataLoaded -> return ()
-              InitialDataLoadFailed e -> liftIO $ do
-                putStrLn $ "Initial data load failed: " ++ e
-                exitFailure
+            unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+            case v of
+                Nothing -> liftIO $ do
+                    putStrLn "Timed out waiting for initial data to load."
+                    exitFailure
+                Just p -> case pubValue p of
+                    InitialDataLoaded -> return ()
+                    InitialDataLoadFailed e -> liftIO $ do
+                        putStrLn $ "Initial data load failed: " ++ e
+                        exitFailure
       where
         wait = void (expect :: Process ProcessMonitorNotification)
         eqnids = conjureRemoteNodeId <$> satellites
 
     startCluster stations | dry = do
-       out $ "# Start cluster"
-       out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
-             ++ " mero start"
+        out $ "# Start cluster"
+        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
+            ++ " mero start"
     startCluster stations = do
         verbose "Requesting cluster start"
         promulgateEQ stnodes ClusterStartRequest >>= flip withMonitor wait
@@ -278,11 +299,9 @@ parseHelper schm text = fst $
     Opt.runP (Opt.runParserFully Opt.SkipOpts schm t) Opt.defaultPrefs
   where t = words text
 
-
--- | Print a parser error.
-printParseError :: Opt.ParseError -> String
-printParseError (Opt.ErrorMsg x) = "error: " ++ x
-printParseError (Opt.InfoMsg x) = "error: " ++ x
-printParseError Opt.ShowHelpText = "Invalid usage"
-printParseError Opt.UnknownError = "Unknown error"
-printParseError (Opt.MissingError _ _) = "Missing error"
+showParseError :: Opt.ParseError -> String
+showParseError (Opt.ErrorMsg x) = "error: " ++ x
+showParseError (Opt.InfoMsg x) = "error: " ++ x
+showParseError Opt.ShowHelpText = "Invalid usage"
+showParseError Opt.UnknownError = "Unknown error"
+showParseError (Opt.MissingError _ _) = "Missing error"
