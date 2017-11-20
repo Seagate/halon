@@ -25,7 +25,7 @@ import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
     FilePath -- ^ Facts file
-    FilePath -- ^ Roles file
+    FilePath -- ^ Mero roles file
     FilePath -- ^ Halon roles file
     Bool -- ^ validate only
     Int -- ^ Timeout (seconds)
@@ -40,17 +40,17 @@ parser = Options
      <> Opt.metavar "FILEPATH"
       )
   <*> Opt.strOption
-      ( Opt.long "rolesfile"
+      ( Opt.long "rolesfile" -- XXX TODO: rename to "mero-roles"
      <> Opt.short 'r'
-     <> Opt.help "File containing template file with role mappings."
+     <> Opt.help "File containing template file with Mero role mappings."
      <> Opt.metavar "FILEPATH"
      <> Opt.showDefaultWith id
      <> Opt.value "/etc/halon/mero_role_mappings"
       )
   <*> Opt.strOption
-      ( Opt.long "halonrolesfile"
+      ( Opt.long "halonrolesfile" -- XXX TODO: rename to "halon-roles"
      <> Opt.short 's'
-     <> Opt.help "File containing template file with halon role mappings."
+     <> Opt.help "File containing template file with Halon role mappings."
      <> Opt.metavar "FILEPATH"
      <> Opt.showDefaultWith id
      <> Opt.value "/etc/halon/halon_role_mappings"

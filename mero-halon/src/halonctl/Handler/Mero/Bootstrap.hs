@@ -48,7 +48,7 @@ import           System.Exit
 
 data Options = Options
   { configInitialData :: Defaultable FilePath
-  , configRoles  :: Defaultable FilePath
+  , configMeroRoles :: Defaultable FilePath
   , configHalonRoles :: Defaultable FilePath
   , configDryRun :: Bool
   , configVerbose :: Bool
@@ -62,17 +62,17 @@ parser = let
             <> Opt.short 'f'
             <> Opt.help "Halon facts file"
             <> Opt.metavar "FILEPATH"
-    roles = defaultable "/etc/halon/role_maps/prov.ede" . Opt.strOption
-          $ Opt.long "roles"
+    meroRoles = defaultable "/etc/halon/role_maps/prov.ede" . Opt.strOption
+          $ Opt.long "roles" -- XXX TODO: rename to "mero-roles"
          <> Opt.short 'r'
-         <> Opt.help "Mero roles file used by halon"
+         <> Opt.help "Mero roles file used by Halon"
          <> Opt.metavar "FILEPATH"
     halonRoles = defaultable "/etc/halon/halon_role_mappings" . Opt.strOption
-          $ Opt.long "halonroles"
+          $ Opt.long "halonroles" -- XXX TODO: rename to "halon-roles"
          <> Opt.short 's'
          <> Opt.help "Halon-specific roles file"
          <> Opt.metavar "FILEPATH"
-    dry  = Opt.switch
+    dry = Opt.switch
           $ Opt.long "dry-run"
          <> Opt.short 'n'
          <> Opt.help "Do not actually start cluster, just log actions"
@@ -83,7 +83,7 @@ parser = let
     mkfs = Opt.switch
          $ Opt.long "mkfs-done"
          <> Opt.help "Do not run mkfs on a cluster."
-  in Options <$> initial <*> roles <*> halonRoles <*> dry <*> verbose <*> mkfs
+  in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
 data ValidatedConfig = ValidatedConfig
       { vcTsConfig :: (String, Station.Options)  -- ^ Tracking station config and it's representation
@@ -95,7 +95,7 @@ data ValidatedConfig = ValidatedConfig
 run :: Options -> Process ()
 run Options{..} = do
   einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
-                                            (fromDefault configRoles)
+                                            (fromDefault configMeroRoles)
                                             (fromDefault configHalonRoles)
   case einitData of
     Left err -> liftIO . putStrLn $ "Failed to load initial data: " ++ show err
@@ -146,7 +146,7 @@ run Options{..} = do
           verbose "Halon facts"
           liftIO (readFile $ fromDefault configInitialData) >>= verbose
           verbose "Mero roles"
-          liftIO (readFile $ fromDefault configRoles) >>= verbose
+          liftIO (readFile $ fromDefault configMeroRoles) >>= verbose
           verbose "Halon roles"
           liftIO (readFile $ fromDefault configHalonRoles) >>= verbose
 
@@ -178,7 +178,7 @@ run Options{..} = do
               loadInitialData station_hosts
                               initialData
                               (fromDefault configInitialData)
-                              (fromDefault configRoles)
+                              (fromDefault configMeroRoles)
 
               when configMkfsDone $ do
                 if dry

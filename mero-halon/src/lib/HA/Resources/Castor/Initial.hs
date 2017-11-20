@@ -299,9 +299,9 @@ instance A.ToJSON InitialData
 -- | Handy synonym for role names
 type RoleName = String
 
--- | Specification for mero roles. Mero roles are user-defined (or
--- provider defined). This determines which role to look-up and reify
--- as well as any overrides to the environment.
+-- | Specification for Mero or Halon role. Determines which role to
+-- look-up and reify as well as any overrides to the environment.
+-- Roles are user-defined (or provider defined).
 data RoleSpec = RoleSpec
   { _rolespec_name :: RoleName
   -- ^ Role name. Valid values depend on the mero roles passed to
@@ -383,7 +383,6 @@ instance A.FromJSON InitialWithRoles where
 
   parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
 
-
 instance A.ToJSON InitialWithRoles where
   toJSON InitialWithRoles{..} = A.object
     [ "id_racks" A..= _rolesinit_id_racks
@@ -393,7 +392,6 @@ instance A.ToJSON InitialWithRoles where
     , "id_m0_servers" A..= map snd _rolesinit_id_m0_servers
     , "id_m0_globals" A..= _rolesinit_id_m0_globals
     ]
-
 
 -- | Hosts section of halon_facts
 --
