@@ -149,8 +149,6 @@ data HalonRole = HalonRole
   -- @
   } deriving (Show, Eq, Data, Ord, Generic, Typeable)
 
-instance Hashable HalonRole
-
 -- | Options for the 'HalonRole' JSON parser.
 halonConfigOptions :: A.Options
 halonConfigOptions = A.defaultOptions
