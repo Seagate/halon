@@ -204,14 +204,14 @@ service :: [NodeId] -- ^ NodeIds of the nodes to control services on.
         -> Options
         -> Process ()
 service nids so = case so of
-  DummyServiceCmd sso    -> standardService nids sso Dummy.dummy
-  NoisyServiceCmd sso    -> standardService nids sso Noisy.noisy
-  PingServiceCmd sso    -> standardService nids sso Ping.ping
-  SSPLServiceCmd sso     -> standardService nids sso SSPL.sspl
-  SSPLHLServiceCmd sso   -> standardService nids sso SSPLHL.sspl
-  DLogServiceCmd sso     -> standardService nids sso DLog.decisionLog
-  EkgServiceCmd sso      ->standardService nids sso Ekg.ekg
-  MeroServiceCmd sso     -> standardService nids sso Mero.m0d_real
+  DummyServiceCmd sso  -> standardService nids sso Dummy.dummy
+  NoisyServiceCmd sso  -> standardService nids sso Noisy.noisy
+  PingServiceCmd sso   -> standardService nids sso Ping.ping
+  SSPLServiceCmd sso   -> standardService nids sso SSPL.sspl
+  SSPLHLServiceCmd sso -> standardService nids sso SSPLHL.sspl
+  DLogServiceCmd sso   -> standardService nids sso DLog.decisionLog
+  EkgServiceCmd sso    -> standardService nids sso Ekg.ekg
+  MeroServiceCmd sso   -> standardService nids sso Mero.m0d_real
 
 -- | Handle an instance of a "standard service" command.
 standardService :: Configuration a
