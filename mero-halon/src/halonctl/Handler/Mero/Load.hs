@@ -17,7 +17,7 @@ import           Data.Yaml (prettyPrintParseException)
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
-import           HA.Resources.Castor.Initial (InitialData_XXX0, parseInitialData_XXX0, parseInitialData)
+import           HA.Resources.Castor.Initial (parseInitialData_XXX0)
 import           Network.CEP
 import qualified Options.Applicative as Opt
 import           System.Exit (exitFailure)
@@ -71,10 +71,6 @@ run_XXX0 :: [NodeId] -- ^ EQ nodes to send data to
     -> Options
     -> Process ()
 run_XXX0 eqnids (Options facts meroRoles halonRoles verify _t) = do
-  _initData <- liftIO $ parseInitialData facts "/tmp/new-facts_XXX.yaml" halonRoles
-  liftIO . putStrLn $ "XXX " ++ case _initData of
-      Left err -> "**ERROR** " ++ show err
-      Right (initData, _) -> show initData
   initData <- liftIO $ parseInitialData_XXX0 facts meroRoles halonRoles
   case initData of
     Left err -> liftIO $ do
@@ -83,7 +79,7 @@ run_XXX0 eqnids (Options facts meroRoles halonRoles verify _t) = do
     Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
-    Right ((datum :: InitialData_XXX0), _) -> do
+    Right (datum, _) -> do
       subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
       promulgateEQ eqnids datum >>= flip withMonitor wait
       expectTimeout (_t * 1000000) >>= \v -> do
