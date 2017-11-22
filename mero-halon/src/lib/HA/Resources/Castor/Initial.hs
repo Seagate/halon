@@ -255,9 +255,9 @@ instance A.ToJSON HalonSettings
 -- | Handy synonym for role names.
 type RoleName = String
 
--- | Specification for mero roles. Mero roles are user-defined (or
--- provider defined). This determines which role to look-up and reify
--- as well as any overrides to the environment.
+-- | Specification for Mero or Halon role. Determines which role to
+-- look-up and reify as well as any overrides to the environment.
+-- Roles are user-defined (or provider defined).
 data RoleSpec = RoleSpec
   { r_name :: RoleName
   -- ^ Role name. Valid values depend on the mero roles passed to
@@ -285,6 +285,27 @@ data MeroRole = MeroRole
 
 instance A.FromJSON MeroRole
 instance A.ToJSON MeroRole
+
+-- | Halon config for a host
+data HalonRole = HalonRole
+  { hr_name :: RoleName
+  -- ^ Role name
+  , hr_bootstrap_station :: Bool
+  -- ^ Does this role make the host a tracking station?
+  , hr_services :: [T.Text]
+  -- ^ Commands starting the services for this role. For example, a
+  -- role for the CMU that requires @halon:SSPL@ and @halon:SSPL-HL@
+  -- could define its services as follows:
+  --
+  -- @
+  -- - "sspl-hl start -u sspluser -p sspl4ever"
+  -- - "sspl start -u sspluser -p sspl4ever"
+  -- @
+  } deriving (Show, Data, Eq, Ord, Generic, Typeable)
+
+-- instance Hashable HalonRole
+instance A.FromJSON HalonRole
+instance A.ToJSON HalonRole
 
 -- | Parse a halon_facts file into a structure indicating roles for
 -- each given controller.
@@ -418,6 +439,22 @@ mkRole template env role pp = do
     role' <- first (++ "\n" ++ T.unpack roleText)
         (Y.decodeEither $ T.encodeUtf8 roleText)
     pp role'
+
+-- | Expand all given 'RoleSpec's into 'HalonRole's.
+mkHalonRoles :: EDE.Template -- ^ Role template.
+             -> [RoleSpec] -- ^ Roles to expand.
+             -> Either String [HalonRole]
+mkHalonRoles template roles =
+    fmap (nub . concat) . forM roles $ \role ->
+        mkRole template mempty role (findHalonRole $ r_name role)
+  where
+    findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
+    findHalonRole rname halonRoles = maybeToEither errMsg ((:[]) <$> findRole)
+      where
+        findRole = find ((rname ==) . hr_name) halonRoles
+        errMsg =
+            printf "%s: Role \"%s\" not found in Halon mapping file" func rname
+        func = "mkHalonRoles.findHalonRole" :: String
 
 ----------------------------------------------------------------------
 -- parseInitialData
