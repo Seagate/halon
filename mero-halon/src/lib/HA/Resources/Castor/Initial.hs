@@ -131,10 +131,10 @@ data Controller = Controller
   , c_memsize :: Word32 -- ^ Memory size in MB.
   , c_cpucount :: Word32 -- ^ Number of processors.
   , c_disks :: [Disk] -- ^ Disks attached to this controller.
-  , c_halon :: Maybe HalonSettings -- XXX Why 'Maybe'?
-  -- ^ Halon settings, if any.  Note that if unset, the node is ignored
-  -- during @hctl bootstrap cluster@ command. This does not imply that
-  -- the controller is not loaded as part of the initial data.
+  , c_halon :: Maybe HalonSettings
+  -- ^ Halon settings, if any.  Note that if unset, the controller is
+  -- ignored during @hctl bootstrap cluster@ command. This does not imply
+  -- that the controller is not loaded as part of the initial data.
   } deriving (Data, Eq, Generic, Show, Typeable)
 
 instance Hashable Controller

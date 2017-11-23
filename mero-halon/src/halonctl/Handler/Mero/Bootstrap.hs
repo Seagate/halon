@@ -107,11 +107,11 @@ data ValidatedConfig = ValidatedConfig
   , vcHosts :: [Host]
   }
 
-mkValidatedConfig :: [CI.Rack_XXX0]
+mkValidatedConfig_XXX0 :: [CI.Rack_XXX0]
                   -> ([CI.RoleSpec_XXX0] -> Either String [CI.HalonRole_XXX0])
                   -> String -- ^ Tracking station options.
                   -> AccValidation [String] ValidatedConfig
-mkValidatedConfig racks mkRoles stationOpts =
+mkValidatedConfig_XXX0 racks mkRoles stationOpts =
     ValidatedConfig
         <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
         <*> (firstErr "satellite" validateSatelliteOpts ^. from _Either)
@@ -169,7 +169,7 @@ run_XXX0 Options{..} = do
     Right (initialData, halonRoleObj) -> do
       stationOpts <- fmap (fromMaybe "") . liftIO
           $ lookupEnv "HALOND_STATION_OPTIONS"
-      let evConfig = mkValidatedConfig (CI.id_racks_XXX0 initialData)
+      let evConfig = mkValidatedConfig_XXX0 (CI.id_racks_XXX0 initialData)
                                        (CI.mkHalonRoles_XXX0 halonRoleObj)
                                        stationOpts
       case evConfig of
