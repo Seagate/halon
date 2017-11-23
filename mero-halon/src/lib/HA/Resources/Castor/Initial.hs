@@ -420,56 +420,39 @@ mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
-resolveRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
-             -> FilePath -- ^ Mero role map file.
-             -> IO (Either Y.ParseException InitialData)
-resolveRoles InitialWithRoles{..} meroRoles = runExceptT resolve
+resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
+                 -> EDE.Template -- ^ Parsed Mero roles template.
+                 -> Either Y.ParseException InitialData
+resolveMeroRoles InitialWithRoles{..} template =
+    case partitionEithers ehosts of
+        ([], hosts) ->
+            Right $ InitialData { id_racks = _rolesinit_id_racks
+                                , id_m0_servers = hosts
+                                , id_m0_globals = _rolesinit_id_m0_globals
+                                }
+        (errs, _) -> Left . mkException func . intercalate ", " $ concat errs
   where
-    resolve :: ExceptT Y.ParseException IO InitialData
-    resolve = do
-        template <- ExceptT $ first mkExc <$> EDE.eitherParseFile meroRoles
-        ExceptT . pure $ mkInitialData template _rolesinit_id_m0_servers
+    func = "resolveMeroRoles"
 
-    mkExc = mkException "resolveRoles"
-
-    -- | Given a list of unexpanded hosts, build 'InitialData'.
-    mkInitialData :: EDE.Template
-                  -> [(UnexpandedHost, Y.Object)]
-                  -> Either Y.ParseException InitialData
-    mkInitialData template uhosts =
-        let allHosts :: [Either [String] M0Host]
-            allHosts = map (\(uhost, env) -> mkHost template env uhost) uhosts
-        in case partitionEithers allHosts of
-            ([], hosts) -> Right $
-                InitialData { id_racks = _rolesinit_id_racks
-                            , id_m0_servers = hosts
-                            , id_m0_globals = _rolesinit_id_m0_globals
-                            }
-            (errs, _) -> Left . mkExc . intercalate ", " $ concat errs
+    ehosts :: [Either [String] M0Host]
+    ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
 
     -- | Expand a host.
-    mkHost :: EDE.Template
-           -> Y.Object
-           -> UnexpandedHost
-           -> Either [String] M0Host
-    mkHost template env uhost =
+    mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host
+    mkHost env uhost =
         let eprocs :: [Either String [M0Process]]
-            eprocs =
-                roleToProcesses template env `map` _uhost_m0h_roles uhost
+            eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
         in case partitionEithers eprocs of
-            ([], procs) -> Right $
-                M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
-                       , m0h_processes = concat procs
-                       , m0h_devices = _uhost_m0h_devices uhost
-                       }
+            ([], procs) ->
+                Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
+                               , m0h_processes = concat procs
+                               , m0h_devices = _uhost_m0h_devices uhost
+                               }
             (errs, _) -> Left errs
 
     -- | Find a list of processes corresponding to the given role.
-    roleToProcesses :: EDE.Template
-                    -> Y.Object
-                    -> RoleSpec
-                    -> Either String [M0Process]
-    roleToProcesses template env role =
+    roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process]
+    roleToProcesses env role =
         mkRole template env role (findProcesses $ _rolespec_name role)
 
     -- | Find a role among the others by its name and return the list
@@ -479,9 +462,8 @@ resolveRoles InitialWithRoles{..} meroRoles = runExceptT resolve
         maybeToEither errMsg (_role_content <$> findRole)
       where
         findRole = find ((rname ==) . _role_name) roles
-        errMsg =
-            printf "%s: Role \"%s\" not found in Mero mapping file" func rname
-        func = "resolveRoles.findProcesses" :: String
+        errMsg = printf "%s.findProcesses: Role \"%s\" not found\
+                        \ in Mero mapping file" func rname
 
 -- | Expand a role from the given template and env.
 mkRole :: A.FromJSON a
@@ -511,25 +493,30 @@ mkHalonRoles template roles =
         maybeToEither errMsg ((\x -> [x]) <$> findRole)
       where
         findRole = find ((rname ==) . _hc_name) halonRoles
-        errMsg =
-          printf "%s: Role \"%s\" not found in Halon mapping file" func rname
-        func = "mkHalonRoles.findHalonRole" :: String
+        errMsg = printf "mkHalonRoles.findHalonRole: Role \"%s\" not found\
+                        \ in Halon mapping file" rname
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-parseInitialData facts roles halonRoles = runExceptT parse
+parseInitialData facts meroRoles halonRoles = runExceptT parse
   where
     parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
     parse = do
         initialWithRoles <- ExceptT (Y.decodeFileEither facts)
-        template <- ExceptT $ first (mkException "parseInitialData")
-            <$> EDE.eitherParseFile halonRoles
-        initialData <- ExceptT (resolveRoles initialWithRoles roles)
+        m0roles <- parseFile meroRoles
+        h0roles <- parseFile halonRoles
+        initialData <-
+            ExceptT . pure $ resolveMeroRoles initialWithRoles m0roles
         ExceptT . pure $ validateInitialData initialData
-        pure (initialData, template)
+        pure (initialData, h0roles)
+
+    parseFile :: FilePath -> ExceptT Y.ParseException IO EDE.Template
+    parseFile = ExceptT . (first mkExc <$>) . EDE.eitherParseFile
+
+    mkExc = mkException "parseInitialData"
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData idata = do
