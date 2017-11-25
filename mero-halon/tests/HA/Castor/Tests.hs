@@ -16,7 +16,7 @@ import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless, void)
 import           Data.Foldable (for_)
-import           Data.List (partition, nub)
+import           Data.List (intercalate, partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
 import qualified Data.Set as Set
@@ -95,9 +95,6 @@ tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   ]
   ++ [testSuccess "parse-initial-data" testParseInitialData]
 
-fsSize :: (a, Set.Set b) -> Int
-fsSize (_, a) = Set.size a
-
 testParseInitialData :: IO ()
 testParseInitialData = do
     exe <- (</> "scripts" </> "h0fabricate") <$> getH0SrcDir
@@ -107,14 +104,21 @@ testParseInitialData = do
               ["h0fabricated-" ++ name ++ ".yaml"
               | name <- ["facts", "roles_mero", "roles_halon"]]
         res <- CI.parseInitialData facts meroRoles halonRoles
-        mapM_ removeFile files
+        for_ files removeFile
         case res of
             Left err -> Tasty.assertFailure $ "ParseException:\n"
                 ++ prettyPrintParseException err
-            _ -> pure ()
+            Right t -> do
+                res2 <- pure $ uncurry CI.resolveHalonRoles t
+                case res2 of
+                    Left errs -> Tasty.assertFailure (intercalate ", " errs)
+                    _ -> pure ()
   where
       getH0SrcDir = joinPath . reverse . drop 8 . reverse . splitDirectories
                  <$> getExecutablePath
+
+fsSize :: (a, Set.Set b) -> Int
+fsSize (_, a) = Set.size a
 
 testFailureSets :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
