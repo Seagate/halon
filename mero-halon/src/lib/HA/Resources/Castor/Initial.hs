@@ -374,7 +374,7 @@ resolveMeroRoles InitialWithRoles{..} template =
                                 , _id_racks = _rolesinit_id_racks
                                 , _id_nodes = nodes
                                 }
-        (errs, _) -> Left . mkExc . intercalate ", " $ concat errs
+        (errs, _) -> Left . mkExc . intercalate "\n" $ concat errs
   where
     mkExc = mkException "resolveMeroRoles"
 
@@ -839,7 +839,7 @@ resolveMeroRoles_XXX0 InitialWithRoles_XXX0{..} template =
                                 , id_m0_servers_XXX0 = hosts
                                 , id_m0_globals_XXX0 = _rolesinit_id_m0_globals_XXX0
                                 }
-        (errs, _) -> Left . mkExc . intercalate ", " $ concat errs
+        (errs, _) -> Left . mkExc . intercalate "\n" $ concat errs
   where
     mkExc = mkException "resolveMeroRoles_XXX0"
 

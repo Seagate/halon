@@ -15,6 +15,7 @@ import           Control.Distributed.Process.Closure
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless, void)
+import           Data.Bifunctor (first)
 import           Data.Foldable (for_)
 import           Data.List (intercalate, partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
@@ -105,17 +106,13 @@ testParseInitialData = do
               | name <- ["facts", "roles_mero", "roles_halon"]]
         res <- CI.parseInitialData facts meroRoles halonRoles
         for_ files removeFile
-        case res of
-            Left err -> Tasty.assertFailure $ "ParseException:\n"
-                ++ prettyPrintParseException err
-            Right t -> do
-                res2 <- pure $ uncurry CI.resolveHalonRoles t
-                case res2 of
-                    Left errs -> Tasty.assertFailure (intercalate ", " errs)
-                    _ -> pure ()
+        either Tasty.assertFailure pure (check res)
   where
-      getH0SrcDir = joinPath . reverse . drop 8 . reverse . splitDirectories
-                 <$> getExecutablePath
+    getH0SrcDir = joinPath . reverse . drop 8 . reverse . splitDirectories
+                  <$> getExecutablePath
+    check e = do
+        e' <- first prettyPrintParseException e
+        void $ first (intercalate "\n") (uncurry CI.resolveHalonRoles e')
 
 fsSize :: (a, Set.Set b) -> Int
 fsSize (_, a) = Set.size a
