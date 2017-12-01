@@ -291,7 +291,7 @@ data HalonRole = HalonRole
   -- ^ Role name
   , hr_bootstrap_station :: Bool
   -- ^ Does this role make the host a tracking station?
-  , hr_services :: [T.Text]
+  , hr_services :: [String]
   -- ^ Commands starting the services for this role. For example, a
   -- role for the CMU that requires @halon:SSPL@ and @halon:SSPL-HL@
   -- could define its services as follows:
@@ -411,7 +411,7 @@ resolveMeroRoles InitialWithRoles{..} template =
 data ControllerInfo = ControllerInfo
   { ci_fqdn :: T.Text
   , ci_ip :: T.Text
-  , ci_roles :: [HalonRole]
+  , ci_hroles :: [HalonRole]
   } deriving (Eq, Show)
 
 -- XXX DOCUMENTME
@@ -435,7 +435,7 @@ resolveHalonRoles InitialData{..} template =
         Left err -> Left $ err ++ "; fqdn=" ++ show (c_fqdn ctrl)
         Right roles -> Right $ ControllerInfo { ci_fqdn = c_fqdn ctrl
                                               , ci_ip = halon_address hs
-                                              , ci_roles = roles
+                                              , ci_hroles = roles
                                               }
 
     -- | Expand all given 'RoleSpec's into 'HalonRole's.

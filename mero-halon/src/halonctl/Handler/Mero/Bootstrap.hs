@@ -27,6 +27,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import           Data.Proxy
 import qualified Data.Text as T
+import           Data.Traversable (for)
 import           Data.Typeable
 import           Data.Validation
   ( _Either
@@ -50,6 +51,7 @@ import qualified Options.Applicative.Internal as Opt
 import qualified Options.Applicative.Types as Opt
 import           System.Environment
 import           System.Exit
+import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
   { configFacts :: Defaultable FilePath
@@ -90,6 +92,108 @@ parser = let
          <> Opt.help "Do not run mkfs on a cluster."
   in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
+data NodeInfo = NodeInfo
+  { _niCtrl :: CI.ControllerInfo
+  , _niSvcs :: [( String          -- service start command
+                , Service.Options -- parsed service config
+                )]
+  } deriving Show
+
+data ValidatedConfig = ValidatedConfig
+  { vcTsConfig :: (String, Station.Options)
+  -- ^ Tracking station config and it's representation.
+  , vcSatConfig :: (String, NodeAdd.Options)
+  -- ^ Satellite config and it's representation.
+  , vcNodes :: [NodeInfo]
+  } deriving Show
+
+mkValidatedConfig :: [CI.ControllerInfo]
+                  -> String -- ^ Tracking stations options.
+                  -> AccValidation [String] ValidatedConfig
+mkValidatedConfig ctrls stationOpts =
+    ValidatedConfig
+        <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
+        <*> (firstErr "satellite" validateSatelliteOpts ^. from _Either)
+        <*> nodes
+  where
+    firstErr what = first $ \err ->
+        ["Error when reading " ++ what ++ " config: " ++ showParseError err]
+
+    validateTStationOpts :: Either Opt.ParseError (String, Station.Options)
+    validateTStationOpts = let text = stationOpts
+                           in (text,) <$> parseHelper Station.parser text
+
+    validateSatelliteOpts :: Either Opt.ParseError (String, NodeAdd.Options)
+    validateSatelliteOpts = let text = "" -- XXX Why bother parsing an empty
+                                          -- string?
+                            in (text,) <$> parseHelper NodeAdd.parser text
+
+    nodes :: AccValidation [String] [NodeInfo]
+    nodes = let ctrls' = filter (not . null . CI.ci_hroles) ctrls
+            in for ctrls' $ \c -> NodeInfo c <$> services c
+
+    services :: CI.ControllerInfo
+             -> AccValidation [String] [(String, Service.Options)]
+    services =
+        sequenceA . map parseSvc . concatMap CI.hr_services . CI.ci_hroles
+
+    parseSvc :: String -> AccValidation [String] (String, Service.Options)
+    parseSvc str = case parseHelper Service.parser str of
+        Left err -> _Failure # ["Cannot parse service " ++ show str ++ ": "
+                                ++ showParseError err]
+        Right conf -> _Success # (str, conf)
+
+_run :: Options -> Process ()
+_run Options{..} = do
+    einitData <- liftIO $ CI.parseInitialData (fromDefault configFacts)
+                                              (fromDefault configMeroRoles)
+                                              (fromDefault configHalonRoles)
+    case einitData of
+        Left err -> out2 $ "Failed to load initial data: " ++ show err
+        Right (initialData, halonRoleObj) -> do
+            case CI.resolveHalonRoles initialData halonRoleObj of
+                Left errs -> for_ ("Failed to resolve Halon roles:":errs) out2
+                Right ctrls -> do
+                    stationOpts <- fromMaybe ""
+                        <$> liftIO (lookupEnv "HALOND_STATION_OPTIONS")
+                    case mkValidatedConfig ctrls stationOpts of
+                        AccFailure errs ->
+                            for_ ("Failed to validate settings:":errs) out2
+                        AccSuccess ValidatedConfig{..} -> do
+                            verboseDumpFile "Halon facts" configFacts
+                            verboseDumpFile "Mero roles" configMeroRoles
+                            verboseDumpFile "Halon roles" configHalonRoles
+                            when configDryRun $ do
+                                out "#!/usr/bin/env bash"
+                                out "set -eu -o pipefail"
+                                out "set -x"
+                            let isTS :: NodeInfo -> Bool
+                                isTS = any CI.hr_bootstrap_station . CI.ci_hroles . _niCtrl
+
+                                getIP :: NodeInfo -> T.Text
+                                getIP = CI.ci_ip . _niCtrl
+
+                                stationHosts = map getIP $ filter isTS vcNodes
+                                _satelliteHosts = map getIP vcNodes
+
+                            if null stationHosts
+                              then out2 "No station hosts, can't do anything"
+                              else do
+                                undefined -- XXX WIP
+  where
+    out = liftIO . putStrLn
+    out2 = liftIO . hPutStrLn stderr
+    -- _verbose = liftIO . if configVerbose then putStrLn else const (pure ())
+    -- _verbose = if configVerbose then liftIO . putStrLn else const (pure ())
+
+    verboseDumpFile :: String -> Defaultable FilePath -> Process ()
+    verboseDumpFile title path = when configVerbose . liftIO $ do
+        putStrLn $ "--- " ++ title ++ " ---"
+        readFile (fromDefault path) >>= putStrLn
+        putStrLn "----------"
+
+-- XXX ---------------------------------------------------------------
+
 data Host = Host
   { hFqdn :: T.Text
   , hIp :: String
@@ -99,20 +203,20 @@ data Host = Host
               )]
   }
 
-data ValidatedConfig = ValidatedConfig
-  { vcTsConfig :: (String, Station.Options)
+data ValidatedConfig_XXX0 = ValidatedConfig_XXX0
+  { vcTsConfig_XXX0 :: (String, Station.Options)
   -- ^ Tracking station config and it's representation.
-  , vcSatConfig :: (String, NodeAdd.Options)
+  , vcSatConfig_XXX0 :: (String, NodeAdd.Options)
   -- ^ Satellite config and it's representation.
-  , vcHosts :: [Host]
+  , vcHosts_XXX0 :: [Host]
   }
 
 mkValidatedConfig_XXX0 :: [CI.Rack_XXX0]
                   -> ([CI.RoleSpec_XXX0] -> Either String [CI.HalonRole_XXX0])
                   -> String -- ^ Tracking station options.
-                  -> AccValidation [String] ValidatedConfig
+                  -> AccValidation [String] ValidatedConfig_XXX0
 mkValidatedConfig_XXX0 racks mkRoles stationOpts =
-    ValidatedConfig
+    ValidatedConfig_XXX0
         <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
         <*> (firstErr "satellite" validateSatelliteOpts ^. from _Either)
         <*> ehosts
@@ -176,7 +280,7 @@ run_XXX0 Options{..} = do
         AccFailure strs -> liftIO $ do
           putStrLn "Failed to validate settings: "
           mapM_ putStrLn strs
-        AccSuccess ValidatedConfig{..} -> do
+        AccSuccess ValidatedConfig_XXX0{..} -> do
           verbose "Halon facts"
           liftIO (readFile $ fromDefault configFacts) >>= verbose
           verbose "Mero roles"
@@ -189,19 +293,19 @@ run_XXX0 Options{..} = do
             out "set -xe"
 
           let getIps :: ([CI.HalonRole_XXX0] -> Bool) -> [String]
-              getIps p = map hIp $ filter (p . hRoles) vcHosts
+              getIps p = map hIp $ filter (p . hRoles) vcHosts_XXX0
 
               station_hosts = getIps $ any CI._hc_h_bootstrap_station -- TS
-              satellite_hosts = getIps $ const True -- no TS, some services
+              satellite_hosts = getIps $ const True
 
           if null station_hosts
             then out "No station hosts, can't do anything"
             else do
-              bootstrapStation vcTsConfig station_hosts
-              bootstrapSatellites vcSatConfig station_hosts satellite_hosts
+              bootstrapStation vcTsConfig_XXX0 station_hosts
+              bootstrapSatellites vcSatConfig_XXX0 station_hosts satellite_hosts
 
               out "# Starting services"
-              for_ vcHosts $ \Host{..} -> do
+              for_ vcHosts_XXX0 $ \Host{..} -> do
                 unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
                 for_ hSvcs $ \svc -> startService hIp svc station_hosts
 

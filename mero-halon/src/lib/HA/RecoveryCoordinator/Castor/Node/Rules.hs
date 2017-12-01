@@ -197,7 +197,6 @@ type FldLnetInfo = '("mLnetInfo", Maybe LnetInfo)
 fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
 
-
 type FldHost = '("host", Maybe Host_XXX1)
 fldHost :: Proxy FldHost
 fldHost = Proxy

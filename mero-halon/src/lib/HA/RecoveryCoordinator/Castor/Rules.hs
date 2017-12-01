@@ -90,6 +90,7 @@ ruleInitialDataLoad =
                 putLocalGraph graph'
                 syncGraphBlocking
             Monolithic update -> modifyLocalGraph update
+
           -- Note that we call these after doing the 'update', which creates
           -- pool versions for the IO pools. The reason for this is that
           -- 'createIMeta', at least, generates additional disks for use in the
@@ -100,6 +101,7 @@ ruleInitialDataLoad =
           -- multiple types of pools. In the meantime, creating these fake
           -- devices later works.
           createMDPoolPVer filesystem
+
           createIMeta filesystem
           validateConf
 

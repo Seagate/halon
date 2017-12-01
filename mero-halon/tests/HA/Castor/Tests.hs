@@ -23,7 +23,6 @@ import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Typeable
-import           Data.Yaml (prettyPrintParseException)
 import           System.Directory (removeFile)
 import           System.Environment (getExecutablePath)
 import           System.FilePath ((</>), joinPath, splitDirectories)
@@ -111,7 +110,7 @@ testParseInitialData = do
     getH0SrcDir = joinPath . reverse . drop 8 . reverse . splitDirectories
                   <$> getExecutablePath
     check e = do
-        e' <- first prettyPrintParseException e
+        e' <- first show e
         void $ first (intercalate "\n") (uncurry CI.resolveHalonRoles e')
 
 fsSize :: (a, Set.Set b) -> Int
