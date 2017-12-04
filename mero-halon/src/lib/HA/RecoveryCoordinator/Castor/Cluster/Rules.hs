@@ -223,7 +223,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
     inferType srvs
       | any (\(M0.Service _ t _) -> t == CST_IOS) srvs = "ioservice"
       | any (\(M0.Service _ t _) -> t == CST_MDS) srvs = "mdservice"
-      | any (\(M0.Service _ t _) -> t == CST_MGS) srvs = "confd    "
+      | any (\(M0.Service _ t _) -> t == CST_CONFD) srvs = "confd    "
       | otherwise                                        = "m0d      "
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
@@ -292,7 +292,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
                    , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
                    , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
                    , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
-                   , M0.s_type sv == CST_MGS
+                   , M0.s_type sv == CST_CONFD
                    ]
           traverse_ setPrincipalRMIfUnset $
             listToMaybe [ srv

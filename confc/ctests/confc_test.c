@@ -49,8 +49,8 @@ static const char* show_service_type(enum m0_conf_service_type t) {
 			return "M0_CST_MDS";
 		case M0_CST_IOS:
 			return "M0_CST_IOS";
-		case M0_CST_MGS:
-			return "M0_CST_MGS";
+		case M0_CST_CONFD:
+			return "M0_CST_CONFD";
 		case M0_CST_RMS:
 			return "M0_CST_RMS";
 		case M0_CST_STS:

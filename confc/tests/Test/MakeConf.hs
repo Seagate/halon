@@ -108,9 +108,9 @@ transaction server1_endpoint server2_endpoint tx = do
   addProcess tx (fids "process")  (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
   addProcess tx (fids "process2") (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
   addService tx (fids "confd")    (fids "process")
-    $ ServiceInfo  CST_MGS [server1_endpoint] (SPConfDBPath server1_endpoint)
+    $ ServiceInfo CST_CONFD [server1_endpoint] (SPConfDBPath server1_endpoint)
   addService tx (fids "confd2")   (fids "process2")
-    $ ServiceInfo CST_MGS [server2_endpoint] (SPConfDBPath server1_endpoint)
+    $ ServiceInfo CST_CONFD [server2_endpoint] (SPConfDBPath server1_endpoint)
   addService tx (fids "rms")   (fids "process")
     $ ServiceInfo CST_RMS [server1_endpoint] (SPConfDBPath server1_endpoint)
   addService tx (fids "ha")    (fids "process2")

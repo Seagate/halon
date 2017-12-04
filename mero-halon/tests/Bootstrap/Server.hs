@@ -246,7 +246,7 @@ facts host = unlines $
   , "        tag: SPConfDBPath"
   , "        contents: /var/mero/confd"
   , "      m0s_type:"
-  , "        tag: CST_MGS"
+  , "        tag: CST_CONFD"
   , "        contents: []"
   , "    m0p_mem_rss: 1"
   , "    m0p_mem_as: 1"

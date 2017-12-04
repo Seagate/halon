@@ -177,7 +177,7 @@ calculateRunLevel = do
       confdprocs <- getLocalGraph <&> \rg ->
         Process.getLabeled (M0.PLM0d $ M0.BootLevel 0) rg & filter
           (\p -> any
-              (\s -> M0.s_type s == CST_MGS)
+              (\s -> M0.s_type s == CST_CONFD)
               (G.connectedTo p M0.IsParentOf rg)
           )
       onlineProcs <- getLocalGraph <&>
@@ -303,7 +303,7 @@ configureMeroProcess :: (MeroToSvc -> Process ())
 configureMeroProcess sender p runType = do
   rg <- getLocalGraph
   uid <- liftIO nextRandom
-  conf <- if any (\s -> M0.s_type s == CST_MGS)
+  conf <- if any (\s -> M0.s_type s == CST_CONFD)
                $ G.connectedTo p M0.IsParentOf rg
           then ProcessConfigLocal p <$> syncToBS
           else return $! ProcessConfigRemote p

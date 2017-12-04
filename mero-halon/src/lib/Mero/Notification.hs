@@ -655,10 +655,10 @@ getSpielAddress b g =
   let ep2s = T.unpack . encodeEndpoint
       svs = M0.getM0Services g
       qsize = if b
-              then length [ () | Service {s_type = CST_MGS} <- svs ]
+              then length [ () | Service {s_type = CST_CONFD} <- svs ]
               else length confdsFid
       (confdsFid,confdsEps) = nub *** nub . concat $ unzip
-        [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_MGS, s_endpoints = eps }) <- svs
+        [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_CONFD, s_endpoints = eps }) <- svs
                     , b || M0.getState svc g == M0.SSOnline ]
       (rmFids, rmEps) = unzip
         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs

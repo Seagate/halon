@@ -80,7 +80,7 @@ getUnstartedProcesses :: M0.Node -> G.Graph -> [(M0.Process, M0.ProcessState)]
 getUnstartedProcesses n rg =
   let isPOnline :: M0.Process -> Bool
       isPOnline p = M0.getState p rg == M0.PSOnline
-      isM0t1fs (M0.s_type -> t) = t `notElem` [CST_IOS, CST_MDS, CST_MGS, CST_HA]
+      isM0t1fs (M0.s_type -> t) = t `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA]
   in [ (p, M0.getState p rg)
      | p <- G.connectedTo n M0.IsParentOf rg
      , not $ isPOnline p

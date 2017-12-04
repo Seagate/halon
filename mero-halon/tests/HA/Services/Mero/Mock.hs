@@ -212,7 +212,7 @@ sendProcessEvents p petype setype pid = do
                           | otherwise = TAG_M0_CONF_HA_PROCESS_M0D
       where
         isM0T1FS :: M0.Service -> Bool
-        isM0T1FS (M0.s_type -> t) = t `notElem` [CST_IOS, CST_MDS, CST_MGS, CST_HA]
+        isM0T1FS (M0.s_type -> t) = t `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA]
 
     sendProcessEvent :: ProcessType -> Process ()
     sendProcessEvent pt = do
@@ -296,7 +296,7 @@ mockRunCmd cmd svcN mp = do
         -- m0t1fs. If yes, PID 0.
         Just (ProcessState { _ps_svcs = svcs })
           | all (\s -> M0.s_type s `notElem`
-                  [CST_IOS, CST_MDS, CST_MGS, CST_HA]) svcs -> (mls, 0)
+                  [CST_IOS, CST_MDS, CST_CONFD, CST_HA]) svcs -> (mls, 0)
         -- We don't have a PID for this process (or have process
         -- without state), just assign next available PID.
         _ -> swap $ mls & m_last_pid <+~ 1

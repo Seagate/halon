@@ -323,7 +323,7 @@ getProcess po = do
 data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     = CST_MDS     -- ^ Meta-data service
     | CST_IOS     -- ^ IO service
-    | CST_MGS     -- ^ Management service (confd)
+    | CST_CONFD   -- ^ Confd service
     | CST_RMS     -- ^ Resource management
     | CST_STS     -- ^ Stats service
     | CST_HA      -- ^ HA service
@@ -349,7 +349,7 @@ instance ToJSON ServiceType
 instance Enum ServiceType where
   toEnum #{const M0_CST_MDS}      = CST_MDS
   toEnum #{const M0_CST_IOS}      = CST_IOS
-  toEnum #{const M0_CST_MGS}      = CST_MGS
+  toEnum #{const M0_CST_CONFD}    = CST_CONFD
   toEnum #{const M0_CST_RMS}      = CST_RMS
   toEnum #{const M0_CST_STS}      = CST_STS
   toEnum #{const M0_CST_HA}       = CST_HA
@@ -368,7 +368,7 @@ instance Enum ServiceType where
 
   fromEnum CST_MDS          = #{const M0_CST_MDS}
   fromEnum CST_IOS          = #{const M0_CST_IOS}
-  fromEnum CST_MGS          = #{const M0_CST_MGS}
+  fromEnum CST_CONFD        = #{const M0_CST_CONFD}
   fromEnum CST_RMS          = #{const M0_CST_RMS}
   fromEnum CST_STS          = #{const M0_CST_STS}
   fromEnum CST_HA           = #{const M0_CST_HA}

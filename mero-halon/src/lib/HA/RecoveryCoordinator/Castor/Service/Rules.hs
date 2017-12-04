@@ -65,7 +65,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
              Nothing -> False
              Just srv -> fromMaybe False $ do
                p :: M0.Process <- G.connectedFrom M0.IsParentOf srv rg
-               is_m0t1fs <- Just $ all (\s -> M0.s_type s `notElem` [CST_IOS, CST_MDS, CST_MGS, CST_HA])
+               is_m0t1fs <- Just $ all (\s -> M0.s_type s `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA])
                                        (G.connectedTo p M0.IsParentOf rg)
                if spid == -1
                then return True -- if message is old and does not contain pid, we accept message.

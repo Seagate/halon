@@ -221,7 +221,7 @@ confdProcess ifaddr = CI.M0Process
   , CI.m0p_cores = [1]
   , CI.m0p_services =
     [ CI.M0Service
-        { CI.m0s_type = CST_MGS
+        { CI.m0s_type = CST_CONFD
         , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
         , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         , CI.m0s_pathfilter = Nothing }

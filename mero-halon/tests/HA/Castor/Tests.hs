@@ -305,7 +305,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getLocalGraph
            let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_MGS
+                                 , M0.s_type srv == ConfC.CST_CONFD
                                  , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                        (connectedTo ps M0.IsParentOf rg)
                                  ]
@@ -318,7 +318,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getLocalGraph
            let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_MGS
+                                 , M0.s_type srv == ConfC.CST_CONFD
                                  , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                              (connectedTo ps M0.IsParentOf rg)
                                  ]
@@ -331,7 +331,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getLocalGraph
            let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
                                  , srv <- connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_MGS
+                                 , M0.s_type srv == ConfC.CST_CONFD
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
            )

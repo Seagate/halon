@@ -183,7 +183,7 @@ pickPrincipalRM = getLocalGraph >>= \g ->
         , G.isConnected proc Is M0.PSOnline g
         , let srv_types = M0.s_type <$>
                 (G.connectedTo proc M0.IsParentOf g)
-        , CST_MGS `elem` srv_types
+        , CST_CONFD `elem` srv_types
         , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
         , G.isConnected proc Is M0.PSOnline g
         , M0.s_type rm == CST_RMS
