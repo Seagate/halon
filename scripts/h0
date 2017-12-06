@@ -78,7 +78,7 @@ cmd_stop() {
 
 check_stack_dir() {
     [ -d ~/.stack ] ||
-        die 'Stack environment is not configured. Run `h0 setup` first.'
+        die "Stack environment is not configured. Run \`$PROG setup' first."
 }
 
 cmd_path() {
@@ -92,6 +92,11 @@ cmd_env() {
     echo "export PATH=\"$(local_install_root)/bin:\$PATH\""
     echo -n "export LD_LIBRARY_PATH=\"$M0_SRC_DIR/mero/.libs"
     echo "\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
+}
+
+cmd_clean() {
+    cd "$H0_SRC_DIR"
+    $STACK clean "$@"
 }
 
 cmd_help() {
@@ -123,15 +128,15 @@ Commands:
     env                  Print shell commands that, if evaluated, simplify
                          execution of Halon binaries located in the sources
                          directory.
+    clean [OPTION]...    Clean the local packages.
     help                 Show this help and exit.
 
 Options:
-    'rebuild' and 'make' commands support stack build options
-    (e.g., \`--fast'). Type \`stack build --help' for the full list.
+    'make', 'test', and 'clean' commands support options of the Haskell Tool
+    Stack. Type \`stack <command> --help' for the documentation.
 
 Environment variables:
-    M0_SRC_DIR    Path to Mero sources directory;
-                  defaults to '$M0_SRC_DIR'.
+    M0_SRC_DIR    Path to Mero sources directory; defaults to '$M0_SRC_DIR'.
 EOF
 }
 
@@ -139,7 +144,7 @@ CMD=
 OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|start|stop|path|env|help)
+        setup|make|rebuild|test|start|stop|path|env|clean|help)
             [[ -z $CMD ]] || _exec $CMD $OPTS
             CMD=cmd_${1//-/_}
             OPTS=;;
