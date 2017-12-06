@@ -9,12 +9,6 @@ Category:      Network
 Build-Type:    Custom
 Cabal-Version: >= 1.10
 
-custom-setup
-  setup-depends:
-    base,
-    Cabal,
-    process
-
 Library
   Default-Language:    Haskell2010
   exposed-modules:     Mero.ConfC

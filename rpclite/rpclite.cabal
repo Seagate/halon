@@ -7,11 +7,6 @@ build-type:          Custom
 cabal-version:       >=1.10
 data-files:          rpclite/rpclite.h
 
-custom-setup
-  setup-depends:
-    base,
-    Cabal
-
 library
   exposed-modules:     Mero
                        Mero.Concurrent
