@@ -349,7 +349,7 @@ class RoleMero(ToYaml):
                                                               lnet_tmid)
         self.services = {
             'ha': ('HA', 'RMS'),
-            'confd': ('MGS', 'RMS'),
+            'confd': ('CONFD', 'RMS'),
             'mds': ('RMS', 'MDS', 'ADDB2'),
             'storage': ('RMS', 'IOS', 'SNS_REP', 'SNS_REB', 'ADDB2'),
             'm0t1fs': ('RMS',)
@@ -379,9 +379,9 @@ class RoleMero(ToYaml):
                          's_endpoints: ["{}"]'.format(self.endpoint))
             lines.append(indent(depth+5) + 's_params:')
             lines.append(indent(depth+6) + 'tag: SP{}'.format(
-                'ConfDBPath' if svc in ('HA', 'MGS') else 'Unused'))
+                'ConfDBPath' if svc in ('HA', 'CONFD') else 'Unused'))
             lines.append(indent(depth+6) + 'contents: {}'.format(
-                '"/var/mero/confd"' if svc in ('HA', 'MGS') else '[]'))
+                '"/var/mero/confd"' if svc in ('HA', 'CONFD') else '[]'))
         return lines
 
 
