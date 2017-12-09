@@ -21,7 +21,7 @@ import           Control.Lens
 import           Control.Monad (unless, when, void)
 import           Data.Bifunctor
 import           Data.Defaultable (Defaultable(..), defaultable, fromDefault)
-import           Data.Foldable (for_)
+import           Data.Foldable (for_, traverse_)
 import           Data.List (intercalate)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
@@ -45,12 +45,12 @@ import qualified Handler.Halon.Node.Add as NodeAdd
 import qualified Handler.Halon.Service as Service
 import qualified Handler.Halon.Station as Station
 import           Lookup (conjureRemoteNodeId)
-import           Network.CEP (Published(..))
+import           Network.CEP (pubValue)
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Internal as Opt
 import qualified Options.Applicative.Types as Opt
-import           System.Environment
-import           System.Exit
+import           System.Environment (lookupEnv)
+import           System.Exit (exitFailure)
 import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
@@ -93,10 +93,10 @@ parser = let
   in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
 
 data NodeInfo = NodeInfo
-  { _niCtrl :: CI.ControllerInfo
-  , _niSvcs :: [( String          -- service start command
-                , Service.Options -- parsed service config
-                )]
+  { niCtrl :: CI.ControllerInfo
+  , niSvcs :: [( String          -- service start command
+               , Service.Options -- parsed service config
+               )]
   } deriving Show
 
 data ValidatedConfig = ValidatedConfig
@@ -144,47 +144,81 @@ mkValidatedConfig ctrls stationOpts =
         Right conf -> _Success # (str, conf)
 
 _run :: Options -> Process ()
-_run Options{..} = do
+_run opts@Options{..} = do
     einitData <- liftIO $ CI.parseInitialData (fromDefault configFacts)
                                               (fromDefault configMeroRoles)
                                               (fromDefault configHalonRoles)
     case einitData of
-        Left err -> out2 $ "Failed to load initial data: " ++ show err
+        Left err -> perrors ("Failed to load initial data:" : [show err])
         Right (initialData, halonRoleObj) -> do
             case CI.resolveHalonRoles initialData halonRoleObj of
-                Left errs -> for_ ("Failed to resolve Halon roles:":errs) out2
+                Left errs -> perrors ("Failed to resolve Halon roles:":errs)
                 Right ctrls -> do
                     stationOpts <- fromMaybe ""
                         <$> liftIO (lookupEnv "HALOND_STATION_OPTIONS")
                     case mkValidatedConfig ctrls stationOpts of
                         AccFailure errs ->
-                            for_ ("Failed to validate settings:":errs) out2
-                        AccSuccess ValidatedConfig{..} -> do
-                            verboseDumpFile "Halon facts" configFacts
-                            verboseDumpFile "Mero roles" configMeroRoles
-                            verboseDumpFile "Halon roles" configHalonRoles
-                            when configDryRun $ do
-                                out "#!/usr/bin/env bash"
-                                out "set -eu -o pipefail"
-                                out "set -x"
-                            let isTS :: NodeInfo -> Bool
-                                isTS = any CI.hr_bootstrap_station . CI.ci_hroles . _niCtrl
+                            perrors ("Failed to validate settings:":errs)
+                        AccSuccess vconf -> bootstrap initialData vconf opts
+  where
+    perrors :: [String] -> Process ()
+    perrors = traverse_ out2
 
-                                getIP :: NodeInfo -> T.Text
-                                getIP = CI.ci_ip . _niCtrl
+bootstrap :: CI.InitialData -> ValidatedConfig -> Options -> Process ()
+bootstrap initialData ValidatedConfig{..} Options{..} = do
+    verboseDumpFile "Halon facts" configFacts
+    verboseDumpFile "Mero roles" configMeroRoles
+    verboseDumpFile "Halon roles" configHalonRoles
 
-                                stationHosts = map getIP $ filter isTS vcNodes
-                                _satelliteHosts = map getIP vcNodes
+    when configDryRun $ do
+        out "#!/usr/bin/env bash"
+        out "set -eu -o pipefail"
+        out "set -x"
+        out ""
 
-                            if null stationHosts
-                              then out2 "No station hosts, can't do anything"
-                              else do
-                                undefined -- XXX WIP
+    let getIP :: NodeInfo -> String
+        getIP = T.unpack . CI.ci_ip . niCtrl
+
+        isTS :: NodeInfo -> Bool
+        isTS = any CI.hr_bootstrap_station . CI.ci_hroles . niCtrl
+
+        stationHosts = map getIP (filter isTS vcNodes)
+        satelliteHosts = map getIP vcNodes
+
+    if null stationHosts
+      then out2 "No station hosts, can't do anything"
+      else do
+        bootstrapStation vcTsConfig stationHosts
+        bootstrapSatellites vcSatConfig stationHosts satelliteHosts
+
+        out "# Starting services"
+        for_ vcNodes $ \ni@NodeInfo{..} -> do
+            unless (null niSvcs) $
+                out $ "# Services for " ++ show (CI.ci_fqdn niCtrl)
+            for_ niSvcs $ \svc -> startService (getIP ni) svc stationHosts
+
+        loadInitialData stationHosts
+                        initialData
+                        (fromDefault configFacts)
+                        (fromDefault configMeroRoles)
+
+        when configMkfsDone $ do
+            if configDryRun
+            then out $ "halonctl -l $IP:0 mero mkfs-done --confirm"
+                    ++ preintercalate " -t " stationHosts
+            else do
+                (sp, rp) <- newChan
+                _ <- promulgateEQ (nids stationHosts)
+                                  (MarkProcessesBootstrapped sp)
+                void $ receiveWait [ matchChan rp (const $ pure ()) ]
+
+        startCluster stationHosts
+        unless configDryRun $
+            void $ receiveTimeout stepDelay []
   where
     out = liftIO . putStrLn
-    out2 = liftIO . hPutStrLn stderr
-    -- _verbose = liftIO . if configVerbose then putStrLn else const (pure ())
-    -- _verbose = if configVerbose then liftIO . putStrLn else const (pure ())
+    verbose = if configVerbose then liftIO . putStrLn else const (pure ())
+    stepDelay = 10000000
 
     verboseDumpFile :: String -> Defaultable FilePath -> Process ()
     verboseDumpFile title path = when configVerbose . liftIO $ do
@@ -192,7 +226,92 @@ _run Options{..} = do
         readFile (fromDefault path) >>= putStrLn
         putStrLn "----------"
 
--- XXX ---------------------------------------------------------------
+    nids :: [String] -> [NodeId]
+    nids = map conjureRemoteNodeId
+
+    bootstrapStation :: (String, Station.Options) -> [String] -> Process ()
+    bootstrapStation (str, _) stations | configDryRun = do
+        out "# Starting stations"
+        out $ "halonctl -l $IP:0" ++ preintercalate " -a " stations
+            ++ " halon station " ++ str
+    bootstrapStation (_, conf) stations = do
+        verbose $ "Starting stations: " ++ show stations
+        Station.start (nids stations) conf
+
+    bootstrapSatellites :: (String, NodeAdd.Options)
+                        -> [String]
+                        -> [String]
+                        -> Process ()
+    bootstrapSatellites _ stations satellites | configDryRun = do
+        out "# Starting satellites"
+        out $ "halonctl -l $IP:0" ++ preintercalate " -a " satellites
+            ++ " halon node add" ++ preintercalate " -t " stations
+    bootstrapSatellites (_, conf) stations satellites = do
+        verbose $ "Starting satellites: " ++ show satellites
+        let conf' = conf { NodeAdd.configTrackers = Configured stations }
+        NodeAdd.run (nids satellites) conf' >>= \case
+            [] -> pure ()
+            errs -> do
+                out2 $ "nodeUp failed on following nodes: " ++ show errs
+                liftIO exitFailure
+
+    startService :: String
+                 -> (String, Service.Options)
+                 -> [String]
+                 -> Process ()
+    startService ip (str, conf) stations
+      | configDryRun =
+            out $ "halonctl -l $IP:0 -a " ++ ip
+                ++ " halon service " ++ str ++ preintercalate " -t " stations
+      | otherwise = Service.service (nids [ip]) conf
+
+    loadInitialData :: [String]
+                    -> CI.InitialData
+                    -> FilePath
+                    -> FilePath
+                    -> Process ()
+    loadInitialData stations _ facts meroRoles | configDryRun = do
+        out $ "# Load intitial data"
+        out $ "halonctl -l $IP:0" ++ preintercalate " -a " stations
+            ++ " mero load -f " ++ facts ++ " -r " ++ meroRoles
+    loadInitialData stations datum _ _ = do
+        verbose "Loading initial data"
+        let eqnids = nids stations
+        subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
+        promulgateEQ eqnids datum >>= withMonitorWait
+        expectTimeout stepDelay >>= \v -> do
+            unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+            case v of
+                Nothing -> do
+                    out2 "Timed out waiting for initial data to load"
+                    liftIO exitFailure
+                Just p -> case pubValue p of
+                    InitialDataLoadFailed err -> do
+                        out2 $ "Initial data load failed: " ++ err
+                        liftIO exitFailure
+                    InitialDataLoaded -> pure ()
+
+    startCluster :: [String] -> Process ()
+    startCluster stations | configDryRun = do
+        out "# Start cluster"
+        out $ "halonctl -l $IP:0" ++ preintercalate " -a " stations
+            ++ " mero start"
+    startCluster stations = do
+        verbose "Requesting cluster start"
+        promulgateEQ (nids stations) ClusterStartRequest >>= withMonitorWait
+
+out2 :: String -> Process ()
+out2 = liftIO . hPutStrLn stderr
+
+preintercalate :: [a] -> [[a]] -> [a]
+preintercalate xs xss = xs ++ intercalate xs xss
+
+withMonitorWait :: ProcessId -> Process ()
+withMonitorWait =
+    let wait = void (expect :: Process ProcessMonitorNotification)
+    in flip withMonitor wait
+
+-- XXX ---------------------------------------------------------------
 
 data Host = Host
   { hFqdn :: T.Text
@@ -309,7 +428,7 @@ run_XXX0 Options{..} = do
                 unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
                 for_ hSvcs $ \svc -> startService hIp svc station_hosts
 
-              loadInitialData station_hosts
+              loadInitialData_XXX station_hosts
                               initialData
                               (fromDefault configFacts)
                               (fromDefault configMeroRoles)
@@ -344,7 +463,7 @@ run_XXX0 Options{..} = do
     bootstrapStation (str, _) hosts | dry = do
         out "# Starting stations"
         out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
-            ++ " halon station" ++ str
+            ++ " halon station" ++ str  -- XXX ? s/station/station /
     bootstrapStation (_, conf) hosts = do
         verbose $ "Starting stations: " ++ show hosts
         Station.start nodes conf
@@ -368,11 +487,11 @@ run_XXX0 Options{..} = do
         nodes = conjureRemoteNodeId <$> hosts
         conf = cfg { NodeAdd.configTrackers = Configured st }
 
-    loadInitialData satellites _ fn roles | dry = do
+    loadInitialData_XXX stations _ fn roles | dry = do
         out $ "# load intitial data"
-        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
+        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
             ++ " mero load -f " ++ fn ++ " -r " ++ roles
-    loadInitialData satellites datum _ _ = do
+    loadInitialData_XXX stations datum _ _ = do
         verbose "Loading initial data"
         subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
         promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
@@ -389,7 +508,7 @@ run_XXX0 Options{..} = do
                         exitFailure
       where
         wait = void (expect :: Process ProcessMonitorNotification)
-        eqnids = conjureRemoteNodeId <$> satellites
+        eqnids = conjureRemoteNodeId <$> stations
 
     startCluster stations | dry = do
         out $ "# Start cluster"

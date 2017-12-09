@@ -7,17 +7,18 @@ module Lookup
   , findEQFromNodes
   ) where
 
-import qualified HA.EQTracker          as EQT
-
-import Control.Distributed.Process
-
-import qualified Network.Transport.TCP as TCP
+import qualified HA.EQTracker as EQT
+import           Network.Transport.TCP (encodeEndPointAddress)
+import           Control.Distributed.Process
+  ( NodeId(..)
+  , Process
+  , expectTimeout
+  )
 
 conjureRemoteNodeId :: String -> NodeId
 conjureRemoteNodeId addr =
-    NodeId $ TCP.encodeEndPointAddress host port 0
-  where
-    (host, _:port) = break (== ':') addr
+    let (host, _:port) = break (== ':') addr
+    in NodeId (encodeEndPointAddress host port 0)
 
 -- | Look up the location of the EQ by querying the EQTracker(s) on the
 --   provided node(s)
