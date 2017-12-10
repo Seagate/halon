@@ -35,6 +35,7 @@ import qualified Options.Applicative.Extras as Opt
 
 data Options =
     Bootstrap Bootstrap.Options
+  | XXX_NEW_Bootstrap Bootstrap.Options
   | Drive Drive.Options
   | Dump Dump.Options
   | Load Load.Options
@@ -54,6 +55,7 @@ data Options =
 parser :: Opt.Parser Options
 parser = Opt.subparser $ mconcat
   [ Opt.cmd "bootstrap" (Bootstrap <$> Bootstrap.parser) "Bootstrap cluster."
+  , Opt.cmd "XXX_NEW_bootstrap" (XXX_NEW_Bootstrap <$> Bootstrap.parser) "Bootstrap cluster."
   , Opt.cmd "drive" (Drive <$> Drive.parser) "Commands to drive"
   , Opt.cmd "dump" (Dump <$> Dump.parser) "Dump embedded confd database to file."
   , Opt.cmd "load" (Load <$> Load.parser) "Load initial data into the system."
@@ -86,6 +88,7 @@ mero nids' opt = do
   dispatch rnids opt
   where
     dispatch _    (Bootstrap opts) = Bootstrap.run_XXX0 opts
+    dispatch _    (XXX_NEW_Bootstrap opts) = Bootstrap.run opts
     dispatch nids (Drive opts) = Drive.run nids opts
     dispatch nids (Dump opts) = Dump.run nids opts
     dispatch nids (Load opts) = Load.run_XXX0 nids opts

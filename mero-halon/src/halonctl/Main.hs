@@ -35,7 +35,6 @@ import           System.Environment (getProgName)
 import           System.Process (readProcess)
 import           Version.Read
 
-
 printHeader :: IO ()
 printHeader = putStrLn "This is halonctl/TCP"
 
@@ -48,7 +47,6 @@ main = getOptions >>= maybe version run
     version = do
       printHeader
       versionString >>= putStrLn
-
 
 data Options = Options
     { optTheirAddress :: ![String] -- ^ Addresses of halond nodes to control.
@@ -71,7 +69,6 @@ instance Monoid SystemOptions where
 getOptions :: IO (Maybe Options)
 getOptions = do
     self <- getProgName
-
     hostname <- readProcess "hostname" [] ""
     defaults <- doesFileExist sysconfig >>= \case
       True -> mconcat . fmap toSystemOptions . lines <$> readFile sysconfig
@@ -109,7 +106,7 @@ getOptions = do
     trim = filter (liftA2 (||) isAlphaNum isPunctuation)
 
 run :: Options -> IO ()
-run (Options { .. }) =
+run Options{..} =
   let (hostname, _:port) = break (== ':') optOurAddress in
   bracket (either (error . show) id <$>
                TCP.createTransport hostname port

@@ -13,6 +13,7 @@
 module Handler.Mero.Bootstrap
   ( Options(..)
   , parser
+  , run
   , run_XXX0
   ) where
 
@@ -143,8 +144,8 @@ mkValidatedConfig ctrls stationOpts =
                                 ++ showParseError err]
         Right conf -> _Success # (str, conf)
 
-_run :: Options -> Process ()
-_run opts@Options{..} = do
+run :: Options -> Process ()
+run opts@Options{..} = do
     einitData <- liftIO $ CI.parseInitialData (fromDefault configFacts)
                                               (fromDefault configMeroRoles)
                                               (fromDefault configHalonRoles)
