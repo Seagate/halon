@@ -41,6 +41,9 @@ import           HA.EventQueue
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           HA.RecoveryCoordinator.RC.Events.Cluster
+  ( InitialDataLoaded(..)
+  , InitialDataLoaded_XXX3(..)
+  )
 import qualified HA.Resources.Castor.Initial as CI
 import qualified Handler.Halon.Node.Add as NodeAdd
 import qualified Handler.Halon.Service as Service
@@ -489,22 +492,22 @@ run_XXX0 Options{..} = do
         conf = cfg { NodeAdd.configTrackers = Configured st }
 
     loadInitialData_XXX stations _ fn roles | dry = do
-        out $ "# load intitial data"
+        out $ "# Load intitial data"
         out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
             ++ " mero load -f " ++ fn ++ " -r " ++ roles
     loadInitialData_XXX stations datum _ _ = do
         verbose "Loading initial data"
-        subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
+        subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded_XXX3)
         promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
         expectTimeout step_delay >>= \v -> do
-            unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+            unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded_XXX3)
             case v of
                 Nothing -> liftIO $ do
                     putStrLn "Timed out waiting for initial data to load."
                     exitFailure
                 Just p -> case pubValue p of
-                    InitialDataLoaded -> return ()
-                    InitialDataLoadFailed e -> liftIO $ do
+                    InitialDataLoaded_XXX3 -> return ()
+                    InitialDataLoadFailed_XXX3 e -> liftIO $ do
                         putStrLn $ "Initial data load failed: " ++ e
                         exitFailure
       where

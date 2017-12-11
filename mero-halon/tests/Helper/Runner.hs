@@ -52,6 +52,9 @@ import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import           HA.RecoveryCoordinator.RC.Events.Cluster
+  ( InitialDataLoaded_XXX3(..)
+  , NewNodeConnected(..)
+  )
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
@@ -346,11 +349,11 @@ run' transport pg extraRules to test = do
         HalonVarsUpdated{} <- expectPublished
         return ()
 
-      withSubscription [rcNodeId] (Proxy :: Proxy InitialDataLoaded) $ do
+      withSubscription [rcNodeId] (Proxy :: Proxy InitialDataLoaded_XXX3) $ do
         _ <- promulgateEQ [rcNodeId] idata
         expectPublished >>= \case
-          InitialDataLoaded -> return ()
-          InitialDataLoadFailed e -> fail e
+          InitialDataLoaded_XXX3 -> return ()
+          InitialDataLoadFailed_XXX3 e -> fail e
 
       when (_to_run_sspl to) $ do
         _ <- serviceStartOnNodes [rcNodeId] sspl ssplConf nids

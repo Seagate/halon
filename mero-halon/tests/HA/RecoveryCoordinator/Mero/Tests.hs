@@ -192,7 +192,7 @@ testConfLoads :: (Typeable g, RGroup g)
               => CI.InitialData_XXX0 -- ^ Initial data to load
               -> Transport -- ^ Transport
               -> Proxy g -- ^ Replicated group type
-              -> (InitialDataLoaded -> Bool) -- ^ Expected load result
+              -> (InitialDataLoaded_XXX3 -> Bool) -- ^ Expected load result
               -> IO ()
 testConfLoads iData transport pg expectedResultP = do
   runDefaultTest transport $ do
@@ -200,7 +200,7 @@ testConfLoads iData transport pg expectedResultP = do
     sayTest $ "tests node: " ++ show nid
     withTrackingStation pg [] $ \ta -> do
       nodeUp [nid]
-      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded)
+      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded_XXX3)
       void $ promulgateEQ [nid] iData
       r <- expectPublished
       unless (expectedResultP r) $ do
@@ -210,7 +210,7 @@ testConfLoads iData transport pg expectedResultP = do
 testGoodConfLoads :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testGoodConfLoads t pg = do
   iData <- liftIO defaultInitialData
-  testConfLoads iData t pg (== InitialDataLoaded)
+  testConfLoads iData t pg (== InitialDataLoaded_XXX3)
 
 -- | Check that we can detect a bad conf. Bad conf is produced by
 -- setting invalid endpoints for every process. Only the suffix of the
@@ -219,7 +219,7 @@ testBadConfDoesNotLoad :: (Typeable g, RGroup g)
                            => Transport -> Proxy g -> IO ()
 testBadConfDoesNotLoad t pg = do
   iData <- mkData
-  testConfLoads iData t pg (\case { InitialDataLoadFailed _ -> True ; _ -> False })
+  testConfLoads iData t pg (\case { InitialDataLoadFailed_XXX3 _ -> True ; _ -> False })
   where
     mkData = do
       iData <- liftIO defaultInitialData
@@ -248,10 +248,10 @@ testProcessMultiplicity t pg = runDefaultTest t $ do
     sayTest $ "tests node: " ++ show nid
     withTrackingStation pg [] $ \ta -> do
       nodeUp [nid]
-      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded)
+      subscribe (ta_rc ta) (Proxy :: Proxy InitialDataLoaded_XXX3)
       void $ promulgateEQ [nid] iData
       r <- expectPublished
-      unless (r == InitialDataLoaded) $ do
+      unless (r == InitialDataLoaded_XXX3) $ do
         fail $ "Initial data loaded unexpectedly with " ++ show r
       graph <- G.getGraph $ ta_mm ta
       let procs = Process.getLabeled M0.PLM0t1fs graph

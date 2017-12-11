@@ -40,7 +40,7 @@ import           Network.CEP
 -- | Collection of Castor rules.
 castorRules :: Definitions RC ()
 castorRules = sequence_
-  [ ruleInitialDataLoad
+  [ ruleInitialDataLoad_XXX3
   , Filesystem.rules
   , Process.rules
   , Drive.rules
@@ -53,13 +53,13 @@ castorRules = sequence_
 -- | Load initial data from facts file into the system.
 --
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
-ruleInitialDataLoad :: Definitions RC ()
-ruleInitialDataLoad =
+ruleInitialDataLoad_XXX3 :: Definitions RC ()
+ruleInitialDataLoad_XXX3 =
   defineSimpleTask "castor::initial-data-load" $ \CI.InitialData_XXX0{..} -> do
     rg <- getLocalGraph
     let err logPrefix msg = do
           Log.rcLog' Log.ERROR $ logPrefix ++ msg
-          notify $ InitialDataLoadFailed msg
+          notify $ InitialDataLoadFailed_XXX3 msg
 
         validateConf = validateTransactionCache >>= \case
           Left e -> do
@@ -70,7 +70,7 @@ ruleInitialDataLoad =
             err "Conf failed to validate: " e
           Right Nothing -> do
             Log.rcLog' Log.DEBUG "Initial data loaded."
-            notify InitialDataLoaded
+            notify InitialDataLoaded_XXX3
 
         load = do
           mapM_ goRack id_racks_XXX0

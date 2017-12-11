@@ -80,17 +80,17 @@ run_XXX0 eqnids (Options facts meroRoles halonRoles verify _t) = do
       putStrLn "Initial data file parsed successfully."
       print datum
     Right (datum, _) -> do
-      subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
+      subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded_XXX3)
       promulgateEQ eqnids datum >>= flip withMonitor wait
       expectTimeout (_t * 1000000) >>= \v -> do
-        unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
+        unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded_XXX3)
         case v of
           Nothing -> liftIO $ do
             hPutStrLn stderr "Timed out waiting for initial data to load."
             exitFailure
           Just p -> case pubValue p of
-            InitialDataLoaded -> return ()
-            InitialDataLoadFailed e -> liftIO $ do
+            InitialDataLoaded_XXX3 -> return ()
+            InitialDataLoadFailed_XXX3 e -> liftIO $ do
               hPutStrLn stderr $ "Initial data load failed: " ++ e
               exitFailure
       where

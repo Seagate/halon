@@ -11,6 +11,7 @@
 module HA.RecoveryCoordinator.RC.Events.Cluster
   ( NewNodeConnected(..)
   , InitialDataLoaded(..)
+  , InitialDataLoaded_XXX3(..)
   , OldNodeRevival(..)
   , RecoveryAttempt(..)
   , NodeTransient(..)
@@ -28,11 +29,17 @@ data NewNodeConnected = NewNodeConnected !Node_XXX2 !SysInfo
    deriving (Eq, Show, Typeable, Generic)
 instance Binary NewNodeConnected
 
--- | Initial data was loaded or has failed to load.
+-- | Result of 'InitialData' loading.
 data InitialDataLoaded = InitialDataLoaded
                        | InitialDataLoadFailed String
-   deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic)
 instance Binary InitialDataLoaded
+
+-- | Initial data was loaded or has failed to load.
+data InitialDataLoaded_XXX3 = InitialDataLoaded_XXX3
+                       | InitialDataLoadFailed_XXX3 String
+  deriving (Eq, Show, Typeable, Generic)
+instance Binary InitialDataLoaded_XXX3
 
 -- * Messages which may be interesting to any subscribers (disconnect
 -- tests).

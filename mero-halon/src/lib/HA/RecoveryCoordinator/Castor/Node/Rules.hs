@@ -438,7 +438,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
                           }
     continue confd_running
 
-  setPhaseIf wait_data_load initialDataLoaded $ \() -> do
+  setPhaseIf wait_data_load initialDataLoaded_XXX3 $ \() -> do
     StartProcessNodeNew node _ <- getRequest
     route node >>= switch
 
@@ -520,9 +520,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
 
   return check
   where
-    initialDataLoaded :: Event.InitialDataLoaded -> g -> l -> Process (Maybe ())
-    initialDataLoaded Event.InitialDataLoaded _ _ = return $ Just ()
-    initialDataLoaded Event.InitialDataLoadFailed{} _ _ = return Nothing
+    initialDataLoaded_XXX3 :: Event.InitialDataLoaded_XXX3 -> g -> l -> Process (Maybe ())
+    initialDataLoaded_XXX3 Event.InitialDataLoaded_XXX3 _ _ = return $ Just ()
+    initialDataLoaded_XXX3 Event.InitialDataLoadFailed_XXX3{} _ _ = return Nothing
 
     fldReq = Proxy :: Proxy '("request", Maybe StartProcessNodeNew)
     fldRep = Proxy :: Proxy '("reply", Maybe NewMeroServer)
