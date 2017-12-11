@@ -39,11 +39,22 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
+-- | Representation of a hardware rack.
+newtype Rack = Rack
+    Int -- ^ Rack index.
+  deriving (Eq, Show, Generic, Typeable, Hashable)
+
+storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
+deriveSafeCopy 0 'base ''Rack
+instance ToJSON Rack
+
+-- XXX --------------------------------------------------------------
+
 newtype Rack_XXX1 = Rack_XXX1
   Int -- ^ Rack index
   deriving (Eq, Show, Generic, Typeable, Hashable)
 
-storageIndex ''Rack_XXX1 "227a4ae1-529b-40b0-a0b4-7466605764c2"
+storageIndex ''Rack_XXX1 "e20058a4-8f26-4a04-a99c-19dbe88c0ca6"
 deriveSafeCopy 0 'base ''Rack_XXX1
 instance ToJSON Rack_XXX1
 
@@ -316,13 +327,14 @@ instance ToJSON HalonVars
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
-  [ ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack, ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, ''Has, ''Rack_XXX1)
+  [ (''Cluster, ''Has, ''Rack)
+  , (''Cluster, ''Has, ''Rack_XXX1)
   , (''Cluster, ''Has, ''Host_XXX1)
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice_XXX1)
@@ -343,13 +355,14 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack, ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure_XXX1, ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice_XXX1)

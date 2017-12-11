@@ -30,7 +30,7 @@ import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Drive.Events
-import           HA.RecoveryCoordinator.Castor.Rules (goRack)
+import           HA.RecoveryCoordinator.Castor.Rules (goRack_XXX3)
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Mero
@@ -107,7 +107,7 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO defaultInitialData
     sayTest $ show iData
     (ls',_)  <- run ls $ do
-            mapM_ goRack (id_racks_XXX0 iData)
+            mapM_ goRack_XXX3 (id_racks_XXX0 iData)
             filesystem <- initialiseConfInRG
             loadMeroGlobals (id_m0_globals_XXX0 iData)
             loadMeroServers filesystem (id_m0_servers_XXX0 iData)

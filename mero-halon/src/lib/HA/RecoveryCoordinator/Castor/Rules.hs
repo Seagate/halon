@@ -13,7 +13,7 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack) where
+module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack_XXX3) where
 
 import           Control.Monad.Catch
 import           Data.Foldable (for_)
@@ -40,7 +40,8 @@ import           Network.CEP
 -- | Collection of Castor rules.
 castorRules :: Definitions RC ()
 castorRules = sequence_
-  [ ruleInitialDataLoad_XXX3
+  [ ruleInitialDataLoad
+  , ruleInitialDataLoad_XXX3
   , Filesystem.rules
   , Process.rules
   , Drive.rules
@@ -50,12 +51,31 @@ castorRules = sequence_
   , Commands.rules
   ]
 
+-- | Load 'InitialData', obtained from facts file, into the resource graph.
+ruleInitialDataLoad :: Definitions RC ()
+ruleInitialDataLoad =
+    defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
+        rg <- getLocalGraph
+        if null (G.connectedTo Cluster Has rg :: [R.Rack])
+        then load `catch` ( err "Failure during initial data load: "
+                          . (show :: SomeException -> String) )
+        else err "" "Initial data is already loaded."
+  where
+    err :: String -> String -> PhaseM RC l ()
+    err logPrefix msg = do
+        Log.rcLog' Log.ERROR (logPrefix ++ msg)
+        notify (InitialDataLoadFailed msg)
+
+    load = undefined
+
+-- XXX --------------------------------------------------------------
+
 -- | Load initial data from facts file into the system.
 --
 --   TODO We could only use 'syncGraphBlocking' in the preloaded case.
 ruleInitialDataLoad_XXX3 :: Definitions RC ()
 ruleInitialDataLoad_XXX3 =
-  defineSimpleTask "castor::initial-data-load" $ \CI.InitialData_XXX0{..} -> do
+  defineSimpleTask "castor::initial-data-load_XXX3" $ \CI.InitialData_XXX0{..} -> do
     rg <- getLocalGraph
     let err logPrefix msg = do
           Log.rcLog' Log.ERROR $ logPrefix ++ msg
@@ -73,7 +93,7 @@ ruleInitialDataLoad_XXX3 =
             notify InitialDataLoaded_XXX3
 
         load = do
-          mapM_ goRack id_racks_XXX0
+          mapM_ goRack_XXX3 id_racks_XXX0
           filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals_XXX0
           loadMeroServers filesystem id_m0_servers_XXX0
@@ -110,13 +130,13 @@ ruleInitialDataLoad_XXX3 =
                       . (show :: SomeException -> String) )
     else err "" "Initial data is already loaded."
 
-goRack :: CI.Rack_XXX0 -> PhaseM RC l ()
-goRack CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
+goRack_XXX3 :: CI.Rack_XXX0 -> PhaseM RC l ()
+goRack_XXX3 CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
   registerRack rack
-  mapM_ (goEnc rack) rack_enclosures_XXX0
+  mapM_ (goEnc_XXX3 rack) rack_enclosures_XXX0
 
-goEnc :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
-goEnc rack CI.Enclosure_XXX0{..} = let
+goEnc_XXX3 :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc_XXX3 rack CI.Enclosure_XXX0{..} = let
     enclosure = R.Enclosure_XXX1 enc_id_XXX0
   in do
     registerEnclosure rack enclosure
