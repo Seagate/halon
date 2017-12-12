@@ -11,6 +11,7 @@
 module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Infrastructure functions
     registerRack
+  , registerRack_XXX3
   , registerEnclosure
   , registerBMC
   , findBMCAddress
@@ -60,10 +61,17 @@ import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
 -- | Register a new rack in the system.
-registerRack :: R.Rack_XXX1
-             -> PhaseM RC l ()
+registerRack :: R.Rack -> PhaseM RC l ()
 registerRack rack = do
-  actLog "registerRack" [("rack", show rack)]
+    actLog "registerRack" [("rack", show rack)]
+    modifyGraph $ G.connect Cluster Has rack
+
+-- XXX --------------------------------------------------------------
+
+-- | Register a new rack in the system.
+registerRack_XXX3 :: R.Rack_XXX1 -> PhaseM RC l ()
+registerRack_XXX3 rack = do
+  actLog "registerRack_XXX3" [("rack", show rack)]
   modifyGraph $ G.connect Cluster Has rack
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.

@@ -153,8 +153,8 @@ data ReportClusterState = ReportClusterState
       -- ^ Current 'M0.MeroClusterState'.
       , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
       -- ^ 'M0.Pool's and their SNS repair/rebalance status.
-      , csrInfo       :: Maybe (M0.Profile, M0.Filesystem)
-      -- ^ 'M0.Profile'' and 'M0.Filesystem' information.
+      , csrInfo       :: Maybe (M0.Profile_XXX3, M0.Filesystem)
+      -- ^ 'M0.Profile' and 'M0.Filesystem' information.
       , csrStats      :: Maybe M0.FilesystemStats
       -- ^ 'M0.FilesystemStats' information.
       , csrHosts      :: [(Host_XXX1, ReportClusterHost)]

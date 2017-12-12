@@ -54,7 +54,7 @@ import           HA.Resources.Castor
   )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.TH
-import           HA.SafeCopy hiding (Profile)
+import           HA.SafeCopy
 import           Mero.ConfC
   ( Bitmap
   , Fid(..)
@@ -215,14 +215,14 @@ storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
 deriveSafeCopy 0 'base ''Root
 instance ToJSON Root
 
-newtype Profile = Profile Fid
+newtype Profile_XXX3 = Profile_XXX3 Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
 
-instance ConfObj Profile where
+instance ConfObj Profile_XXX3 where
   fidType _ = fromIntegral . ord $ 'p'
-  fid (Profile f) = f
-storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
-deriveSafeCopy 0 'base ''Profile
+  fid (Profile_XXX3 f) = f
+storageIndex ''Profile_XXX3 "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
+deriveSafeCopy 0 'base ''Profile_XXX3
 
 data Filesystem = Filesystem {
     f_fid :: Fid
@@ -941,7 +941,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -957,15 +957,15 @@ $(mkDicts
     (''Cluster, ''Has, ''Root)
   , (''Cluster, ''Has, ''Disposition)
   , (''Cluster, ''Has, ''PVerCounter)
-  , (''Root, ''IsParentOf, ''Profile)
-  , (''Cluster, ''Has, ''Profile)
+  , (''Root, ''IsParentOf, ''Profile_XXX3)
+  , (''Cluster, ''Has, ''Profile_XXX3)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''Host_XXX1)
   , (''Rack, ''At, ''Rack_XXX1)
   , (''Enclosure, ''At, ''Enclosure_XXX1)
   , (''Disk, ''At, ''StorageDevice_XXX1)
     -- Parent/child relationships between conf entities
-  , (''Profile, ''IsParentOf, ''Filesystem)
+  , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
   , (''Filesystem, ''IsParentOf, ''Node)
   , (''Filesystem, ''IsParentOf, ''Rack)
   , (''Filesystem, ''IsParentOf, ''Pool)
@@ -1014,7 +1014,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1030,8 +1030,8 @@ $(mkResRel
     (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Disposition)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''PVerCounter)
-  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
-  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''Rack_XXX1)
@@ -1039,7 +1039,7 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot_XXX1)
     -- Parent/child relationships between conf entities
-  , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
+  , (''Profile_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
@@ -1098,7 +1098,7 @@ getM0Services g =
 -- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
 getM0Processes :: G.Graph -> [Process]
 getM0Processes g =
-  [ p | Just (prof :: Profile) <- [G.connectedTo Cluster Has g]
+  [ p | Just (prof :: Profile_XXX3) <- [G.connectedTo Cluster Has g]
        , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
        , (node :: Node) <- G.connectedTo fs IsParentOf g
        , p <- G.connectedTo node IsParentOf g

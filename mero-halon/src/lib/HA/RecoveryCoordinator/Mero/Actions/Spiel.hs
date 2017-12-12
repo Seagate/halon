@@ -186,9 +186,9 @@ withSpielIO = withResourceGraphCache . try . withM0RC . flip m0asynchronously_
 -- This call is required for running spiel management commands.
 --
 -- Internal action will be running in mero thread allocated to RC service.
-withRConfIO :: Maybe M0.Profile -> IO a -> IO a
+withRConfIO :: Maybe M0.Profile_XXX3 -> IO a -> IO a
 withRConfIO mp action = do
-  Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
+  Mero.Spiel.setCmdProfile (fmap (\(M0.Profile_XXX3 p) -> show p) mp)
   Mero.Spiel.rconfStart
   action `finally` Mero.Spiel.rconfStop
 
@@ -680,12 +680,12 @@ txSyncToConfd f luuid lift t = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData = TxConfData M0.M0Globals_XXX0 M0.Profile M0.Filesystem
+data TxConfData = TxConfData M0.M0Globals_XXX0 M0.Profile_XXX3 M0.Filesystem
 
 loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
             <$> getM0Globals
-            <*> getProfile
+            <*> getProfile_XXX3
             <*> getFilesystem
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
@@ -709,7 +709,7 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
@@ -972,6 +972,6 @@ getTimeUntilHourlyQuery pool = getPoolRepairInformation pool >>= \case
 setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
   rg <- getLocalGraph
-  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported
+  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3 -- XXX: multiprofile is not supported
   Log.rcLog' Log.DEBUG $ "set command profile to" ++ show mp
-  m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
+  m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile_XXX3 p) -> show p) mp)

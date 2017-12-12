@@ -77,7 +77,7 @@ stateCascade t pg = do
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       rg <- getLocalGraph
       let Just p = listToMaybe $
-              [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+              [ proc | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
               , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
               , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
@@ -110,7 +110,7 @@ failvecCascade t pg = do
       Log.rcLog' Log.DEBUG ("Set hooks." :: String)
       rg <- getLocalGraph
       let d0:d1:_ =
-              [ disk | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+              [ disk | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
               , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
               , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
@@ -122,7 +122,7 @@ failvecCascade t pg = do
       rg' <- getLocalGraph
 
       let pools =
-              [ pool | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']
+              [ pool | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg']
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg'
               , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg'
               , (pver :: M0.PVer) <- G.connectedTo pool M0.IsParentOf rg'

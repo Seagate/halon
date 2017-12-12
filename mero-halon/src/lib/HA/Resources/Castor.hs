@@ -42,7 +42,7 @@ import GHC.Generics (Generic)
 -- | Representation of a hardware rack.
 newtype Rack = Rack
     Int -- ^ Rack index.
-  deriving (Eq, Show, Generic, Typeable, Hashable)
+  deriving (Eq, Generic, Hashable, Show, Typeable)
 
 storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
 deriveSafeCopy 0 'base ''Rack

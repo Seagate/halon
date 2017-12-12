@@ -34,7 +34,7 @@ mkPVerFormulaicFid fid@(Fid container key)
 -- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
-  prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
+  prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3
   fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
     G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0

@@ -142,7 +142,7 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
   showType x = Generics.datatypeName x
 
 instance ShowFidObj M0.Root
-instance ShowFidObj M0.Profile
+instance ShowFidObj M0.Profile_XXX3
 instance ShowFidObj M0.Filesystem
 instance ShowFidObj M0.Pool
 instance ShowFidObj M0.PVer
@@ -224,7 +224,7 @@ data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x
 -- | Generate dictionaries
 $(join <$> (mapM (mkDict ''HasConfObjectState) $
   [ ''M0.Root
-  , ''M0.Profile
+  , ''M0.Profile_XXX3
   , ''M0.Filesystem
   , ''M0.Rack
   , ''M0.Enclosure
@@ -248,11 +248,11 @@ instance HasConfObjectState M0.Root where
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Root
   toConfObjState _ = const M0_NC_ONLINE
-instance HasConfObjectState M0.Profile where
-  type StateCarrier M0.Profile = NoExplicitConfigState
+instance HasConfObjectState M0.Profile_XXX3 where
+  type StateCarrier M0.Profile_XXX3 = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
-  hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile_XXX3
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Filesystem where
   type StateCarrier M0.Filesystem = NoExplicitConfigState
@@ -390,7 +390,7 @@ fidConfObjDict f = fromMaybe []
 dictMap :: Map.Map Word64 [SomeConfObjDict]
 dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     [ mkTypePair (Proxy :: Proxy M0.Root)
-    , mkTypePair (Proxy :: Proxy M0.Profile)
+    , mkTypePair (Proxy :: Proxy M0.Profile_XXX3)
     , mkTypePair (Proxy :: Proxy M0.Filesystem)
     , mkTypePair (Proxy :: Proxy M0.Node)
     , mkTypePair (Proxy :: Proxy M0.Rack)

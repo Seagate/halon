@@ -91,7 +91,7 @@ instance A.FromJSON PoolVersGen
 instance A.ToJSON PoolVersGen
 
 data Rack = Rack {
-    rack_idx :: Integer
+    rack_idx :: Int
   , rack_enclosures :: [Enclosure]
   } deriving (Data, Eq, Generic, Show, Typeable)
 

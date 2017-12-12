@@ -26,7 +26,7 @@ import qualified HA.Resources.Mero.Note as M0
 getNonMD :: G.Graph -> [M0.Pool]
 getNonMD rg =
   [ pl
-  | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
+  | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
   , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
   , pl <- G.connectedTo fs M0.IsParentOf rg
   , M0.fid pl /= M0.f_mdpool_fid fs

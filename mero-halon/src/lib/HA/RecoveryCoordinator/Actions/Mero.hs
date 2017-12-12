@@ -277,7 +277,7 @@ getClusterStatus rg = let
 isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
-  | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+  | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed
@@ -318,7 +318,7 @@ startMeroService host node = do
   Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
                       ++ show (host, node)
   rg <- getLocalGraph
-  mprofile <- Conf.getProfile
+  mprofile <- Conf.getProfile_XXX3
   kaFreq <- getHalonVar _hv_keepalive_frequency
   kaTimeout <- getHalonVar _hv_keepalive_timeout
   mHaAddr <- Conf.lookupHostHAAddress host >>= \case

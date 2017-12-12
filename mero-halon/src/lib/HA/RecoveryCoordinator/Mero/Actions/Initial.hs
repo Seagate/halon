@@ -6,7 +6,7 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Initial
   ( -- * Initialization
-    initialiseConfInRG
+    initialiseConfInRG_XXX3
   , loadMeroServers
   , createMDPoolPVer
   , createIMeta
@@ -54,12 +54,12 @@ import           Text.Regex.TDFA ((=~))
 --   * Create a single profile, filesystem
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
-initialiseConfInRG :: PhaseM RC l M0.Filesystem
-initialiseConfInRG = getFilesystem >>= \case
+initialiseConfInRG_XXX3 :: PhaseM RC l M0.Filesystem
+initialiseConfInRG_XXX3 = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
-      root    <- M0.Root    <$> newFidRC (Proxy :: Proxy M0.Root)
-      profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+      root    <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+      profile <- M0.Profile_XXX3 <$> newFidRC (Proxy :: Proxy M0.Profile_XXX3)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       -- Note that this FID will actually be overwritten by `createIMeta`

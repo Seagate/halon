@@ -187,7 +187,7 @@ requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getLocalGraph
-      profile <- getProfile
+      profile <- getProfile_XXX3
       filesystem <- getFilesystem
       let status = getClusterStatus rg
           stats = filesystem >>= \fs -> G.connectedTo fs Has rg
@@ -249,7 +249,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
      rg <- getLocalGraph
      let procs =
            [ m0proc
-           | Just (m0prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+           | Just (m0prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
            , m0fs   <- G.connectedTo m0prof M0.IsParentOf rg :: [M0.Filesystem]
            , m0node <- G.connectedTo m0fs M0.IsParentOf rg :: [M0.Node]
            , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
@@ -294,7 +294,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           -- Randomly select principal RM, it may be switched if another
           -- RM will appear online before this one.
           let pr = [ ps
-                   | Just (prf :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+                   | Just (prf :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
                    , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
                    , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
                    , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
@@ -651,7 +651,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     calculateStoppingState = do
       rg <- getLocalGraph
       let ps = [ (p, M0.getState p rg)
-               | Just (pr :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+               | Just (pr :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
                , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
                , mn :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
                , p  :: M0.Process  <- G.connectedTo mn M0.IsParentOf rg ]

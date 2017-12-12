@@ -15,7 +15,7 @@
 
 module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack_XXX3) where
 
-import           Control.Monad.Catch
+import           Control.Monad.Catch (catch, SomeException)
 import           Data.Foldable (for_)
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Hardware
@@ -51,14 +51,15 @@ castorRules = sequence_
   , Commands.rules
   ]
 
--- | Load 'InitialData', obtained from facts file, into the resource graph.
+-- | Load 'InitialData', obtained from facts file, into the system.
 ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad =
-    defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
+    defineSimpleTask "castor::initial-data-load" $ \idata -> do
         rg <- getLocalGraph
         if null (G.connectedTo Cluster Has rg :: [R.Rack])
-        then load `catch` ( err "Failure during initial data load: "
-                          . (show :: SomeException -> String) )
+        then loadInitialData idata `catch`
+            ( err "Failure during initial data load: "
+            . (show :: SomeException -> String) )
         else err "" "Initial data is already loaded."
   where
     err :: String -> String -> PhaseM RC l ()
@@ -66,7 +67,26 @@ ruleInitialDataLoad =
         Log.rcLog' Log.ERROR (logPrefix ++ msg)
         notify (InitialDataLoadFailed msg)
 
-    load = undefined
+loadInitialData :: CI.InitialData -> PhaseM RC l ()
+loadInitialData CI.InitialData{..} = do
+    -- for_ _id_profiles goProfile
+    for_ _id_racks goRack
+    undefined -- XXX
+
+-- goProfile :: CI.Profile -> PhaseM RC l ()
+-- goProfile CI.Profile{..} = do
+--     root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+--     undefined -- XXX
+
+goRack :: CI.Rack -> PhaseM RC l ()
+goRack CI.Rack{..} =
+    let rack = R.Rack rack_idx
+    in do
+        registerRack rack
+        for_ rack_enclosures goEnclosure
+
+goEnclosure :: CI.Enclosure -> PhaseM RC l ()
+goEnclosure CI.Enclosure{..} = undefined -- XXX
 
 -- XXX --------------------------------------------------------------
 
@@ -94,7 +114,7 @@ ruleInitialDataLoad_XXX3 =
 
         load = do
           mapM_ goRack_XXX3 id_racks_XXX0
-          filesystem <- initialiseConfInRG
+          filesystem <- initialiseConfInRG_XXX3
           loadMeroGlobals id_m0_globals_XXX0
           loadMeroServers filesystem id_m0_servers_XXX0
           graph <- getLocalGraph
@@ -132,7 +152,7 @@ ruleInitialDataLoad_XXX3 =
 
 goRack_XXX3 :: CI.Rack_XXX0 -> PhaseM RC l ()
 goRack_XXX3 CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
-  registerRack rack
+  registerRack_XXX3 rack
   mapM_ (goEnc_XXX3 rack) rack_enclosures_XXX0
 
 goEnc_XXX3 :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()

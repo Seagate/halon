@@ -10,7 +10,7 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Conf
   ( -- ** Get all objects of type
-    getProfile
+    getProfile_XXX3
   , getFilesystem
   , getSDevPool
   , getM0ServicesRC
@@ -63,12 +63,12 @@ lookupConfObjByFid f =
 -- Querying conf in RG
 --------------------------------------------------------------------------------
 
--- | Fetch the Mero Profile in the system. Currently, we
+-- | Fetch the Mero profile in the system. Currently, we
 --   only support a single profile, though in future there
 --   might be multiple profiles and this function will need
 --   to change.
-getProfile :: PhaseM RC l (Maybe M0.Profile)
-getProfile =
+getProfile_XXX3 :: PhaseM RC l (Maybe M0.Profile_XXX3)
+getProfile_XXX3 =
     G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Fetch the Mero filesystem in the system. Currently, we
@@ -78,7 +78,7 @@ getProfile =
 getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
 getFilesystem = getLocalGraph >>= \rg -> do
   return . listToMaybe
-    $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
+    $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
       ]
 
@@ -173,7 +173,7 @@ pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 pickPrincipalRM = getLocalGraph >>= \g ->
   let rms =
         [ rm
-        | Just (prof :: M0.Profile) <-
+        | Just (prof :: M0.Profile_XXX3) <-
             [G.connectedTo Cluster Has g]
         , (fs :: M0.Filesystem) <-
             G.connectedTo prof M0.IsParentOf g

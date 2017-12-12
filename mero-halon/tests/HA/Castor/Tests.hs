@@ -126,7 +126,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
                , _id_globals = defaultGlobals { CI.m0_data_units_XXX0 = 4 } }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
-      filesystem <- initialiseConfInRG
+      filesystem <- initialiseConfInRG_XXX3
       loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
     -- 8 disks, tolerating one disk failure at a time
@@ -153,7 +153,7 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
                { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
-      filesystem <- initialiseConfInRG
+      filesystem <- initialiseConfInRG_XXX3
       loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
     -- 16 disks, tolerating one disk failure at a time
@@ -196,7 +196,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                , _id_globals = defaultGlobals { CI.m0_failure_set_gen_XXX0 = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
-      filesystem <- initialiseConfInRG
+      filesystem <- initialiseConfInRG_XXX3
       loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       Just (Monolithic update) <- getCurrentGraphUpdateType
@@ -205,7 +205,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     let g = lsGraph ls'
 
     let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has g]
-                                , Just (profile :: M0.Profile) <- [G.connectedTo root M0.IsParentOf g]
+                                , Just (profile :: M0.Profile_XXX3) <- [G.connectedTo root M0.IsParentOf g]
                                 , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf g
                                 , pool :: M0.Pool     <- G.connectedTo fs M0.IsParentOf g
                                 , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf g
@@ -234,7 +234,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
-      filesystem <- initialiseConfInRG
+      filesystem <- initialiseConfInRG_XXX3
       loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       rg <- getLocalGraph
@@ -301,7 +301,7 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
       mapM_ goRack (CI.id_racks_XXX0 iData)
-      filesystem <- initialiseConfInRG
+      filesystem <- initialiseConfInRG_XXX3
       loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
       loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
       RC.initialRule (IgnitionArguments [])
@@ -400,7 +400,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do
          mapM_ goRack (CI.id_racks_XXX0 iData)
-         filesystem <- initialiseConfInRG
+         filesystem <- initialiseConfInRG_XXX3
          loadMeroGlobals (CI.id_m0_globals_XXX0 iData)
          loadMeroServers filesystem (CI.id_m0_servers_XXX0 iData)
          Just (Monolithic update) <- getCurrentGraphUpdateType
@@ -430,7 +430,7 @@ runGet = runPhaseGet
 
 goRack :: forall l. CI.Rack_XXX0 -> PhaseM RC l ()
 goRack CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
-  registerRack rack
+  registerRack_XXX3 rack
   mapM_ (goEnc rack) rack_enclosures_XXX0
 
 goEnc :: forall l. R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
