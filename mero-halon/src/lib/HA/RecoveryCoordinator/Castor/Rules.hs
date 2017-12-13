@@ -17,6 +17,7 @@ module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack_XXX3) where
 
 import           Control.Monad.Catch (catch, SomeException)
 import           Data.Foldable (for_)
+import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -35,6 +36,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
+import qualified HA.Resources.Mero as M0 (Profile(..))
 import           Network.CEP
 
 -- | Collection of Castor rules.
@@ -60,7 +62,7 @@ ruleInitialDataLoad =
         then loadInitialData idata `catch`
             ( err "Failure during initial data load: "
             . (show :: SomeException -> String) )
-        else err "" "Initial data is already loaded."
+        else err "" "Initial data is already loaded"
   where
     err :: String -> String -> PhaseM RC l ()
     err logPrefix msg = do
@@ -69,14 +71,15 @@ ruleInitialDataLoad =
 
 loadInitialData :: CI.InitialData -> PhaseM RC l ()
 loadInitialData CI.InitialData{..} = do
-    -- for_ _id_profiles goProfile
+    for_ _id_profiles goProfile
     for_ _id_racks goRack
-    undefined -- XXX
+    error "XXX IMPLEMENTME"
 
--- goProfile :: CI.Profile -> PhaseM RC l ()
--- goProfile CI.Profile{..} = do
---     root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
---     undefined -- XXX
+goProfile :: CI.Profile -> PhaseM RC l ()
+goProfile CI.Profile{..} = do
+    profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+    modifyGraph $ G.connect Cluster Has profile
+    error "XXX IMPLEMENTME: Use `prof_pools`"
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} =
@@ -86,7 +89,7 @@ goRack CI.Rack{..} =
         for_ rack_enclosures goEnclosure
 
 goEnclosure :: CI.Enclosure -> PhaseM RC l ()
-goEnclosure CI.Enclosure{..} = undefined -- XXX
+goEnclosure CI.Enclosure{..} = error "XXX IMPLEMENTME"
 
 -- XXX --------------------------------------------------------------
 

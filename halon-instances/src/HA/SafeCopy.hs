@@ -21,7 +21,6 @@ module HA.SafeCopy
   , deriveSafeCopy
   ) where
 
-
 import "distributed-process" Control.Distributed.Process
 import "distributed-process" Control.Distributed.Process.Serializable
 import           Data.Binary (Binary, encode, decode)

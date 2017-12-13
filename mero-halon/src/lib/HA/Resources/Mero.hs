@@ -54,7 +54,7 @@ import           HA.Resources.Castor
   )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.TH
-import           HA.SafeCopy
+import           HA.SafeCopy hiding (Profile)
 import           Mero.ConfC
   ( Bitmap
   , Fid(..)
@@ -177,7 +177,7 @@ instance ToJSON At
 -- | Relationship between parent and child entities in confd
 --   Directed from parent to child (e.g. profile IsParentOf filesystem)
 data IsParentOf = IsParentOf
-   deriving (Eq, Generic, Show, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsParentOf
 storageIndex ''IsParentOf "5e8df2ad-26c9-4614-8f66-4c9a31f044eb"
@@ -187,7 +187,7 @@ instance ToJSON IsParentOf
 -- | Relationship between virtual and real entities in confd.
 --   Directed from real to virtual (e.g. rack IsRealOf rackv)
 data IsRealOf = IsRealOf
-   deriving (Eq, Generic, Show, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsRealOf
 storageIndex ''IsRealOf "5be580c1-5dfa-4e01-ae27-ccf6739746c9"
@@ -198,12 +198,23 @@ instance ToJSON IsRealOf
 --   Directed from sdev to disk (e.g. sdev IsOnHardware disk)
 --   Directed from node to controller (e.g. node IsOnHardware controller)
 data IsOnHardware = IsOnHardware
-   deriving (Eq, Generic, Show, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsOnHardware
 storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
 instance ToJSON IsOnHardware
+
+newtype Profile = Profile Fid
+  deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
+
+instance ConfObj Profile where
+  fidType _ = fromIntegral . ord $ 'p'
+  fid (Profile f) = f
+storageIndex ''Profile "c1d1eca6-4f3b-4c01-b0d8-8bed54b670ce"
+deriveSafeCopy 0 'base ''Profile
+
+-- XXX --------------------------------------------------------------
 
 newtype Root = Root Fid
   deriving (Eq, Generic, Hashable, Show, Typeable)
@@ -941,7 +952,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -958,6 +969,7 @@ $(mkDicts
   , (''Cluster, ''Has, ''Disposition)
   , (''Cluster, ''Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile_XXX3)
+  , (''Cluster, ''Has, ''Profile)
   , (''Cluster, ''Has, ''Profile_XXX3)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''Host_XXX1)
@@ -1014,7 +1026,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1031,6 +1043,7 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Disposition)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''PVerCounter)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Profile)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
