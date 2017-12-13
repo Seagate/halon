@@ -61,7 +61,7 @@ extra-deps:
 - shelly-1.6.8.3
 
 docker:
-  enable: true
+  enable: false
   repo: quay.io/tweag/halon:latest
   registry-login: true
   # XXX To route around GHC bug #11042
@@ -77,3 +77,5 @@ nix:
             , libiconv
             , pcre
             ]
+
+allow-different-user: true

@@ -27,36 +27,38 @@ export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 ## -------------------------------------------------------------------
 
 PROG="${0##*/}"
-STACK='stack --no-docker --allow-different-user'
+
+cmd_stack() {
+    cd "$H0_SRC_DIR"
+    stack "$@"
+}
 
 cmd_setup() {
-    $STACK setup
+    cmd_stack setup
 }
 
 cmd_make() {
-    cd "$H0_SRC_DIR"
     PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         MERO_ROOT=$M0_SRC_DIR \
-        $STACK build mero-halon --ghc-options='-g -j4' --test --no-run-tests \
-        "$@"
+        cmd_stack build mero-halon --ghc-options='-g -j4' --test \
+        --no-run-tests "$@"
 }
 
 cmd_rebuild() {
-    cd "$H0_SRC_DIR"
     # XXX TODO: The script should be able to determine automatically
     # whether Mero has been updated since last Halon compilation.
     # One possible solution is to reimplement this script as a Makefile.
-    $STACK clean rpclite
+    cmd_stack clean rpclite
     cmd_make "$@"
 }
 
 cmd_test() {
     LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        $H0_SRC_DIR/mero-halon/$($STACK path --dist-dir)/build/tests/tests "$@"
+        $H0_SRC_DIR/mero-halon/$(stack path --dist-dir)/build/tests/tests "$@"
 }
 
 local_install_root() {
-    (cd "$H0_SRC_DIR" && $STACK path --local-install-root)
+    cmd_stack path --local-install-root
 }
 
 _bootstrap() {
@@ -95,8 +97,7 @@ cmd_env() {
 }
 
 cmd_clean() {
-    cd "$H0_SRC_DIR"
-    $STACK clean "$@"
+    cmd_stack clean "$@"
 }
 
 cmd_help() {
@@ -129,11 +130,12 @@ Commands:
                          execution of Halon binaries located in the sources
                          directory.
     clean [OPTION]...    Clean the local packages.
+    stack [OPTION]...    Run \`stack' in Halon sources directory.
     help                 Show this help and exit.
 
 Options:
-    'make', 'test', and 'clean' commands support options of the Haskell Tool
-    Stack. Type \`stack <command> --help' for the documentation.
+    'make', 'test', 'clean', and 'stack' commands support options of the
+    Haskell Tool Stack. Type \`stack <command> --help' for the documentation.
 
 Environment variables:
     M0_SRC_DIR    Path to Mero sources directory; defaults to '$M0_SRC_DIR'.
@@ -144,7 +146,7 @@ CMD=
 OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|start|stop|path|env|clean|help)
+        setup|make|rebuild|test|start|stop|path|env|clean|stack|help)
             [[ -z $CMD ]] || _exec $CMD $OPTS
             CMD=cmd_${1//-/_}
             OPTS=;;
