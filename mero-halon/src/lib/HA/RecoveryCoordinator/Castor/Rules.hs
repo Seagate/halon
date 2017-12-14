@@ -78,6 +78,7 @@ loadInitialData CI.InitialData{..} = do
 goProfile :: CI.Profile -> PhaseM RC l ()
 goProfile CI.Profile{..} = do
     profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+                          <*> pure prof_md_redundancy
     modifyGraph $ G.connect Cluster Has profile
     error "XXX IMPLEMENTME: Use `prof_pools`"
 

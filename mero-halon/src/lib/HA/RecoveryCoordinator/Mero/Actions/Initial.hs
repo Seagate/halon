@@ -58,7 +58,7 @@ initialiseConfInRG_XXX3 :: PhaseM RC l M0.Filesystem
 initialiseConfInRG_XXX3 = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
-      root    <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+      root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
       profile <- M0.Profile_XXX3 <$> newFidRC (Proxy :: Proxy M0.Profile_XXX3)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)

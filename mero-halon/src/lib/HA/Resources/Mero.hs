@@ -38,7 +38,7 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import qualified Data.Vector as V
-import           Data.Word ( Word32, Word64 )
+import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           HA.Aeson
 import qualified HA.ResourceGraph as G
@@ -205,12 +205,19 @@ storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
 instance ToJSON IsOnHardware
 
-newtype Profile = Profile Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
+data Profile = Profile
+  { cp_fid :: Fid
+  , cp_md_redundancy :: Word32
+  } deriving (Eq, Generic, Show, Typeable)
+
+instance Hashable Profile
+instance FromJSON Profile
+instance ToJSON Profile
 
 instance ConfObj Profile where
   fidType _ = fromIntegral . ord $ 'p'
-  fid (Profile f) = f
+  fid = cp_fid
+
 storageIndex ''Profile "c1d1eca6-4f3b-4c01-b0d8-8bed54b670ce"
 deriveSafeCopy 0 'base ''Profile
 
@@ -517,6 +524,7 @@ instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
   fid (Disk f) = f
 
+-- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
 data PVerType = PVerActual {
     v_tolerance :: [Word32]
   , v_attrs :: PDClustAttr
