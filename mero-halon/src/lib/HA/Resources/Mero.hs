@@ -77,10 +77,10 @@ typMask = 0x00ffffffffffffff
 
 -- | Fid generation sequence number
 newtype FidSeq = FidSeq Word64
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
+
 storageIndex ''FidSeq "64e86424-83b3-49f6-91b9-47fa4597a98a"
 deriveSafeCopy 0 'base ''FidSeq
-instance ToJSON FidSeq
 
 -- | Couple of utility methods for conf objects. Minimal implementation:
 --   fidType and fid
@@ -143,20 +143,17 @@ instance Binary SpielAddress
 instance Hashable SpielAddress
 
 data SyncToConfd =
-      SyncToConfdServersInRG Bool
-      -- | Used by halonctl
-    | SyncDumpToBS ProcessId
+    SyncToConfdServersInRG Bool
+  | SyncDumpToBS ProcessId  -- ^ Used by halonctl
   deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable SyncToConfd
+
 storageIndex ''SyncToConfd "6990a155-7db8-48a9-91e8-d49b75d16b25"
 deriveSafeCopy 0 'base ''SyncToConfd
 
 newtype SyncDumpToBSReply = SyncDumpToBSReply (Either String BS.ByteString)
-  deriving (Eq, Generic, Show, Typeable)
-
-instance Binary SyncDumpToBSReply
-instance Hashable SyncDumpToBSReply
+  deriving (Binary, Eq, Generic, Hashable, Show, Typeable)
 
 --------------------------------------------------------------------------------
 -- Conf tree in the resource graph
@@ -167,12 +164,13 @@ instance Hashable SyncDumpToBSReply
 -- Directed from configuration object to Halon resource
 -- (e.g. M0.Controller At Host)
 data At = At
-    deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable At
+instance ToJSON At
+
 storageIndex ''At "faa2ba1b-b989-468b-98f2-d38859a6b566"
 deriveSafeCopy 0 'base ''At
-instance ToJSON At
 
 -- | Relationship between parent and child entities in confd
 --   Directed from parent to child (e.g. profile IsParentOf filesystem)
@@ -180,9 +178,10 @@ data IsParentOf = IsParentOf
   deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsParentOf
+instance ToJSON IsParentOf
+
 storageIndex ''IsParentOf "5e8df2ad-26c9-4614-8f66-4c9a31f044eb"
 deriveSafeCopy 0 'base ''IsParentOf
-instance ToJSON IsParentOf
 
 -- | Relationship between virtual and real entities in confd.
 --   Directed from real to virtual (e.g. rack IsRealOf rackv)
@@ -190,9 +189,10 @@ data IsRealOf = IsRealOf
   deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsRealOf
+instance ToJSON IsRealOf
+
 storageIndex ''IsRealOf "5be580c1-5dfa-4e01-ae27-ccf6739746c9"
 deriveSafeCopy 0 'base ''IsRealOf
-instance ToJSON IsRealOf
 
 -- | Relationship between conceptual and hardware entities in confd
 --   Directed from sdev to disk (e.g. sdev IsOnHardware disk)
@@ -201,9 +201,10 @@ data IsOnHardware = IsOnHardware
   deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable IsOnHardware
+instance ToJSON IsOnHardware
+
 storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
-instance ToJSON IsOnHardware
 
 data Profile = Profile
   { cp_fid :: Fid
@@ -224,14 +225,14 @@ deriveSafeCopy 0 'base ''Profile
 -- XXX --------------------------------------------------------------
 
 newtype Root = Root Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj Root where
    fidType _ = fromIntegral . ord $ 't'
    fid (Root f) = f
+
 storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
 deriveSafeCopy 0 'base ''Root
-instance ToJSON Root
 
 newtype Profile_XXX3 = Profile_XXX3 Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
@@ -239,14 +240,15 @@ newtype Profile_XXX3 = Profile_XXX3 Fid
 instance ConfObj Profile_XXX3 where
   fidType _ = fromIntegral . ord $ 'p'
   fid (Profile_XXX3 f) = f
+
 storageIndex ''Profile_XXX3 "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile_XXX3
 
-data Filesystem = Filesystem {
-    f_fid :: Fid
+data Filesystem = Filesystem
+  { f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
   , f_imeta_fid :: Fid -- ^ Fid of the imeta pver
-} deriving (Eq, Ord, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Hashable Filesystem
 instance ToJSON Filesystem
@@ -255,6 +257,7 @@ instance FromJSON Filesystem
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
+
 storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
 deriveSafeCopy 0 'base ''Filesystem
 
@@ -270,29 +273,28 @@ storageIndex ''DIXInitialised "E36D8C47-62D8-466C-88D7-BD1255776BE0"
 deriveSafeCopy 0 'base ''DIXInitialised
 
 newtype Node = Node Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
 instance ConfObj Node where
   fidType _ = fromIntegral . ord $ 'n'
   fid (Node f) = f
 
-instance FromJSON Node
-instance ToJSON   Node
 storageIndex ''Node "ad7ccb0d-546a-41d0-a332-6a4f3d842a15"
 deriveSafeCopy 0 'base ''Node
 
 -- | Node state. This is a generalization of what might be reported to Mero.
-data NodeState
-  = NSUnknown             -- ^ Node state is not known.
+data NodeState =
+    NSUnknown             -- ^ Node state is not known.
   | NSOffline             -- ^ Node is stopped, gracefully.
   | NSFailedUnrecoverable -- ^ Node is failed
   | NSFailed              -- ^ Node is failed, possibly can be recovered.
   | NSOnline              -- ^ Node is online.
-  deriving (Eq, Show, Typeable, Generic, Read, Ord)
+  deriving (Eq, Generic, Ord, Read, Show, Typeable)
 
 instance Hashable NodeState
 instance ToJSON NodeState
 instance FromJSON NodeState
+
 storageIndex ''NodeState "20e7c791-34ab-48b0-87d5-0ad9a7931f3a"
 deriveSafeCopy 0 'base ''NodeState
 
@@ -309,58 +311,61 @@ displayNodeState xs@NSFailedUnrecoverable = ("failed", Just $ prettyNodeState xs
 displayNodeState xs = (prettyNodeState xs, Nothing)
 
 newtype Rack = Rack Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
-instance ToJSON Rack
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj Rack where
   fidType _ = fromIntegral . ord $ 'a'
   fid (Rack f) = f
+
 storageIndex ''Rack "967502a2-03df-4750-a4de-b1d9c1be20fa"
 deriveSafeCopy 0 'base ''Rack
 
 newtype Pool = Pool Fid
-  deriving
-    (Eq, Generic, Hashable, Show, Typeable, Ord, FromJSON, ToJSON)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
 instance ConfObj Pool where
   fidType _ = fromIntegral . ord $ 'o'
   fid (Pool f) = f
+
 storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
-data Process = Process {
-    r_fid :: !Fid
+data Process = Process
+  { r_fid :: !Fid
   , r_mem_as :: !Word64
   , r_mem_rss :: !Word64
   , r_mem_stack :: !Word64
   , r_mem_memlock :: !Word64
   , r_cores :: !Bitmap
   , r_endpoint :: !Endpoint
-} deriving (Eq, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable Process
 instance ToJSON Process
 instance FromJSON Process
+
 instance ConfObj Process where
   fidType _ = fromIntegral . ord $ 'r'
   fid = r_fid
+
 instance Ord Process where
   compare = comparing r_fid
+
 storageIndex ''Process "7d76bc51-c2ee-4cbf-bbfc-19276403e500"
 deriveSafeCopy 0 'base ''Process
 
-data Service_v0 = Service_v0 {
-    s_fid_v0 :: Fid
+data Service_v0 = Service_v0
+  { s_fid_v0 :: Fid
   , s_type_v0 :: ServiceType -- ^ e.g. ioservice, haservice
   , s_endpoints_v0 :: [String]
   , s_params_v0 :: ServiceParams
-} deriving (Eq, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Show, Typeable)
 
-data Service = Service {
-    s_fid :: Fid
+data Service = Service
+  { s_fid :: Fid
   , s_type :: ServiceType -- ^ e.g. ioservice, haservice
   , s_endpoints :: [Endpoint]
-} deriving (Eq, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Migrate Service where
   type MigrateFrom Service = Service_v0
@@ -373,9 +378,11 @@ instance Ord Service where
 instance Hashable Service
 instance ToJSON Service
 instance FromJSON Service
+
 instance ConfObj Service where
   fidType _ = fromIntegral . ord $ 's'
   fid = s_fid
+
 storageIndex ''Service "2f7bd43d-767a-4c6d-9586-ef369528f2e2"
 deriveSafeCopy 0 'base ''Service_v0
 deriveSafeCopy 1 'extension ''Service
@@ -390,16 +397,18 @@ data ServiceState =
   | SSStopping
   | SSInhibited ServiceState -- ^ Service state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic, Read, Ord)
+  deriving (Eq, Generic, Read, Ord, Show, Typeable)
+
 instance Hashable ServiceState
 instance ToJSON ServiceState
 instance FromJSON ServiceState
+
 storageIndex ''ServiceState "59f1f98a-bcf8-4707-8652-3ab10ed78ecb"
 deriveSafeCopy 0 'base ''ServiceState
 
 prettyServiceState :: ServiceState -> String
-prettyServiceState SSUnknown = "N/A"
-prettyServiceState SSOffline = "offline"
+prettyServiceState SSUnknown  = "N/A"
+prettyServiceState SSOffline  = "offline"
 prettyServiceState SSStarting = "starting"
 prettyServiceState SSOnline   = "online"
 prettyServiceState SSStopping = "stopping"
@@ -410,22 +419,24 @@ displayServiceState :: ServiceState -> (String, Maybe String)
 displayServiceState s@SSInhibited{} = ("inhibited", Just $ prettyServiceState s)
 displayServiceState s = (prettyServiceState s, Nothing)
 
-data SDev = SDev {
-    d_fid :: Fid
+data SDev = SDev
+  { d_fid :: Fid
   , d_idx :: Word32 -- ^ Index of device in pool
   , d_size :: Word64 -- ^ Size in mb
   , d_bsize :: Word32 -- ^ Block size in mb
   , d_path :: String -- ^ Path to logical device
-} deriving (Eq, Generic, Show, Typeable, Ord)
-storageIndex ''SDev "3b07bf77-c5f9-4a42-bae9-6c658272b3a1"
-deriveSafeCopy 0 'base ''SDev
+  } deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Hashable SDev
 instance ToJSON SDev
 instance FromJSON SDev
+
 instance ConfObj SDev where
   fidType _ = fromIntegral . ord $ 'd'
   fid = d_fid
+
+storageIndex ''SDev "3b07bf77-c5f9-4a42-bae9-6c658272b3a1"
+deriveSafeCopy 0 'base ''SDev
 
 data SDevState =
     SDSUnknown
@@ -437,11 +448,12 @@ data SDevState =
   | SDSInhibited SDevState -- Failure is inhibited by a higher level failure.
   | SDSTransient SDevState -- Transient failure, and state before said
                            -- transient failure.
-  deriving (Eq, Show, Typeable, Generic, Read, Ord)
+  deriving (Eq, Generic, Ord, Read, Show, Typeable)
 
 instance Hashable SDevState
 instance ToJSON SDevState
 instance FromJSON SDevState
+
 storageIndex ''SDevState "9b261aec-81d9-42a7-a0f5-0e6463c9789a"
 deriveSafeCopy 0 'base ''SDevState
 
@@ -474,24 +486,26 @@ sdsFailTransient (SDSInhibited x) = SDSInhibited $ sdsFailTransient x
 sdsFailTransient x = SDSTransient x
 
 newtype Enclosure = Enclosure Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
-instance ToJSON Enclosure
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj Enclosure where
   fidType _ = fromIntegral . ord $ 'e'
   fid (Enclosure f) = f
+
 storageIndex ''Enclosure "c532aff7-0a81-4949-9f52-3963c7871250"
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | A controller represents an entity which allows access to a number of
 --   disks. It will typically be hosted on a node.
 newtype Controller = Controller Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
 
-instance ToJSON Controller
-instance FromJSON Controller
 storageIndex ''Controller "e0b49549-5ba5-4e2a-9440-81fbfd1b0253"
 deriveSafeCopy 0 'base ''Controller
+
+instance ConfObj Controller where
+  fidType _ = fromIntegral . ord $ 'c'
+  fid (Controller f) = f
 
 -- | Controller state type. Note that:
 --   - A controller cannot be meaningfully turned 'off', so there is no
@@ -499,26 +513,23 @@ deriveSafeCopy 0 'base ''Controller
 --   - A controller has no persistent identity of its own, so there is no
 --     permanent failure state. A controller which is completely broken and
 --     replaced will appear identical from Halon's perspective.
-data ControllerState
-  = CSUnknown -- ^ We do not know the state of the controller.
+data ControllerState =
+    CSUnknown -- ^ We do not know the state of the controller.
   | CSOnline -- ^ Controller is fine.
   | CSTransient -- ^ Controller is experiencing a failure.
-  deriving (Eq, Show, Typeable, Generic, Read)
-storageIndex ''ControllerState "83139b83-4170-47e2-be95-8a726c8159a6"
-deriveSafeCopy 0 'base ''ControllerState
-instance ToJSON ControllerState
+  deriving (Eq, Generic, Read, Show, Typeable)
 
 instance Hashable ControllerState
+instance ToJSON ControllerState
 
-instance ConfObj Controller where
-  fidType _ = fromIntegral . ord $ 'c'
-  fid (Controller f) = f
+storageIndex ''ControllerState "83139b83-4170-47e2-be95-8a726c8159a6"
+deriveSafeCopy 0 'base ''ControllerState
 
 newtype Disk = Disk Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable, Ord)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, ToJSON)
+
 storageIndex ''Disk "ab1e2612-33cb-436c-8a37-d6763212db27"
 deriveSafeCopy 0 'base ''Disk
-instance ToJSON Disk
 
 instance ConfObj Disk where
   fidType _ = fromIntegral . ord $ 'k'
@@ -535,69 +546,71 @@ data PVerType = PVerActual {
 } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable PVerType
-storageIndex ''PVerType "eb620a23-ffd8-4705-871f-c0674ad84cb7"
-deriveSafeCopy 0 'base ''PVerType
 instance ToJSON PVerType
 
-data PVer = PVer {
-    v_fid :: Fid
+storageIndex ''PVerType "eb620a23-ffd8-4705-871f-c0674ad84cb7"
+deriveSafeCopy 0 'base ''PVerType
+
+data PVer = PVer
+  { v_fid :: Fid
   , v_type :: PVerType
-} deriving (Eq, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable PVer
-storageIndex ''PVer "055c3f88-4bdd-419a-837b-a029c7f4effd"
-deriveSafeCopy 0 'base ''PVer
 instance ToJSON PVer
 
+storageIndex ''PVer "055c3f88-4bdd-419a-837b-a029c7f4effd"
+deriveSafeCopy 0 'base ''PVer
+
 newtype PVerCounter = PVerCounter Word32
-  deriving (Eq, Generic, Show, Typeable, Ord, Hashable)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, ToJSON)
 
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
   fid = v_fid
+
 storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter
-instance ToJSON PVerCounter
 
 newtype RackV = RackV Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj RackV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (RackV f) = f
+
 storageIndex ''RackV "23dd6e71-7a5b-48e1-9d1e-9aa2ef6a6994"
 deriveSafeCopy 0 'base ''RackV
-instance ToJSON RackV
 
 newtype EnclosureV = EnclosureV Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj EnclosureV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (EnclosureV f) = f
+
 storageIndex ''EnclosureV "f63ac45b-7a36-483c-84c8-739f028b04ed"
 deriveSafeCopy 0 'base ''EnclosureV
-instance ToJSON EnclosureV
 
 newtype ControllerV = ControllerV Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj ControllerV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (ControllerV f) = f
+
 storageIndex ''ControllerV "d3ab3c01-198d-4612-9281-ddf8ce217910"
 deriveSafeCopy 0 'base ''ControllerV
-instance ToJSON ControllerV
 
 newtype DiskV = DiskV Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 instance ConfObj DiskV where
   fidType _ = fromIntegral . ord $ 'j'
   fid (DiskV f) = f
+
 storageIndex ''DiskV "31526120-34c9-47c8-b63e-8668ee6add27"
 deriveSafeCopy 0 'base ''DiskV
-instance ToJSON DiskV
 
 -- | Wrapper for 'C.TimeSpec' providing 'Binary' and 'Hashable'
 -- instances.
@@ -606,7 +619,7 @@ instance ToJSON DiskV
 --
 -- TODO: Move this somewhere else
 newtype TimeSpec = TimeSpec { _unTimeSpec :: C.TimeSpec }
-  deriving (Eq, Num, Ord, Read, Show, Generic, Typeable)
+  deriving (Eq, Generic, Num, Ord, Read, Show, Typeable)
 
 storageIndex ''TimeSpec "fb1d3f0b-5761-41a3-b14a-ca5f458180b6"
 deriveSafeCopy 0 'base ''TimeSpec
@@ -661,11 +674,12 @@ secondsSince oldSpec = do
 data PoolRepairType = Failure | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
-storageIndex ''PoolRepairType "e26504dd-3dfd-4989-872f-180097e755d0"
-deriveSafeCopy 0 'base ''PoolRepairType
 instance Hashable PoolRepairType
 instance ToJSON PoolRepairType
 instance FromJSON PoolRepairType
+
+storageIndex ''PoolRepairType "e26504dd-3dfd-4989-872f-180097e755d0"
+deriveSafeCopy 0 'base ''PoolRepairType
 
 -- | Information attached to 'PoolRepairStatus'.
 data PoolRepairInformation_v0 = PoolRepairInformation_v0
@@ -681,6 +695,7 @@ data PoolRepairInformation_v0 = PoolRepairInformation_v0
 instance Hashable PoolRepairInformation_v0
 instance ToJSON PoolRepairInformation_v0
 instance FromJSON PoolRepairInformation_v0
+
 deriveSafeCopy 0 'base ''PoolRepairInformation_v0
 
 data PoolRepairInformation = PoolRepairInformation
@@ -692,6 +707,7 @@ data PoolRepairInformation = PoolRepairInformation
 instance Hashable PoolRepairInformation
 instance ToJSON PoolRepairInformation
 instance FromJSON PoolRepairInformation
+
 storageIndex ''PoolRepairInformation "2ef9e93c-5351-45e9-8a7d-82caa99bc4e6"
 deriveSafeCopy 1 'extension ''PoolRepairInformation
 
@@ -717,6 +733,7 @@ data PoolRepairStatus = PoolRepairStatus
 instance Hashable PoolRepairStatus
 instance ToJSON PoolRepairStatus
 instance FromJSON PoolRepairStatus
+
 storageIndex ''PoolRepairStatus "a238bffa-4a36-457d-95e8-2947ed8f45e5"
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
@@ -724,42 +741,37 @@ deriveSafeCopy 0 'base ''PoolRepairStatus
 -- mero should always send information about that to mero in the same
 -- order.
 newtype DiskFailureVector = DiskFailureVector [Disk]
-  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, ToJSON)
+
 storageIndex ''DiskFailureVector "00b766c3-3740-4c9c-afb4-e485fa52b433"
 deriveSafeCopy 0 'base ''DiskFailureVector
-instance ToJSON DiskFailureVector
 
 -- | @lnet@ address associated with a host.
 newtype LNid = LNid Lnet.LNid
-  deriving (Eq, Generic, Hashable, Show, Typeable)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
+
 storageIndex ''LNid "c46ca6b1-e84a-4981-8aa9-ed2223c91bff"
 deriveSafeCopy 0 'base ''LNid
-instance ToJSON LNid
 
 -- | Hardware information about a host.
 data HostHardwareInfo = HostHardwareInfo
-       { hhMemorySize  :: !Word64
-       -- ^ Memory size in MiB
-       , hhCpuCount    :: !Int
-       -- ^ Number of CPUs
-       , hhLNidAddress :: !Lnet.LNid
-       -- ^ @lnet@ address
-       }
-   deriving (Eq, Show, Typeable, Generic)
+  { hhMemorySize  :: !Word64    -- ^ Memory size in MiB
+  , hhCpuCount    :: !Int       -- ^ Number of CPUs
+  , hhLNidAddress :: !Lnet.LNid -- ^ @lnet@ address
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable HostHardwareInfo
+instance ToJSON HostHardwareInfo
+
 storageIndex ''HostHardwareInfo "7b81d801-ff8f-4364-b635-6648fc8614b2"
 deriveSafeCopy 0 'base ''HostHardwareInfo
-instance ToJSON HostHardwareInfo
 
 -- | Alias for process ID. In glibc @pid_t = int@.
 newtype PID = PID Int
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
-instance Hashable PID
 storageIndex ''PID "a28fae4e-054b-4442-b81b-9dea98312d3a"
 deriveSafeCopy 0 'base ''PID
-instance ToJSON PID
 
 -- | Process state. This is a generalisation of what might be reported to Mero.
 data ProcessState =
@@ -772,10 +784,12 @@ data ProcessState =
   | PSFailed String -- ^ Process has failed, with reason given
   | PSInhibited ProcessState -- ^ Process state is masked by a higher level
                              --   failure.
-  deriving (Eq, Show, Typeable, Generic, Read, Ord)
+  deriving (Eq, Generic, Ord, Read, Show, Typeable)
+
 instance Hashable ProcessState
 instance ToJSON ProcessState
 instance FromJSON ProcessState
+
 storageIndex ''ProcessState "8bdf4695-22d6-4f21-88a9-27445ad29252"
 deriveSafeCopy 0 'base ''ProcessState
 
@@ -807,8 +821,8 @@ displayProcessState s = ( prettyProcessState s, Nothing)
 --   * 0 - confd
 --   * 1 - other
 newtype BootLevel = BootLevel { unBootLevel :: Int }
-  deriving
-    (Eq, Show, Typeable, Generic, Hashable, Ord, FromJSON, ToJSON)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
+
 storageIndex ''BootLevel "1d4cb2fc-6dbf-4dd9-ae3e-e48bb7accce7"
 deriveSafeCopy 0 'base ''BootLevel
 
@@ -816,8 +830,10 @@ data ProcessLabel_0 =
     PLM0t1fs_0
   | PLBootLevel_0 BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
   | PLNoBoot_0  -- ^ Tag processes which should not boot.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Show, Typeable)
+
 instance Hashable ProcessLabel_0
+
 deriveSafeCopy 0 'base ''ProcessLabel_0
 
 -- | Label to attach to a Mero process providing extra context about how
@@ -831,10 +847,9 @@ data ProcessLabel =
   | PLM0d BootLevel -- ^ Process runs in m0d at the given boot level.
                     --   Currently 0 = confd, 1 = other0
   | PLHalon  -- ^ Process lives inside Halon program space.
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Show, Typeable)
+
 instance Hashable ProcessLabel
-storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
-deriveSafeCopy 1 'extension ''ProcessLabel
 instance ToJSON ProcessLabel
 
 instance Migrate ProcessLabel where
@@ -843,16 +858,21 @@ instance Migrate ProcessLabel where
   migrate (PLBootLevel_0 x) = PLM0d x
   migrate PLNoBoot_0 = PLHalon
 
+storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
+deriveSafeCopy 1 'extension ''ProcessLabel
+
 -- | Process environment. Values stored here will be added to the environment
 --   file for the process.
 data ProcessEnv =
     ProcessEnvValue String String
   | ProcessEnvInRange String Int
-  deriving (Eq, Ord, Show, Generic, Typeable)
+  deriving (Eq, Generic, Ord, Show, Typeable)
+
 instance Hashable ProcessEnv
+instance ToJSON ProcessEnv
+
 storageIndex ''ProcessEnv "9a713802-a47b-4abb-97f6-2cbc35c95431"
 deriveSafeCopy 0 'base ''ProcessEnv
-instance ToJSON ProcessEnv
 
 -- | Cluster disposition.
 --   This represents the desired state for the cluster, which is used to
@@ -860,40 +880,43 @@ instance ToJSON ProcessEnv
 data Disposition =
     ONLINE -- ^ Cluster should be online
   | OFFLINE -- ^ Cluster should be offline (e.g. for maintenance)
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable Disposition
 instance ToJSON Disposition
 instance FromJSON Disposition
+
 storageIndex ''Disposition "c84234bf-5d6a-4918-a3fd-82f16b012cb7"
 deriveSafeCopy 0 'base ''Disposition
 
 -- | Marker to tag the cluster run level
 data RunLevel = RunLevel
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable RunLevel
+instance ToJSON RunLevel
+
 storageIndex ''RunLevel "534ecce0-42bf-4618-ae24-dbb235ce5dec"
 deriveSafeCopy 0 'base ''RunLevel
-instance ToJSON RunLevel
 
 -- | Marker to tag the cluster stop level
 data StopLevel = StopLevel
   deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable StopLevel
+instance ToJSON StopLevel
+
 storageIndex ''StopLevel "65ff0e97-9a9f-47f8-8d80-b5ddce912985"
 deriveSafeCopy 0 'base ''StopLevel
-instance ToJSON StopLevel
 
 -- | Cluster state.
 --   We do not store this cluster state in the graph, but it's a useful
 --   aggregation for sending to clients.
-data MeroClusterState = MeroClusterState {
-    _mcs_disposition :: Disposition
+data MeroClusterState = MeroClusterState
+  { _mcs_disposition :: Disposition
   , _mcs_runlevel :: BootLevel
   , _mcs_stoplevel :: BootLevel
-} deriving (Eq, Show, Typeable, Generic)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Binary MeroClusterState
 instance FromJSON MeroClusterState
@@ -914,28 +937,30 @@ prettyStatus MeroClusterState{..} = unlines [
 -- we can just check against the hash if we actually have some changes
 -- to commit.
 data ConfUpdateVersion = ConfUpdateVersion Word64 (Maybe Int)
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable ConfUpdateVersion
+instance ToJSON ConfUpdateVersion
+
 storageIndex ''ConfUpdateVersion "0792089d-38c7-4993-8e7b-fcc30dd2ca33"
 deriveSafeCopy 0 'base ''ConfUpdateVersion
-instance ToJSON ConfUpdateVersion
 
 -- | Process property, that shows that process was already bootstrapped,
 -- and no mkfs is needed.
 data ProcessBootstrapped = ProcessBootstrapped
-  deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable ProcessBootstrapped
-storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
-deriveSafeCopy 0 'base ''ProcessBootstrapped
 instance ToJSON ProcessBootstrapped
 
+storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
+deriveSafeCopy 0 'base ''ProcessBootstrapped
+
 -- | Filesystem statistics
-data FilesystemStats = FilesystemStats {
-    _fs_fetched_on :: TimeSpec
+data FilesystemStats = FilesystemStats
+  { _fs_fetched_on :: TimeSpec
   , _fs_stats :: FSStats
-} deriving (Eq, Show, Typeable, Generic)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable FilesystemStats
 instance ToJSON FilesystemStats
@@ -947,7 +972,9 @@ storageIndex ''FilesystemStats "cc95cff6-abb5-474a-aad9-44acdf1d5e4a"
 deriveSafeCopy 0 'base ''FilesystemStats
 
 -- | A disk marker for replaced disks.
-data Replaced = Replaced deriving (Eq, Show, Typeable, Generic)
+data Replaced = Replaced
+  deriving (Eq, Generic, Show, Typeable)
+
 instance Hashable Replaced
 instance ToJSON Replaced
 instance FromJSON Replaced
