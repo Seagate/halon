@@ -80,7 +80,13 @@ goProfile CI.Profile{..} = do
     profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
                           <*> pure prof_md_redundancy
     modifyGraph $ G.connect Cluster Has profile
-    error "XXX IMPLEMENTME: Use `prof_pools`"
+    for_ prof_pools goPool
+
+goPool :: CI.Pool -> PhaseM RC l ()
+goPool CI.Pool{..} = do
+    -- pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+    --                 <*> pure pool_ver_policy
+    error "XXX IMPLEMENTME"
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} =
