@@ -222,6 +222,22 @@ instance ConfObj Profile where
 storageIndex ''Profile "c1d1eca6-4f3b-4c01-b0d8-8bed54b670ce"
 deriveSafeCopy 0 'base ''Profile
 
+data Pool = Pool
+  { pl_fid :: Fid
+  , pl_ver_policy :: Word32
+  } deriving (Eq, Generic, Ord, Show, Typeable)
+
+instance Hashable Pool
+instance FromJSON Pool
+instance ToJSON Pool
+
+instance ConfObj Pool where
+  fidType _ = fromIntegral . ord $ 'o'
+  fid = pl_fid
+
+storageIndex ''Pool "56771d2a-f5f8-40fc-94d0-1d655371555f"
+deriveSafeCopy 0 'base ''Pool
+
 -- XXX --------------------------------------------------------------
 
 newtype Root = Root Fid
@@ -987,7 +1003,8 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
+  [ ''Profile, ''Pool
+  , ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1012,6 +1029,7 @@ $(mkDicts
   , (''Enclosure, ''At, ''Enclosure_XXX1)
   , (''Disk, ''At, ''StorageDevice_XXX1)
     -- Parent/child relationships between conf entities
+  , (''Profile, ''IsParentOf, ''Pool)
   , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
   , (''Filesystem, ''IsParentOf, ''Node)
   , (''Filesystem, ''IsParentOf, ''Rack)
@@ -1061,7 +1079,8 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
+  [ ''Profile, ''Pool
+  , ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1074,11 +1093,11 @@ $(mkResRel
   , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
-    (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
+    (''Cluster, AtMostOne, ''Has, Unbounded, ''Profile)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Disposition)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''PVerCounter)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
-  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Profile)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
@@ -1087,6 +1106,7 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot_XXX1)
     -- Parent/child relationships between conf entities
+  , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Profile_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)

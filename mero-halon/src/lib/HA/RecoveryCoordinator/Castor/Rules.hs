@@ -13,7 +13,10 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules (castorRules, goRack_XXX3) where
+module HA.RecoveryCoordinator.Castor.Rules
+  ( castorRules
+  , goRack_XXX3
+  ) where
 
 import           Control.Monad.Catch (catch, SomeException)
 import           Data.Foldable (for_)
@@ -36,7 +39,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
-import qualified HA.Resources.Mero as M0 (Profile(..))
+import qualified HA.Resources.Mero as M0 (IsParentOf(..), Pool(..), Profile(..))
 import           Network.CEP
 
 -- | Collection of Castor rules.
@@ -80,13 +83,13 @@ goProfile CI.Profile{..} = do
     profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
                           <*> pure prof_md_redundancy
     modifyGraph $ G.connect Cluster Has profile
-    for_ prof_pools goPool
+    for_ prof_pools (goPool profile)
 
-goPool :: CI.Pool -> PhaseM RC l ()
-goPool CI.Pool{..} = do
-    -- pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-    --                 <*> pure pool_ver_policy
-    error "XXX IMPLEMENTME"
+goPool :: M0.Profile -> CI.Pool -> PhaseM RC l ()
+goPool profile CI.Pool{..} = do
+    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+                    <*> pure pool_ver_policy
+    modifyGraph $ G.connect profile M0.IsParentOf pool
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} =
