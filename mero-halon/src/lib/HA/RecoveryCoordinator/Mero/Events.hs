@@ -189,39 +189,39 @@ instance ProcessEncode InternalObjectStateChange where
         put dict >> put (runPutLazy $ safePut obj) >> put (old, new)
 
 -- | Request abort on the given pool.
-data AbortSNSOperation = AbortSNSOperation M0.Pool UUID
+data AbortSNSOperation = AbortSNSOperation M0.Pool_XXX3 UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Reply to SNS operation abort.
 data AbortSNSOperationResult
-          = AbortSNSOperationOk M0.Pool -- ^ Operation  abort succesfull.
-          | AbortSNSOperationFailure M0.Pool String -- ^ Operation abort completed with failure.
-          | AbortSNSOperationSkip M0.Pool -- ^ Operation abort was skipped because no SNS operation was running.
+          = AbortSNSOperationOk M0.Pool_XXX3 -- ^ Operation  abort succesfull.
+          | AbortSNSOperationFailure M0.Pool_XXX3 String -- ^ Operation abort completed with failure.
+          | AbortSNSOperationSkip M0.Pool_XXX3 -- ^ Operation abort was skipped because no SNS operation was running.
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Binary AbortSNSOperationResult
 
 -- | Request SNS quiesce on the given 'M0.Pool'.
-newtype QuiesceSNSOperation = QuiesceSNSOperation M0.Pool
+newtype QuiesceSNSOperation = QuiesceSNSOperation M0.Pool_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Result of SNS quiesce request.
 data QuiesceSNSOperationResult
-          = QuiesceSNSOperationOk M0.Pool
-          | QuiesceSNSOperationFailure M0.Pool String
-          | QuiesceSNSOperationSkip M0.Pool
+          = QuiesceSNSOperationOk M0.Pool_XXX3
+          | QuiesceSNSOperationFailure M0.Pool_XXX3 String
+          | QuiesceSNSOperationSkip M0.Pool_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 instance Binary QuiesceSNSOperationResult
 
 -- | Request restart of the SNS operation on the given pool.
-data RestartSNSOperationRequest = RestartSNSOperationRequest M0.Pool UUID
+data RestartSNSOperationRequest = RestartSNSOperationRequest M0.Pool_XXX3 UUID
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Result of SNS restart request.
 data RestartSNSOperationResult =
-    RestartSNSOperationSuccess M0.Pool
-  | RestartSNSOperationFailed M0.Pool String
-  | RestartSNSOperationSkip M0.Pool
+    RestartSNSOperationSuccess M0.Pool_XXX3
+  | RestartSNSOperationFailed M0.Pool_XXX3 String
+  | RestartSNSOperationSkip M0.Pool_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 instance Binary RestartSNSOperationResult
 

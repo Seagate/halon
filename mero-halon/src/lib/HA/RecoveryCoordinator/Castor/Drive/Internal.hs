@@ -45,7 +45,7 @@ rgRecordDiskOnline = updateDiskFailure defAction rm where
      | otherwise = (x:) <$> rm d xs
 
 -- | Generic update graph function that just removes code duplication
-updateDiskFailure :: (M0.Pool -> G.Graph -> G.Graph) -- ^ Default action if structure does not exist.
+updateDiskFailure :: (M0.Pool_XXX3 -> G.Graph -> G.Graph) -- ^ Default action if structure does not exist.
                   -> (M0.Disk -> [M0.Disk] -> Maybe [M0.Disk]) -- ^ Vector update function
                   -> M0.Disk -- ^ Disk in question
                   -> G.Graph
@@ -58,7 +58,7 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
     , Just rack  <- [G.connectedFrom     M0.IsParentOf encl  graph :: Maybe M0.Rack]
     , rackv <- G.connectedTo  rack M0.IsRealOf         graph :: [M0.RackV]
     , Just pver  <- [G.connectedFrom     M0.IsParentOf rackv graph :: Maybe M0.PVer]
-    , Just pool  <- [G.connectedFrom     M0.IsParentOf pver  graph :: Maybe M0.Pool]
+    , Just pool  <- [G.connectedFrom     M0.IsParentOf pver  graph :: Maybe M0.Pool_XXX3]
     ]
   -- Get all pools, except metadata pools.
   allPools = Pool.getNonMD graph

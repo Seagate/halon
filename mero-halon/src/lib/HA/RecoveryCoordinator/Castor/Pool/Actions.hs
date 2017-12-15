@@ -23,7 +23,7 @@ import qualified HA.Resources.Mero.Note as M0
 
 -- | Find all 'M0.Pool's in the RG that aren't metadata pools. See
 -- also 'getPool'.
-getNonMD :: G.Graph -> [M0.Pool]
+getNonMD :: G.Graph -> [M0.Pool_XXX3]
 getNonMD rg =
   [ pl
   | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
@@ -42,7 +42,7 @@ getNonMD rg =
 -- doesn't belong to the pool." See discussion at
 -- https://seagate.slack.com/archives/mero-halon/p1457632533003295 for
 -- details.
-getSDevs :: M0.Pool -> G.Graph -> [M0.SDev]
+getSDevs :: M0.Pool_XXX3 -> G.Graph -> [M0.SDev]
 getSDevs pool rg =
   -- Find SDevs for every single pool version belonging to the disk.
   let sdevs =
@@ -60,7 +60,7 @@ getSDevs pool rg =
 
 -- | Get all 'M0.SDev's in the given 'M0.Pool' with the given
 -- 'M0.ConfObjState'.
-getSDevsWithState :: M0.Pool
+getSDevsWithState :: M0.Pool_XXX3
                   -> M0.ConfObjectState
                   -> G.Graph
                   -> [M0.SDev]

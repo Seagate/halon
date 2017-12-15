@@ -84,7 +84,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
           putStrLn $ label ++ printf ("%" ++ show width ++ "s") val
       unless (null sns) $ do
          putStrLn "    sns operations:"
-         forM_ sns $ \(M0.Pool pool_fid, s) -> do
+         forM_ sns $ \(M0.Pool_XXX3 pool_fid, s) -> do
            putStrLn $ "      pool:" ++ fidToStr pool_fid ++ " => " ++ show (M0.prsType s)
            putStrLn $ "      uuid:" ++ show (M0.prsRepairUUID s)
            forM_ (M0.prsPri s) $ \i -> do

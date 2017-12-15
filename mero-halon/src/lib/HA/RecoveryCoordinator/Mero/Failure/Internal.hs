@@ -69,7 +69,7 @@ data UpdateType m
 
 -- | Create pool versions for the given pool.
 createPoolVersionsInPool :: M0.Filesystem
-                         -> M0.Pool
+                         -> M0.Pool_XXX3
                          -> [PoolVersion]
                          -> Bool -- ^ If specified, the pool version
                                  -- is assumed to contain failed
@@ -154,11 +154,11 @@ createPoolVersions :: M0.Filesystem
 createPoolVersions fs pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
   where
-    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
     imeta_pools =
       [ pool
       | Just (pver :: M0.PVer) <- [M0.lookupConfObjByFid (M0.f_imeta_fid fs) rg]
-      , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
+      , Just (pool :: M0.Pool_XXX3) <- [G.connectedFrom M0.IsParentOf pver rg]
       ]
     pools = filter (/= mdpool)
           . filter (\x -> not $ elem x imeta_pools)

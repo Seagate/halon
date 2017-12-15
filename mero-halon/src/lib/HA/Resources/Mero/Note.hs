@@ -144,7 +144,7 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile_XXX3
 instance ShowFidObj M0.Filesystem
-instance ShowFidObj M0.Pool
+instance ShowFidObj M0.Pool_XXX3
 instance ShowFidObj M0.PVer
 instance ShowFidObj M0.Enclosure
 instance ShowFidObj M0.Controller
@@ -234,7 +234,7 @@ $(join <$> (mapM (mkDict ''HasConfObjectState) $
   , ''M0.Service
   , ''M0.Disk
   , ''M0.SDev
-  , ''M0.Pool
+  , ''M0.Pool_XXX3
   , ''M0.PVer
   , ''M0.RackV
   , ''M0.EnclosureV
@@ -349,8 +349,8 @@ instance HasConfObjectState M0.SDev where
   toConfObjState _ (M0.SDSTransient M0.SDSRebalancing) = M0_NC_REBALANCE
   toConfObjState _ (M0.SDSTransient _) = M0_NC_TRANSIENT
   toConfObjState _ (M0.SDSInhibited _) = M0_NC_TRANSIENT
-instance HasConfObjectState M0.Pool where
-  hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
+instance HasConfObjectState M0.Pool_XXX3 where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool_XXX3
 instance HasConfObjectState M0.PVer where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
 instance HasConfObjectState M0.RackV where
@@ -394,7 +394,7 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     , mkTypePair (Proxy :: Proxy M0.Filesystem)
     , mkTypePair (Proxy :: Proxy M0.Node)
     , mkTypePair (Proxy :: Proxy M0.Rack)
-    , mkTypePair (Proxy :: Proxy M0.Pool)
+    , mkTypePair (Proxy :: Proxy M0.Pool_XXX3)
     , mkTypePair (Proxy :: Proxy M0.Process)
     , mkTypePair (Proxy :: Proxy M0.Service)
     , mkTypePair (Proxy :: Proxy M0.SDev)
@@ -436,7 +436,7 @@ $(mkDicts
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
   , (''M0.Service, ''Is, ''PrincipalRM)
-  , (''M0.Pool, ''Is, ''ConfObjectState)
+  , (''M0.Pool_XXX3, ''Is, ''ConfObjectState)
   , (''M0.PVer, ''Is, ''ConfObjectState)
   ]
   )
@@ -448,7 +448,7 @@ $(mkResRel
   , (''M0.Enclosure, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Controller, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Service, Unbounded, ''Is, AtMostOne, ''PrincipalRM)
-  , (''M0.Pool, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
+  , (''M0.Pool_XXX3, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.PVer, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   ]
   []

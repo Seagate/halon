@@ -111,29 +111,29 @@ import           Network.CEP
 --------------------------------------------------------------------------------
 
 -- | Event sent when we want a 5 minute spiel query rule to fire
-data SpielQuery = SpielQuery M0.Pool M0.PoolRepairType UUID
+data SpielQuery = SpielQuery M0.Pool_XXX3 M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 deriveSafeCopy 0 'base ''SpielQuery
 
 -- | Event sent when we want a 60 minute repeated query rule to fire
-data SpielQueryHourly = SpielQueryHourly M0.Pool M0.PoolRepairType UUID
+data SpielQueryHourly = SpielQueryHourly M0.Pool_XXX3 M0.PoolRepairType UUID
   deriving (Eq, Ord, Show, Generic, Typeable)
 deriveSafeCopy 0 'base ''SpielQueryHourly
 
 -- | Event that hourly job finihed.
-data SpielQueryHourlyFinished = SpielQueryHourlyFinished M0.Pool M0.PoolRepairType UUID
+data SpielQueryHourlyFinished = SpielQueryHourlyFinished M0.Pool_XXX3 M0.PoolRepairType UUID
   deriving (Eq, Show, Generic, Typeable)
 
 deriveSafeCopy 0 'base ''SpielQueryHourlyFinished
 
-data ContinueSNS = ContinueSNS UUID M0.Pool M0.PoolRepairType
+data ContinueSNS = ContinueSNS UUID M0.Pool_XXX3 M0.PoolRepairType
       deriving (Eq, Show, Ord, Typeable, Generic)
 deriveSafeCopy 0 'base ''ContinueSNS
 
 data ContinueSNSResult
-       = SNSContinued UUID M0.Pool M0.PoolRepairType
-       | SNSFailed    UUID M0.Pool M0.PoolRepairType String
-       | SNSSkipped   UUID M0.Pool M0.PoolRepairType
+       = SNSContinued UUID M0.Pool_XXX3 M0.PoolRepairType
+       | SNSFailed    UUID M0.Pool_XXX3 M0.PoolRepairType String
+       | SNSSkipped   UUID M0.Pool_XXX3 M0.PoolRepairType
       deriving (Eq, Show, Ord, Typeable, Generic)
 deriveSafeCopy 0 'base ''ContinueSNSResult
 
@@ -145,7 +145,7 @@ deriveSafeCopy 0 'base ''ContinueSNSResult
 -- | Handler for @M0_NC_ONLINE@ 'Pool' messages. Its main role is to
 -- load all metadata information and schedule request that will check
 -- if repair could be completed.
-queryStartHandling :: M0.Pool -> PhaseM RC l ()
+queryStartHandling :: M0.Pool_XXX3 -> PhaseM RC l ()
 queryStartHandling pool = do
   M0.PoolRepairStatus prt ruuid _ <- getPoolRepairStatus pool >>= \case
     Nothing -> do
@@ -173,7 +173,7 @@ processSnsStatusReply ::
       --
       -- In case 'anyIOSFailed', SNS abort message is provided instead
       -- of 'PoolRepairInformation'.
-   -> M0.Pool
+   -> M0.Pool_XXX3
    -> [Spiel.SnsStatus]
    -> PhaseM RC l ()
 processSnsStatusReply getUUIDs preProcess onNotRunning onNonComplete onComplete pool sts = do
@@ -505,7 +505,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRebalanceRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRebalanceStarted)
-    fldPoolDisks = Proxy :: Proxy '("pooldisks", Maybe (M0.Pool, [M0.Disk]))
+    fldPoolDisks = Proxy :: Proxy '("pooldisks", Maybe (M0.Pool_XXX3, [M0.Disk]))
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
@@ -676,7 +676,7 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
 
     fldReq = Proxy :: Proxy '("request", Maybe PoolRepairRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe PoolRepairStartResult)
-    fldPool = Proxy :: Proxy '("pool", Maybe M0.Pool)
+    fldPool = Proxy :: Proxy '("pool", Maybe M0.Pool_XXX3)
 
     args = fldUUID          =: Nothing
        <+> fldReq           =: Nothing
@@ -773,7 +773,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
        <+> fldRep           =: Nothing
        <+> RNil
 
-newtype DelayedAbort = DelayedAbort M0.Pool
+newtype DelayedAbort = DelayedAbort M0.Pool_XXX3
   deriving (Show, Eq, Ord, Generic)
 
 -- | Delay SNS operation abort for some time.
@@ -1071,7 +1071,7 @@ ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
 
 
 -- | Continue a previously-quiesced SNS operation.
-continueSNS :: M0.Pool  -- ^ Pool under SNS operation
+continueSNS :: M0.Pool_XXX3  -- ^ Pool under SNS operation
             -> M0.PoolRepairType
             -> PhaseM RC l ()
 continueSNS pool prt = do
@@ -1093,7 +1093,7 @@ continueSNS pool prt = do
                              ++ show (prsType prs) ++ "is registered."
 
 -- | Quiesce the repair on the given pool if the repair is on-going.
-quiesceSNS :: M0.Pool -> PhaseM RC l ()
+quiesceSNS :: M0.Pool_XXX3 -> PhaseM RC l ()
 quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 
 -- | Complete the given pool repair by notifying mero about all the
@@ -1104,7 +1104,7 @@ quiesceSNS pool = promulgateRC $ QuiesceSNSOperation pool
 -- continue with the process.
 --
 -- Starts rebalance if we were repairing and have fully completed.
-completeRepair :: M0.Pool -> M0.PoolRepairType -> Maybe UUID -> PhaseM RC l ()
+completeRepair :: M0.Pool_XXX3 -> M0.PoolRepairType -> Maybe UUID -> PhaseM RC l ()
 completeRepair pool prt muid = do
   -- if no status is found for SDev, assume M0_NC_ONLINE
   let getSDevState :: M0.SDev -> PhaseM RC l' ConfObjectState
@@ -1272,7 +1272,7 @@ checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBoot
 -- as some devices) so handle this here. Such a notification is likely
 -- to have come from IOS indicating thigns like finished
 -- repair/rebalance.
-processPoolInfo :: M0.Pool
+processPoolInfo :: M0.Pool_XXX3
                 -- ^ Pool to work on
                 -> ConfObjectState
                 -- ^ Status of the pool
@@ -1374,7 +1374,7 @@ processPoolInfo pool st m = Log.rcLog' Log.WARN $ unwords
 
 -- | Info about Pool repair update. Such sets are sent by the IO
 -- services during repair and rebalance procedures.
-data PoolInfo = PoolInfo M0.Pool ConfObjectState SDevStateMap deriving (Show)
+data PoolInfo = PoolInfo M0.Pool_XXX3 ConfObjectState SDevStateMap deriving (Show)
 
 -- | Given a 'Set', figure out if this update belongs to a 'PoolInfo' update.
 --
@@ -1391,7 +1391,7 @@ getPoolInfo (Set ns _) =
     mapMaybeM f xs = catMaybes <$> mapM f xs
 
 -- | Updates of sdev, that doesn't contain Pool version.
-newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
+newtype DevicesOnly = DevicesOnly [(M0.Pool_XXX3, SDevStateMap)] deriving (Show)
 
 -- | Given a 'Set', figure if update contains only info about devices.
 --

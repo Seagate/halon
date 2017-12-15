@@ -102,28 +102,28 @@ instance Binary StateChangeResult
 
 -- | Request SNS rebalance on the given pool. Replied to with
 -- 'PoolRebalanceStarted'.
-newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool
+newtype PoolRebalanceRequest = PoolRebalanceRequest M0.Pool_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Reply to 'PoolRebalanceRequest'.
 data PoolRebalanceStarted =
-  PoolRebalanceStarted M0.Pool
+  PoolRebalanceStarted M0.Pool_XXX3
   -- ^ SNS rebalance procedure started on the given 'M0.Pool'.
-  | PoolRebalanceFailedToStart M0.Pool
+  | PoolRebalanceFailedToStart M0.Pool_XXX3
   -- ^ SNS rebalance procedure not started on the given 'M0.Pool'.
   deriving (Show, Eq, Ord, Typeable, Generic)
 instance Binary PoolRebalanceStarted
 
 -- | Request SNS repair on the given 'M0.Pool'. Replied to with
 -- 'PoolRepairStartResult'.
-newtype PoolRepairRequest = PoolRepairRequest M0.Pool
+newtype PoolRepairRequest = PoolRepairRequest M0.Pool_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | Reply to 'PoolRepairRequest'.
 data PoolRepairStartResult
-  = PoolRepairStarted M0.Pool
+  = PoolRepairStarted M0.Pool_XXX3
   -- ^ SNS repair has started on the given 'M0.Pool'.
-  | PoolRepairFailedToStart M0.Pool String
+  | PoolRepairFailedToStart M0.Pool_XXX3 String
   -- ^ SNS repair has failed to start on the given 'M0.Pool' with the
   -- provided reason.
   deriving (Show, Eq, Ord, Typeable, Generic)
@@ -151,7 +151,7 @@ data ClusterResetRequest = ClusterResetRequest
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
       -- ^ Current 'M0.MeroClusterState'.
-      , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
+      , csrSNS        :: [(M0.Pool_XXX3, M0.PoolRepairStatus)]
       -- ^ 'M0.Pool's and their SNS repair/rebalance status.
       , csrInfo       :: Maybe (M0.Profile_XXX3, M0.Filesystem)
       -- ^ 'M0.Profile' and 'M0.Filesystem' information.

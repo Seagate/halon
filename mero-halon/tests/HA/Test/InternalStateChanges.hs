@@ -124,7 +124,7 @@ failvecCascade t pg = do
       let pools =
               [ pool | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg']
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg'
-              , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg'
+              , (pool :: M0.Pool_XXX3) <- G.connectedTo fs M0.IsParentOf rg'
               , (pver :: M0.PVer) <- G.connectedTo pool M0.IsParentOf rg'
               , M0.fid pool /= M0.f_mdpool_fid fs
               , M0.fid pver /= M0.f_imeta_fid fs

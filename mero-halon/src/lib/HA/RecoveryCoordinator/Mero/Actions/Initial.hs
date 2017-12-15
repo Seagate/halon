@@ -60,8 +60,8 @@ initialiseConfInRG_XXX3 = getFilesystem >>= \case
     Nothing -> do
       root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
       profile <- M0.Profile_XXX3 <$> newFidRC (Proxy :: Proxy M0.Profile_XXX3)
-      pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-      mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+      pool <- M0.Pool_XXX3 <$> newFidRC (Proxy :: Proxy M0.Pool_XXX3)
+      mdpool <- M0.Pool_XXX3 <$> newFidRC (Proxy :: Proxy M0.Pool_XXX3)
       -- Note that this FID will actually be overwritten by `createIMeta`
       imeta_fid <- newFidRC (Proxy :: Proxy M0.PVer)
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
@@ -245,7 +245,7 @@ addProcess node devs CI.M0Process_XXX0{..} = let
 --   each controller.
 createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
-    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
     encls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
     ctrls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) =<< encls
@@ -286,7 +286,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 createIMeta :: M0.Filesystem -> PhaseM RC l ()
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
-  pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+  pool <- M0.Pool_XXX3 <$> newFidRC (Proxy :: Proxy M0.Pool_XXX3)
   rg <- getLocalGraph
   let cas = [ (rack, encl, ctrl, srv)
             | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]

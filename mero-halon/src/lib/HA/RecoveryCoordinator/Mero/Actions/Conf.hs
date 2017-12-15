@@ -89,7 +89,7 @@ getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 -- | Find a pool the given 'M0.SDev' belongs to.
 --
 -- Fails if multiple pools are found. Metadata pool are ignored.
-getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
+getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool_XXX3
 getSDevPool sdev = do
     rg <- getLocalGraph
     let ps =
@@ -100,7 +100,7 @@ getSDevPool sdev = do
           , Just (ev :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ct rg]
           , Just rv <- [G.connectedFrom M0.IsParentOf ev rg :: Maybe M0.RackV]
           , Just pv <- [G.connectedFrom M0.IsParentOf rv rg :: Maybe M0.PVer]
-          , Just (p :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pv rg]
+          , Just (p :: M0.Pool_XXX3) <- [G.connectedFrom M0.IsParentOf pv rg]
           , Just (fs :: M0.Filesystem) <- [G.connectedFrom M0.IsParentOf p rg]
           , M0.fid p /= M0.f_mdpool_fid fs
           ]

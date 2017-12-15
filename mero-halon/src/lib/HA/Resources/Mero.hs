@@ -320,15 +320,15 @@ instance ConfObj Rack where
 storageIndex ''Rack "967502a2-03df-4750-a4de-b1d9c1be20fa"
 deriveSafeCopy 0 'base ''Rack
 
-newtype Pool = Pool Fid
+newtype Pool_XXX3 = Pool_XXX3 Fid
   deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
-instance ConfObj Pool where
+instance ConfObj Pool_XXX3 where
   fidType _ = fromIntegral . ord $ 'o'
-  fid (Pool f) = f
+  fid (Pool_XXX3 f) = f
 
-storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
-deriveSafeCopy 0 'base ''Pool
+storageIndex ''Pool_XXX3 "9e348e20-a996-47d2-b5d6-5ba04b952d35"
+deriveSafeCopy 0 'base ''Pool_XXX3
 
 data Process = Process
   { r_fid :: !Fid
@@ -987,7 +987,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1015,14 +1015,14 @@ $(mkDicts
   , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
   , (''Filesystem, ''IsParentOf, ''Node)
   , (''Filesystem, ''IsParentOf, ''Rack)
-  , (''Filesystem, ''IsParentOf, ''Pool)
+  , (''Filesystem, ''IsParentOf, ''Pool_XXX3)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
   , (''Rack, ''IsParentOf, ''Enclosure)
   , (''Enclosure, ''IsParentOf, ''Controller)
   , (''Controller, ''IsParentOf, ''Disk)
-  , (''Pool, ''IsParentOf, ''PVer)
+  , (''Pool_XXX3, ''IsParentOf, ''PVer)
   , (''PVer, ''IsParentOf, ''RackV)
   , (''RackV, ''IsParentOf, ''EnclosureV)
   , (''EnclosureV, ''IsParentOf, ''ControllerV)
@@ -1042,8 +1042,8 @@ $(mkDicts
   , (''Cluster, ''Has, ''M0Globals_XXX0)
   , (''Cluster, ''RunLevel, ''BootLevel)
   , (''Cluster, ''StopLevel, ''BootLevel)
-  , (''Pool, ''Has, ''PoolRepairStatus)
-  , (''Pool, ''Has, ''DiskFailureVector)
+  , (''Pool_XXX3, ''Has, ''PoolRepairStatus)
+  , (''Pool_XXX3, ''Has, ''DiskFailureVector)
   , (''Host_XXX1, ''Has, ''LNid)
   , (''Host_XXX1, ''Runs, ''Node)
   , (''Process, ''Has, ''ProcessLabel)
@@ -1061,7 +1061,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
@@ -1090,14 +1090,14 @@ $(mkResRel
   , (''Profile_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool_XXX3)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)
   , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
   , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
-  , (''Pool, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
+  , (''Pool_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
   , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
   , (''EnclosureV, AtMostOne, ''IsParentOf, Unbounded, ''ControllerV)
@@ -1116,8 +1116,8 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''M0Globals_XXX0)
   , (''Cluster, AtMostOne, ''RunLevel, AtMostOne, ''BootLevel)
   , (''Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
-  , (''Pool, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)
-  , (''Pool, AtMostOne, ''Has, AtMostOne, ''DiskFailureVector)
+  , (''Pool_XXX3, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)
+  , (''Pool_XXX3, AtMostOne, ''Has, AtMostOne, ''DiskFailureVector)
   , (''Host_XXX1, AtMostOne, ''Has, Unbounded, ''LNid)
   , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''Has, AtMostOne, ''ProcessLabel)

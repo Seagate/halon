@@ -30,7 +30,7 @@ import           HA.EventQueue (promulgateEQ)
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Evt
 import qualified HA.RecoveryCoordinator.Mero.Events as Evt
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
-import           HA.Resources.Mero (Pool(..))
+import           HA.Resources.Mero (Pool_XXX3(..))
 import qualified HA.Resources.Mero.Note as M0 (showFid)
 import qualified Handler.Mero.Helpers as Helpers
 import           Options.Applicative ((<|>))
@@ -50,7 +50,7 @@ data RepRebCommands =
   deriving (Eq, Show)
 
 data SNSOpts = SNSOpts {
-    pool :: Pool
+    pool :: Pool_XXX3
   , opUUID :: UUID
   , opTimeout :: Int
 } deriving (Eq, Show)
@@ -71,8 +71,8 @@ parseRepRebCommands =
   <|> ( Resume <$> Opt.subparser ( Opt.command "resume"
         ( Opt.withDesc parseSNSOpts "Resume in-progress repair/rebalance.")))
 
-parsePool :: Opt.Parser Pool
-parsePool = Pool <$> Helpers.fidOpt
+parsePool_XXX3 :: Opt.Parser Pool_XXX3
+parsePool_XXX3 = Pool_XXX3 <$> Helpers.fidOpt
     ( Opt.long "pool"
     <> Opt.short 'p'
     <> Opt.help "Fid of the pool to control operations on."
@@ -81,7 +81,7 @@ parsePool = Pool <$> Helpers.fidOpt
 
 parseSNSOpts :: Opt.Parser SNSOpts
 parseSNSOpts = SNSOpts
-  <$> parsePool
+  <$> parsePool_XXX3
   <*> Opt.option (Opt.maybeReader UUID.fromString)
       ( Opt.long "uuid"
       <> Opt.short 'u'

@@ -181,23 +181,23 @@ rackCascadeEnclosure _ = constTransition M0_NC_TRANSIENT
 
 -- | Transition a 'M0.Pool' to a rebalancing state, after repair has
 -- finished.
-poolRebalance :: (?loc :: CallStack) => Transition M0.Pool
+poolRebalance :: (?loc :: CallStack) => Transition M0.Pool_XXX3
 poolRebalance = Transition $ \case
   M0_NC_REPAIRED -> TransitionTo M0_NC_REBALANCE
   st -> transitionErr ?loc st
 
 -- | TODO: Fill my states in!
-poolRepairing :: Transition M0.Pool
+poolRepairing :: Transition M0.Pool_XXX3
 poolRepairing = constTransition M0_NC_REPAIR
 
 -- | 'M0.Pool' has managed to repair.
-poolRepairComplete :: (?loc :: CallStack) => Transition M0.Pool
+poolRepairComplete :: (?loc :: CallStack) => Transition M0.Pool_XXX3
 poolRepairComplete = Transition $ \case
   M0_NC_REPAIR -> TransitionTo M0_NC_REPAIRED
   st -> transitionErr ?loc st
 
 -- | 'M0.Pool' has managed to rebalance.
-poolRebalanceComplete :: (?loc :: CallStack) => Transition M0.Pool
+poolRebalanceComplete :: (?loc :: CallStack) => Transition M0.Pool_XXX3
 poolRebalanceComplete = Transition $ \case
   M0_NC_REBALANCE -> TransitionTo M0_NC_ONLINE
   st -> transitionErr ?loc st

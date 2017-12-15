@@ -207,7 +207,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has g]
                                 , Just (profile :: M0.Profile_XXX3) <- [G.connectedTo root M0.IsParentOf g]
                                 , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf g
-                                , pool :: M0.Pool     <- G.connectedTo fs M0.IsParentOf g
+                                , pool :: M0.Pool_XXX3     <- G.connectedTo fs M0.IsParentOf g
                                 , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf g
                                 ]
     for_ ppvers $ \(_, pvers) -> do
@@ -244,7 +244,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       putLocalGraph rg'
     -- Verify that everything is set up correctly
     Just fs <- runGet ls' getFilesystem
-    let mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    let mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
       $ G.memberResource mdpool (lsGraph ls')
     mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)

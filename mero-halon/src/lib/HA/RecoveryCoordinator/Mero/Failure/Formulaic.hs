@@ -45,7 +45,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                 , pa_unit_size = 4096
                 , pa_seed = Word128 101 102
                 }
-      mdpool = M0.Pool (M0.f_mdpool_fid fs)
+      mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
       imeta_pver = M0.f_imeta_fid fs
       n = m0_data_units_XXX0 globs
       k = m0_parity_units_XXX0 globs
@@ -67,7 +67,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
           | otherwise = remainder
       addFormulas g = flip execState g $ do
         for_ (filter (/= mdpool) $
-          G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
+          G.connectedTo fs M0.IsParentOf g) $ \(pool :: M0.Pool_XXX3) ->
           for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsParentOf g) $
             \(pver::M0.PVer) -> do
             for_ formulas $ \formula -> do
