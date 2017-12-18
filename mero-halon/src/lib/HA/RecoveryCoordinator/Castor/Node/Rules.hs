@@ -409,7 +409,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   dispatch <- mkDispatcher
   notifier <- mkNotifier dispatch
 
-  let route node = getFilesystem >>= \case
+  let route :: Node_XXX2 -> PhaseM RC l [Jump PhaseHandle]
+      route node = getFilesystem >>= \case
         Nothing -> return [wait_data_load]
         Just _ -> do
           mhost <- findNodeHost node
@@ -418,7 +419,9 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
                   return [reconnect_m0d]
           else return [query_host_info]
 
-  let check (StartProcessNodeNew node _) = do
+  let check :: StartProcessNodeNew
+            -> PhaseM RC l (Either e (NewMeroServer, [Jump PhaseHandle]))
+      check (StartProcessNodeNew node _) = do
         mhost <- findNodeHost node
         if isNothing mhost
         then do
