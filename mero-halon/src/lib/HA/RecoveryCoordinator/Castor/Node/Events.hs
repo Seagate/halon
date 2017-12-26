@@ -36,7 +36,7 @@ import           HA.SafeCopy
 import           Mero.ConfC (Fid)
 import           System.Posix.SysInfo
 
--- | Request start of the 'ruleNewNode'.
+-- | Request start of the 'ruleNodeNew'.
 data StartProcessNodeNew = StartProcessNodeNew !Node_XXX2 !SysInfo
   deriving (Eq, Show, Generic, Ord)
 

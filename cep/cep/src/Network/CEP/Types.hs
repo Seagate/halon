@@ -411,7 +411,7 @@ setPhase h action = singleton $ SetPhase h (ContCall PhaseNone action)
 
 -- | Assigns a 'PhaseHandle' to a 'Phase' state machine that would await for
 --   a specific message before starting. The expected messsage should
---   satisfies the given predicate.
+--   satisfy the given predicate.
 setPhaseIf :: (Application app, Serializable a, Serializable b)
            => Jump PhaseHandle
            -> (a -> GlobalState app -> l -> Process (Maybe b))

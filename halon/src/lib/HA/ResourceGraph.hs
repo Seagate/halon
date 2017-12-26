@@ -318,7 +318,6 @@ genRelationKeyName ur ua ub = "relation:" ++
     , UUID.toString ub
     ]
 
-
 -- | An internal wrapper for resources to have one universal type of resources.
 data Res = forall a. Resource a => Res !a
 
