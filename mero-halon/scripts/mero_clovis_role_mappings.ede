@@ -171,7 +171,7 @@
           m0s_params:
             tag: SPUnused
             contents: []
-- name: "c0cat"
+- name: "clovis-app"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:302"
       m0p_mem_as: {{ host_mem_as }}
@@ -184,7 +184,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["c0cat", True]
+        contents: ["clovis-app", True]
       m0p_services:
         - m0s_type:
             tag: CST_RMS
