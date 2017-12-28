@@ -49,37 +49,36 @@ import qualified Data.UUID as UUID
 import Language.Haskell.TH
 
 -- | Generate UUID from string in compile time. This method can't fail in runtime.
-mkUUID :: String -> Q Exp
+mkUUID :: String -> ExpQ
 mkUUID s =  [e| UUID.fromWords w1 w2 w3 w4 |]
   where u = fromJust (UUID.fromString s)
         (w1,w2,w3,w4) = UUID.toWords u
 
 -- | Generate 'StorageIndex' instance.
-storageIndex :: Name -> String -> Q [Dec]
+storageIndex :: Name -> String -> DecsQ
 storageIndex n s =
   [d| instance StorageIndex $(conT n) where typeKey _ = $(mkUUID s) |]
 
 -- | Generate 'StorageIndex' instance for composed types:
 --
 -- @ storageIndexQ [t| Maybe Int |] "uuid" @
-storageIndexQ :: TypeQ -> String -> Q [Dec]
+storageIndexQ :: TypeQ -> String -> DecsQ
 storageIndexQ type_ s =
   [d| instance StorageIndex $type_ where typeKey _ = $(mkUUID s) |]
 
 mkDicts :: [Name] -- ^ Resources
         -> [(Name, Name, Name)] -- ^ Relations
-        -> Q [Dec] -- ^ Decls
+        -> DecsQ -- ^ Decls
 mkDicts res rel = do
   x <- mkDictsQ (liftA2 (,) mkResourceName conT  <$> res)
                 (liftA2 (,) mkRelationName conTs <$> rel)
   y <- mkStorageDicts res rel
   return $ x ++ y
-  where conTs (a,b,c) = (conT a, conT b, conT c)
 
 -- | 'mkDicsQ' function does not create dictionaries for the storage
--- resources in order to aboid name conflicts.
-mkDictsQ :: [(Name,TypeQ)]
-         -> [(Name,(TypeQ, TypeQ, TypeQ))]
+-- resources in order to avoid name conflicts.
+mkDictsQ :: [(Name, TypeQ)]
+         -> [(Name, (TypeQ, TypeQ, TypeQ))]
          -> DecsQ
 mkDictsQ res rel = do
   resD <- join <$> mapM (uncurry mkResourceDictQ) res
@@ -89,7 +88,7 @@ mkDictsQ res rel = do
 mkResRel :: [Name] -- ^ Resources
          -> [(Name, Cardinality, Name, Cardinality, Name)] -- ^ Relations
          -> [Name] -- ^ Any additional functions to add to `remotable`
-         -> Q [Dec] -- ^ Decls
+         -> DecsQ -- ^ Decls
 mkResRel res rel othernames = do
   (resN, resD) <- fmap join . unzip <$> mapM mkResource res
   (relN, relD) <- fmap join . unzip <$> mapM mkRelation rel
@@ -99,13 +98,10 @@ mkResRel res rel othernames = do
   resTable <- mkResourcesTable res (map (\(r,_,a,_,b) -> (r,a,b)) rel)
   return $ remD ++ sresD ++ srelD ++ resD ++ relD ++ resTable
 
-mkStorageDicts :: [Name]
-               -> [(Name, Name, Name)]
-               -> Q [Dec]
+mkStorageDicts :: [Name] -> [(Name, Name, Name)] -> DecsQ
 mkStorageDicts res rel = do
   mkStorageDictsQ (liftA2 (,) mkStorageResourceName conT  <$> res)
                   (liftA2 (,) mkStorageRelationName conTs <$> rel)
-  where conTs (a,b,c) = (conT a, conT b, conT c)
 
 mkStorageDictsQ :: [(Name, TypeQ)]
                 -> [(Name, (TypeQ, TypeQ, TypeQ))]
@@ -226,36 +222,38 @@ mkStorageRelationName :: (Name, Name, Name) -> Name
 mkStorageRelationName (from, by, to) = mkName $ "storageRelationDict"
   ++ intercalate "_" [nameBase from, nameBase by, nameBase to]
 
-mkResourcesTable :: [Name] -> [(Name,Name,Name)] -> DecsQ
-mkResourcesTable names rels = mkResourceTableQ (conT <$> names) (conTs <$> rels)
-  where conTs (a,b,c) = (conT a, conT b, conT c)
+conTs :: (Name, Name, Name) -> (TypeQ, TypeQ, TypeQ)
+conTs (a, b, c) = (conT a, conT b, conT c)
 
-mkStorageResourceTable :: [Name] -> [(Name,Name,Name)] -> DecsQ
+mkResourcesTable :: [Name] -> [(Name, Name, Name)] -> DecsQ
+mkResourcesTable names rels =
+    mkResourceTableQ (conT <$> names) (conTs <$> rels)
+
+mkStorageResourceTable :: [Name] -> [(Name, Name, Name)] -> DecsQ
 mkStorageResourceTable names rels =
     mkStorageResourceTableQ (conT <$> names) (conTs <$> rels)
-  where conTs (a,b,c) = (conT a, conT b, conT c)
 
 mkResourceTableQ :: [TypeQ] -> [(TypeQ, TypeQ, TypeQ)] -> DecsQ
 mkResourceTableQ names rels = do
-  let m = mkName "__resourcesTable"
-  let is = map makeResource names
-      rs = map (\(a,b,c) -> makeRelation a b c) rels
-  sequence [ sigD m [t| RemoteTable -> RemoteTable |]
-           , funD m [clause [] (normalB (compose (is++rs))) []]
-           ]
+    let m = mkName "__resourcesTable"
+        is = map makeResource names
+        rs = map (\(a, r, b) -> makeRelation a r b) rels
+    sequence [ sigD m [t| RemoteTable -> RemoteTable |]
+             , funD m [clause [] (normalB (compose (is ++ rs))) []]
+             ]
 
-mkStorageResourceTableQ :: [TypeQ] -> [(TypeQ,TypeQ,TypeQ)] -> DecsQ
+mkStorageResourceTableQ :: [TypeQ] -> [(TypeQ, TypeQ, TypeQ)] -> DecsQ
 mkStorageResourceTableQ names rels = do
-     let m = mkName "__resourcesTable"
-     let ls = map makeStorageResource names
-         ds = map (\(a,b,c) -> makeStorageRelation a b c) rels
-     sequence [ sigD m [t| RemoteTable -> RemoteTable |]
-              , funD m [clause [] (normalB (compose (ls++ds))) []]
-              ]
+    let m = mkName "__resourcesTable"
+        ls = map makeStorageResource names
+        ds = map (\(a, r, b) -> makeStorageRelation a r b) rels
+    sequence [ sigD m [t| RemoteTable -> RemoteTable |]
+             , funD m [clause [] (normalB (compose (ls ++ ds))) []]
+             ]
 
--- | composition of the Q Exp, required to make TH not consume
--- terrabytes of memory.
-compose :: [Q Exp] -> Q Exp
+-- | Composition of the ExpQ, required to make TH not consume
+-- terabytes of memory.
+compose :: [ExpQ] -> ExpQ
 compose [] = [| id |]
 compose [e] = e
 compose (e:es) = [| $e . $(compose es) |]
@@ -268,7 +266,7 @@ genTableUpdate dict key som =
     |]
 
 -- | Create resource.
-makeResource :: TypeQ -> Q Exp
+makeResource :: TypeQ -> ExpQ
 makeResource x = [e| $f . $(makeStorageResource x) |]
   where
     f = genTableUpdate [e| resourceDict :: Static (Dict (Resource $x)) |]
@@ -276,14 +274,14 @@ makeResource x = [e| $f . $(makeStorageResource x) |]
                        [e| someResourceDict |]
 
 -- | Create relation.
-makeRelation :: TypeQ -> TypeQ -> TypeQ -> Q Exp
+makeRelation :: TypeQ -> TypeQ -> TypeQ -> ExpQ
 makeRelation a r b  = [e| $f . $(makeStorageRelation a r b) |]
   where
     f = genTableUpdate [e| relationDict :: Static (Dict (Relation $r $a $b)) |]
                        [e| mkRelationKeyName (Proxy :: Proxy $r, Proxy :: Proxy $a, Proxy :: Proxy $b) |]
                        [e| someRelationDict |]
 
-makeStorageRelation :: TypeQ -> TypeQ -> TypeQ -> Q Exp
+makeStorageRelation :: TypeQ -> TypeQ -> TypeQ -> ExpQ
 makeStorageRelation a r b =
   genTableUpdate [e| storageRelationDict :: Static (Dict (StorageRelation $r $a $b)) |]
                  [e| mkStorageRelationKeyName (Proxy :: Proxy $r, Proxy :: Proxy $a, Proxy :: Proxy $b) |]

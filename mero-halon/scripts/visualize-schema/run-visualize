@@ -15,10 +15,8 @@ export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
 ## -------------------------------------------------------------------
 
-STACK='stack --no-docker --allow-different-user'
-
 cd "$(dirname $(readlink -f $0))"
 PKG_CONFIG_PATH=$M0_SRC_DIR \
-LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-MERO_ROOT=$M0_SRC_DIR \
-$STACK runhaskell visualize.hs
+    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+    MERO_ROOT=$M0_SRC_DIR \
+    stack runhaskell visualize.hs

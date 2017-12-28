@@ -77,6 +77,7 @@ module HA.ResourceGraph
     , GL.edgesFromSrc
     , GL.edgesToDst
     , asUnbounded
+    , cardinalities
     , connectedFrom
     , connectedTo
     , GL.anyConnectedFrom
@@ -266,6 +267,13 @@ $(singletons [d|
 type family Quantify (c :: Cardinality) = (r :: * -> *) | r -> c where
   Quantify 'AtMostOne = Maybe
   Quantify 'Unbounded = []
+
+-- | Returns a pair of cardinalities at "from" and "to" sides of a relation.
+cardinalities :: forall r a b. Relation r a b
+              => Proxy r -> Proxy a -> Proxy b -> (Cardinality, Cardinality)
+cardinalities _ _ _ = let a = sing :: Sing (CardinalityFrom r a b)
+                          b = sing :: Sing (CardinalityTo r a b)
+                      in (fromSing a, fromSing b)
 
 -- | A relation that can exist in the storage of the ResourceGraph.
 -- See examples of use in 'StorageResource' type class
