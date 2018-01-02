@@ -554,7 +554,7 @@ mkSyncAction lstate next = do
 --   this way spiel state machines will be able to return all locks to RM,
 --   and take them and resubscribe later.
 syncToBS :: PhaseM RC l BS.ByteString
-syncToBS = loadConfData >>= \case
+syncToBS = loadConfData_XXX4 >>= \case
   Just tx -> getHalonVar _hv_mero_workers_allowed >>= \case
     True -> do
       M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
@@ -591,7 +591,7 @@ mkSyncToConfd lstate next = do
           force <- (\x -> x ^. lstate . cssForce) <$> get Local
           withSpielRC $ \lift -> do
             setProfileRC lift
-            loadConfData >>= traverse_ (\x -> do
+            loadConfData_XXX4 >>= traverse_ (\x -> do
               t0 <- txOpenContext lift
               t1 <- txPopulate lift x t0
               txSyncToConfd force (lstate.cssHash) lift t1)
@@ -680,10 +680,10 @@ txSyncToConfd f luuid lift t = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData = TxConfData M0.M0Globals_XXX0 M0.Profile_XXX3 M0.Filesystem
+data TxConfData_XXX4 = TxConfData_XXX4 M0.M0Globals_XXX0 M0.Profile_XXX3 M0.Filesystem
 
-loadConfData :: PhaseM RC l (Maybe TxConfData)
-loadConfData = liftA3 TxConfData
+loadConfData_XXX4 :: PhaseM RC l (Maybe TxConfData_XXX4)
+loadConfData_XXX4 = liftA3 TxConfData_XXX4
             <$> getM0Globals
             <*> getProfile_XXX3
             <*> getFilesystem
@@ -708,8 +708,8 @@ modifyConfUpdateVersion f = do
   Log.rcLog' Log.TRACE $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
-txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
+txPopulate :: LiftRC -> TxConfData_XXX4 -> SpielTransaction -> PhaseM RC l SpielTransaction
+txPopulate lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
@@ -825,9 +825,9 @@ txPopulate lift (TxConfData M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.File
 -- | Load the current conf data, create a transaction that we would
 -- send to spiel and ask mero if the transaction cache is valid.
 validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
-validateTransactionCache = loadConfData >>= \case
+validateTransactionCache = loadConfData_XXX4 >>= \case
   Nothing -> do
-    Log.rcLog' Log.DEBUG "validateTransactionCache: loadConfData failed"
+    Log.rcLog' Log.DEBUG "validateTransactionCache: loadConfData_XXX4 failed"
     return $! Right Nothing
   Just x -> do
     Log.rcLog' Log.DEBUG "validateTransactionCache: validating context"
