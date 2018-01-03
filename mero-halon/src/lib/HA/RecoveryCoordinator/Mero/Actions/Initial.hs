@@ -25,7 +25,7 @@ import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
-  ( getFilesystem
+  ( getFilesystem_XXX3
   , lookupEnclosureM0
   )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
@@ -55,7 +55,7 @@ import           Text.Regex.TDFA ((=~))
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
 initialiseConfInRG_XXX3 :: PhaseM RC l M0.Filesystem
-initialiseConfInRG_XXX3 = getFilesystem >>= \case
+initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
     Just fs -> return fs
     Nothing -> do
       root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)

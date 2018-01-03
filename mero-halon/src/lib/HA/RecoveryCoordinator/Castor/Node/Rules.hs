@@ -127,6 +127,20 @@ import           HA.Encode
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
+  ( calculateRunLevel
+  , createMeroClientConfig
+  , createMeroKernelConfig
+  , defaultConfSyncState
+  , fldConfSyncState
+  , getClusterStatus
+  , getFilesystem_XXX3
+  , getRunningMeroInterface
+  , lookupConfObjByFid
+  , m0t1fsBootLevel
+  , mkSyncToConfd
+  , retriggerMeroNodeBootstrap
+  , startMeroService
+  )
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Actions as Node
@@ -410,7 +424,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   notifier <- mkNotifier dispatch
 
   let route :: Node_XXX2 -> PhaseM RC l [Jump PhaseHandle]
-      route node = getFilesystem >>= \case
+      route node = getFilesystem_XXX3 >>= \case
         Nothing -> return [wait_data_load]
         Just _ -> do
           mhost <- findNodeHost node
@@ -430,7 +444,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
         else Right . (NewMeroServerFailure node,) <$> route node
 
   directly config_created $ do
-    Just fs <- getFilesystem
+    Just fs <- getFilesystem_XXX3
     Just host <- getField . rget fldHost <$> get Local
     Just (LnetInfo _ lnet)  <- getField . rget fldLnetInfo <$> get Local
     StartProcessNodeNew _ info <- getRequest
@@ -793,7 +807,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
         else continue boot_level_3_dixinit
 
     directly boot_level_3_dixinit $ do
-      Just fs <- getFilesystem -- Legitimate, we couldn't be here otherwise
+      Just fs <- getFilesystem_XXX3 -- Legitimate, we couldn't be here otherwise
       -- Check that we're on BL3. This should be fine; no need to wait, since
       -- while different conditions are required for BL2 and 3, the BL2
       -- conditions should guarantee the BL3 ones.

@@ -14,7 +14,7 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
 
 import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import HA.RecoveryCoordinator.Castor.Filesystem.Events ( StatsUpdated(..) )
-import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem)
+import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem_XXX3)
 import HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
 import HA.RecoveryCoordinator.Mero.Actions.Spiel (withSpielIO, withRConfIO)
 import HA.RecoveryCoordinator.RC.Actions
@@ -74,7 +74,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                   . right (M0.FilesystemStats now)
                   $ x
 
-    mfs <- getFilesystem
+    mfs <- getFilesystem_XXX3
     status <- getClusterStatus <$> getLocalGraph
     case ((,) <$> mfs <*> status) of
       Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 1 -> do

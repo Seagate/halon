@@ -20,6 +20,12 @@ import           Data.Maybe (fromMaybe, listToMaybe)
 import           Data.Monoid (All(..), Any(..))
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Actions.Mero
+  ( calculateRunLevel
+  , calculateStopLevel
+  , getClusterStatus
+  , getFilesystem_XXX3
+  , getPoolRepairInformation
+  )
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Event
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
@@ -90,7 +96,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
         Nothing -> return $ All False
         Just _  -> return $ All True
 
-    havePVers <- getFilesystem >>= \case
+    havePVers <- getFilesystem_XXX3 >>= \case
       Nothing -> return True
       Just fs -> do
        let x = mkFailuresSets fs

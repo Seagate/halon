@@ -32,6 +32,13 @@ import           HA.Multimap
 import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
 import           HA.RecoveryCoordinator.Actions.Mero
+  ( getFilesystem_XXX3
+  , initialiseConfInRG_XXX3
+  , loadMeroGlobals
+  , loadMeroServers
+  , lookupConfObjByFid
+  , pickPrincipalRM
+  )
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
@@ -243,7 +250,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
-    Just fs <- runGet ls' getFilesystem
+    Just fs <- runGet ls' getFilesystem_XXX3
     let mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
     assertMsg "MDPool is stored in RG"
       $ G.memberResource mdpool (lsGraph ls')

@@ -60,7 +60,21 @@ import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
+  ( getFilesystem_XXX3
+  , getProfile_XXX3
+  , lookupConfObjByFid
+  , unmarkSDevReplaced
+  )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+  ( getM0Globals
+  , LiftRC
+  , m0asynchronously
+  , m0asynchronously_
+  , m0synchronously
+  , mkLiftRC
+  , mkUnliftProcess
+  , withM0RC
+  )
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -390,7 +404,7 @@ mkRebalanceStartOperation handler = do
              Log.rcLog' Log.DEBUG "Starting rebalance on pool"
              for_ disks $ \d -> do
                mt <- lookupDiskSDev d
-               for_ mt $ unmarkSDevReplaced -- XXX: (qnikst) we should do that when finished rebalance, shouldm't we?
+               for_ mt $ unmarkSDevReplaced -- XXX: (qnikst) we should do that when finished rebalance, shouldn't we?
              mkGenericSNSOperationSimple p poolRebalanceStart pool
          )
   where
@@ -686,7 +700,7 @@ loadConfData_XXX4 :: PhaseM RC l (Maybe TxConfData_XXX4)
 loadConfData_XXX4 = liftA3 TxConfData_XXX4
             <$> getM0Globals
             <*> getProfile_XXX3
-            <*> getFilesystem
+            <*> getFilesystem_XXX3
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.

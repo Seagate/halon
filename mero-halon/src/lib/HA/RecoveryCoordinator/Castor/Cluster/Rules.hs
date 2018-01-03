@@ -68,6 +68,17 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
      ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Actions.Mero
+  ( getChildren
+  , getClusterStatus
+  , getFilesystem_XXX3
+  , getPoolRepairStatus
+  , getPrincipalRM
+  , getProfile_XXX3
+  , isClusterStopped
+  , lookupConfObjByFid
+  , pickPrincipalRM
+  , setPrincipalRMIfUnset
+  )
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
@@ -188,7 +199,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getLocalGraph
       profile <- getProfile_XXX3
-      filesystem <- getFilesystem
+      filesystem <- getFilesystem_XXX3
       let status = getClusterStatus rg
           stats = filesystem >>= \fs -> G.connectedTo fs Has rg
           pools = Pool.getNonMD rg
@@ -330,7 +341,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
               modify Local $ rlens fldNext . rfield .~ Just finish
               return $ Right (ClusterStartTimeout [], [wait_server_jobs])
 
-    let route ClusterStartRequest{} = getFilesystem >>= \case
+    let route ClusterStartRequest{} = getFilesystem_XXX3 >>= \case
           Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." []
           Just _ -> do
             rg <- getLocalGraph

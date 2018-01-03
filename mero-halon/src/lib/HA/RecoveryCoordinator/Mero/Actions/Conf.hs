@@ -11,7 +11,7 @@
 module HA.RecoveryCoordinator.Mero.Actions.Conf
   ( -- ** Get all objects of type
     getProfile_XXX3
-  , getFilesystem
+  , getFilesystem_XXX3
   , getSDevPool
   , getM0ServicesRC
   , getChildren
@@ -75,8 +75,8 @@ getProfile_XXX3 =
 --   only support a single filesystem, though in future there
 --   might be multiple filesystems and this function will need
 --   to change.
-getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
-getFilesystem = getLocalGraph >>= \rg -> do
+getFilesystem_XXX3 :: PhaseM RC l (Maybe M0.Filesystem)
+getFilesystem_XXX3 = getLocalGraph >>= \rg -> do
   return . listToMaybe
     $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]

@@ -172,7 +172,6 @@ mkUnliftProcess = do
 -- running in mero thread associated with Recovery Coordinator.
 data LiftRC = LiftRC M0Worker
 
-
 -- | Wrap known worker into lift  handle.
 mkLiftRC :: M0Worker -> LiftRC
 mkLiftRC = LiftRC
