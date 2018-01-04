@@ -165,10 +165,12 @@ install_files()
     dir='/etc/halon'
     [[ -d $dir ]] || run "mkdir -vp $dir"
     run "$cmd $H0_SRC_DIR/mero-halon/scripts/halon_roles.yaml $dir/halon_role_mappings"
+    run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_clovis_role_mappings.ede $dir/mero_role_mappings"
 
     dir='/etc/halon/role_maps'
     [[ -d $dir ]] || run "mkdir -vp $dir"
-    run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_clovis_role_mappings.ede $dir/prov.ede"
+    run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_provisioner_role_mappings.ede $dir/prov.ede"
+    run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_clovis_role_mappings.ede $dir/clovis.ede"
 
     dir='/usr/bin'
     local halon_bin_dir=$(h0_path halon-bin)
