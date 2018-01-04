@@ -62,7 +62,7 @@ parser = let
             <> Opt.short 'f'
             <> Opt.help "Halon facts file"
             <> Opt.metavar "FILEPATH"
-    meroRoles = defaultable "/etc/halon/role_maps/prov.ede" . Opt.strOption
+    meroRoles = defaultable "/etc/halon/mero_role_mappings" . Opt.strOption
           $ Opt.long "roles" -- XXX TODO: rename to "mero-roles"
          <> Opt.short 'r'
          <> Opt.help "Mero roles file used by Halon"
