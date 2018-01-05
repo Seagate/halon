@@ -556,21 +556,17 @@ parseInitialData :: FilePath -- ^ Halon facts.
                  -> FilePath -- ^ Mero role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-parseInitialData facts meroRoles halonRoles = runExceptT parse
+parseInitialData facts meroRoles halonRoles = runExceptT $ do
+    initialWithRoles <- ExceptT (Y.decodeFileEither facts)
+    m0roles <- parseFile meroRoles
+    h0roles <- parseFile halonRoles
+    initialData <- ExceptT . pure $ resolveMeroRoles initialWithRoles m0roles
+    ExceptT . pure $ validateInitialData initialData
+    pure (initialData, h0roles)
   where
-    parse :: ExceptT Y.ParseException IO (InitialData, EDE.Template)
-    parse = do
-        initialWithRoles <- ExceptT (Y.decodeFileEither facts)
-        m0roles <- parseFile meroRoles
-        h0roles <- parseFile halonRoles
-        initialData <-
-            ExceptT . pure $ resolveMeroRoles initialWithRoles m0roles
-        ExceptT . pure $ validateInitialData initialData
-        pure (initialData, h0roles)
-
     parseFile :: FilePath -> ExceptT Y.ParseException IO EDE.Template
     parseFile = let mkExc = mkException "parseInitialData"
-                in ExceptT . (first mkExc <$>) . EDE.eitherParseFile
+                in ExceptT . fmap (first mkExc) . EDE.eitherParseFile
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData InitialData{..} = do
