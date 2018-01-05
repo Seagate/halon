@@ -574,7 +574,7 @@ syncToBS = loadConfData_XXX4 >>= \case
       M0.ConfUpdateVersion verno _ <- getConfUpdateVersion
       wrk <- DP.liftIO newM0Worker
       bs <- txOpenLocalContext (mkLiftRC wrk)
-        >>= txPopulate (mkLiftRC wrk) tx
+        >>= txPopulate_XXX4 (mkLiftRC wrk) tx
         >>= m0synchronously (mkLiftRC wrk) . flip txToBS verno
       DP.liftIO $ terminateM0Worker wrk
       return bs
@@ -607,7 +607,7 @@ mkSyncToConfd lstate next = do
             setProfileRC lift
             loadConfData_XXX4 >>= traverse_ (\x -> do
               t0 <- txOpenContext lift
-              t1 <- txPopulate lift x t0
+              t1 <- txPopulate_XXX4 lift x t0
               txSyncToConfd force (lstate.cssHash) lift t1)
         case eresult of
           Left ex -> Log.rcLog' Log.ERROR $ "Exception during sync: " ++ show ex
@@ -722,8 +722,8 @@ modifyConfUpdateVersion f = do
   Log.rcLog' Log.TRACE $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
-txPopulate :: LiftRC -> TxConfData_XXX4 -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
+txPopulate_XXX4 :: LiftRC -> TxConfData_XXX4 -> SpielTransaction -> PhaseM RC l SpielTransaction
+txPopulate_XXX4 lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
@@ -854,7 +854,7 @@ validateTransactionCache = loadConfData_XXX4 >>= \case
         -- on unbootstrapped cluster.
         wrk <- DP.liftIO newM0Worker
         r <- try $ txOpenLocalContext (mkLiftRC wrk)
-               >>= txPopulate (mkLiftRC wrk) x
+               >>= txPopulate_XXX4 (mkLiftRC wrk) x
                >>= m0synchronously (mkLiftRC wrk) . txValidateTransactionCache
         DP.liftIO $ terminateM0Worker wrk
         return r
