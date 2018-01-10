@@ -842,7 +842,7 @@ validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
 validateTransactionCache = loadConfData_XXX4 >>= \case
   Nothing -> do
     Log.rcLog' Log.DEBUG "validateTransactionCache: loadConfData_XXX4 failed"
-    return $! Right Nothing
+    return $! Right Nothing  -- XXX Shouldn't it be `Left`?
   Just x -> do
     Log.rcLog' Log.DEBUG "validateTransactionCache: validating context"
     getHalonVar _hv_mero_workers_allowed >>= \case

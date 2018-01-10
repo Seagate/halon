@@ -202,7 +202,6 @@ txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> 
     buflen :: CSize
     buflen = 128
 
-
 setCmdProfile :: Maybe String
               -> IO ()
 setCmdProfile ms =
@@ -212,7 +211,6 @@ setCmdProfile ms =
       Nothing -> c_spiel_cmd_profile_set sc nullPtr
       Just s  -> withCString s $ \cs ->
         c_spiel_cmd_profile_set sc cs
-
 
 addProfile :: SpielTransaction
            -> Fid
