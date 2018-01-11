@@ -199,7 +199,7 @@ findHostAttrs h = G.connectedTo h Has <$> getLocalGraph
 findHostStorageDevices :: R.Host -> PhaseM RC l [R.StorageDevice_XXX1]
 findHostStorageDevices h = flip fmap getLocalGraph $ \rg ->
   [ sdev | enc  :: R.Enclosure <- maybeToList $ G.connectedFrom Has h rg
-         , loc  :: R.Slot_XXX1 <- G.connectedTo enc Has rg
+         , loc  :: R.Slot <- G.connectedTo enc Has rg
          , sdev :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has loc rg ]
 
 -- | Check if the 'StorageDevice' is still attached (from halon
@@ -207,7 +207,7 @@ findHostStorageDevices h = flip fmap getLocalGraph $ \rg ->
 isStorageDriveRemoved :: R.StorageDevice_XXX1 -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
-  return . maybe True (\R.Slot_XXX1{} -> False) $ G.connectedTo sd Has rg
+  return . maybe True (\R.Slot{} -> False) $ G.connectedTo sd Has rg
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
 lookupStorageDevicesWithDI :: R.DeviceIdentifier -> PhaseM RC l [R.StorageDevice_XXX1]

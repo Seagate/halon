@@ -94,17 +94,17 @@ newtype StorageDevice_XXX1 = StorageDevice_XXX1
 storageIndex ''StorageDevice_XXX1 "6f7915aa-645c-42b4-b3e0-a8222c764730"
 deriveSafeCopy 0 'base ''StorageDevice_XXX1
 
-data Slot_XXX1 = Slot_XXX1
-  { slotEnclosure_XXX1 :: Enclosure
-  , slotIndex_XXX1     :: Int
+data Slot = Slot
+  { slotEnclosure :: Enclosure
+  , slotIndex     :: Int
   } deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Hashable Slot_XXX1
-instance FromJSON Slot_XXX1
-instance ToJSON   Slot_XXX1
+instance Hashable Slot
+instance FromJSON Slot
+instance ToJSON   Slot
 
-storageIndex ''Slot_XXX1 "b0561c97-63ed-4f16-a27a-10ef04f9a023"
-deriveSafeCopy 0 'base ''Slot_XXX1
+storageIndex ''Slot "b0561c97-63ed-4f16-a27a-10ef04f9a023"
+deriveSafeCopy 0 'base ''Slot
 
 data StorageDeviceAttr
   = SDResetAttempts !Int
@@ -322,7 +322,7 @@ $(mkDicts
   [ ''Rack, ''Enclosure, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''StorageDevice_XXX1, ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot_XXX1, ''Is, ''ReplacedBy
+  , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack)
   , (''Cluster, ''Has, ''Host)
@@ -331,12 +331,12 @@ $(mkDicts
   , (''Rack, ''Has, ''Enclosure)
   , (''Enclosure, ''Has, ''Host)
   , (''Enclosure, ''Has, ''BMC)
-  , (''Enclosure, ''Has, ''Slot_XXX1)
+  , (''Enclosure, ''Has, ''Slot)
   , (''Host, ''Has, ''HostAttr)
   , (''Host, ''Has, ''UUID)
   , (''Host, ''Runs, ''Node_XXX2)
   , (''Host, ''Is, ''ReassemblingRaid)
-  , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
+  , (''StorageDevice_XXX1, ''Has, ''Slot)
   , (''StorageDevice_XXX1, ''Is, ''StorageDeviceStatus)
   , (''StorageDevice_XXX1, ''Has, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, ''Has, ''StorageDeviceAttr)
@@ -348,7 +348,7 @@ $(mkResRel
   [ ''Rack, ''Enclosure, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''StorageDevice_XXX1, ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
-  , ''Slot_XXX1, ''Is, ''ReplacedBy
+  , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
@@ -357,13 +357,13 @@ $(mkResRel
   , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''BMC)
-  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot_XXX1)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Host, AtMostOne, ''Runs, Unbounded, ''Node_XXX2)
   , (''Host, Unbounded, ''Is, AtMostOne, ''ReassemblingRaid)
-  , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot_XXX1)
   , (''StorageDevice_XXX1, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
+  , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''StorageDeviceAttr)
   , (''StorageDevice_XXX1, AtMostOne, ''ReplacedBy, AtMostOne, ''StorageDevice_XXX1)

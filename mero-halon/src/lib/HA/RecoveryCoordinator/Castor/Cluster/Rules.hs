@@ -56,7 +56,7 @@ import           HA.Resources.Castor
   ( Is(..)
   , HostAttr(HA_M0CLIENT, HA_M0SERVER)
   , Host
-  , Slot_XXX1
+  , Slot
   , StorageDevice_XXX1
   )
 import qualified HA.Resources.Mero as M0
@@ -220,7 +220,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                             let msd   = do disk :: M0.Disk <- G.connectedTo (sdev::M0.SDev) M0.IsOnHardware rg
                                            sd :: StorageDevice_XXX1 <- G.connectedTo disk M0.At rg
                                            return sd
-                                slot  = G.connectedTo sdev M0.At rg :: Maybe Slot_XXX1
+                                slot  = G.connectedTo sdev M0.At rg :: Maybe Slot
                                 state = M0.getState sdev rg
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')

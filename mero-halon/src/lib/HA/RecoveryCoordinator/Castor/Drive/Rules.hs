@@ -60,7 +60,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Resources (Node_XXX2(..))
 import           HA.Resources.Castor
-  ( Slot_XXX1(..)
+  ( Slot(..)
   , StorageDevice_XXX1(..)
   , StorageDeviceStatus(..)
   )
@@ -285,7 +285,7 @@ ruleDriveRemoved = define "drive-removed" $ do
                    post_process sdev)
     post_process
 
-  setPhase pinit $ \(DriveRemoved uuid _ (Slot_XXX1 enc loc) disk _) -> do
+  setPhase pinit $ \(DriveRemoved uuid _ (Slot enc loc) disk _) -> do
     sd <- lookupStorageDeviceSDev disk
     forM_ sd $ \m0sdev -> fork CopyNewerBuffer $ do
       Log.tagContext Log.SM uuid Nothing
@@ -330,8 +330,8 @@ ruleDriveInserted = define "drive-inserted" $ do
               , timeout t main]
 
   setPhaseIf removed
-    (\(DriveRemoved{drLocation=Slot_XXX1 enc loc}) _
-      (Just (_,DriveInserted{diLocation=Slot_XXX1 enc' loc'
+    (\(DriveRemoved{drLocation=Slot enc loc}) _
+      (Just (_,DriveInserted{diLocation=Slot enc' loc'
                             }), _) -> do
        if enc == enc' && loc == loc'
           then return $ Just ()
@@ -346,8 +346,8 @@ ruleDriveInserted = define "drive-inserted" $ do
   -- go. However we add this case to cover scenario when other subsystems do not
   -- work perfectly and do not issue DriveRemoval first.
   setPhaseIf inserted
-    (\(DriveInserted{diLocation=Slot_XXX1 enc loc}) _
-      (Just (_, DriveInserted{diLocation=Slot_XXX1 enc' loc'}), _) -> do
+    (\(DriveInserted{diLocation=Slot enc loc}) _
+      (Just (_, DriveInserted{diLocation=Slot enc' loc'}), _) -> do
         if enc == enc' && loc == loc'
            then return (Just ())
            else return Nothing)

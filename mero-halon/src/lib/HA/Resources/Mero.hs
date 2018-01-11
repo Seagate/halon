@@ -48,7 +48,7 @@ import qualified HA.Resources.Castor as Cas (Rack, Enclosure)
 import           HA.Resources.Castor
   ( Host(..)
   , Is(..)
-  , Slot_XXX1(..)
+  , Slot(..)
   , StorageDevice_XXX1
   )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
@@ -1052,7 +1052,7 @@ $(mkDicts
   , (''Disk, ''Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
-  , (''SDev, ''At, ''Slot_XXX1)
+  , (''SDev, ''At, ''Slot)
   , (''Node, ''IsOnHardware, ''Controller)
     -- Other things!
   , (''Cluster, ''Has, ''FidSeq)
@@ -1103,7 +1103,7 @@ $(mkResRel
   , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
-  , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot_XXX1)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot)
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Profile_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)

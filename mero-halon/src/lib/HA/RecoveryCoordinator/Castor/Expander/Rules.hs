@@ -42,7 +42,7 @@ import           HA.Resources.Castor
   , Host
   , Is(..)
   , ReassemblingRaid(..)
-  , Slot_XXX1
+  , Slot
   , StorageDevice_XXX1
   )
 import           HA.Resources.HalonVars
@@ -139,7 +139,7 @@ ruleReassembleRaid =
             extractRaidDev (DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
           in nub $ mapMaybe extractRaidDev [
-              lbl | slot <- G.connectedTo enc Has rg :: [Slot_XXX1]
+              lbl | slot <- G.connectedTo enc Has rg :: [Slot]
                   , Just d <- [G.connectedFrom Has slot rg] :: [Maybe StorageDevice_XXX1]
                   , lbl <- G.connectedTo d Has rg :: [DeviceIdentifier]
                   ]

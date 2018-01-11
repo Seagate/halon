@@ -23,7 +23,7 @@ import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
   , Enclosure
-  , Slot_XXX1(..)
+  , Slot(..)
   , StorageDevice_XXX1(..)
   )
 import qualified HA.Resources.Mero as M0
@@ -55,7 +55,7 @@ ruleDriveFailed = define "castor::drive::led::ruleDriveFailed" $ do
     todo eid
     rg <- getLocalGraph
     let storDevs = [ storD | sd <- (map fst sds :: [M0.SDev])
-                           , slot@Slot_XXX1{} <- maybeToList $ G.connectedTo sd M0.At rg
+                           , slot@Slot{} <- maybeToList $ G.connectedTo sd M0.At rg
                            , storD <- maybeToList $ G.connectedFrom Has slot rg ]
     for_ storDevs $ \sd -> sendFailedLed sd
     done eid
@@ -121,7 +121,7 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                  , enc :: Enclosure <- maybeToList $ G.connectedTo m0enc M0.At rg
-                 , slot :: Slot_XXX1 <- G.connectedTo enc Has rg
+                 , slot :: Slot <- G.connectedTo enc Has rg
                  , sd :: StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
                  ]
          for_ l $ \(StorageDevice_XXX1 sn, mled) -> do

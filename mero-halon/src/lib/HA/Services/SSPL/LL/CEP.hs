@@ -130,7 +130,7 @@ sendLedUpdate status host sd@(R.StorageDevice_XXX1 (T.pack -> sn)) = do
   rg <- getLocalGraph
   let mnode = listToMaybe $ G.connectedTo host Runs rg -- XXX: try all nodes
       modifyLedState mledSt = case G.connectedTo sd Has rg of
-        Just slot@R.Slot_XXX1{} -> modifyGraph $ case mledSt of
+        Just slot@R.Slot{} -> modifyGraph $ case mledSt of
           Just ledSt -> G.connect slot Has ledSt
           Nothing -> G.disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
         _ -> Log.rcLog' Log.WARN $ "No slot found for " ++ show sd
@@ -254,7 +254,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
         Nothing -> do
           Log.rcLog' Log.WARN ("No enclosure found for drive"::String)
           return enc
-        Just (R.Slot_XXX1 enc' is)
+        Just (R.Slot enc' is)
           | is == diskNum -> return enc'
           | otherwise -> do
               Log.rcLog' Log.WARN $ "Enclosure found for drive, but drive have different id " ++ show sn
@@ -316,7 +316,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
       is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
       is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
       sdev = R.StorageDevice_XXX1 $ T.unpack serial
-      sdev_loc = R.Slot_XXX1 enc diskNum
+      sdev_loc = R.Slot enc diskNum
   -- Setup context
   todo uuid
   Log.tagContext Log.SM uuid Nothing

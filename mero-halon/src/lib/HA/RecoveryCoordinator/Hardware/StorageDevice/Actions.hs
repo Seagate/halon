@@ -65,15 +65,15 @@ exists sn =  bool Nothing (Just sdev)
   where sdev = R.StorageDevice_XXX1 sn
 
 -- | Check if 'StorageDevice' is locted in given enclosure.
-isAt :: R.StorageDevice_XXX1 -> R.Slot_XXX1 -> PhaseM RC l Bool
+isAt :: R.StorageDevice_XXX1 -> R.Slot -> PhaseM RC l Bool
 isAt sdev loc = G.isConnected sdev Has loc <$> getLocalGraph
 
 -- | Get device that is in slot currently.
-atSlot :: R.Slot_XXX1 -> PhaseM RC l (Maybe R.StorageDevice_XXX1)
+atSlot :: R.Slot -> PhaseM RC l (Maybe R.StorageDevice_XXX1)
 atSlot loc = G.connectedFrom Has loc <$> getLocalGraph
 
 -- | Get location of current device.
-location :: R.StorageDevice_XXX1 -> PhaseM RC l (Maybe R.Slot_XXX1)
+location :: R.StorageDevice_XXX1 -> PhaseM RC l (Maybe R.Slot)
 location sdev = G.connectedTo sdev Has <$> getLocalGraph
 
 -- | Get device enclosure, if there is no connection to location,
@@ -81,20 +81,20 @@ location sdev = G.connectedTo sdev Has <$> getLocalGraph
 enclosure :: R.StorageDevice_XXX1 -> PhaseM RC l (Maybe R.Enclosure)
 enclosure sdev = do
  rg <- getLocalGraph
- return $ R.slotEnclosure_XXX1 <$> G.connectedTo sdev Has rg
+ return $ R.slotEnclosure <$> G.connectedTo sdev Has rg
 
 -- | Register device location in graph.
-mkLocation :: R.Enclosure -> Int -> PhaseM RC l R.Slot_XXX1
+mkLocation :: R.Enclosure -> Int -> PhaseM RC l R.Slot
 mkLocation enc num = do
   modifyGraph $ G.connect enc Has loc
   return loc
-  where loc = R.Slot_XXX1 enc num
+  where loc = R.Slot enc num
 
 -- | Failure to insert a 'StorageDevice' into a 'Slot' has occured.
 data InsertionError
   = AnotherInSlot R.StorageDevice_XXX1
   | AlreadyInstalled
-  | InAnotherSlot R.Slot_XXX1
+  | InAnotherSlot R.Slot
   deriving (Show, Eq)
 
 -- | Insert storage device in location.
@@ -105,7 +105,7 @@ data InsertionError
 -- relation because this relation is not needed when connection to
 -- 'Slot' exits.
 insertTo :: R.StorageDevice_XXX1
-         -> R.Slot_XXX1
+         -> R.Slot
          -> PhaseM RC l (Either InsertionError ())
 insertTo sdev sdev_loc = do
   rg <- getLocalGraph
@@ -125,7 +125,7 @@ insertTo sdev sdev_loc = do
                   -- information about a whole new drive (MD/RAID) in
                   -- some previously unseen slot, we need to connect
                   -- the slot up to the enclosure too.
-                  >>> G.connect (R.slotEnclosure_XXX1 sdev_loc) Has sdev_loc
+                  >>> G.connect (R.slotEnclosure sdev_loc) Has sdev_loc
         return $ Right ()
     -- The slot is already filled by the StorageDevice
     Just sdev' | sdev' == sdev -> do
@@ -140,7 +140,7 @@ insertTo sdev sdev_loc = do
 -- | Remove 'StorageDevice' from it's slot.
 --
 -- TODO: remove device identifiers what are not applicable now.
-ejectFrom :: R.StorageDevice_XXX1 -> R.Slot_XXX1 -> PhaseM RC l ()
+ejectFrom :: R.StorageDevice_XXX1 -> R.Slot -> PhaseM RC l ()
 ejectFrom sdev sdev_loc = do
   Log.rcLog' Log.DEBUG ("Ejecting " ++ show sdev ++ " from " ++ show sdev_loc :: String)
   modifyGraph $ G.disconnect sdev Has sdev_loc

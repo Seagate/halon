@@ -156,7 +156,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
                ]
     in do
       let sdev = R.StorageDevice_XXX1 m0d_serial_XXX0
-          slot = R.Slot_XXX1 enc m0d_slot_XXX0
+          slot = R.Slot enc m0d_slot_XXX0
       StorageDevice.identify sdev devIds
       m0sdev <- lookupStorageDeviceSDev sdev >>= \case
         Just m0sdev -> return m0sdev

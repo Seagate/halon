@@ -19,7 +19,7 @@ import GHC.Generics
 
 import Control.Distributed.Process
 
-import HA.Resources.Castor (Slot_XXX1)
+import HA.Resources.Castor (Slot)
 import HA.SafeCopy
 
 -- | Request to create new storage device.
@@ -40,7 +40,7 @@ instance Binary CommandStorageDeviceCreateResult
 -- | Update  information about known drive.
 data CommandStorageDevicePresence = CommandStorageDevicePresence
       { csdpSerial :: String
-      , csdpSlot   :: Slot_XXX1
+      , csdpSlot   :: Slot
       , csdpIsInstalled :: Bool
       , csdpIsPowered   :: Bool
       , csdpReplyTo :: SendPort CommandStorageDevicePresenceResult
@@ -58,7 +58,7 @@ instance Binary CommandStorageDevicePresenceResult
 -- | Update status of the known drive.
 data CommandStorageDeviceStatus = CommandStorageDeviceStatus
       { csdsSerial :: String
-      , csdsSlot :: Slot_XXX1
+      , csdsSlot :: Slot
       , csdsStatus :: String
       , csdsReason :: String
       , csdsReplyTo :: SendPort CommandStorageDeviceStatusResult

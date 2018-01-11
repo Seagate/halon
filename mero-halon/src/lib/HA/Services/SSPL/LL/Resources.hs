@@ -59,7 +59,7 @@ import           GHC.Generics (Generic)
 import           HA.Aeson hiding (encode, decode)
 import           HA.ResourceGraph
 import           HA.Resources (Has)
-import           HA.Resources.Castor (Slot_XXX1)
+import           HA.Resources.Castor (Slot)
 import           HA.SafeCopy
 import qualified HA.Service
 import           HA.Service.Interface
@@ -383,12 +383,12 @@ genericBindConf (exchange,exchangeLong)
        $ long queueLong
        <> metavar "QUEUE_NAME"
 
-data ActuatorConf = ActuatorConf {
-    acIEM :: Rabbit.BindConf
+data ActuatorConf = ActuatorConf
+  { acIEM :: Rabbit.BindConf
   , acSystemd :: Rabbit.BindConf
   , acCommandAck :: Rabbit.BindConf
   , acDeclareChanTimeout :: Defaultable Int
-} deriving (Eq, Generic, Show, Typeable)
+  } deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable ActuatorConf
 instance ToJSON ActuatorConf where
@@ -507,13 +507,13 @@ mkDictsQ
   [ (mkName "resourceDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "relationDictLedControlStateSlot"
-    ,  ([t| Slot_XXX1|], [t| Has |], [t| LedControlState |]))
+  ,  ([t| Slot |], [t| Has |], [t| LedControlState |]))
   ]
 mkStorageDictsQ
   [ (mkName "storageDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "storageDictLedControlStateSlot"
-    ,  ([t| Slot_XXX1|], [t| Has |], [t| LedControlState |]))
+  ,  ([t| Slot |], [t| Has |], [t| LedControlState |]))
   ]
 generateDicts ''SSPLConf
 deriveService ''SSPLConf 'ssplSchema
@@ -526,21 +526,21 @@ mkStorageResRelQ
   [ (mkName "storageDictLedControlState", [t| LedControlState |])
   ]
   [ (mkName "storageDictLedControlStateSlot"
-    ,  ([t| Slot_XXX1|], [t| Has |], [t| LedControlState |]))
+  ,  ([t| Slot |], [t| Has |], [t| LedControlState |]))
   ]
 
 instance Resource LedControlState where
   resourceDict = $(mkStatic 'resourceDictLedControlState)
 
-instance Relation Has Slot_XXX1 LedControlState where
-  type CardinalityFrom Has Slot_XXX1 LedControlState = 'Unbounded
-  type CardinalityTo Has Slot_XXX1 LedControlState = 'AtMostOne
+instance Relation Has Slot LedControlState where
+  type CardinalityFrom Has Slot LedControlState = 'Unbounded
+  type CardinalityTo Has Slot LedControlState = 'AtMostOne
   relationDict = $(mkStatic 'relationDictLedControlStateSlot)
 
 myResourcesTable :: RemoteTable -> RemoteTable
 myResourcesTable
   = $(makeResource [t| LedControlState |])
-  . $(makeRelation [t| Slot_XXX1 |] [t| Has |] [t| LedControlState |])
+  . $(makeRelation [t| Slot |] [t| Has |] [t| LedControlState |])
   . HA.Services.SSPL.LL.Resources.__resourcesTable
 
 --------------------------------------------------------------------------------

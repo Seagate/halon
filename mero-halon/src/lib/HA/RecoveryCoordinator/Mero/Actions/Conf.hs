@@ -199,7 +199,7 @@ encToM0Enc :: R.Enclosure -> G.Graph -> Maybe M0.Enclosure
 encToM0Enc enc rg = G.connectedFrom M0.At enc rg
 
 -- | Find 'M0.SDev' that associated with a given location.
-lookupLocationSDev :: R.Slot_XXX1 -> PhaseM RC l (Maybe M0.SDev)
+lookupLocationSDev :: R.Slot -> PhaseM RC l (Maybe M0.SDev)
 lookupLocationSDev loc = G.connectedFrom M0.At loc <$> getLocalGraph
 
 -- | Mark 'M0.SDev' as replaced, so it could be rebalanced if needed.
