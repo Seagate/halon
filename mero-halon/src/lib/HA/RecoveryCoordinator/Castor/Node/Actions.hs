@@ -20,7 +20,7 @@ import HA.RecoveryCoordinator.RC.Actions.Core (RC, getLocalGraph, promulgateRC)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node_XXX2, Runs(..))
-import           HA.Resources.Castor (Host_XXX1)
+import           HA.Resources.Castor (Host)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -37,7 +37,7 @@ getLabeledProcesses :: Node_XXX2
                     -> G.Graph
                     -> [M0.Process]
 getLabeledProcesses node label rg =
-   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
        , p <- G.connectedTo m0node M0.IsParentOf rg
        , G.isConnected p Has label rg
@@ -52,7 +52,7 @@ getLabeledProcessesP :: Node_XXX2
                       -> G.Graph
                       -> [M0.Process]
 getLabeledProcessesP node labelP rg =
-  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host]
       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
       , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo p Has rg]
@@ -62,7 +62,7 @@ getLabeledProcessesP node labelP rg =
 -- | Get all 'M0.Process'es on the given 'Node'.
 getProcesses :: Node_XXX2 -> G.Graph -> [M0.Process]
 getProcesses node rg =
-  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host_XXX1]
+  [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host]
       , m0node <- G.connectedTo host Runs rg :: [M0.Node]
       , p <- G.connectedTo m0node M0.IsParentOf rg
   ]
@@ -84,7 +84,7 @@ getUnstartedProcesses n rg =
 
 -- | Start all Mero processes labelled with the specified process label on
 -- a given node. Returns all the processes which are being started.
-startProcesses ::  Host_XXX1
+startProcesses ::  Host
                 -> (M0.ProcessLabel -> Bool)
                 -> PhaseM RC a [M0.Process]
 startProcesses host labelP = do

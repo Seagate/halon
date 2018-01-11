@@ -166,12 +166,12 @@ ruleNodeUp argv = mkJobRule nodeUpJob args $ \(JobHandle getRequest finish) -> d
   let route (NodeUp info nid _) = do
         let h = T.unpack $ _si_hostname info
             node = Node_XXX2 nid
-            host = R.Host_XXX1 h
+            host = R.Host h
         RCLog.tagContext RCLog.SM [ ("node", show node)
                                   , ("host", show h)
                                   ] Nothing
-        hasFailed <- hasHostAttr R.HA_TRANSIENT (R.Host_XXX1 h)
-        isDown <- hasHostAttr R.HA_DOWN (R.Host_XXX1 h)
+        hasFailed <- hasHostAttr R.HA_TRANSIENT (R.Host h)
+        isDown <- hasHostAttr R.HA_DOWN (R.Host h)
         isKnown <- knownResource node
         if isKnown
         then publish $ OldNodeRevival node
@@ -358,7 +358,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
     fldRep = Proxy
     fldNode :: Proxy '("node", Maybe Node_XXX2)
     fldNode = Proxy
-    fldHost :: Proxy '("host", Maybe R.Host_XXX1)
+    fldHost :: Proxy '("host", Maybe R.Host)
     fldHost = Proxy
     fldRetries :: Proxy '("retries", Maybe Int)
     fldRetries = Proxy
@@ -372,8 +372,8 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
 
     -- Reboots the node if possible (if it's a server node) or logs an
     -- IEM otherwise.
-    rebootOrLogHost :: R.Host_XXX1 -> PhaseM RC l ()
-    rebootOrLogHost host@(R.Host_XXX1 hst) = do
+    rebootOrLogHost :: R.Host -> PhaseM RC l ()
+    rebootOrLogHost host@(R.Host hst) = do
       RCLog.actLog "rebootOrLogHost" [("host", show host)]
       isServer <- hasHostAttr R.HA_M0SERVER host
       isClient <- hasHostAttr R.HA_M0CLIENT host
@@ -421,7 +421,7 @@ sendLogs logs ls = do
    else for_ nodes $ \(Node_XXX2 nid) -> sendSvc (getInterface decisionLog) nid logs
   where
    rg = lsGraph ls
-   nodes = [ n | host <- G.connectedTo Cluster Has rg :: [R.Host_XXX1]
+   nodes = [ n | host <- G.connectedTo Cluster Has rg :: [R.Host]
                , n <- G.connectedTo host Runs rg :: [Node_XXX2]
                , not . null $ lookupServiceInfo n decisionLog rg
                ]

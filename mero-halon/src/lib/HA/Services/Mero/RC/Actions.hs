@@ -39,7 +39,7 @@ import           HA.ResourceGraph                      (Graph)
 import qualified HA.ResourceGraph                      as G
 import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
 import           HA.Resources.Castor
-  ( Host_XXX1
+  ( Host
   , Is(..)
   , _hv_notification_timeout
   )
@@ -68,7 +68,7 @@ getNotificationNodes = do
   rg <- getLocalGraph
   let nodes =
         [ (node, m0node)
-        | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
+        | host <- G.connectedTo Cluster Has rg :: [Host]
         , node <- G.connectedTo host Runs rg
         , Just m0node <- [M0.nodeToM0Node node rg]
         ]

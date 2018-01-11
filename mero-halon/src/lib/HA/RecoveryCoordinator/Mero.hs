@@ -51,14 +51,14 @@ data IgnitionArguments = IgnitionArguments
 instance Binary IgnitionArguments
 
 -- | Used in 'timeoutHost'
-newtype HostDisconnected = HostDisconnected R.Host_XXX1
+newtype HostDisconnected = HostDisconnected R.Host
   deriving (Show, Eq, Generic, Typeable)
 
 instance Binary HostDisconnected
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
-timeoutHost :: R.Host_XXX1 -> PhaseM RC g ()
+timeoutHost :: R.Host -> PhaseM RC g ()
 timeoutHost h = hasHostAttr R.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do

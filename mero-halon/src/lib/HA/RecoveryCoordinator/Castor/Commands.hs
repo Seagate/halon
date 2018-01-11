@@ -37,7 +37,7 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
      let R.Slot_XXX1 enc _idx = slot
      rg <- getLocalGraph
      if isConnected Cluster Has sd rg
-     then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg
+     then let nodes = do host :: R.Host <- G.connectedTo enc Has rg
                          G.connectedTo host Runs rg
           in case listToMaybe nodes of
                Nothing -> liftProcess $ sendChan chan StorageDevicePresenceErrorNoSuchEnclosure
@@ -56,7 +56,7 @@ driveStatus = defineSimpleTask "castor::command::update-drive-status" $
       let R.Slot_XXX1 enc _idx = slot
       rg <- getLocalGraph
       if isConnected Cluster Has sd rg
-      then let nodes = do host :: R.Host_XXX1 <- G.connectedTo enc Has rg
+      then let nodes = do host :: R.Host <- G.connectedTo enc Has rg
                           G.connectedTo host Runs rg
            in case listToMaybe nodes of
                 Nothing -> liftProcess $ sendChan chan StorageDeviceStatusErrorNoSuchEnclosure

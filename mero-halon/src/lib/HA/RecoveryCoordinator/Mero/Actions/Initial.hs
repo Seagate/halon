@@ -121,7 +121,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices_XXX0 h)) (0 :: Int) hosts)
   goHost (CI.M0Host_XXX0{..}, hostIdx) = let
-      host = R.Host_XXX1 $! T.unpack m0h_fqdn_XXX0
+      host = R.Host $! T.unpack m0h_fqdn_XXX0
     in do
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)

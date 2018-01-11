@@ -44,7 +44,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Runs(..), Node_XXX2(..))
-import           HA.Resources.Castor (Host_XXX1(..), Is(..))
+import           HA.Resources.Castor (Host(..), Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
@@ -341,7 +341,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   where
     fldReq = Proxy :: Proxy '("request", Maybe ProcessStartRequest)
     fldRep = Proxy :: Proxy '("reply", Maybe ProcessStartResult)
-    fldHost = Proxy :: Proxy '("host", Maybe Host_XXX1)
+    fldHost = Proxy :: Proxy '("host", Maybe Host)
     fldSender = Proxy :: Proxy '("sender", Maybe (MeroToSvc -> Process ()))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
     fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)

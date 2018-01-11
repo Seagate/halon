@@ -19,7 +19,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           HA.Aeson
 import           HA.Resources (Has(..))
-import           HA.Resources.Castor (Host_XXX1(..))
+import           HA.Resources.Castor (Host(..))
 import           HA.Resources.TH
 import           HA.SafeCopy
 
@@ -42,12 +42,12 @@ deriveSafeCopy 0 'base ''Interface
 deriveSafeCopy 0 'base ''Network
 storageIndex ''Interface "9d4812ee-d1c9-455b-9e27-e146bb1c17e5"
 
-mkStorageDicts [''Interface] [(''Host_XXX1, ''Has, ''Interface)]
+mkStorageDicts [''Interface] [(''Host, ''Has, ''Interface)]
 
 remotable [ mkStorageResourceName ''Interface
-          , mkStorageRelationName (''Host_XXX1, ''Has, ''Interface)
+          , mkStorageRelationName (''Host, ''Has, ''Interface)
           ]
 
 snd <$> mkStorageResource ''Interface
-snd <$> mkStorageRelation (''Host_XXX1, ''Has, ''Interface)
-mkStorageResourceTable [''Interface] [(''Host_XXX1, ''Has, ''Interface)]
+snd <$> mkStorageRelation (''Host, ''Has, ''Interface)
+mkStorageResourceTable [''Interface] [(''Host, ''Has, ''Interface)]

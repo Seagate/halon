@@ -25,7 +25,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
-import           HA.Resources.Castor (Host_XXX1, Is(..))
+import           HA.Resources.Castor (Host, Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -122,7 +122,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
       let m0d = lookupM0d rg
           nodes = findRunningServiceOn
             [ node
-            | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
+            | host <- G.connectedTo Cluster Has rg :: [Host]
             , node <- G.connectedTo host Runs rg :: [Node_XXX2]
             ]
             m0d rg

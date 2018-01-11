@@ -80,7 +80,7 @@ registerBMC enc bmc = do
 -- XXX --------------------------------------------------------------
 
 -- | Find the IP address of the BMC corresponding to this host.
-findBMCAddress :: R.Host_XXX1 -> PhaseM RC l (Maybe String)
+findBMCAddress :: R.Host -> PhaseM RC l (Maybe String)
 findBMCAddress host = do
     g <- getLocalGraph
     return . listToMaybe $
@@ -94,29 +94,29 @@ findBMCAddress host = do
 ----------------------------------------------------------
 
 -- | Find the host running the given node
-findNodeHost :: Node_XXX2 -> PhaseM RC l (Maybe R.Host_XXX1)
+findNodeHost :: Node_XXX2 -> PhaseM RC l (Maybe R.Host)
 findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
 -- | Find the enclosure containing the given host.
-findHostEnclosure :: R.Host_XXX1 -> PhaseM RC l (Maybe R.Enclosure)
+findHostEnclosure :: R.Host -> PhaseM RC l (Maybe R.Enclosure)
 findHostEnclosure host =
     G.connectedFrom Has host <$> getLocalGraph
 
 -- | Find a list of all hosts in the system matching a given
 --   regular expression.
-findHosts :: String -> PhaseM RC l [R.Host_XXX1]
+findHosts :: String -> PhaseM RC l [R.Host]
 findHosts regex = do
   g <- getLocalGraph
-  return $ [ host | host@(R.Host_XXX1 hn) <- G.connectedTo Cluster Has g
+  return $ [ host | host@(R.Host hn) <- G.connectedTo Cluster Has g
                   , hn =~ regex]
 
 -- | Find all nodes running on the given host.
-nodesOnHost :: R.Host_XXX1 -> PhaseM RC l [Node_XXX2]
+nodesOnHost :: R.Host -> PhaseM RC l [Node_XXX2]
 nodesOnHost host = do
   fmap (G.connectedTo host Runs) getLocalGraph
 
 -- | Register a new host in the system.
-registerHost :: R.Host_XXX1 -> PhaseM RC l ()
+registerHost :: R.Host -> PhaseM RC l ()
 registerHost host = registerOnCluster host $ "Registering host on cluster: " ++ show host
 
 -- | Register a new thing on 'Cluster' as long as it has a 'Has'
@@ -134,14 +134,14 @@ registerOnCluster x m = modifyLocalGraph $ \rg ->
     return $! G.connect Cluster Has x rg
 
 -- | Record that a host is running in an enclosure.
-locateHostInEnclosure :: R.Host_XXX1 -> R.Enclosure -> PhaseM RC l ()
+locateHostInEnclosure :: R.Host -> R.Enclosure -> PhaseM RC l ()
 locateHostInEnclosure host enc = do
   actLog "locateHostInEnclosure" [("host", show host), ("enclosure", show enc)]
   modifyGraph $ G.connect enc Has host
 
 -- | Record that a node is running on a host. Does not re-connect if
 -- the 'Node' is already connected to the given 'Host'.
-locateNodeOnHost :: Node_XXX2 -> R.Host_XXX1 -> PhaseM RC l ()
+locateNodeOnHost :: Node_XXX2 -> R.Host -> PhaseM RC l ()
 locateNodeOnHost node host = modifyLocalGraph $ \rg ->
   if G.isConnected host Runs node rg
   then return rg
@@ -154,56 +154,51 @@ locateNodeOnHost node host = modifyLocalGraph $ \rg ->
 ----------------------------------------------------------
 
 -- | Test if a host has the specified attribute.
-hasHostAttr :: R.HostAttr -> R.Host_XXX1 -> PhaseM RC l Bool
-hasHostAttr f h = do
-  g <- getLocalGraph
-  return $ G.isConnected h Has f g
+hasHostAttr :: R.HostAttr -> R.Host -> PhaseM RC l Bool
+hasHostAttr a h = G.isConnected h Has a <$> getLocalGraph
 
 -- | Set an attribute on a host. Note that this will not replace
 --   any existing attributes - that must be done manually.
-setHostAttr :: R.Host_XXX1 -> R.HostAttr -> PhaseM RC l ()
-setHostAttr h f = do
-  actLog "setHostAttr" [("host", show h), ("attr", show f)]
-  modifyGraph $ G.connect h Has f
+setHostAttr :: R.Host -> R.HostAttr -> PhaseM RC l ()
+setHostAttr h a = do
+  actLog "setHostAttr" [("host", show h), ("attr", show a)]
+  modifyGraph $ G.connect h Has a
 
 -- | Remove the given 'HostAttr' from the 'Host'.
-unsetHostAttr :: R.Host_XXX1 -> R.HostAttr -> PhaseM RC l ()
-unsetHostAttr h f = do
-  actLog "unsetHostAttr" [("host", show h), ("attr", show f)]
-  modifyGraph $ G.disconnect h Has f
+unsetHostAttr :: R.Host -> R.HostAttr -> PhaseM RC l ()
+unsetHostAttr h a = do
+  actLog "unsetHostAttr" [("host", show h), ("attr", show a)]
+  modifyGraph $ G.disconnect h Has a
 
 -- | Find hosts with attributes satisfying the user supplied predicate
 findHostsByAttributeFilter :: String -- ^ Message to log
                            -> ([R.HostAttr] -> Bool) -- ^ Filter predicate
-                           -> PhaseM RC l [R.Host_XXX1]
+                           -> PhaseM RC l [R.Host]
 findHostsByAttributeFilter msg p = do
   Log.rcLog' Log.TRACE msg
   g <- getLocalGraph
-  return $ [ host | host@(R.Host_XXX1 {}) <- G.connectedTo Cluster Has g
+  return $ [ host | host@(R.Host {}) <- G.connectedTo Cluster Has g
                   , p (G.connectedTo host Has g) ]
 
 -- | A specialised version of 'findHostsByAttributeFilter' that returns all
 -- hosts labelled with at least the given attribute.
-findHostsByAttr :: R.HostAttr -> PhaseM RC l [R.Host_XXX1]
-findHostsByAttr label =
-    findHostsByAttributeFilter ( "Looking for hosts with attribute "
-                                ++ show label) p
-  where
-    p = elem label
+findHostsByAttr :: R.HostAttr -> PhaseM RC l [R.Host]
+findHostsByAttr a =
+    findHostsByAttributeFilter ("Looking for hosts with attribute " ++ show a)
+        (elem a)
 
 -- | Find all attributes possessed by the given host.
-findHostAttrs :: R.Host_XXX1 -> PhaseM RC l [R.HostAttr]
-findHostAttrs host = do
-  G.connectedTo host Has <$> getLocalGraph
+findHostAttrs :: R.Host -> PhaseM RC l [R.HostAttr]
+findHostAttrs h = G.connectedTo h Has <$> getLocalGraph
 
 ----------------------------------------------------------
 -- Drive related functions                              --
 ----------------------------------------------------------
 
 -- | Find logical devices on a host
-findHostStorageDevices :: R.Host_XXX1 -> PhaseM RC l [R.StorageDevice_XXX1]
-findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
-  [ sdev | enc  :: R.Enclosure <- maybeToList $ G.connectedFrom Has host rg
+findHostStorageDevices :: R.Host -> PhaseM RC l [R.StorageDevice_XXX1]
+findHostStorageDevices h = flip fmap getLocalGraph $ \rg ->
+  [ sdev | enc  :: R.Enclosure <- maybeToList $ G.connectedFrom Has h rg
          , loc  :: R.Slot_XXX1 <- G.connectedTo enc Has rg
          , sdev :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has loc rg ]
 
@@ -236,10 +231,9 @@ updateDiskResetCount = do
 -- | Test whether a given device is currently undergoing a reset operation.
 hasOngoingReset :: R.StorageDevice_XXX1 -> PhaseM RC l Bool
 hasOngoingReset =
-    fmap (not . null) . SDev.findAttrs go
-  where
-    go R.SDOnGoingReset = True
-    go _                = False
+    let go R.SDOnGoingReset = True
+        go _                = False
+    in fmap (not . null) . SDev.findAttrs go
 
 -- | Mark that a storage device is undergoing reset.
 markOnGoingReset :: R.StorageDevice_XXX1 -> PhaseM RC l ()
@@ -306,7 +300,7 @@ getSDevNode sdev = do
 -- 'StorageDevice'.
 --
 -- TODO: See 'getSDevNode' TODOs.
-getSDevHost :: R.StorageDevice_XXX1 -> PhaseM RC l [R.Host_XXX1]
+getSDevHost :: R.StorageDevice_XXX1 -> PhaseM RC l [R.Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
   maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev

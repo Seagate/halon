@@ -39,7 +39,7 @@ import           HA.Resources (Has(..), Node_XXX2(..), Runs(..))
 import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
   , Enclosure
-  , Host_XXX1
+  , Host
   , Is(..)
   , ReassemblingRaid(..)
   , Slot_XXX1
@@ -132,7 +132,7 @@ ruleReassembleRaid =
           return (m0enc, m0node)
         mnode <- getLocalGraph <&> \rg -> listToMaybe
           [ (host, node)
-          | host <- G.connectedTo enc Has rg :: [Host_XXX1]
+          | host <- G.connectedTo enc Has rg :: [Host]
           , node <- G.connectedTo host Runs rg
           ]
         raidDevs <- getLocalGraph <&> \rg -> let
@@ -350,7 +350,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure, Host_XXX1, Node_XXX2))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure, Host, Node_XXX2))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

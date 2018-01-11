@@ -53,14 +53,12 @@ newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
 storageIndex ''Enclosure "4e78e1a1-8d02-4f42-a325-a4685aa44595"
 deriveSafeCopy 0 'base ''Enclosure
 
--- XXX --------------------------------------------------------------
-
 -- | Representation of a physical host.
-newtype Host_XXX1 = Host_XXX1 String -- ^ Hostname
+newtype Host = Host String -- ^ Hostname
   deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
-storageIndex ''Host_XXX1 "8a9fb3e8-5400-45d4-85a3-e7d5128e504b"
-deriveSafeCopy 0 'base ''Host_XXX1
+storageIndex ''Host "8a9fb3e8-5400-45d4-85a3-e7d5128e504b"
+deriveSafeCopy 0 'base ''Host
 
 -- | Generic 'host attribute'.
 data HostAttr
@@ -85,6 +83,8 @@ instance ToJSON HostAttr
 
 storageIndex ''HostAttr "7a3def57-d9d2-41e1-9024-a72803916b6b"
 deriveSafeCopy 0 'base ''HostAttr
+
+-- XXX --------------------------------------------------------------
 
 -- | Representation of a storage device
 newtype StorageDevice_XXX1 = StorageDevice_XXX1
@@ -319,55 +319,54 @@ deriveSafeCopy 0 'base ''HalonVars
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
-  [ ''Rack, ''Enclosure, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
-  , ''StorageDevice_XXX1
-  , ''StorageDeviceStatus, ''StorageDeviceAttr
+  [ ''Rack, ''Enclosure, ''Host, ''HostAttr, ''DeviceIdentifier
+  , ''StorageDevice_XXX1, ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack)
-  , (''Cluster, ''Has, ''Host_XXX1)
+  , (''Cluster, ''Has, ''Host)
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice_XXX1)
   , (''Rack, ''Has, ''Enclosure)
-  , (''Host_XXX1, ''Has, ''HostAttr)
-  , (''Enclosure, ''Has, ''Slot_XXX1)
-  , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
-  , (''Enclosure, ''Has, ''Host_XXX1)
+  , (''Enclosure, ''Has, ''Host)
   , (''Enclosure, ''Has, ''BMC)
-  , (''Host_XXX1, ''Runs, ''Node_XXX2)
+  , (''Enclosure, ''Has, ''Slot_XXX1)
+  , (''Host, ''Has, ''HostAttr)
+  , (''Host, ''Has, ''UUID)
+  , (''Host, ''Runs, ''Node_XXX2)
+  , (''Host, ''Is, ''ReassemblingRaid)
+  , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
   , (''StorageDevice_XXX1, ''Is, ''StorageDeviceStatus)
   , (''StorageDevice_XXX1, ''Has, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, ''Has, ''StorageDeviceAttr)
   , (''StorageDevice_XXX1, ''ReplacedBy, ''StorageDevice_XXX1)
-  , (''Host_XXX1, ''Has, ''UUID)
-  , (''Host_XXX1, ''Is, ''ReassemblingRaid)
   ]
   )
 
 $(mkResRel
-  [ ''Rack, ''Enclosure, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
+  [ ''Rack, ''Enclosure, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''StorageDevice_XXX1, ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
-  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice_XXX1)
-  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot_XXX1)
   , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
-  , (''Host_XXX1, Unbounded, ''Has, Unbounded, ''HostAttr)
-  , (''Host_XXX1, AtMostOne, ''Has, AtMostOne, ''UUID)
-  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''BMC)
-  , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node_XXX2)
-  , (''StorageDevice_XXX1, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot_XXX1)
+  , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
+  , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
+  , (''Host, AtMostOne, ''Runs, Unbounded, ''Node_XXX2)
+  , (''Host, Unbounded, ''Is, AtMostOne, ''ReassemblingRaid)
   , (''StorageDevice_XXX1, AtMostOne, ''Has, AtMostOne, ''Slot_XXX1)
+  , (''StorageDevice_XXX1, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''DeviceIdentifier)
   , (''StorageDevice_XXX1, Unbounded, ''Has, Unbounded, ''StorageDeviceAttr)
   , (''StorageDevice_XXX1, AtMostOne, ''ReplacedBy, AtMostOne, ''StorageDevice_XXX1)
-  , (''Host_XXX1, Unbounded, ''Is, AtMostOne, ''ReassemblingRaid)
   ]
   []
   )

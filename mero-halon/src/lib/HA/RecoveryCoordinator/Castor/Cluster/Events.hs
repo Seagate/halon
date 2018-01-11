@@ -44,7 +44,7 @@ import           Data.Typeable
 import           GHC.Generics
 import           HA.Aeson
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import           HA.Resources.Castor (Host_XXX1, Slot_XXX1, StorageDevice_XXX1)
+import           HA.Resources.Castor (Host, Slot_XXX1, StorageDevice_XXX1)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.SafeCopy
@@ -157,7 +157,7 @@ data ReportClusterState = ReportClusterState
       -- ^ 'M0.Profile' and 'M0.Filesystem' information.
       , csrStats      :: Maybe M0.FilesystemStats
       -- ^ 'M0.FilesystemStats' information.
-      , csrHosts      :: [(Host_XXX1, ReportClusterHost)]
+      , csrHosts      :: [(Host, ReportClusterHost)]
       -- ^ Information about every 'Host'. See 'ReportClusterHost' for details.
       } deriving (Eq, Show, Typeable, Generic)
 

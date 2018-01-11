@@ -442,14 +442,14 @@ goRack CI.Rack_XXX0{..} = do
     mapM_ (goEnc rack) rack_enclosures_XXX0
 
 goEnc :: forall l. R.Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
-goEnc rack (CI.Enclosure_XXX0{..}) = do
-    let enclosure = R.Enclosure enc_id_XXX0
-    registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc_XXX0
-    mapM_ (goHost enclosure) enc_hosts_XXX0
+goEnc rack CI.Enclosure_XXX0{..} = do
+    let encl = R.Enclosure enc_id_XXX0
+    registerEnclosure rack encl
+    mapM_ (registerBMC encl) enc_bmc_XXX0
+    mapM_ (goHost encl) enc_hosts_XXX0
 
 goHost :: forall l. R.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
-goHost enc CI.Host_XXX0{..} = do
-    let host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
+goHost encl CI.Host_XXX0{..} = do
+    let host = R.Host $ T.unpack h_fqdn_XXX0
     registerHost host
-    locateHostInEnclosure host enc
+    locateHostInEnclosure host encl

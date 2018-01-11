@@ -82,7 +82,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Cluster(..))
 import           HA.Resources.Castor
   ( HostAttr(HA_CPU_COUNT,HA_MEMSIZE_MB)
-  , Host_XXX1
+  , Host
   )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.HalonVars
@@ -758,7 +758,7 @@ txPopulate_XXX4 lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) 
   for_ nodes $ \node -> do
     let attrs =
           [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware g :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host_XXX1]
+              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host]
               , a <- G.connectedTo host Has g :: [HostAttr]]
         defaultMem = 1024
         defCPUCount = 1

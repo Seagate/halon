@@ -24,7 +24,7 @@ import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..))
 import           HA.EventQueue.Types (HAEvent(..))
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Runs(..), Node_XXX2(..))
-import           HA.Resources.Castor (Host_XXX1, Is(..))
+import           HA.Resources.Castor (Host, Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Service
   ( Service
@@ -65,7 +65,7 @@ ruleCheckCleanup = define "service::m0d::check-cleanup" $ do
     rg <- getLocalGraph
     let msg = Cleanup . null $
           [ ()
-          | Just (host :: Host_XXX1) <- [G.connectedFrom Runs (Node_XXX2 nid) rg]
+          | Just (host :: Host) <- [G.connectedFrom Runs (Node_XXX2 nid) rg]
           , m0node :: M0.Node <- G.connectedTo host Runs rg
           , p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
           , G.isConnected p Is M0.ProcessBootstrapped rg

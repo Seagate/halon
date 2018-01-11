@@ -17,7 +17,7 @@
 -- Related part of the resource graph:
 --
 -- @
---   Host_XXX1 ----+- HostAttirbutes
+--   Host ---------+- HostAttirbutes
 --     |           |
 --     |           +-- M0.Client
 --     |           |
@@ -162,7 +162,7 @@ import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node_XXX2(..))
-import           HA.Resources.Castor (Host_XXX1)
+import           HA.Resources.Castor (Host)
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -211,7 +211,7 @@ type FldLnetInfo = '("mLnetInfo", Maybe LnetInfo)
 fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
 
-type FldHost = '("host", Maybe Host_XXX1)
+type FldHost = '("host", Maybe Host)
 fldHost :: Proxy FldHost
 fldHost = Proxy
 

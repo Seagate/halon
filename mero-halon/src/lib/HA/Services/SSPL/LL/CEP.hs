@@ -120,7 +120,7 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
 -- | Send information about 'DriveLedUpdate' to the given 'Host' for
 -- the drive with the given serial number.
 sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
-              -> R.Host_XXX1 -- ^ Host we want to deal with
+              -> R.Host -- ^ Host we want to deal with
               -> R.StorageDevice_XXX1 -- ^ Drive
               -> PhaseM RC l Bool
 sendLedUpdate status host sd@(R.StorageDevice_XXX1 (T.pack -> sn)) = do

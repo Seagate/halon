@@ -10,12 +10,12 @@
 --     Cluster
 --       |  |
 --       |  +-------M0.Root
---       |           |
+--       |              |
 --       |          M0.Profie
---       |           |
+--       |              |
 --       |          M0.FileSystem
---     R.Host_XXX1     |
---      |  |           v
+--     R.Host           |
+--      |  |            v
 --      |  +--------->M0.Node
 --      v
 --     R.Node
@@ -55,7 +55,7 @@ import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources.Castor
   ( Is(..)
   , HostAttr(HA_M0CLIENT, HA_M0SERVER)
-  , Host_XXX1
+  , Host
   , Slot_XXX1
   , StorageDevice_XXX1
   )
@@ -287,7 +287,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
     let getMeroHostsNodes p = do
          rg <- getLocalGraph
          return [ (host,node)
-                | host <- G.connectedTo Cluster Has rg  :: [Host_XXX1]
+                | host <- G.connectedTo Cluster Has rg  :: [Host]
                 , node <- G.connectedTo host Runs rg :: [M0.Node]
                 , p host node rg
                 ]
@@ -322,7 +322,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
           modifyGraph $ G.connect Cluster Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host::Host_XXX1) (node::M0.Node) rg' ->
+            $ \(host::Host) (node::M0.Node) rg' ->
                    ( G.isConnected host Has HA_M0SERVER rg'
                   || G.isConnected host Has HA_M0CLIENT rg'
                    )
@@ -434,7 +434,7 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
           return $ Right (ClusterStopOk, [finish])
         else do
           modifyGraph $ G.connect Cluster Has M0.OFFLINE
-          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
+          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [Host]
                              , node <- G.connectedTo host Runs rg ]
           jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
           modify Local $ rlens fldJobs . rfield .~ jobs
@@ -466,7 +466,7 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     Log.rcLog' Log.DEBUG "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getLocalGraph <&> \rg -> [ node
-              | host <- G.connectedTo Cluster Has rg :: [Host_XXX1]
+              | host <- G.connectedTo Cluster Has rg :: [Host]
               , node <- take 1 (G.connectedTo host Runs rg) :: [M0.Node]
               ]
     procs <- getLocalGraph <&> M0.getM0Processes

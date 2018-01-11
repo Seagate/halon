@@ -121,7 +121,7 @@ lookupEnclosureM0 enc =
 --   endpoint for the HA service hosted by processes on that node. Whilst in
 --   theory different processes might have different HA endpoints, in
 --   practice this should not happen.
-lookupHostHAAddress :: R.Host_XXX1 -> PhaseM RC l (Maybe Endpoint)
+lookupHostHAAddress :: R.Host -> PhaseM RC l (Maybe Endpoint)
 lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
   [ ep
   | node <- G.connectedTo host Runs rg :: [M0.Node]

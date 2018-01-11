@@ -46,7 +46,7 @@ import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources (Node_XXX2(..))
 import qualified HA.Resources.Castor as Cas (Rack, Enclosure)
 import           HA.Resources.Castor
-  ( Host_XXX1(..)
+  ( Host(..)
   , Is(..)
   , Slot_XXX1(..)
   , StorageDevice_XXX1
@@ -1023,7 +1023,7 @@ $(mkDicts
   , (''Cluster, ''Has, ''Profile)
   , (''Cluster, ''Has, ''Profile_XXX3)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''Host_XXX1)
+  , (''Controller, ''At, ''Host)
   , (''Rack, ''At, ''Cas.Rack)
   , (''Enclosure, ''At, ''Cas.Enclosure)
   , (''Disk, ''At, ''StorageDevice_XXX1)
@@ -1061,8 +1061,8 @@ $(mkDicts
   , (''Cluster, ''StopLevel, ''BootLevel)
   , (''Pool_XXX3, ''Has, ''PoolRepairStatus)
   , (''Pool_XXX3, ''Has, ''DiskFailureVector)
-  , (''Host_XXX1, ''Has, ''LNid)
-  , (''Host_XXX1, ''Runs, ''Node)
+  , (''Host, ''Has, ''LNid)
+  , (''Host, ''Runs, ''Node)
   , (''Process, ''Has, ''ProcessLabel)
   , (''Process, ''Has, ''ProcessEnv)
   , (''Process, ''Has, ''PID)
@@ -1099,7 +1099,7 @@ $(mkResRel
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
-  , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''Host)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
@@ -1137,8 +1137,8 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool_XXX3, AtMostOne, ''Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool_XXX3, AtMostOne, ''Has, AtMostOne, ''DiskFailureVector)
-  , (''Host_XXX1, AtMostOne, ''Has, Unbounded, ''LNid)
-  , (''Host_XXX1, AtMostOne, ''Runs, Unbounded, ''Node)
+  , (''Host, AtMostOne, ''Has, Unbounded, ''LNid)
+  , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''Has, AtMostOne, ''ProcessLabel)
   , (''Process, Unbounded, ''Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''Has, AtMostOne, ''PID)
@@ -1185,12 +1185,12 @@ lookupConfObjByFid f =
 -- 'nodeToM0Node' for inverse.
 m0nodeToNode :: Node -> G.Graph -> Maybe Node_XXX2
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: Host_XXX1) <- [G.connectedFrom Runs m0node rg]
+  [ node | Just (h :: Host) <- [G.connectedFrom Runs m0node rg]
          , node <- G.connectedTo h Runs rg ]
 
 -- | Lookup 'Node' associated with the given 'Node'. See
 -- 'm0nodeToNode' for inverse.
 nodeToM0Node :: Node_XXX2 -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
-  [ m0n | Just (h :: Host_XXX1) <- [G.connectedFrom Runs node rg]
+  [ m0n | Just (h :: Host) <- [G.connectedFrom Runs node rg]
         , m0n <- G.connectedTo h Runs rg ]
