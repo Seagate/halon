@@ -203,7 +203,7 @@ instance Binary RuleDriveManagerDisk
 -- rule ignores such events.
 ruleMonitorDriveManager :: Definitions RC ()
 ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ \(uuid, nid, srdm) -> do
-  let enc' = R.Enclosure_XXX1 . T.unpack
+  let enc' = R.Enclosure . T.unpack
                        . sensorResponseMessageSensor_response_typeDisk_status_drivemanagerEnclosureSN
                        $ srdm
       diskNum = fromInteger $ sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskNum srdm
@@ -249,7 +249,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
     -- If SSPL doesn't know which enclosure the drive is in, try to
     -- infer it from the drive serial number and info we may have
     -- gotten previously
-    populateEnclosure enc@(R.Enclosure_XXX1 "HPI_Data_Not_Available") sn diskNum =
+    populateEnclosure enc@(R.Enclosure "HPI_Data_Not_Available") sn diskNum =
       StorageDevice.location (R.StorageDevice_XXX1 sn) >>= \case
         Nothing -> do
           Log.rcLog' Log.WARN ("No enclosure found for drive"::String)
@@ -310,7 +310,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
               $ srphi
       serial = sensorResponseMessageSensor_response_typeDisk_status_hpiSerialNumber
              $ srphi
-      enc   = R.Enclosure_XXX1 . T.unpack
+      enc   = R.Enclosure . T.unpack
                    . sensorResponseMessageSensor_response_typeDisk_status_hpiEnclosureSN
                    $ srphi
       is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi

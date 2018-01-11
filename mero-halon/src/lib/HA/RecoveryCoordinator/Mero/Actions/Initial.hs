@@ -85,7 +85,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
-    mirrorRack :: M0.Filesystem -> (R.Rack_XXX1, [R.Enclosure_XXX1]) -> PhaseM RC l ()
+    mirrorRack :: M0.Filesystem -> (R.Rack_XXX1, [R.Enclosure]) -> PhaseM RC l ()
     mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0es <- mapM mirrorEncl encls
@@ -93,7 +93,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
           $ G.connect m0r M0.At rack
         >>> G.connect fs M0.IsParentOf m0r
         >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
-    mirrorEncl :: R.Enclosure_XXX1 -> PhaseM RC l M0.Enclosure
+    mirrorEncl :: R.Enclosure -> PhaseM RC l M0.Enclosure
     mirrorEncl encl = lookupEnclosureM0 encl >>= \case
       Just m0e -> return m0e
       Nothing -> do
@@ -135,7 +135,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getLocalGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
-              e <- G.connectedFrom Has host rg :: Maybe R.Enclosure_XXX1
+              e <- G.connectedFrom Has host rg :: Maybe R.Enclosure
               m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
               return (m0e, e)
 

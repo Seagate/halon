@@ -38,7 +38,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Node_XXX2(..), Runs(..))
 import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
-  , Enclosure_XXX1
+  , Enclosure
   , Host_XXX1
   , Is(..)
   , ReassemblingRaid(..)
@@ -350,7 +350,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure_XXX1, Host_XXX1, Node_XXX2))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure, Host_XXX1, Node_XXX2))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

@@ -22,7 +22,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
-  , Enclosure_XXX1
+  , Enclosure
   , Slot_XXX1(..)
   , StorageDevice_XXX1(..)
   )
@@ -120,7 +120,7 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  , fs :: M0.Filesystem <- G.connectedTo p M0.IsParentOf rg
                  , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-                 , enc :: Enclosure_XXX1 <- maybeToList $ G.connectedTo m0enc M0.At rg
+                 , enc :: Enclosure <- maybeToList $ G.connectedTo m0enc M0.At rg
                  , slot :: Slot_XXX1 <- G.connectedTo enc Has rg
                  , sd :: StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
                  ]

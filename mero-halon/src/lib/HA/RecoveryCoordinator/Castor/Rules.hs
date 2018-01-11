@@ -170,13 +170,13 @@ goRack_XXX3 CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
 
 goEnc_XXX3 :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc_XXX3 rack CI.Enclosure_XXX0{..} = let
-    enclosure = R.Enclosure_XXX1 enc_id_XXX0
+    enclosure = R.Enclosure enc_id_XXX0
   in do
     registerEnclosure rack enclosure
     mapM_ (registerBMC enclosure) enc_bmc_XXX0
     mapM_ (goHost_XXX0 enclosure) enc_hosts_XXX0
 
-goHost_XXX0 :: R.Enclosure_XXX1 -> CI.Host_XXX0 -> PhaseM RC l ()
+goHost_XXX0 :: R.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost_XXX0 enc CI.Host_XXX0{..} = let
     host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.

@@ -216,7 +216,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         ph1 <- phaseHandle "finish"
         directly ph0 $ do
            [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
-           let R.Enclosure_XXX1 ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
+           let R.Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
            let serial = "serial" ++ ide ++ "_1"
            let sdev = R.StorageDevice_XXX1 serial
            unless hpiWasInstalled $ do
@@ -231,11 +231,11 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         start ph0 ()
       defineSimple "enclosure" $ \(GiveMeEnclosureName, pid) -> do
         [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
-        liftProcess $ usend pid (e::R.Enclosure_XXX1)
+        liftProcess $ usend pid (e::R.Enclosure)
     test rc = do
       self <- getSelfPid
       usend rc (GiveMeEnclosureName, self)
-      R.Enclosure_XXX1 e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
+      R.Enclosure e@('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) <- expect
       let serial = "serial" ++ ide ++ "_1"
       let (enc, serial', idx, devid, wwn, _sdev) =
             if hpiIsNew
@@ -261,7 +261,7 @@ testDMRequest = mkHpiTest rules test
   where
     rules self = do
       defineSimple "prepare" $ \() -> do
-        -- Just sd1 <- lookupStorageDeviceInEnclosure (R.Enclosure_XXX1 "enclosure1") (DIIndexInEnclosure 1)
+        -- Just sd1 <- lookupStorageDeviceInEnclosure (R.Enclosure "enclosure1") (DIIndexInEnclosure 1)
         -- markStorageDeviceRemoved sd1
         liftProcess $ usend self ()
     test rc = do

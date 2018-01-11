@@ -14,7 +14,7 @@ import           Control.Distributed.Process
 import           Data.Foldable
 import           Data.Monoid ((<>))
 import           HA.RecoveryCoordinator.Castor.Commands.Events
-import           HA.Resources.Castor (Enclosure_XXX1(..), Slot_XXX1(..))
+import           HA.Resources.Castor (Enclosure(..), Slot_XXX1(..))
 import           Handler.Mero.Helpers (clusterCommand)
 import           Options.Applicative
 import qualified Options.Applicative as Opt
@@ -60,7 +60,7 @@ optSerial = strOption $ mconcat
 
 parseSlot :: Parser Slot_XXX1
 parseSlot = Slot_XXX1
-   <$> (Enclosure_XXX1 <$>
+   <$> (Enclosure <$>
          strOption (mconcat [ long "slot-enclosure"
                             , help "index of the drive's enclosure"
                             , metavar "NAME"

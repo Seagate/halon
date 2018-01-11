@@ -269,7 +269,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
         encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
         disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r g :: Maybe R.Enclosure_XXX1) hosts
+        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r g :: Maybe R.Enclosure) hosts
         sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has g :: [R.Slot_XXX1]
                                        , d <- maybeToList (G.connectedFrom Has s g :: Maybe R.StorageDevice_XXX1) ])
                             enc
@@ -442,13 +442,13 @@ goRack CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
 
 goEnc :: forall l. R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc rack (CI.Enclosure_XXX0{..}) = let
-    enclosure = R.Enclosure_XXX1 enc_id_XXX0
+    enclosure = R.Enclosure enc_id_XXX0
   in do
     registerEnclosure rack enclosure
     mapM_ (registerBMC enclosure) enc_bmc_XXX0
     mapM_ (goHost enclosure) enc_hosts_XXX0
 
-goHost :: forall l. R.Enclosure_XXX1 -> CI.Host_XXX0 -> PhaseM RC l ()
+goHost :: forall l. R.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost enc CI.Host_XXX0{..} = let
     host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
   in do

@@ -29,7 +29,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   ) where
 
 import HA.Resources (Node_XXX2(..))
-import HA.Resources.Castor (Enclosure_XXX1, Slot_XXX1, StorageDevice_XXX1)
+import HA.Resources.Castor (Enclosure, Slot_XXX1, StorageDevice_XXX1)
 import HA.SafeCopy
 
 import Data.UUID (UUID)
@@ -127,7 +127,7 @@ deriveSafeCopy 0 'base ''DriveReady
 
 -- | Sent when an expander reset attempt happens in the enclosure. In such
 --   a case, we expect to see (or have seen) multiple drive transient events.
-newtype ExpanderReset = ExpanderReset Enclosure_XXX1
+newtype ExpanderReset = ExpanderReset Enclosure
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable ExpanderReset

@@ -177,7 +177,7 @@ findSDev rg = case findSDevs rg of
     error "Unreachable"
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
-findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe R.Enclosure_XXX1
+findDiskEnclosure :: ThatWhichWeCallADisk -> G.Graph -> Maybe R.Enclosure
 findDiskEnclosure disk rg = R.slotEnclosure_XXX1 <$> G.connectedTo (aDiskSD disk) Has rg
 
 find2SDev :: G.Graph -> Process ThatWhichWeCallADisk
@@ -195,7 +195,7 @@ find2SDev rg =
                error "Unreachable"
 
 -- | Check if specified device have RemovedAt attribute.
-checkStorageDeviceRemoved :: R.Enclosure_XXX1 -> Int -> G.Graph -> Bool
+checkStorageDeviceRemoved :: R.Enclosure -> Int -> G.Graph -> Bool
 checkStorageDeviceRemoved enc idx rg = Prelude.null $
   [ () | slot@(R.Slot_XXX1 enc' idx') <- G.connectedTo enc Has rg
        , Just{} <- [G.connectedFrom Has slot rg :: Maybe R.StorageDevice_XXX1]
@@ -206,8 +206,8 @@ checkStorageDeviceRemoved enc idx rg = Prelude.null $
 -- to the RC through an HPI message. This is useful when the disk is
 -- not in the initial data to begin with such as in the case of
 -- metadata/RAID drives.
-announceNewSDev :: R.Enclosure_XXX1 -> ThatWhichWeCallADisk -> TestSetup -> Process ()
-announceNewSDev enc@(R.Enclosure_XXX1 enclosureName) sdev ts = do
+announceNewSDev :: R.Enclosure -> ThatWhichWeCallADisk -> TestSetup -> Process ()
+announceNewSDev enc@(R.Enclosure enclosureName) sdev ts = do
   rg <- G.getGraph (_ts_mm ts)
   let R.Host_XXX1 host : _ = G.connectedTo enc Has rg
       devIdx = succ . maximum . map R.slotIndex_XXX1 $ G.connectedTo enc Has rg
@@ -451,7 +451,7 @@ testDriveRemovedBySSPL transport pg = run transport pg [] $ \ts -> do
   subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy DriveRemoved)
   rg <- G.getGraph (_ts_mm ts)
   sdev <- findSDev rg
-  let Just enc@(R.Enclosure_XXX1 enclosureName) = findDiskEnclosure sdev rg
+  let Just enc@(R.Enclosure enclosureName) = findDiskEnclosure sdev rg
 
   -- Find the host on which this device is actually on
   Just (R.Host_XXX1 host) <- return $ do
@@ -559,7 +559,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         -- Find a single SDev
         let msdev = listToMaybe
               [ sdev | rack :: R.Rack_XXX1 <- G.connectedTo Cluster Has rg
-                     , enc :: R.Enclosure_XXX1 <- G.connectedTo rack Has rg
+                     , enc :: R.Enclosure <- G.connectedTo rack Has rg
                      , slot :: R.Slot_XXX1 <- G.connectedTo enc Has rg
                      , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
         case msdev of
@@ -636,7 +636,7 @@ testMetadataDriveFailed transport pg = run transport pg [] $ \ts -> do
 
   rg <- G.getGraph (_ts_mm ts)
   -- Look up the storage device by path
-  let [sd]  = [ d |  e :: R.Enclosure_XXX1 <- maybeToList $ G.connectedFrom Has (R.Host_XXX1 hostname) rg
+  let [sd]  = [ d |  e :: R.Enclosure <- maybeToList $ G.connectedFrom Has (R.Host_XXX1 hostname) rg
                   ,  s :: R.Slot_XXX1 <- G.connectedTo e Has rg
                   ,  d :: R.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has s rg
                   , di <- G.connectedTo d Has rg

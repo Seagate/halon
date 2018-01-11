@@ -78,13 +78,13 @@ location sdev = G.connectedTo sdev Has <$> getLocalGraph
 
 -- | Get device enclosure, if there is no connection to location,
 -- then this call tries to find direct connection.
-enclosure :: R.StorageDevice_XXX1 -> PhaseM RC l (Maybe R.Enclosure_XXX1)
+enclosure :: R.StorageDevice_XXX1 -> PhaseM RC l (Maybe R.Enclosure)
 enclosure sdev = do
  rg <- getLocalGraph
  return $ R.slotEnclosure_XXX1 <$> G.connectedTo sdev Has rg
 
 -- | Register device location in graph.
-mkLocation :: R.Enclosure_XXX1 -> Int -> PhaseM RC l R.Slot_XXX1
+mkLocation :: R.Enclosure -> Int -> PhaseM RC l R.Slot_XXX1
 mkLocation enc num = do
   modifyGraph $ G.connect enc Has loc
   return loc

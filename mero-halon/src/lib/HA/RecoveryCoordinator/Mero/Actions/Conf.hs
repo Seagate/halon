@@ -113,7 +113,7 @@ getSDevPool sdev = do
         return x
 
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.
-lookupEnclosureM0 :: R.Enclosure_XXX1 -> PhaseM RC l (Maybe M0.Enclosure)
+lookupEnclosureM0 :: R.Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
     G.connectedFrom M0.At enc <$> getLocalGraph
 
@@ -191,11 +191,11 @@ pickPrincipalRM = getLocalGraph >>= \g ->
   in traverse setPrincipalRMIfUnset $ listToMaybe rms
 
 -- | Lookup enclosure corresponding to Mero enclosure.
-m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure_XXX1
+m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure
 m0encToEnc m0enc rg = G.connectedTo m0enc M0.At rg
 
 -- | Lookup Mero enclosure corresponding to enclosure.
-encToM0Enc :: R.Enclosure_XXX1 -> G.Graph -> Maybe M0.Enclosure
+encToM0Enc :: R.Enclosure -> G.Graph -> Maybe M0.Enclosure
 encToM0Enc enc rg = G.connectedFrom M0.At enc rg
 
 -- | Find 'M0.SDev' that associated with a given location.
