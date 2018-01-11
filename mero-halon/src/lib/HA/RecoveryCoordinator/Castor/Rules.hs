@@ -15,7 +15,7 @@
 
 module HA.RecoveryCoordinator.Castor.Rules
   ( castorRules
-  , goRack_XXX3
+  , goRack_XXX0
   ) where
 
 import           Control.Monad.Catch (catch, SomeException)
@@ -92,11 +92,10 @@ goPool profile CI.Pool{..} = do
     modifyGraph $ G.connect profile M0.IsParentOf pool
 
 goRack :: CI.Rack -> PhaseM RC l ()
-goRack CI.Rack{..} =
+goRack CI.Rack{..} = do
     let rack = R.Rack rack_idx
-    in do
-        registerRack rack
-        for_ rack_enclosures goEnclosure
+    registerRack rack
+    for_ rack_enclosures goEnclosure
 
 goEnclosure :: CI.Enclosure -> PhaseM RC l ()
 goEnclosure CI.Enclosure{..} = error "XXX IMPLEMENTME"
@@ -126,7 +125,7 @@ ruleInitialDataLoad_XXX3 =
             notify InitialDataLoaded_XXX3
 
         load = do
-          mapM_ goRack_XXX3 id_racks_XXX0
+          mapM_ goRack_XXX0 id_racks_XXX0
           filesystem <- initialiseConfInRG_XXX3
           loadMeroGlobals id_m0_globals_XXX0
           loadMeroServers filesystem id_m0_servers_XXX0
@@ -158,30 +157,29 @@ ruleInitialDataLoad_XXX3 =
           createIMeta filesystem
           validateConf
 
-    if null (G.connectedTo Cluster Has rg :: [R.Rack_XXX1])
+    if null (G.connectedTo Cluster Has rg :: [R.Rack])
     then load `catch` ( err "Failure during initial data load: "
                       . (show :: SomeException -> String) )
     else err "" "Initial data is already loaded."
 
-goRack_XXX3 :: CI.Rack_XXX0 -> PhaseM RC l ()
-goRack_XXX3 CI.Rack_XXX0{..} = let rack = R.Rack_XXX1 rack_idx_XXX0 in do
-  registerRack_XXX3 rack
-  mapM_ (goEnc_XXX3 rack) rack_enclosures_XXX0
+goRack_XXX0 :: CI.Rack_XXX0 -> PhaseM RC l ()
+goRack_XXX0 CI.Rack_XXX0{..} = do
+    let rack = R.Rack rack_idx_XXX0
+    registerRack rack
+    mapM_ (goEnc_XXX0 rack) rack_enclosures_XXX0
 
-goEnc_XXX3 :: R.Rack_XXX1 -> CI.Enclosure_XXX0 -> PhaseM RC l ()
-goEnc_XXX3 rack CI.Enclosure_XXX0{..} = let
-    enclosure = R.Enclosure enc_id_XXX0
-  in do
-    registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc_XXX0
-    mapM_ (goHost_XXX0 enclosure) enc_hosts_XXX0
+goEnc_XXX0 :: R.Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc_XXX0 rack CI.Enclosure_XXX0{..} = do
+    let encl = R.Enclosure enc_id_XXX0
+    registerEnclosure rack encl
+    mapM_ (registerBMC encl) enc_bmc_XXX0
+    mapM_ (goHost_XXX0 encl) enc_hosts_XXX0
 
 goHost_XXX0 :: R.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
-goHost_XXX0 enc CI.Host_XXX0{..} = let
-    host = R.Host_XXX1 $ T.unpack h_fqdn_XXX0
-    -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-    remAttrs = [R.HA_M0CLIENT]
-  in do
+goHost_XXX0 enc CI.Host_XXX0{..} = do
+    let host = R.Host_XXX1 (T.unpack h_fqdn_XXX0)
+        -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
+        remAttrs = [R.HA_M0CLIENT]
     registerHost host
     locateHostInEnclosure host enc
     mapM_ (unsetHostAttr host) remAttrs

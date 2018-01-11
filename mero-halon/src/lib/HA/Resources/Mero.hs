@@ -44,11 +44,10 @@ import           HA.Aeson
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources (Node_XXX2(..))
-import qualified HA.Resources.Castor as R (Enclosure(..))
+import qualified HA.Resources.Castor as Cas (Rack, Enclosure)
 import           HA.Resources.Castor
   ( Host_XXX1(..)
   , Is(..)
-  , Rack_XXX1(..)
   , Slot_XXX1(..)
   , StorageDevice_XXX1
   )
@@ -1025,8 +1024,8 @@ $(mkDicts
   , (''Cluster, ''Has, ''Profile_XXX3)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''Host_XXX1)
-  , (''Rack, ''At, ''Rack_XXX1)
-  , (''Enclosure, ''At, ''R.Enclosure)
+  , (''Rack, ''At, ''Cas.Rack)
+  , (''Enclosure, ''At, ''Cas.Enclosure)
   , (''Disk, ''At, ''StorageDevice_XXX1)
     -- Parent/child relationships between conf entities
   , (''Profile, ''IsParentOf, ''Pool)
@@ -1101,8 +1100,8 @@ $(mkResRel
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''Host_XXX1)
-  , (''Rack, AtMostOne, ''At, AtMostOne, ''Rack_XXX1)
-  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
+  , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
+  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot_XXX1)
     -- Parent/child relationships between conf entities

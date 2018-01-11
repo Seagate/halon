@@ -43,16 +43,8 @@ import GHC.Generics (Generic)
 newtype Rack = Rack Int -- ^ Rack index.
   deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
-storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
+storageIndex ''Rack "e20058a4-8f26-4a04-a99c-19dbe88c0ca6"
 deriveSafeCopy 0 'base ''Rack
-
--- XXX --------------------------------------------------------------
-
-newtype Rack_XXX1 = Rack_XXX1 Int -- ^ Rack index
-  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
-
-storageIndex ''Rack_XXX1 "e20058a4-8f26-4a04-a99c-19dbe88c0ca6"
-deriveSafeCopy 0 'base ''Rack_XXX1
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
@@ -60,6 +52,8 @@ newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
 
 storageIndex ''Enclosure "4e78e1a1-8d02-4f42-a325-a4685aa44595"
 deriveSafeCopy 0 'base ''Enclosure
+
+-- XXX --------------------------------------------------------------
 
 -- | Representation of a physical host.
 newtype Host_XXX1 = Host_XXX1 String -- ^ Hostname
@@ -325,18 +319,17 @@ deriveSafeCopy 0 'base ''HalonVars
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
-  [ ''Rack, ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
-  , ''Enclosure, ''StorageDevice_XXX1
+  [ ''Rack, ''Enclosure, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
+  , ''StorageDevice_XXX1
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack)
-  , (''Cluster, ''Has, ''Rack_XXX1)
   , (''Cluster, ''Has, ''Host_XXX1)
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice_XXX1)
-  , (''Rack_XXX1, ''Has, ''Enclosure)
+  , (''Rack, ''Has, ''Enclosure)
   , (''Host_XXX1, ''Has, ''HostAttr)
   , (''Enclosure, ''Has, ''Slot_XXX1)
   , (''StorageDevice_XXX1, ''Has, ''Slot_XXX1)
@@ -353,19 +346,17 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Rack, ''Rack_XXX1, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
-  , ''Enclosure, ''StorageDevice_XXX1
-  , ''StorageDeviceStatus, ''StorageDeviceAttr
+  [ ''Rack, ''Enclosure, ''Host_XXX1, ''HostAttr, ''DeviceIdentifier
+  , ''StorageDevice_XXX1, ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot_XXX1, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
-  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack_XXX1)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice_XXX1)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot_XXX1)
-  , (''Rack_XXX1, AtMostOne, ''Has, Unbounded, ''Enclosure)
+  , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
   , (''Host_XXX1, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host_XXX1, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host_XXX1)
