@@ -54,7 +54,9 @@ storageIndex ''Enclosure "4e78e1a1-8d02-4f42-a325-a4685aa44595"
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
-newtype Host = Host String -- ^ Hostname
+--
+-- XXX TODO: s/Host/Controller/
+newtype Host = Host String -- ^ Hostname.
   deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
 storageIndex ''Host "8a9fb3e8-5400-45d4-85a3-e7d5128e504b"

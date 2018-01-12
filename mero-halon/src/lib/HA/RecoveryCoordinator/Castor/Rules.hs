@@ -83,7 +83,7 @@ goProfile CI.Profile{..} = do
     profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
                           <*> pure prof_md_redundancy
     modifyGraph $ G.connect Cluster Has profile
-    for_ prof_pools (goPool profile)
+    for_ prof_pools $ goPool profile
 
 goPool :: M0.Profile -> CI.Pool -> PhaseM RC l ()
 goPool profile CI.Pool{..} = do
@@ -95,10 +95,22 @@ goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} = do
     let rack = Cas.Rack rack_idx
     registerRack rack
-    for_ rack_enclosures goEnclosure
+    for_ rack_enclosures $ goEnclosure rack
 
-goEnclosure :: CI.Enclosure -> PhaseM RC l ()
-goEnclosure CI.Enclosure{..} = error "XXX IMPLEMENTME"
+goEnclosure :: Cas.Rack -> CI.Enclosure -> PhaseM RC l ()
+goEnclosure rack CI.Enclosure{..} = do
+    let encl = Cas.Enclosure (T.unpack enc_id)
+    registerEnclosure rack encl
+    for_ enc_bmc $ registerBMC encl
+    for_ enc_controllers $ goController encl
+
+goController :: Cas.Enclosure -> CI.Controller -> PhaseM RC l ()
+goController encl CI.Controller{..} = do
+    let host = Cas.Host (T.unpack c_fqdn) -- XXX TODO: s/Host/Controller/
+    registerHost host
+    locateHostInEnclosure host encl
+    -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
+    unsetHostAttr host Cas.HA_M0CLIENT
 
 -- XXX --------------------------------------------------------------
 
