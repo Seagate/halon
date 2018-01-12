@@ -39,7 +39,7 @@ import qualified HA.RecoveryCoordinator.RC.Internal.Storage as Storage
 import qualified HA.RecoverySupervisor as RS
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..))
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas
 import           Network.CEP
 
 -- | Initial configuration data.
@@ -51,20 +51,20 @@ data IgnitionArguments = IgnitionArguments
 instance Binary IgnitionArguments
 
 -- | Used in 'timeoutHost'
-newtype HostDisconnected = HostDisconnected R.Host
+newtype HostDisconnected = HostDisconnected Cas.Host
   deriving (Show, Eq, Generic, Typeable)
 
 instance Binary HostDisconnected
 
 -- | Notify mero about the node being considered down and set the
 -- appropriate host attributes.
-timeoutHost :: R.Host -> PhaseM RC g ()
-timeoutHost h = hasHostAttr R.HA_TRANSIENT h >>= \case
+timeoutHost :: Cas.Host -> PhaseM RC g ()
+timeoutHost h = hasHostAttr Cas.HA_TRANSIENT h >>= \case
   False -> return ()
   True -> do
     Log.rcLog' Log.DEBUG $ "Disconnecting " ++ show h ++ " due to timeout"
-    unsetHostAttr h R.HA_TRANSIENT
-    setHostAttr h R.HA_DOWN
+    unsetHostAttr h Cas.HA_TRANSIENT
+    setHostAttr h Cas.HA_DOWN
     publish $ HostDisconnected h
 
 -- | Send '()' to the given 'ProcessId' as a form of acknowledgement.

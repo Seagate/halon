@@ -42,7 +42,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources.Castor (Is(..))
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC
@@ -113,7 +113,7 @@ getSDevPool sdev = do
         return x
 
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.
-lookupEnclosureM0 :: R.Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
+lookupEnclosureM0 :: Cas.Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
     G.connectedFrom M0.At enc <$> getLocalGraph
 
@@ -121,7 +121,7 @@ lookupEnclosureM0 enc =
 --   endpoint for the HA service hosted by processes on that node. Whilst in
 --   theory different processes might have different HA endpoints, in
 --   practice this should not happen.
-lookupHostHAAddress :: R.Host -> PhaseM RC l (Maybe Endpoint)
+lookupHostHAAddress :: Cas.Host -> PhaseM RC l (Maybe Endpoint)
 lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
   [ ep
   | node <- G.connectedTo host Runs rg :: [M0.Node]
@@ -191,15 +191,15 @@ pickPrincipalRM = getLocalGraph >>= \g ->
   in traverse setPrincipalRMIfUnset $ listToMaybe rms
 
 -- | Lookup enclosure corresponding to Mero enclosure.
-m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure
+m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe Cas.Enclosure
 m0encToEnc m0enc rg = G.connectedTo m0enc M0.At rg
 
 -- | Lookup Mero enclosure corresponding to enclosure.
-encToM0Enc :: R.Enclosure -> G.Graph -> Maybe M0.Enclosure
+encToM0Enc :: Cas.Enclosure -> G.Graph -> Maybe M0.Enclosure
 encToM0Enc enc rg = G.connectedFrom M0.At enc rg
 
 -- | Find 'M0.SDev' that associated with a given location.
-lookupLocationSDev :: R.Slot -> PhaseM RC l (Maybe M0.SDev)
+lookupLocationSDev :: Cas.Slot -> PhaseM RC l (Maybe M0.SDev)
 lookupLocationSDev loc = G.connectedFrom M0.At loc <$> getLocalGraph
 
 -- | Mark 'M0.SDev' as replaced, so it could be rebalanced if needed.

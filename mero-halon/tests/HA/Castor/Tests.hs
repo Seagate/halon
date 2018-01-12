@@ -52,7 +52,7 @@ import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor (Is(..))
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -269,9 +269,9 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
         encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
         disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r g :: Maybe R.Enclosure) hosts
-        sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has g :: [R.Slot]
-                                       , d <- maybeToList (G.connectedFrom Has s g :: Maybe R.StorageDevice_XXX1) ])
+        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r g :: Maybe Cas.Enclosure) hosts
+        sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has g :: [Cas.Slot]
+                                       , d <- maybeToList (G.connectedFrom Has s g :: Maybe Cas.StorageDevice_XXX1) ])
                             enc
         disksByHost = catMaybes $ fmap (\r -> G.connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
 
@@ -437,19 +437,19 @@ runGet = runPhaseGet
 
 goRack :: forall l. CI.Rack_XXX0 -> PhaseM RC l ()
 goRack CI.Rack_XXX0{..} = do
-    let rack = R.Rack rack_idx_XXX0
+    let rack = Cas.Rack rack_idx_XXX0
     registerRack rack
     mapM_ (goEnc rack) rack_enclosures_XXX0
 
-goEnc :: forall l. R.Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
+goEnc :: forall l. Cas.Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc rack CI.Enclosure_XXX0{..} = do
-    let encl = R.Enclosure enc_id_XXX0
+    let encl = Cas.Enclosure enc_id_XXX0
     registerEnclosure rack encl
     mapM_ (registerBMC encl) enc_bmc_XXX0
     mapM_ (goHost encl) enc_hosts_XXX0
 
-goHost :: forall l. R.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
+goHost :: forall l. Cas.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost encl CI.Host_XXX0{..} = do
-    let host = R.Host $ T.unpack h_fqdn_XXX0
+    let host = Cas.Host (T.unpack h_fqdn_XXX0)
     registerHost host
     locateHostInEnclosure host encl

@@ -18,9 +18,8 @@ import           HA.RecoveryCoordinator.RC.Internal
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import           HA.Resources.HalonVars
-import qualified HA.Resources.RC as R
-import Network.CEP
-
+import qualified HA.Resources.RC as RC
+import           Network.CEP
 
 import Control.Distributed.Process
   ( ProcessMonitorNotification(..)
@@ -32,9 +31,7 @@ import Control.Distributed.Process
   , say
   , sendChan
   )
-import Control.Distributed.Process.Serializable
-  ( decodeFingerprint
-  )
+import Control.Distributed.Process.Serializable (decodeFingerprint)
 
 import Control.Category
 import Control.Monad.Trans.State.Strict (execStateT)
@@ -58,9 +55,8 @@ rules = sequence_
 
 -- | Describe how to update recovery coordinator, in case
 -- if new version is used now.
-updateRC :: R.RC -> R.RC -> PhaseM RC l ()
+updateRC :: RC.RC -> RC.RC -> PhaseM RC l ()
 updateRC _old _new = return ()
-
 
 -- | Store information about currently running RC in the Resource Graph
 -- ('G.Graph'). We store current RC, and update old one if needed.
@@ -74,8 +70,8 @@ initialRule argv = do
   -- subscribe all processes with persistent subscription.
   rg <- getLocalGraph
   l "subscribers"
-  for_ (G.connectedFrom R.SubscribedTo rc rg) $
-      \(R.Subscriber p (BS64 bs)) -> do
+  for_ (G.connectedFrom RC.SubscribedTo rc rg) $
+      \(RC.Subscriber p (BS64 bs)) -> do
     let fp = decodeFingerprint bs
     liftProcess $ do
       self <- getSelfPid
@@ -104,9 +100,9 @@ ruleNewSubscription = defineSimpleTask "halon::rc::new-subscription" $
       _ <- monitor pid
       rawSubscribeThem self fp pid
     rc <- getCurrentRC
-    let s = R.Subscriber pid (BS64 bs)
-    modifyGraph $ G.connect (R.SubProcessId pid) R.IsSubscriber s
-              >>> G.connect s R.SubscribedTo rc
+    let s = RC.Subscriber pid (BS64 bs)
+    modifyGraph $ G.connect (RC.SubProcessId pid) RC.IsSubscriber s
+              >>> G.connect s RC.SubscribedTo rc
 
     registerSyncGraphCallback $ \_ _ -> do
       usend pid (SubscribeToReply bs)
@@ -127,9 +123,9 @@ ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
       rawUnsubscribeThem self fp pid
     rc <- getCurrentRC
     modifyGraph $ \g -> do
-      let s  = R.Subscriber pid (BS64 bs)
-          g' = G.disconnect (R.SubProcessId pid) R.IsSubscriber s
-           >>> G.disconnect s R.SubscribedTo rc
+      let s  = RC.Subscriber pid (BS64 bs)
+          g' = G.disconnect (RC.SubProcessId pid) RC.IsSubscriber s
+           >>> G.disconnect s RC.SubscribedTo rc
              $ g
       g'
 
@@ -148,15 +144,15 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
       -- Remove external subscribers
       modifyLocalGraph $ \g -> do
         let subs = do
-              sub <- G.connectedTo (R.SubProcessId pid) R.IsSubscriber g
-                         :: Maybe R.Subscriber
-              rc  <- G.connectedTo sub R.SubscribedTo g :: Maybe R.RC
+              sub <- G.connectedTo (RC.SubProcessId pid) RC.IsSubscriber g
+                         :: Maybe RC.Subscriber
+              rc  <- G.connectedTo sub RC.SubscribedTo g :: Maybe RC.RC
               return (sub,rc)
         flip execStateT g $ do
-          for_ subs $ \(sub@(R.Subscriber _ (BS64 bs)), rc) -> do
+          for_ subs $ \(sub@(RC.Subscriber _ (BS64 bs)), rc) -> do
             let fp = decodeFingerprint bs
-            State.modify $ G.disconnect sub R.SubscribedTo rc
-            State.modify $ G.disconnect (R.SubProcessId pid) R.IsSubscriber sub
+            State.modify $ G.disconnect sub RC.SubscribedTo rc
+            State.modify $ G.disconnect (RC.SubProcessId pid) RC.IsSubscriber sub
             lift $ liftProcess $ rawUnsubscribeThem self fp pid
 
 -- | When node dies we run all interested subscribers.
