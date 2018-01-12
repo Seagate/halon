@@ -43,14 +43,9 @@ import           GHC.Generics (Generic)
 import           HA.Aeson
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import           HA.Resources (Node_XXX2(..))
+import qualified HA.Resources as R (Node(..))
+import           HA.Resources.Castor (Host(..), Is(..), Slot(..), StorageDevice)
 import qualified HA.Resources.Castor as Cas (Rack, Enclosure)
-import           HA.Resources.Castor
-  ( Host(..)
-  , Is(..)
-  , Slot(..)
-  , StorageDevice
-  )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.TH
 import           HA.SafeCopy hiding (Profile)
@@ -1070,8 +1065,8 @@ $(mkDicts
   , (''Process, ''Is, ''ProcessState)
   , (''Service, ''Is, ''ServiceState)
   , (''SDev, ''Is, ''SDevState)
-  , (''Node,    ''Is, ''NodeState)
-  , (''Controller,    ''Is, ''ControllerState)
+  , (''Node, ''Is, ''NodeState)
+  , (''Controller, ''Is, ''ControllerState)
   , (''Filesystem, ''Has, ''FilesystemStats)
   , (''Filesystem, ''Is, ''DIXInitialised)
   ]
@@ -1181,16 +1176,16 @@ lookupConfObjByFid f =
   . filter ((== f) . fid)
   . G.getResourcesOfType
 
--- | Lookup 'Node' associated with the given 'Node'. See
+-- | Lookup 'R.Node' associated with the given 'Node'. See
 -- 'nodeToM0Node' for inverse.
-m0nodeToNode :: Node -> G.Graph -> Maybe Node_XXX2
+m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
   [ node | Just (h :: Host) <- [G.connectedFrom Runs m0node rg]
          , node <- G.connectedTo h Runs rg ]
 
--- | Lookup 'Node' associated with the given 'Node'. See
+-- | Lookup 'Node' associated with the given 'R.Node'. See
 -- 'm0nodeToNode' for inverse.
-nodeToM0Node :: Node_XXX2 -> G.Graph -> Maybe Node
+nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
   [ m0n | Just (h :: Host) <- [G.connectedFrom Runs node rg]
         , m0n <- G.connectedTo h Runs rg ]

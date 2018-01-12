@@ -32,7 +32,7 @@ import           HA.RecoveryCoordinator.RC.Actions (defineSimpleTask, RC)
 import           HA.RecoveryCoordinator.Helpers
 import           HA.RecoveryCoordinator.Service.Events
 import           HA.Replicator
-import           HA.Resources (Node_XXX2(..))
+import           HA.Resources (Node(..))
 import           HA.SafeCopy
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
@@ -72,7 +72,7 @@ testServiceRestarting transport pg = runDefaultTest transport $ do
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
     _ <- promulgateEQ [nid] . encodeP $
-      ServiceStartRequest Start (Node_XXX2 nid) Dummy.dummy
+      ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
     pid <- serviceStarted Dummy.dummy
@@ -100,18 +100,18 @@ testServiceNotRestarting transport pg = runDefaultTest transport $ do
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
     _ <- promulgateEQ [nid] . encodeP $
-      ServiceStartRequest Start (Node_XXX2 nid) Dummy.dummy
+      ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
     pid <- serviceStarted Dummy.dummy
     sayTest $ "Dummy service started successfully."
 
     _ <- promulgateEQ [nid] $
-           ServiceFailed (Node_XXX2 nid)
+           ServiceFailed (Node nid)
                          (encodeP $ ServiceInfo Dummy.dummy (Dummy.DummyConf $ Configured "Test 1"))
                          (nullProcessId nid)
 
-    pid2 <- getServiceProcessPid (Node_XXX2 nid) Dummy.dummy
+    pid2 <- getServiceProcessPid (Node nid) Dummy.dummy
     liftIO $ assertEqual "Same service keeps running" pid pid2
     sayTest $ "testServiceNotRestarting finished"
 
@@ -132,7 +132,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     TrimDone{} <- expectPublished
 
     _ <- promulgateEQ [nid] $  encodeP $
-      ServiceStartRequest Start (Node_XXX2 nid)
+      ServiceStartRequest Start (Node nid)
         Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         []
 
@@ -192,14 +192,14 @@ testServiceStopped transport pg = runDefaultTest transport $ do
     nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
     _ <- promulgateEQ [nid] . encodeP $
-      ServiceStartRequest Start (Node_XXX2 nid) Dummy.dummy
+      ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
     pid <- serviceStarted Dummy.dummy
     sayTest $ "dummy service started successfully."
 
     _ <- monitor pid
-    _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node_XXX2 nid)
+    _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node nid)
                                                            Dummy.dummy
 
     (_ :: ProcessMonitorNotification) <- expect

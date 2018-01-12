@@ -35,7 +35,7 @@ import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Node_XXX2(..), Runs(..))
+import           HA.Resources (Has(..), Node(..), Runs(..))
 import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
   , Enclosure
@@ -350,7 +350,7 @@ ruleReassembleRaid =
 
   where
     -- Enclosure, node
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure, Host, Node_XXX2))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (Enclosure, Host, Node))
     -- RAID devices
     fldRaidDevices = Proxy :: Proxy '("raidDevices", [String])
     -- Using Mero?

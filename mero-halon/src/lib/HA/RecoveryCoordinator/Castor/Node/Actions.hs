@@ -19,7 +19,7 @@ import HA.RecoveryCoordinator.Castor.Process.Events (ProcessStartRequest(..))
 import HA.RecoveryCoordinator.RC.Actions.Core (RC, getLocalGraph, promulgateRC)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Node_XXX2, Runs(..))
+import           HA.Resources (Has(..), Node, Runs(..))
 import           HA.Resources.Castor (Host)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -32,10 +32,7 @@ import Network.CEP
 -- the given 'M0.ProcessLabel'.
 --
 -- For processes on any node, see 'Node.getLabeled'.
-getLabeledProcesses :: Node_XXX2
-                    -> M0.ProcessLabel
-                    -> G.Graph
-                    -> [M0.Process]
+getLabeledProcesses :: Node -> M0.ProcessLabel -> G.Graph -> [M0.Process]
 getLabeledProcesses node label rg =
    [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host]
        , m0node <- G.connectedTo host Runs rg :: [M0.Node]
@@ -47,7 +44,7 @@ getLabeledProcesses node label rg =
 -- a 'M0.ProcessLabel' satisfying the predicate.
 --
 -- For processes on any node, see 'Node.getLabeledP'.
-getLabeledProcessesP :: Node_XXX2
+getLabeledProcessesP :: Node
                       -> (M0.ProcessLabel -> Bool)
                       -> G.Graph
                       -> [M0.Process]
@@ -60,7 +57,7 @@ getLabeledProcessesP node labelP rg =
   ]
 
 -- | Get all 'M0.Process'es on the given 'Node'.
-getProcesses :: Node_XXX2 -> G.Graph -> [M0.Process]
+getProcesses :: Node -> G.Graph -> [M0.Process]
 getProcesses node rg =
   [ p | Just host <- [G.connectedFrom Runs node rg] :: [Maybe Host]
       , m0node <- G.connectedTo host Runs rg :: [M0.Node]

@@ -62,7 +62,7 @@ import           GHC.Generics
 import           HA.Aeson
 import           HA.Encode (ProcessEncode(..))
 import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources (Node_XXX2(..))
+import           HA.Resources (Node(..))
 import           HA.Resources.Castor (Host)
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -94,8 +94,8 @@ data SyncComplete = SyncComplete UUID
 instance Binary SyncComplete
 
 -- | New mero server was connected.
-data NewMeroServer = NewMeroServer Node_XXX2
-                   | NewMeroServerFailure Node_XXX2
+data NewMeroServer = NewMeroServer Node
+                   | NewMeroServerFailure Node
       deriving (Eq, Show, Typeable, Generic)
 instance Binary NewMeroServer
 

@@ -8,7 +8,7 @@ module HA.Test.Cluster where
 
 import HA.EventQueue.Producer (promulgateEQ)
 import HA.NodeUp (nodeUp)
-import HA.Resources (Node_XXX2(..))
+import HA.Resources (Node(..))
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Service.Events
 import HA.Startup
@@ -60,12 +60,12 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
 
   say "starting service"
   _ <- promulgateEQ [localNodeId n] . encodeP $
-         ServiceStartRequest Start (Node_XXX2 $ localNodeId n) DLog.decisionLog
+         ServiceStartRequest Start (Node $ localNodeId n) DLog.decisionLog
           (DLog.processOutput self) []
   "Test 1" :: String <- expect
   say "stopping service"
   _ <- promulgateEQ [localNodeId n] . encodeP $
-         ServiceStopRequest (Node_XXX2 $ localNodeId n) DLog.decisionLog
+         ServiceStopRequest (Node $ localNodeId n) DLog.decisionLog
 
   say "doing something strange"
   mt <- receiveTimeout 1000000

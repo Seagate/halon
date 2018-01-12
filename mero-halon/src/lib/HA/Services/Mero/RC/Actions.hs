@@ -37,7 +37,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph                      (Graph)
 import qualified HA.ResourceGraph                      as G
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
+import           HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import           HA.Resources.Castor
   ( Host
   , Is(..)
@@ -63,7 +63,7 @@ import           Prelude                               hiding (id, (.))
 -- Only 'PSOnline' processes are used as recepients for notifications:
 -- starting processes should request state themselves. Stopping
 -- processes shouldn't need any further updates.
-getNotificationNodes :: PhaseM RC l [(Node_XXX2, [M0.Process])]
+getNotificationNodes :: PhaseM RC l [(Node, [M0.Process])]
 getNotificationNodes = do
   rg <- getLocalGraph
   let nodes =
@@ -182,7 +182,7 @@ forceCompleteStateDiff diff = do
 -- | Mark all notifications for processes on the given node as failed.
 --
 -- This code process node even in case if it was disconnected from cluster.
-failNotificationsOnNode :: Node_XXX2 -> PhaseM RC l ()
+failNotificationsOnNode :: Node -> PhaseM RC l ()
 failNotificationsOnNode node
   -- Find all processes on the current target node.
  = do
@@ -217,7 +217,7 @@ notifyMeroAsync diff s = do
     [ ("notifyMeroAsynch.epoch", show (stateEpoch diff))
     , ("notifyMeroAsynch.nodes", show $ fmap (second (fmap M0.fid)) nodes)
     ]
-  for_ nodes $ \(Node_XXX2 nid, recipients) -> do
+  for_ nodes $ \(Node nid, recipients) -> do
     modifyGraph $
       execState $ for recipients $ State.modify . G.connect diff ShouldDeliverTo
     registerSyncGraph $

@@ -13,7 +13,7 @@ module HA.Resources
   ( Cluster(..)
   , Has(..)
   , Runs(..)
-  , Node_XXX2(..)
+  , Node(..)
   , EpochId(..)
   , RecoverNode(..)
   , HA.Resources.__remoteTable
@@ -44,11 +44,11 @@ storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
 deriveSafeCopy 0 'base ''Cluster
 
 -- | A resource graph representation for nodes.
-newtype Node_XXX2 = Node_XXX2 NodeId
+newtype Node = Node NodeId
   deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
-storageIndex ''Node_XXX2 "43ab6bb3-5bfe-4de8-838d-489584b1456c"
-deriveSafeCopy 0 'base ''Node_XXX2
+storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"
+deriveSafeCopy 0 'base ''Node
 
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
@@ -83,7 +83,7 @@ storageIndex ''Runs "8a53e367-8746-4814-aa3e-fb29c5432119"
 deriveSafeCopy 0 'base ''Runs
 
 -- | Sent when a node goes down and we need to try to recover it
-newtype RecoverNode = RecoverNode Node_XXX2
+newtype RecoverNode = RecoverNode Node
   deriving (Eq, Generic, Ord, Show, Typeable)
 
 deriveSafeCopy 0 'base ''RecoverNode
@@ -96,14 +96,14 @@ deriveSafeCopy 0 'base ''RecoverNode
 -- type EpochByteString = Epoch ByteString
 
 $(mkDicts
-  [''Cluster, ''Node_XXX2, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, ''Has, ''Node_XXX2)
+  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
+  [ (''Cluster, ''Has, ''Node)
   , (''Cluster, ''Has, ''EpochId)
   ])
 
 $(mkResRel
-  [''Cluster, ''Node_XXX2, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node_XXX2)
+  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
   ]
   []

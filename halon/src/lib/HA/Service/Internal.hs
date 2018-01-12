@@ -70,7 +70,7 @@ import           HA.ResourceGraph
   , Relation
   , Resource
   )
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
+import           HA.Resources (Cluster(..), Has(..), Node(..))
 import           HA.Resources.TH (mkDicts, mkResRel, storageIndex)
 import           HA.SafeCopy
 import           HA.Service.Interface
@@ -253,7 +253,7 @@ data ExitReason = Shutdown -- ^ Shutdown service, interpreted like normal exit.
 instance Binary ExitReason
 
 -- | A notification about service normal exit.
-data ServiceExit = ServiceExit Node_XXX2 ServiceInfoMsg ProcessId
+data ServiceExit = ServiceExit Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceExit
 
@@ -261,7 +261,7 @@ deriveSafeCopy 0 'base ''ServiceExit
 --
 -- Service or another service decided that current service have failed, and
 -- throw this exception.
-data ServiceFailed = ServiceFailed Node_XXX2 ServiceInfoMsg ProcessId
+data ServiceFailed = ServiceFailed Node ServiceInfoMsg ProcessId
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceFailed
 
@@ -269,13 +269,13 @@ deriveSafeCopy 0 'base ''ServiceFailed
 --
 -- In case if some exception was not caught when it should be, we notify RC
 -- about it.
-data ServiceUncaughtException = ServiceUncaughtException Node_XXX2 ServiceInfoMsg String ProcessId
+data ServiceUncaughtException = ServiceUncaughtException Node ServiceInfoMsg String ProcessId
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceUncaughtException
 
 -- | A notification of service stop failure due to service is not
 -- running at all.
-data ServiceStopNotRunning = ServiceStopNotRunning Node_XXX2 String
+data ServiceStopNotRunning = ServiceStopNotRunning Node String
   deriving (Typeable, Generic)
 deriveSafeCopy 0 'base ''ServiceStopNotRunning
 
@@ -316,18 +316,18 @@ remoteStartService (replyCh, msg) = do
              `onException` (do
                 let node = processNodeId self
                 serviceLog $ "uncaught exception"
-                promulgateWait $ ServiceUncaughtException (Node_XXX2 node) msg
+                promulgateWait $ ServiceUncaughtException (Node node) msg
                                    ("uncaught exception during startup") self)
       case est of
         AlreadyRunning pid -> serviceLog $ "already running at " ++ show pid
         ServiceStarted (Left e) -> do
           let node = processNodeId self
           serviceLog $ "exception during start: " ++ e
-          promulgateWait $ ServiceFailed (Node_XXX2 node) msg self
+          promulgateWait $ ServiceFailed (Node node) msg self
         ServiceStarted (Right r) -> do
           let notify :: forall a . (SafeCopy a, Typeable a)
-                     => (Node_XXX2 -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
-              notify f = promulgateWait $ f (Node_XXX2 (processNodeId self)) msg self
+                     => (Node -> ServiceInfoMsg -> ProcessId -> a) -> Process ()
+              notify f = promulgateWait $ f (Node (processNodeId self)) msg self
           confirmStarted conf r
           fix (\loop !b -> do
               next <- runMainloop mainloop conf b
@@ -398,11 +398,11 @@ remoteStopService (ackCh, label) = do
 
 $(mkDicts
    [ ''ServiceInfoMsg, ''Supports]
-   [ (''Node_XXX2, ''Has, ''ServiceInfoMsg)
+   [ (''Node, ''Has, ''ServiceInfoMsg)
    ])
 $(mkResRel
    [ ''ServiceInfoMsg, ''Supports ]
-   [ (''Node_XXX2, Unbounded, ''Has, Unbounded, ''ServiceInfoMsg)
+   [ (''Node, Unbounded, ''Has, Unbounded, ''ServiceInfoMsg)
    ]
    [ 'someConfigDict
    , 'remoteStartService

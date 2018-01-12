@@ -53,7 +53,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import           HA.RecoveryCoordinator.RC.Actions.Log (actLog)
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2, Runs(..))
+import           HA.Resources (Cluster(..), Has(..), Node, Runs(..))
 import qualified HA.Resources.Castor as Cas
 import           HA.Services.Ekg.RC
 import           Network.CEP
@@ -92,7 +92,7 @@ findBMCAddress host = do
 ----------------------------------------------------------
 
 -- | Find the host running the given node
-findNodeHost :: Node_XXX2 -> PhaseM RC l (Maybe Cas.Host)
+findNodeHost :: Node -> PhaseM RC l (Maybe Cas.Host)
 findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
 
 -- | Find the enclosure containing the given host.
@@ -108,7 +108,7 @@ findHosts regex = do
                   , hn =~ regex]
 
 -- | Find all nodes running on the given host.
-nodesOnHost :: Cas.Host -> PhaseM RC l [Node_XXX2]
+nodesOnHost :: Cas.Host -> PhaseM RC l [Node]
 nodesOnHost host = fmap (G.connectedTo host Runs) getLocalGraph
 
 -- | Register a new host in the system.
@@ -137,7 +137,7 @@ locateHostInEnclosure host enc = do
 
 -- | Record that a node is running on a host. Does not re-connect if
 -- the 'Node' is already connected to the given 'Host'.
-locateNodeOnHost :: Node_XXX2 -> Cas.Host -> PhaseM RC l ()
+locateNodeOnHost :: Node -> Cas.Host -> PhaseM RC l ()
 locateNodeOnHost node host = modifyLocalGraph $ \rg ->
   if G.isConnected host Runs node rg
   then return rg
@@ -285,7 +285,7 @@ getDiskResetAttempts sdev = do
 -- TODO: Should be @'Maybe' 'Node'@.
 -- TODO: Is this function and are uses of this function correct?
 -- TODO: Same questions for 'getSDevHost'
-getSDevNode :: Cas.StorageDevice -> PhaseM RC l [Node_XXX2]
+getSDevNode :: Cas.StorageDevice -> PhaseM RC l [Node]
 getSDevNode sdev = do
   rg <- getLocalGraph
   hosts <- getSDevHost sdev

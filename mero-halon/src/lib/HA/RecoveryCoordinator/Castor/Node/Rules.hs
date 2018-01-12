@@ -161,7 +161,7 @@ import qualified HA.RecoveryCoordinator.RC.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Node_XXX2(..))
+import           HA.Resources (Has(..), Node(..))
 import           HA.Resources.Castor (Host)
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -215,7 +215,7 @@ type FldHost = '("host", Maybe Host)
 fldHost :: Proxy FldHost
 fldHost = Proxy
 
-type FldNode = '("node", Maybe Node_XXX2)
+type FldNode = '("node", Maybe Node)
 fldNode :: Proxy FldNode
 fldNode = Proxy
 
@@ -247,7 +247,7 @@ eventKernelFailed = defineSimpleIf "castor::node::event::kernel-failed" g $
   \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
-    let node = Node_XXX2 nid
+    let node = Node nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
     let failMsg = "mero-kernel failed to start: " ++ msg
@@ -270,7 +270,7 @@ eventCleanupFailed = defineSimpleIf "castor::node::event::cleanup-failed" g $
   \(uid, nid, msg) -> do
     todo uid
     rg <- getLocalGraph
-    let node = Node_XXX2 nid
+    let node = Node nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
     let failMsg = "mero-cleanup failed to start: " ++ msg
@@ -332,7 +332,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
       Just (M0.MeroClusterState M0.OFFLINE _ _) -> do
          Log.rcLog' Log.DEBUG "Cluster disposition is OFFLINE."
       _ -> case M0.m0nodeToNode m0node rg of
-             Just node@(Node_XXX2 nid) ->
+             Just node@(Node nid) ->
                findNodeHost node >>= \case
                  Just host -> do
                    Log.rcLog' Log.DEBUG $ "Starting new mero server."
@@ -423,7 +423,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   dispatch <- mkDispatcher
   notifier <- mkNotifier dispatch
 
-  let route :: Node_XXX2 -> PhaseM RC l [Jump PhaseHandle]
+  let route :: Node -> PhaseM RC l [Jump PhaseHandle]
       route node = getFilesystem_XXX3 >>= \case
         Nothing -> return [wait_data_load]
         Just _ -> do
@@ -495,7 +495,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   directly reconnect_m0d $ do
     StartProcessNodeNew node _ <- getRequest
     rg <- getLocalGraph
-    let Node_XXX2 nid = node
+    let Node nid = node
     case lookupServiceInfo node (lookupM0d rg) rg of
       [] -> do
         Log.rcLog' Log.DEBUG "No halon:m0d already running."
@@ -565,7 +565,7 @@ mkQueryLnetInfo andThen orFail = do
     info_returned <- phaseHandle "queryHostInfo::info_returned"
 
     directly query_info $ do
-      Just node@(Node_XXX2 nid) <- getField . rget fldNode <$> get Local
+      Just node@(Node nid) <- getField . rget fldNode <$> get Local
       Log.rcLog' Log.DEBUG $ "Querying system information from " ++ show node
       liftProcess . void . spawnLocal . void
         $ spawnAsync nid $ $(mkClosure 'getLnetInfo) node

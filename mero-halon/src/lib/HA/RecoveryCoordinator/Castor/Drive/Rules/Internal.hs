@@ -16,12 +16,12 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
 import Control.Lens
 import Data.UUID (UUID)
 import HA.RecoveryCoordinator.Job.Actions (ListenerId)
-import HA.Resources (Node_XXX2)
+import HA.Resources (Node)
 import HA.Resources.Castor (Slot, StorageDevice)
 
 -- | State of the mkcheck rule.
 data CheckAndHandleState = CheckAndHandleState
-      { _chsNode          :: Node_XXX2
+      { _chsNode          :: Node
          -- ^ Node where disk is located.
       , _chsStorageDevice :: StorageDevice
          -- ^ Storage device we work with.

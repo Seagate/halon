@@ -26,18 +26,18 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           GHC.Generics
 import           HA.EventQueue (promulgateWait)
-import           HA.Resources (Node_XXX2)
+import           HA.Resources (Node)
 import           HA.SafeCopy
 import           Mero.Lnet
 import           System.Process
 import           System.SystemD.API
 
 -- | Hardware information about a 'Node'.
-data LnetInfo = LnetInfo !Node_XXX2 !LNid
+data LnetInfo = LnetInfo !Node !LNid
   deriving (Eq, Show, Typeable, Generic)
 
 -- | Load information about system hardware. Reply is sent via 'promulgate'.
-getLnetInfo :: Node_XXX2 -> Process ()
+getLnetInfo :: Node -> Process ()
 getLnetInfo nid = do
   say "Getting lnet info."
   liftIO (LnetInfo nid <$> getLNetID) >>= promulgateWait

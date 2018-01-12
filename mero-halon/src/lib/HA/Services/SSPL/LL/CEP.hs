@@ -44,7 +44,7 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
+import           HA.Resources (Cluster(..), Has(..), Node(..))
 import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -67,11 +67,11 @@ import           Text.Read (readMaybe)
 -- given message to it.
 --
 -- True if some service was found, False otherwise.
-sendToSSPLSvc :: [Node_XXX2] -> SsplLlToSvc -> PhaseM RC l Bool
+sendToSSPLSvc :: [Node] -> SsplLlToSvc -> PhaseM RC l Bool
 sendToSSPLSvc nodes msg = do
   rg <- getLocalGraph
   case findRunningServiceOn nodes sspl rg of
-    Node_XXX2 nid : _ -> do
+    Node nid : _ -> do
       Log.rcLog' Log.DEBUG
         (printf "Sending %s through SSPL on %s" (show msg) (show nid) :: String)
       sendSvc (getInterface sspl) nid msg
@@ -95,9 +95,7 @@ sendInterestingEvent msg = do
 --
 -- Logger actuator command is used to forcefully set drives status using
 -- SSPL and sent related IEM message.
-sendLoggingCmd :: Node_XXX2
-               -> LoggerCmd
-               -> PhaseM RC l ()
+sendLoggingCmd :: Node -> LoggerCmd -> PhaseM RC l ()
 sendLoggingCmd node req = do
   r <- sendToSSPLSvc [node] $ SystemdMessage Nothing (makeLoggerMsg req)
   when r $ publish req
@@ -135,30 +133,27 @@ sendLedUpdate status host sd@(Cas.StorageDevice (T.pack -> sn)) = do
           Nothing -> G.disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
         _ -> Log.rcLog' Log.WARN $ "No slot found for " ++ show sd
   case mnode of
-    Just (Node_XXX2 nid) -> case status of
+    Just (Node nid) -> case status of
       DrivePermanentlyFailed -> do
         modifyLedState $ Just FaultOn
-        sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed sn FaultOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn FaultOn)
       DriveTransientlyFailed -> do
         modifyLedState $ Just PulseFastOn
-        sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed sn PulseFastOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn PulseFastOn)
       DriveRebalancing -> do
         modifyLedState $ Just PulseSlowOn
-        sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed sn PulseSlowOn)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn PulseSlowOn)
       DriveOk -> do
         modifyLedState Nothing
-        sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed sn FaultOff)
+        sendNodeCmd [Node nid] Nothing (DriveLed sn FaultOff)
     _ -> do Log.rcLog' Log.ERROR ("Cannot find sspl service on the node!" :: String)
             return False
 
 -- | Send command to nodecontroller. Reply will be received as a
 -- @'HAEvent' 'SsplLlFromSvc' ('CAck')@ where UUID will be set to UUID
 -- value if passed, and any random value otherwise.
-sendNodeCmd :: [Node_XXX2]
-            -> Maybe UUID
-            -> NodeCmd
-            -> PhaseM RC l Bool
-sendNodeCmd nodes muuid = do
+sendNodeCmd :: [Node] -> Maybe UUID -> NodeCmd -> PhaseM RC l Bool
+sendNodeCmd nodes muuid =
   sendToSSPLSvc nodes . SystemdMessage muuid . makeNodeMsg
 
 --------------------------------------------------------------------------------
@@ -228,10 +223,10 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
   Log.tagContext Log.SM [ ("drive.location" :: String, show sdev_loc) ] Nothing
   disk <- populateStorageDevice sn path
   unless (T.unpack (T.toUpper disk_reason) =="EMPTY") $ do
-    updateStorageDevicePresence uuid (Node_XXX2 nid) disk sdev_loc True Nothing
+    updateStorageDevicePresence uuid (Node nid) disk sdev_loc True Nothing
   next <- shouldContinue disk
   when next $ do
-    result <- updateStorageDeviceStatus uuid (Node_XXX2 nid) disk sdev_loc
+    result <- updateStorageDeviceStatus uuid (Node nid) disk sdev_loc
                 (T.unpack disk_status)
                 (T.unpack disk_reason)
     unless result $
@@ -329,7 +324,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
   unless have_wwn $ StorageDevice.identify sdev [wwn]
   isOngoingReset <- hasOngoingReset sdev
   unless isOngoingReset $
-    updateStorageDevicePresence uuid (Node_XXX2 nid) sdev sdev_loc
+    updateStorageDevicePresence uuid (Node nid) sdev sdev_loc
       is_installed (Just is_powered)
   done uuid
   where
@@ -403,7 +398,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
       drives = sensorResponseMessageSensor_response_typeRaid_dataDrives srrd
     in do
       todo uid
-      mhost <- findNodeHost (Node_XXX2 nid)
+      mhost <- findNodeHost (Node nid)
       case mhost of
         Nothing -> Log.rcLog' Log.ERROR $ "Cannot find host for node " ++ show nid
                                     ++ " resulting from failure of RAID device "
@@ -460,7 +455,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
 
           if not isReassembling
           then promulgateRC $ RaidUpdate {
-              ruNode = Node_XXX2 nid
+              ruNode = Node nid
             , ruRaidDevice = device_t
             , ruFailedComponents = fmap fst . filter (\(_,x) -> x == "_")
                                     $ catMaybes sdevs
@@ -476,7 +471,7 @@ ruleMonitorExpanderReset :: Definitions RC ()
 ruleMonitorExpanderReset = defineSimpleIf "monitor-expander-reset" extract $ \(uid, nid) -> do
   todo uid
   menc <- runMaybeT $ do
-    host <- MaybeT $ findNodeHost (Node_XXX2 nid)
+    host <- MaybeT $ findNodeHost (Node nid)
     MaybeT $ findHostEnclosure host
   forM_ menc $ promulgateRC . ExpanderReset
   done uid
@@ -492,7 +487,7 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
      todo uid
      case (T.toUpper module_name, T.toUpper thread_response) of
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
-         mhost <- findNodeHost (Node_XXX2 nid)
+         mhost <- findNodeHost (Node nid)
          case mhost of
            Nothing -> Log.rcLog' Log.ERROR $ "can't find host for node " ++ show nid
            Just host -> do
@@ -505,8 +500,8 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
              forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(Cas.StorageDevice serial, status) ->
                case status of
                  Cas.StorageDeviceStatus "HALON-FAILED" reason -> do
-                   _ <- sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed (T.pack serial) FaultOn)
-                   sendLoggingCmd (Node_XXX2 nid) $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
+                   _ <- sendNodeCmd [Node nid] Nothing (DriveLed (T.pack serial) FaultOn)
+                   sendLoggingCmd (Node nid) $ mkDiskLoggingCmd (T.pack "HALON-FAILED")
                                                                 (T.pack serial)
                                                                 (T.pack reason)
                  _ -> return ()
@@ -535,7 +530,7 @@ updateDriveManagerWithFailure sdev@(Cas.StorageDevice sn) st reason = getSDevHos
 ruleSSPLTimeout :: Definitions RC ()
 ruleSSPLTimeout = defineSimpleIf "sspl-service-timeout" extract $ \(uuid, nid) -> do
   todo uuid
-  mcfg <- Service.lookupInfoMsg (Node_XXX2 nid) sspl
+  mcfg <- Service.lookupInfoMsg (Node nid) sspl
   for_ mcfg $ \_ -> do
     Log.rcLog' Log.WARN
       ("SSPL didn't send any message withing timeout - restarting." :: String)

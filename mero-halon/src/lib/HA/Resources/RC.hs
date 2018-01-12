@@ -16,7 +16,7 @@ import Data.Hashable (Hashable(..))
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import HA.Aeson
-import HA.Resources (Cluster(..), Has(..), Node_XXX2(..))
+import HA.Resources (Cluster(..), Has(..), Node(..))
 import HA.Resources.Castor (Is(..))
 import HA.Resources.TH
   ( Cardinality(AtMostOne,Unbounded)
@@ -101,7 +101,7 @@ $(mkDicts
   , (''RC, ''Is, ''Active)
   , (''Subscriber, ''SubscribedTo, ''RC)
   , (''SubProcessId, ''IsSubscriber, ''Subscriber)
-  , (''Node_XXX2, ''Stopping, ''ServiceInfoMsg)
+  , (''Node, ''Stopping, ''ServiceInfoMsg)
   ])
 
 $(mkResRel
@@ -113,6 +113,6 @@ $(mkResRel
   , (''RC, AtMostOne, ''Is, AtMostOne, ''Active)
   , (''Subscriber, Unbounded, ''SubscribedTo, AtMostOne, ''RC)
   , (''SubProcessId, Unbounded, ''IsSubscriber, AtMostOne, ''Subscriber)
-  , (''Node_XXX2, Unbounded, ''Stopping, Unbounded, ''ServiceInfoMsg)
+  , (''Node, Unbounded, ''Stopping, Unbounded, ''ServiceInfoMsg)
   ]
   [])

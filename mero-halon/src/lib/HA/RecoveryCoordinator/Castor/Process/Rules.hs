@@ -43,7 +43,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..), Runs(..), Node_XXX2(..))
+import           HA.Resources (Has(..), Runs(..), Node(..))
 import           HA.Resources.Castor (Host(..), Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -399,7 +399,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
          msender = do
            m0node <- mn
            iface <- getRunningMeroInterface m0node rg
-           Node_XXX2 nid <- M0.m0nodeToNode m0node rg
+           Node nid <- M0.m0nodeToNode m0node rg
            return $ liftProcess . sendSvc iface nid
          mlabel = G.connectedTo p Has rg
      case (,,) <$> mh <*> msender <*> mlabel of
@@ -724,7 +724,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     rg <- getLocalGraph
     let msender = do
           m0n <- G.connectedFrom M0.IsParentOf p rg
-          Node_XXX2 nid <- M0.m0nodeToNode m0n rg
+          Node nid <- M0.m0nodeToNode m0n rg
           iface <- getRunningMeroInterface m0n rg
           return $ liftProcess . sendSvc iface nid
     case msender of

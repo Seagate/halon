@@ -13,18 +13,18 @@ import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics
-import           HA.Resources (Node_XXX2)
+import           HA.Resources (Node)
 import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy
 import           Mero.ConfC (Fid)
 
 -- | Sent when a process wishes to enquire about the status of a node.
-data NodeStatusRequest = NodeStatusRequest !Node_XXX2 !(SendPort NodeStatusResponse)
+data NodeStatusRequest = NodeStatusRequest !Node !(SendPort NodeStatusResponse)
   deriving (Eq, Show, Typeable, Generic)
 
 -- | Response to a query about the status of a node.
 data NodeStatusResponse = NodeStatusResponse
-  { nsrNode :: !Node_XXX2
+  { nsrNode :: !Node
   , nsrIsStation :: !Bool
   , nsrIsSatellite :: !Bool
   } deriving (Eq, Show, Typeable, Generic)

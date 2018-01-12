@@ -58,7 +58,7 @@ import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.Resources (Node_XXX2(..))
+import           HA.Resources (Node(..))
 import           HA.Resources.Castor
   ( Slot(..)
   , StorageDevice(..)
@@ -103,7 +103,7 @@ rules = sequence_
 mkCheckAndHandleDriveReady ::
      Lens' l (Maybe CheckAndHandleState) -- ^ Simple lens to listener ID for SMART test
   -> (M0.SDev -> PhaseM RC l ())  -- ^ Action to run when drive is handled.
-  -> RuleM RC l (Node_XXX2 -> StorageDevice -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
+  -> RuleM RC l (Node -> StorageDevice -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
 mkCheckAndHandleDriveReady smartLens next = do
 
   smart_run     <- phaseHandle "smart_run"
@@ -410,7 +410,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
     fork CopyNewerBuffer $ do
-      let Node_XXX2 nid = dpcNode
+      let Node nid = dpcNode
           StorageDevice serial = dpcDevice
           dpcSerial = T.pack serial
       Log.tagContext Log.SM dpcDevice Nothing
@@ -429,7 +429,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   directly post_power_removed $ do
       (Just (_, _, nid, serial), _) <- get Local
       -- Attempt to power the disk back on
-      sent <- sendNodeCmd [Node_XXX2 nid] Nothing (DrivePoweron serial)
+      sent <- sendNodeCmd [Node nid] Nothing (DrivePoweron serial)
       if sent
       then do
         Log.rcLog' Log.DEBUG "Attempting to repower drive."

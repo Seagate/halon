@@ -22,7 +22,7 @@ module HA.Resources.Castor
 
 import HA.Aeson
 import HA.SafeCopy
-import HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
+import HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import HA.Resources.Castor.Initial (BMC(..))
 import HA.Resources.TH
   ( Cardinality(AtMostOne,Unbounded)
@@ -334,7 +334,7 @@ $(mkDicts
   , (''Enclosure, ''Has, ''Slot)
   , (''Host, ''Has, ''HostAttr)
   , (''Host, ''Has, ''UUID)
-  , (''Host, ''Runs, ''Node_XXX2)
+  , (''Host, ''Runs, ''Node)
   , (''Host, ''Is, ''ReassemblingRaid)
   , (''StorageDevice, ''Has, ''Slot)
   , (''StorageDevice, ''Is, ''StorageDeviceStatus)
@@ -360,7 +360,7 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
-  , (''Host, AtMostOne, ''Runs, Unbounded, ''Node_XXX2)
+  , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''Host, Unbounded, ''Is, AtMostOne, ''ReassemblingRaid)
   , (''StorageDevice, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
   , (''StorageDevice, AtMostOne, ''Has, AtMostOne, ''Slot)

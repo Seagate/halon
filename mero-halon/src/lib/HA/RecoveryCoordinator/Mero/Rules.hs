@@ -24,7 +24,7 @@ import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2(..), Runs(..))
+import           HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import           HA.Resources.Castor (Host, Is(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -123,11 +123,11 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
           nodes = findRunningServiceOn
             [ node
             | host <- G.connectedTo Cluster Has rg :: [Host]
-            , node <- G.connectedTo host Runs rg :: [Node_XXX2]
+            , node <- G.connectedTo host Runs rg :: [Node]
             ]
             m0d rg
       case listToMaybe nodes of
-        Just node@(Node_XXX2 nid) ->
+        Just node@(Node nid) ->
           if G.isConnected fs Is M0.DIXInitialised rg
           then do
             Log.rcLog' Log.DEBUG "DIX subsystem already initialised."

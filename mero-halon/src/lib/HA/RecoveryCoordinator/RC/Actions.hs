@@ -50,7 +50,7 @@ import           HA.Resources
   ( Cluster(..)
   , EpochId(..)
   , Has(..)
-  , Node_XXX2(..)
+  , Node(..)
   , RecoverNode(..)
   )
 import           HA.Resources.Castor (Is(..))
@@ -116,8 +116,8 @@ updateEpoch = do
   return old
 
 -- | Monitor node and register callback to run when node dies.
-registerNodeMonitor :: Node_XXX2 -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
-registerNodeMonitor (Node_XXX2 node) callback = do
+registerNodeMonitor :: Node -> (forall v . PhaseM RC v ()) -> PhaseM RC l MonitorRef
+registerNodeMonitor (Node node) callback = do
   mref <- liftProcess $ monitorNode node
   mmon <- getStorageRC
   putStorageRC $ RegisteredMonitors $
@@ -150,11 +150,11 @@ unregisterMonitor mref = do
 -- | Spawn a remote process and register asynchronous callback.
 -- Callback should not be blocking as it will be executed in
 -- scope on another thread.
-registerSpawnAsync :: Node_XXX2
+registerSpawnAsync :: Node
                    -> Closure (Process ())
                    -> (forall v . PhaseM RC v ())
                    -> PhaseM RC l SpawnRef
-registerSpawnAsync (Node_XXX2 nid) clo callback = do
+registerSpawnAsync (Node nid) clo callback = do
   ref <- liftProcess $ spawnAsync nid clo
   Log.actLog "registerSpawnAsync" [("nid", show nid), ("ref", show ref)]
   msp <- getStorageRC
@@ -175,8 +175,8 @@ unregisterSpawnAsync ref = do
 --
 -- This call provisions node, restart services there and add required
 -- monitoring procedures.
-addNodeToCluster :: [NodeId] -> Node_XXX2 -> PhaseM RC l ()
-addNodeToCluster eqs node@(Node_XXX2 nid) = do
+addNodeToCluster :: [NodeId] -> Node -> PhaseM RC l ()
+addNodeToCluster eqs node@(Node nid) = do
   Log.actLog "addNodeToCluster" [("nid", show nid), ("eqs", show eqs)]
   is_monitored <- isMonitored node
   if not is_monitored
@@ -204,7 +204,7 @@ addNodeToCluster eqs node@(Node_XXX2 nid) = do
 labelMonitorAngel :: String
 labelMonitorAngel = "rc.angel.node-monitor"
 
-newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set Node_XXX2}
+newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set Node}
 
 -- [Note: monitor angel request serialisation]
 -- All requests to the node monitor should be serialised, this is needed
@@ -214,15 +214,15 @@ newtype MonitortedNodes = MonitoredNodes { getMonitoredNodes :: Set Node_XXX2}
 
 -- | Check if given monitor node is monitored by angel.
 -- See [Note:monitor angel request serialisation]
-isMonitored :: Node_XXX2 -> PhaseM RC l Bool
+isMonitored :: Node -> PhaseM RC l Bool
 isMonitored node = do
   mmns <- getStorageRC
   return $ maybe False (Set.member node . getMonitoredNodes) mmns
 
 -- | Start node monitoring using angel
 -- See [Note:monitor angel request serialisation]
-startMonitoring :: Node_XXX2 -> PhaseM RC l ()
-startMonitoring node@(Node_XXX2 nid) = do
+startMonitoring :: Node -> PhaseM RC l ()
+startMonitoring node@(Node nid) = do
   Log.actLog "startMonitoring" [("nid", show nid)]
   Log.rcLog' Log.DEBUG "Adding new node to the cluster."
   mmns <- getStorageRC
@@ -233,8 +233,8 @@ startMonitoring node@(Node_XXX2 nid) = do
 
 -- | Stop node monitoring using Angel.
 -- See [Note:monitor angel request serialisation]
-stopMonitoring :: Node_XXX2 -> PhaseM RC l ()
-stopMonitoring node@(Node_XXX2 nid) = do
+stopMonitoring :: Node -> PhaseM RC l ()
+stopMonitoring node@(Node nid) = do
   Log.actLog "stopMonitoring" [("nid", show nid)]
   mmns <- getStorageRC
   for_ mmns $ \mns -> putStorageRC $
@@ -292,7 +292,7 @@ registerNodeMonitoringAngel = do
     AngelMonUp <- expect
     return pid
   -- rg <- getLocalGraph
-  -- let nodes = (\(Node_XXX2 n) -> n) <$> G.connectedTo Cluster Has rg
+  -- let nodes = (\(Node n) -> n) <$> G.connectedTo Cluster Has rg
   -- liftProcess $ for_ nodes $ usend pid . AddNode
   void $ registerProcessMonitor pid $ do
      Log.rcLog' Log.WARN "Node monitor angel has died, restarting."

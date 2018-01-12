@@ -26,8 +26,7 @@ module HA.RecoveryCoordinator.Actions.Mero
   , m0t1fsBootLevel
   , retriggerMeroNodeBootstrap
   , getRunningMeroInterface
-  )
-where
+  ) where
 
 import           Control.Category ((>>>))
 import           Control.Distributed.Process
@@ -53,16 +52,20 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
+import           HA.Resources (Cluster(..), Has(..))
+import qualified HA.Resources as R (Node)
 import           HA.Resources.Castor (Is(..))
-import qualified HA.Resources.Castor as Castor
+import           HA.Resources.Castor (HostAttr(HA_M0CLIENT,HA_M0SERVER), Host)
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero
-import           Mero.ConfC hiding (Process)
+import           Mero.ConfC
+  ( ServiceType(CST_CAS,CST_CONFD,CST_HA,CST_RMS)
+  , bitmapFromArray
+  )
 import           Mero.Lnet
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
@@ -93,8 +96,8 @@ rmsAddress lnid = Endpoint {
 -- | Create the necessary configuration in the resource graph to support
 -- loading the Mero kernel. Currently this consists of creating a unique node
 -- UUID and storing the LNet nid.
-createMeroKernelConfig :: Castor.Host
-                       -> LNid -- ^ LNet interface address
+createMeroKernelConfig :: Host
+                       -> LNid -- ^ LNet interface address.
                        -> PhaseM RC a ()
 createMeroKernelConfig host lnid = do
   uuid <- liftIO nextRandom
@@ -105,7 +108,7 @@ createMeroKernelConfig host lnid = do
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
 createMeroClientConfig :: M0.Filesystem
-                       -> Castor.Host
+                       -> Host
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
 createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
@@ -311,12 +314,10 @@ configureMeroProcess sender p runType = do
     ConfigureProcess runType conf env (runType == M0D) uid
   return uid
 
--- | Dispatch a request to start @halon:m0d@ on the given
--- 'Castor.Host'.
-startMeroService :: Castor.Host -> Node_XXX2 -> PhaseM RC a ()
+-- | Dispatch a request to start @halon:m0d@ on the given 'Host'.
+startMeroService :: Host -> R.Node -> PhaseM RC a ()
 startMeroService host node = do
-  Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
-                      ++ show (host, node)
+  Log.rcLog' Log.DEBUG $ "Trying to start mero service on " ++ show (host, node)
   rg <- getLocalGraph
   mprofile <- Conf.getProfile_XXX3
   kaFreq <- getHalonVar _hv_keepalive_frequency
@@ -379,34 +380,28 @@ retriggerMeroNodeBootstrap n = do
         Just h  -> announceTheseMeroHosts [h] (\_ _ -> True)
 
 -- | Send notifications about new mero nodes and new mero servers for
--- the given set of 'Castor.Host's.
+-- the given set of 'Host's.
 --
 -- Used during startup by 'requestClusterStart'.
-announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
-                       -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
+announceTheseMeroHosts :: [Host] -- ^ Candidate hosts.
+                       -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts.
                        -> PhaseM RC a ()
 announceTheseMeroHosts hosts p = do
   rg' <- getLocalGraph
-  let clientHosts =
-        [ host | host <- hosts
-               , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
-               ]
-      serverHosts =
-        [ host | host <- hosts
-               , G.isConnected host Has Castor.HA_M0SERVER rg'
-               ]
+  let clientHosts = [h | h <- hosts, G.isConnected h Has HA_M0CLIENT rg']
+      serverHosts = [h | h <- hosts, G.isConnected h Has HA_M0SERVER rg']
 
-
-      -- Don't announced failed nodes
-      hostsToNodes hs = [ n | h <- hs, n <- G.connectedTo h Runs rg'
-                            , p n rg' ]
-
+      -- Unannounced failed nodes.
+      hostsToNodes hs = [ n
+                        | h <- hs
+                        , n <- G.connectedTo h Runs rg'
+                        , p n rg'
+                        ]
       serverNodes = hostsToNodes serverHosts :: [M0.Node]
       clientNodes = hostsToNodes clientHosts :: [M0.Node]
   Log.rcLog' Log.DEBUG $ "Sending messages about these new mero nodes: "
       ++ show ((clientNodes, clientHosts), (serverNodes, serverHosts))
   for_ (serverNodes++clientNodes) $ promulgateRC . StartProcessesOnNodeRequest
-
 
 -- | Get an 'Interface' we can send on to the halon:m0d service on the
 -- given node. This interface is only provided if the process on the

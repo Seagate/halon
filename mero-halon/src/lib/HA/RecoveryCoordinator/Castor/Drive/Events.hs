@@ -28,7 +28,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   , SMARTResponseStatus(..)
   ) where
 
-import HA.Resources (Node_XXX2(..))
+import HA.Resources (Node(..))
 import HA.Resources.Castor (Enclosure, Slot, StorageDevice)
 import HA.SafeCopy
 
@@ -58,7 +58,7 @@ instance Binary ResetAttemptResult
 --   drive changes.
 data DrivePowerChange = DrivePowerChange
   { dpcUUID :: UUID -- ^ Thread UUID
-  , dpcNode :: Node_XXX2
+  , dpcNode :: Node
   , dpcLocation :: Slot
   , dpcDevice :: StorageDevice
   , dpcPowered :: Bool -- Is device now powered?
@@ -71,7 +71,7 @@ instance Binary DrivePowerChange
 --   physically removed from the system.
 data DriveRemoved = DriveRemoved
   { drUUID :: UUID -- ^ Threaad UUID.
-  , drNode :: Node_XXX2 -- ^ Node where event happens.
+  , drNode :: Node -- ^ Node where event happens.
   , drLocation :: Slot -- ^ Location where event happened.
   , drDevice :: StorageDevice -- ^ Removed device.
   , drPowered :: Maybe Bool -- Is disk powered?
@@ -87,7 +87,7 @@ instance Binary DriveRemoved
 --     case we may safely infer that the drive is present and powered.
 data DriveInserted = DriveInserted
   { diUUID :: UUID -- ^ Thread UUID.
-  , diNode :: Node_XXX2 -- ^ Node where event happens.
+  , diNode :: Node -- ^ Node where event happens.
   , diLocation :: Slot -- ^ Location where event happened.
   , diDevice :: StorageDevice -- ^ Inserted device.
   , diPowered :: Maybe Bool -- Is disk powered?
@@ -98,7 +98,7 @@ instance Binary DriveInserted
 
 -- | 'DriveFailed' event indicates that an underlying system has identified a
 --   failed drive. Currently this is sent when a SMART test fails on a drive.
-data DriveFailed = DriveFailed UUID Node_XXX2 Slot StorageDevice
+data DriveFailed = DriveFailed UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
@@ -106,7 +106,7 @@ instance Binary DriveFailed
 
 -- | Event emitted when drive manager indicates that a device is no longer
 --   visible to the system.
-data DriveTransient = DriveTransient UUID Node_XXX2 Slot StorageDevice
+data DriveTransient = DriveTransient UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveTransient
@@ -114,7 +114,7 @@ instance Binary DriveTransient
 
 -- | Event emitted when we get OK indication for the drive
 --   from drive manager.
-data DriveOK = DriveOK UUID Node_XXX2 Slot StorageDevice
+data DriveOK = DriveOK UUID Node Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveOK
@@ -138,7 +138,7 @@ deriveSafeCopy 0 'base ''ExpanderReset
 
 -- | Sent when RAID controller reports that part of a RAID array has failed.
 data RaidUpdate = RaidUpdate
-  { ruNode :: Node_XXX2
+  { ruNode :: Node
   , ruRaidDevice :: T.Text -- ^ RAID device path
   , ruFailedComponents :: [(StorageDevice, T.Text)] -- ^ sd, path
   } deriving (Eq, Show, Typeable, Generic)
@@ -165,7 +165,7 @@ instance Hashable RaidAddResult
 
 -- | Sent to request a SMART test is run on the system.
 data SMARTRequest = SMARTRequest
-  { srqNode :: Node_XXX2
+  { srqNode :: Node
   , srqDevice :: StorageDevice
   } deriving (Eq, Show, Ord, Typeable, Generic)
 

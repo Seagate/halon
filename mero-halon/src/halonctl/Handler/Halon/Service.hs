@@ -39,7 +39,7 @@ import           GHC.Generics (Generic)
 import           HA.Encode
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.Service.Events
-import           HA.Resources (Node_XXX2(..))
+import           HA.Resources (Node(..))
 import           HA.Service
 import qualified HA.Services.DecisionLog as DLog
 import qualified HA.Services.Dummy as Dummy
@@ -261,7 +261,7 @@ start t s c eqnids nid = do
     self <- getSelfPid
     promulgateEQ eqnids (ssrm self) >>= \pid -> withMonitor pid wait
   where
-    ssrm self = encodeP $ ServiceStartRequest Start (Node_XXX2 nid) s c [self]
+    ssrm self = encodeP $ ServiceStartRequest Start (Node nid) s c [self]
     wait = do
       _ <- expect :: Process ProcessMonitorNotification
       stat <- expectTimeout t
@@ -283,7 +283,7 @@ reconf :: Configuration a
 reconf t s c eqnids nid = promulgateEQ eqnids msg
     >>= \pid -> withMonitor pid wait
   where
-    msg = encodeP $ ServiceStartRequest Restart (Node_XXX2 nid) s c []
+    msg = encodeP $ ServiceStartRequest Restart (Node nid) s c []
     wait = do
       _ <- expect :: Process ProcessMonitorNotification
       stat <- expectTimeout t
@@ -302,7 +302,7 @@ stop :: Configuration a
 stop s eqnids nid = promulgateEQ eqnids ssrm
     >>= \pid -> withMonitor pid wait
   where
-    ssrm = encodeP $ ServiceStopRequest (Node_XXX2 nid) s
+    ssrm = encodeP $ ServiceStopRequest (Node nid) s
     wait = void (expect :: Process ProcessMonitorNotification)
 
 status :: Configuration a
@@ -315,7 +315,7 @@ status t s eqnids nid = do
     self <- getSelfPid
     promulgateEQ eqnids (msg self) >>= \pid -> withMonitor pid wait
   where
-    msg self = encodeP $ ServiceStatusRequest (Node_XXX2 nid) s [self]
+    msg self = encodeP $ ServiceStatusRequest (Node nid) s [self]
     wait = do
       _ <- expect :: Process ProcessMonitorNotification
       expectTimeout t >>= mapM decodeP

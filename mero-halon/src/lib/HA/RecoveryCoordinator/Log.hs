@@ -8,7 +8,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module HA.RecoveryCoordinator.Log where
 
-import qualified HA.Resources as R (Node_XXX2)
+import qualified HA.Resources as R (Node)
 import HA.SafeCopy
 import HA.Aeson
 import Data.Typeable (Typeable)
@@ -58,7 +58,7 @@ instance FromJSON TagContextInfo
 data Scope =
     Thread UUID -- ^ Tag a "thread" of processing. This could be used to
                      --   group multiple rules all driven from a single message.
-  | Node R.Node_XXX2 -- ^ Associated node
+  | Node R.Node -- ^ Associated node
   | StorageDevice String -- ^ Associated storage device.
   | MeroConfObj String -- ^ Associated Mero configuration object.
   deriving (Eq, Generic, Ord, Show, Typeable)
@@ -99,7 +99,7 @@ data SystemEvent =
     -- ^ Declare that the state of a stateful resource has changed.
   | ActionCalled String Environment
     -- ^ Declare than an action has been called with certain parameters.
-  | RCStarted R.Node_XXX2
+  | RCStarted R.Node
     -- ^ Declare that the RC has started on a node.
   deriving (Eq, Generic, Ord, Show, Typeable)
 

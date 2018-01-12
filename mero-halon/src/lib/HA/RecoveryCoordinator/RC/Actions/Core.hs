@@ -102,7 +102,7 @@ import           HA.ResourceGraph
   , Resource
   , sync
   )
-import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
+import           HA.Resources (Cluster(..), Has(..), Node)
 import           HA.SafeCopy
 import           Network.CEP
 
@@ -172,7 +172,7 @@ knownResource :: Resource a => a -> PhaseM RC l Bool
 knownResource res = fmap (memberResource res) getLocalGraph
 
 -- | Register a new satellite node in the cluster.
-registerNode :: Node_XXX2 -> PhaseM RC l ()
+registerNode :: Node -> PhaseM RC l ()
 registerNode node = do
   Log.rcLog' Log.DEBUG $ "Registering satellite node: " ++ show node
   modifyGraph $ connect Cluster Has node
