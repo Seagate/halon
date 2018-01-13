@@ -8,7 +8,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module HA.Resources
   ( Cluster(..)
@@ -36,28 +35,29 @@ import HA.SafeCopy
 
 -- | The root of the resource graph.
 data Cluster = Cluster
-  deriving (Eq, Ord, Show, Typeable, Generic)
+  deriving (Eq, Generic, Ord, Show, Typeable)
+
 instance Hashable Cluster
-storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
-deriveSafeCopy 0 'base ''Cluster
 instance ToJSON Cluster
 
+storageIndex ''Cluster "67850c56-c077-4e43-a985-310bdea0b4a1"
+deriveSafeCopy 0 'base ''Cluster
 
 -- | A resource graph representation for nodes.
+--
+-- XXX Move to HA.Resources.Castor?
 newtype Node = Node NodeId
-  deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
-instance ToJSON Node
-instance FromJSON Node
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
+
 storageIndex ''Node "43ab6bb3-5bfe-4de8-838d-489584b1456c"
 deriveSafeCopy 0 'base ''Node
 
-
 -- | An identifier for epochs.
 newtype EpochId = EpochId Word64
-  deriving (Eq, Ord, Show, Typeable, Generic, Hashable)
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, ToJSON)
+
 storageIndex ''EpochId "8c4d4b29-0c24-4bc8-8ab5-e6b3a1f2cc96"
 deriveSafeCopy 0 'base ''EpochId
-instance ToJSON EpochId
 
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -66,20 +66,23 @@ instance ToJSON EpochId
 -- | A relation connecting the cluster to global resources, such as nodes and
 -- epochs.
 data Has = Has
-  deriving (Eq, Ord, Show, Typeable, Generic)
+  deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Hashable Has
+instance ToJSON Has
+
 storageIndex ''Has "c912f510-1829-4df0-873d-4a960ff1ff4e"
 deriveSafeCopy 0 'base ''Has
-instance ToJSON Has
 
 -- | A relation connecting a node to the services it runs.
 data Runs = Runs
   deriving (Eq, Show, Typeable, Generic)
-storageIndex ''Runs "8a53e367-8746-4814-aa3e-fb29c5432119"
-deriveSafeCopy 0 'base ''Runs
+
 instance Hashable Runs
 instance ToJSON Runs
+
+storageIndex ''Runs "8a53e367-8746-4814-aa3e-fb29c5432119"
+deriveSafeCopy 0 'base ''Runs
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
@@ -104,4 +107,5 @@ $(mkResRel
 -- | Sent when a node goes down and we need to try to recover it
 newtype RecoverNode = RecoverNode Node
   deriving (Typeable, Generic, Show, Eq, Ord)
+
 deriveSafeCopy 0 'base ''RecoverNode

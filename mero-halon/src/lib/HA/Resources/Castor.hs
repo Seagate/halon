@@ -11,19 +11,18 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- XXX: for graph instances:
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module HA.Resources.Castor (
-    module HA.Resources.Castor
-  , MI.BMC(..)
-) where
+module HA.Resources.Castor
+  ( module HA.Resources.Castor
+  , BMC(..)
+  ) where
 
 import HA.Aeson
 import HA.SafeCopy
 import HA.Resources
-import qualified HA.Resources.Castor.Initial as MI
+import HA.Resources.Castor.Initial (BMC(..))
 import HA.Resources.TH
 
 import Data.Hashable (Hashable(..))
@@ -35,25 +34,23 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
-newtype Rack = Rack
-  Int -- ^ Rack index
-  deriving (Eq, Show, Generic, Typeable, Hashable)
+newtype Rack = Rack Int -- ^ Rack index
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
+
 storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"
 deriveSafeCopy 0 'base ''Rack
-instance ToJSON Rack
 
 -- | Representation of a physical enclosure.
 newtype Enclosure = Enclosure String -- ^ Enclosure UUID.
-  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
-instance FromJSON Enclosure
-instance ToJSON   Enclosure
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
+
 storageIndex ''Enclosure "4e78e1a1-8d02-4f42-a325-a4685aa44595"
 deriveSafeCopy 0 'base ''Enclosure
 
 -- | Representation of a physical host.
-newtype Host = Host
-    String -- ^ Hostname
-  deriving (Eq, Show, Generic, Typeable, Hashable, FromJSON, ToJSON, Ord)
+newtype Host = Host String -- ^ Hostname.
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
+
 storageIndex ''Host "8a9fb3e8-5400-45d4-85a3-e7d5128e504b"
 deriveSafeCopy 0 'base ''Host
 
@@ -76,17 +73,15 @@ data HostAttr =
   deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Hashable HostAttr
-storageIndex ''HostAttr "7a3def57-d9d2-41e1-9024-a72803916b6b"
-deriveSafeCopy 0 'base ''HostAttr
 instance ToJSON HostAttr
 
--- | Representation of a storage device
+storageIndex ''HostAttr "7a3def57-d9d2-41e1-9024-a72803916b6b"
+deriveSafeCopy 0 'base ''HostAttr
+
+-- | Representation of a storage device.
 newtype StorageDevice = StorageDevice
     String -- ^ Disk serial number. XXX: convert to ShortByteString
-  deriving (Eq, Show, Ord, Generic, Typeable, Hashable)
-
-instance FromJSON StorageDevice
-instance ToJSON StorageDevice
+  deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
 storageIndex ''StorageDevice "6f7915aa-645c-42b4-b3e0-a8222c764730"
 deriveSafeCopy 0 'base ''StorageDevice
@@ -95,6 +90,7 @@ data Slot = Slot
   { slotEnclosure :: Enclosure
   , slotIndex     :: Int
   } deriving (Eq, Show, Ord, Generic, Typeable)
+
 instance Hashable Slot
 instance FromJSON Slot
 instance ToJSON   Slot
@@ -102,55 +98,57 @@ instance ToJSON   Slot
 storageIndex ''Slot "b0561c97-63ed-4f16-a27a-10ef04f9a023"
 deriveSafeCopy 0 'base ''Slot
 
-
 data StorageDeviceAttr
-    = SDResetAttempts !Int
-    | SDPowered Bool
-    | SDOnGoingReset
-    | SDRemovedFromRAID
-    deriving (Eq, Ord, Show, Generic)
+  = SDResetAttempts !Int
+  | SDPowered Bool
+  | SDOnGoingReset
+  | SDRemovedFromRAID
+  deriving (Eq, Ord, Show, Generic)
 
 instance Hashable StorageDeviceAttr
-storageIndex ''StorageDeviceAttr "0a27839d-7e0c-4dda-96b8-034d640e6503"
-deriveSafeCopy 0 'base ''StorageDeviceAttr
 instance ToJSON StorageDeviceAttr
 
--- | Arbitrary identifier for a logical or storage device
-data DeviceIdentifier =
-      DIPath String
-    | DIWWN String
-    | DIUUID String
-    | DIRaidIdx Int -- Index in RAID array
-    | DIRaidDevice String -- Device name of RAID device containing this
-  deriving (Eq, Show, Ord, Generic, Typeable)
+storageIndex ''StorageDeviceAttr "0a27839d-7e0c-4dda-96b8-034d640e6503"
+deriveSafeCopy 0 'base ''StorageDeviceAttr
+
+-- | Arbitrary identifier for a logical or storage device.
+data DeviceIdentifier
+  = DIPath String
+  | DIWWN String
+  | DIUUID String
+  | DIRaidIdx Int -- Index in RAID array.
+  | DIRaidDevice String -- Device name of RAID device containing this.
+  deriving (Eq, Generic, Ord, Show, Typeable)
 
 instance Hashable DeviceIdentifier
 instance ToJSON DeviceIdentifier
 instance FromJSON DeviceIdentifier
+
 storageIndex ''DeviceIdentifier "d4b502aa-e1d3-421a-8082-f3837aef3fdc"
 deriveSafeCopy 0 'base ''DeviceIdentifier
 
 -- | Representation of storage device status. Currently this just mirrors
 --   the status we get from OpenHPI.
 data StorageDeviceStatus = StorageDeviceStatus
-    { sdsStatus :: String
-    , sdsReason :: String
-    }
-  deriving (Eq, Show, Generic, Typeable)
+  { sdsStatus :: String
+  , sdsReason :: String
+  } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable StorageDeviceStatus
+instance ToJSON StorageDeviceStatus
+
 storageIndex ''StorageDeviceStatus "893b1410-6aff-4694-a6fd-19509a12d715"
 deriveSafeCopy 0 'base ''StorageDeviceStatus
-instance ToJSON StorageDeviceStatus
 
 -- | Marker used to indicate that a host is undergoing RAID reassembly.
 data ReassemblingRaid = ReassemblingRaid
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable ReassemblingRaid
+instance ToJSON ReassemblingRaid
+
 storageIndex ''ReassemblingRaid "e82259ce-5ae8-4117-85ca-6593e3856a89"
 deriveSafeCopy 0 'base ''ReassemblingRaid
-instance ToJSON ReassemblingRaid
 
 --------------------------------------------------------------------------------
 -- Relations                                                                  --
@@ -158,21 +156,23 @@ instance ToJSON ReassemblingRaid
 
 -- | The relation between a configuration object and its state marker.
 data Is = Is
-    deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable Is
+instance ToJSON Is
+
 storageIndex ''Is "72d44ab5-4a22-4dbf-9cf1-170ed8518f3e"
 deriveSafeCopy 0 'base ''Is
-instance ToJSON Is
 
 -- | The relation between a storage device and it's new version.
 data ReplacedBy = ReplacedBy
-  deriving (Eq, Show, Generic, Typeable)
+  deriving (Eq, Generic, Show, Typeable)
 
 instance Hashable ReplacedBy
+instance ToJSON ReplacedBy
+
 storageIndex ''ReplacedBy "5db0c0d7-59d0-4750-84f6-c4b140a190df"
 deriveSafeCopy 0 'base ''ReplacedBy
-instance ToJSON ReplacedBy
 
 -- Defined here for the instances to connect to Cluster (so it doesn't
 -- get GC'd). Helpers elsewhere.
@@ -300,9 +300,10 @@ data HalonVars = HalonVars
   } deriving (Show, Eq, Ord, Typeable, Generic)
 
 instance Hashable HalonVars
+instance ToJSON HalonVars
+
 storageIndex ''HalonVars "46828e80-3122-45e1-88b9-1ba3edea13ae"
 deriveSafeCopy 0 'base ''HalonVars
-instance ToJSON HalonVars
 
 --------------------------------------------------------------------------------
 -- Dictionaries                                                               --
@@ -313,7 +314,7 @@ $(mkDicts
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, ''Has, ''Rack)
@@ -325,7 +326,7 @@ $(mkDicts
   , (''Enclosure, ''Has, ''Slot)
   , (''StorageDevice, ''Has, ''Slot)
   , (''Enclosure, ''Has, ''Host)
-  , (''Enclosure, ''Has, ''MI.BMC)
+  , (''Enclosure, ''Has, ''BMC)
   , (''Host, ''Runs, ''Node)
   , (''StorageDevice, ''Is, ''StorageDeviceStatus)
   , (''StorageDevice, ''Has, ''DeviceIdentifier)
@@ -340,7 +341,7 @@ $(mkResRel
   [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
-  , ''MI.BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
+  , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
   [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
@@ -352,7 +353,7 @@ $(mkResRel
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Host)
-  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''MI.BMC)
+  , (''Enclosure, AtMostOne, ''Has, Unbounded, ''BMC)
   , (''Host, AtMostOne, ''Runs, Unbounded, ''Node)
   , (''StorageDevice, Unbounded, ''Is, AtMostOne, ''StorageDeviceStatus)
   , (''StorageDevice, AtMostOne, ''Has, AtMostOne, ''Slot)
