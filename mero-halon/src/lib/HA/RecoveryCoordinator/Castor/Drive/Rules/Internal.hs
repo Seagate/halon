@@ -17,13 +17,13 @@ import Control.Lens
 import Data.UUID (UUID)
 import HA.RecoveryCoordinator.Job.Actions (ListenerId)
 import HA.Resources (Node_XXX2)
-import HA.Resources.Castor (Slot, StorageDevice_XXX1)
+import HA.Resources.Castor (Slot, StorageDevice)
 
 -- | State of the mkcheck rule.
 data CheckAndHandleState = CheckAndHandleState
       { _chsNode          :: Node_XXX2
          -- ^ Node where disk is located.
-      , _chsStorageDevice :: StorageDevice_XXX1
+      , _chsStorageDevice :: StorageDevice
          -- ^ Storage device we work with.
       , _chsLocation      :: Slot
          -- ^ Known location of the storage device.

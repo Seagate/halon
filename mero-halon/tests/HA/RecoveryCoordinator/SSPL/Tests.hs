@@ -218,7 +218,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
            [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
            let Cas.Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
            let serial = "serial" ++ ide ++ "_1"
-           let sdev = Cas.StorageDevice_XXX1 serial
+           let sdev = Cas.StorageDevice serial
            unless hpiWasInstalled $ do
              loc <- StorageDevice.mkLocation e 1
              _   <- StorageDevice.insertTo sdev loc
@@ -239,8 +239,8 @@ genericHpiTest HTI{..} = mkHpiTest rules test
       let serial = "serial" ++ ide ++ "_1"
       let (enc, serial', idx, devid, wwn, _sdev) =
             if hpiIsNew
-            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", Cas.StorageDevice_XXX1 $ serial++"new")
-            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", Cas.StorageDevice_XXX1 serial)
+            then (pack e, serial++"new", 1, pack $ "/dev/loop" ++ ide ++"_new", pack $ "wwn" ++ ide ++"_1new", Cas.StorageDevice $ serial++"new")
+            else (pack e, serial, 1, pack $ "/dev/loop" ++ ide ++ "_1", pack $ "wwn" ++ ide ++ "_1", Cas.StorageDevice serial)
 
       subscribe rc (Proxy :: Proxy HpiRuleMsg)
       subscribe rc (Proxy :: Proxy DrivePowerChange)

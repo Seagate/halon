@@ -192,25 +192,25 @@ findHostAttrs h = G.connectedTo h Has <$> getLocalGraph
 ----------------------------------------------------------
 
 -- | Find logical devices on a host
-findHostStorageDevices :: Cas.Host -> PhaseM RC l [Cas.StorageDevice_XXX1]
+findHostStorageDevices :: Cas.Host -> PhaseM RC l [Cas.StorageDevice]
 findHostStorageDevices h = flip fmap getLocalGraph $ \rg ->
   [ sdev | enc  :: Cas.Enclosure <- maybeToList $ G.connectedFrom Has h rg
          , loc  :: Cas.Slot <- G.connectedTo enc Has rg
-         , sdev :: Cas.StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has loc rg ]
+         , sdev :: Cas.StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
 
 -- | Check if the 'StorageDevice' is still attached (from halon
 -- perspective).
-isStorageDriveRemoved :: Cas.StorageDevice_XXX1 -> PhaseM RC l Bool
+isStorageDriveRemoved :: Cas.StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
   rg <- getLocalGraph
   return . maybe True (\Cas.Slot{} -> False) $ G.connectedTo sd Has rg
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
-lookupStorageDevicesWithDI :: Cas.DeviceIdentifier -> PhaseM RC l [Cas.StorageDevice_XXX1]
+lookupStorageDevicesWithDI :: Cas.DeviceIdentifier -> PhaseM RC l [Cas.StorageDevice]
 lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
 
 -- | Find all 'StorageDevice's with the given 'StorageDeviceAttr'.
-lookupStorageDevicesWithAttr :: Cas.StorageDeviceAttr -> PhaseM RC l [Cas.StorageDevice_XXX1]
+lookupStorageDevicesWithAttr :: Cas.StorageDeviceAttr -> PhaseM RC l [Cas.StorageDevice]
 lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getLocalGraph
 
 -- | Update a metric monitoring how many drives are currently
@@ -225,14 +225,14 @@ updateDiskResetCount = do
   runEkgMetricCmd (ModifyGauge "ongoing_disk_resets" $ GaugeSet i)
 
 -- | Test whether a given device is currently undergoing a reset operation.
-hasOngoingReset :: Cas.StorageDevice_XXX1 -> PhaseM RC l Bool
+hasOngoingReset :: Cas.StorageDevice -> PhaseM RC l Bool
 hasOngoingReset =
     let go Cas.SDOnGoingReset = True
         go _                  = False
     in fmap (not . null) . SDev.findAttrs go
 
 -- | Mark that a storage device is undergoing reset.
-markOnGoingReset :: Cas.StorageDevice_XXX1 -> PhaseM RC l ()
+markOnGoingReset :: Cas.StorageDevice -> PhaseM RC l ()
 markOnGoingReset sdev = do
     let _F Cas.SDOnGoingReset = True
         _F _                  = False
@@ -244,7 +244,7 @@ markOnGoingReset sdev = do
       _       -> return ()
 
 -- | Mark that a storage device has completed reset.
-markResetComplete :: Cas.StorageDevice_XXX1 -> PhaseM RC l ()
+markResetComplete :: Cas.StorageDevice -> PhaseM RC l ()
 markResetComplete sdev = do
     let _F Cas.SDOnGoingReset = True
         _F _                  = False
@@ -257,7 +257,7 @@ markResetComplete sdev = do
 
 -- | Increment the number of disk reset attempts the 'StorageDevice'
 -- has gone through.
-incrDiskResetAttempts :: Cas.StorageDevice_XXX1 -> PhaseM RC l ()
+incrDiskResetAttempts :: Cas.StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (Cas.SDResetAttempts _) = True
         _F _                       = False
@@ -270,7 +270,7 @@ incrDiskResetAttempts sdev = do
 
 -- | Number of times the given 'StorageDevice' has been tried to
 -- reset.
-getDiskResetAttempts :: Cas.StorageDevice_XXX1 -> PhaseM RC l Int
+getDiskResetAttempts :: Cas.StorageDevice -> PhaseM RC l Int
 getDiskResetAttempts sdev = do
     let _F (Cas.SDResetAttempts _) = True
         _F _                       = False
@@ -285,7 +285,7 @@ getDiskResetAttempts sdev = do
 -- TODO: Should be @'Maybe' 'Node'@.
 -- TODO: Is this function and are uses of this function correct?
 -- TODO: Same questions for 'getSDevHost'
-getSDevNode :: Cas.StorageDevice_XXX1 -> PhaseM RC l [Node_XXX2]
+getSDevNode :: Cas.StorageDevice -> PhaseM RC l [Node_XXX2]
 getSDevNode sdev = do
   rg <- getLocalGraph
   hosts <- getSDevHost sdev
@@ -296,7 +296,7 @@ getSDevNode sdev = do
 -- 'StorageDevice'.
 --
 -- TODO: See 'getSDevNode' TODOs.
-getSDevHost :: Cas.StorageDevice_XXX1 -> PhaseM RC l [Cas.Host]
+getSDevHost :: Cas.StorageDevice -> PhaseM RC l [Cas.Host]
 getSDevHost sdev = do
   rg <- getLocalGraph
   maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev

@@ -57,7 +57,7 @@ import           HA.Resources.Castor
   , HostAttr(HA_M0CLIENT, HA_M0SERVER)
   , Host
   , Slot
-  , StorageDevice_XXX1
+  , StorageDevice
   )
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -218,7 +218,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                           sdevs  <- sort <$> getChildren service
                           sdevs' <- forM sdevs $ \sdev -> do
                             let msd   = do disk :: M0.Disk <- G.connectedTo (sdev::M0.SDev) M0.IsOnHardware rg
-                                           sd :: StorageDevice_XXX1 <- G.connectedTo disk M0.At rg
+                                           sd :: StorageDevice <- G.connectedTo disk M0.At rg
                                            return sd
                                 slot  = G.connectedTo sdev M0.At rg :: Maybe Slot
                                 state = M0.getState sdev rg

@@ -28,7 +28,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Resources (Node_XXX2(..))
 import           HA.Resources.Castor
-  ( StorageDevice_XXX1(..)
+  ( StorageDevice(..)
   , StorageDeviceStatus(..)
   )
 import           HA.Resources.HalonVars
@@ -57,10 +57,10 @@ import           Data.Vinyl
 
 import           Network.CEP
 
-data DeviceInfo = DeviceInfo {
-    _diSDev :: !StorageDevice_XXX1
+data DeviceInfo = DeviceInfo
+  { _diSDev :: !StorageDevice
   , _diSerial :: !T.Text
-}
+  }
 
 fldNode :: Proxy '("node", Maybe Node_XXX2)
 fldNode = Proxy
@@ -173,7 +173,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
       drive_removed <- phaseHandle "drive-removed"
       finalize      <- phaseHandle "finalize"
 
-      let home (ResetAttempt sdev@(StorageDevice_XXX1 serial)) = getSDevNode sdev >>= \case
+      let home (ResetAttempt sdev@(StorageDevice serial)) = getSDevNode sdev >>= \case
             (node : _) -> do
               Log.tagContext Log.SM sdev Nothing
               Log.tagContext Log.SM node Nothing
@@ -332,7 +332,7 @@ onDriveRemoved :: forall g l. (FldDeviceInfo ∈ l)
                => DriveRemoved
                -> g
                -> FieldRec l
-               -> Process (Maybe StorageDevice_XXX1)
+               -> Process (Maybe StorageDevice)
 onDriveRemoved dr _ ((view $ rlens fldDeviceInfo . rfield)
                       -> Just (DeviceInfo sdev _)) =
     if drDevice dr == sdev

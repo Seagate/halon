@@ -495,7 +495,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
       where
         stats = do
           (disk :: M0.Disk) <- G.connectedTo s M0.IsOnHardware rg
-          (sd :: Res.StorageDevice_XXX1) <- G.connectedTo disk At rg
+          (sd :: Res.StorageDevice) <- G.connectedTo disk At rg
           (Res.StorageDeviceStatus sds _) <- G.connectedTo sd Is rg
           return ( sd
                  , G.isConnected disk Is M0.Replaced rg

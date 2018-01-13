@@ -57,28 +57,28 @@ import           Network.CEP
 
 -- | Check if storage device exists in a graph. If so
 -- it returns 'StorageDevice' object
-exists :: String   -- ^ Serial number.
-       -> PhaseM RC l (Maybe Cas.StorageDevice_XXX1)
+exists :: String -- ^ Serial number.
+       -> PhaseM RC l (Maybe Cas.StorageDevice)
 exists sn =  bool Nothing (Just sdev)
           .  G.isConnected Cluster Has sdev
          <$> getLocalGraph
-  where sdev = Cas.StorageDevice_XXX1 sn
+  where sdev = Cas.StorageDevice sn
 
--- | Check if 'StorageDevice' is locted in given enclosure.
-isAt :: Cas.StorageDevice_XXX1 -> Cas.Slot -> PhaseM RC l Bool
+-- | Is 'StorageDevice' located in given enclosure?
+isAt :: Cas.StorageDevice -> Cas.Slot -> PhaseM RC l Bool
 isAt sdev loc = G.isConnected sdev Has loc <$> getLocalGraph
 
 -- | Get device that is in slot currently.
-atSlot :: Cas.Slot -> PhaseM RC l (Maybe Cas.StorageDevice_XXX1)
+atSlot :: Cas.Slot -> PhaseM RC l (Maybe Cas.StorageDevice)
 atSlot loc = G.connectedFrom Has loc <$> getLocalGraph
 
 -- | Get location of current device.
-location :: Cas.StorageDevice_XXX1 -> PhaseM RC l (Maybe Cas.Slot)
+location :: Cas.StorageDevice -> PhaseM RC l (Maybe Cas.Slot)
 location sdev = G.connectedTo sdev Has <$> getLocalGraph
 
 -- | Get device enclosure, if there is no connection to location,
 -- then this call tries to find direct connection.
-enclosure :: Cas.StorageDevice_XXX1 -> PhaseM RC l (Maybe Cas.Enclosure)
+enclosure :: Cas.StorageDevice -> PhaseM RC l (Maybe Cas.Enclosure)
 enclosure sdev = do
  rg <- getLocalGraph
  return $ Cas.slotEnclosure <$> G.connectedTo sdev Has rg
@@ -92,10 +92,10 @@ mkLocation enc num = do
 
 -- | Failure to insert a 'StorageDevice' into a 'Slot' has occured.
 data InsertionError
-  = AnotherInSlot Cas.StorageDevice_XXX1
+  = AnotherInSlot Cas.StorageDevice
   | AlreadyInstalled
   | InAnotherSlot Cas.Slot
-  deriving (Show, Eq)
+  deriving (Eq, Show)
 
 -- | Insert storage device in location.
 --
@@ -104,7 +104,7 @@ data InsertionError
 -- This method doesn't create deprecated @'Enclosure' -> 'StorageDevice'@
 -- relation because this relation is not needed when connection to
 -- 'Slot' exits.
-insertTo :: Cas.StorageDevice_XXX1
+insertTo :: Cas.StorageDevice
          -> Cas.Slot
          -> PhaseM RC l (Either InsertionError ())
 insertTo sdev sdev_loc = do
@@ -140,7 +140,7 @@ insertTo sdev sdev_loc = do
 -- | Remove 'StorageDevice' from it's slot.
 --
 -- TODO: remove device identifiers what are not applicable now.
-ejectFrom :: Cas.StorageDevice_XXX1 -> Cas.Slot -> PhaseM RC l ()
+ejectFrom :: Cas.StorageDevice -> Cas.Slot -> PhaseM RC l ()
 ejectFrom sdev sdev_loc = do
   Log.rcLog' Log.DEBUG ("Ejecting " ++ show sdev ++ " from " ++ show sdev_loc :: String)
   modifyGraph $ G.disconnect sdev Has sdev_loc
@@ -151,19 +151,19 @@ ejectFrom sdev sdev_loc = do
                           _ -> G.connect sdev Is (Cas.StorageDeviceStatus "EMPTY" "None") rg)
 
 -- | Turn 'StorageDevice' power on.
-poweron :: Cas.StorageDevice_XXX1 -> PhaseM RC l () -- XXX: move to location.
+poweron :: Cas.StorageDevice -> PhaseM RC l () -- XXX: move to location.
 poweron sdev = do
   setAttr sdev (Cas.SDPowered True)
   unsetAttr sdev (Cas.SDPowered False)
 
 -- | Turn 'StorageDevice' power off.
-poweroff :: Cas.StorageDevice_XXX1 -> PhaseM RC l ()
+poweroff :: Cas.StorageDevice -> PhaseM RC l ()
 poweroff sdev = do -- XXX: move to locat
   setAttr sdev (Cas.SDPowered False)
   unsetAttr sdev (Cas.SDPowered True)
 
 -- | Check if 'StorageDevice' is powered.
-isPowered :: Cas.StorageDevice_XXX1 -> PhaseM RC l Bool
+isPowered :: Cas.StorageDevice -> PhaseM RC l Bool
 isPowered sdev = maybe True id . listToMaybe . mapMaybe unwrap
               <$> findAttrs (const True) sdev
   where
@@ -171,13 +171,13 @@ isPowered sdev = maybe True id . listToMaybe . mapMaybe unwrap
     unwrap _                 = Nothing
 
 -- | Get the status of a storage device.
-status :: Cas.StorageDevice_XXX1 -> PhaseM RC l Cas.StorageDeviceStatus
+status :: Cas.StorageDevice -> PhaseM RC l Cas.StorageDeviceStatus
 status dev = fromMaybe (Cas.StorageDeviceStatus "UNKNOWN" "UNKNOWN") . G.connectedTo dev Is <$> getLocalGraph
 
 -- | Update the status of a storage device.
 --
 -- XXX: keep in mind that some statuses are final.
-setStatus :: Cas.StorageDevice_XXX1
+setStatus :: Cas.StorageDevice
           -> String -- ^ Status.
           -> String -- ^ Reason.
           -> PhaseM RC l ()
@@ -191,7 +191,7 @@ setStatus dev st reason = do
   modifyGraph $ G.connect dev Is statusNode
 
 -- | Add an additional identifier to a logical storage device.
-identify :: Cas.StorageDevice_XXX1 -> [Cas.DeviceIdentifier] -> PhaseM RC l ()
+identify :: Cas.StorageDevice -> [Cas.DeviceIdentifier] -> PhaseM RC l ()
 identify ld dis = do
  Log.rcLog' Log.DEBUG $ "Adding identifiers " ++ show dis ++ " to device " ++ show ld
  modifyGraph $ \rg -> foldl' (\g i -> G.connect ld Has i g) rg dis
@@ -199,13 +199,13 @@ identify ld dis = do
 -- Internal
 
 -- | Set an attribute on a storage device.
-setAttr :: Cas.StorageDevice_XXX1 -> Cas.StorageDeviceAttr -> PhaseM RC l ()
+setAttr :: Cas.StorageDevice -> Cas.StorageDeviceAttr -> PhaseM RC l ()
 setAttr sd attr  = do
     Log.rcLog' Log.TRACE $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
     modifyGraph $ G.connect sd Has attr
 
 -- | Unset an attribute on a storage device.
-unsetAttr :: Cas.StorageDevice_XXX1 -> Cas.StorageDeviceAttr -> PhaseM RC l ()
+unsetAttr :: Cas.StorageDevice -> Cas.StorageDeviceAttr -> PhaseM RC l ()
 unsetAttr sd attr = do
     Log.rcLog' Log.TRACE $ "Unsetting disk attribute "
                   ++ show attr ++ " on " ++ show sd
@@ -213,7 +213,7 @@ unsetAttr sd attr = do
 
 -- | Find attributes matching the given filter on a storage device.
 findAttrs :: (Cas.StorageDeviceAttr -> Bool)
-          -> Cas.StorageDevice_XXX1
+          -> Cas.StorageDevice
           -> PhaseM RC l [Cas.StorageDeviceAttr]
 findAttrs k sdev = do
     rg <- getLocalGraph
@@ -222,7 +222,7 @@ findAttrs k sdev = do
                   ]
 
 -- | Lookup filesystem paths for storage devices (e.g. /dev/sda1)
-path :: Cas.StorageDevice_XXX1 -> PhaseM RC l (Maybe String)
+path :: Cas.StorageDevice -> PhaseM RC l (Maybe String)
 path sd =
     listToMaybe . mapMaybe extractPath <$> getIdentifiers sd
   where
@@ -231,7 +231,7 @@ path sd =
 
 -- | Set the path ('DIPath') 'DeviceIdentifier' for the
 -- 'StorageDevice' to the given 'String'.
-setPath :: Cas.StorageDevice_XXX1 -> String -> PhaseM RC l ()
+setPath :: Cas.StorageDevice -> String -> PhaseM RC l ()
 setPath sd path' = do
    old <- mapMaybe extractPath <$> getIdentifiers sd
    for_ old $ \o -> modifyGraph $ G.disconnect sd Has o
@@ -241,17 +241,17 @@ setPath sd path' = do
     extractPath _ = Nothing
 
 -- | Get all 'DeviceIdentifier's for the 'StorageDevice'.
-getIdentifiers :: Cas.StorageDevice_XXX1 -> PhaseM RC l [Cas.DeviceIdentifier]
+getIdentifiers :: Cas.StorageDevice -> PhaseM RC l [Cas.DeviceIdentifier]
 getIdentifiers sd = G.connectedTo sd Has <$> getLocalGraph
 
 -- | Test if a drive have a given identifier
-hasIdentifier :: Cas.StorageDevice_XXX1
+hasIdentifier :: Cas.StorageDevice
               -> Cas.DeviceIdentifier
               -> PhaseM RC l Bool
 hasIdentifier ld di = elem di <$> getIdentifiers ld
 
 -- | Lookup raid device associated with a storage device.
-raidDevice :: Cas.StorageDevice_XXX1 -> PhaseM RC l [String]
+raidDevice :: Cas.StorageDevice -> PhaseM RC l [String]
 raidDevice sd =
     mapMaybe extract <$> getIdentifiers sd
   where

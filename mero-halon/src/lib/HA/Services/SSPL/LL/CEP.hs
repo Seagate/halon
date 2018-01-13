@@ -121,9 +121,9 @@ data DriveLedUpdate = DrivePermanentlyFailed -- ^ Drive is failed permanently
 -- the drive with the given serial number.
 sendLedUpdate :: DriveLedUpdate -- ^ Drive state we want to signal
               -> Cas.Host -- ^ Host we want to deal with
-              -> Cas.StorageDevice_XXX1 -- ^ Drive
+              -> Cas.StorageDevice -- ^ Drive
               -> PhaseM RC l Bool
-sendLedUpdate status host sd@(Cas.StorageDevice_XXX1 (T.pack -> sn)) = do
+sendLedUpdate status host sd@(Cas.StorageDevice (T.pack -> sn)) = do
   Log.actLog "sending LED update" [ ("status", show status)
                                   , ("sn", show sn)
                                   , ("host", show host) ]
@@ -178,7 +178,7 @@ ssplRules = sequence_
   , ruleMonitorServiceFailed
   ]
 
-data RuleDriveManagerDisk = RuleDriveManagerDisk Cas.StorageDevice_XXX1
+data RuleDriveManagerDisk = RuleDriveManagerDisk Cas.StorageDevice
   deriving (Eq,Show,Generic,Typeable)
 
 instance Binary RuleDriveManagerDisk
@@ -217,7 +217,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
       disk_reason = sensorResponseMessageSensor_response_typeDisk_status_drivemanagerDiskReason srdm
   todo uuid
   Log.tagContext Log.SM uuid Nothing
-  Log.tagContext Log.SM (Cas.StorageDevice_XXX1 sn) $ Just "sspl::monitor-drivemanager"
+  Log.tagContext Log.SM (Cas.StorageDevice sn) $ Just "sspl::monitor-drivemanager"
   Log.tagContext Log.SM [ ("drive.path"   :: String, show path)
                         , ("drive.diskNum" :: String, show diskNum)
                         , ("drive.status" :: String, T.unpack disk_reason)
@@ -250,7 +250,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
     -- infer it from the drive serial number and info we may have
     -- gotten previously
     populateEnclosure enc@(Cas.Enclosure "HPI_Data_Not_Available") sn diskNum =
-      StorageDevice.location (Cas.StorageDevice_XXX1 sn) >>= \case
+      StorageDevice.location (Cas.StorageDevice sn) >>= \case
         Nothing -> do
           Log.rcLog' Log.WARN ("No enclosure found for drive"::String)
           return enc
@@ -268,7 +268,7 @@ ruleMonitorDriveManager = defineSimpleIf "sspl::monitor-drivemanager" extract $ 
         -- happen under certain conditions, possibly only during tests
         -- on cluster where system may be in eventually inconsistent state.
         Log.rcLog' Log.WARN ("Drive manager event for the drive without HPI data available"::String)
-        let sdev = Cas.StorageDevice_XXX1 sn
+        let sdev = Cas.StorageDevice sn
         StorageDevice.setPath sdev path
         return sdev
       Just sdev -> do
@@ -315,7 +315,7 @@ ruleMonitorStatusHpi = defineSimpleIf "sspl::monitor-status-hpi" extract $ \(uui
                    $ srphi
       is_powered = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskPowered srphi
       is_installed = sensorResponseMessageSensor_response_typeDisk_status_hpiDiskInstalled srphi
-      sdev = Cas.StorageDevice_XXX1 $ T.unpack serial
+      sdev = Cas.StorageDevice $ T.unpack serial
       sdev_loc = Cas.Slot enc diskNum
   -- Setup context
   todo uuid
@@ -419,7 +419,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
               Just ident -> let
                   path = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentityPath ident
                   sn = sensorResponseMessageSensor_response_typeRaid_dataDrivesItemIdentitySerialNumber ident
-                  sdev = Cas.StorageDevice_XXX1 $ T.unpack sn
+                  sdev = Cas.StorageDevice $ T.unpack sn
                   devIds = [ Cas.DIPath (T.unpack path)
                            , Cas.DIRaidDevice device
                            , Cas.DIRaidIdx idx
@@ -502,7 +502,7 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
                           liftA (x,) <$> fmap Just (StorageDevice.status x))
              encl' <- findHostEnclosure host
              Log.rcLog' Log.DEBUG $ "MSDS: " ++ show (catMaybes <$> msds, host, encl')
-             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(Cas.StorageDevice_XXX1 serial, status) ->
+             forM_ msds $ \sds -> forM_ (catMaybes sds) $ \(Cas.StorageDevice serial, status) ->
                case status of
                  Cas.StorageDeviceStatus "HALON-FAILED" reason -> do
                    _ <- sendNodeCmd [Node_XXX2 nid] Nothing (DriveLed (T.pack serial) FaultOn)
@@ -517,11 +517,11 @@ ruleThreadController = defineSimpleIf "monitor-thread-controller" extract $ \(ui
     extract _ _ = return Nothing
 
 -- | Send update to SSPL that the given 'StorageDevice' changed its status.
-updateDriveManagerWithFailure :: Cas.StorageDevice_XXX1
+updateDriveManagerWithFailure :: Cas.StorageDevice
                               -> String
                               -> Maybe String
                               -> PhaseM RC l ()
-updateDriveManagerWithFailure sdev@(Cas.StorageDevice_XXX1 sn) st reason = getSDevHost sdev >>= \case
+updateDriveManagerWithFailure sdev@(Cas.StorageDevice sn) st reason = getSDevHost sdev >>= \case
   host : _ -> do
     _ <- sendLedUpdate DrivePermanentlyFailed host sdev
     nodesOnHost host >>= \case

@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import           HA.Resources.Castor (StorageDevice_XXX1)
+import           HA.Resources.Castor (StorageDevice)
 import qualified HA.Resources.Mero as M0
 
 import Network.CEP
@@ -36,15 +36,15 @@ getAllSDev rg =
   ]
 
 -- | Find 'StorageDevice' associated with the given 'M0.SDev'.
-lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice_XXX1)
+lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getLocalGraph
     return $ do
-      dev  <- G.connectedTo sdev M0.IsOnHardware rg
+      dev <- G.connectedTo sdev M0.IsOnHardware rg
       G.connectedTo (dev :: M0.Disk) M0.At rg
 
--- | Return the Mero SDev associated with the given storage device
-lookupStorageDeviceSDev :: StorageDevice_XXX1 -> PhaseM RC l (Maybe M0.SDev)
+-- | Return the Mero SDev associated with the given storage device.
+lookupStorageDeviceSDev :: StorageDevice -> PhaseM RC l (Maybe M0.SDev)
 lookupStorageDeviceSDev sdev = do
   rg <- getLocalGraph
   return $ do
@@ -52,7 +52,7 @@ lookupStorageDeviceSDev sdev = do
     G.connectedFrom M0.IsOnHardware (disk :: M0.Disk) rg
 
 -- | Connect 'StorageDevice' with corresponcing 'M0.SDev'.
-attachStorageDeviceToSDev :: StorageDevice_XXX1 -> M0.SDev -> PhaseM RC l ()
+attachStorageDeviceToSDev :: StorageDevice -> M0.SDev -> PhaseM RC l ()
 attachStorageDeviceToSDev sdev m0sdev = do
   rg <- getLocalGraph
   case G.connectedTo m0sdev M0.IsOnHardware rg of
@@ -61,10 +61,8 @@ attachStorageDeviceToSDev sdev m0sdev = do
 
 -- | Find 'M0.Disk' associated with the given 'M0.SDev'.
 lookupSDevDisk :: M0.SDev -> PhaseM RC l (Maybe M0.Disk)
-lookupSDevDisk sdev =
-    G.connectedTo sdev M0.IsOnHardware <$> getLocalGraph
+lookupSDevDisk sdev = G.connectedTo sdev M0.IsOnHardware <$> getLocalGraph
 
 -- | Given a 'M0.Disk', find the 'M0.SDev' attached to it.
 lookupDiskSDev :: M0.Disk -> PhaseM RC l (Maybe M0.SDev)
-lookupDiskSDev disk =
-    G.connectedFrom M0.IsOnHardware disk <$> getLocalGraph
+lookupDiskSDev disk = G.connectedFrom M0.IsOnHardware disk <$> getLocalGraph

@@ -61,7 +61,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.Resources (Node_XXX2(..))
 import           HA.Resources.Castor
   ( Slot(..)
-  , StorageDevice_XXX1(..)
+  , StorageDevice(..)
   , StorageDeviceStatus(..)
   )
 import           HA.Resources.HalonVars
@@ -103,7 +103,7 @@ rules = sequence_
 mkCheckAndHandleDriveReady ::
      Lens' l (Maybe CheckAndHandleState) -- ^ Simple lens to listener ID for SMART test
   -> (M0.SDev -> PhaseM RC l ())  -- ^ Action to run when drive is handled.
-  -> RuleM RC l (Node_XXX2 -> StorageDevice_XXX1 -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
+  -> RuleM RC l (Node_XXX2 -> StorageDevice -> PhaseM RC l [Jump PhaseHandle] -> PhaseM RC l [Jump PhaseHandle])
 mkCheckAndHandleDriveReady smartLens next = do
 
   smart_run     <- phaseHandle "smart_run"
@@ -411,7 +411,7 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
     fork CopyNewerBuffer $ do
       let Node_XXX2 nid = dpcNode
-          StorageDevice_XXX1 serial = dpcDevice
+          StorageDevice serial = dpcDevice
           dpcSerial = T.pack serial
       Log.tagContext Log.SM dpcDevice Nothing
       Log.tagContext Log.SM dpcUUID   Nothing
@@ -546,7 +546,7 @@ rulePowerDownDriveOnFailure = define "power-down-drive-on-failure" $ do
       msdev <- lookupStorageDevice m0sdev
       mnode <- join <$> forM msdev (fmap listToMaybe . getSDevNode)
       case (mnode, msdev) of
-        (Just node, Just sdev@(StorageDevice_XXX1 serial)) -> do
+        (Just node, Just sdev@(StorageDevice serial)) -> do
           Log.tagContext Log.SM node $ Just "Node hosting this disk."
           Log.tagContext Log.SM sdev Nothing
           sent <- sendNodeCmd [node] Nothing (DrivePowerdown . T.pack $ serial)

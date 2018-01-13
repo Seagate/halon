@@ -29,7 +29,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Events
   ) where
 
 import HA.Resources (Node_XXX2(..))
-import HA.Resources.Castor (Enclosure, Slot, StorageDevice_XXX1)
+import HA.Resources.Castor (Enclosure, Slot, StorageDevice)
 import HA.SafeCopy
 
 import Data.UUID (UUID)
@@ -40,15 +40,16 @@ import Data.Typeable (Typeable)
 import GHC.Generics
 
 -- | Event sent when to many failures has been sent for a 'Disk'.
-newtype ResetAttempt = ResetAttempt StorageDevice_XXX1
+newtype ResetAttempt = ResetAttempt StorageDevice
   deriving (Eq, Generic, Show, Typeable, Ord)
+
 deriveSafeCopy 0 'base ''ResetAttempt
 
 -- | Result for 'ResetAttempt'
-data ResetAttemptResult = ResetFailure StorageDevice_XXX1
-                        | ResetSuccess StorageDevice_XXX1
-                        -- | Reset attempt was aborted for some reason.
-                        | ResetAborted StorageDevice_XXX1
+data ResetAttemptResult
+  = ResetFailure StorageDevice
+  | ResetSuccess StorageDevice
+  | ResetAborted StorageDevice -- ^ Reset attempt was aborted for some reason.
   deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ResetAttemptResult
@@ -59,21 +60,23 @@ data DrivePowerChange = DrivePowerChange
   { dpcUUID :: UUID -- ^ Thread UUID
   , dpcNode :: Node_XXX2
   , dpcLocation :: Slot
-  , dpcDevice :: StorageDevice_XXX1
+  , dpcDevice :: StorageDevice
   , dpcPowered :: Bool -- Is device now powered?
   } deriving (Eq, Show, Typeable, Generic)
+
 instance Hashable DrivePowerChange
 instance Binary DrivePowerChange
 
 -- | DriveRemoved event is emmited when HPI indicates that a device has been
 --   physically removed from the system.
 data DriveRemoved = DriveRemoved
-       { drUUID :: UUID -- ^ Threaad UUID.
-       , drNode :: Node_XXX2 -- ^ Node where event happens.
-       , drLocation :: Slot -- ^ Location where event happened.
-       , drDevice    :: StorageDevice_XXX1 -- ^ Removed device
-       , drPowered :: Maybe Bool -- Is disk powered?
-       } deriving (Eq, Show, Typeable, Generic)
+  { drUUID :: UUID -- ^ Threaad UUID.
+  , drNode :: Node_XXX2 -- ^ Node where event happens.
+  , drLocation :: Slot -- ^ Location where event happened.
+  , drDevice :: StorageDevice -- ^ Removed device.
+  , drPowered :: Maybe Bool -- Is disk powered?
+  } deriving (Eq, Show, Typeable, Generic)
+
 instance Hashable DriveRemoved
 instance Binary DriveRemoved
 
@@ -83,19 +86,19 @@ instance Binary DriveRemoved
 --   - As a result of DM data indicating that the OS can see the drive. In this
 --     case we may safely infer that the drive is present and powered.
 data DriveInserted = DriveInserted
-       { diUUID :: UUID -- ^ Thread UUID.
-       , diNode :: Node_XXX2 -- ^ Node where event happens.
-       , diLocation :: Slot -- ^ Location where event happened.
-       , diDevice :: StorageDevice_XXX1 -- ^ Inserted device.
-       , diPowered :: Maybe Bool -- Is disk powered?
-       } deriving (Eq, Show, Typeable, Generic)
+  { diUUID :: UUID -- ^ Thread UUID.
+  , diNode :: Node_XXX2 -- ^ Node where event happens.
+  , diLocation :: Slot -- ^ Location where event happened.
+  , diDevice :: StorageDevice -- ^ Inserted device.
+  , diPowered :: Maybe Bool -- Is disk powered?
+  } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveInserted
 instance Binary DriveInserted
 
 -- | 'DriveFailed' event indicates that an underlying system has identified a
 --   failed drive. Currently this is sent when a SMART test fails on a drive.
-data DriveFailed = DriveFailed UUID Node_XXX2 Slot StorageDevice_XXX1
+data DriveFailed = DriveFailed UUID Node_XXX2 Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveFailed
@@ -103,7 +106,7 @@ instance Binary DriveFailed
 
 -- | Event emitted when drive manager indicates that a device is no longer
 --   visible to the system.
-data DriveTransient = DriveTransient UUID Node_XXX2 Slot StorageDevice_XXX1
+data DriveTransient = DriveTransient UUID Node_XXX2 Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveTransient
@@ -111,7 +114,7 @@ instance Binary DriveTransient
 
 -- | Event emitted when we get OK indication for the drive
 --   from drive manager.
-data DriveOK = DriveOK UUID Node_XXX2 Slot StorageDevice_XXX1
+data DriveOK = DriveOK UUID Node_XXX2 Slot StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveOK
@@ -119,7 +122,7 @@ instance Binary DriveOK
 
 -- | Event sent when a drive is ready and available to be used by the system.
 --   This is presently only consumed by the metatada drive rules.
-newtype DriveReady = DriveReady StorageDevice_XXX1
+newtype DriveReady = DriveReady StorageDevice
   deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable DriveReady
@@ -137,7 +140,7 @@ deriveSafeCopy 0 'base ''ExpanderReset
 data RaidUpdate = RaidUpdate
   { ruNode :: Node_XXX2
   , ruRaidDevice :: T.Text -- ^ RAID device path
-  , ruFailedComponents :: [(StorageDevice_XXX1, T.Text)] -- ^ sd, path
+  , ruFailedComponents :: [(StorageDevice, T.Text)] -- ^ sd, path
   } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable RaidUpdate
@@ -145,24 +148,26 @@ deriveSafeCopy 0 'base ''RaidUpdate
 
 -- | Request that the given storage device is added to a RAID array.
 -- The array is determined by looking at 'StorageDevice' identifiers.
-newtype RaidAddToArray = RaidAddToArray StorageDevice_XXX1
+newtype RaidAddToArray = RaidAddToArray StorageDevice
   deriving (Eq, Show, Typeable, Generic, Ord)
+
 instance Hashable RaidAddToArray
 deriveSafeCopy 0 'base ''RaidAddToArray
 
 -- | Result part of 'RaidAddToArray'
-data RaidAddResult = RaidAddOK StorageDevice_XXX1
-                   | RaidAddFailed StorageDevice_XXX1
+data RaidAddResult
+  = RaidAddOK StorageDevice
+  | RaidAddFailed StorageDevice
   deriving (Eq, Show, Typeable, Generic, Ord)
 
 instance Binary RaidAddResult
 instance Hashable RaidAddResult
 
 -- | Sent to request a SMART test is run on the system.
-data SMARTRequest = SMARTRequest {
-    srqNode :: Node_XXX2
-  , srqDevice :: StorageDevice_XXX1
-} deriving (Eq, Show, Ord, Typeable, Generic)
+data SMARTRequest = SMARTRequest
+  { srqNode :: Node_XXX2
+  , srqDevice :: StorageDevice
+  } deriving (Eq, Show, Ord, Typeable, Generic)
 
 instance Hashable SMARTRequest
 deriveSafeCopy 0 'base ''SMARTRequest
@@ -180,10 +185,10 @@ instance Hashable SMARTResponseStatus
 deriveSafeCopy 0 'base ''SMARTResponseStatus
 
 -- | Response from SMART test job.
-data SMARTResponse = SMARTResponse {
-    srpDevice :: StorageDevice_XXX1
+data SMARTResponse = SMARTResponse
+  { srpDevice :: StorageDevice
   , srpStatus :: SMARTResponseStatus
-} deriving (Eq, Show, Typeable, Generic)
+  } deriving (Eq, Show, Typeable, Generic)
 
 instance Hashable SMARTResponse
 deriveSafeCopy 0 'base ''SMARTResponse

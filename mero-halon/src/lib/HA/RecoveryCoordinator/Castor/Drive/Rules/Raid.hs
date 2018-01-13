@@ -38,7 +38,7 @@ import HA.RecoveryCoordinator.Job.Actions
 import HA.RecoveryCoordinator.Job.Events (JobFinished(..))
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node_XXX2(..))
-import HA.Resources.Castor (StorageDevice_XXX1)
+import HA.Resources.Castor (StorageDevice)
 import HA.Services.SSPL.LL.CEP
   ( sendInterestingEvent
   , sendNodeCmd
@@ -67,9 +67,9 @@ import Network.CEP
 fldNode :: Proxy '("node", Maybe Node_XXX2)
 fldNode = Proxy
 
-data RaidInfo = RaidInfo {
-    _riRaidDevice :: T.Text
-  , _riCompSDev :: StorageDevice_XXX1
+data RaidInfo = RaidInfo
+  { _riRaidDevice :: T.Text
+  , _riCompSDev :: StorageDevice
   , _riCompPath :: T.Text
   }
 makeLenses ''RaidInfo
@@ -80,7 +80,7 @@ fldRaidInfo = Proxy
 -- | Fail the RAID 'StorageDevice'. As RAID devices don't have mero
 -- disks associated with them, this basically resolves to sending
 -- "RAID_FAILURE" to the drive manager.
-failRaidStorageDevice :: StorageDevice_XXX1 -> PhaseM RC l ()
+failRaidStorageDevice :: StorageDevice -> PhaseM RC l ()
 failRaidStorageDevice sd = updateDriveManagerWithFailure sd "HALON-FAILED" (Just "RAID_FAILURE")
 
 -- | Log info about the state of this operation

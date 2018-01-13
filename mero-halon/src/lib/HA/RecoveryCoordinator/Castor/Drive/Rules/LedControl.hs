@@ -24,7 +24,7 @@ import           HA.Resources.Castor
   ( DeviceIdentifier(DIRaidDevice)
   , Enclosure
   , Slot(..)
-  , StorageDevice_XXX1(..)
+  , StorageDevice(..)
   )
 import qualified HA.Resources.Mero as M0
 import           HA.Services.SSPL.LL.CEP (DriveLedUpdate(..), sendLedUpdate, sendNodeCmd)
@@ -122,9 +122,9 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                  , enc :: Enclosure <- maybeToList $ G.connectedTo m0enc M0.At rg
                  , slot :: Slot <- G.connectedTo enc Has rg
-                 , sd :: StorageDevice_XXX1 <- maybeToList $ G.connectedFrom Has slot rg
+                 , sd :: StorageDevice <- maybeToList $ G.connectedFrom Has slot rg
                  ]
-         for_ l $ \(StorageDevice_XXX1 sn, mled) -> do
+         for_ l $ \(StorageDevice sn, mled) -> do
            let ledSt = fromMaybe FaultOff mled
            void $ sendNodeCmd nid Nothing (DriveLed (T.pack sn) ledSt)
        _ -> return ()

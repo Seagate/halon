@@ -41,7 +41,7 @@ import HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import HA.Resources (Node_XXX2(..))
 import HA.Resources.HalonVars
-import HA.Resources.Castor (StorageDevice_XXX1(..))
+import HA.Resources.Castor (StorageDevice(..))
 import HA.Services.SSPL.LL.CEP
   ( sendNodeCmd )
 import HA.Services.SSPL.LL.Resources
@@ -66,10 +66,10 @@ import Network.CEP
 smartTestTimeout :: Int
 smartTestTimeout = 15*60
 
-data DeviceInfo = DeviceInfo {
-    _diSDev :: StorageDevice_XXX1
+data DeviceInfo = DeviceInfo
+  { _diSDev :: StorageDevice
   , _diSerial :: T.Text
-}
+  }
 makeLenses ''DeviceInfo
 
 fldNode :: Proxy '("node", Maybe Node_XXX2)
@@ -160,7 +160,7 @@ runSmartTest = mkJobRule jobRunSmartTest args $ \(JobHandle _ finish) -> do
         (Just $ SMARTResponse sdev SRSTimeout)
       continue finish
 
-    return $ \(SMARTRequest node sdev@(StorageDevice_XXX1 (T.pack -> serial))) -> do
+    return $ \(SMARTRequest node sdev@(StorageDevice (T.pack -> serial))) -> do
       isDisabled <- getHalonVar _hv_disable_smart_checks
       Log.tagContext Log.SM node Nothing
       Log.tagContext Log.SM sdev Nothing

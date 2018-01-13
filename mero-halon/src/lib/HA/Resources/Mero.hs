@@ -49,7 +49,7 @@ import           HA.Resources.Castor
   ( Host(..)
   , Is(..)
   , Slot(..)
-  , StorageDevice_XXX1
+  , StorageDevice
   )
 import           HA.Resources.Castor.Initial (M0Globals_XXX0(..))
 import           HA.Resources.TH
@@ -1026,7 +1026,7 @@ $(mkDicts
   , (''Controller, ''At, ''Host)
   , (''Rack, ''At, ''Cas.Rack)
   , (''Enclosure, ''At, ''Cas.Enclosure)
-  , (''Disk, ''At, ''StorageDevice_XXX1)
+  , (''Disk, ''At, ''StorageDevice)
     -- Parent/child relationships between conf entities
   , (''Profile, ''IsParentOf, ''Pool)
   , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
@@ -1102,7 +1102,7 @@ $(mkResRel
   , (''Controller, AtMostOne, ''At, AtMostOne, ''Host)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
-  , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice_XXX1)
+  , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot)
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Pool)

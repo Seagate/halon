@@ -33,7 +33,7 @@ rules = sequence_
 drivePresence :: Definitions RC ()
 drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
   \(CommandStorageDevicePresence serial slot isInstalled isPowered chan) -> do
-     let sd = Cas.StorageDevice_XXX1 serial
+     let sd = Cas.StorageDevice serial
          Cas.Slot enc _idx = slot
      rg <- getLocalGraph
      if isConnected Cluster Has sd rg
@@ -52,7 +52,7 @@ drivePresence = defineSimpleTask "castor::command::update-drive-presence" $
 driveStatus :: Definitions RC ()
 driveStatus = defineSimpleTask "castor::command::update-drive-status" $
   \(CommandStorageDeviceStatus serial slot status reason chan) -> do
-      let sd = Cas.StorageDevice_XXX1 serial
+      let sd = Cas.StorageDevice serial
           Cas.Slot enc _idx = slot
       rg <- getLocalGraph
       if isConnected Cluster Has sd rg
@@ -70,7 +70,7 @@ driveStatus = defineSimpleTask "castor::command::update-drive-status" $
 driveNew :: Definitions RC ()
 driveNew = defineSimpleTask "castor::command::new-drive" $
   \(CommandStorageDeviceCreate serial path chan) -> do
-     let sd = Cas.StorageDevice_XXX1 serial
+     let sd = Cas.StorageDevice serial
      rg <- getLocalGraph
      if not $ isConnected Cluster Has sd rg
      then do modifyGraph $ G.connect Cluster Has sd

@@ -48,7 +48,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Node_XXX2)
 import           HA.Resources.Castor
   ( Slot
-  , StorageDevice_XXX1
+  , StorageDevice
   , StorageDeviceAttr(..)
   , StorageDeviceStatus(..)
   )
@@ -192,16 +192,16 @@ mkDetachDisk getter onFailure onSuccess = do
 
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
-markRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l ()
+markRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
 markRemovedFromRAID sdev = StorageDevice.setAttr sdev SDRemovedFromRAID
 
 -- | Remove the marker indicating that a device has been removed from the RAID
 --   array of which it is part.
-unmarkRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l ()
+unmarkRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
 unmarkRemovedFromRAID sdev = StorageDevice.unsetAttr sdev SDRemovedFromRAID
 
 -- | Check whether a device has been removed from its RAID array.
-isRemovedFromRAID :: StorageDevice_XXX1 -> PhaseM RC l Bool
+isRemovedFromRAID :: StorageDevice -> PhaseM RC l Bool
 isRemovedFromRAID = fmap (not . null) . StorageDevice.findAttrs go
   where
     go SDRemovedFromRAID = True
@@ -281,8 +281,8 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
-                            -> Node_XXX2          -- ^ Node in question.
-                            -> StorageDevice_XXX1 -- ^ Installed storage device.
+                            -> Node_XXX2     -- ^ Node in question.
+                            -> StorageDevice -- ^ Installed storage device.
                             -> Slot          -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.
                             -> Maybe Bool    -- ^ Is device powered.
@@ -329,7 +329,7 @@ updateStorageDevicePresence uuid node sdev sdev_loc is_installed mis_powered = d
 updateStorageDeviceStatus ::
      UUID  -- ^ Thread UUID.
   -> Node_XXX2 -- ^ Node in question.
-  -> StorageDevice_XXX1 -- ^ Updated storage device.
+  -> StorageDevice -- ^ Updated storage device.
   -> Slot -- ^ Storage device location.
   -> String -- ^ Storage device status.
   -> String -- ^ Status reason.

@@ -42,7 +42,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
-import           HA.Resources.Castor (slotEnclosure, Slot, StorageDevice_XXX1)
+import           HA.Resources.Castor (slotEnclosure, Slot, StorageDevice)
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -186,7 +186,7 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
             [ disk
             | Just encl <- [slotEnclosure <$> G.connectedTo sdev Has rg]
             , slot <- G.connectedTo encl Has rg :: [Slot]
-            , Just disk <- [G.connectedFrom Has slot rg :: Maybe StorageDevice_XXX1]
+            , Just disk <- [G.connectedFrom Has slot rg :: Maybe StorageDevice]
             , Just m0disk <- [G.connectedFrom M0.At disk rg :: Maybe M0.Disk]
             , isTransient $ M0.getState m0disk rg
             ]
@@ -243,6 +243,6 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
 
     startFork transient_msg args
   where
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (M0.SDev, StorageDevice_XXX1))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (M0.SDev, StorageDevice))
     args = fldHardware =: Nothing
        <+> fldUUID =: Nothing
