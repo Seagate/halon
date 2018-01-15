@@ -200,6 +200,17 @@ instance ToJSON IsOnHardware
 storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
 
+-- XXX RENAMEME: s/Root/Cluster/
+newtype Root = Root Fid
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
+
+instance ConfObj Root where
+   fidType _ = fromIntegral . ord $ 't'
+   fid (Root f) = f
+
+storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
+deriveSafeCopy 0 'base ''Root
+
 data Profile = Profile
   { cp_fid :: Fid
   , cp_md_redundancy :: Word32
@@ -234,16 +245,6 @@ deriveSafeCopy 0 'base ''Pool
 
 -- XXX --------------------------------------------------------------
 
-newtype Root = Root Fid
-  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
-
-instance ConfObj Root where
-   fidType _ = fromIntegral . ord $ 't'
-   fid (Root f) = f
-
-storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
-deriveSafeCopy 0 'base ''Root
-
 newtype Profile_XXX3 = Profile_XXX3 Fid
   deriving (Eq, Generic, Hashable, Show, Typeable, FromJSON, ToJSON)
 
@@ -254,6 +255,8 @@ instance ConfObj Profile_XXX3 where
 storageIndex ''Profile_XXX3 "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile_XXX3
 
+-- XXX DELETEME: Next-gen conf schema won't have a filesystem object.
+-- The payload will go to a profile object.
 data Filesystem = Filesystem
   { f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
@@ -997,11 +1000,11 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''Profile, ''Pool
-  , ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
-  , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
-  , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem
+  , ''Node, ''Process, ''Service, ''SDev
+  , ''Rack, ''Enclosure, ''Controller, ''Disk
+  , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
+  , ''FidSeq, ''M0Globals_XXX0, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -1012,21 +1015,23 @@ $(mkDicts
   ]
   [ -- Relationships connecting conf with other resources
     (''Cluster, ''Has, ''Root)
-  , (''Cluster, ''Has, ''Disposition)
-  , (''Cluster, ''Has, ''PVerCounter)
-  , (''Root, ''IsParentOf, ''Profile_XXX3)
   , (''Cluster, ''Has, ''Profile)
   , (''Cluster, ''Has, ''Profile_XXX3)
+  , (''Cluster, ''Has, ''Disposition)
+  , (''Cluster, ''Has, ''PVerCounter)
   , (''Cluster, ''Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''Host)
   , (''Rack, ''At, ''Cas.Rack)
   , (''Enclosure, ''At, ''Cas.Enclosure)
+  , (''Controller, ''At, ''Host)
   , (''Disk, ''At, ''StorageDevice)
     -- Parent/child relationships between conf entities
-  , (''Profile, ''IsParentOf, ''Pool)
+  , (''Root, ''IsParentOf, ''Profile)
+  , (''Root, ''IsParentOf, ''Profile_XXX3)
+  , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
   , (''Filesystem, ''IsParentOf, ''Node)
   , (''Filesystem, ''IsParentOf, ''Rack)
+  , (''Filesystem, ''IsParentOf, ''Pool)
   , (''Filesystem, ''IsParentOf, ''Pool_XXX3)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
@@ -1034,6 +1039,7 @@ $(mkDicts
   , (''Rack, ''IsParentOf, ''Enclosure)
   , (''Enclosure, ''IsParentOf, ''Controller)
   , (''Controller, ''IsParentOf, ''Disk)
+  , (''Pool, ''IsParentOf, ''PVer)
   , (''Pool_XXX3, ''IsParentOf, ''PVer)
   , (''PVer, ''IsParentOf, ''RackV)
   , (''RackV, ''IsParentOf, ''EnclosureV)
@@ -1044,11 +1050,11 @@ $(mkDicts
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
   , (''Disk, ''IsRealOf, ''DiskV)
-  , (''Disk, ''Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
+  , (''Node, ''IsOnHardware, ''Controller)
   , (''SDev, ''IsOnHardware, ''Disk)
   , (''SDev, ''At, ''Slot)
-  , (''Node, ''IsOnHardware, ''Controller)
+  , (''Disk, ''Is, ''Replaced)
     -- Other things!
   , (''Cluster, ''Has, ''FidSeq)
   , (''Cluster, ''Has, ''M0Globals_XXX0)
@@ -1073,11 +1079,11 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Profile, ''Pool
-  , ''FidSeq, ''Profile_XXX3, ''Filesystem, ''Node, ''Rack, ''Pool_XXX3
-  , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
-  , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''M0Globals_XXX0, ''Root, ''PoolRepairStatus, ''LNid
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem
+  , ''Node, ''Process, ''Service, ''SDev
+  , ''Rack, ''Enclosure, ''Controller, ''Disk
+  , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
+  , ''FidSeq, ''M0Globals_XXX0, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
@@ -1087,23 +1093,26 @@ $(mkResRel
   , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
-    (''Cluster, AtMostOne, ''Has, Unbounded, ''Profile)
-  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
+    (''Cluster, AtMostOne, ''Has, AtMostOne, ''Root)
+  , (''Cluster, AtMostOne, ''Has, Unbounded, ''Profile)
+  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Disposition)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''PVerCounter)
-  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
-  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''Profile_XXX3)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''ConfUpdateVersion)
-  , (''Controller, AtMostOne, ''At, AtMostOne, ''Host)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''Host)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''StorageDevice)
-  , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot)
     -- Parent/child relationships between conf entities
-  , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
-  , (''Profile_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
+  , (''Profile, AtMostOne, ''IsParentOf, AtMostOne, ''Filesystem)
+  , (''Profile_XXX3, AtMostOne, ''IsParentOf
+    , Unbounded -- XXX FIXME: s/Unbounded/AtMostOne/
+    , ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool_XXX3)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
@@ -1111,6 +1120,7 @@ $(mkResRel
   , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
   , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
+  , (''Pool, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''Pool_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
   , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
@@ -1121,10 +1131,11 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)
   , (''Disk, AtMostOne, ''IsRealOf, Unbounded, ''DiskV)
-  , (''Disk, Unbounded, ''Is, Unbounded, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
-  , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
+  , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''Slot)
+  , (''Disk, Unbounded, ''Is, Unbounded, ''Replaced)
     -- Other things!
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''FidSeq)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''M0Globals_XXX0)
@@ -1141,8 +1152,8 @@ $(mkResRel
   , (''Process, Unbounded, ''Is, AtMostOne, ''ProcessState)
   , (''Service, Unbounded, ''Is, AtMostOne, ''ServiceState)
   , (''SDev, Unbounded, ''Is, AtMostOne, ''SDevState)
-  , (''Node, Unbounded,    ''Is, AtMostOne, ''NodeState)
-  , (''Controller, Unbounded,    ''Is, AtMostOne, ''ControllerState)
+  , (''Node, Unbounded, ''Is, AtMostOne, ''NodeState)
+  , (''Controller, Unbounded, ''Is, AtMostOne, ''ControllerState)
   , (''Filesystem, Unbounded, ''Has, AtMostOne, ''FilesystemStats)
   , (''Filesystem, Unbounded, ''Is, AtMostOne, ''DIXInitialised)
   ]

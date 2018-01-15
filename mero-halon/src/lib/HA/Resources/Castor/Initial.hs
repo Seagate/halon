@@ -58,6 +58,7 @@ instance A.FromJSON InitialData where
 instance A.ToJSON InitialData where
     toJSON = A.genericToJSON initialDataOptions
 
+-- | Information about Mero profile.
 data Profile = Profile
   { prof_id :: T.Text
   , prof_md_redundancy :: Word32

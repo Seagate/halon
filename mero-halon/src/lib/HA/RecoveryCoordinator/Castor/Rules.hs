@@ -18,10 +18,12 @@ module HA.RecoveryCoordinator.Castor.Rules
   , goRack_XXX0
   ) where
 
+import           Control.Category ((>>>))
 import           Control.Monad.Catch (catch, SomeException)
 import           Data.Foldable (for_)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
+
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
@@ -39,7 +41,12 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
-import qualified HA.Resources.Mero as M0 (IsParentOf(..), Pool(..), Profile(..))
+import qualified HA.Resources.Mero as M0
+  ( IsParentOf(..)
+  -- , Pool(..)
+  , Profile(..)
+  , Root(..)
+  )
 import           Network.CEP
 
 -- | Collection of Castor rules.
@@ -74,22 +81,26 @@ ruleInitialDataLoad =
 
 loadInitialData :: CI.InitialData -> PhaseM RC l ()
 loadInitialData CI.InitialData{..} = do
-    for_ _id_profiles goProfile
     for_ _id_racks goRack
+    root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+    modifyGraph $ G.connect Cluster Has root
+    for_ _id_profiles $ goProfile root
+
+goProfile :: M0.Root -> CI.Profile -> PhaseM RC l ()
+goProfile root CI.Profile{..} = do
+    prof <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+                       <*> pure prof_md_redundancy
+    -- fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
+    modifyGraph $ G.connect Cluster Has prof
+              >>> G.connect root M0.IsParentOf prof
+    -- for_ prof_pools $ goPool fs
     error "XXX IMPLEMENTME"
 
-goProfile :: CI.Profile -> PhaseM RC l ()
-goProfile CI.Profile{..} = do
-    profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
-                          <*> pure prof_md_redundancy
-    modifyGraph $ G.connect Cluster Has profile
-    for_ prof_pools $ goPool profile
-
-goPool :: M0.Profile -> CI.Pool -> PhaseM RC l ()
-goPool profile CI.Pool{..} = do
-    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-                    <*> pure pool_ver_policy
-    modifyGraph $ G.connect profile M0.IsParentOf pool
+-- goPool :: M0.Profile -> CI.Pool -> PhaseM RC l ()
+-- goPool profile CI.Pool{..} = do
+--     pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+--                     <*> pure pool_ver_policy
+--     modifyGraph $ G.connect profile M0.IsParentOf pool
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} = do
