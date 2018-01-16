@@ -36,7 +36,7 @@ getLabeledP :: (M0.ProcessLabel -> Bool)
 getLabeledP labelP rg =
   [ proc
   | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo proc Has rg]
@@ -48,7 +48,7 @@ getAll :: G.Graph -> [M0.Process]
 getAll rg =
   [ p
   | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
   ]

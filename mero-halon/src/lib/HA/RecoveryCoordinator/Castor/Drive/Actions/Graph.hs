@@ -27,7 +27,7 @@ getAllSDev :: G.Graph -> [M0.SDev]
 getAllSDev rg =
   [ sdev
   | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
   , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
   , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
   , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg

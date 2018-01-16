@@ -54,7 +54,7 @@ import           Text.Regex.TDFA ((=~))
 --   * Create a single profile, filesystem
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
-initialiseConfInRG_XXX3 :: PhaseM RC l M0.Filesystem
+initialiseConfInRG_XXX3 :: PhaseM RC l M0.Filesystem_XXX3
 initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
     Just fs -> return fs
     Nothing -> do
@@ -64,7 +64,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
       mdpool <- M0.Pool_XXX3 <$> newFidRC (Proxy :: Proxy M0.Pool_XXX3)
       -- Note that this FID will actually be overwritten by `createIMeta`
       imeta_fid <- newFidRC (Proxy :: Proxy M0.PVer)
-      fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
+      fs <- M0.Filesystem_XXX3 <$> newFidRC (Proxy :: Proxy M0.Filesystem_XXX3)
                           <*> return (M0.fid mdpool)
                           <*> return imeta_fid
       modifyGraph
@@ -85,7 +85,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
-    mirrorRack :: M0.Filesystem -> (Cas.Rack, [Cas.Enclosure]) -> PhaseM RC l ()
+    mirrorRack :: M0.Filesystem_XXX3 -> (Cas.Rack, [Cas.Enclosure]) -> PhaseM RC l ()
     mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0es <- mapM mirrorEncl encls
@@ -114,7 +114,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
 --     - An SDev (logical device)
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
-loadMeroServers :: M0.Filesystem -> [CI.M0Host_XXX0] -> PhaseM RC l ()
+loadMeroServers :: M0.Filesystem_XXX3 -> [CI.M0Host_XXX0] -> PhaseM RC l ()
 loadMeroServers fs = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices_XXX0 h)) (0 :: Int) hosts)
@@ -238,7 +238,7 @@ addProcess node devs CI.M0Process_XXX0{..} = let
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
-createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
+createMDPoolPVer :: M0.Filesystem_XXX3 -> PhaseM RC l ()
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     mdpool = M0.Pool_XXX3 (M0.f_mdpool_fid fs)
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
@@ -278,7 +278,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   no associated devices). In this case, we use the special FID 'M0_FID0'
 --   in the 'f_imeta_pver' field. This should validate correctly in Mero iff
 --   there are no CAS services.
-createIMeta :: M0.Filesystem -> PhaseM RC l ()
+createIMeta :: M0.Filesystem_XXX3 -> PhaseM RC l ()
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool_XXX3 <$> newFidRC (Proxy :: Proxy M0.Pool_XXX3)
@@ -318,13 +318,13 @@ createIMeta fs = do
 
   let pver = PoolVersion (Just $ M0.f_imeta_fid fs)
                           (Set.unions $ Set.fromList <$> fids) failures attrs
-      -- If there are no CAS services then we need to replace the Filesystem
+      -- If there are no CAS services then we need to replace the Filesystem_XXX3
       -- entity with one containing the special M0_FID0 value. We can't do this
       -- before since we create the filesystem before we create services in the
       -- graph.
       updateGraph = if null cas
         then G.mergeResources head
-                [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
+                [M0.Filesystem_XXX3 (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
         else G.connect fs M0.IsParentOf pool
           >>> createPoolVersionsInPool fs pool [pver] False
 

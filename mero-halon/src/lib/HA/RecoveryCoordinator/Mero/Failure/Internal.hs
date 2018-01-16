@@ -68,7 +68,7 @@ data UpdateType m
     -- graph updates in chunks of reasonable size.
 
 -- | Create pool versions for the given pool.
-createPoolVersionsInPool :: M0.Filesystem
+createPoolVersionsInPool :: M0.Filesystem_XXX3
                          -> M0.Pool_XXX3
                          -> [PoolVersion]
                          -> Bool -- ^ If specified, the pool version
@@ -145,7 +145,7 @@ createPoolVersionsInPool fs pool pvers invert rg =
 
 -- | Create specified pool versions in the resource graph. These will be
 --   created inside all IO pools (e.g. not mdpool or imeta)
-createPoolVersions :: M0.Filesystem
+createPoolVersions :: M0.Filesystem_XXX3
                    -> [PoolVersion]
                    -> Bool -- If specified, the pool version is assumed to
                            -- contain failed devices, rather than working ones.

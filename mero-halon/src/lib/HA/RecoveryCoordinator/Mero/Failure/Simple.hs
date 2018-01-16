@@ -43,7 +43,7 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
   let mchunks = do
         prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3
         fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
-                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
+                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem_XXX3
         globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals_XXX0
         let fsets = generateFailureSets df cf cfe rg globs
             attrs = PDClustAttr {

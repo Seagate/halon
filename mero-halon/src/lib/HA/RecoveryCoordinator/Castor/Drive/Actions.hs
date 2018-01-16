@@ -267,7 +267,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
              failedDisks = [ d | prof :: M0.Profile_XXX3 <- connectedToList Cluster Has rg
-                               , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
+                               , fs :: M0.Filesystem_XXX3 <- G.connectedTo prof M0.IsParentOf rg
                                , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                                , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
                                , ctrl :: M0.Controller <- G.connectedTo enc M0.IsParentOf rg

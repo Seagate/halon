@@ -143,7 +143,7 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile_XXX3
-instance ShowFidObj M0.Filesystem
+instance ShowFidObj M0.Filesystem_XXX3
 instance ShowFidObj M0.Pool_XXX3
 instance ShowFidObj M0.PVer
 instance ShowFidObj M0.Enclosure
@@ -225,7 +225,7 @@ data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x
 $(join <$> (mapM (mkDict ''HasConfObjectState) $
   [ ''M0.Root
   , ''M0.Profile_XXX3
-  , ''M0.Filesystem
+  , ''M0.Filesystem_XXX3
   , ''M0.Rack
   , ''M0.Enclosure
   , ''M0.Controller
@@ -248,22 +248,27 @@ instance HasConfObjectState M0.Root where
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Root
   toConfObjState _ = const M0_NC_ONLINE
+
 instance HasConfObjectState M0.Profile_XXX3 where
   type StateCarrier M0.Profile_XXX3 = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile_XXX3
   toConfObjState _ = const M0_NC_ONLINE
-instance HasConfObjectState M0.Filesystem where
-  type StateCarrier M0.Filesystem = NoExplicitConfigState
+
+instance HasConfObjectState M0.Filesystem_XXX3 where
+  type StateCarrier M0.Filesystem_XXX3 = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
-  hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem_XXX3
   toConfObjState _ = const M0_NC_ONLINE
+
 instance HasConfObjectState M0.Rack where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Rack
+
 instance HasConfObjectState M0.Enclosure where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Enclosure
+
 instance HasConfObjectState M0.Controller where
   type StateCarrier M0.Controller = M0.ControllerState
   getState x rg = fromMaybe M0.CSUnknown $ G.connectedTo x Is rg
@@ -273,6 +278,7 @@ instance HasConfObjectState M0.Controller where
   toConfObjState _ M0.CSUnknown = M0_NC_ONLINE
   toConfObjState _ M0.CSOnline = M0_NC_ONLINE
   toConfObjState _ M0.CSTransient = M0_NC_TRANSIENT
+
 instance HasConfObjectState M0.Node where
   type StateCarrier M0.Node = M0.NodeState
   getState x rg = fromMaybe M0.NSUnknown $ G.connectedTo x Is rg
@@ -284,6 +290,7 @@ instance HasConfObjectState M0.Node where
   toConfObjState _ M0.NSFailedUnrecoverable = M0_NC_FAILED
   toConfObjState _ M0.NSOffline = M0_NC_FAILED
   toConfObjState _ M0.NSOnline  = M0_NC_ONLINE
+
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
   getState x rg = fromMaybe M0.PSUnknown $ G.connectedTo x Is rg
@@ -316,6 +323,7 @@ instance HasConfObjectState M0.Service where
   toConfObjState _ M0.SSStarting = M0_NC_ONLINE
   toConfObjState _ (M0.SSInhibited M0.SSFailed) = M0_NC_FAILED
   toConfObjState _ (M0.SSInhibited _) = M0_NC_TRANSIENT
+
 instance HasConfObjectState M0.Disk where
   type StateCarrier M0.Disk = M0.SDevState
   getState x rg = fromMaybe M0.SDSUnknown . listToMaybe $
@@ -331,6 +339,7 @@ instance HasConfObjectState M0.Disk where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Disk
 
   toConfObjState _ x = toConfObjState (undefined :: M0.SDev) x
+
 instance HasConfObjectState M0.SDev where
   type StateCarrier M0.SDev = M0.SDevState
   getState x rg = fromMaybe M0.SDSUnknown $ G.connectedTo x Is rg
@@ -349,28 +358,34 @@ instance HasConfObjectState M0.SDev where
   toConfObjState _ (M0.SDSTransient M0.SDSRebalancing) = M0_NC_REBALANCE
   toConfObjState _ (M0.SDSTransient _) = M0_NC_TRANSIENT
   toConfObjState _ (M0.SDSInhibited _) = M0_NC_TRANSIENT
+
 instance HasConfObjectState M0.Pool_XXX3 where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool_XXX3
+
 instance HasConfObjectState M0.PVer where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
+
 instance HasConfObjectState M0.RackV where
   type StateCarrier M0.RackV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_RackV
   toConfObjState _ = const M0_NC_ONLINE
+
 instance HasConfObjectState M0.EnclosureV where
   type StateCarrier M0.EnclosureV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_EnclosureV
   toConfObjState _ = const M0_NC_ONLINE
+
 instance HasConfObjectState M0.ControllerV where
   type StateCarrier M0.ControllerV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_ControllerV
   toConfObjState _ = const M0_NC_ONLINE
+
 instance HasConfObjectState M0.DiskV where
   type StateCarrier M0.DiskV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
@@ -391,7 +406,7 @@ dictMap :: Map.Map Word64 [SomeConfObjDict]
 dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     [ mkTypePair (Proxy :: Proxy M0.Root)
     , mkTypePair (Proxy :: Proxy M0.Profile_XXX3)
-    , mkTypePair (Proxy :: Proxy M0.Filesystem)
+    , mkTypePair (Proxy :: Proxy M0.Filesystem_XXX3)
     , mkTypePair (Proxy :: Proxy M0.Node)
     , mkTypePair (Proxy :: Proxy M0.Rack)
     , mkTypePair (Proxy :: Proxy M0.Pool_XXX3)

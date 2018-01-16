@@ -75,11 +75,11 @@ getProfile_XXX3 =
 --   only support a single filesystem, though in future there
 --   might be multiple filesystems and this function will need
 --   to change.
-getFilesystem_XXX3 :: PhaseM RC l (Maybe M0.Filesystem)
+getFilesystem_XXX3 :: PhaseM RC l (Maybe M0.Filesystem_XXX3)
 getFilesystem_XXX3 = getLocalGraph >>= \rg -> do
   return . listToMaybe
     $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
-           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem_XXX3]
       ]
 
 -- | RC wrapper for 'getM0Services'.
@@ -101,7 +101,7 @@ getSDevPool sdev = do
           , Just rv <- [G.connectedFrom M0.IsParentOf ev rg :: Maybe M0.RackV]
           , Just pv <- [G.connectedFrom M0.IsParentOf rv rg :: Maybe M0.PVer]
           , Just (p :: M0.Pool_XXX3) <- [G.connectedFrom M0.IsParentOf pv rg]
-          , Just (fs :: M0.Filesystem) <- [G.connectedFrom M0.IsParentOf p rg]
+          , Just (fs :: M0.Filesystem_XXX3) <- [G.connectedFrom M0.IsParentOf p rg]
           , M0.fid p /= M0.f_mdpool_fid fs
           ]
     case ps of
@@ -173,16 +173,12 @@ pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 pickPrincipalRM = getLocalGraph >>= \g ->
   let rms =
         [ rm
-        | Just (prof :: M0.Profile_XXX3) <-
-            [G.connectedTo Cluster Has g]
-        , (fs :: M0.Filesystem) <-
-            G.connectedTo prof M0.IsParentOf g
+        | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has g]
+        , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf g
         , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
-        , (proc :: M0.Process) <-
-            G.connectedTo node M0.IsParentOf g
+        , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf g
         , G.isConnected proc Is M0.PSOnline g
-        , let srv_types = M0.s_type <$>
-                (G.connectedTo proc M0.IsParentOf g)
+        , let srv_types = M0.s_type <$> (G.connectedTo proc M0.IsParentOf g)
         , CST_CONFD `elem` srv_types
         , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
         , G.isConnected proc Is M0.PSOnline g

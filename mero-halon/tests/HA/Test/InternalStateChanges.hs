@@ -78,7 +78,7 @@ stateCascade t pg = do
       rg <- getLocalGraph
       let Just p = listToMaybe $
               [ proc | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+              , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
               , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
               , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
               , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
@@ -111,7 +111,7 @@ failvecCascade t pg = do
       rg <- getLocalGraph
       let d0:d1:_ =
               [ disk | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+              , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
               , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
               , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
               , (controller :: M0.Controller) <- G.connectedTo enclosure M0.IsParentOf rg
@@ -123,7 +123,7 @@ failvecCascade t pg = do
 
       let pools =
               [ pool | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg']
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg'
+              , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg'
               , (pool :: M0.Pool_XXX3) <- G.connectedTo fs M0.IsParentOf rg'
               , (pver :: M0.PVer) <- G.connectedTo pool M0.IsParentOf rg'
               , M0.fid pool /= M0.f_mdpool_fid fs

@@ -27,7 +27,7 @@ getNonMD :: G.Graph -> [M0.Pool_XXX3]
 getNonMD rg =
   [ pl
   | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile_XXX3]
-  , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
+  , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem_XXX3]
   , pl <- G.connectedTo fs M0.IsParentOf rg
   , M0.fid pl /= M0.f_mdpool_fid fs
   ]

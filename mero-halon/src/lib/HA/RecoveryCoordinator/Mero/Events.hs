@@ -229,12 +229,12 @@ instance Binary RestartSNSOperationResult
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 
-newtype DixInitRequest = DixInitRequest M0.Filesystem
+newtype DixInitRequest = DixInitRequest M0.Filesystem_XXX3
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 data DixInitResult =
-    DixInitSuccess M0.Filesystem
-  | DixInitFailure M0.Filesystem String
+    DixInitSuccess M0.Filesystem_XXX3
+  | DixInitFailure M0.Filesystem_XXX3 String
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 -- | The endpoint hasn't been initialised yet so the m0 worker is not

@@ -107,7 +107,7 @@ createMeroKernelConfig host lnid = do
 --
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
-createMeroClientConfig :: M0.Filesystem
+createMeroClientConfig :: M0.Filesystem_XXX3
                        -> Host
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
@@ -281,7 +281,7 @@ isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
   | Just (prof :: M0.Profile_XXX3) <- [G.connectedTo Cluster Has rg]
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+  , (fs :: M0.Filesystem_XXX3) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed
   , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg

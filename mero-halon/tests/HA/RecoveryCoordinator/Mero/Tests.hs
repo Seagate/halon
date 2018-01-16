@@ -143,7 +143,7 @@ testConfObjectStateQuery transport pg = do
         sdevFids = fmap M0.fid sdevs
         otherFids =
              fmap M0.fid (G.getResourcesOfType graph :: [M0.Profile_XXX3])
-          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem])
+          ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Filesystem_XXX3])
           ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Rack])
           ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Enclosure])
           ++ fmap M0.fid (G.getResourcesOfType graph :: [M0.Controller])

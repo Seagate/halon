@@ -694,7 +694,7 @@ txSyncToConfd f luuid lift t = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData_XXX4 = TxConfData_XXX4 M0.M0Globals_XXX0 M0.Profile_XXX3 M0.Filesystem
+data TxConfData_XXX4 = TxConfData_XXX4 M0.M0Globals_XXX0 M0.Profile_XXX3 M0.Filesystem_XXX3
 
 loadConfData_XXX4 :: PhaseM RC l (Maybe TxConfData_XXX4)
 loadConfData_XXX4 = liftA3 TxConfData_XXX4
@@ -723,7 +723,7 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate_XXX4 :: LiftRC -> TxConfData_XXX4 -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate_XXX4 lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem{..}) t = do
+txPopulate_XXX4 lift (TxConfData_XXX4 M0Globals_XXX0{..} (M0.Profile_XXX3 pfid) fs@M0.Filesystem_XXX3{..}) t = do
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence

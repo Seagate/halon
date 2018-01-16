@@ -257,22 +257,22 @@ deriveSafeCopy 0 'base ''Profile_XXX3
 
 -- XXX DELETEME: Next-gen conf schema won't have a filesystem object.
 -- The payload will go to a profile object.
-data Filesystem = Filesystem
+data Filesystem_XXX3 = Filesystem_XXX3
   { f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
   , f_imeta_fid :: Fid -- ^ Fid of the imeta pver
   } deriving (Eq, Generic, Ord, Show, Typeable)
 
-instance Hashable Filesystem
-instance ToJSON Filesystem
-instance FromJSON Filesystem
+instance Hashable Filesystem_XXX3
+instance ToJSON Filesystem_XXX3
+instance FromJSON Filesystem_XXX3
 
-instance ConfObj Filesystem where
+instance ConfObj Filesystem_XXX3 where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
 
-storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
-deriveSafeCopy 0 'base ''Filesystem
+storageIndex ''Filesystem_XXX3 "5c783c2a-f112-4364-b6b9-4e8f54387d11"
+deriveSafeCopy 0 'base ''Filesystem_XXX3
 
 -- | Marker to indicate the DIX subsystem has been initialised.
 data DIXInitialised = DIXInitialised
@@ -1000,7 +1000,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem_XXX3
   , ''Node, ''Process, ''Service, ''SDev
   , ''Rack, ''Enclosure, ''Controller, ''Disk
   , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
@@ -1027,12 +1027,10 @@ $(mkDicts
     -- Parent/child relationships between conf entities
   , (''Root, ''IsParentOf, ''Profile)
   , (''Root, ''IsParentOf, ''Profile_XXX3)
-  , (''Profile, ''IsParentOf, ''Filesystem)
-  , (''Profile_XXX3, ''IsParentOf, ''Filesystem)
-  , (''Filesystem, ''IsParentOf, ''Node)
-  , (''Filesystem, ''IsParentOf, ''Rack)
-  , (''Filesystem, ''IsParentOf, ''Pool)
-  , (''Filesystem, ''IsParentOf, ''Pool_XXX3)
+  , (''Profile_XXX3, ''IsParentOf, ''Filesystem_XXX3)
+  , (''Filesystem_XXX3, ''IsParentOf, ''Node)
+  , (''Filesystem_XXX3, ''IsParentOf, ''Rack)
+  , (''Filesystem_XXX3, ''IsParentOf, ''Pool_XXX3)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
@@ -1073,13 +1071,13 @@ $(mkDicts
   , (''SDev, ''Is, ''SDevState)
   , (''Node, ''Is, ''NodeState)
   , (''Controller, ''Is, ''ControllerState)
-  , (''Filesystem, ''Has, ''FilesystemStats)
-  , (''Filesystem, ''Is, ''DIXInitialised)
+  , (''Filesystem_XXX3, ''Has, ''FilesystemStats)
+  , (''Filesystem_XXX3, ''Is, ''DIXInitialised)
   ]
   )
 
 $(mkResRel
-  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem_XXX3
   , ''Node, ''Process, ''Service, ''SDev
   , ''Rack, ''Enclosure, ''Controller, ''Disk
   , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
@@ -1106,14 +1104,12 @@ $(mkResRel
     -- Parent/child relationships between conf entities
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Profile)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
-  , (''Profile, AtMostOne, ''IsParentOf, AtMostOne, ''Filesystem)
   , (''Profile_XXX3, AtMostOne, ''IsParentOf
     , Unbounded -- XXX FIXME: s/Unbounded/AtMostOne/
-    , ''Filesystem)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool_XXX3)
+    , ''Filesystem_XXX3)
+  , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Node)
+  , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
+  , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Pool_XXX3)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)
@@ -1154,8 +1150,8 @@ $(mkResRel
   , (''SDev, Unbounded, ''Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded, ''Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded, ''Is, AtMostOne, ''ControllerState)
-  , (''Filesystem, Unbounded, ''Has, AtMostOne, ''FilesystemStats)
-  , (''Filesystem, Unbounded, ''Is, AtMostOne, ''DIXInitialised)
+  , (''Filesystem_XXX3, Unbounded, ''Has, AtMostOne, ''FilesystemStats)
+  , (''Filesystem_XXX3, Unbounded, ''Is, AtMostOne, ''DIXInitialised)
   ]
   []
   )
@@ -1172,7 +1168,7 @@ getM0Services g =
 getM0Processes :: G.Graph -> [Process]
 getM0Processes g =
   [ p | Just (prof :: Profile_XXX3) <- [G.connectedTo Cluster Has g]
-       , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
+       , (fs :: Filesystem_XXX3) <- G.connectedTo prof IsParentOf g
        , (node :: Node) <- G.connectedTo fs IsParentOf g
        , p <- G.connectedTo node IsParentOf g
   ]

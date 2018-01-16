@@ -155,7 +155,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
                               _ -> False
         ]
 
-    mkFailuresSets :: M0.Filesystem -> [Failures]
+    mkFailuresSets :: M0.Filesystem_XXX3 -> [Failures]
     mkFailuresSets filesystem = map getFailures $ mkPool M0.NoExplicitConfigState
       [ mkRack r_state
          [ mkEnclosure e_state

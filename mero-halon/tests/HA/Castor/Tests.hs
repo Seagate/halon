@@ -213,7 +213,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
 
     let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has g]
                                 , Just (profile :: M0.Profile_XXX3) <- [G.connectedTo root M0.IsParentOf g]
-                                , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf g
+                                , fs :: M0.Filesystem_XXX3 <- G.connectedTo profile M0.IsParentOf g
                                 , pool :: M0.Pool_XXX3     <- G.connectedTo fs M0.IsParentOf g
                                 , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf g
                                 ]
