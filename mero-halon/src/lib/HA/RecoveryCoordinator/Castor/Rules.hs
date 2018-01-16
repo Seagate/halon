@@ -42,11 +42,6 @@ import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-  ( IsParentOf(..)
-  -- , Pool(..)
-  , Profile(..)
-  , Root(..)
-  )
 import           Network.CEP
 
 -- | Collection of Castor rules.
@@ -83,24 +78,27 @@ loadInitialData :: CI.InitialData -> PhaseM RC l ()
 loadInitialData CI.InitialData{..} = do
     for_ _id_racks goRack
     root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
-    modifyGraph $ G.connect Cluster Has root
+    modifyGraph $ G.connect Cluster Has M0.OFFLINE
+              >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
+              >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+              >>> G.connect Cluster Has root
     for_ _id_profiles $ goProfile root
 
 goProfile :: M0.Root -> CI.Profile -> PhaseM RC l ()
 goProfile root CI.Profile{..} = do
     prof <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
                        <*> pure prof_md_redundancy
-    -- fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
+    fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
     modifyGraph $ G.connect Cluster Has prof
               >>> G.connect root M0.IsParentOf prof
-    -- for_ prof_pools $ goPool fs
-    error "XXX IMPLEMENTME"
+              >>> G.connect prof M0.IsParentOf fs
+    for_ prof_pools $ goPool fs
 
--- goPool :: M0.Profile -> CI.Pool -> PhaseM RC l ()
--- goPool profile CI.Pool{..} = do
---     pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
---                     <*> pure pool_ver_policy
---     modifyGraph $ G.connect profile M0.IsParentOf pool
+goPool :: M0.Filesystem -> CI.Pool -> PhaseM RC l ()
+goPool fs CI.Pool{..} = do
+    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+                    <*> pure pool_ver_policy
+    modifyGraph $ G.connect fs M0.IsParentOf pool
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} = do

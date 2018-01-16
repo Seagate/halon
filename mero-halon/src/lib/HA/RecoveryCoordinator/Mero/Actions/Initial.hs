@@ -79,10 +79,10 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
         >>> G.connect root M0.IsParentOf profile
 
       rg <- getLocalGraph
-      let re = [ (rack, G.connectedTo rack Has rg)
-               | rack <- G.connectedTo Cluster Has rg
-               ]
-      mapM_ (mirrorRack fs) re
+      let rack_enclosures = [ (rack, G.connectedTo rack Has rg)
+                            | rack <- G.connectedTo Cluster Has rg
+                            ]
+      mapM_ (mirrorRack fs) rack_enclosures
       return fs
   where
     mirrorRack :: M0.Filesystem_XXX3 -> (Cas.Rack, [Cas.Enclosure]) -> PhaseM RC l ()
