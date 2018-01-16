@@ -227,6 +227,22 @@ instance ConfObj Profile where
 storageIndex ''Profile "c1d1eca6-4f3b-4c01-b0d8-8bed54b670ce"
 deriveSafeCopy 0 'base ''Profile
 
+-- XXX DELETEME: Next-gen conf schema won't have a filesystem object.
+-- The payload will go to a profile object.
+newtype Filesystem = Filesystem Fid
+  deriving (Eq, Generic, Ord, Show, Typeable)
+
+instance Hashable Filesystem
+instance ToJSON Filesystem
+instance FromJSON Filesystem
+
+instance ConfObj Filesystem where
+  fidType _ = fromIntegral . ord $ 'f'
+  fid (Filesystem f) = f
+
+storageIndex ''Filesystem "8e980796-da37-4fe0-a91e-d2948cfd5f76"
+deriveSafeCopy 0 'base ''Filesystem
+
 data Pool = Pool
   { pl_fid :: Fid
   , pl_ver_policy :: Word32
@@ -255,8 +271,6 @@ instance ConfObj Profile_XXX3 where
 storageIndex ''Profile_XXX3 "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile_XXX3
 
--- XXX DELETEME: Next-gen conf schema won't have a filesystem object.
--- The payload will go to a profile object.
 data Filesystem_XXX3 = Filesystem_XXX3
   { f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
@@ -1000,7 +1014,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem_XXX3
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem, ''Filesystem_XXX3
   , ''Node, ''Process, ''Service, ''SDev
   , ''Rack, ''Enclosure, ''Controller, ''Disk
   , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
@@ -1027,7 +1041,11 @@ $(mkDicts
     -- Parent/child relationships between conf entities
   , (''Root, ''IsParentOf, ''Profile)
   , (''Root, ''IsParentOf, ''Profile_XXX3)
+  , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Profile_XXX3, ''IsParentOf, ''Filesystem_XXX3)
+  , (''Filesystem, ''IsParentOf, ''Node)
+  , (''Filesystem, ''IsParentOf, ''Rack)
+  , (''Filesystem, ''IsParentOf, ''Pool)
   , (''Filesystem_XXX3, ''IsParentOf, ''Node)
   , (''Filesystem_XXX3, ''IsParentOf, ''Rack)
   , (''Filesystem_XXX3, ''IsParentOf, ''Pool_XXX3)
@@ -1037,7 +1055,6 @@ $(mkDicts
   , (''Rack, ''IsParentOf, ''Enclosure)
   , (''Enclosure, ''IsParentOf, ''Controller)
   , (''Controller, ''IsParentOf, ''Disk)
-  , (''Pool, ''IsParentOf, ''PVer)
   , (''Pool_XXX3, ''IsParentOf, ''PVer)
   , (''PVer, ''IsParentOf, ''RackV)
   , (''RackV, ''IsParentOf, ''EnclosureV)
@@ -1077,7 +1094,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem_XXX3
+  [ ''Root, ''Profile, ''Profile_XXX3, ''Filesystem, ''Filesystem_XXX3
   , ''Node, ''Process, ''Service, ''SDev
   , ''Rack, ''Enclosure, ''Controller, ''Disk
   , ''Pool, ''Pool_XXX3, ''PVer, ''RackV, ''EnclosureV, ''ControllerV, ''DiskV
@@ -1104,9 +1121,13 @@ $(mkResRel
     -- Parent/child relationships between conf entities
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Profile)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile_XXX3)
+  , (''Profile, AtMostOne, ''IsParentOf, AtMostOne, ''Filesystem)
   , (''Profile_XXX3, AtMostOne, ''IsParentOf
     , Unbounded -- XXX FIXME: s/Unbounded/AtMostOne/
     , ''Filesystem_XXX3)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
+  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''Filesystem_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''Pool_XXX3)
@@ -1116,7 +1137,6 @@ $(mkResRel
   , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
   , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
-  , (''Pool, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''Pool_XXX3, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
   , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
   , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
