@@ -6,7 +6,8 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Initial
   ( -- * Initialization
-    initialiseConfInRG_XXX3
+    initialiseConfInRG
+  , initialiseConfInRG_XXX3
   , loadMeroServers
   , createMDPoolPVer
   , createIMeta
@@ -21,6 +22,8 @@ import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Traversable (for)
+import           Text.Regex.TDFA ((=~))
+
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
@@ -47,7 +50,34 @@ import           Mero.ConfC
   )
 import           Mero.Lnet
 import           Network.CEP
-import           Text.Regex.TDFA ((=~))
+
+-- | Initialise a reflection of the Mero configuration in the resource graph.
+initialiseConfInRG :: [CI.Profile] -> PhaseM RC l ()
+initialiseConfInRG profiles = do
+    root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+    modifyGraph $ G.connect Cluster Has M0.OFFLINE
+              >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
+              >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+              >>> G.connect Cluster Has root
+    for_ profiles $ goProfile root
+
+goProfile :: M0.Root -> CI.Profile -> PhaseM RC l ()
+goProfile root CI.Profile{..} = do
+    prof <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+                       <*> pure prof_md_redundancy
+    fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
+    modifyGraph $ G.connect Cluster Has prof
+              >>> G.connect root M0.IsParentOf prof
+              >>> G.connect prof M0.IsParentOf fs
+    for_ prof_pools $ goPool fs
+
+goPool :: M0.Filesystem -> CI.Pool -> PhaseM RC l ()
+goPool fs CI.Pool{..} = do
+    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+                    <*> pure pool_ver_policy
+    modifyGraph $ G.connect fs M0.IsParentOf pool
+
+-- XXX ---------------------------------------------------------------
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
 --   This does the following:
