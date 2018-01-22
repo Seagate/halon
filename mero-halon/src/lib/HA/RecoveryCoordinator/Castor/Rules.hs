@@ -22,8 +22,8 @@ import           Control.Monad.Catch (catch, SomeException)
 import           Data.Foldable (for_)
 import qualified Data.Text as T
 
-import           HA.RecoveryCoordinator.Actions.Hardware
-import           HA.RecoveryCoordinator.Actions.Mero
+import qualified HA.RecoveryCoordinator.Actions.Hardware as HW
+import qualified HA.RecoveryCoordinator.Actions.Mero as M0
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
 import qualified HA.RecoveryCoordinator.Castor.Expander.Rules as Expander
@@ -32,9 +32,15 @@ import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
 import           HA.RecoveryCoordinator.Mero.Actions.Failure
+  ( UpdateType(Iterative,Monolithic)
+  , getCurrentGraphUpdateType
+  )
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Cluster
+  ( InitialDataLoaded(..)
+  , InitialDataLoaded_XXX3(..)
+  )
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas
@@ -74,28 +80,28 @@ ruleInitialDataLoad =
 loadInitialData :: CI.InitialData -> PhaseM RC l ()
 loadInitialData CI.InitialData{..} = do
     for_ _id_racks goRack
-    initialiseConfInRG _id_profiles
+    M0.initialiseConfInRG _id_profiles
 
 goRack :: CI.Rack -> PhaseM RC l ()
 goRack CI.Rack{..} = do
     let rack = Cas.Rack rack_idx
-    registerRack rack
+    HW.registerRack rack
     for_ rack_enclosures $ goEnclosure rack
 
 goEnclosure :: Cas.Rack -> CI.Enclosure -> PhaseM RC l ()
 goEnclosure rack CI.Enclosure{..} = do
     let encl = Cas.Enclosure (T.unpack enc_id)
-    registerEnclosure rack encl
-    for_ enc_bmc $ registerBMC encl
+    HW.registerEnclosure rack encl
+    for_ enc_bmc $ HW.registerBMC encl
     for_ enc_controllers $ goController encl
 
 goController :: Cas.Enclosure -> CI.Controller -> PhaseM RC l ()
 goController encl CI.Controller{..} = do
     let host = Cas.Host (T.unpack c_fqdn) -- XXX TODO: s/Host/Controller/
-    registerHost host
-    locateHostInEnclosure host encl
+    HW.registerHost host
+    HW.locateHostInEnclosure host encl
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-    unsetHostAttr host Cas.HA_M0CLIENT
+    HW.unsetHostAttr host Cas.HA_M0CLIENT
 
 -- XXX --------------------------------------------------------------
 
@@ -110,7 +116,7 @@ ruleInitialDataLoad_XXX3 =
           Log.rcLog' Log.ERROR $ logPrefix ++ msg
           notify $ InitialDataLoadFailed_XXX3 msg
 
-        validateConf = validateTransactionCache >>= \case
+        validateConf = M0.validateTransactionCache >>= \case
           Left e -> do
             putLocalGraph rg
             err "Exception during conf validation: " $ show e
@@ -123,9 +129,9 @@ ruleInitialDataLoad_XXX3 =
 
         load = do
           mapM_ goRack_XXX0 id_racks_XXX0
-          filesystem <- initialiseConfInRG_XXX3
-          loadMeroGlobals id_m0_globals_XXX0
-          loadMeroServers filesystem id_m0_servers_XXX0
+          filesystem <- M0.initialiseConfInRG_XXX3
+          M0.loadMeroGlobals id_m0_globals_XXX0
+          M0.loadMeroServers filesystem id_m0_servers_XXX0
           graph <- getLocalGraph
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
@@ -149,9 +155,9 @@ ruleInitialDataLoad_XXX3 =
           -- solution will involve proper support for multiple pools and
           -- multiple types of pools. In the meantime, creating these fake
           -- devices later works.
-          createMDPoolPVer filesystem
+          M0.createMDPoolPVer filesystem
 
-          createIMeta filesystem
+          M0.createIMeta filesystem
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Cas.Rack])
@@ -162,20 +168,20 @@ ruleInitialDataLoad_XXX3 =
 goRack_XXX0 :: CI.Rack_XXX0 -> PhaseM RC l ()
 goRack_XXX0 CI.Rack_XXX0{..} = do
     let rack = Cas.Rack rack_idx_XXX0
-    registerRack rack
+    HW.registerRack rack
     mapM_ (goEnc_XXX0 rack) rack_enclosures_XXX0
 
 goEnc_XXX0 :: Cas.Rack -> CI.Enclosure_XXX0 -> PhaseM RC l ()
 goEnc_XXX0 rack CI.Enclosure_XXX0{..} = do
     let encl = Cas.Enclosure enc_id_XXX0
-    registerEnclosure rack encl
-    mapM_ (registerBMC encl) enc_bmc_XXX0
+    HW.registerEnclosure rack encl
+    mapM_ (HW.registerBMC encl) enc_bmc_XXX0
     mapM_ (goHost_XXX0 encl) enc_hosts_XXX0
 
 goHost_XXX0 :: Cas.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost_XXX0 enc CI.Host_XXX0{..} = do
     let host = Cas.Host (T.unpack h_fqdn_XXX0)
-    registerHost host
-    locateHostInEnclosure host enc
+    HW.registerHost host
+    HW.locateHostInEnclosure host enc
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-    unsetHostAttr host Cas.HA_M0CLIENT
+    HW.unsetHostAttr host Cas.HA_M0CLIENT
