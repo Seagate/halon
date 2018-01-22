@@ -175,8 +175,7 @@ goEnc_XXX0 rack CI.Enclosure_XXX0{..} = do
 goHost_XXX0 :: Cas.Enclosure -> CI.Host_XXX0 -> PhaseM RC l ()
 goHost_XXX0 enc CI.Host_XXX0{..} = do
     let host = Cas.Host (T.unpack h_fqdn_XXX0)
-        -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-        remAttrs = [Cas.HA_M0CLIENT]
     registerHost host
     locateHostInEnclosure host enc
-    mapM_ (unsetHostAttr host) remAttrs
+    -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
+    unsetHostAttr host Cas.HA_M0CLIENT

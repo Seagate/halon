@@ -123,6 +123,7 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
           $ G.connect m0r M0.At rack
         >>> G.connect fs M0.IsParentOf m0r
         >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
+
     mirrorEncl :: Cas.Enclosure -> PhaseM RC l M0.Enclosure
     mirrorEncl encl = lookupEnclosureM0 encl >>= \case
       Just m0e -> return m0e
@@ -145,21 +146,26 @@ initialiseConfInRG_XXX3 = getFilesystem_XXX3 >>= \case
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: M0.Filesystem_XXX3 -> [CI.M0Host_XXX0] -> PhaseM RC l ()
-loadMeroServers fs = mapM_ goHost . offsetHosts where
-  offsetHosts hosts = zip hosts
-    (scanl' (\acc h -> acc + (length $ CI.m0h_devices_XXX0 h)) (0 :: Int) hosts)
+loadMeroServers fs = mapM_ goHost . hostOffsets where
+  hostOffsets :: [CI.M0Host_XXX0] -> [(CI.M0Host_XXX0, Int)]
+  hostOffsets hosts =
+      let g acc host = acc + length (CI.m0h_devices_XXX0 host)
+          offsets = scanl' g 0 hosts
+      in zip hosts offsets
 
-  goHost (CI.M0Host_XXX0{..}, hostIdx) = do
+  goHost (CI.M0Host_XXX0{..}, devIdx) = do
       let host = Cas.Host $! T.unpack m0h_fqdn_XXX0
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
-      modifyGraph $ G.connect Cluster Has host
+      modifyGraph $ G.connect Cluster Has host -- XXX Already connected by goHost_XXX0.
                 >>> G.connect host Has Cas.HA_M0SERVER
                 >>> G.connect fs M0.IsParentOf node
                 >>> G.connect host Runs node
 
-      if not (null m0h_devices_XXX0) then do
+      if null m0h_devices_XXX0
+      then mapM_ (addProcess node []) m0h_processes_XXX0
+      else do
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getLocalGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
@@ -167,18 +173,19 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
               m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
               return (m0e, e)
 
-        devs <- mapM (goDev enc ctrl)
-                     (zip m0h_devices_XXX0 [hostIdx..length m0h_devices_XXX0 + hostIdx])
+        devs <- mapM (goDev enc ctrl) (zip m0h_devices_XXX0 [devIdx..])
         mapM_ (addProcess node devs) m0h_processes_XXX0
 
         modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
                   >>> G.connect node M0.IsOnHardware ctrl
-      else
-        mapM_ (addProcess node []) m0h_processes_XXX0
 
-  goDev enc ctrl (CI.M0Device_XXX0{..}, idx) = do
-      let mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size_XXX0 m0d_bsize_XXX0 m0d_path_XXX0
+  goDev :: Cas.Enclosure
+        -> M0.Controller
+        -> (CI.M0Device_XXX0, Int)
+        -> PhaseM RC l M0.SDev
+  goDev enc m0ctrl (CI.M0Device_XXX0{..}, devIdx) = do
+      let mkSDev fid = M0.SDev fid (fromIntegral devIdx) m0d_size_XXX0 m0d_bsize_XXX0 m0d_path_XXX0
           devIds = [Cas.DIWWN m0d_wwn_XXX0, Cas.DIPath m0d_path_XXX0]
           sdev = Cas.StorageDevice m0d_serial_XXX0
           slot = Cas.Slot enc m0d_slot_XXX0
@@ -191,7 +198,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         Nothing -> M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
       StorageDevice.poweron sdev
       modifyGraph
-          $ G.connect ctrl M0.IsParentOf m0disk
+          $ G.connect m0ctrl M0.IsParentOf m0disk
         >>> G.connect m0sdev M0.IsOnHardware m0disk
         >>> G.connect m0disk M0.At sdev
         >>> G.connect m0sdev M0.At slot
