@@ -47,6 +47,7 @@ mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/etc/logrotate.d
 mkdir -p %{buildroot}/usr/libexec/halon
 mkdir -p %{buildroot}%{_tmpfilesdir}
+mkdir -p %{buildroot}%{_sharedstatedir}/halon
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
