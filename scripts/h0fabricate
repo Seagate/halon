@@ -28,7 +28,14 @@ defaults = {
 
 
 def indent(depth):
+    assert depth >= 0
     return '  ' * depth
+
+
+def quote(s):
+    assert type(s) is str
+    assert '"' not in s
+    return '"{}"'.format(s)
 
 
 class Default(object):
@@ -51,11 +58,11 @@ class Profile(Default, ToYaml):
 
     def to_yaml(self, depth):
         lines = []
-        lines.append(indent(depth) + '- prof_id: "{}"'.format(self.id))
+        lines.append(indent(depth) + '- prof_id: ' + quote(self.id))
         lines.append(indent(depth+1) + 'prof_md_redundancy: {}'.format(
             self.default('md_redundancy')))
         lines.append(indent(depth+1) + 'prof_pools:')
-        lines.append(indent(depth+2) + '- pool_id: "{}.IO"'.format(self.id))
+        lines.append(indent(depth+2) + '- pool_id: ' + quote(self.id + '.IO'))
         lines.append(indent(depth+3) + 'pool_pdclust_attr:')
         lines.append(indent(depth+4) + 'pa_unit_size: {}'.format(
             self.default('pa_unit_size')))
@@ -82,7 +89,7 @@ class Iface(ToYaml):
 
     def to_yaml(self, depth):
         lines = []
-        lines.append(indent(depth) + '- if_macAddress: "{}"'.format(self.mac))
+        lines.append(indent(depth) + '- if_macAddress: ' + quote(self.mac))
         lines.append(indent(depth+1) + 'if_network: {}'.format(self.network))
         lines.append(indent(depth+1) + 'if_ipAddrs: [{}]'.format(self.ip))
         return lines
@@ -96,16 +103,16 @@ class Disk(Default, ToYaml):
 
     def to_yaml(self, depth):
         lines = []
-        lines.append(indent(depth) + '- d_wwn: "{}"'.format(self.wwn))
-        lines.append(indent(depth+1) + 'd_serial: "{}"'.format(self.serial))
+        lines.append(indent(depth) + '- d_wwn: ' + quote(self.wwn))
+        lines.append(indent(depth+1) + 'd_serial: ' + quote(self.serial))
         lines.append(indent(depth+1) + 'd_bsize: {}'.format(
             self.default('bsize')))
         lines.append(indent(depth+1) + 'd_size: {}'.format(
             self.default('size')))
-        lines.append(indent(depth+1) + 'd_path: "{}"'.format(
-            '/dev/disk/by-id/wwn-' + self.wwn))
+        lines.append(indent(depth+1) + 'd_path: ' +
+                     quote('/dev/disk/by-id/wwn-' + self.wwn))
         lines.append(indent(depth+1) + 'd_slot: {}'.format(self.slot))
-        lines.append(indent(depth+1) + 'd_pool: "{}"'.format(self.pool_id))
+        lines.append(indent(depth+1) + 'd_pool: ' + quote(self.pool_id))
         return lines
 
 
@@ -159,15 +166,15 @@ class Encl(Default, ToYaml):
     def to_yaml(self, depth):
         lines = []
         lines.append(indent(depth) + '- enc_idx: {}'.format(self.idx))
-        lines.append(indent(depth+1) + 'enc_id: "{}"'.format(self.id))
+        lines.append(indent(depth+1) + 'enc_id: ' + quote(self.id))
         lines.append(indent(depth+1) + 'enc_bmc:')
         assert self.bmc
         for x in self.bmc:
-            lines.append(indent(depth+2) + '- bmc_addr: "{}"'.format(x))
+            lines.append(indent(depth+2) + '- bmc_addr: ' + quote(x))
             lines.append(indent(depth+3) + 'bmc_user: "admin"')
             lines.append(indent(depth+3) + 'bmc_pass: "admin"')
         lines.append(indent(depth+1) + 'enc_controllers:')
-        lines.append(indent(depth+2) + '- c_fqdn: "{}"'.format(self.fqdn))
+        lines.append(indent(depth+2) + '- c_fqdn: ' + quote(self.fqdn))
         lines.append(indent(depth+3) + 'c_memsize: {}'.format(self.memsize))
         lines.append(indent(depth+3) + 'c_cpucount: {}'.format(self.cpucount))
         lines.append(indent(depth+3) + 'c_interfaces:')
@@ -178,8 +185,8 @@ class Encl(Default, ToYaml):
         for x in self.disks:
             lines.extend(x.to_yaml(depth+4))
         lines.append(indent(depth+3) + 'c_halon:')
-        lines.append(indent(depth+4) + 'halon_address: "{}:9000"'.format(
-            self.iface_data.ip))
+        lines.append(indent(depth+4) + 'halon_address: ' +
+                     quote(self.iface_data.ip + ':9000'))
         lines.append(indent(depth+4) + 'halon_roles:')
         for x in self.roles_halon:
             lines.append(indent(depth+5) + '- r_name: ' + x)
@@ -217,10 +224,10 @@ class Facts(ToYaml):
         lines.append(indent(depth) + 'nodes:')
         for rack in self.racks:
             for encl in rack.encls:
-                lines.append(indent(depth+1) + '- n_fqdn: "{}"'.format(
-                    encl.fqdn))
-                lines.append(indent(depth+2) + 'n_lnid: "{}@tcp"'.format(
-                    encl.iface_data.ip))
+                lines.append(indent(depth+1) + '- n_fqdn: ' +
+                             quote(encl.fqdn))
+                lines.append(indent(depth+2) + 'n_lnid: ' +
+                             quote(encl.iface_data.ip + '@tcp'))
                 lines.append(indent(depth+2) + 'n_mero_roles:')
                 lines.append(indent(depth+3) + '- r_name: ha')
                 for role in encl.roles_mero:
@@ -340,27 +347,51 @@ def sample_facts():
                            racks=[rack_0, rack_1]).to_yaml(0)) + '\n'
 
 
+class ProcessEnv(ToYaml):
+
+    def __init__(self, name, value):
+        assert type(name) is str
+        if type(value) is tuple:
+            assert list(map(type, value)) == [int]*2
+            self.tag = 'PEnvRange'
+            self.contents = repr(list(value))
+        else:
+            assert type(value) is str
+            self.tag = 'PEnvValue'
+            self.contents = quote(value)
+        self.name = name
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- - ' + quote(self.name))
+        lines.append(indent(depth+1) + '- tag: ' + self.tag)
+        lines.append(indent(depth+2) + 'contents: {}'.format(self.contents))
+        return lines
+
 class RoleMero(ToYaml):
 
-    def __init__(self, name, proc_tag, proc_contents, lnet_portal, lnet_tmid):
+    def __init__(self, name, proc_tag, proc_contents, lnet_portal, lnet_tmid,
+                 multiplicity=None, environment=None):
         self.name = name
         self.proc_tag, self.proc_contents = proc_tag, proc_contents
         self.endpoint = '{{{{ n_lnid }}}}:12345:{}:{}'.format(lnet_portal,
                                                               lnet_tmid)
+        self.multiplicity, self.environment = multiplicity, environment
         self.services = {
             'ha': ('HA', 'RMS'),
             'confd': ('CONFD', 'RMS'),
             'mds': ('RMS', 'MDS', 'ADDB2'),
             'storage': ('RMS', 'IOS', 'SNS_REP', 'SNS_REB', 'ADDB2'),
-            'm0t1fs': ('RMS',)
+            'm0t1fs': ('RMS',),
+            'clovis-app': ('RMS',),
+            's3server': ('RMS',),
         }[name]
 
     def to_yaml(self, depth):
         lines = []
         lines.append(indent(depth) + '- mr_name: "{}"'.format(self.name))
         lines.append(indent(depth+1) + 'mr_content:')
-        lines.append(indent(depth+2) +
-                     '- p_endpoint: "{}"'.format(self.endpoint))
+        lines.append(indent(depth+2) + '- p_endpoint: ' + quote(self.endpoint))
         lines.append(indent(depth+3) + 'p_mem_as: 0')
         lines.append(indent(depth+3) + 'p_mem_rss: 0')
         lines.append(indent(depth+3) + 'p_mem_stack: 0')
@@ -368,8 +399,11 @@ class RoleMero(ToYaml):
         lines.append(indent(depth+3) + 'p_cores: {!r}'.format([1]*20))
         lines.append(indent(depth+3) + 'p_boot_level:')
         lines.append(indent(depth+4) + 'tag: PT{}'.format(self.proc_tag))
-        lines.append(indent(depth+4) +
-                     'contents: {!r}'.format(self.proc_contents))
+        if self.name in ('clovis-app', 's3server'):
+            contents = '["{}", True]'.format(self.name)
+        else:
+            contents = repr(self.proc_contents)
+        lines.append(indent(depth+4) + 'contents: {}'.format(contents))
         lines.append(indent(depth+3) + 'p_services:')
         for svc in self.services:
             lines.append(indent(depth+4) + '- s_type:')
@@ -382,6 +416,16 @@ class RoleMero(ToYaml):
                 'ConfDBPath' if svc in ('HA', 'CONFD') else 'Unused'))
             lines.append(indent(depth+6) + 'contents: {}'.format(
                 '"/var/mero/confd"' if svc in ('HA', 'CONFD') else '[]'))
+        if self.multiplicity is not None:
+            assert self.name == 'clovis-app'
+            assert self.multiplicity > 0
+            lines.append(indent(depth+3) +
+                         'p_multiplicity: {}'.format(self.multiplicity))
+        if self.environment is not None:
+            assert self.name == 's3server'
+            lines.append(indent(depth+3) + 'p_environment:')
+            for env in self.environment:
+                lines.extend(env.to_yaml(depth+4))
         return lines
 
 
@@ -391,7 +435,12 @@ def sample_roles_mero():
                  RoleMero('confd', 'M0d', 0, 44, 101),
                  RoleMero('mds', 'M0d', 1, 41, 201),
                  RoleMero('storage', 'M0d', 1, 41, 401),
-                 RoleMero('m0t1fs', 'M0t1fs', [], 41, 301)]:
+                 RoleMero('m0t1fs', 'M0t1fs', [], 41, 301),
+                 RoleMero('clovis-app', 'Clovis', None, 41, 302,
+                          multiplicity=3),
+                 RoleMero('s3server', 'Clovis', None, 41, 303,
+                          environment=[ProcessEnv('MERO_S3SERVER_PORT',
+                                                  (8081, 8092))])]:
         lines.extend(role.to_yaml(0))
     return '\n'.join(lines) + '\n'
 
