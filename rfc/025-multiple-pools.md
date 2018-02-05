@@ -11,17 +11,11 @@ with arbitrary number of filesystems and pools per filesystem.
 
 ### Phase 1
 
-Multiple profiles, one pool per profile. (Note that there is
-one-to-one relation between profile and filesystem.)
-
-This requires new schema of `halon_facts.yaml` file and modification
-of Halon code.  No Mero code changes are necessary.
+Multiple profiles, one pool per profile.
 
 ### Phase 2
 
 Multiple pools per profile.
-
-This requires changes of both Halon and Mero code.
 
 ## halon_facts.yaml
 
