@@ -18,7 +18,7 @@ FLAGS=""
 
 if [ $HALON_BUILD_ENV = "bare" ]; then
   if [ -z "$MERO_ROOT" ]; then
-    echo "MERO_ROOT be defined and point to the Mero source directory."
+    echo 'MERO_ROOT should be defined and point to the Mero source directory.'
     exit 1
   fi
   FLAGS=("${FLAGS[@]}" "--no-docker")
