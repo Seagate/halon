@@ -31,6 +31,7 @@ import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
+-- import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as SD
 import           HA.RecoveryCoordinator.Mero.Actions.Failure
   ( UpdateType(Iterative,Monolithic)
   , getCurrentGraphUpdateType
@@ -97,11 +98,20 @@ goEnclosure rack CI.Enclosure{..} = do
 
 goController :: Cas.Enclosure -> CI.Controller -> PhaseM RC l ()
 goController encl CI.Controller{..} = do
-    let host = Cas.Host (T.unpack c_fqdn) -- XXX TODO: s/Host/Controller/
     HW.registerHost host
     HW.locateHostInEnclosure host encl
     -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
     HW.unsetHostAttr host Cas.HA_M0CLIENT
+    for_ c_disks goDisk
+  where
+    host = Cas.Host (T.unpack c_fqdn) -- XXX TODO: s/Host/Controller/
+    goDisk CI.Disk{..} = do
+        -- let sdev = Cas.StorageDevice d_serial
+        --     devIds = [Cas.DIWWN d_wwn, Cas.DIPath d_path]
+        --     slot = Cas.Slot encl_XXX d_slot
+        -- SD.identify sdev devIds
+        let _ = host -- XXX DELETEME
+        error "XXX IMPLEMENTME"
 
 -- XXX --------------------------------------------------------------
 
