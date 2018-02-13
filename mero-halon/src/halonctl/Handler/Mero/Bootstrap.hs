@@ -47,28 +47,31 @@ import           System.Environment
 import           System.Exit
 
 data Options = Options
-  { configInitialData :: Defaultable FilePath
-  , configMeroRoles :: Defaultable FilePath
-  , configHalonRoles :: Defaultable FilePath
-  , configDryRun :: Bool
-  , configVerbose :: Bool
-  , configMkfsDone :: Bool
+  { optFacts :: Defaultable FilePath
+  , optRolesMero :: Defaultable FilePath
+  , optRolesHalon :: Defaultable FilePath
+  , optDryRun :: Bool
+  , optVerbose :: Bool
+  , optMkfsDone :: Bool
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 parser :: Opt.Parser Options
 parser = let
-    initial = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
-            $ Opt.long "facts"
-            <> Opt.short 'f'
-            <> Opt.help "Halon facts file"
-            <> Opt.metavar "FILEPATH"
-    meroRoles = defaultable "/etc/halon/mero_role_mappings" . Opt.strOption
-          $ Opt.long "roles" -- XXX TODO: rename to "mero-roles"
+    -- XXX TODO: rename to "/etc/halon/facts.yaml"
+    facts = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
+          $ Opt.long "facts"
+         <> Opt.short 'f'
+         <> Opt.help "Halon facts file"
+         <> Opt.metavar "FILEPATH"
+    -- XXX TODO: rename to "/etc/halon/roles-mero.yaml"
+    rolesMero = defaultable "/etc/halon/mero_role_mappings" . Opt.strOption
+          $ Opt.long "roles" -- XXX TODO: rename to "roles-mero"
          <> Opt.short 'r'
          <> Opt.help "Mero roles file used by Halon"
          <> Opt.metavar "FILEPATH"
-    halonRoles = defaultable "/etc/halon/halon_role_mappings" . Opt.strOption
-          $ Opt.long "halonroles" -- XXX TODO: rename to "halon-roles"
+    -- XXX TODO: rename to "/etc/halon/roles-halon.yaml"
+    rolesHalon = defaultable "/etc/halon/halon_role_mappings" . Opt.strOption
+          $ Opt.long "halonroles" -- XXX TODO: rename to "roles-halon"
          <> Opt.short 's'
          <> Opt.help "Halon-specific roles file"
          <> Opt.metavar "FILEPATH"
@@ -81,15 +84,15 @@ parser = let
          <> Opt.short 'v'
          <> Opt.help "Verbose output"
     mkfs = Opt.switch
-         $ Opt.long "mkfs-done"
-         <> Opt.help "Do not run mkfs on a cluster."
-  in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
+          $ Opt.long "mkfs-done"
+         <> Opt.help "Do not run mkfs on a cluster"
+  in Options <$> facts <*> rolesMero <*> rolesHalon <*> dry <*> verbose <*> mkfs
 
 data Host = Host
   { hFqdn :: T.Text
   , hIp :: String
   , hRoles :: [CI.HalonRole]
-  , hSvcs :: [( String          -- service string
+  , hSvcs :: [( String          -- service start command
               , Service.Options -- parsed service config
               )]
   }
@@ -156,9 +159,9 @@ mkValidatedConfig racks mkRoles stationOpts =
 
 run :: Options -> Process ()
 run Options{..} = do
-  einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
-                                            (fromDefault configMeroRoles)
-                                            (fromDefault configHalonRoles)
+  einitData <- liftIO $ CI.parseInitialData (fromDefault optFacts)
+                                            (fromDefault optRolesMero)
+                                            (fromDefault optRolesHalon)
   case einitData of
     Left err -> out $ "Failed to load initial data: " ++ show err
     Right (initialData, halonRoleObj) -> do
@@ -173,11 +176,11 @@ run Options{..} = do
           mapM_ putStrLn strs
         AccSuccess ValidatedConfig{..} -> do
           verbose "Halon facts"
-          liftIO (readFile $ fromDefault configInitialData) >>= verbose
+          liftIO (readFile $ fromDefault optFacts) >>= verbose
           verbose "Mero roles"
-          liftIO (readFile $ fromDefault configMeroRoles) >>= verbose
+          liftIO (readFile $ fromDefault optRolesMero) >>= verbose
           verbose "Halon roles"
-          liftIO (readFile $ fromDefault configHalonRoles) >>= verbose
+          liftIO (readFile $ fromDefault optRolesHalon) >>= verbose
 
           when dry $ do
             out "#!/bin/sh"
@@ -202,10 +205,10 @@ run Options{..} = do
 
               loadInitialData station_hosts
                               initialData
-                              (fromDefault configInitialData)
-                              (fromDefault configMeroRoles)
+                              (fromDefault optFacts)
+                              (fromDefault optRolesMero)
 
-              when configMkfsDone $ do
+              when optMkfsDone $ do
                 if dry
                 then out $ "halonctl -l $IP:0 mero mkfs-done --confirm "
                         ++ intercalate " -t " station_hosts
@@ -218,9 +221,9 @@ run Options{..} = do
               startCluster station_hosts
               unless dry $ receiveTimeout step_delay [] >> return ()
   where
-    dry = configDryRun
+    dry = optDryRun
     out = liftIO . putStrLn
-    verbose = liftIO . if configVerbose then putStrLn else const (return ())
+    verbose = liftIO . if optVerbose then putStrLn else const (return ())
     step_delay = 10000000
 
     startService :: String -> (String, Service.Options) -> [String] -> Process ()

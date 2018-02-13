@@ -119,7 +119,6 @@ instance Hashable Rack
 instance A.FromJSON Rack
 instance A.ToJSON Rack
 
-
 -- | Failure set schemes. Define how failure sets are determined.
 --
 -- TODO: Link to some doc here.
@@ -280,7 +279,6 @@ data M0Service = M0Service {
 instance Hashable M0Service
 instance A.FromJSON M0Service
 instance A.ToJSON M0Service
-
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
@@ -498,7 +496,7 @@ mkHalonRoles template roles =
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
-                 -> FilePath -- ^ Role map file.
+                 -> FilePath -- ^ Mero role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
 parseInitialData facts meroRoles halonRoles = runExceptT parse
