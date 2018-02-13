@@ -512,9 +512,8 @@ parseInitialData facts meroRoles halonRoles = runExceptT parse
         pure (initialData, h0roles)
 
     parseFile :: FilePath -> ExceptT Y.ParseException IO EDE.Template
-    parseFile = ExceptT . (first mkExc <$>) . EDE.eitherParseFile
-
-    mkExc = mkException "parseInitialData"
+    parseFile = let mkExc = mkException "parseInitialData"
+                in ExceptT . (first mkExc <$>) . EDE.eitherParseFile
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData idata = do
