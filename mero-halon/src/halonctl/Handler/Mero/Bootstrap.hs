@@ -175,12 +175,9 @@ run Options{..} = do
           putStrLn "Failed to validate settings: "
           mapM_ putStrLn strs
         AccSuccess ValidatedConfig{..} -> do
-          verbose "Halon facts"
-          liftIO (readFile $ fromDefault optFacts) >>= verbose
-          verbose "Mero roles"
-          liftIO (readFile $ fromDefault optRolesMero) >>= verbose
-          verbose "Halon roles"
-          liftIO (readFile $ fromDefault optRolesHalon) >>= verbose
+          verboseDumpFile "Halon facts" optFacts
+          verboseDumpFile "Mero roles" optRolesMero
+          verboseDumpFile "Halon roles" optRolesHalon
 
           when dry $ do
             out "#!/bin/sh"
@@ -225,6 +222,12 @@ run Options{..} = do
     out = liftIO . putStrLn
     verbose = liftIO . if optVerbose then putStrLn else const (return ())
     step_delay = 10000000
+
+    verboseDumpFile :: String -> Defaultable FilePath -> Process ()
+    verboseDumpFile title path = when optVerbose . liftIO $ do
+        putStrLn $ "--- " ++ title ++ " ---"
+        readFile (fromDefault path) >>= putStrLn
+        putStrLn "----------"
 
     startService :: String -> (String, Service.Options) -> [String] -> Process ()
     startService host (svcString, conf) stations
