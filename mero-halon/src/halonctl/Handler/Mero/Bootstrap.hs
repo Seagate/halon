@@ -180,8 +180,10 @@ run Options{..} = do
           verboseDumpFile "Halon roles" optRolesHalon
 
           when dry $ do
-            out "#!/bin/sh"
-            out "set -xe"
+            out "#!/usr/bin/env bash"
+            out "set -eu -o pipefail"
+            out "set -x"
+            out ""
 
           let getIps :: ([CI.HalonRole] -> Bool) -> [String]
               getIps p = map hIp $ filter (p . hRoles) vcHosts
