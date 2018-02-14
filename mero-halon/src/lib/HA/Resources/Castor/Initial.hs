@@ -471,12 +471,11 @@ mkRole :: A.FromJSON a
        -> (a -> Either String b) -- ^ Role post-process
        -> Either String b
 mkRole template env role pp = do
+    let env' = maybe env (`M.union` env) (_rolespec_overrides role)
     roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
     role' <- first (++ "\n" ++ T.unpack roleText)
         (Y.decodeEither $ T.encodeUtf8 roleText)
     pp role'
-  where
-    env' = maybe env (`M.union` env) (_rolespec_overrides role)
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
 mkHalonRoles :: EDE.Template -- ^ Role template.

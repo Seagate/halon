@@ -15,6 +15,7 @@ import           Control.Distributed.Process.Closure
 import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless, void)
+import           Data.Bifunctor (first)
 import           Data.Foldable (for_)
 import           Data.List (partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
@@ -22,6 +23,11 @@ import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Typeable
+import           System.Directory (removeFile)
+import           System.Environment (getExecutablePath)
+import           System.FilePath ((</>), joinPath, splitDirectories)
+import           System.Process (callProcess)
+
 import           HA.Multimap
 import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
@@ -86,6 +92,23 @@ tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
   , testClusterLiveness transport pg
   ]
+  ++
+  [ testSuccess "parse-initial-data" testParseInitialData]
+
+testParseInitialData :: IO ()
+testParseInitialData = do
+    exe <- (</> "scripts" </> "h0fabricate") <$> getH0SrcDir
+    withTmpDirectory $ do
+        callProcess exe ["--out-dir", "."]
+        let files@(facts:meroRoles:halonRoles:[]) =
+              ["h0fabricated-" ++ name ++ ".yaml"
+              | name <- ["facts", "roles_mero", "roles_halon"]]
+        res <- first show <$> CI.parseInitialData facts meroRoles halonRoles
+        for_ files removeFile
+        either Tasty.assertFailure (const $ pure ()) res
+  where
+    getH0SrcDir = joinPath . takeWhile (/= "mero-halon") . splitDirectories
+        <$> getExecutablePath
 
 fsSize :: (a, Set.Set b) -> Int
 fsSize (_, a) = Set.size a
