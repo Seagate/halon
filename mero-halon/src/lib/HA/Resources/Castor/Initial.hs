@@ -30,7 +30,6 @@ import qualified Data.Text.Lazy as T (toStrict)
 import           Data.Word (Word32, Word64)
 import qualified Data.Yaml as Y
 import           GHC.Generics (Generic)
-import           Text.Printf (printf)
 import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
@@ -428,10 +427,9 @@ resolveMeroRoles InitialWithRoles{..} template =
                                 , id_m0_servers = hosts
                                 , id_m0_globals = _rolesinit_id_m0_globals
                                 }
-        (errs, _) -> Left . mkException func . intercalate ", " $ concat errs
+        (errs, _) -> Left . mkException "resolveMeroRoles" . intercalate ", "
+            $ concat errs
   where
-    func = "resolveMeroRoles"
-
     ehosts :: [Either [String] M0Host]
     ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
 
@@ -451,24 +449,39 @@ resolveMeroRoles InitialWithRoles{..} template =
     -- | Find a list of processes corresponding to the given role.
     roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process]
     roleToProcesses env role =
-        mkRole template env role (findProcesses $ _rolespec_name role)
+        mkRole template env role (
+            (_role_content <$>) . findMeroRole (_rolespec_name role) )
 
-    -- | Find a role among the others by its name and return the list
-    -- of this role's processes.
-    findProcesses :: RoleName -> [Role] -> Either String [M0Process]
-    findProcesses rname roles =
-        maybeToEither errMsg (_role_content <$> findRole)
-      where
-        findRole = find ((rname ==) . _role_name) roles
-        errMsg = printf "%s.findProcesses: Role \"%s\" not found\
-                        \ in Mero mapping file" func rname
+    findMeroRole :: RoleName -> [Role] -> Either String Role
+    findMeroRole name =
+        let err = "No such role in Mero mapping file: " ++ show name
+        in maybeToEither err . findRole name
+
+    findRole :: RoleName -> [Role] -> Maybe Role
+    findRole name = find ((name ==) . _role_name)
+
+-- | Expand all given 'RoleSpec's into 'HalonRole's.
+mkHalonRoles :: EDE.Template -- ^ Role template.
+             -> [RoleSpec] -- ^ Roles to expand.
+             -> Either String [HalonRole]
+mkHalonRoles template roles =
+    fmap nub . forM roles $ \role ->
+        mkRole template mempty role (findHalonRole $ _rolespec_name role)
+  where
+    findHalonRole :: RoleName -> [HalonRole] -> Either String HalonRole
+    findHalonRole name =
+        let err = "No such role in Halon mapping file: " ++ show name
+        in maybeToEither err . findRole name
+
+    findRole :: RoleName -> [HalonRole] -> Maybe HalonRole
+    findRole name = find ((name ==) . _hc_name)
 
 -- | Expand a role from the given template and env.
 mkRole :: A.FromJSON a
-       => EDE.Template -- ^ Role template
-       -> Y.Object -- ^ Surrounding env
-       -> RoleSpec -- ^ Role to expand
-       -> (a -> Either String b) -- ^ Role post-process
+       => EDE.Template -- ^ Role template.
+       -> Y.Object -- ^ Surrounding environment.
+       -> RoleSpec -- ^ Role to expand.
+       -> (a -> Either String b) -- ^ Role post-process.
        -> Either String b
 mkRole template env role pp = do
     let env' = maybe env (`M.union` env) (_rolespec_overrides role)
@@ -476,22 +489,6 @@ mkRole template env role pp = do
     role' <- first (++ "\n" ++ T.unpack roleText)
         (Y.decodeEither $ T.encodeUtf8 roleText)
     pp role'
-
--- | Expand all given 'RoleSpec's into 'HalonRole's.
-mkHalonRoles :: EDE.Template -- ^ Role template.
-             -> [RoleSpec] -- ^ Roles to expand.
-             -> Either String [HalonRole]
-mkHalonRoles template roles =
-  fmap (nub . concat) . forM roles $ \role ->
-    mkRole template mempty role (findHalonRole $ _rolespec_name role)
-  where
-    findHalonRole :: RoleName -> [HalonRole] -> Either String [HalonRole]
-    findHalonRole rname halonRoles =
-        maybeToEither errMsg ((\x -> [x]) <$> findRole)
-      where
-        findRole = find ((rname ==) . _hc_name) halonRoles
-        errMsg = printf "mkHalonRoles.findHalonRole: Role \"%s\" not found\
-                        \ in Halon mapping file" rname
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
