@@ -133,7 +133,7 @@ instance A.ToJSON FailureSetScheme
 -- | Halon config for a host
 data HalonRole = HalonRole
   { _hc_name :: RoleName
-  -- ^ Role name
+  -- ^ Role name.
   , _hc_h_bootstrap_station :: Bool
   -- ^ Does this role make the host a tracking station?
   , _hc_h_services :: [String]
@@ -337,7 +337,7 @@ instance Binary RoleSpec where
 
 -- | A single parsed mero role, ready to be used for building
 -- 'InitialData'.
-data Role = Role
+data MeroRole = MeroRole
   { _role_name :: RoleName
   , _role_content :: [M0Process]
   } deriving (Eq, Data, Generic, Show, Typeable)
@@ -347,10 +347,10 @@ roleJSONOptions :: A.Options
 roleJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
 
-instance A.FromJSON Role where
+instance A.FromJSON MeroRole where
   parseJSON = A.genericParseJSON roleJSONOptions
 
-instance A.ToJSON Role where
+instance A.ToJSON MeroRole where
   toJSON = A.genericToJSON roleJSONOptions
 
 -- | Parse a halon_facts file into a structure indicating roles for
@@ -452,12 +452,12 @@ resolveMeroRoles InitialWithRoles{..} template =
         mkRole template env role (
             (_role_content <$>) . findMeroRole (_rolespec_name role) )
 
-    findMeroRole :: RoleName -> [Role] -> Either String Role
+    findMeroRole :: RoleName -> [MeroRole] -> Either String MeroRole
     findMeroRole name =
         let err = "No such role in Mero mapping file: " ++ show name
         in maybeToEither err . findRole name
 
-    findRole :: RoleName -> [Role] -> Maybe Role
+    findRole :: RoleName -> [MeroRole] -> Maybe MeroRole
     findRole name = find ((name ==) . _role_name)
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
