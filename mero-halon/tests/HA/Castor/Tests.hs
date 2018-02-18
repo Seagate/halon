@@ -103,12 +103,19 @@ testParseInitialData = do
         let files@(facts:meroRoles:halonRoles:[]) =
               ["h0fabricated-" ++ name ++ ".yaml"
               | name <- ["facts", "roles_mero", "roles_halon"]]
-        res <- first show <$> CI.parseInitialData facts meroRoles halonRoles
+        ev <- first show <$> CI.parseInitialData facts meroRoles halonRoles
         for_ files removeFile
-        either Tasty.assertFailure (const $ pure ()) res
+        either Tasty.assertFailure pure (void . check =<< ev)
   where
     getH0SrcDir = joinPath . takeWhile (/= "mero-halon") . splitDirectories
         <$> getExecutablePath
+
+    check (initData, halonRolesObj) =
+        traverse (CI.mkHalonRoles halonRolesObj . CI._hs_roles)
+            [ h0params | rack <- CI.id_racks initData
+                       , encl <- CI.rack_enclosures rack
+                       , host <- CI.enc_hosts encl
+                       , Just h0params <- [CI.h_halon host] ]
 
 fsSize :: (a, Set.Set b) -> Int
 fsSize (_, a) = Set.size a

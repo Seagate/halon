@@ -124,25 +124,25 @@ mkValidatedConfig racks mkRoles stationOpts =
                            in (text,) <$> parseHelper Station.parser text
 
     validateSatelliteOpts :: Either Opt.ParseError (String, NodeAdd.Options)
-    validateSatelliteOpts = let text = "" -- XXX Why bother parsing an empty
-                                          -- string?
+    validateSatelliteOpts = let text = "" -- XXX Why bother parsing
+                                          -- empty string?
                             in (text,) <$> parseHelper NodeAdd.parser text
 
     hosts :: [(CI.Host, CI.HalonSettings)]
-    hosts = [ (h, hs) | rack <- racks
-                      , enc <- CI.rack_enclosures rack
-                      , h <- CI.enc_hosts enc
-                      , Just hs <- [CI.h_halon h] ]
+    hosts = [ (host, h0params) | rack <- racks
+                               , encl <- CI.rack_enclosures rack
+                               , host <- CI.enc_hosts encl
+                               , Just h0params <- [CI.h_halon host] ]
 
     ehosts :: AccValidation [String] [Host]
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
 
     expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
-    expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
+    expandHost (host, h0params) = case mkRoles (CI._hs_roles h0params) of
         Left err -> _Failure # ["Halon role failure for "
-                                ++ T.unpack (CI.h_fqdn h) ++ ": " ++ err]
-        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn h
-                                      , hIp = CI._hs_address hs
+                                ++ T.unpack (CI.h_fqdn host) ++ ": " ++ err]
+        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn host
+                                      , hIp = CI._hs_address h0params
                                       , hRoles = roles
                                       , hSvcs = svcs
                                       }
