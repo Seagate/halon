@@ -105,6 +105,7 @@ class Drive(Default, ToYaml):
 
     def __init__(self, wwn, serial, slot):
         self.wwn, self.serial, self.slot = wwn, serial, slot
+        self.path = '/dev/disk/by-id/wwn-' + self.wwn
 
     def to_yaml(self, depth):
         lines = []
@@ -114,8 +115,7 @@ class Drive(Default, ToYaml):
                      'm0d_bsize: {}'.format(self.default('bsize')))
         lines.append(indent(depth+1) +
                      'm0d_size: {}'.format(self.default('size')))
-        lines.append(indent(depth+1) +
-                     'm0d_path: ' + quote('/dev/disk/by-id/wwn-' + self.wwn))
+        lines.append(indent(depth+1) + 'm0d_path: ' + quote(self.path))
         lines.append(indent(depth+1) + 'm0d_slot: {}'.format(self.slot))
         return lines
 
@@ -251,23 +251,61 @@ class Server(Default, ToYaml):
         return lines
 
 
-class Facts(ToYaml):
+class Pool(ToYaml):
 
-    def __init__(self, racks):
-        self.racks = racks
+    def __init__(self, id, drive_refs):
+        assert id and type(id) is str
+        assert drive_refs and all(type(x) is DriveRef for x in drive_refs)
+        self.id, self.drive_refs = id, drive_refs
 
     def to_yaml(self, depth):
         lines = []
-        for section in ('racks',):  # XXX REFACTORME
-            lines.append(indent(depth) + 'id_{}:'.format(section))
-            xs = getattr(self, section)
-            assert xs, section + ': non-empty list expected'
-            for x in xs:
-                lines.extend(x.to_yaml(depth+1))
+        lines.append(indent(depth) + '- pool_id: ' + quote(self.id))
+        lines.append(indent(depth+1) + 'pool_device_refs:')
+        for x in self.drive_refs:
+            lines.extend(x.to_yaml(depth+2))
+        return lines
+
+
+class DriveRef(ToYaml):
+
+    def __init__(self, drive):
+        assert type(drive) is Drive
+        self.drive = drive
+
+    def to_yaml(self, depth):
+        # DriveRef is a combination of 1, 2, or 3 drive attributes
+        # from this list:
+        attrs = ['wwn', 'serial', 'path']
+        lines = []
+        random.shuffle(attrs)
+        lines.append(indent(depth) + '- dr_{}: {}'.format(
+            attrs[0], quote(getattr(self.drive, attrs[0]))))
+        n = random.randint(1, len(attrs))
+        for a in attrs[1:n]:
+            lines.append(indent(depth+1) +
+                         'dr_{}: {}'.format(a, quote(getattr(self.drive, a))))
+        return lines
+
+
+class Facts(ToYaml):
+
+    def __init__(self, racks, pools):
+        assert racks
+        self.racks, self.pools = racks, pools
+
+    def to_yaml(self, depth):
+        lines = []
+
+        lines.append(indent(depth) + 'id_racks:')
+        for x in self.racks:
+            lines.extend(x.to_yaml(depth+1))
+
         lines.append(indent(depth) + 'id_m0_servers:')
         for rack in self.racks:
             for encl in rack.encls:
                 lines.extend(Server(encl).to_yaml(depth+1))
+
         lines.append(indent(depth) + 'id_m0_globals:')
         for s in ('m0_be_ios_seg_size: 549755813888',
                   'm0_be_log_size: 17179869184',
@@ -291,6 +329,11 @@ class Facts(ToYaml):
         lines.append(indent(depth+2) + 'tag: Formulaic')
         lines.append(indent(depth+2) + 'contents:')
         lines.append(indent(depth+3) + '- [0,0,0,0,1]')
+
+        lines.append(indent(depth) + 'id_pools:')
+        for x in self.pools:
+            lines.extend(x.to_yaml(depth+1))
+
         return lines
 
 
@@ -402,8 +445,17 @@ def sample_facts():
         encls=[encl_ssu11, encl_ssu13, encl_ssu14, encl_ssu16, encl_ssu17,
                encl_c191, encl_c192, encl_c193, encl_c194])
 
-    return '\n'.join(Facts(#profiles=[Profile('tier' + i) for i in '1234'],
-                           racks=[rack_0, rack_1]).to_yaml(0)) + '\n'
+    pools = [Pool(id='tier1.IO', drive_refs=map(DriveRef, encl_ssu11.drives)),
+             Pool(id='tier2.IO', drive_refs=map(DriveRef, encl_ssu13.drives)),
+             Pool(id='tier3.IO', drive_refs=map(DriveRef,
+                                                encl_ssu14.drives +
+                                                encl_ssu16.drives +
+                                                encl_ssu17.drives)),
+             # Drives of encl_ssu17 are shared between two pools.
+             Pool(id='tier4.IO', drive_refs=map(DriveRef, encl_ssu17.drives))]
+
+    return '\n'.join(
+        Facts(racks=[rack_0, rack_1], pools=pools).to_yaml(0)) + '\n'
 
 
 class ProcessEnv(ToYaml):
