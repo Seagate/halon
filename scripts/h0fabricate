@@ -25,11 +25,6 @@ defaults = {
     'Server.host_mem_rss': 65772544,
     'Server.host_mem_stack': 65772544,
     'Server.host_mem_memlock': 65772544,
-    'Profile.md_redundancy': 2,
-    'Profile.pa_unit_size': 4096,
-    'Profile.pa_N': 8,
-    'Profile.pa_K': 2,
-    'Profile.pa_seed': [101, 102],
 }
 
 
@@ -57,34 +52,18 @@ class ToYaml(object):
         raise NotImplementedError
 
 
-class Profile(Default, ToYaml):
+class Profile(ToYaml):
 
-    def __init__(self, id):
-        self.id = id
+    def __init__(self, id, pools):
+        assert id and type(id) is str
+        assert pools and all(type(x) is Pool for x in pools)
+        self.id, self.pools = id, pools
 
     def to_yaml(self, depth):
         lines = []
         lines.append(indent(depth) + '- prof_id: ' + quote(self.id))
-        lines.append(indent(depth+1) + 'prof_md_redundancy: {}'.format(
-            self.default('md_redundancy')))
-        lines.append(indent(depth+1) + 'prof_pools:')
-        lines.append(indent(depth+2) + '- pool_id: ' + quote(self.id + '.IO'))
-        lines.append(indent(depth+3) + 'pool_pdclust_attr:')
-        lines.append(indent(depth+4) + 'pa_unit_size: {}'.format(
-            self.default('pa_unit_size')))
-        lines.append(indent(depth+4) + 'pa_N: {}'.format(self.default('pa_N')))
-        lines.append(indent(depth+4) + 'pa_K: {}'.format(self.default('pa_K')))
-        lines.append(indent(depth+4) + 'pa_P: 0')
-        lines.append(indent(depth+4) + 'pa_seed: {}'.format(
-            self.default('pa_seed')))
-        lines.append(indent(depth+3) + 'pool_vers_gen:')
-        lines.append(indent(depth+4) + 'tag: Formulaic')
-        lines.append(indent(depth+4) + 'contents:')
-        lines.append(indent(depth+5) + '- [0, 0, 0, 0, 1]')
-        lines.append(indent(depth+5) + '- [0, 0, 0, 0, 2]')
-        lines.append(indent(depth+5) + '- [0, 0, 0, 1, 0]')
-        lines.append(indent(depth+5) + '- [0, 0, 0, 1, 1]')
-        lines.append(indent(depth+3) + 'pool_ver_policy: 0')
+        lines.append(indent(depth+1) + 'prof_pools: [{}]'.format(
+            ', '.join(quote(x.id) for x in self.pools)))
         return lines
 
 
@@ -290,9 +269,13 @@ class DriveRef(ToYaml):
 
 class Facts(ToYaml):
 
-    def __init__(self, racks, pools):
-        assert racks
-        self.racks, self.pools = racks, pools
+    def __init__(self, racks, pools, profiles):
+        # XXX REFACTORME: Use decorators: @nonempty_sequence_of(Rack), etc.
+        assert racks and all(type(x) is Rack for x in racks)
+        assert pools and all(type(x) is Pool for x in pools)
+        assert profiles and all(type(x) is Profile for x in profiles)
+        assert all(pool in pools for prof in profiles for pool in prof.pools)
+        self.racks, self.pools, self.profiles = racks, pools, profiles
 
     def to_yaml(self, depth):
         lines = []
@@ -332,6 +315,10 @@ class Facts(ToYaml):
 
         lines.append(indent(depth) + 'id_pools:')
         for x in self.pools:
+            lines.extend(x.to_yaml(depth+1))
+
+        lines.append(indent(depth) + 'id_profiles:')
+        for x in self.profiles:
             lines.extend(x.to_yaml(depth+1))
 
         return lines
@@ -454,8 +441,13 @@ def sample_facts():
              # Drives of encl_ssu17 are shared between two pools.
              Pool(id='tier4.IO', drive_refs=map(DriveRef, encl_ssu17.drives))]
 
-    return '\n'.join(
-        Facts(racks=[rack_0, rack_1], pools=pools).to_yaml(0)) + '\n'
+    profiles = [Profile(id='prof-0', pools=pools[:1]),
+                Profile(id='prof-1', pools=pools[1:3]),
+                Profile(id='prof-2', pools=pools[3:])]
+
+    return '\n'.join(Facts(racks=[rack_0, rack_1],
+                           pools=pools,
+                           profiles=profiles).to_yaml(0)) + '\n'
 
 
 class ProcessEnv(ToYaml):
