@@ -30,6 +30,7 @@ import qualified Data.Text.Lazy as T (toStrict)
 import           Data.Word (Word32, Word64)
 import qualified Data.Yaml as Y
 import           GHC.Generics (Generic)
+import           HA.Aeson (FromJSON, ToJSON, (.:), (.=))
 import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
@@ -55,10 +56,10 @@ halonSettingsOptions :: A.Options
 halonSettingsOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hs_" :: String)) }
 
-instance A.FromJSON HalonSettings where
+instance FromJSON HalonSettings where
   parseJSON = A.genericParseJSON halonSettingsOptions
 
-instance A.ToJSON HalonSettings where
+instance ToJSON HalonSettings where
   toJSON = A.genericToJSON halonSettingsOptions
 
 -- | Information about a mero host.
@@ -72,8 +73,8 @@ data Host = Host
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Host
-instance A.FromJSON Host
-instance A.ToJSON Host
+instance FromJSON Host
+instance ToJSON Host
 
 -- | Information about @BMC@ interface, used to commands to the
 -- hardware.
@@ -87,8 +88,8 @@ data BMC = BMC
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable BMC
-instance A.FromJSON BMC
-instance A.ToJSON BMC
+instance FromJSON BMC
+instance ToJSON BMC
 
 -- | Information about enclosures.
 data Enclosure = Enclosure
@@ -103,8 +104,8 @@ data Enclosure = Enclosure
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Enclosure
-instance A.FromJSON Enclosure
-instance A.ToJSON Enclosure
+instance FromJSON Enclosure
+instance ToJSON Enclosure
 
 -- | Rack information
 data Rack = Rack
@@ -115,8 +116,8 @@ data Rack = Rack
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Rack
-instance A.FromJSON Rack
-instance A.ToJSON Rack
+instance FromJSON Rack
+instance ToJSON Rack
 
 -- | Failure set schemes. Define how failure sets are determined.
 --
@@ -127,8 +128,8 @@ data FailureSetScheme =
   deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable FailureSetScheme
-instance A.FromJSON FailureSetScheme
-instance A.ToJSON FailureSetScheme
+instance FromJSON FailureSetScheme
+instance ToJSON FailureSetScheme
 
 -- | Halon config for a host
 data HalonRole = HalonRole
@@ -152,10 +153,10 @@ halonConfigOptions :: A.Options
 halonConfigOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_hc_" :: String)) }
 
-instance A.FromJSON HalonRole where
+instance FromJSON HalonRole where
   parseJSON = A.genericParseJSON halonConfigOptions
 
-instance A.ToJSON HalonRole where
+instance ToJSON HalonRole where
   toJSON = A.genericToJSON halonConfigOptions
 
 -- | Facts about the cluster.
@@ -181,8 +182,8 @@ data M0Globals = M0Globals {
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Globals
-instance A.FromJSON M0Globals
-instance A.ToJSON M0Globals
+instance FromJSON M0Globals
+instance ToJSON M0Globals
 
 -- | Devices attached to a 'M0Host'
 data M0Device = M0Device {
@@ -195,8 +196,8 @@ data M0Device = M0Device {
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Device
-instance A.FromJSON M0Device
-instance A.ToJSON M0Device
+instance FromJSON M0Device
+instance ToJSON M0Device
 
 -- | Represents an aggregation of three Mero concepts, which we don't
 -- necessarily need for the castor implementation - nodes,
@@ -211,8 +212,8 @@ data M0Host = M0Host
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Host
-instance A.FromJSON M0Host
-instance A.ToJSON M0Host
+instance FromJSON M0Host
+instance ToJSON M0Host
 
 data M0ProcessType =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
@@ -226,8 +227,8 @@ data M0ProcessType =
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Data, Show, Typeable, Generic)
 instance Hashable M0ProcessType
-instance A.FromJSON M0ProcessType
-instance A.ToJSON M0ProcessType
+instance FromJSON M0ProcessType
+instance ToJSON M0ProcessType
 
 -- | Mero process environment. Values of this type become additional Environment
 --   variables in the sysconfig file for this process.
@@ -239,8 +240,8 @@ data M0ProcessEnv =
   | M0PEnvRange Int Int
   deriving (Eq, Data, Show, Typeable, Generic)
 instance Hashable M0ProcessEnv
-instance A.FromJSON M0ProcessEnv
-instance A.ToJSON M0ProcessEnv
+instance FromJSON M0ProcessEnv
+instance ToJSON M0ProcessEnv
 
 -- | Information about mero process on the host
 data M0Process = M0Process
@@ -263,8 +264,8 @@ data M0Process = M0Process
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Process
-instance A.FromJSON M0Process
-instance A.ToJSON M0Process
+instance FromJSON M0Process
+instance ToJSON M0Process
 
 -- | Information about a service
 data M0Service = M0Service {
@@ -276,8 +277,8 @@ data M0Service = M0Service {
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Service
-instance A.FromJSON M0Service
-instance A.ToJSON M0Service
+instance FromJSON M0Service
+instance ToJSON M0Service
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
@@ -288,8 +289,8 @@ data InitialData = InitialData {
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable InitialData
-instance A.FromJSON InitialData
-instance A.ToJSON InitialData
+instance FromJSON InitialData
+instance ToJSON InitialData
 
 -- | Handy synonym for role names
 type RoleName = String
@@ -316,10 +317,10 @@ rolespecJSONOptions = A.defaultOptions
   , A.omitNothingFields = True
   }
 
-instance A.FromJSON RoleSpec where
+instance FromJSON RoleSpec where
   parseJSON = A.genericParseJSON rolespecJSONOptions
 
-instance A.ToJSON RoleSpec where
+instance ToJSON RoleSpec where
   toJSON = A.genericToJSON rolespecJSONOptions
 
 instance Hashable RoleSpec where
@@ -347,10 +348,10 @@ roleJSONOptions :: A.Options
 roleJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_role_" :: String)) }
 
-instance A.FromJSON MeroRole where
+instance FromJSON MeroRole where
   parseJSON = A.genericParseJSON roleJSONOptions
 
-instance A.ToJSON MeroRole where
+instance ToJSON MeroRole where
   toJSON = A.genericToJSON roleJSONOptions
 
 -- | Parse a halon_facts file into a structure indicating roles for
@@ -366,26 +367,26 @@ data InitialWithRoles = InitialWithRoles
 
 instance A.FromJSON InitialWithRoles where
   parseJSON (A.Object v) = InitialWithRoles <$>
-                           v A..: "id_racks" <*>
+                           v .: "id_racks" <*>
                            parseServers <*>
-                           v A..: "id_m0_globals"
+                           v .: "id_m0_globals"
 
     where
       parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
       parseServers = do
-        objs <- v A..: "id_m0_servers"
+        objs <- v .: "id_m0_servers"
         forM objs $ \obj -> (,obj) <$> A.parseJSON (A.Object obj)
 
   parseJSON invalid = A.typeMismatch "InitialWithRoles" invalid
 
-instance A.ToJSON InitialWithRoles where
+instance ToJSON InitialWithRoles where
   toJSON InitialWithRoles{..} = A.object
-    [ "id_racks" A..= _rolesinit_id_racks
+    [ "id_racks" .= _rolesinit_id_racks
     -- Dump out the full object into the file rather than our parsed
     -- and trimmed structure. This means we won't lose any information
     -- with @fromJSON . toJSON@
-    , "id_m0_servers" A..= map snd _rolesinit_id_m0_servers
-    , "id_m0_globals" A..= _rolesinit_id_m0_globals
+    , "id_m0_servers" .= map snd _rolesinit_id_m0_servers
+    , "id_m0_globals" .= _rolesinit_id_m0_globals
     ]
 
 -- | Hosts section of halon_facts
@@ -406,10 +407,10 @@ unexpandedHostJSONOptions :: A.Options
 unexpandedHostJSONOptions = A.defaultOptions
   { A.fieldLabelModifier = drop (length ("_uhost_" :: String)) }
 
-instance A.FromJSON UnexpandedHost where
+instance FromJSON UnexpandedHost where
   parseJSON = A.genericParseJSON unexpandedHostJSONOptions
 
-instance A.ToJSON UnexpandedHost where
+instance ToJSON UnexpandedHost where
   toJSON = A.genericToJSON unexpandedHostJSONOptions
 
 mkException :: String -> String -> Y.ParseException
@@ -477,7 +478,7 @@ mkHalonRoles template roles =
     findRole name = find ((name ==) . _hc_name)
 
 -- | Expand a role from the given template and env.
-mkRole :: A.FromJSON a
+mkRole :: FromJSON a
        => EDE.Template -- ^ Role template.
        -> Y.Object -- ^ Surrounding environment.
        -> RoleSpec -- ^ Role to expand.
