@@ -151,6 +151,8 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
               [(1 :: Int) .. _id_drives]
           })
       serverAddrs
+  , CI.id_pools = []
+  , CI.id_profiles = []
 }
   where
     serverAddrs :: [(Word8, Word8, Word8, Word8)]

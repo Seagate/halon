@@ -280,12 +280,57 @@ instance Hashable M0Service
 instance FromJSON M0Service
 instance ToJSON M0Service
 
+data M0Pool = M0Pool
+  { pool_id :: T.Text
+  , pool_device_refs :: [M0DeviceRef]
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Hashable M0Pool
+instance FromJSON M0Pool
+instance ToJSON M0Pool
+
+-- | Reference to M0Device: a combination of any number of device
+-- attributes (from given subset), which uniquely identifies a device.
+--
+-- We cannot use WWN as a unique identifier, because it's not set for
+-- some types of devices (e.g., loop devices).
+data M0DeviceRef = M0DeviceRef
+  { dr_wwn :: Maybe T.Text
+  , dr_serial :: Maybe T.Text
+  , dr_path :: Maybe T.Text
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+-- XXX BUGS: If name of optional field is misspelled in facts.yaml,
+-- the parsing will succeed nevertheless!
+--
+-- E.g. (note that `dr_wwn` is misspelled here)
+--     > Y.decode "rd_wwn: \"0x5000c50078000157\"" :: Maybe M0DeviceRef
+--     Just (M0DeviceRef Nothing Nothing Nothing)
+--
+-- This problem can be solved by using yaml-combinators package;
+-- see https://ro-che.info/articles/2015-07-26-better-yaml-parsing
+
+instance Hashable M0DeviceRef
+instance FromJSON M0DeviceRef
+instance ToJSON M0DeviceRef
+
+data M0Profile = M0Profile
+  { prof_id :: T.Text
+  , prof_pools :: [T.Text]
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Hashable M0Profile
+instance FromJSON M0Profile
+instance ToJSON M0Profile
+
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
 data InitialData = InitialData {
     id_racks :: [Rack]
   , id_m0_servers :: [M0Host]
   , id_m0_globals :: M0Globals
+  , id_pools :: [M0Pool]
+  , id_profiles :: [M0Profile]
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable InitialData
@@ -363,14 +408,17 @@ data InitialWithRoles = InitialWithRoles
     -- the host was parsed out from, used as environment given during
     -- template expansion.
   , _rolesinit_id_m0_globals :: M0Globals
+  , _rolesinit_id_pools :: [M0Pool]
+  , _rolesinit_id_profiles :: [M0Profile]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
-instance A.FromJSON InitialWithRoles where
-  parseJSON (A.Object v) = InitialWithRoles <$>
-                           v .: "id_racks" <*>
-                           parseServers <*>
-                           v .: "id_m0_globals"
-
+instance FromJSON InitialWithRoles where
+  parseJSON (A.Object v) =
+      InitialWithRoles <$> v .: "id_racks"
+                       <*> parseServers
+                       <*> v .: "id_m0_globals"
+                       <*> v .: "id_pools"
+                       <*> v .: "id_profiles"
     where
       parseServers :: A.Parser [(UnexpandedHost, Y.Object)]
       parseServers = do
@@ -387,6 +435,8 @@ instance ToJSON InitialWithRoles where
     -- with @fromJSON . toJSON@
     , "id_m0_servers" .= map snd _rolesinit_id_m0_servers
     , "id_m0_globals" .= _rolesinit_id_m0_globals
+    , "id_pools" .= _rolesinit_id_pools
+    , "id_profiles" .= _rolesinit_id_profiles
     ]
 
 -- | Hosts section of halon_facts
@@ -427,6 +477,8 @@ resolveMeroRoles InitialWithRoles{..} template =
             Right $ InitialData { id_racks = _rolesinit_id_racks
                                 , id_m0_servers = hosts
                                 , id_m0_globals = _rolesinit_id_m0_globals
+                                , id_pools = _rolesinit_id_pools
+                                , id_profiles = _rolesinit_id_profiles
                                 }
         (errs, _) -> Left . mkException "resolveMeroRoles" . intercalate ", "
             $ concat errs
@@ -540,6 +592,9 @@ deriveSafeCopy 0 'base ''M0Device
 storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals
 storageIndex           ''M0Globals "4978783e-e7ff-48fe-ab83-85759d822622"
+deriveSafeCopy 0 'base ''M0Pool
+deriveSafeCopy 0 'base ''M0DeviceRef
+deriveSafeCopy 0 'base ''M0Profile
 deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''M0ProcessType
