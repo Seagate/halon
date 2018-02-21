@@ -21,7 +21,7 @@ import           Control.Lens
 import           Control.Monad (unless, when, void)
 import           Data.Bifunctor
 import           Data.Defaultable (Defaultable(..), defaultable, fromDefault)
-import           Data.Foldable (for_)
+import           Data.Foldable (for_, traverse_)
 import           Data.List (intercalate)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
@@ -39,36 +39,40 @@ import qualified Handler.Halon.Node.Add as NodeAdd
 import qualified Handler.Halon.Service as Service
 import qualified Handler.Halon.Station as Station
 import           Lookup (conjureRemoteNodeId)
-import           Network.CEP (Published(..))
+import           Network.CEP (pubValue)
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Internal as Opt
 import qualified Options.Applicative.Types as Opt
-import           System.Environment
-import           System.Exit
+import           System.Environment (lookupEnv)
+import           System.Exit (exitFailure)
+import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
-  { configInitialData :: Defaultable FilePath
-  , configMeroRoles :: Defaultable FilePath
-  , configHalonRoles :: Defaultable FilePath
-  , configDryRun :: Bool
-  , configVerbose :: Bool
-  , configMkfsDone :: Bool
+  { optFacts :: Defaultable FilePath
+  , optRolesMero :: Defaultable FilePath
+  , optRolesHalon :: Defaultable FilePath
+  , optDryRun :: Bool
+  , optVerbose :: Bool
+  , optMkfsDone :: Bool
   } deriving (Eq, Show, Ord, Generic, Typeable)
 
 parser :: Opt.Parser Options
 parser = let
-    initial = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
-            $ Opt.long "facts"
-            <> Opt.short 'f'
-            <> Opt.help "Halon facts file"
-            <> Opt.metavar "FILEPATH"
-    meroRoles = defaultable "/etc/halon/mero_role_mappings" . Opt.strOption
-          $ Opt.long "roles" -- XXX TODO: rename to "mero-roles"
+    -- XXX TODO: rename to "/etc/halon/facts.yaml"
+    facts = defaultable "/etc/halon/halon_facts.yaml" . Opt.strOption
+          $ Opt.long "facts"
+         <> Opt.short 'f'
+         <> Opt.help "Halon facts file"
+         <> Opt.metavar "FILEPATH"
+    -- XXX TODO: rename to "/etc/halon/roles-mero.yaml"
+    rolesMero = defaultable "/etc/halon/mero_role_mappings" . Opt.strOption
+          $ Opt.long "roles" -- XXX TODO: rename to "roles-mero"
          <> Opt.short 'r'
          <> Opt.help "Mero roles file used by Halon"
          <> Opt.metavar "FILEPATH"
-    halonRoles = defaultable "/etc/halon/halon_role_mappings" . Opt.strOption
-          $ Opt.long "halonroles" -- XXX TODO: rename to "halon-roles"
+    -- XXX TODO: rename to "/etc/halon/roles-halon.yaml"
+    rolesHalon = defaultable "/etc/halon/halon_role_mappings" . Opt.strOption
+          $ Opt.long "halonroles" -- XXX TODO: rename to "roles-halon"
          <> Opt.short 's'
          <> Opt.help "Halon-specific roles file"
          <> Opt.metavar "FILEPATH"
@@ -81,15 +85,15 @@ parser = let
          <> Opt.short 'v'
          <> Opt.help "Verbose output"
     mkfs = Opt.switch
-         $ Opt.long "mkfs-done"
-         <> Opt.help "Do not run mkfs on a cluster."
-  in Options <$> initial <*> meroRoles <*> halonRoles <*> dry <*> verbose <*> mkfs
+          $ Opt.long "mkfs-done"
+         <> Opt.help "Do not run mkfs on a cluster"
+  in Options <$> facts <*> rolesMero <*> rolesHalon <*> dry <*> verbose <*> mkfs
 
 data Host = Host
   { hFqdn :: T.Text
   , hIp :: String
   , hRoles :: [CI.HalonRole]
-  , hSvcs :: [( String          -- service string
+  , hSvcs :: [( String          -- service start command
               , Service.Options -- parsed service config
               )]
   }
@@ -120,25 +124,25 @@ mkValidatedConfig racks mkRoles stationOpts =
                            in (text,) <$> parseHelper Station.parser text
 
     validateSatelliteOpts :: Either Opt.ParseError (String, NodeAdd.Options)
-    validateSatelliteOpts = let text = "" -- XXX Why bother parsing an empty
-                                          -- string?
+    validateSatelliteOpts = let text = "" -- XXX Why bother parsing
+                                          -- empty string?
                             in (text,) <$> parseHelper NodeAdd.parser text
 
     hosts :: [(CI.Host, CI.HalonSettings)]
-    hosts = [ (h, hs) | rack <- racks
-                      , enc <- CI.rack_enclosures rack
-                      , h <- CI.enc_hosts enc
-                      , Just hs <- [CI.h_halon h] ]
+    hosts = [ (host, h0params) | rack <- racks
+                               , encl <- CI.rack_enclosures rack
+                               , host <- CI.enc_hosts encl
+                               , Just h0params <- [CI.h_halon host] ]
 
     ehosts :: AccValidation [String] [Host]
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
 
     expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
-    expandHost (h, hs) = case mkRoles (CI._hs_roles hs) of
+    expandHost (host, h0params) = case mkRoles (CI._hs_roles h0params) of
         Left err -> _Failure # ["Halon role failure for "
-                                ++ T.unpack (CI.h_fqdn h) ++ ": " ++ err]
-        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn h
-                                      , hIp = CI._hs_address hs
+                                ++ T.unpack (CI.h_fqdn host) ++ ": " ++ err]
+        Right roles -> (\svcs -> Host { hFqdn = CI.h_fqdn host
+                                      , hIp = CI._hs_address h0params
                                       , hRoles = roles
                                       , hSvcs = svcs
                                       }
@@ -155,143 +159,155 @@ mkValidatedConfig racks mkRoles stationOpts =
         Right conf -> _Success # (str, conf)
 
 run :: Options -> Process ()
-run Options{..} = do
-  einitData <- liftIO $ CI.parseInitialData (fromDefault configInitialData)
-                                            (fromDefault configMeroRoles)
-                                            (fromDefault configHalonRoles)
-  case einitData of
-    Left err -> out $ "Failed to load initial data: " ++ show err
-    Right (initialData, halonRoleObj) -> do
-      stationOpts <- fmap (fromMaybe "") . liftIO
-          $ lookupEnv "HALOND_STATION_OPTIONS"
-      let evConfig = mkValidatedConfig (CI.id_racks initialData)
-                                       (CI.mkHalonRoles halonRoleObj)
-                                       stationOpts
-      case evConfig of
-        AccFailure strs -> liftIO $ do
-          putStrLn "Failed to validate settings: "
-          mapM_ putStrLn strs
-        AccSuccess ValidatedConfig{..} -> do
-          verbose "Halon facts"
-          liftIO (readFile $ fromDefault configInitialData) >>= verbose
-          verbose "Mero roles"
-          liftIO (readFile $ fromDefault configMeroRoles) >>= verbose
-          verbose "Halon roles"
-          liftIO (readFile $ fromDefault configHalonRoles) >>= verbose
-
-          when dry $ do
-            out "#!/bin/sh"
-            out "set -xe"
-
-          let getIps :: ([CI.HalonRole] -> Bool) -> [String]
-              getIps p = map hIp $ filter (p . hRoles) vcHosts
-
-              station_hosts = getIps $ any CI._hc_h_bootstrap_station -- TS
-              satellite_hosts = getIps $ const True -- no TS, some services
-
-          if null station_hosts
-            then out "No station hosts, can't do anything"
-            else do
-              bootstrapStation vcTsConfig station_hosts
-              bootstrapSatellites vcSatConfig station_hosts satellite_hosts
-
-              out "# Starting services"
-              for_ vcHosts $ \Host{..} -> do
-                unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
-                for_ hSvcs $ \svc -> startService hIp svc station_hosts
-
-              loadInitialData station_hosts
-                              initialData
-                              (fromDefault configInitialData)
-                              (fromDefault configMeroRoles)
-
-              when configMkfsDone $ do
-                if dry
-                then out $ "halonctl -l $IP:0 mero mkfs-done --confirm "
-                        ++ intercalate " -t " station_hosts
-                else do
-                  let stnodes = conjureRemoteNodeId <$> station_hosts
-                  (schan, rchan) <- newChan
-                  _ <- promulgateEQ stnodes (MarkProcessesBootstrapped schan)
-                  void $ receiveWait [ matchChan rchan (const $ return ()) ]
-
-              startCluster station_hosts
-              unless dry $ receiveTimeout step_delay [] >> return ()
+run opts@Options{..} = do
+    einitData <- liftIO $ CI.parseInitialData (fromDefault optFacts)
+                                              (fromDefault optRolesMero)
+                                              (fromDefault optRolesHalon)
+    case einitData of
+        Left err -> perrors ("Failed to load initial data:":[show err])
+        Right (initialData, halonRolesObj) -> do
+            stationOpts <- liftIO $
+                fromMaybe "" <$> lookupEnv "HALOND_STATION_OPTIONS"
+            let evConfig = mkValidatedConfig (CI.id_racks initialData)
+                                             (CI.mkHalonRoles halonRolesObj)
+                                             stationOpts
+            case evConfig of
+                AccFailure errs -> perrors ("Failed to validate settings:":errs)
+                AccSuccess vconf -> bootstrap initialData vconf opts
   where
-    dry = configDryRun
+    perrors :: [String] -> Process ()
+    perrors = traverse_ out2
+
+bootstrap :: CI.InitialData -> ValidatedConfig -> Options -> Process ()
+bootstrap initialData ValidatedConfig{..} Options{..} = do
+    verboseDumpFile "Halon facts" optFacts
+    verboseDumpFile "Mero roles" optRolesMero
+    verboseDumpFile "Halon roles" optRolesHalon
+
+    when dry $ do
+        out "#!/usr/bin/env bash"
+        out "set -eu -o pipefail"
+        out "set -x"
+        out ""
+
+    let getIps :: ([CI.HalonRole] -> Bool) -> [String]
+        getIps p = map hIp $ filter (p . hRoles) vcHosts
+
+        stationHosts = getIps $ any CI._hc_h_bootstrap_station -- TS
+        satelliteHosts = getIps $ const True -- no TS, some services
+
+    if null stationHosts
+      then out2 "No station hosts, can't do anything"
+      else do
+        bootstrapStation vcTsConfig stationHosts
+        bootstrapSatellites vcSatConfig stationHosts satelliteHosts
+
+        out "# Starting services"
+        for_ vcHosts $ \Host{..} -> do
+            unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
+            for_ hSvcs $ \svc -> startService hIp svc stationHosts
+
+        loadInitialData stationHosts
+                        initialData
+                        (fromDefault optFacts)
+                        (fromDefault optRolesMero)
+
+        when optMkfsDone $ do
+            if dry
+            then out $ "halonctl -l $IP:0 mero mkfs-done --confirm"
+                    ++ preintercalate " -t " stationHosts
+            else do
+                let stnodes = nids stationHosts
+                (schan, rchan) <- newChan
+                _ <- promulgateEQ stnodes (MarkProcessesBootstrapped schan)
+                void $ receiveWait [ matchChan rchan (const $ return ()) ]
+
+        startCluster stationHosts
+        unless dry $ void $ receiveTimeout stepDelay []
+  where
+    dry = optDryRun
     out = liftIO . putStrLn
-    verbose = liftIO . if configVerbose then putStrLn else const (return ())
-    step_delay = 10000000
+    verbose = if optVerbose then liftIO . putStrLn else const (return ())
+    stepDelay = 10000000
 
-    startService :: String -> (String, Service.Options) -> [String] -> Process ()
-    startService host (svcString, conf) stations
-      | dry =
-          let svc = svcString ++ " -t " ++ intercalate " -t " stations
-          in out $ "halonctl -l $IP:0 -a " ++ host ++ " halon service " ++ svc
-      | otherwise = Service.service [conjureRemoteNodeId host] conf
+    verboseDumpFile :: String -> Defaultable FilePath -> Process ()
+    verboseDumpFile title path = when optVerbose . liftIO $ do
+        putStrLn $ "--- " ++ title ++ " ---"
+        readFile (fromDefault path) >>= putStrLn
+        putStrLn "----------"
 
-    -- Bootstrap all halon stations.
+    nids :: [String] -> [NodeId]
+    nids = map conjureRemoteNodeId
+
+    preintercalate :: [a] -> [[a]] -> [a]
+    preintercalate xs xss = xs ++ intercalate xs xss
+
+    hctl :: [String] -> String
+    hctl [] = error "Invalid argument"
+    hctl targets = "halonctl -l $IP:0" ++ preintercalate " -a " targets
+
     bootstrapStation :: (String, Station.Options) -> [String] -> Process ()
-    bootstrapStation (str, _) hosts | dry = do
+    bootstrapStation (str, _) stations | dry = do
         out "# Starting stations"
-        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
-            ++ " halon station" ++ str
-    bootstrapStation (_, conf) hosts = do
-        verbose $ "Starting stations: " ++ show hosts
-        Station.start nodes conf
-      where
-        nodes = conjureRemoteNodeId <$> hosts
+        out $ hctl stations ++ " halon station " ++ str
+    bootstrapStation (_, conf) stations = do
+        verbose $ "Starting stations: " ++ show stations
+        Station.start (nids stations) conf
 
-    -- Bootstrap satellites.
-    bootstrapSatellites :: (String, NodeAdd.Options) -> [String] -> [String] -> Process ()
-    bootstrapSatellites _ stations hosts | dry = do
+    bootstrapSatellites :: (String, NodeAdd.Options)
+                        -> [String]
+                        -> [String]
+                        -> Process ()
+    bootstrapSatellites _ stations satellites | dry = do
         out "# Starting satellites"
-        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " hosts
-            ++ " halon node add -t " ++ intercalate " -t " stations
-    bootstrapSatellites (_, cfg) st hosts = do
-        verbose $ "Starting satellites" ++ show hosts
-        NodeAdd.run nodes conf >>= \case
+        out $ hctl satellites
+            ++ " halon node add" ++ preintercalate " -t " stations
+    bootstrapSatellites (_, conf) stations satellites = do
+        verbose $ "Starting satellites: " ++ show satellites
+        let conf' = conf { NodeAdd.configTrackers = Configured stations }
+        NodeAdd.run (nids satellites) conf' >>= \case
             [] -> return ()
-            errs -> liftIO $ do
-                putStrLn $ "nodeUp failed on following nodes: " ++ show errs
-                exitFailure
-      where
-        nodes = conjureRemoteNodeId <$> hosts
-        conf = cfg { NodeAdd.configTrackers = Configured st }
+            errs -> do
+                out2 $ "nodeUp failed on following nodes: " ++ show errs
+                liftIO exitFailure
 
-    loadInitialData satellites _ fn roles | dry = do
-        out $ "# load intitial data"
-        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " satellites
-            ++ " mero load -f " ++ fn ++ " -r " ++ roles
-    loadInitialData satellites datum _ _ = do
+    startService :: String
+                 -> (String, Service.Options)
+                 -> [String]
+                 -> Process ()
+    startService ip (str, _) stations | dry =
+        out $ hctl [ip]
+            ++ " halon service " ++ str ++ preintercalate " -t " stations
+    startService ip (_, conf) _ =
+        Service.service [conjureRemoteNodeId ip] conf
+
+    loadInitialData stations _ fn roles | dry = do
+        out $ "# Loading intitial data"
+        out $ hctl stations ++ " mero load -f " ++ fn ++ " -r " ++ roles
+    loadInitialData stations datum _ _ = do
         verbose "Loading initial data"
+        let eqnids = nids stations
         subscribeOnTo eqnids (Proxy :: Proxy InitialDataLoaded)
-        promulgateEQ eqnids datum >>= \pid -> withMonitor pid wait
-        expectTimeout step_delay >>= \v -> do
+        promulgateEQ eqnids datum >>= withMonitorWait
+        expectTimeout stepDelay >>= \v -> do
             unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
             case v of
-                Nothing -> liftIO $ do
-                    putStrLn "Timed out waiting for initial data to load."
-                    exitFailure
+                Nothing -> do
+                    out2 "Timed out waiting for initial data to load"
+                    liftIO exitFailure
                 Just p -> case pubValue p of
+                    InitialDataLoadFailed err -> do
+                        out2 $ "Initial data load failed: " ++ err
+                        liftIO exitFailure
                     InitialDataLoaded -> return ()
-                    InitialDataLoadFailed e -> liftIO $ do
-                        putStrLn $ "Initial data load failed: " ++ e
-                        exitFailure
-      where
-        wait = void (expect :: Process ProcessMonitorNotification)
-        eqnids = conjureRemoteNodeId <$> satellites
 
+    startCluster :: [String] -> Process ()
     startCluster stations | dry = do
-        out $ "# Start cluster"
-        out $ "halonctl -l $IP:0 -a " ++ intercalate " -a " stations
-            ++ " mero start"
+        out $ "# Starting cluster"
+        out $ hctl stations ++ " mero start"
     startCluster stations = do
         verbose "Requesting cluster start"
-        promulgateEQ stnodes ClusterStartRequest >>= flip withMonitor wait
-      where
-        stnodes = conjureRemoteNodeId <$> stations
-        wait = void (expect :: Process ProcessMonitorNotification)
+        promulgateEQ (nids stations) ClusterStartRequest >>= withMonitorWait
 
 -- | Parse options.
 parseHelper :: Opt.Parser a -> String -> Either Opt.ParseError a
@@ -305,3 +321,11 @@ showParseError (Opt.InfoMsg x) = "error: " ++ x
 showParseError Opt.ShowHelpText = "Invalid usage"
 showParseError Opt.UnknownError = "Unknown error"
 showParseError (Opt.MissingError _ _) = "Missing error"
+
+out2 :: String -> Process ()
+out2 = liftIO . hPutStrLn stderr
+
+withMonitorWait :: ProcessId -> Process ()
+withMonitorWait =
+    let wait = void (expect :: Process ProcessMonitorNotification)
+    in flip withMonitor wait
