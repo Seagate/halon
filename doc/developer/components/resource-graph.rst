@@ -169,11 +169,11 @@ Code pointers
 -------------
 
 - The general interface to graph communication is in
-- `halon/src/lib/HA/ResourceGraph/GraphLike.hs`. The implementation of the
-- `GraphLike` interface for standard RG operations is in
-- `halon/src/lib/HA/ResourceGraph.hs`. The unconstrained graph used for
-- migrating between multiple versions of the resource graph is in
-- `halon/src/lib/HA/ResourceGraph/UGraph.hs`
+  `halon/src/lib/HA/ResourceGraph/GraphLike.hs`.
+- The implementation of the `GraphLike` interface for standard RG
+  operations is in `halon/src/lib/HA/ResourceGraph.hs`.
+- The unconstrained graph used for migrating between multiple versions
+  of the resource graph is in `halon/src/lib/HA/ResourceGraph/UGraph.hs`.
 
 Initial resources are defined in:
 

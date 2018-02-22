@@ -31,11 +31,11 @@ following types of events:
   given interval.
 
 - "Trimming" - a 'trim' message is sent by the RC when it's done with some
-  "event. This informs the EQ that it can drop that event.
+  event. This informs the EQ that it can drop that event.
 
 - "Clearing" - the RC (or an administrator) may send a message asking for the EQ
-  "to be completely cleared. This is mostly useful for working around problems
-  "when the system has got stuck.
+  to be completely cleared. This is mostly useful for working around problems
+  when the system has got stuck.
 
 - Notifications about the replicator availability.
 
