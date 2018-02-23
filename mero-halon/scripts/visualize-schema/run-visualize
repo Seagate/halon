@@ -19,4 +19,4 @@ cd "$(dirname $(readlink -f $0))"
 PKG_CONFIG_PATH=$M0_SRC_DIR \
     LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
     MERO_ROOT=$M0_SRC_DIR \
-    stack runhaskell visualize.hs
+    stack runhaskell visualize.hs -- "$@"

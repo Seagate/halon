@@ -19,6 +19,10 @@ import Mero.RemoteTables ()
 
 import HA.ResourceGraph (Cardinality(AtMostOne,Unbounded), Relation)
 import TH (RelationInfo(..), resources, sep)
+
+import Options.Applicative (execParser, help, helper, info, long, switch)
+import Control.Applicative ((<**>))
+import Data.Semigroup ((<>))
 import Data.List (intersperse, isPrefixOf)
 
 data Fmt = FmtRaw | FmtDot
@@ -71,5 +75,12 @@ shorten' = reprefix [ ("HA.Service.Internal", "SvcI")
       | (prefix ++ ".") `isPrefixOf` str = subst ++ drop (length prefix) str
       | otherwise = reprefix rest str
 
+data Options = Options { optRawP :: Bool }
+
 main :: IO ()
-main = putStrLn $ repr FmtDot $(resources ''Relation)
+main = do
+    opts <- execParser $ info (optsParser <**> helper) mempty
+    let fmt = if optRawP opts then FmtRaw else FmtDot
+    putStrLn $ repr fmt $(resources ''Relation)
+  where
+    optsParser = Options <$> switch (long "raw" <> help "Raw output")
