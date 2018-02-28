@@ -34,6 +34,7 @@ mkPVerFormulaicFid fid@(Fid container key)
 -- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
+  root <- G.connectedTo Cluster Has rg :: Maybe M0.Root
   -- XXX-MULTIPOOLS: [] instead of Maybe
   prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
   -- XXX-MULTIPOOLS: no Filesystem
@@ -47,8 +48,8 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                 , _pa_unit_size = 4096
                 , _pa_seed = Word128 101 102
                 }
-      mdpool = M0.Pool (M0.f_mdpool_fid fs) -- XXX-MULTIPOOLS
-      imeta_pver = M0.f_imeta_fid fs -- XXX-MULTIPOOLS
+      mdpool = M0.Pool (M0.rt_mdpool root)
+      imeta_pver = M0.rt_imeta_pver root
       n = CI.m0_data_units globs
       k = CI.m0_parity_units globs
       noCtlrs = length

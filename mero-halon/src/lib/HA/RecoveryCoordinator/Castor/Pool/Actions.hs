@@ -17,7 +17,7 @@ module HA.RecoveryCoordinator.Castor.Pool.Actions
 import qualified Data.HashSet as S
 
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -25,12 +25,13 @@ import qualified HA.Resources.Mero.Note as M0
 -- also 'getPool'.
 getNonMD :: G.Graph -> [M0.Pool]
 getNonMD rg =
-  [ pool
-  | Just prof <- [G.connectedTo R.Cluster R.Has rg :: Maybe M0.Profile]
-  , fs <- G.connectedTo prof M0.IsParentOf rg :: [M0.Filesystem] -- XXX-MULTIPOOLS
-  , pool <- G.connectedTo fs M0.IsParentOf rg
-  , M0.fid pool /= M0.f_mdpool_fid fs
-  ]
+  let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+  in [ pool
+     | Just prof <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile] -- XXX-MULTIPOOLS
+     , fs <- G.connectedTo prof M0.IsParentOf rg :: [M0.Filesystem] -- XXX-MULTIPOOLS
+     , pool <- G.connectedTo fs M0.IsParentOf rg
+     , M0.fid pool /= M0.rt_mdpool root
+     ]
 
 -- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
 --

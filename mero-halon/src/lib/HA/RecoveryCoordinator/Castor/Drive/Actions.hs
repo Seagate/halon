@@ -252,6 +252,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     mk :: Maybe (Int, Int)
     mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
              connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
+             Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
              -- XXX-MULTIPOOLS: Shouldn't we distinguish pvers of different pools?
              pvers = nub
                [ pver
@@ -260,15 +261,11 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , encl  <- connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
                , rack  <- connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
                , rackv <- G.connectedTo rack M0.IsRealOf        rg :: [M0.RackV]
+               -- XXX-MULTIPOOLS: Site, SiteV
                , pver  <- connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
                , pool  <- connectedFromList M0.IsParentOf pver  rg :: [M0.Pool]
-               -- exclude metadata pools
-               , M0.fid pool `notElem` mdFids
+               , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
                ]
-             mdFids = [ M0.f_mdpool_fid fs -- XXX-MULTIPOOLS
-                      | p <- connectedToList Cluster Has rg :: [M0.Profile]
-                      , fs <- G.connectedTo p M0.IsParentOf rg ]
-
              failedDisks = [ d
                            | prof :: M0.Profile <- connectedToList Cluster Has rg
                            , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
@@ -285,7 +282,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
-                            -> Res.Node          -- ^ Node in question.
+                            -> Res.Node      -- ^ Node in question.
                             -> StorageDevice -- ^ Installed storage device.
                             -> Res.Slot      -- ^ Slot of the device.
                             -> Bool          -- ^ Is device installed.

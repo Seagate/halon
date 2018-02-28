@@ -58,25 +58,26 @@ initialiseConfInRG :: PhaseM RC l M0.Filesystem
 initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
-      root    <- M0.Root    <$> newFidRC (Proxy :: Proxy M0.Root)
+      -- XXX-MULTIPOOLS: create as many profiles as there are in the facts file
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       -- Note that `createIMeta` may replace this FID with m0_fid0.
-      imeta_fid <- newFidRC (Proxy :: Proxy M0.PVer)
-      fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
-                          <*> return (M0.fid mdpool)
-                          <*> return imeta_fid
+      imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
+      root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
+                      <*> pure (M0.fid mdpool)
+                      <*> pure imeta_pver
+      fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem) -- XXX-MULTIPOOLS: DELETEME
       modifyGraph
-          $ G.connect Cluster Has profile
+          $ G.connect Cluster Has root
         >>> G.connect Cluster Has M0.OFFLINE
         >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
         >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+        >>> G.connect root M0.IsParentOf profile
+        >>> G.connect Cluster Has profile -- XXX-MULTIPOOLS: delete this relation?
         >>> G.connect profile M0.IsParentOf fs
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connect fs M0.IsParentOf mdpool
-        >>> G.connect Cluster Has root
-        >>> G.connect root M0.IsParentOf profile
 
       rg <- getLocalGraph
       let re = [ (rack, G.connectedTo rack Has rg)
@@ -248,15 +249,16 @@ createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
 createMDPoolPVer fs = do
     Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
     rg <- getLocalGraph
-    let mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+        mdpool = M0.Pool (M0.rt_mdpool root)
         racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
         encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
                 =<< racks
         ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
                 =<< encls
-        -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the MD pool,
-        -- it should use the information provided via `id_pools` section of the
-        -- facts file.
+        -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the
+        -- meta-data pool --- it should use the information provided via
+        -- `id_pools` section of the facts file.
         disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
                 =<< ctrls
         fids = Set.unions . (fmap Set.fromList) $
@@ -289,7 +291,7 @@ createMDPoolPVer fs = do
 --   If there are no CAS services in the graph, then we have a slight
 --   problem, since it is invalid to have a zero-width pver (e.g. a pver with
 --   no associated devices). In this case, we use the special FID 'M0_FID0'
---   in the 'f_imeta_pver' field. This should validate correctly in Mero iff
+--   in the 'rt_imeta' field. This should validate correctly in Mero iff
 --   there are no CAS services.
 createIMeta :: M0.Filesystem -> PhaseM RC l ()
 -- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
@@ -297,11 +299,12 @@ createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getLocalGraph
-  let cas = [ (rack, encl, ctrl, srv) -- XXX-MULTIPOOLS: site
+  let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+      cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
             | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
             , proc <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
-            , srv <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
-            , M0.s_type srv == CST_CAS
+            , svc <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
+            , M0.s_type svc == CST_CAS
             , Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
             , Just encl <- [G.connectedFrom M0.IsParentOf ctrl rg :: Maybe M0.Enclosure]
             , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
@@ -317,7 +320,7 @@ createIMeta fs = do
               }
       failures = Failures 0 0 0 1 0
       maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]
-  fids <- for (zip cas [1..]) $ \((rack, encl, ctrl, srv), idx :: Int) -> do
+  fids <- for (zip cas [1..]) $ \((rack, encl, ctrl, svc), idx :: Int) -> do
     sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
                     <*> return (fromIntegral idx + maxDiskIdx)
                     <*> return 1024
@@ -327,19 +330,17 @@ createIMeta fs = do
     modifyGraph
         $ G.connect ctrl M0.IsParentOf disk
       >>> G.connect sdev M0.IsOnHardware disk
-      >>> G.connect srv M0.IsParentOf sdev
+      >>> G.connect svc M0.IsParentOf sdev
     return [M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
 
-  let pver = PoolVersion (Just $ M0.f_imeta_fid fs) -- XXX-MULTIPOOLS
+  let pver = PoolVersion (Just $ M0.rt_imeta_pver root)
                           (Set.unions $ Set.fromList <$> fids) failures attrs
-      -- If there are no CAS services then we need to replace the Filesystem
+      -- If there are no CAS services then we need to replace the M0.Root
       -- entity with one containing the special M0_FID0 value. We can't do this
-      -- before since we create the filesystem before we create services in the
+      -- before since we create the root before we create services in the
       -- graph.
       updateGraph = if null cas
-        then G.mergeResources head
-                -- XXX-MULTIPOOLS
-                [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
+        then G.mergeResources head [root {M0.rt_imeta_pver = m0_fid0}, root]
         else G.connect fs M0.IsParentOf pool
           >>> createPoolVersionsInPool fs pool [pver] False
 

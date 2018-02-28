@@ -248,11 +248,12 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       rg' <- updateGraph return
       putLocalGraph rg'
     -- Verify that everything is set up correctly
-    Just fs <- runGet ls' getFilesystem
-    let mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    Just root <- runGet ls' getRoot
+    Just fs <- runGet ls' getFilesystem -- XXX-MULTIPOOLS
+    let mdpool = M0.Pool (M0.rt_mdpool root)
     assertMsg "MDPool is stored in RG"
       $ memberResource mdpool (lsGraph ls')
-    mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.f_mdpool_fid fs)
+    mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.rt_mdpool root)
     assertMsg "MDPool is findable by Fid"
       $ mdpool_byFid == Just mdpool
 
@@ -422,7 +423,6 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
         rg <- getLocalGraph
         liftIO . putMVar box =<< calculateClusterLiveness rg
       liftIO $ test =<< takeMVar box
-
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g

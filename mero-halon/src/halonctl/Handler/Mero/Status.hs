@@ -66,7 +66,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
   putStrLn $ "Cluster is " ++ maybe "N/A" (show . M0._mcs_disposition) status
   case info' of
     Nothing -> putStrLn "cluster information is not available, load initial data.."
-    Just (M0.Profile pfid, M0.Filesystem ffid _ _)  -> do
+    Just (M0.Profile pfid, M0.Filesystem ffid) -> do
       putStrLn   "  cluster info:"
       putStrLn $ "    profile:    " ++ fidToStr pfid
       putStrLn $ "    filesystem: " ++ fidToStr ffid

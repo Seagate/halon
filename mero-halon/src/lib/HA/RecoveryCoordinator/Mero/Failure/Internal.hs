@@ -17,12 +17,14 @@ import           Control.Monad (unless)
 import qualified Control.Monad.State.Lazy as S
 import           Data.Foldable (for_)
 import           Data.List (foldl')
+import           Data.Maybe (fromJust)
 import qualified Data.Set as Set
 import           Data.Traversable (for)
 import           Data.Typeable
 import           Data.Word
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..))
 
@@ -184,10 +186,12 @@ createPoolVersions :: M0.Filesystem -- XXX-MULTIPOOLS
 createPoolVersions fs pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
   where
-    mdpool = M0.Pool (M0.f_mdpool_fid fs)
+    root = fromJust (G.connectedTo Cluster Has rg :: Maybe M0.Root)
+    mdpool = M0.Pool (M0.rt_mdpool root)
     imeta_pools =
       [ pool
-      | Just (pver :: M0.PVer) <- [M0.lookupConfObjByFid (M0.f_imeta_fid fs) rg]
+      | Just (pver :: M0.PVer) <-
+            [M0.lookupConfObjByFid (M0.rt_imeta_pver root) rg]
       , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
       ]
     pools = filter (/= mdpool)

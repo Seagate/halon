@@ -110,8 +110,9 @@ failvecCascade t pg = do
       Log.rcLog' Log.DEBUG ("Set hooks." :: String)
       rg <- getLocalGraph
       let d0:d1:_ =
-              [ disk | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
+              [ disk
+              | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
+              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg -- XXX-MULTIPOOLS
               , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
               , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
               , (controller :: M0.Controller) <- G.connectedTo enclosure M0.IsParentOf rg
@@ -120,14 +121,15 @@ failvecCascade t pg = do
           disks = [d0, d1]
       _ <- applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
       rg' <- getLocalGraph
-
-      let pools =
-              [ pool | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg'
+      let Just root = G.connectedTo Cluster Has rg' :: Maybe M0.Root
+          pools =
+              [ pool
+              | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']
+              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg' -- XXX-MULTIPOOLS
               , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg'
               , (pver :: M0.PVer) <- G.connectedTo pool M0.IsParentOf rg'
-              , M0.fid pool /= M0.f_mdpool_fid fs
-              , M0.fid pver /= M0.f_imeta_fid fs
+              , M0.fid pool /= M0.rt_mdpool root
+              , M0.fid pver /= M0.rt_imeta_pver root
               ]
           mvs :: [M0.Disk]
           mvs = nub . sort . concat $ mapMaybe

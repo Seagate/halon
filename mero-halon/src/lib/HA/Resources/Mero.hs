@@ -199,14 +199,21 @@ instance ToJSON IsOnHardware
 storageIndex ''IsOnHardware "82dcc778-1702-4061-8b4b-c660896c9193"
 deriveSafeCopy 0 'base ''IsOnHardware
 
-newtype Root = Root Fid
-  deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
+data Root = Root
+  { rt_fid :: Fid
+  , rt_mdpool :: Fid -- ^ Meta-data pool.
+  , rt_imeta_pver :: Fid -- ^ Distributed index meta-data pool version.
+  } deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable Root
+instance ToJSON Root
+instance FromJSON Root
 
 instance ConfObj Root where
-   fidType _ = fromIntegral . ord $ 't'
-   fid (Root f) = f
+  fidType _ = fromIntegral . ord $ 't'
+  fid = rt_fid
 
-storageIndex ''Root "c5bc3158-9ff7-4fae-93c8-ed9f8d623991"
+storageIndex ''Root "553c273e-4ae8-4a0d-8152-1b3d634373e5"
 deriveSafeCopy 0 'base ''Root
 
 newtype Profile = Profile Fid
@@ -219,21 +226,13 @@ instance ConfObj Profile where
 storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
--- XXX-MULTIPOOLS: Change to root
-data Filesystem = Filesystem
-  { f_fid :: Fid
-  , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
-  , f_imeta_fid :: Fid -- ^ Fid of the imeta pver
-  } deriving (Eq, Show, Ord, Generic, Typeable)
+-- XXX-MULTIPOOLS: DELETEME
+newtype Filesystem = Filesystem Fid
+  deriving (Eq, Ord, Show, Generic, Hashable, Typeable, FromJSON, ToJSON)
 
-instance Hashable Filesystem
-instance ToJSON Filesystem
-instance FromJSON Filesystem
-
--- XXX-MULTIPOOLS: Change to root
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
-  fid = f_fid
+  fid (Filesystem f) = f
 
 storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
 deriveSafeCopy 0 'base ''Filesystem

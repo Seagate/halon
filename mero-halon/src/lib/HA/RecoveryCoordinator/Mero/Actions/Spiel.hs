@@ -99,6 +99,7 @@ import           Data.Typeable
 import           Data.UUID (UUID)
 import           Data.UUID.V4 (nextRandom)
 import           Data.Vinyl
+import           Data.Word (Word32)
 
 import           Network.CEP
 import           System.IO
@@ -585,7 +586,7 @@ mkSyncToConfd lstate next = do
         eresult <- do
           force <- (\x -> x ^. lstate . cssForce) <$> get Local
           withSpielRC $ \lift -> do
-            setProfileRC lift
+            setProfileRC lift -- XXX-MULTIPOOLS
             loadConfData >>= traverse_ (\x -> do
               t0 <- txOpenContext lift
               t1 <- txPopulate lift x t0
@@ -593,6 +594,7 @@ mkSyncToConfd lstate next = do
         case eresult of
           Left ex -> Log.rcLog' Log.ERROR $ "Exception during sync: " ++ show ex
           _ -> return ()
+
       clean_and_run :: Lens' ConfSyncState [ListenerId] -> [ListenerId] -> PhaseM RC l ()
       clean_and_run ls listeners = do
         state <- get Local
@@ -675,13 +677,14 @@ txSyncToConfd force luuid lift tx = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem -- XXX-MULTIPOOLS: use root instead
+-- XXX-MULTIPOOLS: There should be multiple profiles and no filesystem.
+data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 
 loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
             <$> getM0Globals
-            <*> getProfile
-            <*> getFilesystem
+            <*> getProfile    -- XXX-MULTIPOOLS: no "global profile", please
+            <*> getFilesystem -- XXX-MULTIPOOLS: delete
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
@@ -704,29 +707,32 @@ modifyConfUpdateVersion f = do
   modifyLocalGraph $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{..}) t = do
+txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   g <- getLocalGraph
-  -- Profile, FS, pool
-  -- Top-level pool width is number of devices in existence
-  --
-  -- XXX-MULTIPOOLS: This assumes that there is only one pool.
-  let m0_pool_width = length [ disk
+  let Just M0.Root{..} = G.connectedTo Cluster Has g
+      -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
+      -- one pool.
+      m0_pool_width = length [ disk
                              | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf g
                              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf g
                              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf g
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
                              ]
-      fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
+      rootParams = [printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units]
+      addRoot :: SpielTransaction
+              -> Fid -> Fid -> Fid -> Word32 -> [String] -> IO ()
+      addRoot _ _ _ _ _ _ = putStrLn "XXX IMPLEMENTME (and ditch addFilesystem)"
   m0synchronously lift $ do
-    -- XXX-MULTIPOOLS: addRoot, addProfiles (plural), get rid of addFilesystem
-    addProfile t pfid
-    addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
-  Log.rcLog' Log.DEBUG "Added profile, filesystem, mdpool objects."
+    addRoot t rt_fid rt_mdpool rt_imeta_pver m0_md_redundancy rootParams
+    addProfile t pfid -- XXX-MULTIPOOLS: multiple profiles
+    addFilesystem t (M0.fid fs) pfid -- XXX-MULTIPOOLS: DELETEME
+        m0_md_redundancy rt_fid rt_mdpool rt_imeta_pver rootParams
+  Log.rcLog' Log.DEBUG "Added root and profile"
   -- XXX-MULTIPOOLS: sites
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
   for_ racks $ \rack -> do
-    m0synchronously lift $ addRack t (M0.fid rack) f_fid
+    m0synchronously lift $ addRack t (M0.fid rack) (M0.fid fs)
     let encls = G.connectedTo rack M0.IsParentOf g :: [M0.Enclosure]
     for_ encls $ \encl -> do
       m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
@@ -755,7 +761,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
         getMem _ = Nothing
         getCpuCount (HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
-    m0synchronously lift $ addNode t (M0.fid node) f_fid memsize cpucount 0 0 f_mdpool_fid
+    m0synchronously lift $ addNode t (M0.fid node) (M0.fid fs) memsize cpucount 0 0 rt_mdpool
     let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
         ep2s = T.unpack . encodeEndpoint
     for_ procs $ \(proc@M0.Process{..}) -> do
@@ -779,7 +785,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                          M0.PVer _ a@M0.PVerActual{} -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
-    m0synchronously lift $ addPool t (M0.fid pool) f_fid 0
+    m0synchronously lift $ addPool t (M0.fid pool) (M0.fid fs) 0
     let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_type pver of
@@ -971,6 +977,7 @@ getTimeUntilHourlyQuery pool = getPoolRepairInformation pool >>= \case
 setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
   rg <- getLocalGraph
-  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile -- XXX: multiprofile is not supported
-  Log.rcLog' Log.DEBUG $ "set command profile to" ++ show mp
+  -- XXX-MULTIPOOLS: it should be [], not Maybe
+  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile
+  Log.rcLog' Log.DEBUG $ "set command profile to " ++ show mp
   m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)

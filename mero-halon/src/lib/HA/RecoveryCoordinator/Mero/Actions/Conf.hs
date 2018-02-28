@@ -10,7 +10,8 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Conf
   ( -- ** Get all objects of type
-    getProfile
+    getRoot
+  , getProfile
   , getFilesystem
   , getSDevPool
   , getM0ServicesRC
@@ -45,10 +46,7 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           Mero.ConfC
-  ( Fid
-  , ServiceType(..)
-  )
+import           Mero.ConfC (Fid, ServiceType(..))
 import           Mero.Lnet
 import           Network.CEP
 
@@ -56,20 +54,24 @@ import           Network.CEP
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a, Typeable a)
                    => Fid
                    -> PhaseM RC l (Maybe a)
-lookupConfObjByFid f =
-    fmap (M0.lookupConfObjByFid f) getLocalGraph
+lookupConfObjByFid f = M0.lookupConfObjByFid f <$> getLocalGraph
 
 --------------------------------------------------------------------------------
 -- Querying conf in RG
 --------------------------------------------------------------------------------
+
+-- | Get the top-level Mero configuration object.
+getRoot :: PhaseM RC l (Maybe M0.Root)
+getRoot = G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Fetch the Mero Profile in the system. Currently, we
 --   only support a single profile, though in future there
 --   might be multiple profiles and this function will need
 --   to change.
 getProfile :: PhaseM RC l (Maybe M0.Profile)
-getProfile =
-    G.connectedTo Cluster Has <$> getLocalGraph
+-- XXX-MULTIPOOLS: There is a good chance that this function is not needed
+-- any more.
+getProfile = G.connectedTo Cluster Has <$> getLocalGraph
 
 -- | Fetch the Mero filesystem in the system. Currently, we
 --   only support a single filesystem, though in future there
@@ -77,7 +79,7 @@ getProfile =
 --   to change.
 --   XXX-MULTIPOOLS: Change to getRoot
 getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
-getFilesystem = getLocalGraph >>= \rg -> do
+getFilesystem = getLocalGraph >>= \rg ->
   return . listToMaybe
     $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
@@ -93,17 +95,18 @@ getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
-    let pools =
+    let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+        pools =
           [ pool
-          | Just disk  <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
+          | Just disk <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
           , diskv <- G.connectedTo disk M0.IsRealOf rg :: [M0.DiskV]
           , Just ctrlv <- [G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV]
           , Just enclv <- [G.connectedFrom M0.IsParentOf ctrlv rg :: Maybe M0.EnclosureV]
           , Just rackv <- [G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV]
+          -- XXX-MULTIPOOLS: SiteV
           , Just pver <- [G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
           , Just pool <- [G.connectedFrom M0.IsParentOf pver rg :: Maybe M0.Pool]
-          , Just fs <- [G.connectedFrom M0.IsParentOf pool rg :: Maybe M0.Filesystem]
-          , M0.fid pool /= M0.f_mdpool_fid fs -- XXX-MULTIPOOLS
+          , M0.fid pool /= M0.rt_mdpool root
           ]
     case pools of
       -- TODO throw a better exception

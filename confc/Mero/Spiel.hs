@@ -202,6 +202,7 @@ txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> 
     buflen :: CSize
     buflen = 128
 
+-- XXX-MULTIPOOLS: DELETEME?
 setCmdProfile :: Maybe String
               -> IO ()
 setCmdProfile ms =
