@@ -23,49 +23,50 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , updateStorageDeviceStatus
   ) where
 
-import Data.Binary (Binary)
-import Data.Char (toUpper)
-import Data.Functor (void)
-import Data.Function (fix)
-import Data.Maybe (mapMaybe)
-import Data.Typeable
-import Data.UUID (UUID)
-import Data.Word (Word32)
-import GHC.Generics
-
-import Data.List (nub)
+import           Data.Binary (Binary)
+import           Data.Char (toUpper)
+import           Data.Function (fix)
+import           Data.Functor (void)
+import           Data.List (nub)
+import           Data.Maybe (mapMaybe)
+import           Data.Typeable
+import           Data.UUID (UUID)
+import           Data.Word (Word32)
+import           GHC.Generics
 
 import qualified HA.ResourceGraph as G
-import           HA.Resources
-import HA.Resources.Castor (StorageDevice, StorageDeviceAttr(..))
-import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
-import HA.RecoveryCoordinator.RC.Actions.Core
+import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+import           HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import HA.RecoveryCoordinator.Mero.Actions.Spiel
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.Castor.Drive.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Spiel
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources as Res
+import           HA.Resources.Castor
+  ( StorageDevice
+  , StorageDeviceAttr(SDRemovedFromRAID)
+  )
 import qualified HA.Resources.Castor as Res
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import Mero.ConfC
+import           Mero.ConfC
 import qualified Mero.Spiel as Spiel
 
-import Control.Distributed.Process hiding (try)
-import Control.Monad.Catch (SomeException, try, fromException)
-import System.IO.Error
+import           Control.Distributed.Process hiding (try)
+import           Control.Monad.Catch (SomeException, try, fromException)
+import           System.IO.Error
 
-import Network.CEP
+import           Network.CEP
 
 -- | Notification that happens in case if new spiel device is attached.
 data SpielDeviceAttached = SpielDeviceAttached M0.SDev (Either String ())
   deriving (Eq, Show, Typeable, Generic)
 instance Binary SpielDeviceAttached
-
 
 -- | Notification that happens in case if new spiel device is detached.
 data SpielDeviceDetached = SpielDeviceDetached M0.SDev (Either String ())
@@ -190,7 +191,6 @@ mkDetachDisk getter onFailure onSuccess = do
         Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
         onFailure sdev "no such disk")
 
-
 -- | Mark that a device has been removed from the RAID array of which it
 --   is part.
 markRemovedFromRAID :: StorageDevice -> PhaseM RC l ()
@@ -265,10 +265,10 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , M0.fid pool `notElem` mdFids
                ]
              mdFids = [ M0.f_mdpool_fid fs
-                      | p <- connectedToList Res.Cluster Has rg :: [M0.Profile]
+                      | p <- connectedToList Cluster Has rg :: [M0.Profile]
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
-             failedDisks = [ d | prof :: M0.Profile <- connectedToList Res.Cluster Has rg
+             failedDisks = [ d | prof :: M0.Profile <- connectedToList Cluster Has rg
                                , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
                                , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                                , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
@@ -280,7 +280,6 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
          in case mapMaybe getK pvers of
               [] -> Nothing
               xs -> Just (fromIntegral $ maximum xs, length failedDisks)
-
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
