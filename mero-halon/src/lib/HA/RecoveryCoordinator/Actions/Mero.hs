@@ -155,6 +155,7 @@ createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
           >>> G.connect process M0.IsParentOf haService
           >>> G.connect process Has M0.PLM0t1fs
           >>> G.connect process Is M0.PSUnknown
+          -- XXX-MULTIPOOLS: retire fs, update connection
           >>> G.connect fs M0.IsParentOf m0node
           >>> G.connect host Runs m0node
             $ rg
@@ -279,6 +280,7 @@ isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
   [ p
   | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
+    -- XXX-MULTIPOOLS: retire Filesystem, add site
   , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
   , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
   , M0.getState node rg /= M0.NSFailed

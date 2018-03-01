@@ -123,6 +123,7 @@ getProfile po = do
     }
 
 -- | Representation of @m0_conf_filesystem@.
+-- XXX-MULTIPOOLS: replace with Root
 data Filesystem = Filesystem
     { cf_ptr :: Ptr Obj
     , cf_fid      :: Fid
@@ -133,6 +134,7 @@ data Filesystem = Filesystem
     , cf_params   :: [String]
     } deriving (Show)
 
+-- XXX-MULTIPOOLS: replace with getRoot
 getFilesystem :: Ptr Obj -> IO Filesystem
 getFilesystem po = do
   pfs <- confc_cast_filesystem po

@@ -71,6 +71,7 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
       putStrLn $ "    profile:    " ++ fidToStr pfid
       putStrLn $ "    filesystem: " ++ fidToStr ffid
       forM_ mstats $ \stats -> do
+        -- XXX-MULTIPOOLS: Change Filesystem stats to site/pool stats?
         putStrLn "    Filesystem stats:"
         let fss = M0._fs_stats stats
         let entries =

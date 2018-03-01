@@ -13,7 +13,7 @@
 --       |           |
 --       |          M0.Profie
 --       |           |
---       |          M0.FileSystem
+--       |          M0.FileSystem  XXX-MULTIPOOLS
 --     R.Host          |
 --      |  |           v
 --      |  +--------->M0.Node
@@ -243,6 +243,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
      let procs =
            [ m0proc
            | Just (m0prof :: M0.Profile) <- [G.connectedTo R.Cluster R.Has rg]
+           -- XXX-MULTIPOOLS: Replace filesystem with root
            , m0fs   <- G.connectedTo m0prof M0.IsParentOf rg :: [M0.Filesystem]
            , m0node <- G.connectedTo m0fs M0.IsParentOf rg :: [M0.Node]
            , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]

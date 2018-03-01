@@ -42,7 +42,7 @@ import           Mero.ConfC (Fid(..), PDClustAttr(..))
 -- floor((nr_encls)/(N+K)), though distributional issues may result
 -- in a lower value.
 data Failures = Failures {
-    f_pool :: !Word32
+    f_pool :: !Word32 -- XXX-MULTIPOOLS: s/pool/site/
   , f_rack :: !Word32
   , f_encl :: !Word32
   , f_ctrl :: !Word32
@@ -77,7 +77,7 @@ data UpdateType m
     -- graph updates in chunks of reasonable size.
 
 -- | Create pool versions for the given pool.
-createPoolVersionsInPool :: M0.Filesystem
+createPoolVersionsInPool :: M0.Filesystem -- XXX-MULTIPOOLS: get M0.Root instead
                          -> M0.Pool
                          -> [PoolVersion]
                          -> Bool -- ^ If specified, the pool version
@@ -89,7 +89,7 @@ createPoolVersionsInPool fs pool pvers invert =
     let mk = createPoolVersion fs pool invert
     in S.execState (mapM_ mk pvers)
 
-createPoolVersion :: M0.Filesystem
+createPoolVersion :: M0.Filesystem -- XXX-MULTIPOOLS
                   -> M0.Pool
                   -> Bool
                   -> PoolVersion
@@ -111,6 +111,7 @@ createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
   where
     totalDrives rg = length
       [ disk
+      -- XXX-MULTIPOOLS: site; s/fs/root/
       | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
       , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
       , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
@@ -137,6 +138,7 @@ createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
     runRack pver rack = do
         rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
         rg <- S.get
+        -- XXX-MULTIPOOLS: pver should be connected to sitev, not rackv
         S.modify' $ G.connect pver M0.IsParentOf rackv
                 >>> G.connect rack M0.IsRealOf rackv
         vs <- for (filterByFids
@@ -173,7 +175,7 @@ createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
 
 -- | Create specified pool versions in the resource graph. These will be
 --   created inside all IO pools (e.g. not mdpool or imeta)
-createPoolVersions :: M0.Filesystem
+createPoolVersions :: M0.Filesystem -- XXX-MULTIPOOLS
                    -> [PoolVersion]
                    -> Bool -- If specified, the pool version is assumed to
                            -- contain failed devices, rather than working ones.

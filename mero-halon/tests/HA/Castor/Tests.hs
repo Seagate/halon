@@ -130,6 +130,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
                , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
+      -- XXX-MULTIPOOLS: s/filesystem/root/
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)

@@ -237,6 +237,7 @@ spielCtx = mempty {
 }
 
 -- | @spiel.h m0_fs_stats@
+-- XXX-MULTIPOOLS: Rename to site/pool stats?
 data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
   FSStats {
       _fss_free_seg :: Word64

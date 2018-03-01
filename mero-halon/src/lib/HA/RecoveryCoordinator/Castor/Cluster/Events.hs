@@ -158,8 +158,8 @@ data ReportClusterState = ReportClusterState
       , csrStats      :: Maybe M0.FilesystemStats
       -- ^ 'M0.FilesystemStats' information.
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]
-      -- ^ Information about every 'Castor.Host'. See
-      -- 'ReportClusterHost' for details.
+      -- ^ Information about every 'Castor.Host'.
+      -- See 'ReportClusterHost' for details.
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState

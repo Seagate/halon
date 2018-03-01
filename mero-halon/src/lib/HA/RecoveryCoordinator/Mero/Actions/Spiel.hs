@@ -126,7 +126,7 @@ haAddress lnid = Endpoint {
 -- | Configuration update state.
 data ConfSyncState = ConfSyncState
       { _cssHash :: Maybe Int -- ^ Hash of the graph sync request.
-      , _cssForce :: Bool     -- ^ Should we force synchronization.
+      , _cssForce :: Bool     -- ^ Should we force synchronization?
       , _cssQuiescing :: [ListenerId] -- ^ List of the pending SNS quiece jobs.
       , _cssAborting :: [ListenerId] -- ^ List of the pending SNS abort jobs.
       } deriving (Generic, Show)
@@ -566,7 +566,9 @@ syncToBS = loadConfData >>= \case
       return BS.empty
   Nothing -> error "Cannot load configuration data from graph."
 
-data Synchronized = Synchronized (Maybe Int) (Either String ()) deriving (Generic, Show)
+data Synchronized = Synchronized (Maybe Int) (Either String ())
+  deriving (Generic, Show)
+
 instance Binary Synchronized
 
 -- | Create synchronization action.
@@ -663,21 +665,21 @@ txOpenLocalContext :: LiftRC -> PhaseM RC l SpielTransaction
 txOpenLocalContext lift = m0synchronously lift openLocalTransaction
 
 txSyncToConfd :: Bool -> Lens' l (Maybe Int) -> LiftRC -> SpielTransaction -> PhaseM RC l ()
-txSyncToConfd f luuid lift t = do
+txSyncToConfd force luuid lift tx = do
   Log.rcLog' Log.DEBUG "Committing transaction to confd"
   M0.ConfUpdateVersion v h <- getConfUpdateVersion
-  h' <- return . hash <$> m0synchronously lift (txToBS t v)
-  if h /= h' || f
+  h' <- return . hash <$> m0synchronously lift (txToBS tx v)
+  if h /= h' || force
   then do
      put Local . set luuid h' =<< get Local
      self <- liftProcess DP.getSelfPid
      m0asynchronously lift (DP.usend self . Synchronized h' . first show)
-                           (void $ (first (SomeException . userError) <$> commitTransactionForced t False v)
-                                    `finally` closeTransaction t)
+                           (void $ (first (SomeException . userError) <$> commitTransactionForced tx False v)
+                                    `finally` closeTransaction tx)
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
-data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
+data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem -- XXX-MULTIPOOLS: use root instead
 
 loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
@@ -710,6 +712,8 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   g <- getLocalGraph
   -- Profile, FS, pool
   -- Top-level pool width is number of devices in existence
+  --
+  -- XXX-MULTIPOOLS: This assumes that there is only one pool.
   let m0_pool_width = length [ disk
                              | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf g
                              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf g
@@ -718,9 +722,11 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                              ]
       fsParams = printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units
   m0synchronously lift $ do
+    -- XXX-MULTIPOOLS: addRoot, addProfiles (plural), get rid of addFilesystem
     addProfile t pfid
     addFilesystem t f_fid pfid m0_md_redundancy pfid f_mdpool_fid f_imeta_fid [fsParams]
   Log.rcLog' Log.DEBUG "Added profile, filesystem, mdpool objects."
+  -- XXX-MULTIPOOLS: sites
   -- Racks, encls, controllers, disks
   let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
   for_ racks $ \rack -> do
@@ -774,7 +780,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
   -- Pool versions
   let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
       pvNegWidth pver = case pver of
-                         M0.PVer _ a@M0.PVerActual{}    -> negate . _pa_P . M0.v_attrs $ a
+                         M0.PVer _ a@M0.PVerActual{} -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) f_fid 0
@@ -782,6 +788,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
     for_ pvers $ \pver -> do
       case M0.v_type pver of
         pva@M0.PVerActual{} -> do
+          -- XXX-MULTIPOOLS: M0.SiteV
           m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
           let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
           for_ rackvs $ \rackv -> do
@@ -798,7 +805,6 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs@M0.Filesystem{
                 let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
                 for_ diskvs $ \diskv -> do
                   let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv g
-
                   m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
         pvf@M0.PVerFormulaic{} -> do

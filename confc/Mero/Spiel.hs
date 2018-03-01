@@ -202,7 +202,6 @@ txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> 
     buflen :: CSize
     buflen = 128
 
-
 setCmdProfile :: Maybe String
               -> IO ()
 setCmdProfile ms =
@@ -212,7 +211,6 @@ setCmdProfile ms =
       Nothing -> c_spiel_cmd_profile_set sc nullPtr
       Just s  -> withCString s $ \cs ->
         c_spiel_cmd_profile_set sc cs
-
 
 addProfile :: SpielTransaction
            -> Fid
@@ -391,7 +389,6 @@ addPVerFormulaic (SpielTransaction fsc) fid parent idx base allowance =
           throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
             $ c_spiel_pver_formulaic_add sc fid_ptr parent_ptr idx base_ptr allow_ptr (fromIntegral allow_len)
 
-
 addDisk :: SpielTransaction
         -> Fid
         -> Fid
@@ -486,6 +483,7 @@ instance Spliceable Profile where
     fs <- children o :: IO [Filesystem]
     mapM_ (spliceTree t (cp_fid o)) fs
 
+-- XXX-MULTIPOOLS: use Root instead
 instance Spliceable Filesystem where
   splice t p fs = addFilesystem t (cf_fid fs) p
                                   (cf_redundancy fs) (cf_rootfid fs)
@@ -801,6 +799,7 @@ poolRebalanceStatus fid = mask $ \restore ->
           elt <- peek arr_ptr
           peekArray rc elt
 
+-- XXX-MULTIPOOLS: Change it to site/pool stats?
 filesystemStatsFetch :: Fid
                      -> IO FSStats
 filesystemStatsFetch fid = with fid $ \fid_ptr -> do

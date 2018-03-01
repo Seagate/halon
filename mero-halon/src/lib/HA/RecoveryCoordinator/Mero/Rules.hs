@@ -116,6 +116,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
     norep <- phaseHandle "norep"
 
     directly req $ do
+      -- XXX-MULTIPOOLS: Can we get root without passing it via DixInitRequest?
       DixInitRequest fs <- getRequest
       dixInitTimeout <- getHalonVar _hv_m0dixinit_timeout
       rg <- getLocalGraph

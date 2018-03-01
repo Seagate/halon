@@ -252,6 +252,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     mk :: Maybe (Int, Int)
     mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
              connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
+             -- XXX-MULTIPOOLS: Shouldn't we distinguish pvers of different pools?
              pvers = nub
                [ pver
                | disk  <- connectedToList sdev M0.IsOnHardware  rg :: [M0.Disk]
@@ -264,19 +265,20 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                -- exclude metadata pools
                , M0.fid pool `notElem` mdFids
                ]
-             mdFids = [ M0.f_mdpool_fid fs
+             mdFids = [ M0.f_mdpool_fid fs -- XXX-MULTIPOOLS
                       | p <- connectedToList Cluster Has rg :: [M0.Profile]
                       , fs <- G.connectedTo p M0.IsParentOf rg ]
 
-             failedDisks = [ d | prof :: M0.Profile <- connectedToList Cluster Has rg
-                               , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
-                               , r :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
-                               , enc :: M0.Enclosure <- G.connectedTo r M0.IsParentOf rg
-                               , ctrl :: M0.Controller <- G.connectedTo enc M0.IsParentOf rg
-                               , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                               , d :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
-                               , failingState d (M0.getState d rg)
-                               ]
+             failedDisks = [ d
+                           | prof :: M0.Profile <- connectedToList Cluster Has rg
+                           , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
+                           , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                           , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+                           , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+                           , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
+                           , d :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
+                           , failingState d (M0.getState d rg)
+                           ]
          in case mapMaybe getK pvers of
               [] -> Nothing
               xs -> Just (fromIntegral $ maximum xs, length failedDisks)

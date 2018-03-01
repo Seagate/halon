@@ -143,6 +143,7 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile
+-- XXX-MULTIPOOLS: add M0.Site; s/FIlesystem/Root/
 instance ShowFidObj M0.Filesystem
 instance ShowFidObj M0.Pool
 instance ShowFidObj M0.PVer

@@ -75,6 +75,7 @@ getProfile =
 --   only support a single filesystem, though in future there
 --   might be multiple filesystems and this function will need
 --   to change.
+--   XXX-MULTIPOOLS: Change to getRoot
 getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
 getFilesystem = getLocalGraph >>= \rg -> do
   return . listToMaybe
@@ -92,23 +93,24 @@ getM0ServicesRC = M0.getM0Services <$> getLocalGraph
 getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
     rg <- getLocalGraph
-    let ps =
-          [ p
-          | Just d  <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
-          , dv <- G.connectedTo d M0.IsRealOf rg :: [M0.DiskV]
-          , Just (ct :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf dv rg]
-          , Just (ev :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ct rg]
-          , Just rv <- [G.connectedFrom M0.IsParentOf ev rg :: Maybe M0.RackV]
-          , Just pv <- [G.connectedFrom M0.IsParentOf rv rg :: Maybe M0.PVer]
-          , Just (p :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pv rg]
-          , Just (fs :: M0.Filesystem) <- [G.connectedFrom M0.IsParentOf p rg]
-          , M0.fid p /= M0.f_mdpool_fid fs
+    let pools =
+          [ pool
+          | Just disk  <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
+          , diskv <- G.connectedTo disk M0.IsRealOf rg :: [M0.DiskV]
+          , Just ctrlv <- [G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV]
+          , Just enclv <- [G.connectedFrom M0.IsParentOf ctrlv rg :: Maybe M0.EnclosureV]
+          , Just rackv <- [G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV]
+          , Just pver <- [G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
+          , Just pool <- [G.connectedFrom M0.IsParentOf pver rg :: Maybe M0.Pool]
+          , Just fs <- [G.connectedFrom M0.IsParentOf pool rg :: Maybe M0.Filesystem]
+          , M0.fid pool /= M0.f_mdpool_fid fs -- XXX-MULTIPOOLS
           ]
-    case ps of
+    case pools of
       -- TODO throw a better exception
-      [] -> error "getSDevPool: No pool found for sdev."
+      [] -> error "getSDevPool: No pool found for sdev"
       x:[] -> return x
       x:_ -> do
+        -- XXX-MULTIPOOLS: This shouldn't be an error.
         Log.rcLog' Log.ERROR ("Multiple pools found for sdev!" :: String)
         return x
 

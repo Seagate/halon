@@ -34,8 +34,10 @@ mkPVerFormulaicFid fid@(Fid container key)
 -- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
+  -- XXX-MULTIPOOLS: [] instead of Maybe
   prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
-  fs   <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
+  -- XXX-MULTIPOOLS: no Filesystem
+  fs <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
     G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
   let attrs = PDClustAttr
@@ -45,12 +47,13 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                 , _pa_unit_size = 4096
                 , _pa_seed = Word128 101 102
                 }
-      mdpool = M0.Pool (M0.f_mdpool_fid fs)
-      imeta_pver = M0.f_imeta_fid fs
+      mdpool = M0.Pool (M0.f_mdpool_fid fs) -- XXX-MULTIPOOLS
+      imeta_pver = M0.f_imeta_fid fs -- XXX-MULTIPOOLS
       n = CI.m0_data_units globs
       k = CI.m0_parity_units globs
       noCtlrs = length
         [ cntr
+        -- XXX-MULTIPOOLS: go from root through site
         | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
         , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
         , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg

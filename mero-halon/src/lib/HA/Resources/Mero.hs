@@ -216,6 +216,7 @@ instance ConfObj Profile where
 storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
+-- XXX-MULTIPOOLS: Change to root
 data Filesystem = Filesystem {
     f_fid :: Fid
   , f_mdpool_fid :: Fid -- ^ Fid of filesystem metadata pool
@@ -226,6 +227,7 @@ instance Hashable Filesystem
 instance ToJSON Filesystem
 instance FromJSON Filesystem
 
+-- XXX-MULTIPOOLS: Change to root
 instance ConfObj Filesystem where
   fidType _ = fromIntegral . ord $ 'f'
   fid = f_fid
@@ -904,8 +906,8 @@ storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
 deriveSafeCopy 0 'base ''ProcessBootstrapped
 instance ToJSON ProcessBootstrapped
 
--- | Filesystem statistics
-data FilesystemStats = FilesystemStats {
+-- | Filesystem statistics.
+data FilesystemStats = FilesystemStats { -- XXX-MULTIPOOLS: s/Filesystem//
     _fs_fetched_on :: TimeSpec
   , _fs_stats :: FSStats
 } deriving (Eq, Show, Typeable, Generic)
@@ -958,6 +960,7 @@ $(mkDicts
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
   , (''Profile, ''IsParentOf, ''Filesystem)
+    -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''IsParentOf, ''Node)
   , (''Filesystem, ''IsParentOf, ''Rack)
   , (''Filesystem, ''IsParentOf, ''Pool)
@@ -1000,6 +1003,7 @@ $(mkDicts
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node,    ''R.Is, ''NodeState)
   , (''Controller,    ''R.Is, ''ControllerState)
+    -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''R.Has, ''FilesystemStats)
   , (''Filesystem, ''R.Is, ''DIXInitialised)
   ]

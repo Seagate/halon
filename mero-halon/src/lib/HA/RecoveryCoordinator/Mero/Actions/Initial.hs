@@ -244,12 +244,16 @@ addProcess node devs CI.M0Process{..} = let
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
 createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
+-- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
 createMDPoolPVer fs = getLocalGraph >>= \rg -> let
     mdpool = M0.Pool (M0.f_mdpool_fid fs)
     racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
-    encls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
-    ctrls = (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) =<< encls
-    disks = (\r -> take 1 $ G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
+    encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
+    ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller]) =<< encls
+    -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the MD pool,
+    -- it should use the information provided via `id_pools` section of the
+    -- facts file.
+    disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
     fids = Set.unions . (fmap Set.fromList) $
             [ (M0.fid <$> racks)
             , (M0.fid <$> encls)
@@ -257,6 +261,7 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
             , (M0.fid <$> disks)
             ]
     failures = Failures 0 0 0 1 0
+    -- XXX FIXME: Get this info from facts file.
     attrs = PDClustAttr {
         _pa_N = fromIntegral $ length disks
       , _pa_K = 0
@@ -284,11 +289,12 @@ createMDPoolPVer fs = getLocalGraph >>= \rg -> let
 --   in the 'f_imeta_pver' field. This should validate correctly in Mero iff
 --   there are no CAS services.
 createIMeta :: M0.Filesystem -> PhaseM RC l ()
+-- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getLocalGraph
-  let cas = [ (rack, encl, ctrl, srv)
+  let cas = [ (rack, encl, ctrl, srv) -- XXX-MULTIPOOLS: site
             | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
             , proc <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
             , srv <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
@@ -321,7 +327,7 @@ createIMeta fs = do
       >>> G.connect srv M0.IsParentOf sdev
     return [M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
 
-  let pver = PoolVersion (Just $ M0.f_imeta_fid fs)
+  let pver = PoolVersion (Just $ M0.f_imeta_fid fs) -- XXX-MULTIPOOLS
                           (Set.unions $ Set.fromList <$> fids) failures attrs
       -- If there are no CAS services then we need to replace the Filesystem
       -- entity with one containing the special M0_FID0 value. We can't do this
@@ -329,6 +335,7 @@ createIMeta fs = do
       -- graph.
       updateGraph = if null cas
         then G.mergeResources head
+                -- XXX-MULTIPOOLS
                 [M0.Filesystem (M0.f_fid fs) (M0.f_mdpool_fid fs) m0_fid0, fs]
         else G.connect fs M0.IsParentOf pool
           >>> createPoolVersionsInPool fs pool [pver] False

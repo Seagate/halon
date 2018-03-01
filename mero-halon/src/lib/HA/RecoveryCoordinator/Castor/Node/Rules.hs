@@ -15,7 +15,7 @@
 -- allow to start m0t1fs clients and m0d servers on it.
 --
 -- Related part of the resource graph:
---
+-- XXX-MULTIPOOLS: Update below diagram, remove Filesystem
 -- @
 --   R.Host --+- HostAttirbutes
 --     |      |

@@ -112,6 +112,7 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
          rg <- getLocalGraph
          let l = [ (sd, G.connectedTo slot Has rg)
                  | p :: M0.Profile <- maybeToList $ G.connectedTo Cluster Has rg
+                 -- XXX-MULTIPOOLS: remove
                  , fs :: M0.Filesystem <- G.connectedTo p M0.IsParentOf rg
                  , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg

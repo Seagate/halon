@@ -229,11 +229,11 @@ instance Binary RestartSNSOperationResult
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
       deriving (Eq, Show, Typeable, Generic)
 
-newtype DixInitRequest = DixInitRequest M0.Filesystem
+newtype DixInitRequest = DixInitRequest M0.Filesystem -- XXX-MULTIPOOLS
   deriving (Eq, Show, Ord, Typeable, Generic)
 
 data DixInitResult =
-    DixInitSuccess M0.Filesystem
+    DixInitSuccess M0.Filesystem -- XXX-MULTIPOOLS
   | DixInitFailure M0.Filesystem String
   deriving (Eq, Show, Ord, Typeable, Generic)
 
