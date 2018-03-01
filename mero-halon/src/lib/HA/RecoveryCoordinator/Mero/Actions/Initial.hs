@@ -62,7 +62,7 @@ initialiseConfInRG = getFilesystem >>= \case
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-      -- Note that this FID will actually be overwritten by `createIMeta`
+      -- Note that `createIMeta` may replace this FID with m0_fid0.
       imeta_fid <- newFidRC (Proxy :: Proxy M0.PVer)
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem)
                           <*> return (M0.fid mdpool)
@@ -308,7 +308,7 @@ createIMeta fs = do
               }
       failures = Failures 0 0 0 1 0
       maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]
-  fids <- for (zip cas [1.. length cas]) $ \((rack, encl, ctrl, srv), idx) -> do
+  fids <- for (zip cas [1..]) $ \((rack, encl, ctrl, srv), idx :: Int) -> do
     sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
                     <*> return (fromIntegral idx + maxDiskIdx)
                     <*> return 1024

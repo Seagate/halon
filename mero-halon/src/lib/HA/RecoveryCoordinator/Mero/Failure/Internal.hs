@@ -26,15 +26,21 @@ import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..))
 
--- | Failure tolerance vector. For a given pool version, the failure
---   tolerance vector reflects how many objects in each level can be expected
---   to fail whilst still allowing objects in that pool version to be read. For
---   disks, then, note that this will equal the parameter K, where (N,K,P) is
---   the triple of data units, parity units, pool width for the pool version.
---   For controllers, this should indicate the maximum number number such that
---   no failure of that number of controllers can take out more than K units. We
---   can put an upper bound on this by considering floor((no encls)/(N+K)),
---   though distributional issues may result in a lower value.
+-- | Failure tolerance vector.
+--
+-- For a given pool version, the failure tolerance vector reflects how
+-- many objects in each level can be expected to fail whilst still
+-- allowing objects in that pool version to be read.
+--
+-- For disks, then, note that this will equal the parameter K, where
+-- (N,K,P) is the triple of data units, parity units, pool width for
+-- the pool version.
+--
+-- For controllers, this should indicate the maximum number such that
+-- no failure of that number of controllers can take out more than K
+-- units.  We can put an upper bound on this by considering
+-- floor((nr_encls)/(N+K)), though distributional issues may result
+-- in a lower value.
 data Failures = Failures {
     f_pool :: !Word32
   , f_rack :: !Word32
@@ -44,12 +50,15 @@ data Failures = Failures {
 } deriving (Eq, Ord, Show)
 
 -- |  Minimal representation of a pool version for generation.
-data PoolVersion = PoolVersion !(Maybe Fid) !(Set.Set Fid) !Failures !PDClustAttr
-                  -- ^ @PoolVersion fid fids fs attrs@ where @fids@ is a set of
-                  -- fids, @fs@ are allowable failures in each
-                  -- failure domain, and @attrs@ are the parity declustering
-                  -- attributes. Note that the value for @_pa_P@ will be
-                  -- overridden with the width of the pool.
+--
+-- Note that the value for @_pa_P@ will be overridden with the width
+-- of the pool.
+data PoolVersion = PoolVersion
+    !(Maybe Fid)   -- Pool version fid.
+    !(Set.Set Fid) -- ^ Fids of hardware devices (racks, enclosures,
+                   -- controllers, disks) that belong to this pool version.
+    !Failures      -- ^ Allowable failures in each failure domain.
+    !PDClustAttr   -- The parity declustering attributes.
   deriving (Eq, Show)
 
 -- | Convert failure tolerance vector to a straight array of Words for
@@ -72,76 +81,95 @@ createPoolVersionsInPool :: M0.Filesystem
                          -> M0.Pool
                          -> [PoolVersion]
                          -> Bool -- ^ If specified, the pool version
-                                 -- is assumed to contain failed
-                                 -- devices, rather than working ones.
+                                 -- is assumed to contain failed devices,
+                                 -- rather than working ones.
                          -> G.Graph
                          -> G.Graph
-createPoolVersionsInPool fs pool pvers invert rg =
-    S.execState (mapM_ createPoolVersion pvers) rg
-  where
-    test fids x = (if invert then Set.notMember else Set.member) (M0.fid x) fids
-    totalDrives = length
-      [ disk
-      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
-      , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-      , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-      , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
-      ]
+createPoolVersionsInPool fs pool pvers invert =
+    let mk = createPoolVersion fs pool invert
+    in S.execState (mapM_ mk pvers)
 
-    createPoolVersion :: PoolVersion -> S.State G.Graph ()
-    createPoolVersion (PoolVersion pverfid fids failures attrs) = do
-      let
-        fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
+createPoolVersion :: M0.Filesystem
+                  -> M0.Pool
+                  -> Bool
+                  -> PoolVersion
+                  -> S.State G.Graph ()
+createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
+    rg <- S.get
+    let fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
-                then totalDrives - Set.size fids_drv -- TODO: check this
+                then totalDrives rg - Set.size fids_drv -- TODO: check this
                 else Set.size fids_drv
-      S.when (width > 0) $ do
-        pver <- M0.PVer <$> ( case pverfid of
+    S.when (width > 0) $ do
+        pver <- M0.PVer <$> (case mfid of
                                 Just fid -> pure fid
                                 Nothing -> S.state (newFid (Proxy :: Proxy M0.PVer))
                             )
                         <*> pure (M0.PVerActual (failuresToArray failures)
                                                 (attrs { _pa_P = fromIntegral width }))
-        rg0 <- S.get
+        runPVer pver
+  where
+    totalDrives rg = length
+      [ disk
+      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+      , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+      , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+      , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
+      ]
+
+    filterByFids :: M0.ConfObj a => [a] -> [a]
+    filterByFids =
+        let check = if invert then Set.notMember else Set.member
+        in filter $ \x -> check (M0.fid x) fids
+
+    runPVer :: M0.PVer -> S.State G.Graph ()
+    runPVer pver = do
+        rg <- S.get
         S.modify' $ G.connect pool M0.IsParentOf pver
-        i <- for (filter (test fids)
-                 $ G.connectedTo fs M0.IsParentOf rg0 :: [M0.Rack]) $ \rack -> do
-               rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
-               rg1 <- S.get
-               S.modify'
-                   $ G.connect pver M0.IsParentOf rackv
-                 >>> G.connect rack M0.IsRealOf rackv
-               i <- for (filter (test fids)
-                        $ G.connectedTo rack M0.IsParentOf rg1 :: [M0.Enclosure])
-                        $ \encl -> do
-                      enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
-                      rg2 <- S.get
-                      S.modify'
-                          $ G.connect rackv M0.IsParentOf enclv
-                        >>> G.connect encl M0.IsRealOf enclv
-                      i <- for (filter (test fids)
-                               $ G.connectedTo encl M0.IsParentOf rg2 :: [M0.Controller])
-                               $ \ctrl -> do
-                             ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
-                             rg3 <- S.get
-                             S.modify'
-                                 $ G.connect enclv M0.IsParentOf ctrlv
-                               >>> G.connect ctrl M0.IsRealOf ctrlv
-                             let disks = filter (test fids) $
-                                   G.connectedTo ctrl M0.IsParentOf rg3 :: [M0.Disk]
-                             for_ disks $ \disk -> do
-                               diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
-                               S.modify'
-                                    $ G.connect ctrlv M0.IsParentOf diskv
-                                  >>> G.connect disk M0.IsRealOf diskv
-                             return (not $ null disks)
-                      unless (or i) $ S.put rg2
-                      return (or i)
+        -- An element of list `vs` is True iff diskv objects were added to
+        -- the corresponding subtree.
+        vs <- for (filterByFids
+                   $ G.connectedTo fs M0.IsParentOf rg :: [M0.Rack])
+                  (runRack pver)
+        unless (or vs) $ S.put rg
 
-               unless (or i) $ S.put rg1
-               return (or i)
+    runRack :: M0.PVer -> M0.Rack -> S.State G.Graph Bool
+    runRack pver rack = do
+        rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
+        rg <- S.get
+        S.modify' $ G.connect pver M0.IsParentOf rackv
+                >>> G.connect rack M0.IsRealOf rackv
+        vs <- for (filterByFids
+                   $ G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure])
+                  (runEncl rackv)
+        unless (or vs) $ S.put rg
+        pure (or vs)
 
-        unless (or i) $ S.put rg0
+    runEncl :: M0.RackV -> M0.Enclosure -> S.State G.Graph Bool
+    runEncl rackv encl = do
+        enclv <- M0.EnclosureV <$> S.state (newFid (Proxy :: Proxy M0.EnclosureV))
+        rg <- S.get
+        S.modify' $ G.connect rackv M0.IsParentOf enclv
+                >>> G.connect encl M0.IsRealOf enclv
+        vs <- for (filterByFids
+                  $ G.connectedTo encl M0.IsParentOf rg :: [M0.Controller])
+                  (runCtrl enclv)
+        unless (or vs) $ S.put rg
+        pure (or vs)
+
+    runCtrl :: M0.EnclosureV -> M0.Controller -> S.State G.Graph Bool
+    runCtrl enclv ctrl = do
+        ctrlv <- M0.ControllerV <$> S.state (newFid (Proxy :: Proxy M0.ControllerV))
+        rg <- S.get
+        S.modify' $ G.connect enclv M0.IsParentOf ctrlv
+                >>> G.connect ctrl M0.IsRealOf ctrlv
+        let disks = filterByFids
+                    $ G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
+        for_ disks $ \disk -> do
+            diskv <- M0.DiskV <$> S.state (newFid (Proxy :: Proxy M0.DiskV))
+            S.modify' $ G.connect ctrlv M0.IsParentOf diskv
+                    >>> G.connect disk M0.IsRealOf diskv
+        pure (not $ null disks)
 
 -- | Create specified pool versions in the resource graph. These will be
 --   created inside all IO pools (e.g. not mdpool or imeta)
