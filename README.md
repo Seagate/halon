@@ -10,21 +10,19 @@ This repository includes a number of submodules. To check everything
 out at once, use
 
 ```
-git clone --recursive git@github.com:tweag/halon
+git clone --recursive git@github.com:seagate-ssg/halon.git
 ```
 
 **Note:** You may need to patch up the default URL's for Mero
 submodules, if you do not have access to their upstream location:
 
 ```
-git clone git@github.com:tweag/halon
+git clone git@github.com:seagate-ssg/halon
 git submodule sync
 git submodule update --init
 cd vendor/mero
 git submodule init
-git config submodule.extra-libs/galois.url git@github.com:tweag/mero-galois
-git config submodule.extra-libs/gf-complete.url git@github.com:tweag/mero-gf-complete
-git config submodule.extra-libs/yaml.url git@github.com:tweag/mero-yaml
+git config submodule.extra-libs/gf-complete.url git@github.com:seagate-ssg/gf-complete.git
 git submodule update
 ```
 
@@ -160,7 +158,7 @@ same version of the Mero library that it was built with. This check can
 prevent unexpected bugs, but may occasionally inhibit testing. You can disable
 this check by setting the `DISABLE_MERO_COMPAT_CHECK` environment variable.
 
-# System requirements.
+# System requirements
 
 Architecture: amd64, x86.
 
