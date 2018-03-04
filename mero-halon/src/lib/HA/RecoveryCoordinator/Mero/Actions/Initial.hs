@@ -1,6 +1,6 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE LambdaCase       #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -245,33 +245,36 @@ addProcess node devs CI.M0Process{..} = let
 --   each controller.
 createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
 -- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
-createMDPoolPVer fs = getLocalGraph >>= \rg -> let
-    mdpool = M0.Pool (M0.f_mdpool_fid fs)
-    racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
-    encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure]) =<< racks
-    ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller]) =<< encls
-    -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the MD pool,
-    -- it should use the information provided via `id_pools` section of the
-    -- facts file.
-    disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk]) =<< ctrls
-    fids = Set.unions . (fmap Set.fromList) $
-            [ (M0.fid <$> racks)
-            , (M0.fid <$> encls)
-            , (M0.fid <$> ctrls)
-            , (M0.fid <$> disks)
-            ]
-    failures = Failures 0 0 0 1 0
-    -- XXX FIXME: Get this info from facts file.
-    attrs = PDClustAttr {
-        _pa_N = fromIntegral $ length disks
-      , _pa_K = 0
-      , _pa_P = 0 -- Will be overridden
-      , _pa_unit_size = 4096
-      , _pa_seed = Word128 101 101
-    }
-    pver = PoolVersion Nothing fids failures attrs
-  in do
+createMDPoolPVer fs = do
     Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
+    rg <- getLocalGraph
+    let mdpool = M0.Pool (M0.f_mdpool_fid fs)
+        racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+        encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
+                =<< racks
+        ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
+                =<< encls
+        -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the MD pool,
+        -- it should use the information provided via `id_pools` section of the
+        -- facts file.
+        disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
+                =<< ctrls
+        fids = Set.unions . (fmap Set.fromList) $
+                [ (M0.fid <$> racks)
+                , (M0.fid <$> encls)
+                , (M0.fid <$> ctrls)
+                , (M0.fid <$> disks)
+                ]
+        failures = Failures 0 0 0 1 0
+        -- XXX FIXME: Get this info from facts file.
+        attrs = PDClustAttr
+                { _pa_N = fromIntegral $ length disks
+                , _pa_K = 0
+                , _pa_P = 0 -- Will be overridden
+                , _pa_unit_size = 4096
+                , _pa_seed = Word128 101 101
+                }
+        pver = PoolVersion Nothing fids failures attrs
     Log.rcLog' Log.DEBUG $ "Creating PVer in metadata pool: " ++ show pver
     modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
 
