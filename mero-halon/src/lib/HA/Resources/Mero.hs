@@ -22,42 +22,43 @@ module HA.Resources.Mero
   , CI.M0Globals
   ) where
 
-import Control.Distributed.Process (ProcessId)
-import Data.Binary (Binary(..))
-import Data.Bits
+import           Control.Distributed.Process (ProcessId)
+import           Data.Binary (Binary(..))
+import           Data.Bits
 import qualified Data.ByteString as BS
-import Data.Char (ord)
-import Data.Either (rights)
-import Data.Hashable (Hashable(..))
-import Data.Int (Int64)
-import Data.Maybe (listToMaybe)
-import Data.Ord (comparing)
-import Data.Proxy (Proxy(..))
-import Data.Scientific
+import           Data.Char (ord)
+import           Data.Either (rights)
+import           Data.Hashable (Hashable(..))
+import           Data.Int (Int64)
+import           Data.Maybe (listToMaybe)
+import           Data.Ord (comparing)
+import           Data.Proxy (Proxy(..))
+import           Data.Scientific
 import qualified Data.Text as T
-import Data.Typeable (Typeable)
-import Data.UUID (UUID)
+import           Data.Typeable (Typeable)
+import           Data.UUID (UUID)
 import qualified Data.Vector as V
-import Data.Word ( Word32, Word64 )
-import GHC.Generics (Generic)
-import HA.Aeson
+import           Data.Word (Word32, Word64)
+import           GHC.Generics (Generic)
+import           HA.Aeson
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Castor.Initial as CI
-import HA.Resources.TH
-import HA.SafeCopy hiding (Profile)
-import Mero.ConfC
+import           HA.Resources.TH
+import           HA.SafeCopy hiding (Profile)
+import           Mero.ConfC
   ( Bitmap
   , Fid(..)
   , PDClustAttr(..)
   , ServiceParams
   , ServiceType
   )
-import Mero.Lnet (Endpoint, readEndpoint)
+import           Mero.Lnet (Endpoint, readEndpoint)
 import qualified Mero.Lnet as Lnet
-import Mero.Spiel (FSStats)
+import           Mero.Spiel (FSStats)
 import qualified "distributed-process-scheduler" System.Clock as C
+
 --------------------------------------------------------------------------------
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
