@@ -24,6 +24,8 @@ dependencies:
     - mkdir -p ~/.local/bin
     - curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack';
     - stack --version
+    - sudo apt-get update
+    - sudo apt-get install curl libcurl3
     - sudo apt-get install socat sysstat
     # Make the docker socket available on a port.
     - "socat TCP-LISTEN:5555,reuseaddr,fork UNIX-CLIENT:/var/run/docker.sock":

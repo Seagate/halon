@@ -1,0 +1,99 @@
+version: 2
+
+jobs:
+  build:
+    working_directory: ~/halon
+    docker:
+      - image: centos:centos7
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - '6e:cf:e0:cc:d0:3f:ce:e8:4e:75:11:86:6c:53:df:99'
+
+      - run:
+          name: Environment info
+          command: printenv
+
+      - run:
+          name: Installing git
+          command: yum --assumeyes install git
+
+      - checkout
+
+      - run:
+          name: Checking-out git submodules
+          command: |
+              git submodule sync --recursive
+              git submodule update --init --recursive
+
+      - run:
+          name: Halon revision
+          command: git --no-pager log -1
+
+      - run:
+          name: Checking-out latest Mero master
+          working_directory: ~/
+          command: git clone --recursive ${CIRCLE_REPOSITORY_URL%/*}/mero.git
+
+      - run:
+          name: Mero revision
+          working_directory: ~/mero
+          command: |
+              git describe
+              git --no-pager log -1
+
+      - run:
+          name: Installing ansible
+          command: yum --assumeyes install ansible which
+
+      - run:
+          name: Setting up build environment
+          working_directory: ~/mero
+          command: |
+              ./scripts/setup-node localhost \
+                        --verbose \
+                        --local \
+                        --skip-tags reboot,upgrade,start-services,debug
+
+      - run:
+          name: Building Mero master
+          working_directory: ~/mero
+          command: |
+              ./autogen.sh
+              ./configure --with-linux=/lib/modules/$(yum list installed kernel | tail -n1 | awk '{ print $2 }').x86_64/build
+              make -j8
+
+      - run:
+          name: Running `stack setup`
+          command: ./scripts/h0 setup
+
+      - run:
+          name: Building Halon
+          no_output_timeout: 45m
+          command: ./scripts/h0 make || ./scripts/h0 make
+
+      - run:
+          name: Running Halon unit tests
+          command: ./scripts/h0 test
+
+  test:
+    working_directory: ~/halon
+    docker:
+      - image: centos:centos7
+    steps:
+      - checkout
+      - run:
+          name: Info
+          command: "echo 'TODO: replace me with real tests'"
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
+          filters:
+            branches:
+              only: master
