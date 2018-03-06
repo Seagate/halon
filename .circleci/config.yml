@@ -5,11 +5,8 @@ jobs:
     working_directory: ~/halon
     docker:
       - image: centos:centos7
+      - image: rabbitmq:3
     steps:
-      - add_ssh_keys:
-          fingerprints:
-            - '6e:cf:e0:cc:d0:3f:ce:e8:4e:75:11:86:6c:53:df:99'
-
       - run:
           name: Environment info
           command: printenv
@@ -70,30 +67,17 @@ jobs:
       - run:
           name: Building Halon
           no_output_timeout: 45m
+          # the second `make` invocation is needed as a workaround for the
+          # following build error of 'regex-tdfa' package:
+          #
+          #   --  While building custom Setup.hs for package regex-tdfa-1.2.2 using:
+          #   /root/.stack/setup-exe-cache/x86_64-linux/Cabal-simple_mPHDZzAJ_1.24.2.0_ghc-8.0.2 --builddir=.stack-work/dist/x86_64-linux/Cabal-1.24.2.0 build --ghc-options " -ddump-hi -ddump-to-file"
+          #   Process exited with code: ExitFailure (-9) (THIS MAY INDICATE OUT OF MEMORY)
+          #   Logs have been written to: /root/halon/.stack-work/logs/regex-tdfa-1.2.2.log
+          #
+          # TODO: investigate the root cause and implement a proper solution
           command: ./scripts/h0 make || ./scripts/h0 make
 
       - run:
           name: Running Halon unit tests
           command: ./scripts/h0 test
-
-  test:
-    working_directory: ~/halon
-    docker:
-      - image: centos:centos7
-    steps:
-      - checkout
-      - run:
-          name: Info
-          command: "echo 'TODO: replace me with real tests'"
-
-workflows:
-  version: 2
-  build_and_test:
-    jobs:
-      - build
-      - test:
-          requires:
-            - build
-          filters:
-            branches:
-              only: master
