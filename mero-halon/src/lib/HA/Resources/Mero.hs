@@ -875,7 +875,7 @@ instance ToJSON MeroClusterState
 -- | Pretty-printer for 'MeroClusterState'.
 prettyStatus :: MeroClusterState -> String
 prettyStatus MeroClusterState{..} = unlines [
-    "Disposition: " ++ (show _mcs_disposition)
+    "Disposition: " ++ show _mcs_disposition
   , "Current run level: " ++ (show . unBootLevel $ _mcs_runlevel)
   , "Current stop level: " ++ (show . unBootLevel $ _mcs_stoplevel)
   ]

@@ -63,7 +63,7 @@ jsonReport = BSL.putStrLn . HA.Aeson.encode
 
 prettyReport :: Bool -> ReportClusterState -> IO ()
 prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
-  putStrLn $ "Cluster is " ++ maybe "N/A" M0.prettyStatus status
+  putStrLn $ "Cluster is " ++ maybe "N/A" (show . M0._mcs_disposition) status
   case info' of
     Nothing -> putStrLn "cluster information is not available, load initial data.."
     Just (M0.Profile pfid, M0.Filesystem ffid _ _)  -> do
