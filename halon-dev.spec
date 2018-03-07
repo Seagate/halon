@@ -50,6 +50,7 @@ mkdir -p %{buildroot}/etc/halon/role_maps
 mkdir -p %{buildroot}/usr/libexec/halon
 mkdir -p %{buildroot}/etc/sysconfig
 mkdir -p %{buildroot}%{_tmpfilesdir}
+mkdir -p %{buildroot}%{_sharedstatedir}/halon
 cp -a $RPM_BUILD_DIR/halon/halond %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/halonctl %{buildroot}/usr/bin
 cp -a $RPM_BUILD_DIR/halon/halon-simplelocalcluster %{buildroot}/usr/bin
@@ -86,3 +87,5 @@ rm -rf %{buildroot}
 /etc/halon/halon_role_mappings
 /etc/halon/role_maps/halon_role_mappings
 %{_tmpfilesdir}/halond.conf
+# %{_sharedstatedir} normally resolves to /var/lib
+%{_sharedstatedir}/halon
