@@ -89,3 +89,6 @@ rm -rf %{buildroot}
 %{_tmpfilesdir}/halond.conf
 # %{_sharedstatedir} normally resolves to /var/lib
 %{_sharedstatedir}/halon
+
+%post
+systemctl daemon-reload
