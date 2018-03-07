@@ -55,64 +55,60 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , updateSnsStartTime
   ) where
 
-import HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
-  ( lookupDiskSDev )
-import HA.RecoveryCoordinator.Job.Actions
-import HA.RecoveryCoordinator.Job.Events
-import HA.RecoveryCoordinator.Mero.Actions.Conf
-import HA.RecoveryCoordinator.Mero.Actions.Core
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
+  (lookupDiskSDev)
+import           HA.RecoveryCoordinator.Job.Actions
+import           HA.RecoveryCoordinator.Job.Events
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
+import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import HA.Resources (Has(..), Cluster(..))
-import HA.Resources.Castor
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
-import HA.Resources.HalonVars
-import HA.Resources.Mero (SyncToConfd(..))
+import           HA.Resources.HalonVars
+import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
-import Mero.ConfC
-  ( PDClustAttr(..)
-  , confPVerLvlDisks
-  )
-import Mero.Lnet
-import Mero.Notification hiding (notifyMero)
-import Mero.Spiel
-import Mero.ConfC (Fid)
-import Mero.M0Worker
+import           Mero.ConfC (PDClustAttr(..), confPVerLvlDisks)
+import           Mero.Lnet
+import           Mero.Notification hiding (notifyMero)
+import           Mero.Spiel
+import           Mero.ConfC (Fid)
+import           Mero.M0Worker
 
-import Control.Applicative
+import           Control.Applicative
 import qualified Control.Distributed.Process as DP
-import Control.Monad (void, join)
-import Control.Monad.Catch
-import Control.Lens
+import           Control.Monad (void, join)
+import           Control.Monad.Catch
+import           Control.Lens
 
-import Data.Binary (Binary)
+import           Data.Bifunctor (first)
+import           Data.Binary (Binary)
 import qualified Data.ByteString as BS
-import Data.Foldable (traverse_, for_)
+import           Data.Foldable (traverse_, for_)
+import           Data.Hashable (hash)
+import           Data.IORef (writeIORef)
+import           Data.List (sortOn, (\\))
+import           Data.Maybe (catMaybes, listToMaybe)
 import qualified Data.Text as T
-import Data.Traversable (for)
-import Data.Typeable
-import Data.Hashable (hash)
-import Data.IORef (writeIORef)
-import Data.List (sortOn, (\\))
-import Data.Maybe (catMaybes, listToMaybe)
-import Data.UUID (UUID)
-import Data.UUID.V4 (nextRandom)
-import Data.Bifunctor
-import Data.Vinyl
+import           Data.Traversable (for)
+import           Data.Typeable
+import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
+import           Data.Vinyl
 
-import Network.CEP
+import           Network.CEP
+import           System.IO
+import           Text.Printf (printf)
 
-import System.IO
+import           GHC.Generics
+import           GHC.TypeLits
+import           GHC.Exts
 
-import Text.Printf (printf)
-import GHC.Generics
-import GHC.TypeLits
-import GHC.Exts
-
-import Prelude hiding (id)
+import           Prelude hiding (id)
 
 -- | Default HA process endpoint listen address.
 haAddress :: LNid -> Endpoint
