@@ -227,14 +227,14 @@ instance Binary RestartSNSOperationResult
 
 -- | Failure vector request.
 data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
-      deriving (Eq, Show, Typeable, Generic)
+  deriving (Eq, Show, Typeable, Generic)
 
-newtype DixInitRequest = DixInitRequest M0.Root -- XXX-MULTIPOOLS
+data DixInitRequest = DixInitRequest
   deriving (Eq, Ord, Show, Typeable, Generic)
 
 data DixInitResult =
-    DixInitSuccess M0.Root -- XXX-MULTIPOOLS
-  | DixInitFailure M0.Root String
+    DixInitSuccess
+  | DixInitFailure String
   deriving (Eq, Ord, Show, Typeable, Generic)
 
 -- | The endpoint hasn't been initialised yet so the m0 worker is not
