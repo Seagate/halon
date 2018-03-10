@@ -1,10 +1,10 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE TemplateHaskell  #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -109,7 +109,7 @@ module HA.RecoveryCoordinator.Castor.Node.Rules
   , maxTeardownLevel
   ) where
 
-import           Control.Distributed.Process(Process, spawnLocal, spawnAsync, sendChan)
+import           Control.Distributed.Process (Process, spawnLocal, spawnAsync, sendChan)
 import           Control.Distributed.Process.Closure
 import           Control.Lens
 import           Control.Monad (void, guard, when)
@@ -122,6 +122,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import           Data.Typeable
 import           Data.Vinyl
+
 import qualified HA.Aeson as Aeson
 import           HA.Encode
 import           HA.EventQueue
@@ -155,8 +156,8 @@ import qualified HA.Resources.Mero.Note as M0
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero
-import           HA.Services.SSPL.LL.CEP ( sendInterestingEvent )
-import           HA.Services.SSPL.IEM ( logMeroBEError )
+import           HA.Services.SSPL.IEM (logMeroBEError)
+import           HA.Services.SSPL.LL.CEP (sendInterestingEvent)
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
 import           Mero.ConfC (ServiceType(..))
 import           Mero.Lnet
@@ -193,10 +194,8 @@ maxTeardownLevel = 3 -- XXX: move to cluster constants.
 --------------------------------------------------------------------------------
 
 type FldLnetInfo = '("mLnetInfo", Maybe LnetInfo)
-
 fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
-
 
 type FldHost = '("host", Maybe R.Host)
 fldHost :: Proxy FldHost

@@ -26,7 +26,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources as R (Node(..), Has(..))
+import qualified HA.Resources as R (Node(..))
 import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0

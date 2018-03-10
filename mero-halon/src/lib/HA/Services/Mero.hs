@@ -48,7 +48,7 @@ import qualified Data.UUID as UUID
 import           HA.Debug
 import           HA.Logger
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Service
 import           HA.Service.Interface
@@ -519,7 +519,7 @@ remotableDecl [ [d|
 -- | Find the @'Service' 'MeroConf'@ instance that should be used. By
 -- default, 'm0d' is provided if no value.
 lookupM0d :: G.Graph -> Service MeroConf
-lookupM0d = maybe m0d _msi_m0d . G.connectedTo R.Cluster R.Has
+lookupM0d = maybe m0d _msi_m0d . G.connectedTo Cluster Has
 
 -- | Register the given @'Service' 'MeroConf'@ as the @halon:m0d@
 -- service to use when requested. This allows us to replace the
@@ -529,7 +529,7 @@ lookupM0d = maybe m0d _msi_m0d . G.connectedTo R.Cluster R.Has
 -- and should not be changed afterwards as to not confuse rules or
 -- even start two separate services.
 putM0d :: Service MeroConf -> G.Graph -> G.Graph
-putM0d m = G.connect R.Cluster R.Has (MeroServiceInstance m)
+putM0d m = G.connect Cluster Has (MeroServiceInstance m)
 
 -- | Alias for 'm0d'. Represents a "real" @halon:m0d@ service. It
 -- shouldn't be used directly unless you know what you're doing. Use

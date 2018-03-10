@@ -1032,8 +1032,8 @@ $(mkDicts
   , (''Process, ''R.Is, ''ProcessState)
   , (''Service, ''R.Is, ''ServiceState)
   , (''SDev, ''R.Is, ''SDevState)
-  , (''Node,    ''R.Is, ''NodeState)
-  , (''Controller,    ''R.Is, ''ControllerState)
+  , (''Node, ''R.Is, ''NodeState)
+  , (''Controller, ''R.Is, ''ControllerState)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''R.Has, ''FilesystemStats)
   , (''Root, ''R.Has, ''DIXInitialised)
@@ -1106,8 +1106,8 @@ $(mkResRel
   , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)
   , (''Service, Unbounded, ''R.Is, AtMostOne, ''ServiceState)
   , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
-  , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
-  , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
+  , (''Node, Unbounded, ''R.Is, AtMostOne, ''NodeState)
+  , (''Controller, Unbounded, ''R.Is, AtMostOne, ''ControllerState)
   , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
