@@ -203,7 +203,7 @@ data Root = Root
   { rt_fid :: Fid
   , rt_mdpool :: Fid -- ^ Meta-data pool.
   , rt_imeta_pver :: Fid -- ^ Distributed index meta-data pool version.
-  } deriving (Eq, Ord, Show, Generic, Typeable)
+  } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable Root
 instance ToJSON Root
