@@ -203,7 +203,7 @@ data Root = Root
   { rt_fid :: Fid
   , rt_mdpool :: Fid -- ^ Meta-data pool.
   , rt_imeta_pver :: Fid -- ^ Distributed index meta-data pool version.
-  } deriving (Eq, Show, Generic, Typeable)
+  } deriving (Eq, Ord, Show, Generic, Typeable)
 
 instance Hashable Root
 instance ToJSON Root
@@ -1036,7 +1036,7 @@ $(mkDicts
   , (''Controller,    ''R.Is, ''ControllerState)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''R.Has, ''FilesystemStats)
-  , (''Filesystem, ''R.Is, ''DIXInitialised)
+  , (''Root, ''R.Has, ''DIXInitialised)
   ]
   )
 
@@ -1109,7 +1109,7 @@ $(mkResRel
   , (''Node, Unbounded,    ''R.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded,    ''R.Is, AtMostOne, ''ControllerState)
   , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
-  , (''Filesystem, Unbounded, ''R.Is, AtMostOne, ''DIXInitialised)
+  , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
   []
   )

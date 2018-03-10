@@ -791,13 +791,13 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
         else continue boot_level_3_dixinit
 
     directly boot_level_3_dixinit $ do
-      Just fs <- getFilesystem -- Legitimate, we couldn't be here otherwise
+      Just rt <- getRoot -- Legitimate, we couldn't be here otherwise
       -- Check that we're on BL3. This should be fine; no need to wait, since
       -- while different conditions are required for BL2 and 3, the BL2
       -- conditions should guarantee the BL3 ones.
       (M0.BootLevel n) <- calculateRunLevel
       if n >= 3 then do
-        promulgateRC $ DixInitRequest fs
+        promulgateRC $ DixInitRequest rt
         switch [boot_level_3, dix_failure]
       else do
         StartProcessesOnNodeRequest m0node <- getRequest

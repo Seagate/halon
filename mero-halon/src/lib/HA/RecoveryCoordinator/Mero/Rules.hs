@@ -26,7 +26,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources as R (Node(..))
+import qualified HA.Resources as R (Node(..), Has(..))
 import qualified HA.Resources.Castor as R
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -115,7 +115,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
 
     directly req $ do
       -- XXX-MULTIPOOLS: Can we get root without passing it via DixInitRequest?
-      DixInitRequest fs <- getRequest
+      DixInitRequest rt <- getRequest
       dixInitTimeout <- getHalonVar _hv_m0dixinit_timeout
       rg <- getLocalGraph
       let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
@@ -128,11 +128,11 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
             m0d rg
       case listToMaybe nodes of
         Just node@(R.Node nid) ->
-          if G.isConnected fs R.Is M0.DIXInitialised rg
+          if G.isConnected rt R.Has M0.DIXInitialised rg
           then do
             Log.rcLog' Log.DEBUG "DIX subsystem already initialised."
             modify Local $ rlens fldRep .~
-              Field (Just $ DixInitSuccess fs)
+              Field (Just $ DixInitSuccess rt)
           else Log.withLocalContext' $ do
             Log.tagLocalContext node Nothing
             Log.rcLog Log.DEBUG "Initialising DIX subsystem"
@@ -141,33 +141,33 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle getRequest finish) -> do
             switch [ rep, timeout dixInitTimeout norep ]
         Nothing -> do
           modify Local $ rlens fldRep . rfield .~
-            (Just $ DixInitFailure fs "Cannot find node to call m0dixinit.")
+            (Just $ DixInitFailure rt "Cannot find node to call m0dixinit.")
           continue finish
 
     setPhaseIf rep dixInitialised $
       \(uid, res) -> do
         todo uid
-        DixInitRequest fs <- getRequest
+        DixInitRequest rt <- getRequest
         case res of
           Right () -> do
             Log.rcLog' Log.DEBUG "DIX subsystem initialised successfully."
-            modifyGraph $ G.connect fs R.Is M0.DIXInitialised
+            modifyGraph $ G.connect rt R.Has M0.DIXInitialised
             modify Local $ rlens fldRep .~
-              Field (Just $ DixInitSuccess fs)
+              Field (Just $ DixInitSuccess rt)
           Left err -> do
             Log.rcLog' Log.ERROR $ "DIX subsystem failed to initialise: " ++ err
             modify Local $ rlens fldRep .~
-              Field (Just $ DixInitFailure fs err)
+              Field (Just $ DixInitFailure rt err)
         done uid
         continue finish
 
     directly norep $ do
-      DixInitRequest fs <- getRequest
+      DixInitRequest rt <- getRequest
       modify Local $ rlens fldRep .~
-        Field (Just $ DixInitFailure fs "Timeout waiting for m0dixinit.")
+        Field (Just $ DixInitFailure rt "Timeout waiting for m0dixinit.")
       continue finish
 
-    return $ \(DixInitRequest fs) -> return $ Right (DixInitSuccess fs, [req])
+    return $ \(DixInitRequest rt) -> return $ Right (DixInitSuccess rt, [req])
 
   where
     dixInitialised (HAEvent uid (DixInitialised res)) _ _ =
