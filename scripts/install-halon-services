@@ -155,7 +155,7 @@ install_files()
     run "cp -vf $H0_SRC_DIR/systemd/sysconfig/halon-satellite $dir"
     # example output of `ip address` command that is parsed below
     #   3: eth1    inet 172.28.128.94/24 brd 172.28.128.255 scope global dynamic eth1...
-    local ip_addr=$(ip -oneline -4 address show scope global | tail -n 1 |
+    local ip_addr=$(ip -oneline -4 address show scope global up | grep -v docker | tail -n 1 |
                     awk '{print $4}' | cut -d/ -f1)
     run "sed -i -r s/^#(HALOND_LISTEN=).*(:[[:digit:]]+)$/\1${ip_addr}\2/ $dir/halond"
 
