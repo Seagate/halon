@@ -24,10 +24,10 @@ import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Rules.Maintenance as M
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.ResourceGraph as G
+import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import qualified HA.Resources as R (Node(..))
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas (Host(..))
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -115,11 +115,11 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle _ finish) -> do
 
     directly req $ do
       dixInitTimeout <- getHalonVar _hv_m0dixinit_timeout
-      rg <- getLocalGraph
+      rg <- getGraph
       let m0d = lookupM0d rg
           nodes = findRunningServiceOn
             [ node
-            | host <- G.connectedTo Cluster Has rg :: [R.Host]
+            | host <- G.connectedTo Cluster Has rg :: [Cas.Host]
             , node <- G.connectedTo host Runs rg :: [R.Node]
             ]
             m0d rg
@@ -148,7 +148,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle _ finish) -> do
         case res of
           Right () -> do
             Log.rcLog' Log.DEBUG "DIX subsystem initialised successfully."
-            rg <- getLocalGraph
+            rg <- getGraph
             let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
             modifyGraph $ G.connect root Has M0.DIXInitialised
             modify Local $ rlens fldRep .~
@@ -209,12 +209,12 @@ meroRules = do
   -- This rule answers to the notification interface when it wants to get the
   -- state of some configuration objects.
   defineSimpleTask "castor::cluster::state-get" $ \(Get client fids) -> do
-    getLocalGraph >>= liftProcess . usend client .
+    getGraph >>= liftProcess . usend client .
       GetReply . map (uncurry Note) . lookupConfObjectStates fids
 
   -- Reply to the Failure vector request.
   defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
            <$> G.connectedTo (M0.Pool pool) Has rg
     Log.rcLog' Log.DEBUG $ "FailureVector=" ++ show mv

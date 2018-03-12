@@ -111,7 +111,7 @@ createMeroClientConfig :: M0.Filesystem
                        -> PhaseM RC a ()
 createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
   createMeroKernelConfig host lnid
-  modifyLocalGraph $ \rg -> do
+  modifyGraphM $ \rg -> do
     -- Check if node is already defined in RG
     m0node <- case do (c :: M0.Controller) <- G.connectedFrom M0.At host rg
                       (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
@@ -175,13 +175,13 @@ calculateRunLevel = do
       -- confd processes have started, where n is the total number, and
       -- where we have a principal RM selected.
       prm <- getPrincipalRM
-      confdprocs <- getLocalGraph <&> \rg ->
+      confdprocs <- getGraph <&> \rg ->
         Process.getLabeled (M0.PLM0d $ M0.BootLevel 0) rg & filter
           (\p -> any
               (\s -> M0.s_type s == CST_CONFD)
               (G.connectedTo p M0.IsParentOf rg)
           )
-      onlineProcs <- getLocalGraph <&>
+      onlineProcs <- getGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) confdprocs
       -- The 'null confdprocs' here deserves explanation, because it
       -- shouldn't happen in a normal cluster. It just serves for test cases
@@ -193,16 +193,16 @@ calculateRunLevel = do
       -- TODO Allow boot level 2 to start up earlier
       -- We allow boot level 2 processes to start when all processes
       -- at level 1 have started.
-      lvl1procs <- getLocalGraph <&>
+      lvl1procs <- getGraph <&>
         Process.getLabeled (M0.PLM0d $ M0.BootLevel 1)
-      onlineProcs <- getLocalGraph <&>
+      onlineProcs <- getGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
       return $ length onlineProcs == length lvl1procs
     guard (M0.BootLevel 3) = do
       -- Boot level 3 may start once all CAS services have started.
-      casProcs <- getLocalGraph <&>
+      casProcs <- getGraph <&>
         Process.getAllHostingService CST_CAS
-      onlineProcs <- getLocalGraph <&>
+      onlineProcs <- getGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) casProcs
       return $ length onlineProcs == length casProcs
     guard (M0.BootLevel _) = return False
@@ -222,7 +222,7 @@ calculateStopLevel = do
                        (G.connectedTo (p::M0.Process) M0.IsParentOf g)
       -- We allow stopping m0d when there are no running Mero processes.
     guard (M0.BootLevel (-1)) = do
-      stillUnstopped <- getLocalGraph <&> \g -> filter
+      stillUnstopped <- getGraph <&> \g -> filter
           ( \p -> not . null $
           [ () | M0.getState p g `elem` [ M0.PSOnline
                                         , M0.PSQuiescing
@@ -251,7 +251,7 @@ calculateStopLevel = do
     guard (M0.BootLevel 2) = return True
     guard (M0.BootLevel 3) = return True
     guard (M0.BootLevel _) = return False
-    unstoppedWithLabel lbl = getLocalGraph <&> \g ->
+    unstoppedWithLabel lbl = getGraph <&> \g ->
       ( Process.getLabeledP lbl g) & filter
       ( \p -> not . null $
       [ () | M0.getState p g `elem` [ M0.PSOnline
@@ -303,7 +303,7 @@ configureMeroProcess :: (MeroToSvc -> Process ())
                      -> ProcessRunType
                      -> PhaseM RC a UUID.UUID
 configureMeroProcess sender p runType = do
-  rg <- getLocalGraph
+  rg <- getGraph
   uid <- liftIO nextRandom
   conf <- if any (\s -> M0.s_type s == CST_CONFD)
                $ G.connectedTo p M0.IsParentOf rg
@@ -320,7 +320,7 @@ startMeroService :: Castor.Host -> Res.Node -> PhaseM RC a ()
 startMeroService host node = do
   Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
                       ++ show (host, node)
-  rg <- getLocalGraph
+  rg <- getGraph
   mprofile <- Conf.getProfile
   kaFreq <- getHalonVar _hv_keepalive_frequency
   kaTimeout <- getHalonVar _hv_keepalive_timeout
@@ -369,14 +369,14 @@ startMeroService host node = do
 -- bootstrap.
 retriggerMeroNodeBootstrap :: M0.Node -> PhaseM RC a ()
 retriggerMeroNodeBootstrap n = do
-  rg <- getLocalGraph
+  rg <- getGraph
   case G.connectedTo Res.Cluster Has rg of
     Just M0.ONLINE -> restartMeroOnNode
     cst -> Log.rcLog' Log.DEBUG $
              "Not trying to retrigger mero as cluster state is " ++ show cst
   where
     restartMeroOnNode = do
-      rg <- getLocalGraph
+      rg <- getGraph
       case G.connectedFrom Runs n rg of
         Nothing -> Log.rcLog' Log.DEBUG $ "Not a mero node: " ++ show n
         Just h  -> announceTheseMeroHosts [h] (\_ _ -> True)
@@ -389,7 +389,7 @@ announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
                        -> PhaseM RC a ()
 announceTheseMeroHosts hosts p = do
-  rg' <- getLocalGraph
+  rg' <- getGraph
   let clientHosts =
         [ host | host <- hosts
                , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
@@ -398,7 +398,6 @@ announceTheseMeroHosts hosts p = do
         [ host | host <- hosts
                , G.isConnected host Has Castor.HA_M0SERVER rg'
                ]
-
 
       -- Don't announced failed nodes
       hostsToNodes hs = [ n | h <- hs, n <- G.connectedTo h Runs rg'

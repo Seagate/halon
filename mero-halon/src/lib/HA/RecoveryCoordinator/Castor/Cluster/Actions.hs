@@ -58,7 +58,7 @@ barrierPass rightState (Event.ClusterStateChange _ state') _ _ =
 -- cluster boot level.
 notifyOnClusterTransition :: PhaseM RC l ()
 notifyOnClusterTransition = do
-  rg <- getLocalGraph
+  rg <- getGraph
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
   let disposition = fromMaybe M0.OFFLINE $ G.connectedTo R.Cluster R.Has rg
@@ -109,7 +109,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
     return $ Event.ClusterLiveness havePVers haveOngoingSNS haveQuorum havePrincipalRM
   where
     withTemporaryGraph action = do
-      rg' <- getLocalGraph
+      rg' <- getGraph
       modifyGraph $ const rg
       result <- action
       modifyGraph $ const rg'

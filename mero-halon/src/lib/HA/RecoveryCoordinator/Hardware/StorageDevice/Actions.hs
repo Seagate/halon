@@ -60,26 +60,26 @@ exists :: String   -- ^ Serial number.
        -> PhaseM RC l (Maybe StorageDevice)
 exists sn =  bool Nothing (Just sdev)
           .  G.isConnected R.Cluster R.Has sdev
-         <$> getLocalGraph
+         <$> getGraph
   where sdev = StorageDevice sn
 
 -- | Check if 'StorageDevice' is locted in given enclosure.
 isAt :: StorageDevice -> Slot -> PhaseM RC l Bool
-isAt sdev loc = G.isConnected sdev R.Has loc <$> getLocalGraph
+isAt sdev loc = G.isConnected sdev R.Has loc <$> getGraph
 
 -- | Get device that is in slot currently.
 atSlot :: Slot -> PhaseM RC l (Maybe StorageDevice)
-atSlot loc = G.connectedFrom R.Has loc <$> getLocalGraph
+atSlot loc = G.connectedFrom R.Has loc <$> getGraph
 
 -- | Get location of current device.
 location :: StorageDevice -> PhaseM RC l (Maybe Slot)
-location sdev = G.connectedTo sdev R.Has <$> getLocalGraph
+location sdev = G.connectedTo sdev R.Has <$> getGraph
 
 -- | Get device enclosure, if there is no connection to location,
 -- then this call tries to find direct connection.
 enclosure :: StorageDevice -> PhaseM RC l (Maybe Enclosure)
 enclosure sdev = do
- rg <- getLocalGraph
+ rg <- getGraph
  return $ slotEnclosure <$> G.connectedTo sdev R.Has rg
 
 -- | Register device location in graph.
@@ -107,7 +107,7 @@ insertTo :: StorageDevice
          -> Slot
          -> PhaseM RC l (Either InsertionError ())
 insertTo sdev sdev_loc = do
-  rg <- getLocalGraph
+  rg <- getGraph
   case G.connectedFrom R.Has sdev_loc rg of
     -- No storage device is associated with current location, we
     -- are free to just associate drive with that.
@@ -172,7 +172,9 @@ isPowered sdev = maybe True id . listToMaybe . mapMaybe unwrap
 -- | Get the status of a storage device.
 status :: StorageDevice
        -> PhaseM RC l StorageDeviceStatus
-status dev = fromMaybe (StorageDeviceStatus "UNKNOWN" "UNKNOWN") . G.connectedTo dev Is <$> getLocalGraph
+status dev =
+    fromMaybe (StorageDeviceStatus "UNKNOWN" "UNKNOWN") . G.connectedTo dev Is
+        <$> getGraph
 
 -- | Update the status of a storage device.
 --
@@ -218,7 +220,7 @@ findAttrs :: (StorageDeviceAttr -> Bool)
                        -> StorageDevice
                        -> PhaseM RC l [StorageDeviceAttr]
 findAttrs k sdev = do
-    rg <- getLocalGraph
+    rg <- getGraph
     return [ attr | attr <- G.connectedTo sdev R.Has rg :: [StorageDeviceAttr]
                   , k attr
                   ]
@@ -245,7 +247,7 @@ setPath sd path' = do
 -- | Get all 'DeviceIdentifier's for the 'StorageDevice'.
 getIdentifiers :: StorageDevice
                -> PhaseM RC l [DeviceIdentifier]
-getIdentifiers sd = G.connectedTo sd R.Has <$> getLocalGraph
+getIdentifiers sd = G.connectedTo sd R.Has <$> getGraph
 
 -- | Test if a drive have a given identifier
 hasIdentifier :: StorageDevice

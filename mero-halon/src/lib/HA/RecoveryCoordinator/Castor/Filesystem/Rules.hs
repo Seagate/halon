@@ -22,7 +22,7 @@ import HA.RecoveryCoordinator.Mero.Actions.Spiel
   )
 import HA.RecoveryCoordinator.RC.Actions
   ( RC
-  , getLocalGraph
+  , getGraph
   , modifyGraph
   , notify
   )
@@ -78,10 +78,10 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                   $ x
 
     mfs <- getFilesystem
-    status <- getClusterStatus <$> getLocalGraph
+    status <- getClusterStatus <$> getGraph
     case ((,) <$> mfs <*> status) of
       Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 1 -> do
-        mp <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
+        mp <- G.connectedTo R.Cluster R.Has <$> getGraph
         void . withSpielIO . withRConfIO mp
           $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
         put Local $ Just fs

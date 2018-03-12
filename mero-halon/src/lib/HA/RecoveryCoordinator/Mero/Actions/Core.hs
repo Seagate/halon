@@ -56,9 +56,9 @@ newFidSeq rg = case G.connectedTo Cluster Has rg of
 -- | Atomically fetch a FID sequence number of increment the sequence count.
 newFidSeqRC :: PhaseM RC l Word64
 newFidSeqRC = do
-  rg <- getLocalGraph
+  rg <- getGraph
   let (w, rg') = newFidSeq rg
-  putLocalGraph rg'
+  putGraph rg'
   return w
 
 -- | Create a new 'Fid' for the given 'M0.ConfObj' type.
@@ -83,14 +83,13 @@ uniquePVerCounter rg = case G.connectedTo Cluster Has rg of
 
 -- | Retrieve 'CI.M0Globals' from the RG.
 getM0Globals :: PhaseM RC l (Maybe CI.M0Globals)
-getM0Globals = getLocalGraph >>= \rg -> do
+getM0Globals = getGraph >>= \rg -> do
   Log.rcLog' Log.TRACE $ "Looking for Mero globals."
   return $ G.connectedTo Cluster Has rg
 
 -- | Load Mero global data into the graph
-loadMeroGlobals :: CI.M0Globals
-                -> PhaseM RC l ()
-loadMeroGlobals g = modifyLocalGraph $ return . G.connect Cluster Has g
+loadMeroGlobals :: CI.M0Globals -> PhaseM RC l ()
+loadMeroGlobals g = modifyGraphM $ return . G.connect Cluster Has g
 
 --------------------------------------------------------------------------------
 -- Mero actions execution

@@ -5,7 +5,6 @@
 -- Module rules for debugging and information retrieval.
 module HA.RecoveryCoordinator.RC.Rules.Info where
 
-
 import           Control.Distributed.Process
 import           Control.Monad (void)
 import           Data.ByteString.Builder (toLazyByteString, lazyByteString)
@@ -35,11 +34,10 @@ rules argv = sequence_ [
 ruleNodeStatus :: IgnitionArguments -> Definitions RC ()
 ruleNodeStatus argv = defineSimpleTask "Debug::node-status" $
       \(NodeStatusRequest n@(R.Node nid) sp) -> do
-        rg <- getLocalGraph
-        let
-          isStation = nid `elem` eqNodes argv
-          isSatellite = G.isConnected R.Cluster R.Has (R.Node nid) rg
-          response = NodeStatusResponse n isStation isSatellite
+        rg <- getGraph
+        let isStation = nid `elem` eqNodes argv
+            isSatellite = G.isConnected R.Cluster R.Has (R.Node nid) rg
+            response = NodeStatusResponse n isStation isSatellite
         liftProcess $ sendChan sp response
 
 -- | Listen for 'DebugRequest' and send back 'DebugResponse' to the
@@ -49,7 +47,7 @@ ruleDebugRC argv = defineSimpleTask "Debug::debug-rc" $
   \(DebugRequest sp) -> do
     Log.rcLog' Log.DEBUG "Sending debug statistics to client."
     ls <- get Global
-    rg <- getLocalGraph
+    rg <- getGraph
     liftProcess . sendChan sp $ DebugResponse {
       dr_eq_nodes = eqNodes argv
     , dr_refCounts = lsRefCount ls
@@ -81,7 +79,7 @@ ruleGetGraph = defineSimple "graph-dump-values" $ \(HAEvent uuid msg) -> case ms
   -- followed by '()' when everything is sent.
   ReadResourceGraph sp -> do
     messageProcessed uuid
-    rg <- G.garbageCollectRoot <$> getLocalGraph
+    rg <- G.garbageCollectRoot <$> getGraph
     void . liftProcess $ spawnLocal $ do
       let reply = dumpGraph $ G.getGraphResources rg
       mapM_ (sendChan sp . GraphDataChunk)
@@ -90,7 +88,7 @@ ruleGetGraph = defineSimple "graph-dump-values" $ \(HAEvent uuid msg) -> case ms
       sendChan sp GraphDataDone
   JsonGraph sp -> do
     messageProcessed uuid
-    rg <- G.garbageCollectRoot <$> getLocalGraph
+    rg <- G.garbageCollectRoot <$> getGraph
     void . liftProcess $ spawnLocal $ do
       let reply = dumpToJSON $ G.getGraphResources rg
       mapM_ (sendChan sp . GraphDataChunk)
@@ -106,7 +104,7 @@ ruleQueryRequest = define "query-request" $ do
 
   setPhase process_request $ \(HAEvent uid (ProcessQueryRequest fid sp)) -> do
     messageProcessed uid
-    rg <- getLocalGraph
+    rg <- getGraph
     let rep = M0.lookupConfObjByFid fid rg
     Log.rcLog' Log.DEBUG $ "Sending process info: " ++ show rep
     liftProcess $ sendChan sp rep

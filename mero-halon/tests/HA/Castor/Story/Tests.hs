@@ -40,7 +40,7 @@ import           HA.RecoveryCoordinator.Mero.Actions.Conf (encToM0Enc)
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
-import           HA.RecoveryCoordinator.RC.Actions.Core (getLocalGraph)
+import           HA.RecoveryCoordinator.RC.Actions.Core (getGraph)
 import           HA.RecoveryCoordinator.RC.Subscription
 import           HA.Replicator
 import qualified HA.ResourceGraph as G
@@ -555,7 +555,7 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
     setupRule = define "mkTestAroundReset-setup" $ do
       rule_init <- phaseHandle "rule_init"
       setPhase rule_init $ \(RuleHook caller) -> do
-        rg <- getLocalGraph
+        rg <- getGraph
         -- Find a single SDev
         let msdev = listToMaybe
               [ sdev | rack :: Rack <- G.connectedTo Cluster Has rg

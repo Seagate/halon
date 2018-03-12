@@ -27,7 +27,7 @@ import           Network.CEP
 ruleProcessKeepaliveReply :: Definitions RC ()
 ruleProcessKeepaliveReply = defineSimpleIf "process-keepalive-reply" g $ \(uid, fids) -> do
   todo uid
-  ps <- getProcs fids <$> getLocalGraph
+  ps <- getProcs fids <$> getGraph
   unless (Prelude.null ps) $ do
     ct <- liftIO M0.getTime
     void . applyStateChanges $ map (\(p, t) -> stateSet p $ mkTr ct t) ps

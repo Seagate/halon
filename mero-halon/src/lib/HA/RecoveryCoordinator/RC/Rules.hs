@@ -72,7 +72,7 @@ initialRule argv = do
   -- graph if needed.
   rc <- makeCurrentRC updateRC
   -- subscribe all processes with persistent subscription.
-  rg <- getLocalGraph
+  rg <- getGraph
   l "subscribers"
   for_ (G.connectedFrom R.SubscribedTo rc rg) $
       \(R.Subscriber p (BS64 bs)) -> do
@@ -119,19 +119,19 @@ ruleRemoveSubscription :: Definitions RC ()
 ruleRemoveSubscription = defineSimpleTask "halon::rc::remove-subscription" $
   \(UnsubscribeFromRequest pid bs) -> do
     let fp = decodeFingerprint bs
-    rcLog' DEBUG [  ("process.pid", show pid)
-                  , ("fingerprint", show fp)
-                  ]
+    rcLog' DEBUG [ ("process.pid", show pid)
+                 , ("fingerprint", show fp)
+                 ]
     liftProcess $ do
       self <- getSelfPid
       rawUnsubscribeThem self fp pid
     rc <- getCurrentRC
-    modifyGraph $ \g -> do
-      let s  = R.Subscriber pid (BS64 bs)
-          g' = G.disconnect (R.SubProcessId pid) R.IsSubscriber s
+    modifyGraph $ \rg -> do
+      let s = R.Subscriber pid (BS64 bs)
+          rg' = G.disconnect (R.SubProcessId pid) R.IsSubscriber s
            >>> G.disconnect s R.SubscribedTo rc
-             $ g
-      g'
+             $ rg
+      rg'
 
 -- | When monitored process dies we call all handlers who are intersted in that
 -- event.
@@ -146,13 +146,13 @@ ruleProcessMonitorNotification = defineSimple "halon::rc::process-monitor-notifi
       runMonitorCallback mref
 
       -- Remove external subscribers
-      modifyLocalGraph $ \g -> do
+      modifyGraphM $ \rg -> do
         let subs = do
-              sub <- G.connectedTo (R.SubProcessId pid) R.IsSubscriber g
+              sub <- G.connectedTo (R.SubProcessId pid) R.IsSubscriber rg
                          :: Maybe R.Subscriber
-              rc  <- G.connectedTo sub R.SubscribedTo g :: Maybe R.RC
+              rc  <- G.connectedTo sub R.SubscribedTo rg :: Maybe R.RC
               return (sub,rc)
-        flip execStateT g $ do
+        flip execStateT rg $ do
           for_ subs $ \(sub@(R.Subscriber _ (BS64 bs)), rc) -> do
             let fp = decodeFingerprint bs
             State.modify $ G.disconnect sub R.SubscribedTo rc

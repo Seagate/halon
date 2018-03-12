@@ -48,7 +48,7 @@ ruleDriveFailed = define "castor::drive::led::ruleDriveFailed" $ do
   -- state, switch LED on.
   setPhaseInternalNotification mero_drives_failed freshly_failed $ \(eid, sds) -> do
     todo eid
-    rg <- getLocalGraph
+    rg <- getGraph
     let storDevs = [ storD | sd <- (map fst sds :: [M0.SDev])
                            , slot@Slot{} <- maybeToList $ G.connectedTo sd M0.At rg
                            , storD <- maybeToList $ G.connectedFrom Has slot rg ]
@@ -109,7 +109,7 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
       thread_response = actuatorResponseMessageActuator_response_typeThread_controllerThread_response artc
   in case (T.toUpper module_name, T.toUpper thread_response) of
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
-         rg <- getLocalGraph
+         rg <- getGraph
          let l = [ (sd, G.connectedTo slot Has rg)
                  | p :: M0.Profile <- maybeToList $ G.connectedTo Cluster Has rg
                  -- XXX-MULTIPOOLS: remove

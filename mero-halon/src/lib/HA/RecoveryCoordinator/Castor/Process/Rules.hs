@@ -83,7 +83,7 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
     todo eid
     -- Filter CST_HA processes out: if halon:m0d fails, process fails
     -- too (eventKernelFailed)
-    rg <- getLocalGraph
+    rg <- getGraph
     let procs' = [ p | (p, _) <- procs
                      , let srvs = G.connectedTo p M0.IsParentOf rg
                      , not $ any (\s -> M0.s_type s == CST_HA) srvs ]
@@ -156,7 +156,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   let fail_start m = snd <$> defaultReply ProcessStartFailed m
 
   let route (ProcessStartRequest p) = do
-        rg <- getLocalGraph
+        rg <- getGraph
         case runChecks p rg of
           Just chkFailMsg ->
             Right <$> defaultReply ProcessStartInvalid chkFailMsg
@@ -469,7 +469,7 @@ ruleProcessStarting = define "castor::process::starting" $ do
     Log.tagContext Log.SM p $ Just "Process sending M0_CONF_HA_PROCESS_STARTING"
     Log.tagContext Log.SM [("pid", show processPid)] Nothing
 
-    rg <- getLocalGraph
+    rg <- getGraph
     case (getState p rg, G.connectedTo p Has rg) of
 
       -- We already know the process is starting.
@@ -518,7 +518,7 @@ ruleProcessOnline = define "castor::process::online" $ do
   rule_init <- phaseHandle "rule_init"
 
   setPhaseIfConsume rule_init startedProc $ \(eid, p, processPid) -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     case (getState p rg, G.connectedTo p Has rg) of
       -- Somehow we already have an online process and it has a PID:
       -- we don't care what the PID is as it either is the PID we
@@ -592,7 +592,7 @@ ruleProcessStopping = define "castor::process::stopping" $ do
     Log.tagContext Log.SM p $ Just "Process sending M0_CONF_HA_PROCESS_STOPPING"
     Log.tagContext Log.SM [("pid", show processPid)] Nothing
 
-    getLocalGraph >>= \rg -> case getState p rg of
+    getGraph >>= \rg -> case getState p rg of
       M0.PSOnline -> do
         Log.rcLog' Log.DEBUG "Ephemeral process stopping."
         void $ applyStateChanges [ stateSet p Tr.processStopping ]
@@ -627,7 +627,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
   setPhaseIfConsume rule_init stoppedProc $ \(eid, p, _) -> do
-    getLocalGraph >>= \rg -> case alreadyFailed p rg of
+    getGraph >>= \rg -> case alreadyFailed p rg of
       -- The process is already in what we consider a failed state:
       -- either we're already done dealing with it (it's offline or it
       -- failed).
@@ -721,7 +721,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 
   directly stop_process $ do
     StopProcessRequest p <- getRequest
-    rg <- getLocalGraph
+    rg <- getGraph
     let msender = do
           m0n <- G.connectedFrom M0.IsParentOf p rg
           Node nid <- M0.m0nodeToNode m0n rg
@@ -751,7 +751,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     messageProcessed eid
     case mFailure of
       Nothing -> do
-        rg <- getLocalGraph
+        rg <- getGraph
         let svcs = [ s | s :: M0.Service <- G.connectedTo p M0.IsParentOf rg
                        , getState s rg == M0.SSStopping
                        ]
@@ -779,7 +779,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
   --   or run the following phase for client processes anyway.
   directly process_services_offline $ do
     StopProcessRequest p <- getRequest
-    rg <- getLocalGraph
+    rg <- getGraph
     setReply $ StopProcessResult (p, M0.PSOffline)
     -- It may bee that the process STOPPED has already arrived in
     -- meantime and the process is offline. Finish straight away.
@@ -801,7 +801,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     -- from Mero itself, via @ruleProcessStopped@ - and we may have even
     -- restarted the process. So we should only mark those processes
     -- which are still @PSStopping@ as being failed.
-    rg <- getLocalGraph
+    rg <- getGraph
     case getState p rg of
       M0.PSStopping -> do
         let failMsg = "Timeout while stopping."
@@ -851,7 +851,7 @@ requestUserStopsProcess = defineSimpleTask "castor::process:stop_user_request" $
         l <- startJob $ StopProcessRequest p
         liftProcess . sendChan replyChan $ StopProcessInitiated l
       else do
-        rg <- getLocalGraph
+        rg <- getGraph
         let (_, DeferredStateChanges f _ _) = createDeferredStateChanges
               [stateSet p $ TrI.constTransition M0.PSOffline] rg
         -- Do we want to check for SNS? For example if this is IOS
@@ -876,7 +876,7 @@ ruleFailedNotificationFailsProcess :: Definitions RC ()
 ruleFailedNotificationFailsProcess =
   defineSimpleTask "notification-failed-fails-process" $ \(NotifyFailureEndpoints eps) -> do
     Log.rcLog' Log.DEBUG $ "Handling notification failure for: " ++ show eps
-    rg <- getLocalGraph
+    rg <- getGraph
     -- Get procs which have servicess
     let procs = nub $
           [ p | p <- Process.getAll rg
@@ -893,7 +893,7 @@ ruleFailedNotificationFailsProcess =
     -- we could do here anyway.
     unless (null procs) $ do
       failProcs <- getHalonVar _hv_failed_notification_fails_process
-      if failProcs 
+      if failProcs
       then void . applyStateChanges $
         map (\p -> stateSet p $ Tr.processFailed "notification-failed") procs
       else do

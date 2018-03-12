@@ -19,7 +19,7 @@ import           Prelude hiding ((.), id, mapM_)
 getNoisyPingCount :: PhaseM RC l Int
 getNoisyPingCount = do
     Log.rcLog' Log.TRACE "Querying noisy ping count."
-    rg <- getLocalGraph
+    rg <- getGraph
     let (rg', i) =
           case G.connectedTo noisy HasPingCount rg of
             Nothing -> (G.connect noisy HasPingCount (NoisyPingCount 0) rg, 0)
@@ -28,5 +28,5 @@ getNoisyPingCount = do
                   nrg = G.connect noisy HasPingCount newPingCount $
                         G.disconnect noisy HasPingCount pc rg in
               (nrg, iPc)
-    putLocalGraph rg'
+    putGraph rg'
     return i

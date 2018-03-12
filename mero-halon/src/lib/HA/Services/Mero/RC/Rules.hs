@@ -62,7 +62,7 @@ ruleCheckCleanup = define "service::m0d::check-cleanup" $ do
 
   setPhaseIf check_cleanup g $ \(uid, nid) -> do
     todo uid
-    rg <- getLocalGraph
+    rg <- getGraph
     let msg = Cleanup . null $
           [ ()
           | Just (host :: R.Host) <- [G.connectedFrom R.Runs (R.Node nid) rg]
@@ -108,8 +108,8 @@ ruleGenericNotification = defineSimpleTask "service::m0d::notification" $
     Log.tagContext Log.SM [("epoch", show epoch)] Nothing
     promulgateRC msg
     unless (null fails && null timeouts) $ do
-      psF <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getLocalGraph
-      psT <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) timeouts) <$> getLocalGraph
+      psF <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) fails) <$> getGraph
+      psT <- (\rg -> filter (\p -> getState p rg == M0.PSOnline) timeouts) <$> getGraph
       unless (null psF && null psT) $ do
         for_ psF $ \p -> Log.rcLog' Log.WARN $ "Delivery failed to: " ++ show (M0.fid p)
         for_ psT $ \p -> Log.rcLog' Log.WARN $ "Delivery timed out to: " ++ show (M0.fid p)
@@ -129,7 +129,7 @@ ruleNotificationsDeliveredToM0d = define "service::m0d::notification::delivered-
                           ] Nothing
     mdiff <- getStateDiffByEpoch epoch
     for_ mdiff $ \diff -> do
-      mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
+      mp <- M0.lookupConfObjByFid fid <$> getGraph
       for_ mp $ \p -> do
         Log.tagContext Log.SM p Nothing
         markNotificationDelivered diff p
@@ -165,7 +165,7 @@ ruleNotificationsFailedToBeDeliveredToM0d = defineSimpleIf "service::m0d::notifi
     Log.tagContext Log.SM [("epoch", show epoch), ("fid", show fid)] Nothing
     mdiff <- getStateDiffByEpoch epoch
     for_ mdiff $ \diff -> do
-      mp <- M0.lookupConfObjByFid fid <$> getLocalGraph
+      mp <- M0.lookupConfObjByFid fid <$> getGraph
       for_ mp $ markNotificationFailed diff
     done uid
   where

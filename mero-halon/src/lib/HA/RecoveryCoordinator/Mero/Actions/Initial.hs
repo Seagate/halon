@@ -79,7 +79,7 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect fs M0.IsParentOf pool
         >>> G.connect fs M0.IsParentOf mdpool
 
-      rg <- getLocalGraph
+      rg <- getGraph
       let re = [ (rack, G.connectedTo rack Has rg)
                | rack <- G.connectedTo Cluster Has rg
                ]
@@ -134,7 +134,7 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
 
       if not (null m0h_devices) then do
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
-        rg <- getLocalGraph
+        rg <- getGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
               e <- G.connectedFrom Has host rg :: Maybe Enclosure
               m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
@@ -196,7 +196,7 @@ addProcess node devs CI.M0Process{..} = let
       CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
       CI.PLHalon -> M0.PLHalon
     mkEndpoint = do
-        exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getLocalGraph
+        exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getGraph
         return $ findEP m0p_endpoint exProcEps
       where
         findEP ep eps =
@@ -238,9 +238,9 @@ addProcess node devs CI.M0Process{..} = let
     modifyGraph $ G.connect node M0.IsParentOf proc
               >>> G.connect proc Has procLabel
 
-    rg <- getLocalGraph
-    for_ (procEnv rg) $ \pe -> modifyGraph $
-      G.connect proc Has pe
+    rg <- getGraph
+    for_ (procEnv rg) $ \pe ->
+      modifyGraph (G.connect proc Has pe)
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
@@ -248,7 +248,7 @@ createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
 -- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
 createMDPoolPVer fs = do
     Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
-    rg <- getLocalGraph
+    rg <- getGraph
     let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
         mdpool = M0.Pool (M0.rt_mdpool root)
         racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
@@ -298,7 +298,7 @@ createIMeta :: M0.Filesystem -> PhaseM RC l ()
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-  rg <- getLocalGraph
+  rg <- getGraph
   let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
       cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
             | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]

@@ -21,7 +21,7 @@ module HA.Resources.Castor
 
 import HA.Aeson
 import HA.SafeCopy
-import HA.Resources
+import HA.Resources (Cluster(..), Has(..), Node(..), Runs(..))
 import HA.Resources.Castor.Initial (BMC(..))
 import HA.Resources.TH
 

@@ -232,7 +232,7 @@ eventKernelFailed :: Definitions RC ()
 eventKernelFailed = defineSimpleIf "castor::node::event::kernel-failed" g $
   \(uid, nid, msg) -> do
     todo uid
-    rg <- getLocalGraph
+    rg <- getGraph
     let node = R.Node nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
@@ -255,7 +255,7 @@ eventCleanupFailed :: Definitions RC ()
 eventCleanupFailed = defineSimpleIf "castor::node::event::cleanup-failed" g $
   \(uid, nid, msg) -> do
     todo uid
-    rg <- getLocalGraph
+    rg <- getGraph
     let node = R.Node nid
         mm0node = M0.nodeToM0Node node rg
         mhaprocess = mm0node >>= \m0n -> Process.getHA m0n rg
@@ -281,7 +281,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
         Log.rcLog' Log.WARN $ "Unknown source process: " ++ show meta
       Just (sendingProcess :: M0.Process) -> do
         mnode <- G.connectedFrom M0.IsParentOf sendingProcess
-                <$> getLocalGraph
+                <$> getGraph
         case mnode of
           Just (node :: M0.Node) -> do
               -- Log an IEM about this error
@@ -313,7 +313,7 @@ eventBEError = defineSimpleTask "castor::node::event::be-error"
 requestStartHalonM0d :: Definitions RC ()
 requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d" $
   \(StartHalonM0dRequest m0node) -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     case getClusterStatus rg of
       Just (M0.MeroClusterState M0.OFFLINE _ _) -> do
          Log.rcLog' Log.DEBUG "Cluster disposition is OFFLINE."
@@ -351,7 +351,7 @@ requestStopHalonM0d = mkJobRule halonM0dStopJob args $ \(JobHandle _ finish) -> 
   service_stop_result <- phaseHandle "service_stop_result"
 
   let route (StopHalonM0dRequest node) = do
-        rg <- getLocalGraph
+        rg <- getGraph
         let mhp = M0.nodeToM0Node node rg >>= \m0n -> Process.getHA m0n rg
         case mhp of
           Nothing -> do
@@ -477,7 +477,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   -- the OS for it.
   directly reconnect_m0d $ do
     StartProcessNodeNew node _ <- getRequest
-    rg <- getLocalGraph
+    rg <- getGraph
     let R.Node nid = node
     case lookupServiceInfo node (lookupM0d rg) rg of
       [] -> do
@@ -510,7 +510,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   directly announce $ do
     StartProcessNodeNew node _ <- getRequest
     -- TOOD: shuffle retrigger around a bit
-    rg <- getLocalGraph
+    rg <- getGraph
     case M0.nodeToM0Node node rg of
       Nothing -> Log.rcLog' Log.DEBUG $ "No m0node associated, not retriggering mero"
       Just m0node -> retriggerMeroNodeBootstrap m0node
@@ -655,10 +655,10 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
           Log.tagContext Log.SM m0node Nothing
           let def = NodeProcessesStartTimeout m0node []
           r <- runMaybeT $ do
-            node <- MaybeT $ M0.m0nodeToNode m0node <$> getLocalGraph
+            node <- MaybeT $ M0.m0nodeToNode m0node <$> getGraph
             MaybeT $ do
               Log.tagContext Log.SM node Nothing
-              rg <- getLocalGraph
+              rg <- getGraph
               host <- findNodeHost node  -- XXX: head
               Log.tagContext Log.SM [("host" :: String, show host)] Nothing
               modify Local $ rlens fldHost . rfield .~ host
@@ -781,7 +781,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
         Log.rcLog' Log.DEBUG $ "Starting these m0tifs processes: "
                             ++ show (M0.showFid <$> ps)
         modify Local $ rlens fldWaitingProcs . rfield .~ ps
-        casProcs <- getLocalGraph <&> Process.getAllHostingService CST_CAS
+        casProcs <- getGraph <&> Process.getAllHostingService CST_CAS
         if null casProcs
         then do
           modify Local $ rlens fldRep .rfield .~
@@ -846,7 +846,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     dixInitFailure _ _ _ = return Nothing
 
     nodeFailedWith state m0node = do
-      rg <- getLocalGraph
+      rg <- getGraph
       let ps = getUnstartedProcesses m0node rg
       modify Local $ rlens fldRep .~ (Field . Just $ state m0node ps)
       return $ state m0node ps
@@ -945,7 +945,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
      StopProcessesOnNodeRequest node <- getRequest
      lvl@(M0.BootLevel i) <- getField . rget fldBootLevel <$> get Local
      Log.rcLog' Log.DEBUG $ "Tearing down " ++ show lvl ++ " on " ++ show node
-     cluster_lvl <- getClusterStatus <$> getLocalGraph
+     cluster_lvl <- getClusterStatus <$> getGraph
      barrierTimeout <- _hv_node_stop_barrier_timeout <$> getHalonVars
      case cluster_lvl of
        Just (M0.MeroClusterState M0.OFFLINE _ s)
@@ -975,7 +975,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
    directly teardown_exec $ do
      Just (StopProcessesOnNodeRequest node) <- getField . rget fldReq <$> get Local
      lvl  <- getField . rget fldBootLevel <$> get Local
-     rg <- getLocalGraph
+     rg <- getGraph
 
      let pLabel = if lvl == m0t1fsBootLevel
                   then (\case M0.PLM0t1fs -> True
@@ -1071,7 +1071,7 @@ ruleFailNodeIfProcessCantRestart =
   defineSimple "castor::node::process-start-failure" $ \case
     ProcessStartFailed p r -> do
       Log.rcLog' Log.DEBUG $ "Process start failure for " ++ M0.showFid p ++ ": " ++ r
-      rg <- getLocalGraph
+      rg <- getGraph
       let m0ns = maybeToList $ (G.connectedFrom M0.IsParentOf p rg :: Maybe M0.Node)
       void . applyStateChanges $ map (`stateSet` nodeFailed) m0ns
     _ -> return ()
@@ -1102,9 +1102,9 @@ ruleMaintenanceStopNode = mkJobRule processMaintenaceStopNode args $ \(JobHandle
    directly go $ do
       MaintenanceStopNode node <- getRequest
       -- Get all processes except CST_HA.
-      rg <- getLocalGraph
+      rg <- getGraph
       ps <- do
-        allProcs <- Node.getProcesses node <$> getLocalGraph
+        allProcs <- Node.getProcesses node <$> getGraph
         return [ p | p <- allProcs
                    , let srvs = G.connectedTo p M0.IsParentOf rg
                    , not $ any (\s -> M0.s_type s == CST_HA) srvs
@@ -1161,13 +1161,13 @@ requestUserStopsNode :: Definitions RC ()
 requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go where
   go (Event.StopNodeUserRequest m0fid should_force reply_to _reason) = lookupConfObjByFid m0fid >>= \case
      Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
-     Just m0node -> M0.m0nodeToNode m0node <$> getLocalGraph >>= \case
+     Just m0node -> M0.m0nodeToNode m0node <$> getGraph >>= \case
        Nothing -> liftProcess $ sendChan reply_to (Event.NotANode m0fid)
        Just node ->
          if should_force
          then initiateStop node
          else do
-           rg <- getLocalGraph
+           rg <- getGraph
            let (_, DeferredStateChanges f _ _) = createDeferredStateChanges
                      [stateSet m0node (TrI.constTransition M0.NSFailed)] rg -- XXX: constTransition?
            ClusterLiveness havePVers _haveSNS haveQuorum _haveRM <- calculateClusterLiveness (f rg)

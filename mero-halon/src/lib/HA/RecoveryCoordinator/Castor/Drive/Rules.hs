@@ -114,7 +114,7 @@ mkCheckAndHandleDriveReady smartLens next = do
         Just sdev <- getter <$> get Local
         markSDevReplaced m0sdev
         promulgateRC $ DriveReady sdev
-        getState m0sdev <$> getLocalGraph >>= \case
+        getState m0sdev <$> getGraph >>= \case
           SDSUnknown -> do
             -- We do not know the old state, so set the new state to online
             _ <- applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
@@ -233,7 +233,7 @@ mkCheckAndHandleDriveReady smartLens next = do
       Just loc | not reset && powered && status == "OK" -> do
         current_m0sdev <- lookupStorageDeviceSDev disk
         disk_path <- StorageDevice.path disk
-        rg <- getLocalGraph
+        rg <- getGraph
         case  current_m0sdev of
           Just sdev | Just (M0.d_path sdev) == disk_path
                     , SDSUnknown == getState sdev rg
@@ -467,7 +467,7 @@ ruleDrivePoweredOn = define "drive-powered-on" $ do
       unless realFailure $ do
         m0sdev <- lookupLocationSDev dpcLocation
         for_ m0sdev $ \sdev ->
-          m0failed . getState sdev <$> getLocalGraph >>= \case
+          m0failed . getState sdev <$> getGraph >>= \case
             False -> Log.rcLog' Log.ERROR "Can't find mero drive."
             True  -> do
               Log.tagContext Log.SM sdev Nothing

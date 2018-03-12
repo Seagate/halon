@@ -139,7 +139,7 @@ tryStartReset sdevs = for_ sdevs $ \m0sdev -> do
         "EMPTY" ->
           Log.rcLog' Log.DEBUG "Possible expander reset in progress, skipping reset."
         _ -> do
-          st <- getState m0sdev <$> getLocalGraph
+          st <- getState m0sdev <$> getGraph
 
           unless (st == M0.SDSFailed) $ do
             ongoing <- hasOngoingReset sdev
@@ -248,7 +248,7 @@ ruleResetAttempt = mkJobRule jobResetAttempt args $ \(JobHandle getRequest finis
         (\_ _ -> do Log.rcLog' Log.ERROR "failed to attach disk"
                     continue failure)
         (\m0sdev -> do
-           getLocalGraph <&> getState m0sdev >>= \case
+           getGraph <&> getState m0sdev >>= \case
              M0.SDSTransient _ -> do
                _ <- applyStateChanges [ stateSet m0sdev Tr.sdevReady ]
                ResetAttempt sdev <- getRequest

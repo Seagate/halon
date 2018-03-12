@@ -19,7 +19,7 @@ import Data.Foldable (for_)
 import HA.RecoveryCoordinator.Castor.Process.Events (ProcessStartRequest(..))
 import HA.RecoveryCoordinator.RC.Actions.Core
   ( RC
-  , getLocalGraph
+  , getGraph
   , promulgateRC
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -94,7 +94,7 @@ startProcesses ::  Castor.Host
                 -> PhaseM RC a [M0.Process]
 startProcesses host labelP = do
   Log.actLog "startProcesses" [("host", show host)]
-  rg <- getLocalGraph
+  rg <- getGraph
   let procs = [ p
               | m0node <- G.connectedTo host R.Runs rg :: [M0.Node]
               , p <- G.connectedTo m0node M0.IsParentOf rg

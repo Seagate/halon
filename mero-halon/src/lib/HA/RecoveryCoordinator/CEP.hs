@@ -238,9 +238,9 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
 
   let start_recover (RecoverNode n1) = do
         RCLog.tagContext RCLog.SM n1 Nothing
-        g <- getLocalGraph
+        rg <- getGraph
         RCLog.tagContext RCLog.SM [("node", show n1)] Nothing
-        st <- case G.connectedFrom Runs n1 g of
+        st <- case G.connectedFrom Runs n1 rg of
           Nothing -> do
             return $ Left $ "Couldn't find host for " ++ show n1
           Just host -> do
@@ -256,7 +256,7 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 -- ideally we would like to unregister this when
                 -- monitor disconnects and not here: what if node came
                 -- back before recovery fired? unlikely but who knows
-                case nodeToM0Node n1 g of
+                case nodeToM0Node n1 rg of
                   Nothing -> RCLog.rcLog' RCLog.WARN ("Couldn't find mero node." :: String)
                   Just n -> void $ applyStateChanges [stateSet n nodeFailed]
                 -- if the node is a mero server then power-cycle it.
@@ -272,7 +272,6 @@ ruleRecoverNode argv = mkJobRule recoverJob args $ \(JobHandle _ finish) -> do
                 RCLog.rcLog' RCLog.DEBUG $ "Node already marked down; starting "
                                         ++ "recovery again."
                 return $ Right ()
-
         case st of
           Left e -> return $ Left e
           Right{}  -> do

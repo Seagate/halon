@@ -12,12 +12,12 @@ module HA.RecoveryCoordinator.RC.Actions.Core
   ( RC
     -- * Manipulating LoopState
   , LoopState(..)
-  , getLocalGraph
+  , getGraph
   , liftGraph
   , liftGraph2
-  , putLocalGraph
+  , putGraph
   , modifyGraph
-  , modifyLocalGraph
+  , modifyGraphM
     -- * Operating on the graph
   , getMultimapChan
   , syncGraphBlocking
@@ -163,7 +163,7 @@ lookupStorageMapRC x =
 
 -- | Is a given resource existent in the RG?
 knownResource :: G.Resource a => a -> PhaseM RC l Bool
-knownResource res = fmap (G.memberResource res) getLocalGraph
+knownResource res = G.memberResource res <$> getGraph
 
 -- | Register a new satellite node in the cluster.
 registerNode :: Node -> PhaseM RC l ()
@@ -172,46 +172,43 @@ registerNode node = do
   modifyGraph $ G.connect Cluster Has node
 
 -- | Retrieve the Resource 'G.Graph' from the 'Global' state.
-getLocalGraph :: PhaseM RC l G.Graph
-getLocalGraph = fmap lsGraph $ get Global
+getGraph :: PhaseM RC l G.Graph
+getGraph = lsGraph <$> get Global
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
 liftGraph :: (a -> G.Graph -> b) -> a -> PhaseM RC l b
-liftGraph op = \a -> op a <$> getLocalGraph
+liftGraph op = \a -> op a <$> getGraph
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
 liftGraph2 :: (a -> c -> G.Graph -> b) -> a -> c -> PhaseM RC l b
-liftGraph2 op = \a c -> op a c <$> getLocalGraph
+liftGraph2 op = \a c -> op a c <$> getGraph
 
 -- | Update the RG in the global state.
-putLocalGraph :: G.Graph -> PhaseM RC l ()
-putLocalGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
+putGraph :: G.Graph -> PhaseM RC l ()
+putGraph rg = modify Global $ \ls -> ls { lsGraph = rg }
 
 -- | Modify the RG in the global state.
 modifyGraph :: (G.Graph -> G.Graph) -> PhaseM RC l ()
-modifyGraph k = modifyLocalGraph $ return . k
+modifyGraph k = modifyGraphM $ return . k
 
 -- | Modify the RG in the global state using provided action.
-modifyLocalGraph :: (G.Graph -> PhaseM RC l G.Graph) -> PhaseM RC l ()
-modifyLocalGraph k = do
-    rg  <- getLocalGraph
-    rg' <- k rg
-    putLocalGraph rg'
+modifyGraphM :: (G.Graph -> PhaseM RC l G.Graph) -> PhaseM RC l ()
+modifyGraphM k = putGraph =<< k =<< getGraph
 
 -- | Explicitly syncs the graph to all replicas. When graph will be
 -- synchronized callback will be called.
 -- Callback will block multimap process so only fast calls, that do
 -- not throw exceptions should be used there.
 registerSyncGraph :: Process () -> PhaseM RC l ()
-registerSyncGraph callback = modifyLocalGraph $ \rg ->
+registerSyncGraph callback = modifyGraphM $ \rg ->
   liftProcess $ G.sync rg callback
 
 -- | Sync the graph and block the caller until this is complete. This
 --   internally uses a wait for a hidden message type.
 syncGraphBlocking :: PhaseM RC l ()
-syncGraphBlocking = modifyLocalGraph $ \rg -> liftProcess $ do
+syncGraphBlocking = modifyGraphM $ \rg -> liftProcess $ do
   (sp, rp) <- newChan
   G.sync rg (sendChan sp ()) <* receiveChan rp
 

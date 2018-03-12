@@ -192,7 +192,7 @@ testRules = do
           _ -> Nothing
 
         route (PopulateMock m0dPid nid) = do
-          rg <- getLocalGraph
+          rg <- getGraph
           let procs = Node.getProcesses (Node nid) rg
               pmap = map (\p -> (p, G.connectedTo p M0.IsParentOf rg)) procs
               ha = [ p | (p, svcs) <- pmap

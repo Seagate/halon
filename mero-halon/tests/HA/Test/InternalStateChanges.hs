@@ -75,7 +75,7 @@ stateCascade t pg = do
 
     rule :: Definitions RC ()
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
-      rg <- getLocalGraph
+      rg <- getGraph
       let Just p = listToMaybe $
               [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
               , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
@@ -87,7 +87,7 @@ stateCascade t pg = do
               ]
           srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
       _ <- applyStateChanges [stateSet p Tr.processStarting]
-      rg' <- getLocalGraph
+      rg' <- getGraph
 
       let allOK = getState p rg'  == M0.PSStarting
                   && all (\s -> getState s rg' == M0.SSStarting) srvs
@@ -108,7 +108,7 @@ failvecCascade t pg = do
     rule :: Definitions RC ()
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       Log.rcLog' Log.DEBUG ("Set hooks." :: String)
-      rg <- getLocalGraph
+      rg <- getGraph
       let d0:d1:_ =
               [ disk
               | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
@@ -120,7 +120,7 @@ failvecCascade t pg = do
               ]
           disks = [d0, d1]
       _ <- applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
-      rg' <- getLocalGraph
+      rg' <- getGraph
       let Just root = G.connectedTo Cluster Has rg' :: Maybe M0.Root
           pools =
               [ pool

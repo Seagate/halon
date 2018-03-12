@@ -211,7 +211,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         ph0 <- phaseHandle "init"
         ph1 <- phaseHandle "finish"
         directly ph0 $ do
-           [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
+           [e] <- take 1 . G.getResourcesOfType <$> getGraph
            let Enclosure ('e':'n':'c':'l':'o':'s':'u':'r':'e':'_':ide) = e
            let serial = "serial" ++ ide ++ "_1"
            let sdev = StorageDevice serial
@@ -226,7 +226,7 @@ genericHpiTest HTI{..} = mkHpiTest rules test
         directly ph1 $ stop
         start ph0 ()
       defineSimple "enclosure" $ \(GiveMeEnclosureName, pid) -> do
-        [e] <- take 1 . G.getResourcesOfType <$> getLocalGraph
+        [e] <- take 1 . G.getResourcesOfType <$> getGraph
         liftProcess $ usend pid (e::Enclosure)
     test rc = do
       self <- getSelfPid

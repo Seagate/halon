@@ -85,7 +85,7 @@ iosPaused _                             = False
 allIOSOnline :: M0.Pool -> PhaseM RC l Bool
 allIOSOnline pool = do
   svs <- getIOServices pool
-  rg <- getLocalGraph
+  rg <- getGraph
   let sts = [ M0.getState p rg
             | s <- svs
             , Just (p :: M0.Process) <- [G.connectedFrom M0.IsParentOf s rg]
@@ -96,7 +96,7 @@ allIOSOnline pool = do
 --
 -- We use this helper both in repair module and spiel module so it lives here.
 getIOServices :: M0.Pool -> PhaseM RC l [M0.Service]
-getIOServices pool = getLocalGraph >>= \g -> return $ nub
+getIOServices pool = getGraph >>= \g -> return $ nub
   [ svc | pv <- G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
         , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]

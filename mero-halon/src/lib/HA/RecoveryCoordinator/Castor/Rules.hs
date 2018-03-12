@@ -13,11 +13,15 @@
 --
 -- Rules specific to Castor install of Mero.
 
-module HA.RecoveryCoordinator.Castor.Rules (castorRules,goRack) where
+module HA.RecoveryCoordinator.Castor.Rules
+ ( castorRules
+ , goRack
+ ) where
 
 import           Control.Monad.Catch
 import           Data.Foldable (for_)
 import qualified Data.Text as T
+
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
@@ -32,7 +36,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import qualified HA.ResourceGraph as G
-import           HA.Resources
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import           Network.CEP
@@ -56,17 +60,17 @@ castorRules = sequence_
 ruleInitialDataLoad :: Definitions RC ()
 ruleInitialDataLoad =
   defineSimpleTask "castor::initial-data-load" $ \CI.InitialData{..} -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     let err logPrefix msg = do
           Log.rcLog' Log.ERROR $ logPrefix ++ msg
           notify $ InitialDataLoadFailed msg
 
         validateConf = validateTransactionCache >>= \case
           Left e -> do
-            putLocalGraph rg
+            putGraph rg
             err "Exception during conf validation: " $ show e
           Right (Just e) -> do
-            putLocalGraph rg
+            putGraph rg
             err "Conf failed to validate: " e
           Right Nothing -> do
             Log.rcLog' Log.DEBUG "Initial data loaded."
@@ -77,19 +81,19 @@ ruleInitialDataLoad =
           filesystem <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers filesystem id_m0_servers
-          graph <- getLocalGraph
+          graph <- getGraph
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
             Iterative update -> do
               Log.rcLog' Log.WARN "iterative graph population - can't test sanity prior to update."
               for_ (update graph) $ \updateGraph -> do
                 graph' <- updateGraph $ \rg' -> do
-                  putLocalGraph rg'
+                  putGraph rg'
                   syncGraphBlocking
-                  getLocalGraph
-                putLocalGraph graph'
+                  getGraph
+                putGraph graph'
                 syncGraphBlocking
-            Monolithic update -> modifyLocalGraph update
+            Monolithic update -> modifyGraphM update
           -- Note that we call these after doing the 'update', which creates
           -- pool versions for the IO pools. The reason for this is that
           -- 'createIMeta', at least, generates additional disks for use in the

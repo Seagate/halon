@@ -213,7 +213,7 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
   next <- liftProcess $ do
     rc <- DP.getSelfPid
     return $ DP.usend rc . operation_reply pool
-  mp <- G.connectedTo Cluster Has <$> getLocalGraph
+  mp <- G.connectedTo Cluster Has <$> getGraph
   er <- withSpielIO $
           withRConfIO mp $ try (operation_action pool) >>= unlift . next
   case er of
@@ -606,7 +606,7 @@ mkSyncToConfd lstate next = do
         else switch [on_quiesced, on_aborted]
 
   directly quiesce $ do
-     rg <- getLocalGraph
+     rg <- getGraph
      let pools = [ pool
                  | prs :: M0.PoolRepairStatus <- G.getResourcesOfType rg
                  , Just (pool::M0.Pool) <- [G.connectedFrom Has prs rg]
@@ -690,8 +690,8 @@ loadConfData = liftA3 TxConfData
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
 getConfUpdateVersion :: PhaseM RC l M0.ConfUpdateVersion
 getConfUpdateVersion = do
-  g <- getLocalGraph
-  case G.connectedTo Cluster Has g of
+  rg <- getGraph
+  case G.connectedTo Cluster Has rg of
     Just ver -> return ver
     Nothing -> do
       let csu = M0.ConfUpdateVersion 1 Nothing
@@ -704,19 +704,19 @@ modifyConfUpdateVersion f = do
   csu <- getConfUpdateVersion
   let fcsu = f csu
   Log.rcLog' Log.TRACE $ "Setting ConfUpdateVersion to " ++ show fcsu
-  modifyLocalGraph $ return . G.connect Cluster Has fcsu
+  modifyGraphM $ return . G.connect Cluster Has fcsu
 
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
-  g <- getLocalGraph
-  let Just M0.Root{..} = G.connectedTo Cluster Has g
+  rg <- getGraph
+  let Just M0.Root{..} = G.connectedTo Cluster Has rg
       -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
       -- one pool.
       m0_pool_width = length [ disk
-                             | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf g
-                             , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf g
-                             , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf g
-                             , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf g
+                             | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                             , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+                             , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+                             , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
                              ]
       rootParams = [printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units]
       addRoot :: SpielTransaction
@@ -730,27 +730,27 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   Log.rcLog' Log.DEBUG "Added root and profile"
   -- XXX-MULTIPOOLS: sites
   -- Racks, encls, controllers, disks
-  let racks = G.connectedTo fs M0.IsParentOf g :: [M0.Rack]
+  let racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
   for_ racks $ \rack -> do
     m0synchronously lift $ addRack t (M0.fid rack) (M0.fid fs)
-    let encls = G.connectedTo rack M0.IsParentOf g :: [M0.Enclosure]
+    let encls = G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]
     for_ encls $ \encl -> do
       m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
-      let ctrls = G.connectedTo encl M0.IsParentOf g :: [M0.Controller]
+      let ctrls = G.connectedTo encl M0.IsParentOf rg :: [M0.Controller]
       for_ ctrls $ \ctrl -> do
         -- Get node fid
-        let Just node = G.connectedFrom M0.IsOnHardware ctrl g :: Maybe M0.Node
+        let Just node = G.connectedFrom M0.IsOnHardware ctrl rg :: Maybe M0.Node
         m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
-        let disks = G.connectedTo ctrl M0.IsParentOf g :: [M0.Disk]
+        let disks = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
         for_ disks $ \disk -> do
           m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
-  let nodes = G.connectedTo fs M0.IsParentOf g :: [M0.Node]
+  let nodes = G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
   for_ nodes $ \node -> do
     let attrs =
-          [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware g :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo ctrl M0.At g :: Maybe Host]
-              , a <- G.connectedTo host Has g :: [HostAttr]]
+          [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
+              , Just host <- [G.connectedTo ctrl M0.At rg :: Maybe Host]
+              , a <- G.connectedTo host Has rg :: [HostAttr]]
         defaultMem = 1024
         defCPUCount = 1
         memsize = maybe defaultMem fromIntegral
@@ -762,51 +762,51 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
         getCpuCount (HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) (M0.fid fs) memsize cpucount 0 0 rt_mdpool
-    let procs = G.connectedTo node M0.IsParentOf g :: [M0.Process]
+    let procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
         ep2s = T.unpack . encodeEndpoint
     for_ procs $ \(proc@M0.Process{..}) -> do
       m0synchronously lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
                             (T.unpack . encodeEndpoint $ r_endpoint)
-      let servs = G.connectedTo proc M0.IsParentOf g :: [M0.Service]
+      let servs = G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
       for_ servs $ \(serv@M0.Service{..}) -> do
         m0synchronously lift $ addService t s_fid r_fid
           (ServiceInfo s_type $ fmap ep2s s_endpoints)
-        let sdevs = G.connectedTo serv M0.IsParentOf g :: [M0.SDev]
+        let sdevs = G.connectedTo serv M0.IsParentOf rg :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
-          let disk = G.connectedTo sdev M0.IsOnHardware g :: Maybe M0.Disk
+          let disk = G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk
           m0synchronously lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   Log.rcLog' Log.DEBUG "Finished adding concrete entities."
   -- Pool versions
-  let pools = G.connectedTo fs M0.IsParentOf g :: [M0.Pool]
+  let pools = G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
       pvNegWidth pver = case pver of
                          M0.PVer _ a@M0.PVerActual{} -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) (M0.fid fs) 0
-    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
+    let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_type pver of
         pva@M0.PVerActual{} -> do
           -- XXX-MULTIPOOLS: M0.SiteV
           m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
-          let rackvs = G.connectedTo pver M0.IsParentOf g :: [M0.RackV]
+          let rackvs = G.connectedTo pver M0.IsParentOf rg :: [M0.RackV]
           for_ rackvs $ \rackv -> do
-            let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv g
+            let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv rg
             m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
-            let enclvs = G.connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
+            let enclvs = G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
             for_ enclvs $ \enclv -> do
-              let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv g
+              let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv rg
               m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
-              let ctrlvs = G.connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
+              let ctrlvs = G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
               for_ ctrlvs $ \ctrlv -> do
-                let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv g
+                let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv rg
                 m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-                let diskvs = G.connectedTo ctrlv M0.IsParentOf g :: [M0.DiskV]
+                let diskvs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
                 for_ diskvs $ \diskv -> do
-                  let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv g
+                  let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv rg
                   m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
         pvf@M0.PVerFormulaic{} -> do
@@ -855,7 +855,7 @@ validateTransactionCache = loadConfData >>= \case
 
 -- | RC wrapper for 'getSpielAddress'.
 getSpielAddressRC :: PhaseM RC l (Maybe M0.SpielAddress)
-getSpielAddressRC = getSpielAddress True <$> getLocalGraph
+getSpielAddressRC = getSpielAddress True <$> getGraph
 
 -- | Store 'ResourceGraph' in 'globalResourceGraphCache' in order to avoid dead
 -- lock conditions. RC performing all queries sequentially, thus it can't reply
@@ -866,8 +866,8 @@ getSpielAddressRC = getSpielAddress True <$> getLocalGraph
 -- could be blocked should first query this cached value first.
 withResourceGraphCache :: PhaseM RC l a -> PhaseM RC l a
 withResourceGraphCache action = do
-  g <- getLocalGraph
-  liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache (Just g)
+  rg <- getGraph
+  liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache (Just rg)
   x <- action
   liftProcess $ DP.liftIO $ writeIORef globalResourceGraphCache Nothing
   return x
@@ -880,19 +880,19 @@ withResourceGraphCache action = do
 -- the graph, it means no repairs are going on
 getPoolRepairStatus :: M0.Pool
                     -> PhaseM RC l (Maybe M0.PoolRepairStatus)
-getPoolRepairStatus pool = G.connectedTo pool Has <$> getLocalGraph
+getPoolRepairStatus pool = G.connectedTo pool Has <$> getGraph
 
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.
 setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM RC l ()
 setPoolRepairStatus pool prs =
-  modifyLocalGraph $ return . G.connect pool Has prs
+  modifyGraphM $ return . G.connect pool Has prs
 
 -- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
 unsetPoolRepairStatus :: M0.Pool -> PhaseM RC l ()
 unsetPoolRepairStatus pool = do
   Log.rcLog' Log.DEBUG $ "Unsetting PRS from " ++ show pool
-  modifyLocalGraph $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
+  modifyGraphM $ return . G.disconnectAllFrom pool Has (Proxy :: Proxy M0.PoolRepairStatus)
 
 -- | Remove 'M0.PoolRepairStatus' connection to the given 'M0.Pool' as
 -- long as it has the matching 'M0.prsRepairUUID'. This is useful if
@@ -909,7 +909,7 @@ getPoolRepairInformation :: M0.Pool
                          -> PhaseM RC l (Maybe M0.PoolRepairInformation)
 getPoolRepairInformation pool =
     join . fmap M0.prsPri . G.connectedTo pool Has <$>
-    getLocalGraph
+    getGraph
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any
 -- previously connected @PRI@s are disconnected.
@@ -924,18 +924,18 @@ setPoolRepairInformation pool pri = getPoolRepairStatus pool >>= \case
   Just (M0.PoolRepairStatus prt uuid _) -> do
     let prs = M0.PoolRepairStatus prt uuid $ Just pri
     Log.rcLog' Log.DEBUG $ "Setting PRS for " ++ show pool ++ " to " ++ show prs
-    modifyLocalGraph $ return . G.connect pool Has prs
+    modifyGraphM $ return . G.connect pool Has prs
 
 -- | Modify the  'PoolRepairInformation' in the graph with the given function.
 -- Any previously connected @PRI@s are disconnected.
 modifyPoolRepairInformation :: M0.Pool
                             -> (M0.PoolRepairInformation -> M0.PoolRepairInformation)
                             -> PhaseM RC l ()
-modifyPoolRepairInformation pool f = modifyLocalGraph $ \g ->
-  case G.connectedTo pool Has $ g of
+modifyPoolRepairInformation pool f = modifyGraphM $ \rg ->
+  case G.connectedTo pool Has $ rg of
     Just (M0.PoolRepairStatus prt uuid (Just pri)) ->
-      return $ G.connect pool Has (M0.PoolRepairStatus prt uuid (Just $ f pri)) g
-    _ -> return g
+      return $ G.connect pool Has (M0.PoolRepairStatus prt uuid (Just $ f pri)) rg
+    _ -> return rg
 
 -- | Update time of completion for 'M0.PoolRepairInformation'. If
 -- 'M0.PoolRepairStatus' does not yet exist or
@@ -976,7 +976,7 @@ getTimeUntilHourlyQuery pool = getPoolRepairInformation pool >>= \case
 -- | Set profile in current thread.
 setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
-  rg <- getLocalGraph
+  rg <- getGraph
   -- XXX-MULTIPOOLS: it should be [], not Maybe
   let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile
   Log.rcLog' Log.DEBUG $ "set command profile to " ++ show mp

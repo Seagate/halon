@@ -385,7 +385,7 @@ ruleRebalanceStart = mkJobRule jobRebalanceStart args $ \(JobHandle _ finish) ->
   let init_rule (PoolRebalanceRequest pool) = getPoolRepairInformation pool >>= \case
         Nothing -> R.allIOSOnline pool >>= \case
           True -> do
-            rg <- getLocalGraph
+            rg <- getGraph
             sdevs <- liftGraph Pool.getSDevs pool
             let sts = map (\d -> (getConfObjState d rg, d)) sdevs
             -- states that are considered as ‘OK, we can finish
@@ -1045,7 +1045,7 @@ ruleStobIoqError :: Definitions RC ()
 ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
   Log.actLog "stob ioq error" [ ("meta", show meta)
                               , ("stob", show stob) ]
-  rg <- getLocalGraph
+  rg <- getGraph
   case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
     Nothing -> Log.rcLog' Log.WARN $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
     Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
@@ -1095,7 +1095,7 @@ completeRepair :: Pool -> PoolRepairType -> Maybe UUID -> PhaseM RC l ()
 completeRepair pool prt muid = do
   -- if no status is found for SDev, assume M0_NC_ONLINE
   let getSDevState :: M0.SDev -> PhaseM RC l' ConfObjectState
-      getSDevState d = getConfObjState d <$> getLocalGraph
+      getSDevState d = getConfObjState d <$> getGraph
 
   iosvs <- length <$> R.getIOServices pool
   mdrive_updates <- fmap M0.priStateUpdates <$> getPoolRepairInformation pool
@@ -1172,7 +1172,7 @@ ruleHandleRepairNVec = defineSimpleTask "castor::sns::handle-repair-nvec" $ \not
 --
 ruleHandleRepair :: Definitions RC ()
 ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
-  getClusterStatus <$> getLocalGraph >>= \case
+  getClusterStatus <$> getGraph >>= \case
     Just (M0.MeroClusterState M0.ONLINE n _) | n >= (M0.BootLevel 1) -> do
       InternalObjectStateChange chs <- liftProcess $ decodeP msg
       mdeviceOnly <- processDevices ignoreSome chs
@@ -1234,7 +1234,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
             | Just ds <- allWithState diskMap M0_NC_ONLINE
             , ds' <- S.toList ds -> do
                 sdevs <- filter (`notElem` ds') <$> liftGraph Pool.getSDevs pool
-                sts <- getLocalGraph >>= \rg ->
+                sts <- getGraph >>= \rg ->
                   return $ (flip getConfObjState $ rg) <$> sdevs
                 if M0_NC_TRANSIENT `notElem` sts
                 then continueSNS pool prt
@@ -1249,7 +1249,7 @@ ruleHandleRepair = defineSimpleTask "castor::sns::handle-repair" $ \msg ->
 --   we have devices that failed during the startup process.
 checkRepairOnClusterStart :: Definitions RC ()
 checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBootLevel2 $ \() -> do
-  pools <- Pool.getNonMD <$> getLocalGraph
+  pools <- Pool.getNonMD <$> getGraph
   forM_ pools $ promulgateRC . PoolRepairRequest
   where
     clusterOnBootLevel2 msg ls = barrierPass (\mcs -> _mcs_runlevel mcs >= M0.BootLevel 2) msg ls ()
@@ -1334,7 +1334,7 @@ processPoolInfo pool _ m
   , ds' <- S.toList ds = getPoolRepairStatus pool >>= \case
       Just (M0.PoolRepairStatus prt _ _) -> do
         sdevs <- filter (`notElem` ds') <$> liftGraph Pool.getSDevs pool
-        sts <- getLocalGraph >>= \rg ->
+        sts <- getGraph >>= \rg ->
           return $ (flip getConfObjState $ rg) <$> sdevs
         if null $ filter (== M0_NC_TRANSIENT) sts
         then continueSNS pool prt
@@ -1432,14 +1432,14 @@ checkRepairOnServiceUp = define "checkRepairOnProcessStarted" $ do
     setPhaseInternalNotification init_rule (\o n -> o /= M0.PSOnline &&  n == M0.PSOnline)
       $ \(eid, procs :: [(M0.Process, M0.ProcessState)]) -> do
       todo eid
-      rg <- getLocalGraph
+      rg <- getGraph
       when (isJust $ find (flip isIOSProcess rg) (fst <$> procs)) $ do
         let failedIOS = [ p | p <- Process.getAll rg
                             , M0.PSFailed _ <- [getState p rg]
                             , isIOSProcess p rg ]
         case failedIOS of
           [] -> do
-            pools <- Pool.getNonMD <$> getLocalGraph
+            pools <- Pool.getNonMD <$> getGraph
             for_ pools $ \pool -> case getState pool rg of
               -- TODO: we should probably be setting pool to failed too but
               -- after abort we lose information on what kind of repair was

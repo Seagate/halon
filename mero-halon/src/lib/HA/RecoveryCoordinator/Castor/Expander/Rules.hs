@@ -113,18 +113,18 @@ ruleReassembleRaid =
         todo eid
 
         mm0 <- runMaybeT $ do
-          m0enc <- MaybeT $ getLocalGraph <&> encToM0Enc enc
-          m0node <- MaybeT $ getLocalGraph <&> \rg -> listToMaybe
+          m0enc <- MaybeT $ getGraph <&> encToM0Enc enc
+          m0node <- MaybeT $ getGraph <&> \rg -> listToMaybe
             [ node | ctrl <- G.connectedTo m0enc M0.IsParentOf rg :: [M0.Controller]
                    , Just node <- [G.connectedFrom M0.IsOnHardware ctrl rg]
                    ]
           return (m0enc, m0node)
-        mnode <- getLocalGraph <&> \rg -> listToMaybe
+        mnode <- getGraph <&> \rg -> listToMaybe
           [ (host, node)
           | host <- G.connectedTo enc R.Has rg :: [R.Host]
           , node <- G.connectedTo host R.Runs rg
           ]
-        raidDevs <- getLocalGraph <&> \rg -> let
+        raidDevs <- getGraph <&> \rg -> let
             extractRaidDev (R.DIRaidDevice x) = Just x
             extractRaidDev _ = Nothing
           in nub $ mapMaybe extractRaidDev [

@@ -432,7 +432,7 @@ ruleServiceStarted = defineSimpleTask "rc::service::started" $
 ruleServiceMessageReceived :: Definitions RC ()
 ruleServiceMessageReceived = defineSimple "rc::service::msg-received" $
   \(HAEvent uid wf) -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     lookupIfaceAndSend wf uid rg
   where
     -- Technically we could just find the interface without going

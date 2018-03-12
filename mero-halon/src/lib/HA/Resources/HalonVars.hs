@@ -12,16 +12,17 @@ module HA.Resources.HalonVars
   , module HA.Resources.HalonVars
   ) where
 
-import Data.Binary (Binary)
-import Data.Hashable
-import Data.Typeable
-import GHC.Generics (Generic)
-import HA.RecoveryCoordinator.RC.Actions.Core
-import HA.ResourceGraph as G
-import HA.Resources
-import HA.Resources.Castor
-import HA.SafeCopy
-import Network.CEP
+import           Data.Binary (Binary)
+import           Data.Hashable
+import           Data.Typeable
+import           GHC.Generics (Generic)
+
+import           HA.RecoveryCoordinator.RC.Actions.Core
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor (HalonVars(..))
+import           HA.SafeCopy
+import           Network.CEP
 
 -- | Default value for 'HalonVars'
 defaultHalonVars :: HalonVars
@@ -63,7 +64,7 @@ defaultHalonVars = HalonVars
 getHalonVars :: PhaseM RC l HalonVars
 getHalonVars =
     maybe defaultHalonVars id . G.connectedTo Cluster Has <$>
-    getLocalGraph
+    getGraph
 
 -- | Set a new 'HalonVars' in RG.
 setHalonVars :: HalonVars -> PhaseM RC l ()

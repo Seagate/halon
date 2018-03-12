@@ -58,7 +58,7 @@ import Network.CEP hiding (get, put, start, stop)
 -- | Find all services on the node that are not marked as disconnecting
 -- (i.e. node marked as 'Stopping').
 findRegisteredOn :: Node -> PhaseM RC l [ServiceInfoMsg]
-findRegisteredOn node = go <$> getLocalGraph
+findRegisteredOn node = go <$> getGraph
   where
     go rg = [ info
             | info <- G.connectedTo node Has rg
@@ -102,7 +102,7 @@ lookupInfoMsg :: Node  -- ^ Node of interest.
               -> Service a -- ^ Service of interest.
               -> PhaseM RC l (Maybe ServiceInfoMsg)
 lookupInfoMsg node svc =
-  listToMaybe . Service.lookupServiceInfo node svc <$> getLocalGraph
+  listToMaybe . Service.lookupServiceInfo node svc <$> getGraph
 
 -- | Lookup config of the Service that is started on the 'Node'.
 lookupConfig :: Configuration a
@@ -179,7 +179,7 @@ markStopping node si =
 -- | Unregister service, but only if it's currently stopping.
 unregisterIfStopping :: HasServiceInfoMsg si => Node -> si -> PhaseM RC l ()
 unregisterIfStopping node info = do
-  isStopping <- G.isConnected node Stopping msg <$> getLocalGraph
+  isStopping <- G.isConnected node Stopping msg <$> getGraph
   if isStopping
   then modifyGraph $ G.disconnect node Has msg
   else return ()
@@ -187,4 +187,4 @@ unregisterIfStopping node info = do
 
 -- | Check if instance of service is registered on the node.
 has :: HasServiceInfoMsg si => Node -> si -> PhaseM RC l Bool
-has node info = G.isConnected node Has (Service.serviceInfoMsg info) <$> getLocalGraph
+has node info = G.isConnected node Has (Service.serviceInfoMsg info) <$> getGraph

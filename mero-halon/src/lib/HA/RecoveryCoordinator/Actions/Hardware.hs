@@ -86,11 +86,11 @@ registerBMC enc bmc = do
 findBMCAddress :: Host
                -> PhaseM RC l (Maybe String)
 findBMCAddress host = do
-    g <- getLocalGraph
+    rg <- getGraph
     return . listToMaybe $
       [ bmc_addr bmc
-      | Just (enc :: Enclosure) <- [G.connectedFrom Has host g]
-      , bmc <- G.connectedTo enc Has g
+      | Just (enc :: Enclosure) <- [G.connectedFrom Has host rg]
+      , bmc <- G.connectedTo enc Has rg
       ]
 
 ----------------------------------------------------------
@@ -100,28 +100,28 @@ findBMCAddress host = do
 -- | Find the host running the given node
 findNodeHost :: Node
              -> PhaseM RC l (Maybe Host)
-findNodeHost node = G.connectedFrom Runs node <$> getLocalGraph
+findNodeHost node = G.connectedFrom Runs node <$> getGraph
 
 -- | Find the enclosure containing the given host.
 findHostEnclosure :: Host
                   -> PhaseM RC l (Maybe Enclosure)
 findHostEnclosure host =
-    G.connectedFrom Has host <$> getLocalGraph
+    G.connectedFrom Has host <$> getGraph
 
 -- | Find a list of all hosts in the system matching a given
 --   regular expression.
 findHosts :: String
           -> PhaseM RC l [Host]
 findHosts regex = do
-  g <- getLocalGraph
-  return $ [ host | host@(Host hn) <- G.connectedTo Cluster Has g
+  rg <- getGraph
+  return $ [ host | host@(Host hn) <- G.connectedTo Cluster Has rg
                   , hn =~ regex]
 
 -- | Find all nodes running on the given host.
 nodesOnHost :: Host
             -> PhaseM RC l [Node]
 nodesOnHost host = do
-  fmap (G.connectedTo host Runs) getLocalGraph
+  fmap (G.connectedTo host Runs) getGraph
 
 -- | Register a new host in the system.
 registerHost :: Host
@@ -135,7 +135,7 @@ registerOnCluster :: G.Relation Has Cluster a
                   => a -- ^ The thing to register
                   -> String -- ^ The message to log
                   -> PhaseM RC l ()
-registerOnCluster x m = modifyLocalGraph $ \rg ->
+registerOnCluster x m = modifyGraphM $ \rg ->
   if G.isConnected Cluster Has x rg
   then return rg
   else do
@@ -155,7 +155,7 @@ locateHostInEnclosure host enc = do
 locateNodeOnHost :: Node
                  -> Host
                  -> PhaseM RC l ()
-locateNodeOnHost node host = modifyLocalGraph $ \rg ->
+locateNodeOnHost node host = modifyGraphM $ \rg ->
   if G.isConnected host Runs node rg
   then return rg
   else do
@@ -171,8 +171,8 @@ hasHostAttr :: HostAttr
             -> Host
             -> PhaseM RC l Bool
 hasHostAttr f h = do
-  g <- getLocalGraph
-  return $ G.isConnected h Has f g
+  rg <- getGraph
+  return $ G.isConnected h Has f rg
 
 -- | Set an attribute on a host. Note that this will not replace
 --   any existing attributes - that must be done manually.
@@ -197,9 +197,9 @@ findHostsByAttributeFilter :: String -- ^ Message to log
                            -> PhaseM RC l [Host]
 findHostsByAttributeFilter msg p = do
   Log.rcLog' Log.TRACE msg
-  g <- getLocalGraph
-  return $ [ host | host@(Host {}) <- G.connectedTo Cluster Has g
-                  , p (G.connectedTo host Has g) ]
+  rg <- getGraph
+  return $ [ host | host@(Host {}) <- G.connectedTo Cluster Has rg
+                  , p (G.connectedTo host Has rg) ]
 
 -- | A specialised version of 'findHostsByAttributeFilter' that returns all
 -- hosts labelled with at least the given attribute.
@@ -212,10 +212,8 @@ findHostsByAttr label =
     p = elem label
 
 -- | Find all attributes possessed by the given host.
-findHostAttrs :: Host
-              -> PhaseM RC l [HostAttr]
-findHostAttrs host = do
-  G.connectedTo host Has <$> getLocalGraph
+findHostAttrs :: Host -> PhaseM RC l [HostAttr]
+findHostAttrs host = G.connectedTo host Has <$> getGraph
 
 ----------------------------------------------------------
 -- Drive related functions                              --
@@ -224,7 +222,7 @@ findHostAttrs host = do
 -- | Find logical devices on a host
 findHostStorageDevices :: Host
                        -> PhaseM RC l [StorageDevice]
-findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
+findHostStorageDevices host = flip fmap getGraph $ \rg ->
   [ sdev | enc  :: Enclosure <- maybeToList $ G.connectedFrom Has host rg
          , loc  :: Slot <- G.connectedTo enc Has rg
          , sdev :: StorageDevice <- maybeToList $ G.connectedFrom Has loc rg ]
@@ -233,16 +231,16 @@ findHostStorageDevices host = flip fmap getLocalGraph $ \rg ->
 -- perspective).
 isStorageDriveRemoved :: StorageDevice -> PhaseM RC l Bool
 isStorageDriveRemoved sd = do
-  rg <- getLocalGraph
+  rg <- getGraph
   return . maybe True (\Slot{} -> False) $ G.connectedTo sd Has rg
 
 -- | Find all 'StorageDevice's with the given 'DeviceIdentifier'.
 lookupStorageDevicesWithDI :: DeviceIdentifier -> PhaseM RC l [StorageDevice]
-lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getLocalGraph
+lookupStorageDevicesWithDI di = G.connectedFrom Has di <$> getGraph
 
 -- | Find all 'StorageDevice's with the given 'StorageDeviceAttr'.
 lookupStorageDevicesWithAttr :: StorageDeviceAttr -> PhaseM RC l [StorageDevice]
-lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getLocalGraph
+lookupStorageDevicesWithAttr attr = G.connectedFrom Has attr <$> getGraph
 
 -- | Update a metric monitoring how many drives are currently
 -- undergoing reset. Note that increasing when we start reset and
@@ -267,7 +265,7 @@ hasOngoingReset =
 markOnGoingReset :: StorageDevice -> PhaseM RC l ()
 markOnGoingReset sdev = do
     let _F SDOnGoingReset = True
-        _F _                 = False
+        _F _              = False
     m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Nothing -> do
@@ -279,7 +277,7 @@ markOnGoingReset sdev = do
 markResetComplete :: StorageDevice -> PhaseM RC l ()
 markResetComplete sdev = do
     let _F SDOnGoingReset = True
-        _F _                 = False
+        _F _              = False
     m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Nothing  -> return ()
@@ -292,7 +290,7 @@ markResetComplete sdev = do
 incrDiskResetAttempts :: StorageDevice -> PhaseM RC l ()
 incrDiskResetAttempts sdev = do
     let _F (SDResetAttempts _) = True
-        _F _                        = False
+        _F _                   = False
     m <- listToMaybe <$> SDev.findAttrs _F sdev
     case m of
       Just old@(SDResetAttempts i) -> do
@@ -319,7 +317,7 @@ getDiskResetAttempts sdev = do
 -- TODO: Same questions for 'getSDevHost'
 getSDevNode :: StorageDevice -> PhaseM RC l [Node]
 getSDevNode sdev = do
-  rg <- getLocalGraph
+  rg <- getGraph
   hosts <- getSDevHost sdev
   return [ node | host <- hosts
                 , node <- G.connectedTo host Runs rg ]
@@ -330,5 +328,5 @@ getSDevNode sdev = do
 -- TODO: See 'getSDevNode' TODOs.
 getSDevHost :: StorageDevice -> PhaseM RC l [Host]
 getSDevHost sdev = do
-  rg <- getLocalGraph
+  rg <- getGraph
   maybe [] (\enc -> G.connectedTo enc Has rg) <$> SDev.enclosure sdev

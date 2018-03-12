@@ -74,7 +74,7 @@ testStopStart transport pg = do
       process_started <- phaseHandle "process_started"
 
       setPhase rule_init $ \(H.RuleHook caller) -> do
-        rg <- getLocalGraph
+        rg <- getGraph
         let ps = listToMaybe $
                  Process.getLabeled (M0.PLM0d $ M0.BootLevel 1) rg
                   & filter (\p -> getState p rg == M0.PSOnline)
@@ -147,7 +147,7 @@ testClientStartsAnyBootlevel transport pg = do
         -- Check that we're on level 0 (only halon:m0d start after
         -- all), find m0t1fs process, request m0t1fs start through
         -- StartMerClientRequest just like halonctl would
-        rg <- getLocalGraph
+        rg <- getGraph
         case getClusterStatus rg of
           Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> do
             case Process.getLabeled M0.PLM0t1fs rg of
@@ -160,7 +160,7 @@ testClientStartsAnyBootlevel transport pg = do
           cs -> sendToCaller caller . Just $ "Unexpected cluster status: " ++ show cs
 
       setPhaseIf m0t1fs_result our_m0t1fs $ \r -> do
-        rg <- getLocalGraph
+        rg <- getGraph
         Just caller <- getField . rget fldCaller <$> get Local
         -- Check that cluster is still on the same boot level and we
         -- got process started for the m0t1fs process.

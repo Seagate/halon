@@ -86,7 +86,7 @@ makeCurrentRC update = do
 -- | Find currenlty running RC in resource graph.
 tryGetCurrentRC :: PhaseM RC l (Maybe R.RC)
 tryGetCurrentRC = do
-  rg <- getLocalGraph
+  rg <- getGraph
   return $ listToMaybe
     [ rc
     | Just rc <- [G.connectedTo R.Cluster R.Has rg :: Maybe R.RC]
@@ -100,7 +100,7 @@ incrementEpoch = R.EpochId . succ
 -- | Get current epoch
 getCurrentEpoch :: PhaseM RC l Word64
 getCurrentEpoch = maybe 0 (\(R.EpochId i) -> i) .
-                  G.connectedTo R.Cluster R.Has <$> getLocalGraph
+                  G.connectedTo R.Cluster R.Has <$> getGraph
 
 -- | Read old epoch value and update it to the next one.
 updateEpoch :: PhaseM RC l Word64
@@ -285,7 +285,7 @@ registerNodeMonitoringAngel = do
             loop nodes) []
     AngelMonUp <- expect
     return pid
-  -- rg <- getLocalGraph
+  -- rg <- getGraph
   -- let nodes = (\(R.Node n) -> n) <$> G.connectedTo R.Cluster R.Has rg
   -- liftProcess $ for_ nodes $ usend pid . AddNode
   void $ registerProcessMonitor pid $ do

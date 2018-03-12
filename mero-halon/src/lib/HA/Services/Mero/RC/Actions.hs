@@ -61,7 +61,7 @@ import           Prelude                               hiding (id, (.))
 -- processes shouldn't need any further updates.
 getNotificationNodes :: PhaseM RC l [(R.Node, [M0.Process])]
 getNotificationNodes = do
-  rg <- getLocalGraph
+  rg <- getGraph
   let nodes =
         [ (node, m0node)
         | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
@@ -99,7 +99,7 @@ mkStateDiff f msg onCommit = do
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM RC l (Maybe StateDiff)
-getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getLocalGraph
+getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getGraph
   where
     epoch = StateDiffIndex idx
 
@@ -108,8 +108,8 @@ markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationDelivered diff process = do
   Log.actLog "markNotificationDelivered"
     [("epoch", show $ stateEpoch diff), ("process", M0.showFid process)]
-  isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
-  isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getLocalGraph
+  isDelivered <- G.isConnected diff DeliveredTo process <$> getGraph
+  isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getGraph
   unless (isDelivered) $ do
     modifyGraph $
       G.disconnect diff ShouldDeliverTo process >>>
@@ -122,9 +122,9 @@ markNotificationDelivered diff process = do
 -- already failed, as failed.
 markNotificationFailed :: StateDiff -> M0.Process -> PhaseM RC l ()
 markNotificationFailed diff process = do
-  isFailed <- G.isConnected diff DeliveryFailedTo process <$> getLocalGraph
-  isDelivered <- G.isConnected diff DeliveredTo process <$> getLocalGraph
-  isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getLocalGraph
+  isFailed <- G.isConnected diff DeliveryFailedTo process <$> getGraph
+  isDelivered <- G.isConnected diff DeliveredTo process <$> getGraph
+  isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getGraph
   unless (isDelivered && isFailed) $ do
     modifyGraph $
       G.disconnect diff ShouldDeliverTo process >>>
@@ -146,9 +146,9 @@ tryCompleteStateDiff diff = do
   -- If the diff is connected it means we haven't entered past the
   -- guard below yet: this ensures we only send result of
   -- notifications once.
-  notSent <- G.isConnected rc R.Has diff <$> getLocalGraph
+  notSent <- G.isConnected rc R.Has diff <$> getGraph
   -- Processes we haven't heard success/failure from yet
-  pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
+  pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getGraph
   Log.rcLog'
     Log.DEBUG
     [ ("tryCompleteStateDiff.epoch", show (stateEpoch diff))
@@ -161,9 +161,9 @@ tryCompleteStateDiff diff = do
 --   processes will be deemed to have timed out.
 forceCompleteStateDiff :: StateDiff -> PhaseM RC l ()
 forceCompleteStateDiff diff = do
-  okProcesses <- G.connectedTo diff DeliveredTo <$> getLocalGraph
-  failProcesses <- G.connectedTo diff DeliveryFailedTo <$> getLocalGraph
-  timeoutProcesses <- G.connectedTo diff ShouldDeliverTo <$> getLocalGraph
+  okProcesses <- G.connectedTo diff DeliveredTo <$> getGraph
+  failProcesses <- G.connectedTo diff DeliveryFailedTo <$> getGraph
+  timeoutProcesses <- G.connectedTo diff ShouldDeliverTo <$> getGraph
   modifyGraph $ G.removeResource diff
   registerSyncGraph $ do
     for_ (stateDiffOnCommit diff) applyOnCommit
@@ -188,11 +188,11 @@ failNotificationsOnNode node
        | Just m0node <- [M0.nodeToM0Node node rg]
        , m0process <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
        ]) <$>
-    getLocalGraph
+    getGraph
   -- For each notification to the target process mark all notifications
   -- as failed.
   for_ ps $ \p -> do
-    rg <- getLocalGraph
+    rg <- getGraph
     for_ (G.connectedFrom ShouldDeliverTo p rg) $ \diff -> do
       modifyGraph $
         G.disconnect diff ShouldDeliverTo p >>>
@@ -206,7 +206,7 @@ failNotificationsOnNode node
 notifyMeroAsync :: StateDiff -> Mero.Notification.Set -> PhaseM RC l ()
 notifyMeroAsync diff s = do
   nodes <- getNotificationNodes
-  rg <- getLocalGraph
+  rg <- getGraph
   let iface = getInterface $ lookupM0d rg
   Log.rcLog'
     Log.DEBUG

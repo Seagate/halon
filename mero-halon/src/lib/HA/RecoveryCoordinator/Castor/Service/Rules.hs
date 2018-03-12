@@ -92,7 +92,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
       , ("service.state", show st)
       , ("service.type", show typ)
       ] Nothing
-    rg <- getLocalGraph
+    rg <- getGraph
     let haSiblings =
           [ svc | Just (p :: M0.Process) <- [G.connectedFrom M0.IsParentOf service rg]
                 , svc <- G.connectedTo p M0.IsParentOf rg
@@ -126,7 +126,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
   directly service_notified $ do
     Just srv <- getField . rget fldService <$> get Local
     Just st <- getField . rget fldServiceState <$> get Local
-    rg <- getLocalGraph
+    rg <- getGraph
     let mproc = G.connectedFrom M0.IsParentOf srv rg :: Maybe M0.Process
     Log.withLocalContext' $ do
       for_ mproc $ \p ->

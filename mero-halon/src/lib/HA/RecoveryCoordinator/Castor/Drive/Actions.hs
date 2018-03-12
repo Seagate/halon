@@ -127,7 +127,7 @@ mkAttachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
-    mp <- G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo Cluster Has <$> getGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $
@@ -182,7 +182,7 @@ mkDetachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceDetached sdev . handleSNSReply
-    mp <- G.connectedTo Cluster Has <$> getLocalGraph
+    mp <- G.connectedTo Cluster Has <$> getGraph
     case mdisk of
       Just d ->
         void $ withSpielIO $

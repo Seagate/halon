@@ -31,11 +31,15 @@ import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.UUID (UUID)
 import           GHC.Generics
+import           Text.Printf (printf)
+import           Text.Read (readMaybe)
+
 import           HA.EventQueue (HAEvent(..))
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
-                 ( updateStorageDevicePresence
-                 , updateStorageDeviceStatus )
+ ( updateStorageDevicePresence
+ , updateStorageDeviceStatus
+ )
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.State
@@ -43,7 +47,7 @@ import           HA.RecoveryCoordinator.Mero.Transitions
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.RecoveryCoordinator.Service.Actions as Service
-import           HA.ResourceGraph hiding (null)
+import qualified HA.ResourceGraph as G
 import           HA.Resources (Node(..), Has(..), Cluster(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
@@ -56,8 +60,6 @@ import           HA.Services.SSPL.LL.Resources
 import           Mero.ConfC (strToFid)
 import           Network.CEP
 import           SSPL.Bindings
-import           Text.Printf (printf)
-import           Text.Read (readMaybe)
 
 --------------------------------------------------------------------------------
 -- Primitives
@@ -69,7 +71,7 @@ import           Text.Read (readMaybe)
 -- True if some service was found, False otherwise.
 sendToSSPLSvc :: [Node] -> SsplLlToSvc -> PhaseM RC l Bool
 sendToSSPLSvc nodes msg = do
-  rg <- getLocalGraph
+  rg <- getGraph
   case findRunningServiceOn nodes sspl rg of
     Node nid : _ -> do
       Log.rcLog' Log.DEBUG
@@ -85,8 +87,8 @@ sendToSSPLSvc nodes msg = do
 sendInterestingEvent :: InterestingEventMessage
                      -> PhaseM RC l ()
 sendInterestingEvent msg = do
-  rg <- getLocalGraph
-  let nodes = [ n | n <- connectedTo Cluster Has rg
+  rg <- getGraph
+  let nodes = [ n | n <- G.connectedTo Cluster Has rg
                   , Just m0n <- [M0.nodeToM0Node n rg]
                   , getState m0n rg == M0.NSOnline ]
   void . sendToSSPLSvc nodes $! SsplIem msg
@@ -127,12 +129,12 @@ sendLedUpdate status host sd@(StorageDevice (T.pack -> sn)) = do
   Log.actLog "sending LED update" [ ("status", show status)
                                   , ("sn", show sn)
                                   , ("host", show host) ]
-  rg <- getLocalGraph
-  let mnode = listToMaybe $ connectedTo host Runs rg -- XXX: try all nodes
-      modifyLedState mledSt = case connectedTo sd Has rg of
+  rg <- getGraph
+  let mnode = listToMaybe $ G.connectedTo host Runs rg -- XXX: try all nodes
+      modifyLedState mledSt = case G.connectedTo sd Has rg of
         Just slot@Slot{} -> modifyGraph $ case mledSt of
-          Just ledSt -> connect slot Has ledSt
-          Nothing -> disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
+          Just ledSt -> G.connect slot Has ledSt
+          Nothing -> G.disconnectAllFrom slot Has (Proxy :: Proxy LedControlState)
         _ -> Log.rcLog' Log.WARN $ "No slot found for " ++ show sd
   case mnode of
     Just (Node nid) -> case status of
@@ -351,18 +353,18 @@ ruleMonitorServiceFailed = defineSimpleIf "monitor-service-failure" extract $ \(
     Just (processFid, currentPid, "failed")-> do
       Log.rcLog' Log.DEBUG $ "Received SSPL message about service failure: "
                      ++ show watchdogmsg
-      svs <- M0.getM0Processes <$> getLocalGraph
+      svs <- M0.getM0Processes <$> getGraph
       Log.rcLog' Log.DEBUG $ "Looking for fid " ++ show processFid ++ " in " ++ show svs
       let markFailed p updatePid = do
             Log.rcLog' Log.DEBUG $ "Failing " ++ showFid p
             when updatePid $ do
-              modifyLocalGraph $ return . connect p Has (M0.PID currentPid)
+              modifyGraphM $ return . G.connect p Has (M0.PID currentPid)
             void $ applyStateChanges [stateSet p $ processFailed "SSPL notification about service failure"]
       case listToMaybe $ filter (\p -> M0.r_fid p == processFid) svs of
         Nothing -> Log.rcLog' Log.WARN $ "Couldn't find process with fid " ++ show processFid
         Just p -> do
-          rg <- getLocalGraph
-          case (getState p rg, connectedTo p Has rg) of
+          rg <- getGraph
+          case (getState p rg, G.connectedTo p Has rg) of
             (M0.PSFailed _, _) ->
               Log.rcLog' Log.DEBUG
                 ("Failed SSPL notification for already failed process - doing nothing." :: String)
@@ -456,8 +458,7 @@ ruleMonitorRaidData = defineSimpleIf "monitor-raid-data" extract $
                   path <- MaybeT $ fmap T.pack <$> StorageDevice.path dev
                   return (dev, path)
 
-          isReassembling <- isConnected host Is ReassemblingRaid <$> getLocalGraph
-
+          isReassembling <- G.isConnected host Is ReassemblingRaid <$> getGraph
           if not isReassembling
           then promulgateRC $ RaidUpdate {
               ruNode = Node nid

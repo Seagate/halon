@@ -116,7 +116,7 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
           todo uuid
           modify Local $ rlens fldUUID . rfield .~ Just uuid
           Log.tagContext Log.SM m0sdev Nothing
-          currentState <- M0.getState m0sdev <$> getLocalGraph
+          currentState <- M0.getState m0sdev <$> getGraph
           msdev <- lookupStorageDevice m0sdev
           case (msdev, currentState) of
             (Just sdev, s) | isTransient s -> do
@@ -143,7 +143,7 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
                   (l ^. rlens fldHardware . rfield)
       )
       $ \(m0sdev, st) -> do
-          currentState <- M0.getState m0sdev <$> getLocalGraph
+          currentState <- M0.getState m0sdev <$> getGraph
           case currentState of
             s | isTransient s -> do
               Log.rcLog' Log.WARN
@@ -179,7 +179,7 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
     -- the drive returning; if it does not, we trigger a reset on the drive
     -- and await that.
     directly check_expander_reset $ do
-      rg <- getLocalGraph
+      rg <- getGraph
       Just (_, sdev) <- gets Local (^. rlens fldHardware . rfield)
       expanderResetThreshold <- getHalonVar _hv_expander_reset_threshold
       let failuresInEnclosure =
@@ -213,7 +213,7 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
     directly permanent_failure $ do
       Just (m0sdev, sdev) <- gets Local (^. rlens fldHardware . rfield)
       sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed
-                        <$> getLocalGraph
+                        <$> getGraph
       either
         (\failedTransition -> do
           Log.rcLog' Log.WARN $ "Want to fail drive, but doing so would bring"

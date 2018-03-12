@@ -45,7 +45,7 @@ ssplHLRules = do
       extract _ _ = return Nothing
     in defineSimpleIf "status-query" extract $
       \(uuid, CommandRequestMessageStatusRequest mef et, msgId, nid) -> do
-          rg <- getLocalGraph
+          rg <- getGraph
           let
             items = case et of
               Aeson.String "cluster" -> clusterStatus rg
@@ -71,7 +71,7 @@ ssplHLRules = do
           Just foo -> T.unpack foo
           Nothing  -> "."
       in do
-        rg <- getLocalGraph
+        rg <- getGraph
         let nodes = [ n | n <- G.connectedTo Cluster Has rg
                         , Just m0n <- [nodeToM0Node n rg]
                         , getState m0n rg == NSOnline ]

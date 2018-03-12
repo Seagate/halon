@@ -54,7 +54,7 @@ import           Network.CEP
 lookupConfObjByFid :: (G.Resource a, M0.ConfObj a, Typeable a)
                    => Fid
                    -> PhaseM RC l (Maybe a)
-lookupConfObjByFid f = M0.lookupConfObjByFid f <$> getLocalGraph
+lookupConfObjByFid f = M0.lookupConfObjByFid f <$> getGraph
 
 --------------------------------------------------------------------------------
 -- Querying conf in RG
@@ -62,7 +62,7 @@ lookupConfObjByFid f = M0.lookupConfObjByFid f <$> getLocalGraph
 
 -- | Get the top-level Mero configuration object.
 getRoot :: PhaseM RC l (Maybe M0.Root)
-getRoot = G.connectedTo Cluster Has <$> getLocalGraph
+getRoot = G.connectedTo Cluster Has <$> getGraph
 
 -- | Fetch the Mero Profile in the system. Currently, we
 --   only support a single profile, though in future there
@@ -71,7 +71,7 @@ getRoot = G.connectedTo Cluster Has <$> getLocalGraph
 getProfile :: PhaseM RC l (Maybe M0.Profile)
 -- XXX-MULTIPOOLS: There is a good chance that this function is not needed
 -- any more.
-getProfile = G.connectedTo Cluster Has <$> getLocalGraph
+getProfile = G.connectedTo Cluster Has <$> getGraph
 
 -- | Fetch the Mero filesystem in the system. Currently, we
 --   only support a single filesystem, though in future there
@@ -79,7 +79,7 @@ getProfile = G.connectedTo Cluster Has <$> getLocalGraph
 --   to change.
 --   XXX-MULTIPOOLS: Change to getRoot
 getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
-getFilesystem = getLocalGraph >>= \rg ->
+getFilesystem = getGraph >>= \rg ->
   return . listToMaybe
     $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
            , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
@@ -87,14 +87,14 @@ getFilesystem = getLocalGraph >>= \rg ->
 
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM RC l [M0.Service]
-getM0ServicesRC = M0.getM0Services <$> getLocalGraph
+getM0ServicesRC = M0.getM0Services <$> getGraph
 
 -- | Find a pool the given 'M0.SDev' belongs to.
 --
 -- Fails if multiple pools are found. Metadata pool are ignored.
 getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
-    rg <- getLocalGraph
+    rg <- getGraph
     let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
         pools =
           [ pool
@@ -120,14 +120,14 @@ getSDevPool sdev = do
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.
 lookupEnclosureM0 :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
 lookupEnclosureM0 enc =
-    G.connectedFrom M0.At enc <$> getLocalGraph
+    G.connectedFrom M0.At enc <$> getGraph
 
 -- | Lookup the HA endpoint to be used for the node. This is stored as the
 --   endpoint for the HA service hosted by processes on that node. Whilst in
 --   theory different processes might have different HA endpoints, in
 --   practice this should not happen.
 lookupHostHAAddress :: Host -> PhaseM RC l (Maybe Endpoint)
-lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
+lookupHostHAAddress host = getGraph >>= \rg -> return $ listToMaybe
   [ ep
   | node <- G.connectedTo host Runs rg :: [M0.Node]
   , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
@@ -140,23 +140,23 @@ lookupHostHAAddress host = getLocalGraph >>= \rg -> return $ listToMaybe
 getChildren :: forall a b l. G.Relation M0.IsParentOf a b
             => a -> PhaseM RC l [b]
 getChildren obj = G.asUnbounded
-                . G.connectedTo obj M0.IsParentOf <$> getLocalGraph
+                . G.connectedTo obj M0.IsParentOf <$> getGraph
 
 -- | Get parents of the conf objects.
 getParents :: forall a b l. G.Relation M0.IsParentOf a b
            => b -> PhaseM RC l [a]
 getParents obj = G.asUnbounded
-               . G.connectedFrom M0.IsParentOf obj <$> getLocalGraph
+               . G.connectedFrom M0.IsParentOf obj <$> getGraph
 
 -- | Test if a service is the principal RM service
 isPrincipalRM :: M0.Service
               -> PhaseM RC l Bool
-isPrincipalRM svc = getLocalGraph >>=
+isPrincipalRM svc = getGraph >>=
   return . G.isConnected svc Is M0.PrincipalRM
 
 -- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'.
 getPrincipalRM :: PhaseM RC l (Maybe M0.Service)
-getPrincipalRM = getLocalGraph >>= \rg ->
+getPrincipalRM = getGraph >>= \rg ->
   return . listToMaybe
     . filter (\x -> M0.getState x rg == M0.SSOnline)
     $ G.connectedFrom Is M0.PrincipalRM rg
@@ -175,7 +175,7 @@ setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
 
 -- | Pick a Principal RM out of the available RM services.
 pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
-pickPrincipalRM = getLocalGraph >>= \g ->
+pickPrincipalRM = getGraph >>= \g ->
   let rms =
         [ rm
         | Just (prof :: M0.Profile) <-
@@ -205,7 +205,7 @@ encToM0Enc enc rg = G.connectedFrom M0.At enc rg
 
 -- | Find 'M0.SDev' that associated with a given location.
 lookupLocationSDev :: R.Slot -> PhaseM RC l (Maybe M0.SDev)
-lookupLocationSDev loc = G.connectedFrom M0.At loc <$> getLocalGraph
+lookupLocationSDev loc = G.connectedFrom M0.At loc <$> getGraph
 
 -- | Mark 'M0.SDev' as replaced, so it could be rebalanced if needed.
 markSDevReplaced :: M0.SDev -> PhaseM RC l ()

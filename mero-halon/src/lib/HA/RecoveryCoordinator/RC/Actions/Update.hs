@@ -16,7 +16,7 @@ import           Network.CEP
 
 applyTodoNode :: PhaseM RC (Maybe ProcessId) ()
 applyTodoNode = do
-  mtodo <- G.connectedTo R.Cluster R.Has <$> getLocalGraph
+  mtodo <- G.connectedTo R.Cluster R.Has <$> getGraph
   for_ mtodo $ \td@(Todo s) -> do
     Log.rcLog' Log.DEBUG "Applying Todo node."
     act <- liftProcess $ unStatic s

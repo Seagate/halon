@@ -42,8 +42,8 @@ import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import           HA.Replicator (RGroup(..))
-import           HA.ResourceGraph hiding (__remoteTable)
-import           HA.Resources
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
@@ -135,14 +135,14 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
     -- 8 disks, tolerating one disk failure at a time
-    let g = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+    let rg = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 9
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 8 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    let failureSets2 = generateFailureSets 2 0 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
@@ -162,28 +162,28 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
     -- 16 disks, tolerating one disk failure at a time
-    let g = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 g (CI.id_m0_globals iData)
+    let rg = lsGraph ls'
+        failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (100)" $ length failureSets == 17
     assertMsg "Smallest failure set is empty (100)"
       $ fsSize (head failureSets) == 0
 
     -- 16 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 g (CI.id_m0_globals iData)
+    let failureSets2 = generateFailureSets 2 0 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (200)" $ length failureSets2 == 137
     assertMsg "Smallest failure set is empty (200)"
       $ fsSize (head failureSets2) == 0
     assertMsg "Next smallest failure set has one disk (200)"
       $ fsSize (failureSets2 !! 1) == 1
 
-    let failureSets010 = generateFailureSets 0 1 0 g (CI.id_m0_globals iData)
+    let failureSets010 = generateFailureSets 0 1 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
     assertMsg "Smallest failure set is empty (010)"
       $ fsSize (head failureSets010) == 0
     assertMsg "Next smallest failure set has 4 disks and one controller (010)"
       $ fsSize (failureSets010 !! 1) == 5
 
-    let failureSets110 = generateFailureSets 1 1 0 g (CI.id_m0_globals iData)
+    let failureSets110 = generateFailureSets 1 1 0 rg (CI.id_m0_globals iData)
     assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
     assertMsg "Smallest failure set is empty (110)"
       $ fsSize (head failureSets110) == 0
@@ -205,15 +205,14 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
       Just (Monolithic update) <- getCurrentGraphUpdateType
-      modifyLocalGraph update
+      modifyGraphM update
 
-    let g = lsGraph ls'
-
-    let ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [connectedTo Cluster Has g]
-                                , Just (profile :: M0.Profile) <- [connectedTo root M0.IsParentOf g]
-                                , fs :: M0.Filesystem <- connectedTo profile M0.IsParentOf g
-                                , pool :: M0.Pool     <- connectedTo fs M0.IsParentOf g
-                                , let pvers :: [M0.PVer] = connectedTo pool M0.IsParentOf g
+    let rg = lsGraph ls'
+        ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
+                                , Just (profile :: M0.Profile) <- [G.connectedTo root M0.IsParentOf rg]
+                                , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf rg
+                                , pool :: M0.Pool     <- G.connectedTo fs M0.IsParentOf rg
+                                , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf rg
                                 ]
     for_ ppvers $ \(_, pvers) -> do
       unless (Prelude.null pvers) $ do -- skip metadata pool
@@ -242,40 +241,40 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers filesystem (CI.id_m0_servers iData)
-      rg <- getLocalGraph
+      rg <- getGraph
       let Iterative update = simpleUpdate 0 1 0
-      let Just updateGraph = update rg
+          Just updateGraph = update rg
       rg' <- updateGraph return
-      putLocalGraph rg'
+      putGraph rg'
     -- Verify that everything is set up correctly
     Just root <- runGet ls' getRoot
     Just fs <- runGet ls' getFilesystem -- XXX-MULTIPOOLS
     let mdpool = M0.Pool (M0.rt_mdpool root)
     assertMsg "MDPool is stored in RG"
-      $ memberResource mdpool (lsGraph ls')
+      $ G.memberResource mdpool (lsGraph ls')
     mdpool_byFid <- runGet ls' $ lookupConfObjByFid (M0.rt_mdpool root)
     assertMsg "MDPool is findable by Fid"
       $ mdpool_byFid == Just mdpool
 
     -- Get the non metadata pool
-    [pool] <- runGet ls' $ Pool.getNonMD <$> getLocalGraph
+    [pool] <- runGet ls' $ Pool.getNonMD <$> getGraph
 
     -- We have 4 disks in 4 enclosures.
     hosts <- runGet ls' $ findHosts ".*"
-    let g = lsGraph ls'
-        pvers = connectedTo pool M0.IsParentOf g :: [M0.PVer]
-        racks = connectedTo fs M0.IsParentOf g :: [M0.Rack]
-        encls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Enclosure]) racks
-        ctrls = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Controller]) encls
-        disks = join $ fmap (\r -> connectedTo r M0.IsParentOf g :: [M0.Disk]) ctrls
-        enc   = catMaybes $ fmap (\r -> connectedFrom Has r g :: Maybe Enclosure) hosts
-        sdevs = join $ fmap (\r -> [ d | s <- connectedTo r Has g :: [Slot]
-                                       , d <- maybeToList (connectedFrom Has s g :: Maybe StorageDevice) ])
+    let rg = lsGraph ls'
+        pvers = G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
+        racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+        encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) racks
+        ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) encls
+        disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) ctrls
+        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r rg :: Maybe Enclosure) hosts
+        sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has rg :: [Slot]
+                                       , d <- maybeToList (G.connectedFrom Has s rg :: Maybe StorageDevice) ])
                             enc
-        disksByHost = catMaybes $ fmap (\r -> connectedFrom M0.At r g :: Maybe M0.Disk) sdevs
+        disksByHost = catMaybes $ fmap (\r -> G.connectedFrom M0.At r rg :: Maybe M0.Disk) sdevs
 
         disk1 = head disks
-        dvers1 = connectedTo disk1 M0.IsRealOf g :: [M0.DiskV]
+        dvers1 = G.connectedTo disk1 M0.IsRealOf rg :: [M0.DiskV]
 
     assertMsg "Number of pvers" $ length pvers == 5
     assertMsg "Number of racks" $ length racks == 1
@@ -285,17 +284,17 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 16
     assertMsg "Number of disks" $ length disks == 16
     assertMsg "Number of disk versions" $ length dvers1 == 4
-    forM_ (getResourcesOfType g :: [M0.PVer]) $ \pver -> do
+    forM_ (G.getResourcesOfType rg :: [M0.PVer]) $ \pver -> do
       let PDClustAttr { _pa_N = paN
                       , _pa_K = paK
                       , _pa_P = paP
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
-      let dver = [ diskv | rackv <- connectedTo  pver M0.IsParentOf g :: [M0.RackV]
-                         , enclv <- connectedTo rackv M0.IsParentOf g :: [M0.EnclosureV]
-                         , cntrv <- connectedTo enclv M0.IsParentOf g :: [M0.ControllerV]
-                         , diskv <- connectedTo cntrv M0.IsParentOf g :: [M0.DiskV]]
+      let dver = [ diskv | rackv <- G.connectedTo  pver M0.IsParentOf rg :: [M0.RackV]
+                         , enclv <- G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
+                         , cntrv <- G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
+                         , diskv <- G.connectedTo cntrv M0.IsParentOf rg :: [M0.DiskV]]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
 
 -- | Test that applying state changes works
@@ -312,18 +311,18 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
       loadMeroServers filesystem (CI.id_m0_servers iData)
       RC.initialRule (IgnitionArguments [])
 
-    let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
+    let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
 
     (ls2, _) <- run ls1 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
-      $ length (connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
+      $ length (G.connectedFrom Is M0.PSOnline (lsGraph ls2) :: [M0.Process]) ==
         length procs
 
     (ls3, _) <- run ls2 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSStopping) <$> procs
 
     assertMsg "All processes should be stopping"
-      $ length (connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
+      $ length (G.connectedFrom Is M0.PSStopping (lsGraph ls3) :: [M0.Process]) ==
         length procs
 
 testClusterLiveness :: (Typeable g, RGroup g) => Transport -> Proxy g -> TestTree
@@ -334,12 +333,12 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            ClusterLiveness{clPVers=True,clOngoingSNS=False, clHaveQuorum=True, clPrincipalRM=True}
   , Tasty.testCase "on-broken-confd-quorum-no-rm"
        $ genericTest (do
-           rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           rg <- getGraph
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
-                                 , any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
-                                       (connectedTo ps M0.IsParentOf rg)
+                                 , any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                       (G.connectedTo ps M0.IsParentOf rg)
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> confds
            )
@@ -347,12 +346,12 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=False}
   , Tasty.testCase "on-broken-confd-quorum"
        $ genericTest (do
-           rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           rg <- getGraph
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
-                                 , not $ any (\s -> isConnected (s::M0.Service) Is M0.PrincipalRM rg)
-                                             (connectedTo ps M0.IsParentOf rg)
+                                 , not $ any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
+                                             (G.connectedTo ps M0.IsParentOf rg)
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 confds
            )
@@ -360,9 +359,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True, clPrincipalRM=True}
   , Tasty.testCase "on-broken-confd-no-quorum"
        $ genericTest (do
-           rg <- getLocalGraph
-           let confds = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           rg <- getGraph
+           let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_CONFD
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
@@ -374,9 +373,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
   --     test.
   , Tasty.testCase "on-ios-failure"
        $ genericTest (do
-           rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           rg <- getGraph
+           let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
@@ -385,9 +384,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
             ClusterLiveness{clPVers=True,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
   , Tasty.testCase "on-many-ios"
        $ genericTest (do
-           rg <- getLocalGraph
-           let ios = nub [ ps | ps :: M0.Process <- getResourcesOfType rg
-                                 , srv <- connectedTo ps M0.IsParentOf rg
+           rg <- getGraph
+           let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
+                                 , srv <- G.connectedTo ps M0.IsParentOf rg
                                  , M0.s_type srv == ConfC.CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
@@ -410,9 +409,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
          loadMeroGlobals (CI.id_m0_globals iData)
          loadMeroServers filesystem (CI.id_m0_servers iData)
          Just (Monolithic update) <- getCurrentGraphUpdateType
-         modifyLocalGraph update
+         modifyGraphM update
          RC.initialRule (IgnitionArguments [])
-      let procs = getResourcesOfType (lsGraph ls1) :: [M0.Process]
+      let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
       (ls2, _) <- run ls1 $ do
         void . applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
         _ <- pickPrincipalRM
@@ -420,7 +419,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
       (ls3, _) <- run ls2 $ configure
       box <- liftIO newEmptyMVar
       _ <- run ls3 $ do
-        rg <- getLocalGraph
+        rg <- getGraph
         liftIO . putMVar box =<< calculateClusterLiveness rg
       liftIO $ test =<< takeMVar box
 
@@ -439,6 +438,7 @@ goRack :: forall l. CI.Rack
 goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
   registerRack rack
   mapM_ (goEnc rack) rack_enclosures
+
 goEnc :: forall l. Rack
       -> CI.Enclosure
       -> PhaseM RC l ()
@@ -448,6 +448,7 @@ goEnc rack (CI.Enclosure{..}) = let
     registerEnclosure rack enclosure
     mapM_ (registerBMC enclosure) enc_bmc
     mapM_ (goHost enclosure) enc_hosts
+
 goHost :: forall l. Enclosure
        -> CI.Host
        -> PhaseM RC l ()
