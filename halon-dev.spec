@@ -61,7 +61,7 @@ cp -a $RPM_BUILD_DIR/systemd/* %{buildroot}/usr/lib/systemd/system
 cp -a $RPM_BUILD_DIR/role_maps/* %{buildroot}/etc/halon/role_maps
 cp -a $RPM_BUILD_DIR/sysconfig/* %{buildroot}/etc/sysconfig
 cp -a $RPM_BUILD_DIR/tmpfiles.d/* %{buildroot}%{_tmpfilesdir}
-ln -s /etc/halon/role_maps/prov.ede %{buildroot}/etc/halon/mero_role_mappings
+ln -s /etc/halon/role_maps/clovis.ede %{buildroot}/etc/halon/mero_role_mappings
 ln -s /etc/halon/role_maps/halon_role_mappings %{buildroot}/etc/halon/halon_role_mappings
 
 
