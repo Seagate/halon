@@ -38,66 +38,66 @@ module Mero.Notification
     , getM0Worker
     ) where
 
-import Control.Distributed.Process
+import           Network.CEP (liftProcess, MonadProcess)
 
-import Network.CEP (liftProcess, MonadProcess)
-
-import Mero
-import Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
-import Mero.Notification.HAState hiding (getRPCMachine)
-import Mero.Concurrent
+import           Mero
+import           Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
+import           Mero.Notification.HAState hiding (getRPCMachine)
+import           Mero.Concurrent
 import qualified Mero.Notification.HAState as HAState
-import Mero.Engine
-import Mero.M0Worker
-import HA.EventQueue (promulgateWait)
-import HA.Logger (mkHalonTracerIO)
-import HA.ResourceGraph (Graph)
+import           Mero.Engine
+import           Mero.Lnet
+import           Mero.M0Worker
+
+import           HA.EventQueue (promulgateWait)
+import           HA.Logger (mkHalonTracerIO)
+import           HA.ResourceGraph (Graph)
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor as R
-import HA.Resources.Mero (Service(..), SpielAddress(..))
+import           HA.Resources.Mero (Service(..), SpielAddress(..))
 import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note (lookupConfObjectStates)
+import           HA.Resources.Mero.Note (lookupConfObjectStates)
 import qualified HA.Resources.Mero.Note as M0
-import Network.RPC.RPCLite
-  ( RPCAddress
-  , RPCMachine
+import           Network.RPC.RPCLite (RPCAddress, RPCMachine)
+import           HA.RecoveryCoordinator.Mero.Events
+  ( GetSpielAddress(..)
+  , GetFailureVector(..)
   )
-import HA.RecoveryCoordinator.Mero.Events (GetSpielAddress(..),GetFailureVector(..))
-import HA.SafeCopy
-import Mero.Lnet
+import           HA.SafeCopy
 
-import Control.Arrow ((***))
-import Control.Lens
-import Control.Concurrent.MVar
-import Control.Concurrent.STM
-import Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
+import           Control.Arrow ((***))
+import           Control.Concurrent.MVar
+import           Control.Concurrent.STM
+import           Control.Distributed.Process
+import           Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
 import qualified Control.Distributed.Process.Node as CH ( forkProcess )
-import Control.Monad (void, when)
-import Control.Monad.Trans (MonadIO)
-import Control.Monad.Catch (MonadCatch, SomeException)
-import Control.Monad.Reader (ask)
-import Control.Monad.Fix (fix)
+import           Control.Lens
+import           Control.Monad (void, when)
+import           Control.Monad.Catch (MonadCatch, SomeException)
 import qualified Control.Monad.Catch as Catch
-import Data.Foldable (for_, traverse_)
-import Data.Binary (Binary(..))
-import Data.Hashable (Hashable)
-import Data.List (nub)
+import           Control.Monad.Fix (fix)
+import           Control.Monad.Reader (ask)
+import           Control.Monad.Trans (MonadIO)
+import           Data.Binary (Binary(..))
+import           Data.Foldable (for_, traverse_)
+import           Data.Hashable (Hashable)
+import           Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
+import           Data.List (nub)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (listToMaybe, fromMaybe)
+import           Data.Monoid ((<>))
 import qualified Data.Set as Set
-import Data.Maybe (listToMaybe, fromMaybe)
-import Data.Monoid ((<>))
 import qualified Data.Text as T
-import Data.Tuple (swap)
-import Data.Typeable (Typeable)
-import Data.IORef  (IORef, newIORef, readIORef, atomicModifyIORef')
-import Data.Word
-import GHC.Generics (Generic)
-import System.IO.Unsafe (unsafePerformIO)
-import System.Clock
-import Debug.Trace (traceEventIO)
+import           Data.Tuple (swap)
+import           Data.Typeable (Typeable)
+import           Data.Word
+import           Debug.Trace (traceEventIO)
+import           GHC.Generics (Generic)
+import           System.Clock
+import           System.IO.Unsafe (unsafePerformIO)
 
-import Prelude hiding (log)
+import           Prelude hiding (log)
 
 log :: String -> IO ()
 log = mkHalonTracerIO "m0:notification"
