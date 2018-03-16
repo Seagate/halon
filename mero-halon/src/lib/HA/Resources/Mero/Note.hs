@@ -22,32 +22,32 @@
 
 module HA.Resources.Mero.Note where
 
-import HA.Resources (Cluster, Has(..))
-import HA.Resources.Castor
-import qualified HA.Resources.Mero as M0
-import HA.Resources.Mero.Note.TH
+import           HA.Aeson (FromJSON, ToJSON)
 import qualified HA.ResourceGraph as G
-import HA.Resources.TH
-import HA.Aeson (FromJSON, ToJSON)
-import HA.SafeCopy
-import Mero.ConfC (Fid(..), fidToStr)
-import Mero.Lnet
+import           HA.Resources (Cluster, Has(..))
+import           HA.Resources.Castor
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note.TH
+import           HA.Resources.TH
+import           HA.SafeCopy
+import           Mero.ConfC (Fid(..), fidToStr)
+import           Mero.Lnet
 
-import Control.Distributed.Static (Static, staticPtr)
-import Control.Monad (join)
+import           Control.Distributed.Static (Static, staticPtr)
+import           Control.Monad (join)
 
-import Data.Binary (Binary)
-import Data.Constraint (Dict)
-import Data.Bits (shiftR)
-import Data.Hashable (Hashable)
+import           Data.Binary (Binary)
+import           Data.Constraint (Dict)
+import           Data.Bits (shiftR)
+import           Data.Hashable (Hashable)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
-import Data.Monoid ((<>))
-import Data.Typeable (Typeable)
-import Data.Proxy (Proxy(..))
-import Data.Word ( Word64 )
+import           Data.Maybe (catMaybes, fromMaybe, listToMaybe, mapMaybe)
+import           Data.Monoid ((<>))
+import           Data.Typeable (Typeable)
+import           Data.Proxy (Proxy(..))
+import           Data.Word ( Word64 )
 
-import GHC.Generics (Generic, Rep, M1, D)
+import           GHC.Generics (Generic, Rep, M1, D)
 import qualified GHC.Generics as Generics
 
 --------------------------------------------------------------------------------
