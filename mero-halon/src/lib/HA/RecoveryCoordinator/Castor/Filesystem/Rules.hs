@@ -71,29 +71,29 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                   . right (M0.FilesystemStats now)
                   $ x
 
-    mfs <- getFilesystem
+    mfs <- getFilesystem -- XXX-MULTIPOOLS
     status <- getClusterStatus <$> getGraph
     case ((,) <$> mfs <*> status) of
-      Just (fs, M0.MeroClusterState _ rl _) | rl > M0.BootLevel 1 -> do
-        mp <- G.connectedTo R.Cluster R.Has <$> getGraph
-        void . withSpielIO . withRConfIO mp
-          $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
-        put Local $ Just fs
-        continue stats_fetched
       Nothing ->
         Log.rcLog' Log.DEBUG "No filesystem found in graph."
-      Just (_, M0.MeroClusterState _ rl _) ->
+      Just (_, M0.MeroClusterState _ rl _) | rl <= M0.BootLevel 1 ->
         Log.rcLog' Log.DEBUG $ "Cluster is on runlevel " ++ show rl
+      Just (fs, _) -> do
+        -- XXX-MULTIPOOLS: We should support multiple profiles here.
+        mprof <- G.connectedTo Cluster Has <$> getGraph
+        void . withSpielIO . withRConfIO mprof
+          $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
+        continue stats_fetched
     continue $ timeout queryInterval stats_fetch
 
   setPhase stats_fetched $ \(FSStatsFetched q) -> do
     case q of
-      Left se -> Log.rcLog' Log.WARN $ "Could not fetch filesystem stats: "
-                                    ++ se
+      Left se ->
+        Log.rcLog' Log.WARN $ "Could not fetch filesystem stats: " ++ se
       Right stats -> do
-        Just fs <- get Local
-        modifyGraph $ G.connect fs R.Has stats
-        notify $ StatsUpdated fs stats
+        Just root <- getRoot
+        modifyGraph $ G.connect root Has stats
+        notify $ StatsUpdated stats
     continue $ timeout queryInterval stats_fetch
 
   start stats_fetch Nothing

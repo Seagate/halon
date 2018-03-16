@@ -936,7 +936,7 @@ storageIndex ''ProcessBootstrapped "2f8e34ff-5c7f-4d85-99cf-8a6c0a4f09cc"
 deriveSafeCopy 0 'base ''ProcessBootstrapped
 
 -- | Filesystem statistics.
-data FilesystemStats = FilesystemStats -- XXX-MULTIPOOLS: s/Filesystem//
+data FilesystemStats = FilesystemStats
   { _fs_fetched_on :: TimeSpec
   , _fs_stats :: FSStats
   } deriving (Eq, Show, Generic, Typeable)
@@ -1034,8 +1034,7 @@ $(mkDicts
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node, ''R.Is, ''NodeState)
   , (''Controller, ''R.Is, ''ControllerState)
-    -- XXX-MULTIPOOLS: retire filesystem, update relations
-  , (''Filesystem, ''R.Has, ''FilesystemStats)
+  , (''Root, ''R.Has, ''FilesystemStats)
   , (''Root, ''R.Has, ''DIXInitialised)
   ]
   )
@@ -1108,7 +1107,7 @@ $(mkResRel
   , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded, ''R.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded, ''R.Is, AtMostOne, ''ControllerState)
-  , (''Filesystem, Unbounded, ''R.Has, AtMostOne, ''FilesystemStats)
+  , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
   []

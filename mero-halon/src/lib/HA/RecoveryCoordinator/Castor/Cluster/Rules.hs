@@ -180,15 +180,11 @@ requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getGraph
-      profile <- getProfile
-      filesystem <- getFilesystem
-      let status = getClusterStatus rg
-          stats = filesystem >>= \fs -> G.connectedTo fs R.Has rg
-          pools = Pool.getNonMD rg
+      let pools = Pool.getNonMD rg
       repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) pools
       hosts <- forM (sort $ G.connectedTo R.Cluster R.Has rg) $ \host -> do
             let nodes = sort $ G.connectedTo host R.Runs rg :: [M0.Node]
-            let node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
+                node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
@@ -208,11 +204,14 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                           return (ReportClusterService (M0.getState service rg) service sdevs')
                        return (process, ReportClusterProcess ptyp st services')
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
+      Just root <- getRoot
+      prof <- getProfile
+      fs <- getFilesystem -- XXX-MULTIPOOLS
       liftProcess . sendChan ch $ ReportClusterState
-        { csrStatus = status
+        { csrStatus = getClusterStatus rg
         , csrSNS    = sort repairs
-        , csrInfo   = (liftA2 (,) profile filesystem)
-        , csrStats  = stats
+        , csrInfo   = liftA2 (,) prof fs
+        , csrStats  = G.connectedTo root R.Has rg
         , csrHosts  = hosts
         }
   where

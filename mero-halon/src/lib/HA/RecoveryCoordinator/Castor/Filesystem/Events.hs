@@ -15,8 +15,8 @@ import Data.Typeable (Typeable)
 
 import GHC.Generics
 
--- | Sent whenever the stats for a given filesystem are updated.
-data StatsUpdated = StatsUpdated M0.Filesystem M0.FilesystemStats
+-- | Sent whenever Mero filesystem statistics are updated.
+data StatsUpdated = StatsUpdated M0.FilesystemStats
   deriving (Eq, Show, Generic, Typeable)
 
 instance Binary StatsUpdated
