@@ -317,7 +317,7 @@ data HAStateCallbacks = HSC
 --
 initHAState :: RPCAddress
             -> Fid -- ^ Process Fid
-            -> Fid -- ^ Profile Fid
+            -> Fid -- ^ Profile Fid -- XXX-MULTIPOOLS: drop `profFid` argument?
             -> Fid -- ^ HA Service Fid
             -> Fid -- ^ RM Service Fid
             -> HAStateCallbacks

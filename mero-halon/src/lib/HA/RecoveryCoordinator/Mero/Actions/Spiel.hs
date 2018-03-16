@@ -99,7 +99,6 @@ import           Data.Typeable
 import           Data.UUID (UUID)
 import           Data.UUID.V4 (nextRandom)
 import           Data.Vinyl
-import           Data.Word (Word32)
 
 import           Network.CEP
 import           System.IO
@@ -719,9 +718,6 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
                              ]
       rootParams = [printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units]
-      addRoot :: SpielTransaction
-              -> Fid -> Fid -> Fid -> Word32 -> [String] -> IO ()
-      addRoot _ _ _ _ _ _ = putStrLn "XXX IMPLEMENTME (and ditch addFilesystem)"
   m0synchronously lift $ do
     addRoot t rt_fid rt_mdpool rt_imeta_pver m0_md_redundancy rootParams
     addProfile t pfid -- XXX-MULTIPOOLS: multiple profiles

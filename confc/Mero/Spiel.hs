@@ -191,16 +191,14 @@ openLocalTransaction = do
 txValidateTransactionCache :: SpielTransaction
                            -> IO (Maybe String)
 txValidateTransactionCache (SpielTransaction ftx) = withForeignPtr ftx $ \tx -> do
+  let buflen = 128 :: CSize
   res <- c_confc_validate_cache_of_tx tx buflen
-  case () of
-    _ | res == nullPtr -> return Nothing
-      | otherwise -> do
-          str <- peekCString res
-          free res
-          return $ Just str
-  where
-    buflen :: CSize
-    buflen = 128
+  if res == nullPtr
+    then return Nothing
+    else do
+      str <- peekCString res
+      free res
+      return $ Just str
 
 -- XXX-MULTIPOOLS: DELETEME?
 setCmdProfile :: Maybe String
@@ -212,6 +210,10 @@ setCmdProfile ms =
       Nothing -> c_spiel_cmd_profile_set sc nullPtr
       Just s  -> withCString s $ \cs ->
         c_spiel_cmd_profile_set sc cs
+
+addRoot :: SpielTransaction
+        -> Fid -> Fid -> Fid -> Word32 -> [String] -> IO ()
+addRoot _ _ _ _ _ _ = putStrLn "XXX Mero.Spiel.addRoot: IMPLEMENTME"
 
 addProfile :: SpielTransaction
            -> Fid

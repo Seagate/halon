@@ -180,7 +180,7 @@ applyDeferredStateChanges :: DeferredStateChanges -> PhaseM RC l ()
 applyDeferredStateChanges (DeferredStateChanges f s i) = do
   diff <- mkStateDiff f (encodeP i) []
   notifyMeroAsync diff s
-  let (InternalObjectStateChange iosc) = i
+  let InternalObjectStateChange iosc = i
   for_ iosc $ \(AnyStateChange a o n _) -> do
     Log.sysLog' . Log.StateChange $ Log.StateChangeInfo {
       Log.lsc_entity = M0.showFid a
