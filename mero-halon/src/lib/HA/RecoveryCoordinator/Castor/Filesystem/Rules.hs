@@ -4,7 +4,7 @@
 --
 -- Module rules for Filesystem entity.
 
-{-# LANGUAGE PackageImports             #-}
+{-# LANGUAGE PackageImports #-}
 
 module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   ( rules
@@ -12,15 +12,16 @@ module HA.RecoveryCoordinator.Castor.Filesystem.Rules
   , periodicQueryStats
   ) where
 
-import HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
-import HA.RecoveryCoordinator.Castor.Filesystem.Events ( StatsUpdated(..) )
-import HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem)
-import HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
-import HA.RecoveryCoordinator.Mero.Actions.Spiel
+import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
+import           HA.RecoveryCoordinator.Castor.Filesystem.Events
+  (StatsUpdated(..))
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem, getRoot)
+import           HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
+import           HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( withSpielIO
   , withRConfIO
   )
-import HA.RecoveryCoordinator.RC.Actions
+import           HA.RecoveryCoordinator.RC.Actions
   ( RC
   , getGraph
   , modifyGraph
@@ -28,23 +29,16 @@ import HA.RecoveryCoordinator.RC.Actions
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
-
 import qualified Mero.Spiel as Spiel
+import           Network.CEP
 
-import Control.Arrow (left, right)
-import Control.Distributed.Process
-  ( getSelfPid
-  , liftIO
-  , usend
-  )
-import Control.Exception ( try )
-import Control.Monad (void)
-
-import Data.Binary (Binary)
-
-import Network.CEP
+import           Control.Arrow (left, right)
+import           Control.Distributed.Process (getSelfPid, liftIO, usend)
+import           Control.Exception (try)
+import           Control.Monad (void)
+import           Data.Binary (Binary)
 
 import qualified "distributed-process-scheduler" System.Clock as C
 
