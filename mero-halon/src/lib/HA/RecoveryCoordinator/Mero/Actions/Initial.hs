@@ -13,7 +13,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Initial
   ) where
 
 import           Control.Category ((>>>))
-import           Control.Monad (replicateM_)
+import           Control.Monad (replicateM_, when)
 import           Data.Foldable (foldl', for_)
 import           Data.List (notElem, scanl')
 import           Data.Maybe (fromMaybe)
@@ -58,15 +58,14 @@ initialiseConfInRG :: PhaseM RC l M0.Filesystem
 initialiseConfInRG = getFilesystem >>= \case
     Just fs -> return fs
     Nothing -> do
+      root_fid <- genRootFid -- the first newFidRC call is made here
       -- XXX-MULTIPOOLS: create as many profiles as there are in the facts file
       profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
       pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
       -- Note that `createIMeta` may replace this FID with m0_fid0.
       imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
-      root <- M0.Root <$> newFidRC (Proxy :: Proxy M0.Root)
-                      <*> pure (M0.fid mdpool)
-                      <*> pure imeta_pver
+      let root = M0.Root root_fid (M0.fid mdpool) imeta_pver
       fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem) -- XXX-MULTIPOOLS: DELETEME
       modifyGraph
           $ G.connect Cluster Has root
@@ -86,6 +85,19 @@ initialiseConfInRG = getFilesystem >>= \case
       mapM_ (mirrorRack fs) re
       return fs
   where
+    genRootFid = do
+        let p = Proxy :: Proxy M0.Root
+            root_0 = M0.fidInit p 1 0
+        -- Root fid must be equal to M0_CONF_ROOT_FID=<7400000000000001:0>
+        -- (see HALON-770).
+        -- Only the first newFidRC call can generate fid with f_key == 0.
+        -- That's why fid of the root object must be generated first.
+        fid <- newFidRC p
+        when (fid /= root_0) $
+            error ("initialiseConfInRG.genRootFid: Expected " ++ show root_0
+                   ++ ", got " ++ show fid)
+        pure fid
+
     mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM RC l ()
     mirrorRack fs (rack, encls) = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
@@ -94,6 +106,7 @@ initialiseConfInRG = getFilesystem >>= \case
           $ G.connect m0r M0.At rack
         >>> G.connect fs M0.IsParentOf m0r
         >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
+
     mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
     mirrorEncl encl = lookupEnclosureM0 encl >>= \case
       Just m0e -> return m0e
