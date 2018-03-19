@@ -1002,7 +1002,7 @@ $(mkDicts
     (''R.Cluster, ''R.Has, ''Root)
   , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
-  , (''R.Cluster, ''R.Has, ''Profile)
+  , (''R.Cluster, ''R.Has, ''Profile) -- XXX DELETEME
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
   , (''Site, ''At, ''R.Site)
@@ -1080,7 +1080,7 @@ $(mkResRel
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
+  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile) -- XXX DELETEME
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
   , (''Site, AtMostOne, ''At, AtMostOne, ''R.Site)
@@ -1089,7 +1089,7 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
-  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Profile)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
