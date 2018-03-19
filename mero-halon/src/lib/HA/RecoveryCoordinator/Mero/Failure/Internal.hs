@@ -79,24 +79,22 @@ data UpdateType m
     -- graph updates in chunks of reasonable size.
 
 -- | Create pool versions for the given pool.
-createPoolVersionsInPool :: M0.Filesystem -- XXX-MULTIPOOLS: get M0.Root instead
-                         -> M0.Pool
+createPoolVersionsInPool :: M0.Pool
                          -> [PoolVersion]
                          -> Bool -- ^ If specified, the pool version
                                  -- is assumed to contain failed devices,
                                  -- rather than working ones.
                          -> G.Graph
                          -> G.Graph
-createPoolVersionsInPool fs pool pvers invert =
-    let mk = createPoolVersion fs pool invert
+createPoolVersionsInPool pool pvers invert =
+    let mk = createPoolVersion pool invert
     in S.execState (mapM_ mk pvers)
 
-createPoolVersion :: M0.Filesystem -- XXX-MULTIPOOLS
-                  -> M0.Pool
+createPoolVersion :: M0.Pool
                   -> Bool
                   -> PoolVersion
                   -> S.State G.Graph ()
-createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
+createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
     rg <- S.get
     let fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
         width = if invert
@@ -113,8 +111,9 @@ createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
   where
     totalDrives rg = length
       [ disk
-      -- XXX-MULTIPOOLS: site; s/fs/root/
-      | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+      -- XXX-MULTIPOOLS: site
+      | let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+      , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
       , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
       , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
       , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
@@ -131,8 +130,9 @@ createPoolVersion fs pool invert (PoolVersion mfid fids failures attrs) = do
         S.modify' $ G.connect pool M0.IsParentOf pver
         -- An element of list `vs` is True iff diskv objects were added to
         -- the corresponding subtree.
+        let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
         vs <- for (filterByFids
-                   $ G.connectedTo fs M0.IsParentOf rg :: [M0.Rack])
+                   $ G.connectedTo root M0.IsParentOf rg :: [M0.Rack])
                   (runRack pver)
         unless (or vs) $ S.put rg
 
@@ -184,7 +184,7 @@ createPoolVersions :: M0.Filesystem -- XXX-MULTIPOOLS
                    -> G.Graph
                    -> G.Graph
 createPoolVersions fs pvers invert rg =
-    foldl' (\g p -> createPoolVersionsInPool fs p pvers invert g) rg pools
+    foldl' (\g p -> createPoolVersionsInPool p pvers invert g) rg pools
   where
     root = fromJust (G.connectedTo Cluster Has rg :: Maybe M0.Root)
     mdpool = M0.Pool (M0.rt_mdpool root)

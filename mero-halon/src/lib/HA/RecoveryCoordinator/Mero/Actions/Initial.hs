@@ -29,6 +29,7 @@ import           HA.RecoveryCoordinator.Mero.Actions.Conf
   , lookupEnclosureM0
   )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (getRoot)
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -82,7 +83,7 @@ initialiseConfInRG = getFilesystem >>= \case
       let re = [ (rack, G.connectedTo rack Has rg)
                | rack <- G.connectedTo Cluster Has rg
                ]
-      mapM_ (mirrorRack fs) re
+      mapM_ mirrorRack re
       return fs
   where
     genRootFid = do
@@ -98,13 +99,14 @@ initialiseConfInRG = getFilesystem >>= \case
                    ++ ", got " ++ show fid)
         pure fid
 
-    mirrorRack :: M0.Filesystem -> (Rack, [Enclosure]) -> PhaseM RC l ()
-    mirrorRack fs (rack, encls) = do
+    mirrorRack :: (Rack, [Enclosure]) -> PhaseM RC l ()
+    mirrorRack (rack, encls) = do
+      Just root <- getRoot
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       m0es <- mapM mirrorEncl encls
       modifyGraph
           $ G.connect m0r M0.At rack
-        >>> G.connect fs M0.IsParentOf m0r
+        >>> G.connect root M0.IsParentOf m0r
         >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
 
     mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
@@ -264,7 +266,7 @@ createMDPoolPVer fs = do
     rg <- getGraph
     let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
         mdpool = M0.Pool (M0.rt_mdpool root)
-        racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+        racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
         encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
                 =<< racks
         ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
@@ -291,7 +293,7 @@ createMDPoolPVer fs = do
                 }
         pver = PoolVersion Nothing fids failures attrs
     Log.rcLog' Log.DEBUG $ "Creating PVer in metadata pool: " ++ show pver
-    modifyGraph $ createPoolVersionsInPool fs mdpool [pver] False
+    modifyGraph $ createPoolVersionsInPool mdpool [pver] False
 
 -- | Create an imeta_pver along with all associated structures. This should
 --   create:
@@ -355,6 +357,6 @@ createIMeta fs = do
       updateGraph = if null cas
         then G.mergeResources head [root {M0.rt_imeta_pver = m0_fid0}, root]
         else G.connect fs M0.IsParentOf pool
-          >>> createPoolVersionsInPool fs pool [pver] False
+          >>> createPoolVersionsInPool pool [pver] False
 
   modifyGraph updateGraph

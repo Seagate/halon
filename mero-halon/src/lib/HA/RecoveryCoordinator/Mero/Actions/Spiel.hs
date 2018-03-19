@@ -709,10 +709,11 @@ txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTrans
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   rg <- getGraph
   let Just M0.Root{..} = G.connectedTo Cluster Has rg
+      Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
       -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
       -- one pool.
       m0_pool_width = length [ disk
-                             | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                             | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
                              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
@@ -726,7 +727,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   Log.rcLog' Log.DEBUG "Added root and profile"
   -- XXX-MULTIPOOLS: sites
   -- Racks, encls, controllers, disks
-  let racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+  let racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
   for_ racks $ \rack -> do
     m0synchronously lift $ addRack t (M0.fid rack) (M0.fid fs)
     let encls = G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]

@@ -267,9 +267,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
                ]
              failedDisks = [ d
-                           | prof :: M0.Profile <- connectedToList Cluster Has rg
-                           , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg
-                           , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                           | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
                            , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                            , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
                            , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg

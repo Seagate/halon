@@ -111,10 +111,8 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
          rg <- getGraph
          let l = [ (sd, G.connectedTo slot Has rg)
-                 | p :: M0.Profile <- maybeToList $ G.connectedTo Cluster Has rg
-                 -- XXX-MULTIPOOLS: remove
-                 , fs :: M0.Filesystem <- G.connectedTo p M0.IsParentOf rg
-                 , rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+                 | let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+                 , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                  , enc :: Enclosure <- maybeToList $ G.connectedTo m0enc M0.At rg
                  , slot :: Slot <- G.connectedTo enc Has rg

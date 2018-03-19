@@ -92,8 +92,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
 
     havePVers <- getFilesystem >>= \case
       Nothing -> return True
-      Just fs -> do
-       let x = mkFailuresSets fs
+      Just _  -> do
+       let x = mkFailuresSets
        case  x of
         [] -> return True -- No errors here, unexpected fast path!!
         [Failures 0 0 0 0 0] -> return True
@@ -149,8 +149,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
                               _ -> False
         ]
 
-    mkFailuresSets :: M0.Filesystem -> [Failures]
-    mkFailuresSets filesystem = map getFailures $ mkPool M0.NoExplicitConfigState
+    mkFailuresSets :: [Failures]
+    mkFailuresSets = map getFailures $ mkPool M0.NoExplicitConfigState
       [ mkRack r_state
          [ mkEnclosure e_state
              [ mkController c_state
@@ -164,7 +164,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
          | enclosure :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
          , let e_state = M0.getState enclosure rg
          ]
-      | rack :: M0.Rack <- G.connectedTo filesystem M0.IsParentOf rg
+      | let Just root = G.connectedTo R.Cluster R.Has rg :: Maybe M0.Root
+      , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
       , let r_state = M0.getState rack rg
       ] where
       mkDisk M0.SDSOnline  = mempty

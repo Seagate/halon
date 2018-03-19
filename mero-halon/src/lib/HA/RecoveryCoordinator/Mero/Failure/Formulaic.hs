@@ -55,7 +55,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       noCtlrs = length
         [ cntr
         -- XXX-MULTIPOOLS: go from root through site
-        | rack :: M0.Rack <- G.connectedTo fs M0.IsParentOf rg
+        | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
         , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
         , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
         ]

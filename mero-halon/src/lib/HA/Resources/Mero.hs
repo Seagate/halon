@@ -983,6 +983,7 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''Root, ''IsParentOf, ''Profile)
+  , (''Root, ''IsParentOf, ''Rack)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
@@ -993,7 +994,6 @@ $(mkDicts
   , (''Profile, ''IsParentOf, ''Filesystem)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''IsParentOf, ''Node)
-  , (''Filesystem, ''IsParentOf, ''Rack)
   , (''Filesystem, ''IsParentOf, ''Pool)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
@@ -1057,6 +1057,7 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
@@ -1067,7 +1068,6 @@ $(mkResRel
     -- Parent/child relationships between conf entities
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
