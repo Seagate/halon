@@ -19,13 +19,17 @@ module Control.Distributed.Commands
   )
   where
 
+-- XXX <<<<<<<
+import Debug.Trace (traceM)
+import GHC.IO.Encoding (textEncodingName)
+-- XXX >>>>>>>
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan (newChan, readChan, writeChan)
 import Control.Distributed.Commands.Internal.Log (isVerbose)
 import Control.Exception (throwIO)
 import Control.Monad (void, forM_)
 import System.Exit (ExitCode(..))
-import System.IO (hGetContents, IOMode(..), withFile, stderr)
+import System.IO (hGetContents, IOMode(..), withFile, stderr, hGetEncoding{-XXX-})
 import System.Process
     ( StdStream(..)
     , proc
@@ -150,6 +154,13 @@ systemThere' muser host cmd = do
         { std_out = CreatePipe
         , std_err = UseHandle outputHandle
         }
+      -- XXX <<<<<<<
+      let traceXXX = traceM . ("XXX [systemThere'] " ++)
+      traceXXX $ maybe "" (++ "@") muser ++ host
+      traceXXX $ "cmd: <" ++ cmd ++ ">"
+      menc <- hGetEncoding sout
+      traceXXX $ "encoding: " ++ maybe "?" textEncodingName menc
+      -- XXX >>>>>>>
       out <- hGetContents sout
       chan <- newChan
       void $ forkIO $ void $ do
@@ -168,6 +179,12 @@ systemLocal cmd = do
         { std_out = CreatePipe
         , std_err = UseHandle dev_null
         }
+      -- XXX <<<<<<<
+      let traceXXX = traceM . ("XXX [systemLocal] " ++)
+      traceXXX $ "cmd: <" ++ cmd ++ ">"
+      menc <- hGetEncoding sout
+      traceXXX $ "encoding: " ++ maybe "?" textEncodingName menc
+      -- XXX >>>>>>>
       out <- hGetContents sout
       chan <- newChan
       void $ forkIO $ void $ do
