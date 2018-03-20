@@ -248,7 +248,6 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       putGraph rg'
     -- Verify that everything is set up correctly
     Just root <- runGet ls' getRoot
-    Just fs <- runGet ls' getFilesystem -- XXX-MULTIPOOLS
     let mdpool = M0.Pool (M0.rt_mdpool root)
     assertMsg "MDPool is stored in RG"
       $ G.memberResource mdpool (lsGraph ls')
@@ -263,7 +262,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     hosts <- runGet ls' $ findHosts ".*"
     let rg = lsGraph ls'
         pvers = G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
-        racks = G.connectedTo fs M0.IsParentOf rg :: [M0.Rack]
+        racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
         encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) encls
         disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) ctrls

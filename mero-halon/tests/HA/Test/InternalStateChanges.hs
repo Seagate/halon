@@ -77,9 +77,9 @@ stateCascade t pg = do
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       rg <- getGraph
       let Just p = listToMaybe $
-              [ proc | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-              , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
+              [ proc
+              | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
+              , (rack :: M0.Rack) <- G.connectedTo root M0.IsParentOf rg
               , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
               , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
               , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
@@ -111,9 +111,8 @@ failvecCascade t pg = do
       rg <- getGraph
       let d0:d1:_ =
               [ disk
-              | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg -- XXX-MULTIPOOLS
-              , (rack :: M0.Rack) <- G.connectedTo fs M0.IsParentOf rg
+              | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
+              , (rack :: M0.Rack) <- G.connectedTo root M0.IsParentOf rg
               , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
               , (controller :: M0.Controller) <- G.connectedTo enclosure M0.IsParentOf rg
               , (disk :: M0.Disk) <- G.connectedTo controller M0.IsParentOf rg
