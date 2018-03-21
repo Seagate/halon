@@ -95,17 +95,17 @@ getM0ServicesRC = M0.getM0Services <$> getGraph
 getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
     rg <- getGraph
-    let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+    let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
         pools =
           [ pool
-          | Just disk <- [G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk]
-          , diskv <- G.connectedTo disk M0.IsRealOf rg :: [M0.DiskV]
-          , Just ctrlv <- [G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV]
-          , Just enclv <- [G.connectedFrom M0.IsParentOf ctrlv rg :: Maybe M0.EnclosureV]
-          , Just rackv <- [G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV]
+          | Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+          , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
+          , Just (ctrlv :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf diskv rg]
+          , Just (enclv :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ctrlv rg]
+          , Just (rackv :: M0.RackV) <- [G.connectedFrom M0.IsParentOf enclv rg]
           -- XXX-MULTIPOOLS: SiteV
-          , Just pver <- [G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
-          , Just pool <- [G.connectedFrom M0.IsParentOf pver rg :: Maybe M0.Pool]
+          , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf rackv rg]
+          , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
           , M0.fid pool /= M0.rt_mdpool root
           ]
     case pools of

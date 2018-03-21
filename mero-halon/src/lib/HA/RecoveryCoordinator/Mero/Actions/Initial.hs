@@ -314,15 +314,15 @@ createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getGraph
-  let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+  let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
       cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
-            | node <- G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
-            , proc <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
-            , svc <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
+            | node :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
+            , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+            , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
             , M0.s_type svc == CST_CAS
-            , Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
-            , Just encl <- [G.connectedFrom M0.IsParentOf ctrl rg :: Maybe M0.Enclosure]
-            , Just rack <- [G.connectedFrom M0.IsParentOf encl rg :: Maybe M0.Rack]
+            , Just (ctrl :: M0.Controller) <- [G.connectedTo node M0.IsOnHardware rg]
+            , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsParentOf ctrl rg]
+            , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsParentOf encl rg]
             ]
       attrs = PDClustAttr {
                 _pa_N = 1 -- For CAS service `N` must always be equal to `1` as

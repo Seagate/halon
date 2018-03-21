@@ -26,11 +26,11 @@ import Network.CEP
 getAllSDev :: G.Graph -> [M0.SDev]
 getAllSDev rg =
   [ sdev
-  | let Just root = G.connectedTo Res.Cluster Res.Has rg :: Maybe M0.Root
-  , (rack :: M0.Rack) <- G.connectedTo root M0.IsParentOf rg
-  , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
-  , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
-  , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
+  | let Just (root :: M0.Root) = G.connectedTo Res.Cluster Res.Has rg
+  , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+  , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+  , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+  , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
   , Just (sdev :: M0.SDev) <- [G.connectedFrom M0.IsOnHardware disk rg]
   ]
 
@@ -39,7 +39,7 @@ lookupStorageDevice :: M0.SDev -> PhaseM RC l (Maybe StorageDevice)
 lookupStorageDevice sdev = do
     rg <- getGraph
     return $ do
-      dev  <- G.connectedTo sdev M0.IsOnHardware rg
+      dev <- G.connectedTo sdev M0.IsOnHardware rg
       G.connectedTo (dev :: M0.Disk) M0.At rg
 
 -- | Return the Mero SDev associated with the given storage device

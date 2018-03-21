@@ -120,7 +120,7 @@ failvecCascade t pg = do
           disks = [d0, d1]
       _ <- applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
       rg' <- getGraph
-      let Just root = G.connectedTo Cluster Has rg' :: Maybe M0.Root
+      let Just (root :: M0.Root) = G.connectedTo Cluster Has rg'
           pools =
               [ pool
               | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']

@@ -251,18 +251,18 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     mk :: Maybe (Int, Int)
     mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
              connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
-             Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+             Just (root :: M0.Root) = G.connectedTo Cluster Has rg
              -- XXX-MULTIPOOLS: Shouldn't we distinguish pvers of different pools?
              pvers = nub
                [ pver
-               | disk  <- connectedToList sdev M0.IsOnHardware  rg :: [M0.Disk]
-               , cntrl <- connectedFromList M0.IsParentOf disk  rg :: [M0.Controller]
-               , encl  <- connectedFromList M0.IsParentOf cntrl rg :: [M0.Enclosure]
-               , rack  <- connectedFromList M0.IsParentOf encl  rg :: [M0.Rack]
-               , rackv <- G.connectedTo rack M0.IsRealOf        rg :: [M0.RackV]
+               | disk :: M0.Disk <- connectedToList sdev M0.IsOnHardware rg
+               , ctrl :: M0.Controller <- connectedFromList M0.IsParentOf disk rg
+               , encl :: M0.Enclosure <- connectedFromList M0.IsParentOf ctrl rg
+               , rack :: M0.Rack <- connectedFromList M0.IsParentOf encl rg
+               , rackv :: M0.RackV <- G.connectedTo rack M0.IsRealOf rg
                -- XXX-MULTIPOOLS: Site, SiteV
-               , pver  <- connectedFromList M0.IsParentOf rackv rg :: [M0.PVer]
-               , pool  <- connectedFromList M0.IsParentOf pver  rg :: [M0.Pool]
+               , pver :: M0.PVer <- connectedFromList M0.IsParentOf rackv rg
+               , pool :: M0.Pool <- connectedFromList M0.IsParentOf pver rg
                , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
                ]
              failedDisks = [ d

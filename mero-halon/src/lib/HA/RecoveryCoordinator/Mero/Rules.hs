@@ -119,11 +119,11 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle _ finish) -> do
       let m0d = lookupM0d rg
           nodes = findRunningServiceOn
             [ node
-            | host <- G.connectedTo Cluster Has rg :: [Cas.Host]
-            , node <- G.connectedTo host Runs rg :: [R.Node]
+            | host :: Cas.Host <- G.connectedTo Cluster Has rg
+            , node :: R.Node <- G.connectedTo host Runs rg
             ]
             m0d rg
-          Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+          Just (root :: M0.Root) = G.connectedTo Cluster Has rg
       case listToMaybe nodes of
         Just node@(R.Node nid) ->
           if G.isConnected root Has M0.DIXInitialised rg
@@ -149,7 +149,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle _ finish) -> do
           Right () -> do
             Log.rcLog' Log.DEBUG "DIX subsystem initialised successfully."
             rg <- getGraph
-            let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+            let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
             modifyGraph $ G.connect root Has M0.DIXInitialised
             modify Local $ rlens fldRep .~
               Field (Just DixInitSuccess)
