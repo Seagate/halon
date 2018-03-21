@@ -235,12 +235,11 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
       _ -> Nothing
 
     failingState :: M0.SDev -> M0.SDevState -> Bool
-    failingState d s = case M0.toConfObjState d s of
-      M0.M0_NC_FAILED -> True
-      M0.M0_NC_REPAIR -> True
-      M0.M0_NC_REPAIRED -> True
-      M0.M0_NC_REBALANCE -> True
-      _ -> False
+    failingState d s = M0.toConfObjState d s `elem` [ M0.M0_NC_FAILED
+                                                    , M0.M0_NC_REPAIR
+                                                    , M0.M0_NC_REPAIRED
+                                                    , M0.M0_NC_REBALANCE
+                                                    ]
 
     -- It's only a new failure if we're not in a failed state already.
     -- For example we may be moving from REPAIRED to REBALANCING which
