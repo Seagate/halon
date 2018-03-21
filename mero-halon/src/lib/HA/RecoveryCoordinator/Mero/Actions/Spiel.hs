@@ -708,8 +708,7 @@ modifyConfUpdateVersion f = do
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   rg <- getGraph
-  let Just M0.Root{..} = G.connectedTo Cluster Has rg
-      Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+  let Just root@M0.Root{..} = G.connectedTo Cluster Has rg
       -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
       -- one pool.
       m0_pool_width = length [ disk
