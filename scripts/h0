@@ -61,21 +61,54 @@ local_install_root() {
     cmd_stack path --local-install-root
 }
 
-_bootstrap() {
-    local BIN=$(local_install_root)/bin
+cmd_install() {
+    sudo $H0_SRC_DIR/scripts/install-halon-services -l
+    sudo $M0_SRC_DIR/scripts/install-mero-service -l
+}
 
-    cd "$M0_SRC_DIR"
-    HALOND=$BIN/halond HALONCTL=$BIN/halonctl \
-        HALON_SOURCES=${HALON_SOURCES:-$H0_SRC_DIR} \
-        st/bootstrap.sh -c "$1"
+cmd_uninstall() {
+    case ${1:-pass} in
+        -c|--clean) sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
+                    sudo systemctl start halon-cleanup
+                    sudo systemctl start mero-cleanup
+                    ;;
+        pass)       ;;
+        *)          echo "$PROG: WARN: uninstall: no such option '$1'" >&2
+                    ;;
+    esac
+
+    sudo $M0_SRC_DIR/scripts/install-mero-service -u
+    sudo $H0_SRC_DIR/scripts/install-halon-services -u
 }
 
 cmd_start() {
-    _bootstrap cluster_start
+    cmd_uninstall
+    cmd_install
+    sudo systemctl start halon-cleanup
+    sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
+    sudo $M0_SRC_DIR/utils/m0setup --halon-facts
+    sudo systemctl start halond
+    halonctl mero bootstrap --verbose
+    # display bootstrap progress, usually it completes under a minute
+    { sleep 70; pkill -x watch; } &
+    watch halonctl mero status
+    # show final status (`watch` clears it's output after exit)
+    halonctl mero status
 }
 
 cmd_stop() {
-    _bootstrap cluster_stop
+    halonctl mero stop
+    halonctl mero status
+    sudo systemctl stop halond
+    sudo systemctl stop mero-kernel
+
+    case ${1:-pass} in
+        -u|--uninstall) cmd_uninstall --clean
+                        ;;
+        pass)           ;;
+        *)              echo "$PROG: WARN: stop: no such option '$1'" >&2
+                        ;;
+    esac
 }
 
 check_stack_dir() {
@@ -122,14 +155,19 @@ Commands:
     make [OPTION]...     Build Halon.
                          (Use \`$PROG rebuild' if Mero was updated.)
     rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
+    clean [OPTION]...    Clean the local packages.
     test [OPTION]...     Run unit tests.
     start                Start cluster.
-    stop                 Stop cluster.
+    stop [-u]            Stop cluster. With \`-u' option perform Mero/Halon
+                         meta-data and configs cleanup, then uninstall services.
+    install              Install Mero/Halon services and binaries system-wide.
+    uninstall [-c]       Uninstall Mero/Halon services and binaries system-wide.
+                         With \`-c' option perform Mero/Halon meta-data and
+                         configs cleanup before uninstalling.
     path                 Print out handy path information.
     env                  Print shell commands that, if evaluated, simplify
                          execution of Halon binaries located in the sources
                          directory.
-    clean [OPTION]...    Clean the local packages.
     stack [OPTION]...    Run \`stack' in Halon sources directory.
     help                 Show this help and exit.
 
@@ -146,7 +184,8 @@ CMD=
 OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|start|stop|path|env|clean|stack|help)
+        setup|make|rebuild|test|path|env|clean|stack|help) ;& # fall through
+        install|uninstall|start|stop)
             [[ -z $CMD ]] || _exec $CMD $OPTS
             CMD=cmd_${1//-/_}
             OPTS=;;
