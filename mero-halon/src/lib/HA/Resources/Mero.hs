@@ -982,8 +982,6 @@ $(mkDicts
     (''R.Cluster, ''R.Has, ''Root)
   , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
-  , (''Root, ''IsParentOf, ''Profile)
-  , (''Root, ''IsParentOf, ''Rack)
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
@@ -991,6 +989,8 @@ $(mkDicts
   , (''Enclosure, ''At, ''R.Enclosure)
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
+  , (''Root, ''IsParentOf, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
+  , (''Root, ''IsParentOf, ''Profile)
   , (''Profile, ''IsParentOf, ''Filesystem)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''IsParentOf, ''Node)
@@ -1056,8 +1056,6 @@ $(mkResRel
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
-  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
@@ -1066,6 +1064,8 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
+  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
