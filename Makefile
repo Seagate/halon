@@ -5,7 +5,7 @@ BUILD_NUMBER = 000
 VERSION = $(shell git describe --long --always | tr '-' '_')
 MOCK_CONFIG = default
 SRC_RPM_DIR := $(shell mktemp -du)
-RPMBUILD_DIR = rpmbuild
+RPMBUILD_DIR = $(HOME)/rpmbuild
 
 .PHONY: rpm
 rpm:
