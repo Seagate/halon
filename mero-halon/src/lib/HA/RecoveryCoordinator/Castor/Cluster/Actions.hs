@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Actions
 
 import           Control.Distributed.Process (Process, usend)
 import           Data.List (nub)
-import           Data.Maybe (fromMaybe, listToMaybe)
+import           Data.Maybe (fromMaybe, isJust, listToMaybe)
 import           Data.Monoid (All(..), Any(..))
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -86,23 +86,19 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
             )
         pools = Pool.getNonMD rg
     haveOngoingSNS <- fmap (getAll . mconcat) .
-      for pools $ \pool -> getPoolRepairInformation pool >>= \case
-        Nothing -> return $ All False
-        Just _  -> return $ All True
+      for pools $ \pool -> getPoolRepairInformation pool >>= return . All . isJust
 
     havePVers <- getFilesystem >>= \case
       Nothing -> return True
       Just _  -> do
-       let x = mkFailuresSets
-       case  x of
+       case mkFailuresSets of
         [] -> return True -- No errors here, unexpected fast path!!
         [Failures 0 0 0 0 0] -> return True
         ss -> fmap (getAny . mconcat) . for pools $ \pool -> do -- XXX-MULTIPOOLS: Do we need to check for sites here?
-                let rs = G.connectedTo pool M0.IsParentOf rg
                 return $ mconcat [Any result
-                                 | r <- rs
-                                 , let result = case r of
-                                         (M0.PVer _ M0.PVerActual{}) -> checkActual r
+                                 | pver <- G.connectedTo pool M0.IsParentOf rg
+                                 , let result = case pver of
+                                         (M0.PVer _ M0.PVerActual{}) -> checkActual pver
                                          (M0.PVer _ M0.PVerFormulaic{v_allowance=z}) ->
                                             any ((z ==) . failuresToArray) ss
                                  ]
@@ -114,86 +110,101 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
       result <- action
       modifyGraph $ const rg'
       return result
+
     checkActual :: M0.PVer -> Bool
-    checkActual m0pver = getAll $ mconcat
-        [ mconcat $ (All rack_status):
-           [ mconcat $ (All enc_status):
-              [ mconcat $ (All controller_status):
-                  [ All disk_status
-                  | m0diskV :: M0.DiskV <- G.connectedTo m0controllerV M0.IsParentOf rg
-                  , Just (m0disk :: M0.Disk) <- [G.connectedFrom M0.IsRealOf m0diskV rg]
-                  , let disk_status = case M0.getState m0disk rg of
-                          M0.SDSOnline -> True
-                          M0.SDSUnknown -> True
-                          _ -> False
-                  ]
-              | m0controllerV :: M0.ControllerV <- G.connectedTo m0enclosureV M0.IsParentOf rg
-              , Just (m0controller :: M0.Controller)
-                  <- [G.connectedFrom M0.IsRealOf m0controllerV rg]
-              , let controller_status = case M0.getState m0controller rg of
-                                          M0.CSTransient -> False
-                                          _ -> True
-              ]
-           | m0enclosureV :: M0.EnclosureV <- G.connectedTo m0rackV M0.IsParentOf rg
-           , Just (m0enclosure :: M0.Enclosure)
-               <- [G.connectedFrom M0.IsRealOf m0enclosureV rg]
-           , let enc_status = case M0.getState m0enclosure rg of
-                                M0.M0_NC_ONLINE -> True
-                                _ -> False
-           ]
-        | m0rackV :: M0.RackV <- G.connectedTo m0pver M0.IsParentOf rg
-        , Just (m0rack :: M0.Rack)
-             <- [G.connectedFrom M0.IsRealOf m0rackV rg]
-        , let rack_status = case M0.getState m0rack rg of
-                              M0.M0_NC_ONLINE -> True
-                              _ -> False
+    checkActual pver = getAll $ mconcat
+        [ mconcat $ All (deviceIsOK rack rg) :
+            [ mconcat $ All (deviceIsOK encl rg) :
+                [ mconcat $ All (ctrlIsOK ctrl rg) :
+                    [ All (diskIsOK disk rg)
+                    | diskv :: M0.DiskV <- G.connectedTo ctrlv M0.IsParentOf rg
+                    , Just (disk :: M0.Disk) <- [G.connectedFrom M0.IsRealOf diskv rg]
+                    ]
+                | ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+                , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.IsRealOf ctrlv rg]
+                ]
+            | enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+            , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsRealOf enclv rg]
+            ]
+        | rackv :: M0.RackV <- G.connectedTo pver M0.IsParentOf rg
+        , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsRealOf rackv rg]
         ]
 
     mkFailuresSets :: [Failures]
-    mkFailuresSets = map getFailures $ mkPool M0.NoExplicitConfigState
-      [ mkRack r_state
-         [ mkEnclosure e_state
-             [ mkController c_state
-                [ mkDisk d_state
-                | disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
-                , let d_state = M0.getState disk rg
+    mkFailuresSets = map getFailures $ mkPool
+      [ mkRack rack
+         [ mkEncl encl
+             [ mkCtrl ctrl
+                [ mkDisk disk
+                | disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
                 ]
-             | cntr :: M0.Controller <- G.connectedTo enclosure M0.IsParentOf rg
-             , let c_state = M0.getState cntr rg
+             | ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
              ]
-         | enclosure :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-         , let e_state = M0.getState enclosure rg
+         | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
          ]
-      | let Just root = G.connectedTo R.Cluster R.Has rg :: Maybe M0.Root
+      | let Just (root :: M0.Root) = G.connectedTo R.Cluster R.Has rg
       , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
-      , let r_state = M0.getState rack rg
-      ] where
-      mkDisk M0.SDSOnline  = mempty
-      mkDisk M0.SDSUnknown = mempty
-      mkDisk _             = DF (Failures 0 0 0 0 1)
-      mkController M0.CSTransient  _  = [DF (Failures 0 0 0 1 0)]
-      mkController _               xs = case mconcat xs of
-        DF (Failures 0 0 0 0 0) -> [mempty]
-        y -> [DF (Failures 0 0 0 1 0), y]
-      mkEnclosure M0.M0_NC_ONLINE xs = nub $ concat
-         [ case mconcat rs of
-             DF (Failures 0 0 0 0 0) -> [mempty]
-             y -> [DF (Failures 0 0 1 0 0), y]
-         | rs <- sequence xs
-         ]
-      mkEnclosure _ _ = [DF (Failures 0 0 1 0 0)]
-      mkRack M0.M0_NC_ONLINE xs = nub $ concat
-         [ case mconcat (rs::[DeviceFailure]) of
-             DF (Failures 0 0 0 0 0) -> [mempty]
-             y -> [DF (Failures 0 1 0 0 0), y]
-         | rs <- sequence xs
-         ]
-      mkRack _ _ = [DF (Failures 0 1 0 0 0)]
-      mkPool M0.NoExplicitConfigState xs = mconcat <$> sequence xs
+      ]
 
-newtype DeviceFailure = DF { getFailures :: Failures } deriving (Eq)
+    mkPool :: [[DeviceFailure]] -> [DeviceFailure]
+    mkPool = (mconcat <$>) . sequenceA
+
+    mkRack = mkLvl PVLRacks
+
+    mkEncl = mkLvl PVLEncls
+
+    mkCtrl :: M0.Controller -> [DeviceFailure] -> [DeviceFailure]
+    mkCtrl ctrl xs | ctrlIsOK ctrl rg = comb df xs
+                   | otherwise        = [df]
+      where
+        df = dfLvl PVLCtrls
+
+    mkDisk :: M0.Disk -> DeviceFailure
+    mkDisk disk | diskIsOK disk rg = mempty
+                | otherwise        = dfLvl PVLDisks
+
+    comb :: (Eq a, Monoid a) => a -> [a] -> [a]
+    comb x xs = let y = mconcat xs
+                in if y == mempty then [mempty] else [x, y]
+
+    mkLvl :: M0.HasConfObjectState a => PVerLvl -> a -> [[DeviceFailure]]
+          -> [DeviceFailure]
+    mkLvl lvl a xs
+      | notElem lvl [PVLRacks, PVLEncls] = error "mkLvl: Invalid argument"
+      | deviceIsOK a rg = nub $ concat [ comb (dfLvl lvl) rs
+                                       | rs <- sequenceA xs ]
+      | otherwise       = [dfLvl lvl]
+
+diskIsOK :: M0.Disk -> G.Graph -> Bool
+diskIsOK disk rg = M0.getState disk rg `elem` [M0.SDSOnline, M0.SDSUnknown]
+
+ctrlIsOK :: M0.Controller -> G.Graph -> Bool
+ctrlIsOK ctrl rg = M0.getState ctrl rg /= M0.CSTransient
+
+-- XXX There should be a generic way to implement 'deviceIsOK', which would
+-- do the right thing in 'a ~ M0.Disk' and 'a ~ M0.Controller' cases.
+deviceIsOK :: M0.HasConfObjectState a => a -> G.Graph -> Bool
+deviceIsOK x rg = M0.getConfObjState x rg == M0.M0_NC_ONLINE
+
+newtype DeviceFailure = DF { getFailures :: Failures }
+  deriving Eq
 
 instance Monoid DeviceFailure where
   mempty = DF (Failures 0 0 0 0 0)
   DF (Failures a0 a1 a2 a3 a4) `mappend` DF (Failures b0 b1 b2 b3 b4) =
     DF (Failures (a0+b0) (a1+b1) (a2+b2) (a3+b3) (a4+b4))
+
+data PVerLvl =
+    PVLPools -- XXX-MULTIPOOLS: s/Pools/Sites/
+  | PVLRacks
+  | PVLEncls
+  | PVLCtrls
+  | PVLDisks
+  deriving Eq
+
+dfLvl :: PVerLvl -> DeviceFailure
+dfLvl PVLPools = error $ "dfLvl: Invalid argument"
+dfLvl PVLRacks = DF $ (getFailures mempty){ f_rack = 1 }
+dfLvl PVLEncls = DF $ (getFailures mempty){ f_encl = 1 }
+dfLvl PVLCtrls = DF $ (getFailures mempty){ f_ctrl = 1 }
+dfLvl PVLDisks = DF $ (getFailures mempty){ f_disk = 1 }

@@ -196,7 +196,6 @@ class ( G.Resource a
     -- | Dictionary providing evidence of this class
     hasStateDict :: Static (Dict (HasConfObjectState a))
 
-
     setState :: a -> StateCarrier a -> G.Graph -> G.Graph
     default setState :: G.Relation Is a ConfObjectState
                      => a -> ConfObjectState -> G.Graph -> G.Graph
