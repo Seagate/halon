@@ -168,6 +168,7 @@ cmd_clean()
     local hosts=$1
 
     _pdsh $hosts sudo systemctl start halon-cleanup
+    _pdsh $hosts sudo systemctl start mero-cleanup
     _pdsh $hosts sudo rm -rf /var/mero/
 }
 
