@@ -11,7 +11,8 @@
 module HA.RecoveryCoordinator.Mero.Actions.Conf
   ( -- ** Get all objects of type
     getRoot
-  , getProfile
+  , getProfiles
+  , theProfile
   , getFilesystem
   , getSDevPool
   , getM0ServicesRC
@@ -64,26 +65,32 @@ lookupConfObjByFid f = M0.lookupConfObjByFid f <$> getGraph
 getRoot :: PhaseM RC l (Maybe M0.Root)
 getRoot = G.connectedTo Cluster Has <$> getGraph
 
--- | Fetch the Mero Profile in the system. Currently, we
---   only support a single profile, though in future there
---   might be multiple profiles and this function will need
---   to change.
-getProfile :: PhaseM RC l (Maybe M0.Profile)
--- XXX-MULTIPOOLS: There is a good chance that this function is not needed
--- any more.
-getProfile = G.connectedTo Cluster Has <$> getGraph
+-- | Fetch Mero 'Profile's in the system.
+getProfiles :: PhaseM RC l [M0.Profile]
+getProfiles = do
+    rg <- getGraph
+    pure [ prof
+         | let root = M0.getM0Root rg
+         , prof <- G.connectedTo root M0.IsParentOf rg
+         ]
+
+-- XXX-MULTIPOOLS: DELETEME
+theProfile :: PhaseM RC l (Maybe M0.Profile)
+theProfile = listToMaybe <$> getProfiles
 
 -- | Fetch the Mero filesystem in the system. Currently, we
 --   only support a single filesystem, though in future there
 --   might be multiple filesystems and this function will need
 --   to change.
---   XXX-MULTIPOOLS: Change to getRoot
+--
+-- XXX-MULTIPOOLS: DELETEME
 getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
-getFilesystem = getGraph >>= \rg ->
-  return . listToMaybe
-    $ [ fs | Just p <- [G.connectedTo Cluster Has rg :: Maybe M0.Profile]
-           , fs <- G.connectedTo p M0.IsParentOf rg :: [M0.Filesystem]
-      ]
+getFilesystem = do
+    rg <- getGraph
+    pure $ listToMaybe [ fs
+                       | let root = M0.getM0Root rg
+                       , fs <- G.connectedTo root M0.IsParentOf rg
+                       ]
 
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM RC l [M0.Service]
@@ -110,7 +117,7 @@ getSDevPool sdev = do
     case pools of
       -- TODO throw a better exception
       [] -> error "getSDevPool: No pool found for sdev"
-      x:[] -> return x
+      [x] -> return x
       x:_ -> do
         -- XXX-MULTIPOOLS: This shouldn't be an error.
         Log.rcLog' Log.ERROR ("Multiple pools found for sdev!" :: String)
@@ -127,9 +134,9 @@ lookupM0Enclosure encl = G.connectedFrom M0.At encl <$> getGraph
 lookupHostHAAddress :: Host -> PhaseM RC l (Maybe Endpoint)
 lookupHostHAAddress host = getGraph >>= \rg -> return $ listToMaybe
   [ ep
-  | node <- G.connectedTo host Runs rg :: [M0.Node]
-  , ps <- G.connectedTo node M0.IsParentOf rg :: [M0.Process]
-  , svc <- G.connectedTo ps M0.IsParentOf rg :: [M0.Service]
+  | node :: M0.Node <- G.connectedTo host Runs rg
+  , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+  , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
   , M0.s_type svc == CST_HA
   , ep <- M0.s_endpoints svc
   ]

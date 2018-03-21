@@ -37,6 +37,7 @@ import           GHC.Generics
 import           HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (theProfile)
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
 import           HA.RecoveryCoordinator.Mero.Events
@@ -45,7 +46,6 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources as R (Node)
 import           HA.Resources.Castor
   ( StorageDevice
@@ -54,6 +54,7 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+
 import           Mero.ConfC
 import qualified Mero.Spiel as Spiel
 
@@ -114,26 +115,23 @@ mkAttachDisk getter onFailure onSuccess = do
       Nothing -> onFailure sdev "Drive accidentaly lost."
       Just sdev0
         | sdev0 == sdev ->
-          case eresult of
-            Left e -> onFailure sdev e
-            Right _ -> onSuccess sdev
+              either (onFailure sdev) (const $ onSuccess sdev) eresult
         | otherwise -> continue ph
 
   return (ph, \sdev -> do
     Log.actLog "Attaching disk" [ ("disk.fid", show $ M0.fid sdev) ]
     mdisk <- lookupSDevDisk sdev
-
     unlift <- mkUnliftProcess
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
-    mp <- G.connectedTo Cluster Has <$> getGraph
+    mprof <- theProfile
     case mdisk of
       Just d ->
         void $ withSpielIO $
-          withRConfIO mp $ try (Spiel.deviceAttach (M0.fid d)) >>= unlift . next
+          withRConfIO mprof $ try (Spiel.deviceAttach (M0.fid d)) >>= unlift . next
       Nothing -> do
-        Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
+        Log.rcLog' Log.WARN $ "Disk not found for " ++ M0.showFid sdev ++ ", ignoring."
         onFailure sdev "no such disk")
 
 -- | Create all code that allow to ask mero (IO services) to detach certain disk.
@@ -155,6 +153,9 @@ mkAttachDisk getter onFailure onSuccess = do
 -- directly $ do
 --   attachDisk m0sdev
 -- @
+--
+-- XXX REFACTORME: Code duplication! 'mkAttachDisk' and 'mkDetachDisk'
+-- are quite similar.
 mkDetachDisk ::
       (l -> PhaseM RC l (Maybe M0.SDev))
    -> (M0.SDev -> String -> PhaseM RC l ())
@@ -169,26 +170,23 @@ mkDetachDisk getter onFailure onSuccess = do
       Nothing -> onFailure sdev "Drive accidentaly lost."
       Just sdev0
         | sdev0 == sdev ->
-           case eresult of
-             Left e -> onFailure sdev e
-             Right _ -> onSuccess sdev
+              either (onFailure sdev) (const $ onSuccess sdev) eresult
         | otherwise -> continue ph
 
   return (ph, \sdev -> do
     Log.actLog "Detaching disk" [ ("disk.fid", show $ M0.fid sdev) ]
     mdisk <- lookupSDevDisk sdev
     unlift <- mkUnliftProcess
-
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceDetached sdev . handleSNSReply
-    mp <- G.connectedTo Cluster Has <$> getGraph
+    mprof <- theProfile
     case mdisk of
       Just d ->
         void $ withSpielIO $
-          withRConfIO mp $ try (Spiel.deviceDetach (M0.fid d)) >>= unlift . next
+          withRConfIO mprof $ try (Spiel.deviceDetach (M0.fid d)) >>= unlift . next
       Nothing -> do
-        Log.rcLog' Log.WARN $ "Disk for found for " ++ M0.showFid sdev ++ " ignoring."
+        Log.rcLog' Log.WARN $ "Disk not found for " ++ M0.showFid sdev ++ ", ignoring."
         onFailure sdev "no such disk")
 
 -- | Mark that a device has been removed from the RAID array of which it

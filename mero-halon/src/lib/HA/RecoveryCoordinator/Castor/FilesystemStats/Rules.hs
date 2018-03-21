@@ -15,7 +15,11 @@ module HA.RecoveryCoordinator.Castor.FilesystemStats.Rules
 import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import           HA.RecoveryCoordinator.Castor.FilesystemStats.Events
   (StatsUpdated(..))
-import           HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem, getRoot)
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
+  ( getFilesystem
+  , getRoot
+  , theProfile
+  )
 import           HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( withSpielIO
@@ -29,7 +33,7 @@ import           HA.RecoveryCoordinator.RC.Actions
   )
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified Mero.Spiel as Spiel
 import           Network.CEP
@@ -80,7 +84,7 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
         Log.rcLog' Log.DEBUG $ "Cluster is on runlevel " ++ show rl
       Just (fs, _) -> do
         -- XXX-MULTIPOOLS: We should support multiple profiles here.
-        mprof <- G.connectedTo Cluster Has <$> getGraph
+        mprof <- theProfile
         void . withSpielIO . withRConfIO mprof
           $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
         continue stats_fetched

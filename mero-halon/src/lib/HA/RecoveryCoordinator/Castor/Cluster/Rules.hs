@@ -183,12 +183,12 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                        return (process, ReportClusterProcess ptyp st services')
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
       Just root <- getRoot
-      prof <- getProfile
-      fs <- getFilesystem -- XXX-MULTIPOOLS
+      mprof <- theProfile
+      mfs <- getFilesystem -- XXX-MULTIPOOLS
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus = getClusterStatus rg
         , csrSNS    = sort repairs
-        , csrInfo   = liftA2 (,) prof fs
+        , csrInfo   = liftA2 (,) mprof mfs
         , csrStats  = G.connectedTo root Has rg
         , csrHosts  = hosts
         }

@@ -179,9 +179,11 @@ withSpielIO = withResourceGraphCache . try . withM0RC . flip m0asynchronously_
 -- This call is required for running spiel management commands.
 --
 -- Internal action will be running in mero thread allocated to RC service.
+--
+-- XXX-MULTIPOOLS: What about multiple profiles?
 withRConfIO :: Maybe M0.Profile -> IO a -> IO a
-withRConfIO mp action = do
-  Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
+withRConfIO mprof action = do
+  Mero.Spiel.setCmdProfile (fmap (show . M0.fid) mprof)
   Mero.Spiel.rconfStart
   action `finally` Mero.Spiel.rconfStop
 
@@ -212,9 +214,9 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
   next <- liftProcess $ do
     rc <- DP.getSelfPid
     return $ DP.usend rc . operation_reply pool
-  mp <- G.connectedTo Cluster Has <$> getGraph
+  mprof <- theProfile -- XXX-MULTIPOOLS: What about other profiles?
   er <- withSpielIO $
-          withRConfIO mp $ try (operation_action pool) >>= unlift . next
+          withRConfIO mprof $ try (operation_action pool) >>= unlift . next
   case er of
     Right () -> return ()
     Left e -> liftProcess $ next $ Left e
@@ -682,7 +684,7 @@ data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
 loadConfData :: PhaseM RC l (Maybe TxConfData)
 loadConfData = liftA3 TxConfData
             <$> getM0Globals
-            <*> getProfile    -- XXX-MULTIPOOLS: no "global profile", please
+            <*> theProfile    -- XXX-MULTIPOOLS: no "global profile", please
             <*> getFilesystem -- XXX-MULTIPOOLS: delete
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
@@ -976,10 +978,10 @@ getTimeUntilHourlyQuery pool = getPoolRepairInformation pool >>= \case
     return $ M0.timeSpecToSeconds untilHourPasses
 
 -- | Set profile in current thread.
+--
+-- XXX-MULTIPOOLS: How do we know which profile to use?
 setProfileRC :: LiftRC -> PhaseM RC l ()
 setProfileRC lift = do
-  rg <- getGraph
-  -- XXX-MULTIPOOLS: it should be [], not Maybe
-  let mp = G.connectedTo Cluster Has rg :: Maybe M0.Profile
-  Log.rcLog' Log.DEBUG $ "set command profile to " ++ show mp
-  m0synchronously lift $ Mero.Spiel.setCmdProfile (fmap (\(M0.Profile p) -> show p) mp)
+  mprof <- theProfile
+  Log.rcLog' Log.DEBUG $ "set command profile to " ++ show mprof
+  m0synchronously lift . Mero.Spiel.setCmdProfile $ fmap (show . M0.fid) mprof

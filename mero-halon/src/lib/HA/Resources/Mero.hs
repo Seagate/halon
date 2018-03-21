@@ -1009,7 +1009,6 @@ $(mkDicts
     (''R.Cluster, ''R.Has, ''Root)
   , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
-  , (''R.Cluster, ''R.Has, ''Profile) -- XXX DELETEME
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
   , (''Site, ''At, ''R.Site)
@@ -1089,7 +1088,6 @@ $(mkResRel
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
-  , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile) -- XXX DELETEME
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
   , (''Site, AtMostOne, ''At, AtMostOne, ''R.Site)
@@ -1166,12 +1164,16 @@ getM0Processes rg =
          , proc <- G.connectedTo node IsParentOf rg
   ]
 
--- | Get all 'M0.Service' running on the 'Cluster'.
+-- | Get all 'Service's running on the 'Cluster'.
 getM0Services :: G.Graph -> [Service]
 getM0Services rg =
   [ svc | proc <- getM0Processes rg
         , svc <- G.connectedTo proc IsParentOf rg
   ]
+
+-- | Get all 'Profile's running on the 'Cluster'.
+getM0Profiles :: G.Graph -> [Profile]
+getM0Profiles rg = G.connectedTo (getM0Root rg) IsParentOf rg
 
 -- | Lookup a configuration object in the resource graph.
 lookupConfObjByFid :: forall a. (G.Resource a, ConfObj a)

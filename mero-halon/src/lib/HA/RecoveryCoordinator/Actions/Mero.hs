@@ -10,7 +10,7 @@
 --
 -- Mero actions.
 module HA.RecoveryCoordinator.Actions.Mero
-  ( module Conf
+  ( module HA.RecoveryCoordinator.Mero.Actions.Conf
   , module HA.RecoveryCoordinator.Mero.Actions.Core
   , module HA.RecoveryCoordinator.Mero.Actions.Initial
   , module HA.RecoveryCoordinator.Mero.Actions.Spiel
@@ -43,7 +43,7 @@ import           HA.Encode
 import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
-import           HA.RecoveryCoordinator.Mero.Actions.Conf as Conf
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Initial
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
@@ -76,9 +76,9 @@ m0t1fsBootLevel = M0.BootLevel 2
 -- | If the 'Note' is about an 'SDev' or 'Disk', extract the 'SDev'
 -- and its 'M0.ConfObjectState'.
 noteToSDev :: Note -> PhaseM RC l (Maybe (M0.ConfObjectState, M0.SDev))
-noteToSDev (Note mfid stType)  = Conf.lookupConfObjByFid mfid >>= \case
+noteToSDev (Note mfid stType) = lookupConfObjByFid mfid >>= \case
   Just sdev -> return $ Just (stType, sdev)
-  Nothing -> Conf.lookupConfObjByFid mfid >>= \case
+  Nothing -> lookupConfObjByFid mfid >>= \case
     Just disk -> fmap (stType,) <$> Drive.lookupDiskSDev disk
     Nothing -> return Nothing
 
@@ -316,45 +316,44 @@ configureMeroProcess sender p runType = do
 -- 'Cas.Host'.
 startMeroService :: Cas.Host -> R.Node -> PhaseM RC a ()
 startMeroService host node = do
-  Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
-                      ++ show (host, node)
+  Log.rcLog' Log.DEBUG $ "Trying to start mero service on " ++ show (host, node)
   rg <- getGraph
-  mprofile <- Conf.getProfile
+  mprof <- theProfile
   kaFreq <- getHalonVar _hv_keepalive_frequency
   kaTimeout <- getHalonVar _hv_keepalive_timeout
-  mHaAddr <- Conf.lookupHostHAAddress host >>= \case
+  mHaAddr <- lookupHostHAAddress host >>= \case
     Just addr -> return $ Just addr
     -- if there is no HA service running to give us an endpoint, pass
     -- the lnid to mkHAAddress instead of the host address: trust user
     -- setting
-    Nothing -> case listToMaybe . -- TODO: Don't ignore the other addresses?
-                      G.connectedTo host Has $ rg of
-      Just (M0.LNid lnid) -> return . Just $ haAddress lnid
-      Nothing -> return Nothing
-
+    Nothing -> return $ fmap (\(M0.LNid lnid) -> haAddress lnid)
+                             (listToMaybe -- XXX Don't ignore other addresses?
+                              $ G.connectedTo host Has rg)
   minfo <- return $! do
-    profile <- mprofile
+    prof <- mprof
     haAddr <- mHaAddr
     uuid <- G.connectedTo host Has rg
     let mconf = listToMaybe
-                  [ (p, srvHA, srvRM)
-                  | m0node :: M0.Node  <- G.connectedTo host   Runs          rg
-                  , p :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
-                  , srvHA  :: M0.Service <- G.connectedTo p M0.IsParentOf rg
-                  , M0.s_type srvHA  == CST_HA
-                  , srvRM  :: M0.Service <- G.connectedTo p M0.IsParentOf rg
+                  [ (proc, srvHA, srvRM)
+                  | m0node :: M0.Node <- G.connectedTo host Runs rg
+                  , proc :: M0.Process <- G.connectedTo m0node M0.IsParentOf rg
+                  , srvHA :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+                  , M0.s_type srvHA == CST_HA
+                  , srvRM :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
                   , M0.s_type srvRM == CST_RMS
                   ]
-    mconf <&> \(p, srvHA,srvRM) ->
-      let conf = MeroConf (T.unpack . encodeEndpoint $ haAddr)
-                          (M0.fid profile) (M0.fid p)
+    mconf <&> \(proc, srvHA, srvRM) ->
+      let conf = MeroConf (T.unpack $ encodeEndpoint haAddr)
+                          (M0.fid prof)
+                          (M0.fid proc)
                           (M0.fid srvHA)
                           (M0.fid srvRM)
-                          kaFreq kaTimeout
+                          kaFreq
+                          kaTimeout
                           (MeroKernelConf uuid)
-      in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], p)
-  for_ minfo $ \(msg, p) -> do
-    _ <- applyStateChanges [ stateSet p Tr.processStarting ]
+      in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], proc)
+  for_ minfo $ \(msg, proc) -> do
+    _ <- applyStateChanges [stateSet proc Tr.processStarting]
     promulgateRC msg
 
 -- | It may happen that a node reboots (either through halon or
