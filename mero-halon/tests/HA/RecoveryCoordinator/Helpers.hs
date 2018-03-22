@@ -185,6 +185,6 @@ purgeRmqQueues rmq qs = do
   for_ qs $ \q -> do
     let msg = MQPurge q self
     usend rmq msg
-    Just{} <- receiveTimeout (5 * 1000000)
+    _ <- receiveTimeout (5 * 1000000)
       [ matchIf (\m -> m == msg) (\_ -> return ()) ]
     return ()
