@@ -30,7 +30,6 @@ import Version.Read
 printHeader :: String -> IO ()
 printHeader listen = do
     cwd <- getCurrentDirectory
-    hSetBuffering stdout LineBuffering
     putStrLn $ "This is halond/TCP listening on " ++ listen
     putStrLn $ "Working directory: " ++ show cwd
     versionString >>= putStrLn

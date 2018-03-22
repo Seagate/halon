@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -32,6 +31,12 @@ import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 import           System.Directory
 import           System.Environment (getProgName)
+import           System.IO
+  ( BufferMode(LineBuffering)
+  , hSetBuffering
+  , stderr
+  , stdout
+  )
 import           System.Process (readProcess)
 import           Version.Read
 
@@ -69,7 +74,6 @@ instance Monoid SystemOptions where
 getOptions :: IO (Maybe Options)
 getOptions = do
     self <- getProgName
-
     hostname <- readProcess "hostname" [] ""
     defaults <- doesFileExist sysconfig >>= \case
       True -> mconcat . fmap toSystemOptions . lines <$> readFile sysconfig
@@ -119,6 +123,9 @@ run Options{..} =
   bracket (newLocalNode transport myRemoteTable) closeLocalNode $ \lnid -> do
   let rnids = fmap conjureRemoteNodeId optTheirAddress
   runProcess lnid $ do
+    -- Default buffering mode may result in gibberish in systemd logs.
+    liftIO $ hSetBuffering stdout LineBuffering
+    liftIO $ hSetBuffering stderr LineBuffering
     replies <- forM rnids $ \nid -> do
       (_, mref) <- spawnMonitor nid (returnCP sdictUnit ())
       let mkErrorMsg msg = "Error connecting to " ++ show nid ++ ": " ++ msg
@@ -132,7 +139,6 @@ run Options{..} =
                         _ -> []
                   )
         ]
-
     if null $ concat replies
       then case optCommand of
           Mero opts -> Mero.mero rnids opts
