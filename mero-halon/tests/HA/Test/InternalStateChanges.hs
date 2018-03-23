@@ -78,12 +78,12 @@ stateCascade t pg = do
       rg <- getGraph
       let Just p = listToMaybe $
               [ proc
-              | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
-              , (rack :: M0.Rack) <- G.connectedTo root M0.IsParentOf rg
-              , (encl :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
-              , (ctrl :: M0.Controller) <- G.connectedTo encl M0.IsParentOf rg
+              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+              , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+              , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
               , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
-              , (proc :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
+              , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
               ]
           srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
       _ <- applyStateChanges [stateSet p Tr.processStarting]
@@ -109,24 +109,25 @@ failvecCascade t pg = do
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       Log.rcLog' Log.DEBUG ("Set hooks." :: String)
       rg <- getGraph
+      -- Take first two disks ..
       let d0:d1:_ =
               [ disk
-              | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
-              , (rack :: M0.Rack) <- G.connectedTo root M0.IsParentOf rg
-              , (enclosure :: M0.Enclosure) <- G.connectedTo rack M0.IsParentOf rg
-              , (controller :: M0.Controller) <- G.connectedTo enclosure M0.IsParentOf rg
-              , (disk :: M0.Disk) <- G.connectedTo controller M0.IsParentOf rg
+              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+              -- XXX-MULTIPOOLS: site
+              , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+              , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+              , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
               ]
           disks = [d0, d1]
+      -- .. and mark them as failed.
       _ <- applyStateChanges $ map (`stateSet` Tr.diskFailed) disks
       rg' <- getGraph
-      let Just (root :: M0.Root) = G.connectedTo Cluster Has rg'
-          pools =
+      let pools =
               [ pool
-              | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg']
-              , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg' -- XXX-MULTIPOOLS
-              , (pool :: M0.Pool) <- G.connectedTo fs M0.IsParentOf rg'
-              , (pver :: M0.PVer) <- G.connectedTo pool M0.IsParentOf rg'
+              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg'
+              , pool :: M0.Pool <- G.connectedTo root M0.IsParentOf rg'
+              , pver :: M0.PVer <- G.connectedTo pool M0.IsParentOf rg'
               , M0.fid pool /= M0.rt_mdpool root
               , M0.fid pver /= M0.rt_imeta_pver root
               ]

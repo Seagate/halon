@@ -76,8 +76,8 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect root M0.IsParentOf profile
         >>> G.connect Cluster Has profile -- XXX-MULTIPOOLS: delete this relation?
         >>> G.connect profile M0.IsParentOf fs
-        >>> G.connect fs M0.IsParentOf pool
-        >>> G.connect fs M0.IsParentOf mdpool
+        >>> G.connect root M0.IsParentOf pool
+        >>> G.connect root M0.IsParentOf mdpool
 
       rg <- getGraph
       let re = [ (rack, G.connectedTo rack Has rg)
@@ -356,7 +356,7 @@ createIMeta fs = do
       -- graph.
       updateGraph = if null cas
         then G.mergeResources head [root {M0.rt_imeta_pver = m0_fid0}, root]
-        else G.connect fs M0.IsParentOf pool
+        else G.connect root M0.IsParentOf pool
           >>> createPoolVersionsInPool pool [pver] False
 
   modifyGraph updateGraph

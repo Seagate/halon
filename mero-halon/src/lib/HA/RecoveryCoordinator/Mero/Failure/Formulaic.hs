@@ -10,7 +10,6 @@ import           Control.Monad.Trans.State (execState, modify, state)
 import           Data.Bifunctor (first)
 import           Data.Bits (setBit, testBit)
 import           Data.Foldable (for_)
-import           Data.Maybe (listToMaybe)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Set as Set
 import           Data.Word
@@ -34,14 +33,9 @@ mkPVerFormulaicFid fid@(Fid container key)
 -- | Formulaic 'UpdateType'.
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
-  root <- G.connectedTo Cluster Has rg :: Maybe M0.Root
-  -- XXX-MULTIPOOLS: [] instead of Maybe
-  prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
-  -- XXX-MULTIPOOLS: no Filesystem
-  fs <- listToMaybe $ -- TODO: Don't ignore the remaining filesystems
-    G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
-  let attrs = PDClustAttr
+  let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+      attrs = PDClustAttr
                 { _pa_N = CI.m0_data_units globs
                 , _pa_K = CI.m0_parity_units globs
                 , _pa_P = 0
@@ -52,18 +46,18 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       imeta_pver = M0.rt_imeta_pver root
       n = CI.m0_data_units globs
       k = CI.m0_parity_units globs
-      noCtlrs = length
-        [ cntr
+      noCtrls = length
+        [ ctrl
         -- XXX-MULTIPOOLS: go from root through site
         | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
         , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-        , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+        , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
         ]
     -- Following change is temporary, and would work as long as failures
     -- above controllers (encl, racks) are not to be supported
     -- (ref. HALON-406)
-      quotient =  (n + 2*k) `quot` (fromIntegral noCtlrs)
-      remainder = (n + 2*k) `rem` (fromIntegral noCtlrs)
+      quotient =  (n + 2*k) `quot` fromIntegral noCtrls
+      remainder = (n + 2*k) `rem` fromIntegral noCtrls
       kc = remainder * (quotient + 1)
       ctrlFailures
           | kc > k = k `quot` (quotient + 1)
@@ -71,9 +65,9 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
           | otherwise = remainder
       addFormulas g = flip execState g $ do
         for_ (filter (/= mdpool) $
-          G.connectedTo fs M0.IsParentOf g) $ \(pool::M0.Pool) ->
+          G.connectedTo root M0.IsParentOf g) $ \(pool :: M0.Pool) ->
           for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsParentOf g) $
-            \(pver::M0.PVer) -> do
+            \(pver :: M0.PVer) -> do
             for_ formulas $ \formula -> do
               let f = either error id . mkPVerFormulaicFid
               pvf <- M0.PVer <$> state (first f . newFid (Proxy :: Proxy M0.PVer))
@@ -81,5 +75,5 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                                                    <*> pure formula
                                                    <*> pure (M0.fid pver))
               modify (G.connect pool M0.IsParentOf pvf)
-  Just (addFormulas $ createPoolVersions fs
+  Just (addFormulas $ createPoolVersions
                         [PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)

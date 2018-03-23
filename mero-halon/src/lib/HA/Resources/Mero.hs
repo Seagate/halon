@@ -296,16 +296,6 @@ instance ConfObj Rack where
 storageIndex ''Rack "967502a2-03df-4750-a4de-b1d9c1be20fa"
 deriveSafeCopy 0 'base ''Rack
 
-newtype Pool = Pool Fid
-  deriving (Eq, Show, Generic, Hashable, Typeable, Ord, FromJSON, ToJSON)
-
-instance ConfObj Pool where
-  fidType _ = fromIntegral . ord $ 'o'
-  fid (Pool f) = f
-
-storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
-deriveSafeCopy 0 'base ''Pool
-
 data Process = Process
   { r_fid :: !Fid
   , r_mem_as :: !Word64
@@ -510,6 +500,16 @@ instance ConfObj Disk where
 
 storageIndex ''Disk "ab1e2612-33cb-436c-8a37-d6763212db27"
 deriveSafeCopy 0 'base ''Disk
+
+newtype Pool = Pool Fid
+  deriving (Eq, Show, Generic, Hashable, Typeable, Ord, FromJSON, ToJSON)
+
+instance ConfObj Pool where
+  fidType _ = fromIntegral . ord $ 'o'
+  fid (Pool f) = f
+
+storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
+deriveSafeCopy 0 'base ''Pool
 
 -- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
 data PVerType = PVerActual {
@@ -991,10 +991,10 @@ $(mkDicts
     -- Parent/child relationships between conf entities
   , (''Root, ''IsParentOf, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
   , (''Root, ''IsParentOf, ''Profile)
+  , (''Root, ''IsParentOf, ''Pool)
   , (''Profile, ''IsParentOf, ''Filesystem)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Filesystem, ''IsParentOf, ''Node)
-  , (''Filesystem, ''IsParentOf, ''Pool)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
@@ -1066,9 +1066,9 @@ $(mkResRel
     -- Parent/child relationships between conf entities
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)

@@ -17,7 +17,6 @@ import           Control.Monad (unless)
 import qualified Control.Monad.State.Lazy as S
 import           Data.Foldable (for_)
 import           Data.List (foldl')
-import           Data.Maybe (fromJust)
 import qualified Data.Set as Set
 import           Data.Traversable (for)
 import           Data.Typeable
@@ -177,16 +176,15 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
 
 -- | Create specified pool versions in the resource graph. These will be
 --   created inside all IO pools (e.g. not mdpool or imeta)
-createPoolVersions :: M0.Filesystem -- XXX-MULTIPOOLS
-                   -> [PoolVersion]
+createPoolVersions :: [PoolVersion]
                    -> Bool -- If specified, the pool version is assumed to
                            -- contain failed devices, rather than working ones.
                    -> G.Graph
                    -> G.Graph
-createPoolVersions fs pvers invert rg =
+createPoolVersions pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool p pvers invert g) rg pools
   where
-    root = fromJust (G.connectedTo Cluster Has rg :: Maybe M0.Root)
+    Just (root :: M0.Root) = G.connectedTo Cluster Has rg
     mdpool = M0.Pool (M0.rt_mdpool root)
     imeta_pools =
       [ pool
@@ -196,4 +194,4 @@ createPoolVersions fs pvers invert rg =
       ]
     pools = filter (/= mdpool)
           . filter (\x -> not $ elem x imeta_pools)
-          $ G.connectedTo fs M0.IsParentOf rg
+          $ G.connectedTo root M0.IsParentOf rg

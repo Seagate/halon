@@ -25,13 +25,11 @@ import qualified HA.Resources.Mero.Note as M0
 -- also 'getPool'.
 getNonMD :: G.Graph -> [M0.Pool]
 getNonMD rg =
-  let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
-  in [ pool
-     | Just (prof :: M0.Profile) <- [G.connectedTo Cluster Has rg] -- XXX delete Cluster->Profile relation
-     , fs :: M0.Filesystem <- G.connectedTo prof M0.IsParentOf rg -- XXX-MULTIPOOLS
-     , pool <- G.connectedTo fs M0.IsParentOf rg
-     , M0.fid pool /= M0.rt_mdpool root
-     ]
+  [ pool
+  | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+  , pool <- G.connectedTo root M0.IsParentOf rg
+  , M0.fid pool /= M0.rt_mdpool root
+  ]
 
 -- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
 --

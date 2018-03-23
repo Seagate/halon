@@ -776,7 +776,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   Log.rcLog' Log.DEBUG "Finished adding concrete entities."
   -- Pool versions
-  let pools = G.connectedTo fs M0.IsParentOf rg :: [M0.Pool]
+  let pools = G.connectedTo root M0.IsParentOf rg :: [M0.Pool]
       pvNegWidth pver = case pver of
                          M0.PVer _ a@M0.PVerActual{} -> negate . _pa_P . M0.v_attrs $ a
                          M0.PVer _ M0.PVerFormulaic{} -> 0

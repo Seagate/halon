@@ -208,12 +208,11 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
       modifyGraphM update
 
     let rg = lsGraph ls'
-        ppvers = [(pool, pvers) | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
-                                , Just (profile :: M0.Profile) <- [G.connectedTo root M0.IsParentOf rg]
-                                , fs :: M0.Filesystem <- G.connectedTo profile M0.IsParentOf rg
-                                , pool :: M0.Pool     <- G.connectedTo fs M0.IsParentOf rg
-                                , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf rg
-                                ]
+        ppvers = [ (pool, pvers)
+                 | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+                 , pool :: M0.Pool <- G.connectedTo root M0.IsParentOf rg
+                 , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf rg
+                 ]
     for_ ppvers $ \(_, pvers) -> do
       unless (Prelude.null pvers) $ do -- skip metadata pool
         let (actual, formulaic) = partition (\(M0.PVer _ t) -> case t of M0.PVerActual{} -> True ; _ -> False) pvers
@@ -290,10 +289,12 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
                       } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
-      let dver = [ diskv | rackv <- G.connectedTo  pver M0.IsParentOf rg :: [M0.RackV]
-                         , enclv <- G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
-                         , cntrv <- G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
-                         , diskv <- G.connectedTo cntrv M0.IsParentOf rg :: [M0.DiskV]]
+      let dver = [ diskv
+                 | rackv :: M0.RackV <- G.connectedTo  pver M0.IsParentOf rg
+                 , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+                 , cntrv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+                 , diskv :: M0.DiskV <- G.connectedTo cntrv M0.IsParentOf rg
+                 ]
       liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
 
 -- | Test that applying state changes works

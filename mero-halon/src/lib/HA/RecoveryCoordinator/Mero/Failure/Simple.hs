@@ -37,10 +37,6 @@ simpleUpdate :: Monad m
                -> UpdateType m
 simpleUpdate df cf cfe = Iterative $ \rg ->
   let mchunks = do
-        prof <- G.connectedTo Cluster Has rg :: Maybe M0.Profile
-        -- XXX-MULTIPOOLS: replace with root
-        fs <- listToMaybe $ -- TODO: Don't ignore the other filesystems
-                G.connectedTo prof M0.IsParentOf rg :: Maybe M0.Filesystem
         globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
         let fsets = generateFailureSets df cf cfe rg globs
             attrs = PDClustAttr {
@@ -51,19 +47,19 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
                     , _pa_seed = Word128 101 102
                     }
             -- update chunks
-        return (flip unfoldr fsets $ \xs ->
-                case xs of
-                  [] -> Nothing
-                  _  -> Just $ splitAt 5 xs
-                , fs, attrs)
+        return (flip unfoldr fsets $ \xs -> if null xs
+                                            then Nothing
+                                            else Just (splitAt 5 xs)
+                , attrs)
   in case mchunks of
        Nothing -> Nothing
-       Just (chunks,fs, attrs) -> Just $ \sync ->
+       Just (chunks, attrs) -> Just $ \sync ->
          let go g [] = return g
              go g (c:cs) =
                 let pvs = fmap (\(fs', fids) -> PoolVersion Nothing fids fs' attrs) c
-                in do g' <- sync $ createPoolVersions fs pvs True g
-                      go g' cs
+                in do
+                    g' <- sync $ createPoolVersions pvs True g
+                    go g' cs
          in go rg chunks
 
 -- | Given tolerance parameters, generate failure sets.
@@ -78,16 +74,14 @@ generateFailureSets df cf cfe rg globs = let
     k = CI.m0_parity_units globs
     allCtrls =
       [ ctrl
-      | (host :: Host) <- G.connectedTo Cluster Has rg
-      , Just (ctrl :: M0.Controller) <-
-          [G.connectedFrom M0.At host rg]
+      | host :: Host <- G.connectedTo Cluster Has rg
+      , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to
-    allDisks = Map.fromListWith (Set.union) . fmap (fmap Set.singleton) $
+    allDisks = Map.fromListWith Set.union . fmap (fmap Set.singleton) $
         [ (M0.fid ctrl, M0.fid disk)
-        | (_host :: Host) <- G.connectedTo Cluster Has rg
-        , ctrl <- allCtrls
-        , (disk :: M0.Disk) <- G.connectedTo ctrl M0.IsParentOf rg
+        | ctrl <- allCtrls
+        , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
         ]
 
     buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (Failures, Set Fid)
