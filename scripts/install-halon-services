@@ -214,7 +214,7 @@ uninstall_files()
                  /usr/libexec/halon/halon-cleanup
                 '
     local file
-    for file in "$files" ; do
+    for file in $files ; do
         run "rm -vf $file"
     done
 
@@ -224,7 +224,7 @@ uninstall_files()
                 /var/lib/halon
                '
     local dir
-    for dir in "$dirs" ; do
+    for dir in $dirs ; do
         [[ ! -d $dir  ]] || run "rm -rvf $dir"
     done
 
