@@ -4,37 +4,30 @@
 --
 module HA.RecoveryCoordinator.Mero.Failure.Simple where
 
-import HA.RecoveryCoordinator.Mero.Failure.Internal
-
+import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
-import           HA.Resources
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import Mero.ConfC
-  ( Fid
-  , PDClustAttr(..)
-  , Word128(..)
-  )
+import           Mero.ConfC (Fid, PDClustAttr(..), Word128(..))
 
 import           Control.Monad (join)
-
+import           Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
+import           Data.List ((\\), sort, unfoldr)
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.List ((\\), sort, unfoldr)
-import           Data.Maybe (listToMaybe)
-import           Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as Map
 import           Data.Word
 
 -- | Simple failure set generation strategy. In this case, we pre-generate
 --   failure sets for the given number of failures.
 simpleUpdate :: Monad m
-               => Word32 -- ^ No. of disk failures to tolerate
-               -> Word32 -- ^ No. of controller failures to tolerate
-               -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
-               -> UpdateType m
+             => Word32 -- ^ No. of disk failures to tolerate
+             -> Word32 -- ^ No. of controller failures to tolerate
+             -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
+             -> UpdateType m
 simpleUpdate df cf cfe = Iterative $ \rg ->
   let mchunks = do
         globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
