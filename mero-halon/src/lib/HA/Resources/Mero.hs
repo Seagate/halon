@@ -1035,11 +1035,11 @@ $(mkDicts
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
   , (''Disk, ''IsRealOf, ''DiskV)
-  , (''Disk, ''R.Is, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
   , (''SDev, ''At, ''R.Slot)
   , (''Node, ''IsOnHardware, ''Controller)
+  , (''Profile, ''R.Has, ''Pool) -- XXX USEME
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
@@ -1058,6 +1058,7 @@ $(mkDicts
   , (''SDev, ''R.Is, ''SDevState)
   , (''Node, ''R.Is, ''NodeState)
   , (''Controller, ''R.Is, ''ControllerState)
+  , (''Disk, ''R.Is, ''Replaced)
   , (''Root, ''R.Has, ''FilesystemStats)
   , (''Root, ''R.Has, ''DIXInitialised)
   ]
@@ -1113,10 +1114,10 @@ $(mkResRel
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)
   , (''Disk, AtMostOne, ''IsRealOf, Unbounded, ''DiskV)
-  , (''Disk, Unbounded, ''R.Is, Unbounded, ''Replaced)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
+  , (''Profile, AtMostOne, ''R.Has, Unbounded, ''Pool) -- XXX USEME
     -- Other things!
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''FidSeq)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals)
@@ -1135,6 +1136,7 @@ $(mkResRel
   , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded, ''R.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded, ''R.Is, AtMostOne, ''ControllerState)
+  , (''Disk, Unbounded, ''R.Is, Unbounded, ''Replaced)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
