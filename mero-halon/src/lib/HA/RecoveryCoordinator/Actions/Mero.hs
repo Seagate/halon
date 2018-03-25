@@ -105,16 +105,15 @@ createMeroKernelConfig host lnid = do
 --
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
-createMeroClientConfig :: M0.Filesystem
-                       -> Castor.Host
+createMeroClientConfig :: Castor.Host
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
-createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
+createMeroClientConfig host (M0.HostHardwareInfo memsize cpucnt lnid) = do
   createMeroKernelConfig host lnid
   modifyGraphM $ \rg -> do
     -- Check if node is already defined in RG
-    m0node <- case do (c :: M0.Controller) <- G.connectedFrom M0.At host rg
-                      (n :: M0.Node) <- G.connectedFrom M0.IsOnHardware c rg
+    m0node <- case do c :: M0.Controller <- G.connectedFrom M0.At host rg
+                      n :: M0.Node <- G.connectedFrom M0.IsOnHardware c rg
                       return n of
       Just nd -> return nd
       Nothing -> M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
@@ -155,8 +154,7 @@ createMeroClientConfig fs host (M0.HostHardwareInfo memsize cpucnt lnid) = do
           >>> G.connect process M0.IsParentOf haService
           >>> G.connect process Has M0.PLM0t1fs
           >>> G.connect process Is M0.PSUnknown
-          -- XXX-MULTIPOOLS: retire fs, update connection
-          >>> G.connect fs M0.IsParentOf m0node
+          >>> G.connect (M0.getM0Root rg) M0.IsParentOf m0node
           >>> G.connect host Runs m0node
             $ rg
     return rg'
@@ -278,22 +276,22 @@ getClusterStatus rg = let
 -- are offline, failed or unknown.
 isClusterStopped :: G.Graph -> Bool
 isClusterStopped rg = null $
-  [ p
-  | Just (prof :: M0.Profile) <- [G.connectedTo Res.Cluster Has rg]
-    -- XXX-MULTIPOOLS: retire Filesystem, add site
-  , (fs :: M0.Filesystem) <- G.connectedTo prof M0.IsParentOf rg
-  , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf rg
-  , M0.getState node rg /= M0.NSFailed
-  , (p :: M0.Process) <- G.connectedTo node M0.IsParentOf rg
-  , M0.getState node rg /= M0.NSFailedUnrecoverable
-  , not . psDown $ M0.getState p rg
-  , all (\srv -> M0.s_type srv /= CST_HA) $ G.connectedTo p M0.IsParentOf rg
+  [ proc
+  | node <- M0.getM0Nodes rg
+  , nodeIsOK (M0.getState node rg)
+  , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+  , procIsUp (M0.getState proc rg)
+  , all (\svc -> M0.s_type svc /= CST_HA) $ G.connectedTo proc M0.IsParentOf rg
   ]
   where
-    psDown M0.PSOffline = True
-    psDown (M0.PSFailed _) = True
-    psDown M0.PSUnknown = True
-    psDown _ = False
+    nodeIsOK M0.NSFailed              = False
+    nodeIsOK M0.NSFailedUnrecoverable = False
+    nodeIsOK _                        = True
+
+    procIsUp M0.PSOffline    = False
+    procIsUp (M0.PSFailed _) = False
+    procIsUp M0.PSUnknown    = False
+    procIsUp _               = True
 
 -- | Send a request to configure the given mero process. Constructs
 -- the appropriate 'ProcessConfig' (which depends on whether the

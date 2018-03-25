@@ -104,9 +104,9 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     sayTest $ show iData
     (ls',_)  <- run ls $ do
             mapM_ goRack (CI.id_racks iData)
-            filesystem <- initialiseConfInRG
+            _filesystem <- initialiseConfInRG
             loadMeroGlobals (CI.id_m0_globals iData)
-            loadMeroServers filesystem (CI.id_m0_servers iData)
+            loadMeroServers (CI.id_m0_servers iData)
     let testRule = mkTestRule self
     sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do

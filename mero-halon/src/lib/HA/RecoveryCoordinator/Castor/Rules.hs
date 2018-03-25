@@ -78,9 +78,9 @@ ruleInitialDataLoad =
 
         load = do
           mapM_ goRack id_racks
-          filesystem <- initialiseConfInRG
+          fs <- initialiseConfInRG
           loadMeroGlobals id_m0_globals
-          loadMeroServers filesystem id_m0_servers
+          loadMeroServers id_m0_servers
           graph <- getGraph
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
@@ -103,8 +103,8 @@ ruleInitialDataLoad =
           -- solution will involve proper support for multiple pools and
           -- multiple types of pools. In the meantime, creating these fake
           -- devices later works.
-          createMDPoolPVer filesystem
-          createIMeta filesystem
+          createMDPoolPVer fs
+          createIMeta fs
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Rack])

@@ -427,11 +427,10 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
         else Right . (NewMeroServerFailure node,) <$> route node
 
   directly config_created $ do
-    Just fs <- getFilesystem
     Just host <- getField . rget fldHost <$> get Local
     Just (LnetInfo _ lnet)  <- getField . rget fldLnetInfo <$> get Local
     StartProcessNodeNew _ info <- getRequest
-    createMeroClientConfig fs host $
+    createMeroClientConfig host $
       M0.HostHardwareInfo { hhMemorySize = _si_memMiB info
                           , hhCpuCount = _si_cpus info
                           , hhLNidAddress = lnet

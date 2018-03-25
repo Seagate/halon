@@ -131,9 +131,9 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
       -- XXX-MULTIPOOLS: s/filesystem/root/
-      filesystem <- initialiseConfInRG
+      _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroServers (CI.id_m0_servers iData)
     -- 8 disks, tolerating one disk failure at a time
     let rg = lsGraph ls'
         failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
@@ -158,9 +158,9 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
                { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
-      filesystem <- initialiseConfInRG
+      _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroServers (CI.id_m0_servers iData)
     -- 16 disks, tolerating one disk failure at a time
     let rg = lsGraph ls'
         failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
@@ -201,9 +201,9 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
-      filesystem <- initialiseConfInRG
+      _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroServers (CI.id_m0_servers iData)
       Just (Monolithic update) <- getCurrentGraphUpdateType
       modifyGraphM update
 
@@ -237,9 +237,9 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       mapM_ goRack (CI.id_racks iData)
-      filesystem <- initialiseConfInRG
+      _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroServers (CI.id_m0_servers iData)
       rg <- getGraph
       let Iterative update = simpleUpdate 0 1 0
           Just updateGraph = update rg
@@ -306,9 +306,9 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
       mapM_ goRack (CI.id_racks iData)
-      filesystem <- initialiseConfInRG
+      _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers filesystem (CI.id_m0_servers iData)
+      loadMeroServers (CI.id_m0_servers iData)
       RC.initialRule (IgnitionArguments [])
 
     let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
@@ -405,9 +405,9 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do
          mapM_ goRack (CI.id_racks iData)
-         filesystem <- initialiseConfInRG
+         _filesystem <- initialiseConfInRG
          loadMeroGlobals (CI.id_m0_globals iData)
-         loadMeroServers filesystem (CI.id_m0_servers iData)
+         loadMeroServers (CI.id_m0_servers iData)
          Just (Monolithic update) <- getCurrentGraphUpdateType
          modifyGraphM update
          RC.initialRule (IgnitionArguments [])

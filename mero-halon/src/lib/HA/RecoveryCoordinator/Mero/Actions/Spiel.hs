@@ -741,8 +741,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
         for_ disks $ \disk -> do
           m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
-  let nodes = G.connectedTo fs M0.IsParentOf rg :: [M0.Node]
-  for_ nodes $ \node -> do
+  for_ (M0.getM0Nodes rg) $ \node -> do
     let attrs =
           [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
               , Just host <- [G.connectedTo ctrl M0.At rg :: Maybe Host]

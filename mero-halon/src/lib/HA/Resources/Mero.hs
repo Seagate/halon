@@ -30,7 +30,7 @@ import           Data.Char (ord)
 import           Data.Either (rights)
 import           Data.Hashable (Hashable(..))
 import           Data.Int (Int64)
-import           Data.Maybe (listToMaybe)
+import           Data.Maybe (fromJust, listToMaybe)
 import           Data.Ord (comparing)
 import           Data.Proxy (Proxy(..))
 import           Data.Scientific
@@ -989,12 +989,12 @@ $(mkDicts
   , (''Enclosure, ''At, ''R.Enclosure)
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
+  , (''Root, ''IsParentOf, ''Node)
   , (''Root, ''IsParentOf, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
-  , (''Root, ''IsParentOf, ''Profile)
   , (''Root, ''IsParentOf, ''Pool)
-  , (''Profile, ''IsParentOf, ''Filesystem)
+  , (''Root, ''IsParentOf, ''Profile)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
-  , (''Filesystem, ''IsParentOf, ''Node)
+  , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
@@ -1064,11 +1064,11 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
-  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
+  , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
-  , (''Filesystem, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)
@@ -1113,21 +1113,26 @@ $(mkResRel
   []
   )
 
--- | Get all 'M0.Service' running on the 'Cluster', starting at
--- 'M0.Profile's.
-getM0Services :: G.Graph -> [Service]
-getM0Services g =
-  [ sv | p <- getM0Processes g
-       , sv <- G.connectedTo p IsParentOf g
+-- XXX TODO: Use 'getM0Root' wherever applicable.
+getM0Root :: G.Graph -> Root
+getM0Root = fromJust . G.connectedTo R.Cluster R.Has
+
+-- | Get all 'Node's running on the 'Cluster'.
+getM0Nodes :: G.Graph -> [Node]
+getM0Nodes rg = G.connectedTo (getM0Root rg) IsParentOf rg
+
+-- | Get all 'Process'es running on the 'Cluster'.
+getM0Processes :: G.Graph -> [Process]
+getM0Processes rg =
+  [ proc | node <- getM0Nodes rg
+         , proc <- G.connectedTo node IsParentOf rg
   ]
 
--- | Get all 'Process' running on the 'Cluster', starting at 'Profile's.
-getM0Processes :: G.Graph -> [Process]
-getM0Processes g =
-  [ p | Just (prof :: Profile) <- [G.connectedTo R.Cluster R.Has g]
-       , (fs :: Filesystem) <- G.connectedTo prof IsParentOf g
-       , (node :: Node) <- G.connectedTo fs IsParentOf g
-       , p <- G.connectedTo node IsParentOf g
+-- | Get all 'M0.Service' running on the 'Cluster'.
+getM0Services :: G.Graph -> [Service]
+getM0Services rg =
+  [ svc | proc <- getM0Processes rg
+        , svc <- G.connectedTo proc IsParentOf rg
   ]
 
 -- | Lookup a configuration object in the resource graph.

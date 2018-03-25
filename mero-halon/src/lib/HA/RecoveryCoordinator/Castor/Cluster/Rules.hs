@@ -239,16 +239,9 @@ ruleMarkProcessesBootstrapped :: Definitions RC ()
 ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-process-bootstrapped" $
   \(MarkProcessesBootstrapped ch) -> do
      rg <- getGraph
-     let procs =
-           [ m0proc
-           | Just (m0prof :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-           -- XXX-MULTIPOOLS: Replace filesystem with root
-           , m0fs   <- G.connectedTo m0prof M0.IsParentOf rg :: [M0.Filesystem]
-           , m0node <- G.connectedTo m0fs M0.IsParentOf rg :: [M0.Node]
-           , m0proc <- G.connectedTo m0node M0.IsParentOf rg :: [M0.Process]
-           ]
-     modifyGraph $ execState $ do
-       for_ procs $ \p -> State.modify (G.connect p Is M0.ProcessBootstrapped)
+     modifyGraph . execState $ do
+       for_ (M0.getM0Processes rg) $ \proc ->
+         State.modify (G.connect proc R.Is M0.ProcessBootstrapped)
      registerSyncGraph $ do
        sendChan ch ()
 
@@ -286,25 +279,22 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           rg <- getGraph
           -- Randomly select principal RM, it may be switched if another
           -- RM will appear online before this one.
-          let pr = [ ps
-                   | Just (prf :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-                   , fsm :: M0.Filesystem <- G.connectedTo prf M0.IsParentOf rg
-                   , nd :: M0.Node <- G.connectedTo fsm M0.IsParentOf rg
-                   , ps :: M0.Process <- G.connectedTo nd M0.IsParentOf rg
-                   , sv :: M0.Service <- G.connectedTo ps M0.IsParentOf rg
-                   , M0.s_type sv == CST_CONFD
-                   ]
+          let procsConfd = [ proc
+                           | proc <- M0.getM0Processes rg
+                           , svc <- G.connectedTo proc M0.IsParentOf rg
+                           , M0.s_type svc == CST_CONFD
+                           ]
           traverse_ setPrincipalRMIfUnset $
-            listToMaybe [ srv
-                        | p <- pr
-                        , srv :: M0.Service <- G.connectedTo p M0.IsParentOf rg
-                        , M0.s_type srv == CST_RMS
+            listToMaybe [ svc
+                        | proc <- procsConfd
+                        , svc <- G.connectedTo proc M0.IsParentOf rg
+                        , M0.s_type svc == CST_RMS
                         ]
           -- Update cluster disposition
           Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
           modifyGraph $ G.connect Cluster Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host::R.Host) (node::M0.Node) rg' ->
+            $ \(host :: R.Host) (node::M0.Node) rg' ->
                    ( G.isConnected host Has R.HA_M0SERVER rg'
                   || G.isConnected host Has R.HA_M0CLIENT rg'
                    )
@@ -331,7 +321,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
               Nothing -> do
                 Log.rcLog' Log.ERROR "graph invariant violation: cluster has no attached state"
                 fail_job $ ClusterStartFailure "Unknown cluster state." []
-              Just _ -> if (maybe False (==M0.ONLINE) $ G.connectedTo Cluster Has rg)
+              Just _ -> if (maybe False (== M0.ONLINE) $ G.connectedTo Cluster Has rg)
                             || isClusterStopped rg
                         then start_job
                         else fail_job $ ClusterStartFailure "Cluster not fully stopped." []
@@ -643,11 +633,7 @@ ruleClusterMonitorStop = define "castor::cluster::stop::monitoring" $ do
     calculateStoppingState :: PhaseM RC l ClusterStoppingState
     calculateStoppingState = do
       rg <- getGraph
-      let ps = [ (p, M0.getState p rg)
-               | Just (pr :: M0.Profile) <- [G.connectedTo Cluster Has rg]
-               , fs :: M0.Filesystem <- G.connectedTo pr M0.IsParentOf rg
-               , mn :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
-               , p  :: M0.Process  <- G.connectedTo mn M0.IsParentOf rg ]
+      let ps = [(p, M0.getState p rg) | p <- M0.getM0Processes rg]
           donePs = filter ((== M0.PSOffline) . snd) ps
           svs = [ (s, M0.getState s rg)
                 | (p, _) <- ps

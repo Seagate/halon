@@ -175,24 +175,15 @@ setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
 
 -- | Pick a Principal RM out of the available RM services.
 pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
-pickPrincipalRM = getGraph >>= \g ->
-  let rms =
-        [ rm
-        | Just (prof :: M0.Profile) <-
-            [G.connectedTo Cluster Has g]
-        , (fs :: M0.Filesystem) <-
-            G.connectedTo prof M0.IsParentOf g
-        , (node :: M0.Node) <- G.connectedTo fs M0.IsParentOf g
-        , (proc :: M0.Process) <-
-            G.connectedTo node M0.IsParentOf g
-        , G.isConnected proc Is M0.PSOnline g
-        , let srv_types = M0.s_type <$>
-                (G.connectedTo proc M0.IsParentOf g)
-        , CST_CONFD `elem` srv_types
-        , rm <- G.connectedTo proc M0.IsParentOf g :: [M0.Service]
-        , G.isConnected proc Is M0.PSOnline g
-        , M0.s_type rm == CST_RMS
-        ]
+pickPrincipalRM = getGraph >>= \rg ->
+  let rms = [ svc
+            | proc <- M0.getM0Processes rg
+            , G.isConnected proc Is M0.PSOnline rg
+            , let svcTypes = M0.s_type <$> G.connectedTo proc M0.IsParentOf rg
+            , CST_CONFD `elem` svcTypes
+            , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+            , M0.s_type svc == CST_RMS
+            ]
   in traverse setPrincipalRMIfUnset $ listToMaybe rms
 
 -- | Lookup enclosure corresponding to Mero enclosure.

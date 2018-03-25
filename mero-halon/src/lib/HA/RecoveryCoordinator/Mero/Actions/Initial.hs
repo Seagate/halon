@@ -130,24 +130,27 @@ initialiseConfInRG = getFilesystem >>= \case
 --     - An SDev (logical device)
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
-loadMeroServers :: M0.Filesystem
-                -> [CI.M0Host]
-                -> PhaseM RC l ()
-loadMeroServers fs = mapM_ goHost . offsetHosts where
+loadMeroServers :: [CI.M0Host] -> PhaseM RC l ()
+loadMeroServers = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
+
   goHost (CI.M0Host{..}, hostIdx) = let
       host = Host $! T.unpack m0h_fqdn
     in do
       Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
       node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
 
+      Just root <- getRoot
       modifyGraph $ G.connect Cluster Has host
                 >>> G.connect host Has HA_M0SERVER
-                >>> G.connect fs M0.IsParentOf node
+                >>> G.connect root M0.IsParentOf node
                 >>> G.connect host Runs node
 
-      if not (null m0h_devices) then do
+      if null m0h_devices
+      then
+        mapM_ (addProcess node []) m0h_processes
+      else do
         ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
         rg <- getGraph
         let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
@@ -162,8 +165,6 @@ loadMeroServers fs = mapM_ goHost . offsetHosts where
         modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                   >>> G.connect ctrl M0.At host
                   >>> G.connect node M0.IsOnHardware ctrl
-      else
-        mapM_ (addProcess node []) m0h_processes
 
   goDev enc ctrl (CI.M0Device{..}, idx) = let
       mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
@@ -309,14 +310,13 @@ createMDPoolPVer fs = do
 --   in the 'rt_imeta' field. This should validate correctly in Mero iff
 --   there are no CAS services.
 createIMeta :: M0.Filesystem -> PhaseM RC l ()
--- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
 createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getGraph
   let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
       cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
-            | node :: M0.Node <- G.connectedTo fs M0.IsParentOf rg
+            | node <- M0.getM0Nodes rg
             , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
             , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
             , M0.s_type svc == CST_CAS
