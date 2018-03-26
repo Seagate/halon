@@ -111,7 +111,8 @@ ruleSsplStarted = defineSimpleTask "castor::drive::led::ruleSsplStarted" $ \(nid
        ("THREADCONTROLLER", "SSPL-LL SERVICE HAS STARTED SUCCESSFULLY") -> do
          rg <- getGraph
          let l = [ (sd, G.connectedTo slot Has rg)
-                 | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+                 | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+                 , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
                  , m0enc :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                  , enc :: Enclosure <- maybeToList $ G.connectedTo m0enc M0.At rg
                  , slot :: Slot <- G.connectedTo enc Has rg

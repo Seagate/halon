@@ -106,30 +106,35 @@ initialData InitialDataSettings{..}
     p = CI.m0_parity_units _id_globals
 initialData InitialDataSettings{..} = return $ CI.InitialData {
     CI.id_m0_globals = _id_globals
-  , CI.id_racks = [
-      CI.Rack {
-        CI.rack_idx = 1
-      , CI.rack_enclosures = fmap
-          (\ifaddr@(x,y,z,w) ->
-            let host = if _id_servers > 1
-                       then _id_hostname <> "_" <> T.pack (show w)
-                       else _id_hostname
-                ifaddrBMC = showIP (x, y, z + 10, w)
-            in CI.Enclosure {
-                  CI.enc_idx = fromIntegral w
-                , CI.enc_id = "enclosure_" ++ show w
-                , CI.enc_bmc = [CI.BMC ifaddrBMC "admin" "admin"]
-                , CI.enc_hosts = [
-                    CI.Host {
-                      CI.h_fqdn = host
-                    , CI.h_halon = Just $ CI.HalonSettings {
-                        CI._hs_address = showIP ifaddr ++ ":9000"
-                      , CI._hs_roles = []
-                      }
-                    }
-                  ]
-                })
-          serverAddrs
+  , CI.id_sites = [
+      CI.Site {
+        CI.site_idx = 1
+      , CI.site_racks = [
+          CI.Rack {
+            CI.rack_idx = 1
+          , CI.rack_enclosures = fmap
+              (\ifaddr@(x,y,z,w) ->
+                let host = if _id_servers > 1
+                           then _id_hostname <> "_" <> T.pack (show w)
+                           else _id_hostname
+                    ifaddrBMC = showIP (x, y, z + 10, w)
+                in CI.Enclosure {
+                      CI.enc_idx = fromIntegral w
+                    , CI.enc_id = "enclosure_" ++ show w
+                    , CI.enc_bmc = [CI.BMC ifaddrBMC "admin" "admin"]
+                    , CI.enc_hosts = [
+                        CI.Host {
+                          CI.h_fqdn = host
+                        , CI.h_halon = Just $ CI.HalonSettings {
+                            CI._hs_address = showIP ifaddr ++ ":9000"
+                          , CI._hs_roles = []
+                          }
+                        }
+                      ]
+                    })
+              serverAddrs
+          }
+        ]
       }
     ]
   , CI.id_m0_servers = fmap

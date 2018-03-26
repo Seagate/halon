@@ -67,6 +67,7 @@ main :: IO ()
 main =
   (>>= maybe (error "test timed out") return) $ timeout (120 * 1000000) $ do
   hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
   progName <- getProgName
 
   argv <- getArgs

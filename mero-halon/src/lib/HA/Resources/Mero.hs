@@ -286,6 +286,16 @@ displayNodeState xs@NSFailed = ("failed", Just $ prettyNodeState xs)
 displayNodeState xs@NSFailedUnrecoverable = ("failed", Just $ prettyNodeState xs)
 displayNodeState xs = (prettyNodeState xs, Nothing)
 
+newtype Site = Site Fid
+  deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
+
+instance ConfObj Site where
+  fidType _ = fromIntegral . ord $ 'S'
+  fid (Site f) = f
+
+storageIndex ''Site "7d026dd3-ee2d-42d2-85f8-e4c15738cf79"
+deriveSafeCopy 0 'base ''Site
+
 newtype Rack = Rack Fid
   deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
 
@@ -547,6 +557,16 @@ instance ConfObj PVer where
 
 storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter
+
+newtype SiteV = SiteV Fid
+  deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
+
+instance ConfObj SiteV where
+  fidType _ = fromIntegral . ord $ 'j'
+  fid (SiteV f) = f
+
+storageIndex ''SiteV "18e22f85-0e2c-4e43-9bce-5c87047e0ff7"
+deriveSafeCopy 0 'base ''SiteV
 
 newtype RackV = RackV Fid
   deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
@@ -966,9 +986,9 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
-  , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
+  , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
@@ -985,12 +1005,13 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''Profile)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
   , (''Controller, ''At, ''R.Host)
+  , (''Site, ''At, ''R.Site)
   , (''Rack, ''At, ''R.Rack)
   , (''Enclosure, ''At, ''R.Enclosure)
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
   , (''Root, ''IsParentOf, ''Node)
-  , (''Root, ''IsParentOf, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
+  , (''Root, ''IsParentOf, ''Site)
   , (''Root, ''IsParentOf, ''Pool)
   , (''Root, ''IsParentOf, ''Profile)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
@@ -998,15 +1019,18 @@ $(mkDicts
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
+  , (''Site, ''IsParentOf, ''Rack)
   , (''Rack, ''IsParentOf, ''Enclosure)
   , (''Enclosure, ''IsParentOf, ''Controller)
   , (''Controller, ''IsParentOf, ''Disk)
   , (''Pool, ''IsParentOf, ''PVer)
-  , (''PVer, ''IsParentOf, ''RackV)
+  , (''PVer, ''IsParentOf, ''SiteV)
+  , (''SiteV, ''IsParentOf, ''RackV)
   , (''RackV, ''IsParentOf, ''EnclosureV)
   , (''EnclosureV, ''IsParentOf, ''ControllerV)
   , (''ControllerV, ''IsParentOf, ''DiskV)
     -- Virtual relationships between conf entities
+  , (''Site, ''IsRealOf, ''SiteV)
   , (''Rack, ''IsRealOf, ''RackV)
   , (''Enclosure, ''IsRealOf, ''EnclosureV)
   , (''Controller, ''IsRealOf, ''ControllerV)
@@ -1040,9 +1064,9 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
-  , ''Disk, ''PVer, ''RackV, ''EnclosureV, ''ControllerV
+  , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
   , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
@@ -1059,28 +1083,32 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Profile)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
   , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
+  , (''Site, AtMostOne, ''At, AtMostOne, ''R.Site)
   , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack)
   , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Rack) -- XXX-MULTIPOOLS: s/Rack/Site/
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)
+  , (''Site, AtMostOne, ''IsParentOf, Unbounded, ''Rack)
   , (''Rack, AtMostOne, ''IsParentOf, Unbounded, ''Enclosure)
   , (''Enclosure, AtMostOne, ''IsParentOf, Unbounded, ''Controller)
   , (''Controller, AtMostOne, ''IsParentOf, Unbounded, ''Disk)
   , (''Pool, AtMostOne, ''IsParentOf, Unbounded, ''PVer)
-  , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
+  , (''PVer, AtMostOne, ''IsParentOf, Unbounded, ''SiteV)
+  , (''SiteV, AtMostOne, ''IsParentOf, Unbounded, ''RackV)
   , (''RackV, AtMostOne, ''IsParentOf, Unbounded, ''EnclosureV)
   , (''EnclosureV, AtMostOne, ''IsParentOf, Unbounded, ''ControllerV)
   , (''ControllerV, AtMostOne, ''IsParentOf, Unbounded, ''DiskV)
     -- Virtual relationships between conf entities
+  , (''Site, AtMostOne, ''IsRealOf, Unbounded, ''SiteV)
   , (''Rack, AtMostOne, ''IsRealOf, Unbounded, ''RackV)
   , (''Enclosure, AtMostOne, ''IsRealOf, Unbounded, ''EnclosureV)
   , (''Controller, AtMostOne, ''IsRealOf, Unbounded, ''ControllerV)

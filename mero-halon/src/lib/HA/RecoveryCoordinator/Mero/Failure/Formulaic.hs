@@ -48,8 +48,8 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       k = CI.m0_parity_units globs
       noCtrls = length
         [ ctrl
-        -- XXX-MULTIPOOLS: go from root through site
-        | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+        | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
+        , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
         , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
         , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
         ]

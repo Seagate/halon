@@ -10,7 +10,8 @@
 -- Actions on hardware entities.
 module HA.RecoveryCoordinator.Actions.Hardware
   ( -- * Infrastructure functions
-    registerRack
+    registerSite
+  , registerRack
   , registerEnclosure
   , registerBMC
   , findBMCAddress
@@ -59,12 +60,20 @@ import           HA.Services.Ekg.RC
 import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
--- | Register a new rack in the system.
-registerRack :: Rack
+-- | Register a new site in the system.
+registerSite :: Site
              -> PhaseM RC l ()
-registerRack rack = do
-  actLog "registerRack" [("rack", show rack)]
-  modifyGraph $ G.connect Cluster Has rack
+registerSite site = do
+  actLog "registerSite" [("site", show site)]
+  modifyGraph $ G.connect Cluster Has site
+
+-- | 'G.connect' the given 'Rack' to the 'Site'.
+registerRack :: Site
+             -> Rack
+             -> PhaseM RC l ()
+registerRack site rack = do
+  actLog "registerRack" [("site", show site), ("rack", show rack)]
+  modifyGraph $ G.connect site Has rack
 
 -- | 'G.connect' the given 'Enclosure' to the 'Rack'.
 registerEnclosure :: Rack

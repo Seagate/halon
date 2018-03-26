@@ -79,7 +79,8 @@ stateCascade t pg = do
       let Just p = listToMaybe $
               -- XXX Why don't we use 'M0.getM0Processes'?
               [ proc
-              | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+              | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+              , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
               , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
               , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
               , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
@@ -88,7 +89,6 @@ stateCascade t pg = do
           srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
       _ <- applyStateChanges [stateSet p Tr.processStarting]
       rg' <- getGraph
-
       let allOK = getState p rg'  == M0.PSStarting
                   && all (\s -> getState s rg' == M0.SSStarting) srvs
       liftProcess $ usend pid allOK
@@ -112,7 +112,8 @@ failvecCascade t pg = do
       -- Take first two disks ..
       let d0:d1:_ =
               [ disk
-              | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+              | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+              , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
               , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
               , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
               , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg

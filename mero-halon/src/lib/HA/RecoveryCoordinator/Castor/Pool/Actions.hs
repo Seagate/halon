@@ -46,7 +46,8 @@ getSDevs pool rg =
   let sdevs =
         [ sd
         | pv <- G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
-        , rv <- G.connectedTo pv M0.IsParentOf rg :: [M0.RackV]
+        , sv <- G.connectedTo pv M0.IsParentOf rg :: [M0.SiteV]
+        , rv <- G.connectedTo sv M0.IsParentOf rg :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf rg :: [M0.EnclosureV]
         , ct <- G.connectedTo ev M0.IsParentOf rg :: [M0.ControllerV]
         , dv <- G.connectedTo ct M0.IsParentOf rg :: [M0.DiskV]

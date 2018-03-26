@@ -712,7 +712,8 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
       -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
       -- one pool.
       m0_pool_width = length [ disk
-                             | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+                             | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
+                             , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
                              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                              , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
                              , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
@@ -724,22 +725,23 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
     addFilesystem t (M0.fid fs) pfid -- XXX-MULTIPOOLS: DELETEME
         m0_md_redundancy rt_fid rt_mdpool rt_imeta_pver rootParams
   Log.rcLog' Log.DEBUG "Added root and profile"
-  -- XXX-MULTIPOOLS: sites
-  -- Racks, encls, controllers, disks
-  let racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
-  for_ racks $ \rack -> do
-    m0synchronously lift $ addRack t (M0.fid rack) (M0.fid fs)
-    let encls = G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]
-    for_ encls $ \encl -> do
-      m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
-      let ctrls = G.connectedTo encl M0.IsParentOf rg :: [M0.Controller]
-      for_ ctrls $ \ctrl -> do
-        -- Get node fid
-        let Just node = G.connectedFrom M0.IsOnHardware ctrl rg :: Maybe M0.Node
-        m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
-        let disks = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
-        for_ disks $ \disk -> do
-          m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
+  -- Sites, racks, encls, controllers, disks
+  let sites = G.connectedTo root M0.IsParentOf rg :: [M0.Site]
+  for_ sites $ \site -> do
+    let racks = G.connectedTo site M0.IsParentOf rg :: [M0.Rack]
+    for_ racks $ \rack -> do
+      m0synchronously lift $ addRack t (M0.fid rack) (M0.fid fs)
+      let encls = G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]
+      for_ encls $ \encl -> do
+        m0synchronously lift $ addEnclosure t (M0.fid encl) (M0.fid rack)
+        let ctrls = G.connectedTo encl M0.IsParentOf rg :: [M0.Controller]
+        for_ ctrls $ \ctrl -> do
+          -- Get node fid
+          let Just node = G.connectedFrom M0.IsOnHardware ctrl rg :: Maybe M0.Node
+          m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
+          let disks = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
+          for_ disks $ \disk -> do
+            m0synchronously lift $ addDisk t (M0.fid disk) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
   for_ (M0.getM0Nodes rg) $ \node -> do
     let attrs =
@@ -787,22 +789,24 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
         pva@M0.PVerActual{} -> do
           -- XXX-MULTIPOOLS: M0.SiteV
           m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
-          let rackvs = G.connectedTo pver M0.IsParentOf rg :: [M0.RackV]
-          for_ rackvs $ \rackv -> do
-            let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv rg
-            m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
-            let enclvs = G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
-            for_ enclvs $ \enclv -> do
-              let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv rg
-              m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
-              let ctrlvs = G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
-              for_ ctrlvs $ \ctrlv -> do
-                let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv rg
-                m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-                let diskvs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
-                for_ diskvs $ \diskv -> do
-                  let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv rg
-                  m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
+          let sitevs = G.connectedTo pver M0.IsParentOf rg :: [M0.SiteV]
+          for_ sitevs $ \sitev -> do
+            let rackvs = G.connectedTo sitev M0.IsParentOf rg :: [M0.RackV]
+            for_ rackvs $ \rackv -> do
+              let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv rg
+              m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
+              let enclvs = G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
+              for_ enclvs $ \enclv -> do
+                let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv rg
+                m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
+                let ctrlvs = G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
+                for_ ctrlvs $ \ctrlv -> do
+                  let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv rg
+                  m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
+                  let diskvs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
+                  for_ diskvs $ \diskv -> do
+                    let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv rg
+                    m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
         pvf@M0.PVerFormulaic{} -> do
           base <- lookupConfObjByFid (M0.v_base pvf)

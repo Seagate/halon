@@ -80,10 +80,7 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect root M0.IsParentOf mdpool
 
       rg <- getGraph
-      let re = [ (rack, G.connectedTo rack Has rg)
-               | rack <- G.connectedTo Cluster Has rg
-               ]
-      mapM_ mirrorRack re
+      mapM_ mirrorSite (G.connectedTo Cluster Has rg)
       return fs
   where
     genRootFid = do
@@ -99,22 +96,33 @@ initialiseConfInRG = getFilesystem >>= \case
                    ++ ", got " ++ show fid)
         pure fid
 
-    mirrorRack :: (Rack, [Enclosure]) -> PhaseM RC l ()
-    mirrorRack (rack, encls) = do
+    mirrorSite :: Site -> PhaseM RC l ()
+    mirrorSite site = do
+      m0s <- M0.Site <$> newFidRC (Proxy :: Proxy M0.Site)
+      rg <- getGraph
+      mapM_ (mirrorRack m0s) (G.connectedTo site Has rg)
       Just root <- getRoot
+      modifyGraph
+          $ G.connect m0s M0.At site
+        >>> G.connect root M0.IsParentOf m0s
+
+    mirrorRack :: M0.Site -> Rack -> PhaseM RC l ()
+    mirrorRack m0s rack = do
       m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
-      m0es <- mapM mirrorEncl encls
+      rg <- getGraph
+      mapM_ (mirrorEncl m0r) (G.connectedTo rack Has rg)
       modifyGraph
           $ G.connect m0r M0.At rack
-        >>> G.connect root M0.IsParentOf m0r
-        >>> (foldl' (.) id $ fmap (G.connect m0r M0.IsParentOf) m0es)
+        >>> G.connect m0s M0.IsParentOf m0r
 
-    mirrorEncl :: Enclosure -> PhaseM RC l M0.Enclosure
-    mirrorEncl encl = lookupEnclosureM0 encl >>= \case
+    mirrorEncl :: M0.Rack -> Enclosure -> PhaseM RC l M0.Enclosure
+    mirrorEncl m0r encl = lookupEnclosureM0 encl >>= \case
       Just m0e -> return m0e
       Nothing -> do
          m0e <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
-         modifyGraph $ G.connect m0e M0.At encl
+         modifyGraph
+             $ G.connect m0e M0.At encl
+           >>> G.connect m0r M0.IsParentOf m0e
          return m0e
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
@@ -266,7 +274,9 @@ createMDPoolPVer fs = do
     rg <- getGraph
     let root = M0.getM0Root rg
         mdpool = M0.Pool (M0.rt_mdpool root)
-        racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
+        sites = G.connectedTo root M0.IsParentOf rg :: [M0.Site]
+        racks = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Rack])
+                =<< sites
         encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
                 =<< racks
         ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
@@ -314,7 +324,7 @@ createIMeta fs = do
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getGraph
   let root = M0.getM0Root rg
-      cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
+      cas = [ (site, rack, encl, ctrl, svc)
             | node <- M0.getM0Nodes rg
             , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
             , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
@@ -322,6 +332,7 @@ createIMeta fs = do
             , Just (ctrl :: M0.Controller) <- [G.connectedTo node M0.IsOnHardware rg]
             , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsParentOf ctrl rg]
             , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsParentOf encl rg]
+            , Just (site :: M0.Site) <- [G.connectedFrom M0.IsParentOf rack rg]
             ]
       attrs = PDClustAttr {
                 _pa_N = 1 -- For CAS service `N` must always be equal to `1` as
@@ -334,7 +345,7 @@ createIMeta fs = do
               }
       failures = Failures 0 0 0 1 0
       maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]
-  fids <- for (zip cas [1..]) $ \((rack, encl, ctrl, svc), idx :: Int) -> do
+  fids <- for (zip cas [1..]) $ \((site, rack, encl, ctrl, svc), idx :: Int) -> do
     sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
                     <*> return (fromIntegral idx + maxDiskIdx)
                     <*> return 1024
@@ -345,7 +356,7 @@ createIMeta fs = do
         $ G.connect ctrl M0.IsParentOf disk
       >>> G.connect sdev M0.IsOnHardware disk
       >>> G.connect svc M0.IsParentOf sdev
-    return [M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
+    return [M0.fid site, M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
 
   let pver = PoolVersion (Just $ M0.rt_imeta_pver root)
                           (Set.unions $ Set.fromList <$> fids) failures attrs

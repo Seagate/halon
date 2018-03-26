@@ -113,6 +113,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
 
     checkActual :: M0.PVer -> Bool
     checkActual pver = getAll $ mconcat
+      [ mconcat $ All (deviceIsOK site rg) :
         [ mconcat $ All (deviceIsOK rack rg) :
             [ mconcat $ All (deviceIsOK encl rg) :
                 [ mconcat $ All (ctrlIsOK ctrl rg) :
@@ -126,30 +127,36 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
             | enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
             , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsRealOf enclv rg]
             ]
-        | rackv :: M0.RackV <- G.connectedTo pver M0.IsParentOf rg
+        | rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
         , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsRealOf rackv rg]
         ]
+      | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
+      , Just (site :: M0.Site) <- [G.connectedFrom M0.IsRealOf sitev rg]
+      ]
 
     mkFailuresSets :: [Failures]
     mkFailuresSets = map getFailures $ mkPool
-      [ mkRack rack
-         [ mkEncl encl
-             [ mkCtrl ctrl
-                [ mkDisk disk
-                | disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                ]
-             | ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-             ]
-         | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-         ]
-      | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+      [ mkSite site
+        [ mkRack rack
+           [ mkEncl encl
+               [ mkCtrl ctrl
+                  [ mkDisk disk
+                  | disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
+                  ]
+               | ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+               ]
+           | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+           ]
+        | rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
+        ]
+      | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
       ]
 
     mkPool :: [[DeviceFailure]] -> [DeviceFailure]
     mkPool = (mconcat <$>) . sequenceA
 
+    mkSite = mkLvl PVLSites
     mkRack = mkLvl PVLRacks
-
     mkEncl = mkLvl PVLEncls
 
     mkCtrl :: M0.Controller -> [DeviceFailure] -> [DeviceFailure]
@@ -169,7 +176,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
     mkLvl :: M0.HasConfObjectState a => PVerLvl -> a -> [[DeviceFailure]]
           -> [DeviceFailure]
     mkLvl lvl a xs
-      | notElem lvl [PVLRacks, PVLEncls] = error "mkLvl: Invalid argument"
+      | notElem lvl [PVLSites, PVLRacks, PVLEncls]
+                        = error "mkLvl: Invalid argument"
       | deviceIsOK a rg = nub $ concat [ comb (dfLvl lvl) rs
                                        | rs <- sequenceA xs ]
       | otherwise       = [dfLvl lvl]
@@ -194,7 +202,7 @@ instance Monoid DeviceFailure where
     DF (Failures (a0+b0) (a1+b1) (a2+b2) (a3+b3) (a4+b4))
 
 data PVerLvl =
-    PVLPools -- XXX-MULTIPOOLS: s/Pools/Sites/
+    PVLSites
   | PVLRacks
   | PVLEncls
   | PVLCtrls
@@ -202,7 +210,7 @@ data PVerLvl =
   deriving Eq
 
 dfLvl :: PVerLvl -> DeviceFailure
-dfLvl PVLPools = error $ "dfLvl: Invalid argument"
+dfLvl PVLSites = DF $ (getFailures mempty){ f_site = 1 }
 dfLvl PVLRacks = DF $ (getFailures mempty){ f_rack = 1 }
 dfLvl PVLEncls = DF $ (getFailures mempty){ f_encl = 1 }
 dfLvl PVLCtrls = DF $ (getFailures mempty){ f_ctrl = 1 }

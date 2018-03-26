@@ -109,15 +109,23 @@ instance ToJSON Enclosure
 
 -- | Rack information
 data Rack = Rack
-  { rack_idx :: Int
-  -- ^ Rack index
-  , rack_enclosures :: [Enclosure]
-  -- ^ List of 'Enclosure's in the index.
+  { rack_idx :: Int                -- ^ Rack index.
+  , rack_enclosures :: [Enclosure] -- ^ List of 'Enclosure's in the index.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Rack
 instance FromJSON Rack
 instance ToJSON Rack
+
+-- | Site information
+data Site = Site
+  { site_idx :: Int      -- ^ Site index.
+  , site_racks :: [Rack] -- ^ List of 'Rack's in the index.
+  } deriving (Eq, Data, Generic, Show, Typeable)
+
+instance Hashable Site
+instance FromJSON Site
+instance ToJSON Site
 
 -- | Failure set schemes. Define how failure sets are determined.
 --
@@ -326,7 +334,7 @@ instance ToJSON M0Profile
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
 data InitialData = InitialData {
-    id_racks :: [Rack]
+    id_sites :: [Site]
   , id_m0_servers :: [M0Host]
   , id_m0_globals :: M0Globals
   , id_pools :: [M0Pool]
@@ -402,7 +410,7 @@ instance ToJSON MeroRole where
 -- | Parse a halon_facts file into a structure indicating roles for
 -- each given host.
 data InitialWithRoles = InitialWithRoles
-  { _rolesinit_id_racks :: [Rack]
+  { _rolesinit_id_sites :: [Site]
   , _rolesinit_id_m0_servers :: [(UnexpandedHost, Y.Object)]
     -- ^ The list of unexpanded host as well as the full object that
     -- the host was parsed out from, used as environment given during
@@ -414,7 +422,7 @@ data InitialWithRoles = InitialWithRoles
 
 instance FromJSON InitialWithRoles where
   parseJSON (A.Object v) =
-      InitialWithRoles <$> v .: "id_racks"
+      InitialWithRoles <$> v .: "id_sites"
                        <*> parseServers
                        <*> v .: "id_m0_globals"
                        <*> v .: "id_pools"
@@ -429,7 +437,7 @@ instance FromJSON InitialWithRoles where
 
 instance ToJSON InitialWithRoles where
   toJSON InitialWithRoles{..} = A.object
-    [ "id_racks" .= _rolesinit_id_racks
+    [ "id_sites" .= _rolesinit_id_sites
     -- Dump out the full object into the file rather than our parsed
     -- and trimmed structure. This means we won't lose any information
     -- with @fromJSON . toJSON@
@@ -474,7 +482,7 @@ resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
 resolveMeroRoles InitialWithRoles{..} template =
     case partitionEithers ehosts of
         ([], hosts) ->
-            Right $ InitialData { id_racks = _rolesinit_id_racks
+            Right $ InitialData { id_sites = _rolesinit_id_sites
                                 , id_m0_servers = hosts
                                 , id_m0_globals = _rolesinit_id_m0_globals
                                 , id_pools = _rolesinit_id_pools
@@ -565,19 +573,31 @@ parseInitialData facts meroRoles halonRoles = runExceptT parse
                 in ExceptT . (first mkExc <$>) . EDE.eitherParseFile
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
-validateInitialData idata = do
-    check (allUnique $ map rack_idx $ id_racks idata)
-        "Racks with non-unique rack_idx exist"
-    check (all (\(fmap enc_idx -> idxs) -> allUnique idxs) enclsPerRack)
-        "Enclosures with non-unique enc_idx exist inside a rack"
-    check (all (not . null) enclIds) "Enclosure without enc_id specified"
-    check (length enclIds == length (nub enclIds))
-        "Enclosures with non-unique enc_id exist"
+validateInitialData InitialData{..} = do
+    check "Sites with non-unique rack_idx exist"
+        (unique . map site_idx $ id_sites)
+    check "Racks with non-unique rack_idx exist inside a site" $
+        all (unique . map rack_idx) racksPerSite
+    check "Enclosures with non-unique enc_idx exist inside a rack" $
+        all (unique . map enc_idx) enclsPerRack
+    check "Enclosure without enc_id specified" $ all (not . null) enclIds
+    check "Enclosures with non-unique enc_id exist" (unique enclIds)
   where
-    check cond msg =
-        if cond then Right () else Left (mkException "validateInitialData" msg)
-    allUnique xs = length (nub xs) == length xs
-    enclsPerRack = [rack_enclosures rack | rack <- id_racks idata]
+    check msg cond = if cond
+                     then Right ()
+                     else Left (mkException "validateInitialData" msg)
+
+    unique :: Eq a => [a] -> Bool
+    unique xs = length (nub xs) == length xs
+
+    racksPerSite :: [[Rack]]
+    racksPerSite = site_racks <$> id_sites
+
+    enclsPerRack :: [[Enclosure]]
+    enclsPerRack = [ rack_enclosures rack
+                   | site <- id_sites
+                   , rack <- site_racks site
+                   ]
     enclIds = enc_id <$> concat enclsPerRack
 
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
@@ -606,6 +626,8 @@ deriveSafeCopy 0 'base ''Enclosure
 deriveSafeCopy 0 'base ''HalonSettings
 deriveSafeCopy 0 'base ''Host
 deriveSafeCopy 0 'base ''InitialData
+deriveSafeCopy 0 'base ''Site
+storageIndex           ''Site "4fb5befd-eb37-4f8f-b507-8aff14e774c9"
 deriveSafeCopy 0 'base ''Rack
 storageIndex           ''Rack "fe43cf82-adcd-40b5-bf74-134902424229"
 deriveSafeCopy 0 'base ''RoleSpec

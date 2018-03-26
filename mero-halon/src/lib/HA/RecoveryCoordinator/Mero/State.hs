@@ -218,7 +218,8 @@ data AnyCascadeRule = forall a b.
 -- | List all possible cascading rules
 stateCascadeRules :: [AnyCascadeRule]
 stateCascadeRules =
-  [ AnyCascadeRule rackCascadeEnclosureRule
+  [ AnyCascadeRule siteCascadeRackRule
+  , AnyCascadeRule rackCascadeEnclosureRule
   , AnyCascadeRule sdevCascadeDisk
   , AnyCascadeRule diskCascadeSdev
   , AnyCascadeRule nodeCascadeController
@@ -233,9 +234,16 @@ stateCascadeRules =
   ] ++ (AnyCascadeRule <$> enclosureCascadeControllerRules)
     ++ (AnyCascadeRule <$> iosFailsController)
 
+siteCascadeRackRule :: StateCascadeRule M0.Site M0.Rack
+siteCascadeRackRule = StateCascadeRule
+  (M0.M0_NC_ONLINE ==)
+  (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
+  (\x rg -> G.connectedTo x M0.IsParentOf rg)
+  Transition.siteCascadeRack
+
 rackCascadeEnclosureRule :: StateCascadeRule M0.Rack M0.Enclosure
 rackCascadeEnclosureRule = StateCascadeRule
-  (M0.M0_NC_ONLINE==)
+  (M0.M0_NC_ONLINE ==)
   (`elem` [M0.M0_NC_FAILED, M0.M0_NC_TRANSIENT])
   (\x rg -> G.connectedTo x M0.IsParentOf rg)
   Transition.rackCascadeEnclosure   -- XXX: what if enclosure is failed (?)
@@ -354,15 +362,17 @@ diskFailsPVer = StateCascadeRule
                       contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
                       enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
                       rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
-                      G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
+                      sitev <- G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.SiteV
+                      G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer]
                     guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
                     return pver
             in lefts $ map (checkBroken rg) pvers)
   Transition.diskFailsPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
-     (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
+   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fenc, fctrl, fdisk] _))) = do
+     (sitesv :: [M0.SiteV])       <- check fsite [pver] (Proxy :: Proxy M0.Site)
+     (racksv :: [M0.RackV])       <- check frack sitesv (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
@@ -394,15 +404,17 @@ diskFixesPVer = StateCascadeRule
                        contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
                        enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
                        rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
-                       G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.PVer]
+                       sitev <- G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.SiteV
+                       G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer]
                      guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                      return pver
             in lefts $ map (checkBroken rg) pvers)
   Transition.diskFixesPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [_, frack, fenc, fctrl, fdisk] _))) = do
-     (racksv :: [M0.RackV])       <- check frack [pver] (Proxy :: Proxy M0.Rack)
+   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fenc, fctrl, fdisk] _))) = do
+     (sitesv :: [M0.SiteV])       <- check fsite [pver] (Proxy :: Proxy M0.Site)
+     (racksv :: [M0.RackV])       <- check frack sitesv (Proxy :: Proxy M0.Rack)
      (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
      (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
      void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])

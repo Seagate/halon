@@ -203,6 +203,21 @@ class Rack(ToYaml):
         return lines
 
 
+class Site(ToYaml):
+
+    def __init__(self, idx, racks):
+        self.idx, self.racks = idx, racks
+
+    def to_yaml(self, depth):
+        lines = []
+        lines.append(indent(depth) + '- site_idx: {}'.format(self.idx))
+        lines.append(indent(depth+1) + 'site_racks:')
+        assert self.racks
+        for x in self.racks:
+            lines.extend(x.to_yaml(depth+2))
+        return lines
+
+
 class Server(Default, ToYaml):
 
     def __init__(self, encl):
@@ -269,25 +284,26 @@ class DriveRef(ToYaml):
 
 class Facts(ToYaml):
 
-    def __init__(self, racks, pools, profiles):
-        # XXX REFACTORME: Use decorators: @nonempty_sequence_of(Rack), etc.
-        assert racks and all(type(x) is Rack for x in racks)
+    def __init__(self, sites, pools, profiles):
+        # XXX REFACTORME: Use decorators: @nonempty_sequence_of(Site), etc.
+        assert sites and all(type(x) is Site for x in sites)
         assert pools and all(type(x) is Pool for x in pools)
         assert profiles and all(type(x) is Profile for x in profiles)
         assert all(pool in pools for prof in profiles for pool in prof.pools)
-        self.racks, self.pools, self.profiles = racks, pools, profiles
+        self.sites, self.pools, self.profiles = sites, pools, profiles
 
     def to_yaml(self, depth):
         lines = []
 
-        lines.append(indent(depth) + 'id_racks:')
-        for x in self.racks:
+        lines.append(indent(depth) + 'id_sites:')
+        for x in self.sites:
             lines.extend(x.to_yaml(depth+1))
 
         lines.append(indent(depth) + 'id_m0_servers:')
-        for rack in self.racks:
-            for encl in rack.encls:
-                lines.extend(Server(encl).to_yaml(depth+1))
+        for site in self.sites:
+            for rack in site.racks:
+                for encl in rack.encls:
+                    lines.extend(Server(encl).to_yaml(depth+1))
 
         lines.append(indent(depth) + 'id_m0_globals:')
         for s in ('m0_be_ios_seg_size: 549755813888',
@@ -445,7 +461,7 @@ def sample_facts():
                 Profile(id='prof-1', pools=pools[1:3]),
                 Profile(id='prof-2', pools=pools[3:])]
 
-    return '\n'.join(Facts(racks=[rack_0, rack_1],
+    return '\n'.join(Facts(sites=[Site(idx=0, racks=[rack_0, rack_1])],
                            pools=pools,
                            profiles=profiles).to_yaml(0)) + '\n'
 

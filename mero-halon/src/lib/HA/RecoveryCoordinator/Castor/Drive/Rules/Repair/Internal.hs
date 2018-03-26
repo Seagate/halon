@@ -98,7 +98,8 @@ allIOSOnline pool = do
 getIOServices :: M0.Pool -> PhaseM RC l [M0.Service]
 getIOServices pool = getGraph >>= \g -> return $ nub
   [ svc | pv <- G.connectedTo pool M0.IsParentOf g :: [M0.PVer]
-        , rv <- G.connectedTo pv M0.IsParentOf g :: [M0.RackV]
+        , sv <- G.connectedTo pv M0.IsParentOf g :: [M0.SiteV]
+        , rv <- G.connectedTo sv M0.IsParentOf g :: [M0.RackV]
         , ev <- G.connectedTo rv M0.IsParentOf g :: [M0.EnclosureV]
         , cv <- G.connectedTo ev M0.IsParentOf g :: [M0.ControllerV]
         , Just ct <- [G.connectedFrom M0.IsRealOf cv g :: Maybe M0.Controller]

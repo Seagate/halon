@@ -259,14 +259,15 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                , ctrl :: M0.Controller <- connectedFromList M0.IsParentOf disk rg
                , encl :: M0.Enclosure <- connectedFromList M0.IsParentOf ctrl rg
                , rack :: M0.Rack <- connectedFromList M0.IsParentOf encl rg
-               , rackv :: M0.RackV <- G.connectedTo rack M0.IsRealOf rg
-               -- XXX-MULTIPOOLS: Site, SiteV
-               , pver :: M0.PVer <- connectedFromList M0.IsParentOf rackv rg
+               , site :: M0.Site <- connectedFromList M0.IsParentOf rack  rg
+               , sitev :: M0.SiteV <- G.connectedTo site M0.IsRealOf rg
+               , pver :: M0.PVer <- connectedFromList M0.IsParentOf sitev rg
                , pool :: M0.Pool <- connectedFromList M0.IsParentOf pver rg
                , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
                ]
              failedDisks = [ d
-                           | rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+                           | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
+                           , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
                            , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
                            , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
                            , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg

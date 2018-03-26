@@ -143,13 +143,14 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile
--- XXX-MULTIPOOLS: add M0.Site; s/FIlesystem/Root/
+-- XXX-MULTIPOOLS: s/FIlesystem/Root/
 instance ShowFidObj M0.Filesystem
 instance ShowFidObj M0.Pool
 instance ShowFidObj M0.PVer
 instance ShowFidObj M0.Enclosure
 instance ShowFidObj M0.Controller
 instance ShowFidObj M0.Rack
+instance ShowFidObj M0.Site
 instance ShowFidObj M0.Node
 instance ShowFidObj M0.Process
 instance ShowFidObj M0.Service
@@ -157,6 +158,7 @@ instance ShowFidObj M0.Disk
 instance ShowFidObj M0.SDev
 instance ShowFidObj M0.EnclosureV
 instance ShowFidObj M0.ControllerV
+instance ShowFidObj M0.SiteV
 instance ShowFidObj M0.RackV
 instance ShowFidObj M0.DiskV
 
@@ -226,6 +228,7 @@ $(join <$> (mapM (mkDict ''HasConfObjectState) $
   [ ''M0.Root
   , ''M0.Profile
   , ''M0.Filesystem
+  , ''M0.Site
   , ''M0.Rack
   , ''M0.Enclosure
   , ''M0.Controller
@@ -236,6 +239,7 @@ $(join <$> (mapM (mkDict ''HasConfObjectState) $
   , ''M0.SDev
   , ''M0.Pool
   , ''M0.PVer
+  , ''M0.SiteV
   , ''M0.RackV
   , ''M0.EnclosureV
   , ''M0.ControllerV
@@ -260,6 +264,8 @@ instance HasConfObjectState M0.Filesystem where
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem
   toConfObjState _ = const M0_NC_ONLINE
+instance HasConfObjectState M0.Site where
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_Site
 instance HasConfObjectState M0.Rack where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Rack
 instance HasConfObjectState M0.Enclosure where
@@ -353,6 +359,12 @@ instance HasConfObjectState M0.Pool where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Pool
 instance HasConfObjectState M0.PVer where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_PVer
+instance HasConfObjectState M0.SiteV where
+  type StateCarrier M0.SiteV = NoExplicitConfigState
+  getState _ _ = NoExplicitConfigState
+  setState _ _ = id
+  hasStateDict = staticPtr $ static dict_HasConfObjectState_SiteV
+  toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.RackV where
   type StateCarrier M0.RackV = NoExplicitConfigState
   getState _ _ = NoExplicitConfigState
@@ -393,6 +405,7 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     , mkTypePair (Proxy :: Proxy M0.Profile)
     , mkTypePair (Proxy :: Proxy M0.Filesystem)
     , mkTypePair (Proxy :: Proxy M0.Node)
+    , mkTypePair (Proxy :: Proxy M0.Site)
     , mkTypePair (Proxy :: Proxy M0.Rack)
     , mkTypePair (Proxy :: Proxy M0.Pool)
     , mkTypePair (Proxy :: Proxy M0.Process)
@@ -402,6 +415,7 @@ dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
     , mkTypePair (Proxy :: Proxy M0.Controller)
     , mkTypePair (Proxy :: Proxy M0.Disk)
     , mkTypePair (Proxy :: Proxy M0.PVer)
+    , mkTypePair (Proxy :: Proxy M0.SiteV)
     , mkTypePair (Proxy :: Proxy M0.RackV)
     , mkTypePair (Proxy :: Proxy M0.EnclosureV)
     , mkTypePair (Proxy :: Proxy M0.ControllerV)
@@ -432,6 +446,7 @@ lookupConfObjectStates fids g = catMaybes
 $(mkDicts
   [ ''ConfObjectState, ''PrincipalRM]
   [ (''Cluster, ''Has, ''PrincipalRM)
+  , (''M0.Site, ''Is, ''ConfObjectState)
   , (''M0.Rack, ''Is, ''ConfObjectState)
   , (''M0.Enclosure, ''Is, ''ConfObjectState)
   , (''M0.Controller, ''Is, ''ConfObjectState)
@@ -444,6 +459,7 @@ $(mkDicts
 $(mkResRel
   [ ''ConfObjectState, ''PrincipalRM ]
   [ (''Cluster, AtMostOne, ''Has, AtMostOne, ''PrincipalRM)
+  , (''M0.Site, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Rack, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Enclosure, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Controller, Unbounded, ''Is, AtMostOne, ''ConfObjectState)

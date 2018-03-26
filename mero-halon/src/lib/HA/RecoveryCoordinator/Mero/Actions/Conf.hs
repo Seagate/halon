@@ -102,8 +102,8 @@ getSDevPool sdev = do
           , Just (ctrlv :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf diskv rg]
           , Just (enclv :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ctrlv rg]
           , Just (rackv :: M0.RackV) <- [G.connectedFrom M0.IsParentOf enclv rg]
-          -- XXX-MULTIPOOLS: SiteV
-          , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf rackv rg]
+          , Just (sitev :: M0.SiteV) <- [G.connectedFrom M0.IsParentOf rackv rg]
+          , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf sitev rg]
           , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
           , M0.fid pool /= M0.rt_mdpool (M0.getM0Root rg)
           ]

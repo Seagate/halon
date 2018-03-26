@@ -106,11 +106,11 @@ data ValidatedConfig = ValidatedConfig
   , vcHosts :: [Host]
   }
 
-mkValidatedConfig :: [CI.Rack]
+mkValidatedConfig :: [CI.Site]
                   -> ([CI.RoleSpec] -> Either String [CI.HalonRole])
                   -> String -- ^ Tracking station options.
                   -> AccValidation [String] ValidatedConfig
-mkValidatedConfig racks mkRoles stationOpts =
+mkValidatedConfig sites mkRoles stationOpts =
     ValidatedConfig
         <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
         <*> (firstErr "satellite" validateSatelliteOpts ^. from _Either)
@@ -129,7 +129,8 @@ mkValidatedConfig racks mkRoles stationOpts =
                             in (text,) <$> parseHelper NodeAdd.parser text
 
     hosts :: [(CI.Host, CI.HalonSettings)]
-    hosts = [ (host, h0params) | rack <- racks
+    hosts = [ (host, h0params) | site <- sites
+                               , rack <- CI.site_racks site
                                , encl <- CI.rack_enclosures rack
                                , host <- CI.enc_hosts encl
                                , Just h0params <- [CI.h_halon host] ]
@@ -168,7 +169,7 @@ run opts@Options{..} = do
         Right (initialData, halonRolesObj) -> do
             stationOpts <- liftIO $
                 fromMaybe "" <$> lookupEnv "HALOND_STATION_OPTIONS"
-            let evConfig = mkValidatedConfig (CI.id_racks initialData)
+            let evConfig = mkValidatedConfig (CI.id_sites initialData)
                                              (CI.mkHalonRoles halonRolesObj)
                                              stationOpts
             case evConfig of

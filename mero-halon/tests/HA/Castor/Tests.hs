@@ -21,7 +21,6 @@ import           Data.List (partition, nub)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
 import qualified Data.Set as Set
-import qualified Data.Text as T
 import           Data.Typeable
 import           System.Directory (removeFile)
 import           System.Environment (getExecutablePath)
@@ -32,6 +31,7 @@ import           HA.Multimap
 import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Rules (goSite)
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
@@ -112,7 +112,8 @@ testParseInitialData = do
 
     check (initData, halonRolesObj) =
         traverse (CI.mkHalonRoles halonRolesObj . CI._hs_roles)
-            [ h0params | rack <- CI.id_racks initData
+            [ h0params | site <- CI.id_sites initData
+                       , rack <- CI.site_racks site
                        , encl <- CI.rack_enclosures rack
                        , host <- CI.enc_hosts encl
                        , Just h0params <- [CI.h_halon host] ]
@@ -129,7 +130,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
                { _id_drives = 8
                , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goSite (CI.id_sites iData)
       -- XXX-MULTIPOOLS: s/filesystem/root/
       _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
@@ -157,7 +158,7 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings
                { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goSite (CI.id_sites iData)
       _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers (CI.id_m0_servers iData)
@@ -200,7 +201,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                , _id_drives = 4
                , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goSite (CI.id_sites iData)
       _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers (CI.id_m0_servers iData)
@@ -235,7 +236,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goSite (CI.id_sites iData)
       _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers (CI.id_m0_servers iData)
@@ -260,20 +261,22 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     hosts <- runGet ls' $ findHosts ".*"
     let rg = lsGraph ls'
         pvers = G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
-        racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
+        sites = G.connectedTo root M0.IsParentOf rg :: [M0.Site]
+        racks = join $ fmap (\s -> G.connectedTo s M0.IsParentOf rg :: [M0.Rack]) sites
         encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) racks
-        ctrls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Controller]) encls
-        disks = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Disk]) ctrls
-        enc   = catMaybes $ fmap (\r -> G.connectedFrom Has r rg :: Maybe Enclosure) hosts
-        sdevs = join $ fmap (\r -> [ d | s <- G.connectedTo r Has rg :: [Slot]
+        ctrls = join $ fmap (\e -> G.connectedTo e M0.IsParentOf rg :: [M0.Controller]) encls
+        disks = join $ fmap (\c -> G.connectedTo c M0.IsParentOf rg :: [M0.Disk]) ctrls
+        enclsH = catMaybes $ fmap (\h -> G.connectedFrom Has h rg :: Maybe Enclosure) hosts
+        sdevs = join $ fmap (\e -> [ d | s <- G.connectedTo e Has rg :: [Slot]
                                        , d <- maybeToList (G.connectedFrom Has s rg :: Maybe StorageDevice) ])
-                            enc
-        disksByHost = catMaybes $ fmap (\r -> G.connectedFrom M0.At r rg :: Maybe M0.Disk) sdevs
+                            enclsH
+        disksByHost = catMaybes $ fmap (\s -> G.connectedFrom M0.At s rg :: Maybe M0.Disk) sdevs
 
         disk1 = head disks
         dvers1 = G.connectedTo disk1 M0.IsRealOf rg :: [M0.DiskV]
 
     assertMsg "Number of pvers" $ length pvers == 5
+    assertMsg "Number of sites" $ length sites == 1
     assertMsg "Number of racks" $ length racks == 1
     assertMsg "Number of enclosures" $ length encls == 4
     assertMsg "Number of controllers" $ length ctrls == 4
@@ -289,7 +292,8 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
       let dver = [ diskv
-                 | rackv :: M0.RackV <- G.connectedTo  pver M0.IsParentOf rg
+                 | sitev :: M0.SiteV <- G.connectedTo  pver M0.IsParentOf rg
+                 , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
                  , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
                  , cntrv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
                  , diskv :: M0.DiskV <- G.connectedTo cntrv M0.IsParentOf rg
@@ -304,7 +308,7 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
-      mapM_ goRack (CI.id_racks iData)
+      mapM_ goSite (CI.id_sites iData)
       _filesystem <- initialiseConfInRG
       loadMeroGlobals (CI.id_m0_globals iData)
       loadMeroServers (CI.id_m0_servers iData)
@@ -403,7 +407,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                                                                                          ,[0,0,0,0,1]
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do
-         mapM_ goRack (CI.id_racks iData)
+         mapM_ goSite (CI.id_sites iData)
          _filesystem <- initialiseConfInRG
          loadMeroGlobals (CI.id_m0_globals iData)
          loadMeroServers (CI.id_m0_servers iData)
@@ -431,28 +435,3 @@ run ls = runPhase ls (0 :: Int) emptyFifoBuffer
 runGet :: forall app g a. (Application app, g ~ GlobalState app)
        => g -> PhaseM app (Maybe a) a -> Process a
 runGet = runPhaseGet
-
-goRack :: forall l. CI.Rack
-       -> PhaseM RC l ()
-goRack (CI.Rack{..}) = let rack = Rack rack_idx in do
-  registerRack rack
-  mapM_ (goEnc rack) rack_enclosures
-
-goEnc :: forall l. Rack
-      -> CI.Enclosure
-      -> PhaseM RC l ()
-goEnc rack (CI.Enclosure{..}) = let
-    enclosure = Enclosure enc_id
-  in do
-    registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc
-    mapM_ (goHost enclosure) enc_hosts
-
-goHost :: forall l. Enclosure
-       -> CI.Host
-       -> PhaseM RC l ()
-goHost enc (CI.Host{..}) = let
-    host = Host $ T.unpack h_fqdn
-  in do
-    registerHost host
-    locateHostInEnclosure host enc

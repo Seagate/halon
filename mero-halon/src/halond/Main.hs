@@ -40,14 +40,14 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
 main = do
+  -- Default buffering mode may result in gibberish in systemd logs.
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
   config <- parseArgs <$> getArgs
   case mode config of
     Version -> versionString >>= putStrLn
     Help -> putStrLn helpString
     Run -> do
-        -- Default buffering mode may result in gibberish in systemd logs.
-        hSetBuffering stdout LineBuffering
-        hSetBuffering stderr LineBuffering
         -- TODO: Implement a mechanism to propagate env vars in distributed tests.
         -- Perhaps an env var like
         -- DC_PROPAGATE_ENV="HALON_TRACING DISTRIBUTED_PROCESS_TRACE_FILE"

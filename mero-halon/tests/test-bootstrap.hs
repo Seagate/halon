@@ -65,6 +65,7 @@ hRedirect hFrom hTo action = bracket
 main :: IO ()
 main = withMeroRoot $ \mero_root -> do
   hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
   progName <- getProgName
   let fn = progName ++ ".log"
   putStrLn $ "Redirecting stdout and stderr to " ++ fn

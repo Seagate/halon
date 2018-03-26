@@ -56,8 +56,9 @@ updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` po
     | Just cntrl <- [G.connectedFrom     M0.IsParentOf disk  graph :: Maybe M0.Controller]
     , Just encl  <- [G.connectedFrom     M0.IsParentOf cntrl graph :: Maybe M0.Enclosure]
     , Just rack  <- [G.connectedFrom     M0.IsParentOf encl  graph :: Maybe M0.Rack]
-    , rackv <- G.connectedTo  rack M0.IsRealOf         graph :: [M0.RackV]
-    , Just pver  <- [G.connectedFrom     M0.IsParentOf rackv graph :: Maybe M0.PVer]
+    , Just site  <- [G.connectedFrom     M0.IsParentOf rack  graph :: Maybe M0.Site]
+    , sitev      <-  G.connectedTo  site M0.IsRealOf         graph :: [M0.SiteV]
+    , Just pver  <- [G.connectedFrom     M0.IsParentOf sitev graph :: Maybe M0.PVer]
     , Just pool  <- [G.connectedFrom     M0.IsParentOf pver  graph :: Maybe M0.Pool]
     ]
   -- Get all pools, except metadata pools.

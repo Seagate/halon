@@ -42,7 +42,7 @@ import           Mero.ConfC (Fid(..), PDClustAttr(..))
 -- floor((nr_encls)/(N+K)), though distributional issues may result
 -- in a lower value.
 data Failures = Failures {
-    f_pool :: !Word32 -- XXX-MULTIPOOLS: s/pool/site/
+    f_site :: !Word32
   , f_rack :: !Word32
   , f_encl :: !Word32
   , f_ctrl :: !Word32
@@ -64,7 +64,7 @@ data PoolVersion = PoolVersion
 -- | Convert failure tolerance vector to a straight array of Words for
 --   passing to Mero.
 failuresToArray :: Failures -> [Word32]
-failuresToArray f = [f_pool f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+failuresToArray f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
 -- | Description of how halon run update of the graph.
 data UpdateType m
@@ -109,8 +109,8 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
   where
     totalDrives rg = length
       [ disk
-      -- XXX-MULTIPOOLS: site
-      | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+      | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
+      , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
       , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
       , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
       , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
@@ -129,16 +129,27 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
         -- the corresponding subtree.
         let root = M0.getM0Root rg
         vs <- for (filterByFids
-                   $ G.connectedTo root M0.IsParentOf rg :: [M0.Rack])
-                  (runRack pver)
+                   $ G.connectedTo root M0.IsParentOf rg :: [M0.Site])
+                  (runSite pver)
         unless (or vs) $ S.put rg
 
-    runRack :: M0.PVer -> M0.Rack -> S.State G.Graph Bool
-    runRack pver rack = do
+    runSite :: M0.PVer -> M0.Site -> S.State G.Graph Bool
+    runSite pver site = do
+        sitev <- M0.SiteV <$> S.state (newFid (Proxy :: Proxy M0.SiteV))
+        rg <- S.get
+        S.modify' $ G.connect pver M0.IsParentOf sitev
+                >>> G.connect site M0.IsRealOf sitev
+        vs <- for (filterByFids
+                   $ G.connectedTo site M0.IsParentOf rg :: [M0.Rack])
+                  (runRack sitev)
+        unless (or vs) $ S.put rg
+        pure (or vs)
+
+    runRack :: M0.SiteV -> M0.Rack -> S.State G.Graph Bool
+    runRack sitev rack = do
         rackv <- M0.RackV <$> S.state (newFid (Proxy :: Proxy M0.RackV))
         rg <- S.get
-        -- XXX-MULTIPOOLS: pver should be connected to sitev, not rackv
-        S.modify' $ G.connect pver M0.IsParentOf rackv
+        S.modify' $ G.connect sitev M0.IsParentOf rackv
                 >>> G.connect rack M0.IsRealOf rackv
         vs <- for (filterByFids
                    $ G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure])

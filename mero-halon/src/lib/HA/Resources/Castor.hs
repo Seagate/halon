@@ -34,6 +34,12 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
+newtype Site = Site Int -- ^ Site index
+  deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
+
+storageIndex ''Site "521f5803-9277-40b4-ae5e-6bbb57a25403"
+deriveSafeCopy 0 'base ''Site
+
 newtype Rack = Rack Int -- ^ Rack index
   deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
@@ -311,16 +317,17 @@ deriveSafeCopy 0 'base ''HalonVars
 
 -- XXX Only nodes and services have runtime information attached to them, for now.
 $(mkDicts
-  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Site, ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, ''Has, ''Rack)
+  [ (''Cluster, ''Has, ''Site)
   , (''Cluster, ''Has, ''Host)
   , (''Cluster, ''Has, ''HalonVars)
   , (''Cluster, ''Has, ''StorageDevice)
+  , (''Site, ''Has, ''Rack)
   , (''Rack, ''Has, ''Enclosure)
   , (''Host, ''Has, ''HostAttr)
   , (''Enclosure, ''Has, ''Slot)
@@ -338,17 +345,18 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
+  [ ''Site, ''Rack, ''Host, ''HostAttr, ''DeviceIdentifier
   , ''Enclosure, ''StorageDevice
   , ''StorageDeviceStatus, ''StorageDeviceAttr
   , ''BMC, ''UUID, ''ReassemblingRaid, ''HalonVars
   , ''Slot, ''Is, ''ReplacedBy
   ]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Rack)
+  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Site)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''Host)
   , (''Cluster, AtMostOne, ''Has, AtMostOne, ''HalonVars)
   , (''Cluster, AtMostOne, ''Has, Unbounded, ''StorageDevice)
   , (''Enclosure, AtMostOne, ''Has, Unbounded, ''Slot)
+  , (''Site, AtMostOne, ''Has, Unbounded, ''Rack)
   , (''Rack, AtMostOne, ''Has, Unbounded, ''Enclosure)
   , (''Host, Unbounded, ''Has, Unbounded, ''HostAttr)
   , (''Host, AtMostOne, ''Has, AtMostOne, ''UUID)

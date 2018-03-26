@@ -177,6 +177,11 @@ enclosureOnline = constTransition M0_NC_ONLINE
 rackCascadeEnclosure :: CascadeTransition M0.Rack M0.Enclosure
 rackCascadeEnclosure _ = constTransition M0_NC_TRANSIENT
 
+-- | Unconditionally transition 'M0.Rack' to 'M0_NC_TRANSIENT'
+-- due to 'M0.Site' state change.
+siteCascadeRack :: CascadeTransition M0.Site M0.Rack
+siteCascadeRack _ = constTransition M0_NC_TRANSIENT
+
 -- * 'M0.Pool'
 
 -- | Transition a 'M0.Pool' to a rebalancing state, after repair has
