@@ -27,7 +27,7 @@ import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Commands as Commands
 import qualified HA.RecoveryCoordinator.Castor.Drive as Drive
 import qualified HA.RecoveryCoordinator.Castor.Expander.Rules as Expander
-import qualified HA.RecoveryCoordinator.Castor.Filesystem as Filesystem
+import qualified HA.RecoveryCoordinator.Castor.FilesystemStats as FStats
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
@@ -45,7 +45,7 @@ import           Network.CEP
 castorRules :: Definitions RC ()
 castorRules = sequence_
   [ ruleInitialDataLoad
-  , Filesystem.rules
+  , FStats.rules
   , Process.rules
   , Drive.rules
   , Expander.rules

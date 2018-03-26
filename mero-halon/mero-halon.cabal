@@ -97,7 +97,7 @@ Library
                    HA.RecoveryCoordinator.Castor.Drive.Events
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Smart
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Internal
-                   HA.RecoveryCoordinator.Castor.Filesystem
+                   HA.RecoveryCoordinator.Castor.FilesystemStats
                    HA.RecoveryCoordinator.Castor.Node.Actions
                    HA.RecoveryCoordinator.Castor.Node.Events
                    HA.RecoveryCoordinator.Castor.Pool.Actions
@@ -169,8 +169,8 @@ Library
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Repair.Internal
                    HA.RecoveryCoordinator.Castor.Drive.Rules.Reset
-                   HA.RecoveryCoordinator.Castor.Filesystem.Events
-                   HA.RecoveryCoordinator.Castor.Filesystem.Rules
+                   HA.RecoveryCoordinator.Castor.FilesystemStats.Events
+                   HA.RecoveryCoordinator.Castor.FilesystemStats.Rules
                    HA.RecoveryCoordinator.Castor.Service.Rules
                    HA.RecoveryCoordinator.Castor.Cluster.Rules
                    HA.RecoveryCoordinator.Castor.Process.Rules

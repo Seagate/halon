@@ -2,18 +2,18 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
--- Module rules for Filesystem entity.
+-- Module rules for FilesystemStats entity.
 
 {-# LANGUAGE PackageImports #-}
 
-module HA.RecoveryCoordinator.Castor.Filesystem.Rules
+module HA.RecoveryCoordinator.Castor.FilesystemStats.Rules
   ( rules
     -- * Individual rules exported for tests.
   , periodicQueryStats
   ) where
 
 import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
-import           HA.RecoveryCoordinator.Castor.Filesystem.Events
+import           HA.RecoveryCoordinator.Castor.FilesystemStats.Events
   (StatsUpdated(..))
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (getFilesystem, getRoot)
 import           HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
@@ -72,8 +72,8 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                   $ x
 
     mfs <- getFilesystem -- XXX-MULTIPOOLS
-    status <- getClusterStatus <$> getGraph
-    case ((,) <$> mfs <*> status) of
+    mstatus <- getClusterStatus <$> getGraph
+    case ((,) <$> mfs <*> mstatus) of
       Nothing ->
         Log.rcLog' Log.DEBUG "No filesystem found in graph."
       Just (_, M0.MeroClusterState _ rl _) | rl <= M0.BootLevel 1 ->

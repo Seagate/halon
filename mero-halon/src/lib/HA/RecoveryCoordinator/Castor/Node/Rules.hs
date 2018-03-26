@@ -14,31 +14,6 @@
 -- Castor node is a hardware node with running mero-kernel, such node
 -- allow to start m0t1fs clients and m0d servers on it.
 --
--- Related part of the resource graph:
--- XXX-MULTIPOOLS: Update below diagram, remove Filesystem
--- @
---   R.Host --+- HostAttirbutes
---     |      |
---     |      +-- M0.Client
---     |      |
---     |      +-- M0.Server
---     |
---     |              +-- ServiceProcess
---     |              |
---     |      +--- Service m0d
---     |      |
---     |      |
---     +--- R.Node           M0.Filesystem
---            |                 |
---            |                 |
---            +------+    +-----+
---                   |    |
---                   M0.Node
---                      |
---                      |
---                    M0.Process
--- @
---
 -- Lifetime
 -- =========
 --
@@ -409,7 +384,7 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
   dispatch <- mkDispatcher
   notifier <- mkNotifier dispatch
 
-  let route node = getFilesystem >>= \case
+  let route node = getRoot >>= \case
         Nothing -> return [wait_data_load]
         Just _ -> do
           mhost <- findNodeHost node
