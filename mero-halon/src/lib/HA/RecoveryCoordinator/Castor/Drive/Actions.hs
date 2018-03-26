@@ -251,7 +251,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
     mk :: Maybe (Int, Int)
     mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
              connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
-             Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+             root = M0.getM0Root rg
              -- XXX-MULTIPOOLS: Shouldn't we distinguish pvers of different pools?
              pvers = nub
                [ pver

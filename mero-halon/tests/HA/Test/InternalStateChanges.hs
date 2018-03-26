@@ -77,9 +77,9 @@ stateCascade t pg = do
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       rg <- getGraph
       let Just p = listToMaybe $
+              -- XXX Why don't we use 'M0.getM0Processes'?
               [ proc
-              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
-              , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+              | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
               , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
               , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
               , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
@@ -112,9 +112,7 @@ failvecCascade t pg = do
       -- Take first two disks ..
       let d0:d1:_ =
               [ disk
-              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
-              -- XXX-MULTIPOOLS: site
-              , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+              | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
               , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
               , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
               , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
@@ -125,7 +123,7 @@ failvecCascade t pg = do
       rg' <- getGraph
       let pools =
               [ pool
-              | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg'
+              | let root = M0.getM0Root rg'
               , pool :: M0.Pool <- G.connectedTo root M0.IsParentOf rg'
               , pver :: M0.PVer <- G.connectedTo pool M0.IsParentOf rg'
               , M0.fid pool /= M0.rt_mdpool root

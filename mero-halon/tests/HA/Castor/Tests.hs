@@ -43,7 +43,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources (Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
@@ -209,8 +209,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
 
     let rg = lsGraph ls'
         ppvers = [ (pool, pvers)
-                 | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
-                 , pool :: M0.Pool <- G.connectedTo root M0.IsParentOf rg
+                 | pool :: M0.Pool <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
                  , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf rg
                  ]
     for_ ppvers $ \(_, pvers) -> do

@@ -34,7 +34,7 @@ mkPVerFormulaicFid fid@(Fid container key)
 formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
-  let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+  let root = M0.getM0Root rg
       attrs = PDClustAttr
                 { _pa_N = CI.m0_data_units globs
                 , _pa_K = CI.m0_parity_units globs

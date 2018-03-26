@@ -1113,7 +1113,6 @@ $(mkResRel
   []
   )
 
--- XXX TODO: Use 'getM0Root' wherever applicable.
 getM0Root :: G.Graph -> Root
 getM0Root = fromJust . G.connectedTo R.Cluster R.Has
 

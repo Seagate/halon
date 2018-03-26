@@ -95,8 +95,7 @@ getM0ServicesRC = M0.getM0Services <$> getGraph
 getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
 getSDevPool sdev = do
     rg <- getGraph
-    let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
-        pools =
+    let pools =
           [ pool
           | Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
           , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
@@ -106,7 +105,7 @@ getSDevPool sdev = do
           -- XXX-MULTIPOOLS: SiteV
           , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf rackv rg]
           , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
-          , M0.fid pool /= M0.rt_mdpool root
+          , M0.fid pool /= M0.rt_mdpool (M0.getM0Root rg)
           ]
     case pools of
       -- TODO throw a better exception

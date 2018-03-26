@@ -17,7 +17,6 @@ module HA.RecoveryCoordinator.Castor.Pool.Actions
 import qualified Data.HashSet as S
 
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
@@ -26,7 +25,7 @@ import qualified HA.Resources.Mero.Note as M0
 getNonMD :: G.Graph -> [M0.Pool]
 getNonMD rg =
   [ pool
-  | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+  | let root = M0.getM0Root rg
   , pool <- G.connectedTo root M0.IsParentOf rg
   , M0.fid pool /= M0.rt_mdpool root
   ]

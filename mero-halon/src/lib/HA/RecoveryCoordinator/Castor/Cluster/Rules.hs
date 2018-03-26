@@ -406,8 +406,10 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
           return $ Right (ClusterStopOk, [finish])
         else do
           modifyGraph $ G.connect Cluster Has M0.OFFLINE
-          let nodes = [ node | host <- G.connectedTo Cluster Has rg :: [R.Host]
-                             , node <- G.connectedTo host Runs rg ]
+          let nodes = [ node
+                      | host :: R.Host <- G.connectedTo Cluster Has rg
+                      , node <- G.connectedTo host Runs rg
+                      ]
           jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
           modify Local $ rlens fldJobs . rfield .~ jobs
           liftProcess $ sendChan ch StateChangeStarted

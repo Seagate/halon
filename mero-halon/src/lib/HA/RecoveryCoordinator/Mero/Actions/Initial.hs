@@ -261,11 +261,10 @@ addProcess node devs CI.M0Process{..} = let
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
 createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
--- XXX-MULTIPOOLS: get rid of M0.Filesystem argument
 createMDPoolPVer fs = do
     Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
     rg <- getGraph
-    let Just root = G.connectedTo Cluster Has rg :: Maybe M0.Root
+    let root = M0.getM0Root rg
         mdpool = M0.Pool (M0.rt_mdpool root)
         racks = G.connectedTo root M0.IsParentOf rg :: [M0.Rack]
         encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
@@ -314,7 +313,7 @@ createIMeta fs = do
   Log.actLog "createIMeta" [("fs", M0.showFid fs)]
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getGraph
-  let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+  let root = M0.getM0Root rg
       cas = [ (rack, encl, ctrl, svc) -- XXX-MULTIPOOLS: site
             | node <- M0.getM0Nodes rg
             , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg

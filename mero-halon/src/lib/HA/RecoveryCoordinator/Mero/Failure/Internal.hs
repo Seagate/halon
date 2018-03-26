@@ -23,7 +23,6 @@ import           Data.Typeable
 import           Data.Word
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..))
 
@@ -110,9 +109,8 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
   where
     totalDrives rg = length
       [ disk
-      | let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
       -- XXX-MULTIPOOLS: site
-      , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+      | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
       , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
       , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
       , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
@@ -129,7 +127,7 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
         S.modify' $ G.connect pool M0.IsParentOf pver
         -- An element of list `vs` is True iff diskv objects were added to
         -- the corresponding subtree.
-        let Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+        let root = M0.getM0Root rg
         vs <- for (filterByFids
                    $ G.connectedTo root M0.IsParentOf rg :: [M0.Rack])
                   (runRack pver)
@@ -184,7 +182,7 @@ createPoolVersions :: [PoolVersion]
 createPoolVersions pvers invert rg =
     foldl' (\g p -> createPoolVersionsInPool p pvers invert g) rg pools
   where
-    Just (root :: M0.Root) = G.connectedTo Cluster Has rg
+    root = M0.getM0Root rg
     mdpool = M0.Pool (M0.rt_mdpool root)
     imeta_pools =
       [ pool

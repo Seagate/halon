@@ -142,8 +142,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
              ]
          | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
          ]
-      | let Just (root :: M0.Root) = G.connectedTo R.Cluster R.Has rg
-      , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+      | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
       ]
 
     mkPool :: [[DeviceFailure]] -> [DeviceFailure]

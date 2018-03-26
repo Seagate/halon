@@ -26,8 +26,7 @@ import Network.CEP
 getAllSDev :: G.Graph -> [M0.SDev]
 getAllSDev rg =
   [ sdev
-  | let Just (root :: M0.Root) = G.connectedTo Res.Cluster Res.Has rg
-  , rack :: M0.Rack <- G.connectedTo root M0.IsParentOf rg
+  | rack :: M0.Rack <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
   , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
   , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
   , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
