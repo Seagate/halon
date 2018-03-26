@@ -5,36 +5,15 @@
 --
 -- Mero cluster rules
 --
--- Relevant part of the resource graph.
--- @
---     R.Cluster
---       |  |
---       |  +-------M0.Root
---       |           |
---       |          M0.Profie
---       |           |
---       |          M0.FileSystem  XXX-MULTIPOOLS
---     R.Host          |
---      |  |           v
---      |  +--------->M0.Node
---      v
---     R.Node
--- @
---
---
---
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE ViewPatterns          #-}
-{-# LANGUAGE GADTs                 #-}
 module HA.RecoveryCoordinator.Castor.Cluster.Rules
   ( -- * All rules in one
     clusterRules
@@ -48,26 +27,25 @@ module HA.RecoveryCoordinator.Castor.Cluster.Rules
   , eventNodeFailedStart
   ) where
 
-import           HA.EventQueue
 import           HA.Encode
-import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources.Castor as R
-import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
-
-import qualified HA.ResourceGraph as G
-import           HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.RecoveryCoordinator.Castor.Cluster.Actions
-     ( notifyOnClusterTransition )
+import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Mero
+import           HA.RecoveryCoordinator.Castor.Cluster.Actions
+  ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Castor.Process.Events
-import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
+import           HA.RecoveryCoordinator.Mero.Events
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
@@ -78,16 +56,16 @@ import           Control.Lens
 import           Control.Monad (join, unless, void, when)
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
+import           Data.Foldable
 import           Data.List (sort)
+import qualified Data.Map.Strict as M
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
                             , isJust, isNothing )
 import           Data.Ratio
-import           Data.Foldable
-import qualified Data.Map.Strict as M
+import qualified Data.Set as Set
 import           Data.Traversable (forM, for)
 import           Data.Typeable
 import           Data.Vinyl hiding ((:~:))
-import qualified Data.Set as Set
 
 import           Prelude hiding ((.), id)
 import           Text.Printf (printf)
