@@ -74,8 +74,9 @@ initialiseConfInRG = getFilesystem >>= \case
         >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
         >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
         >>> G.connect root M0.IsParentOf profile
-        >>> G.connect Cluster Has profile -- XXX-MULTIPOOLS: delete this relation?
-        >>> G.connect profile M0.IsParentOf fs
+        >>> G.connect Cluster Has profile -- XXX DELETEME
+        >>> G.connect profile M0.IsParentOf fs -- XXX DELETEME
+        >>> G.connect root M0.IsParentOf fs -- XXX DELETEME
         >>> G.connect root M0.IsParentOf pool
         >>> G.connect root M0.IsParentOf mdpool
 

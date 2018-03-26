@@ -1015,6 +1015,7 @@ $(mkDicts
   , (''Root, ''IsParentOf, ''Node)
   , (''Root, ''IsParentOf, ''Pool)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
+  , (''Root, ''IsParentOf, ''Filesystem)
   , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
@@ -1094,6 +1095,7 @@ $(mkResRel
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
