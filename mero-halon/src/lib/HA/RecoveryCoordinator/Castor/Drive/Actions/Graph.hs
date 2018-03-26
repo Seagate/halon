@@ -14,13 +14,12 @@ module HA.RecoveryCoordinator.Castor.Drive.Actions.Graph
   , attachStorageDeviceToSDev
   ) where
 
+import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.ResourceGraph as G
-import HA.Resources.Castor (StorageDevice)
-import HA.RecoveryCoordinator.RC.Actions.Core
-import qualified HA.Resources as Res
+import           HA.Resources.Castor (StorageDevice)
 import qualified HA.Resources.Mero as M0
 
-import Network.CEP
+import           Network.CEP
 
 -- | Find every 'M0.SDev' in the 'Res.Cluster'.
 getAllSDev :: G.Graph -> [M0.SDev]

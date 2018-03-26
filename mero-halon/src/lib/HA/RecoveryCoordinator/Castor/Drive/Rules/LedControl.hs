@@ -19,7 +19,7 @@ import           HA.RecoveryCoordinator.Mero.Notifications (setPhaseInternalNoti
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources (Has(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Mero as M0
 import           HA.Services.SSPL.LL.CEP (DriveLedUpdate(..), sendLedUpdate, sendNodeCmd)
