@@ -26,7 +26,7 @@ import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.Actions.Conf
   ( getFilesystem
-  , lookupEnclosureM0
+  , lookupM0Enclosure
   )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (getRoot)
@@ -98,32 +98,32 @@ initialiseConfInRG = getFilesystem >>= \case
 
     mirrorSite :: Site -> PhaseM RC l ()
     mirrorSite site = do
-      m0s <- M0.Site <$> newFidRC (Proxy :: Proxy M0.Site)
+      m0site <- M0.Site <$> newFidRC (Proxy :: Proxy M0.Site)
       rg <- getGraph
-      mapM_ (mirrorRack m0s) (G.connectedTo site Has rg)
+      mapM_ (mirrorRack m0site) (G.connectedTo site Has rg)
       Just root <- getRoot
       modifyGraph
-          $ G.connect m0s M0.At site
-        >>> G.connect root M0.IsParentOf m0s
+          $ G.connect m0site M0.At site
+        >>> G.connect root M0.IsParentOf m0site
 
     mirrorRack :: M0.Site -> Rack -> PhaseM RC l ()
-    mirrorRack m0s rack = do
-      m0r <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
+    mirrorRack m0site rack = do
+      m0rack <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       rg <- getGraph
-      mapM_ (mirrorEncl m0r) (G.connectedTo rack Has rg)
+      mapM_ (mirrorEncl m0rack) (G.connectedTo rack Has rg)
       modifyGraph
-          $ G.connect m0r M0.At rack
-        >>> G.connect m0s M0.IsParentOf m0r
+          $ G.connect m0rack M0.At rack
+        >>> G.connect m0site M0.IsParentOf m0rack
 
     mirrorEncl :: M0.Rack -> Enclosure -> PhaseM RC l M0.Enclosure
-    mirrorEncl m0r encl = lookupEnclosureM0 encl >>= \case
-      Just m0e -> return m0e
+    mirrorEncl m0rack encl = lookupM0Enclosure encl >>= \case
+      Just m0encl -> return m0encl
       Nothing -> do
-         m0e <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
+         m0encl <- M0.Enclosure <$> newFidRC (Proxy :: Proxy M0.Enclosure)
          modifyGraph
-             $ G.connect m0e M0.At encl
-           >>> G.connect m0r M0.IsParentOf m0e
-         return m0e
+             $ G.connect m0encl M0.At encl
+           >>> G.connect m0rack M0.IsParentOf m0encl
+         return m0encl
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.

@@ -558,17 +558,18 @@ mkTestAroundReset transport pg devSt = run transport pg [setupRule] $ \ts -> do
         rg <- getGraph
         -- Find a single SDev
         let msdev = listToMaybe
-              [ sdev | site :: Site <- G.connectedTo Cluster Has rg
-                     , rack :: Rack <- G.connectedTo site Has rg
-                     , enc :: Enclosure <- G.connectedTo rack Has rg
-                     , slot :: Slot <- G.connectedTo enc Has rg
-                     , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg ]
+              [ sdev
+              | site :: Site <- G.connectedTo Cluster Has rg
+              , rack :: Rack <- G.connectedTo site Has rg
+              , encl :: Enclosure <- G.connectedTo rack Has rg
+              , slot :: Slot <- G.connectedTo encl Has rg
+              , sdev :: M0.SDev <- maybeToList $ G.connectedFrom M0.At slot rg
+              ]
         case msdev of
           Nothing -> liftProcess $ usend caller (Nothing :: Maybe M0.SDev)
           Just sdev -> do
-            _ <- applyStateChanges [ stateSet sdev $ TrI.constTransition devSt ]
+            _ <- applyStateChanges [stateSet sdev $ TrI.constTransition devSt]
             liftProcess . usend caller $ Just sdev
-
       start rule_init ()
 
 -- | Test that a drive that is in repaired state ends up in repaired
@@ -712,13 +713,14 @@ testExpanderResetRAIDReassemble transport pg = topts >>= \to -> run' transport p
   sayTest "RAID devices established"
 
   rg <- G.getGraph (_ts_mm ts)
-  let encs = [ enc | site <- G.connectedTo Cluster Has rg :: [Site]
-                   , rack <- G.connectedTo site Has rg :: [Rack]
-                   , enc <- G.connectedTo rack Has rg]
-
-  sayTest $ "Enclosures: " ++ show encs
-  let [enc] = encs
-      (Just m0enc) = encToM0Enc enc rg
+  let encls = [ encl
+              | site :: Site <- G.connectedTo Cluster Has rg
+              , rack :: Rack <- G.connectedTo site Has rg
+              , encl <- G.connectedTo rack Has rg
+              ]
+  sayTest $ "Enclosures: " ++ show encls
+  let [enc] = encls
+      Just m0enc = encToM0Enc enc rg
 
   sayTest $ "(enc, m0enc): " ++ show (enc, m0enc)
 

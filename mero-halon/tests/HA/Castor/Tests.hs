@@ -129,12 +129,7 @@ testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings
                { _id_drives = 8
                , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
-    (ls', _) <- run ls $ do
-      mapM_ goSite (CI.id_sites iData)
-      -- XXX-MULTIPOOLS: s/filesystem/root/
-      _filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers (CI.id_m0_servers iData)
+    (ls', _) <- run ls $ initialDataLoad iData
     -- 8 disks, tolerating one disk failure at a time
     let rg = lsGraph ls'
         failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
@@ -157,11 +152,7 @@ testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings
                { _id_servers = 4, _id_drives = 4 }
-    (ls', _) <- run ls $ do
-      mapM_ goSite (CI.id_sites iData)
-      _filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers (CI.id_m0_servers iData)
+    (ls', _) <- run ls $ initialDataLoad iData
     -- 16 disks, tolerating one disk failure at a time
     let rg = lsGraph ls'
         failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
@@ -201,10 +192,7 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                , _id_drives = 4
                , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
     (ls', _) <- run ls $ do
-      mapM_ goSite (CI.id_sites iData)
-      _filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers (CI.id_m0_servers iData)
+      initialDataLoad iData
       Just (Monolithic update) <- getCurrentGraphUpdateType
       modifyGraphM update
 
@@ -236,10 +224,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
-      mapM_ goSite (CI.id_sites iData)
-      _filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers (CI.id_m0_servers iData)
+      initialDataLoad iData
       rg <- getGraph
       let Iterative update = simpleUpdate 0 1 0
           Just updateGraph = update rg
@@ -292,7 +277,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
       assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
       assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
       let dver = [ diskv
-                 | sitev :: M0.SiteV <- G.connectedTo  pver M0.IsParentOf rg
+                 | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
                  , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
                  , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
                  , cntrv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
@@ -308,14 +293,10 @@ testApplyStateChanges transport pg = rGroupTest transport pg $ \pid -> do
     settings <- liftIO defaultInitialDataSettings
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls1, _) <- run ls0 $ do
-      mapM_ goSite (CI.id_sites iData)
-      _filesystem <- initialiseConfInRG
-      loadMeroGlobals (CI.id_m0_globals iData)
-      loadMeroServers (CI.id_m0_servers iData)
+      initialDataLoad iData
       RC.initialRule (IgnitionArguments [])
 
     let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
-
     (ls2, _) <- run ls1 $ void $ applyStateChanges $ (`stateSet` TrI.constTransition M0.PSOnline) <$> procs
 
     assertMsg "All processes should be online"
@@ -397,7 +378,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
        $ Tasty.assertEqual "pvers can't be found"
             ClusterLiveness{clPVers=False,clOngoingSNS=False,clHaveQuorum=True,clPrincipalRM=True}
   ] where
-    genericTest :: (PhaseM RC Int ()) -> (ClusterLiveness -> IO ()) -> IO ()
+    genericTest :: PhaseM RC Int () -> (ClusterLiveness -> IO ()) -> IO ()
     genericTest configure test = rGroupTest transport pg $ \pid -> do
       me <- getSelfNode
       ls0 <- emptyLoopState pid (nullProcessId me)
@@ -407,10 +388,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
                                                                                                          ,[0,0,0,0,1]
                                                                                                          ,[0,0,0,0,2]]}}
       (ls1, _) <- run ls0 $ do
-         mapM_ goSite (CI.id_sites iData)
-         _filesystem <- initialiseConfInRG
-         loadMeroGlobals (CI.id_m0_globals iData)
-         loadMeroServers (CI.id_m0_servers iData)
+         initialDataLoad iData
          Just (Monolithic update) <- getCurrentGraphUpdateType
          modifyGraphM update
          RC.initialRule (IgnitionArguments [])
@@ -425,6 +403,13 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
         rg <- getGraph
         liftIO . putMVar box =<< calculateClusterLiveness rg
       liftIO $ test =<< takeMVar box
+
+initialDataLoad :: CI.InitialData -> PhaseM RC l ()
+initialDataLoad CI.InitialData{..} = do
+    mapM_ goSite id_sites
+    _filesystem <- initialiseConfInRG
+    loadMeroGlobals id_m0_globals
+    loadMeroServers id_m0_servers
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g

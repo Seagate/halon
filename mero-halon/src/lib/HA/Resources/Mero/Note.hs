@@ -143,23 +143,25 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile
--- XXX-MULTIPOOLS: s/FIlesystem/Root/
-instance ShowFidObj M0.Filesystem
-instance ShowFidObj M0.Pool
-instance ShowFidObj M0.PVer
-instance ShowFidObj M0.Enclosure
-instance ShowFidObj M0.Controller
-instance ShowFidObj M0.Rack
-instance ShowFidObj M0.Site
+instance ShowFidObj M0.Filesystem -- XXX DELETEME
+
 instance ShowFidObj M0.Node
 instance ShowFidObj M0.Process
 instance ShowFidObj M0.Service
-instance ShowFidObj M0.Disk
 instance ShowFidObj M0.SDev
-instance ShowFidObj M0.EnclosureV
-instance ShowFidObj M0.ControllerV
+
+instance ShowFidObj M0.Site
+instance ShowFidObj M0.Rack
+instance ShowFidObj M0.Enclosure
+instance ShowFidObj M0.Controller
+instance ShowFidObj M0.Disk
+
+instance ShowFidObj M0.Pool
+instance ShowFidObj M0.PVer
 instance ShowFidObj M0.SiteV
 instance ShowFidObj M0.RackV
+instance ShowFidObj M0.EnclosureV
+instance ShowFidObj M0.ControllerV
 instance ShowFidObj M0.DiskV
 
 --------------------------------------------------------------------------------
@@ -228,15 +230,18 @@ $(join <$> (mapM (mkDict ''HasConfObjectState) $
   [ ''M0.Root
   , ''M0.Profile
   , ''M0.Filesystem
-  , ''M0.Site
-  , ''M0.Rack
-  , ''M0.Enclosure
-  , ''M0.Controller
+
   , ''M0.Node
   , ''M0.Process
   , ''M0.Service
   , ''M0.Disk
   , ''M0.SDev
+
+  , ''M0.Site
+  , ''M0.Rack
+  , ''M0.Enclosure
+  , ''M0.Controller
+
   , ''M0.Pool
   , ''M0.PVer
   , ''M0.SiteV
@@ -400,20 +405,23 @@ fidConfObjDict f = fromMaybe []
 
 -- | Map of all dictionaries
 dictMap :: Map.Map Word64 [SomeConfObjDict]
-dictMap = Map.fromListWith (<>) . fmap (fmap (: [])) $
+dictMap = Map.fromListWith (<>) . fmap (fmap (:[])) $
     [ mkTypePair (Proxy :: Proxy M0.Root)
     , mkTypePair (Proxy :: Proxy M0.Profile)
     , mkTypePair (Proxy :: Proxy M0.Filesystem)
+
     , mkTypePair (Proxy :: Proxy M0.Node)
-    , mkTypePair (Proxy :: Proxy M0.Site)
-    , mkTypePair (Proxy :: Proxy M0.Rack)
-    , mkTypePair (Proxy :: Proxy M0.Pool)
     , mkTypePair (Proxy :: Proxy M0.Process)
     , mkTypePair (Proxy :: Proxy M0.Service)
     , mkTypePair (Proxy :: Proxy M0.SDev)
+
+    , mkTypePair (Proxy :: Proxy M0.Site)
+    , mkTypePair (Proxy :: Proxy M0.Rack)
     , mkTypePair (Proxy :: Proxy M0.Enclosure)
     , mkTypePair (Proxy :: Proxy M0.Controller)
     , mkTypePair (Proxy :: Proxy M0.Disk)
+
+    , mkTypePair (Proxy :: Proxy M0.Pool)
     , mkTypePair (Proxy :: Proxy M0.PVer)
     , mkTypePair (Proxy :: Proxy M0.SiteV)
     , mkTypePair (Proxy :: Proxy M0.RackV)
@@ -444,7 +452,7 @@ lookupConfObjectStates fids g = catMaybes
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''ConfObjectState, ''PrincipalRM]
+  [ ''ConfObjectState, ''PrincipalRM ]
   [ (''Cluster, ''Has, ''PrincipalRM)
   , (''M0.Site, ''Is, ''ConfObjectState)
   , (''M0.Rack, ''Is, ''ConfObjectState)

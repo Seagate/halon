@@ -94,7 +94,7 @@ ruleDriveReplaced = define "castor::drive::led::ruleDriveReplaced" $ do
   start drive_ready ()
   where
     sendReadyLed storDev = getSDevHost storDev >>= \case
-      h : _ -> void $! sendLedUpdate DriveOk h storDev
+      h:_ -> void $! sendLedUpdate DriveOk h storDev
       _ -> Log.rcLog' Log.ERROR $ "No host associated with " ++ show storDev
 
     is_drive_ready (HAEvent uid msg) _ _ = case msg of

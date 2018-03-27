@@ -115,18 +115,18 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
     checkActual pver = getAll $ mconcat
       [ mconcat $ All (deviceIsOK site rg) :
         [ mconcat $ All (deviceIsOK rack rg) :
-            [ mconcat $ All (deviceIsOK encl rg) :
-                [ mconcat $ All (ctrlIsOK ctrl rg) :
-                    [ All (diskIsOK disk rg)
-                    | diskv :: M0.DiskV <- G.connectedTo ctrlv M0.IsParentOf rg
-                    , Just (disk :: M0.Disk) <- [G.connectedFrom M0.IsRealOf diskv rg]
-                    ]
-                | ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
-                , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.IsRealOf ctrlv rg]
-                ]
-            | enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
-            , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsRealOf enclv rg]
+          [ mconcat $ All (deviceIsOK encl rg) :
+            [ mconcat $ All (ctrlIsOK ctrl rg) :
+              [ All (diskIsOK disk rg)
+              | diskv :: M0.DiskV <- G.connectedTo ctrlv M0.IsParentOf rg
+              , Just (disk :: M0.Disk) <- [G.connectedFrom M0.IsRealOf diskv rg]
+              ]
+            | ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+            , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.IsRealOf ctrlv rg]
             ]
+          | enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+          , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsRealOf enclv rg]
+          ]
         | rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
         , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsRealOf rackv rg]
         ]
@@ -138,15 +138,15 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
     mkFailuresSets = map getFailures $ mkPool
       [ mkSite site
         [ mkRack rack
-           [ mkEncl encl
-               [ mkCtrl ctrl
-                  [ mkDisk disk
-                  | disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                  ]
-               | ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-               ]
-           | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-           ]
+          [ mkEncl encl
+            [ mkCtrl ctrl
+              [ mkDisk disk
+              | disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
+              ]
+            | ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
+            ]
+          | encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
+          ]
         | rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
         ]
       | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg

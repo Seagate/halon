@@ -19,7 +19,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , getParents
     -- ** Lookup objects based on another
   , lookupConfObjByFid
-  , lookupEnclosureM0
+  , lookupM0Enclosure
   , lookupHostHAAddress
     -- ** Other things
   , getPrincipalRM
@@ -117,9 +117,8 @@ getSDevPool sdev = do
         return x
 
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.
-lookupEnclosureM0 :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
-lookupEnclosureM0 enc =
-    G.connectedFrom M0.At enc <$> getGraph
+lookupM0Enclosure :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)
+lookupM0Enclosure encl = G.connectedFrom M0.At encl <$> getGraph
 
 -- | Lookup the HA endpoint to be used for the node. This is stored as the
 --   endpoint for the HA service hosted by processes on that node. Whilst in

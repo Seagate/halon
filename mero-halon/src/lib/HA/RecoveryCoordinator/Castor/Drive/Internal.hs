@@ -14,7 +14,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Internal
   ) where
 
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool (getNonMD)
 
@@ -29,7 +29,7 @@ import Data.List (nub, intersect)
 -- | Record disk failure in Failure vector
 rgRecordDiskFailure :: M0.Disk -> G.Graph -> G.Graph
 rgRecordDiskFailure disk = updateDiskFailure defAction ins disk where
-  defAction pool = G.connect pool R.Has (M0.DiskFailureVector [disk])
+  defAction pool = G.connect pool Has (M0.DiskFailureVector [disk])
   ins d [] = Just [d]
   ins d (x:xs)
      | d == x = Nothing
@@ -50,22 +50,21 @@ updateDiskFailure :: (M0.Pool -> G.Graph -> G.Graph) -- ^ Default action if stru
                   -> M0.Disk -- ^ Disk in question
                   -> G.Graph
                   -> G.Graph
-updateDiskFailure df f disk graph =  foldl' apply graph (allPools `intersect` pools) where
+updateDiskFailure df f disk rg = foldl' apply rg (nonMDPools `intersect` pools) where
+  nonMDPools = Pool.getNonMD rg
   pools = nub
     [ pool
-    | Just cntrl <- [G.connectedFrom     M0.IsParentOf disk  graph :: Maybe M0.Controller]
-    , Just encl  <- [G.connectedFrom     M0.IsParentOf cntrl graph :: Maybe M0.Enclosure]
-    , Just rack  <- [G.connectedFrom     M0.IsParentOf encl  graph :: Maybe M0.Rack]
-    , Just site  <- [G.connectedFrom     M0.IsParentOf rack  graph :: Maybe M0.Site]
-    , sitev      <-  G.connectedTo  site M0.IsRealOf         graph :: [M0.SiteV]
-    , Just pver  <- [G.connectedFrom     M0.IsParentOf sitev graph :: Maybe M0.PVer]
-    , Just pool  <- [G.connectedFrom     M0.IsParentOf pver  graph :: Maybe M0.Pool]
+    | Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.IsParentOf disk rg]
+    , Just (encl :: M0.Enclosure)  <- [G.connectedFrom M0.IsParentOf ctrl rg]
+    , Just (rack :: M0.Rack)       <- [G.connectedFrom M0.IsParentOf encl rg]
+    , Just (site :: M0.Site)       <- [G.connectedFrom M0.IsParentOf rack rg]
+    , sitev :: M0.SiteV            <- G.connectedTo site M0.IsRealOf rg
+    , Just (pver :: M0.PVer)       <- [G.connectedFrom M0.IsParentOf sitev rg]
+    , Just (pool :: M0.Pool)       <- [G.connectedFrom M0.IsParentOf pver rg]
     ]
-  -- Get all pools, except metadata pools.
-  allPools = Pool.getNonMD graph
-  apply rg pool =
-    case G.connectedTo pool R.Has rg of
-      Nothing -> df pool rg
+  apply rg' pool =
+    case G.connectedTo pool Has rg' of
+      Nothing -> df pool rg'
       Just (M0.DiskFailureVector v) -> case f disk v of
-        Nothing -> rg
-        Just fv -> G.connect pool R.Has (M0.DiskFailureVector fv) rg
+        Nothing -> rg'
+        Just fv -> G.connect pool Has (M0.DiskFailureVector fv) rg'

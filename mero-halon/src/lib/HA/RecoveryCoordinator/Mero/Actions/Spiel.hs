@@ -705,6 +705,7 @@ modifyConfUpdateVersion f = do
   Log.rcLog' Log.TRACE $ "Setting ConfUpdateVersion to " ++ show fcsu
   modifyGraphM $ return . G.connect Cluster Has fcsu
 
+-- XXX REFACTORME
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   rg <- getGraph
@@ -737,7 +738,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
         let ctrls = G.connectedTo encl M0.IsParentOf rg :: [M0.Controller]
         for_ ctrls $ \ctrl -> do
           -- Get node fid
-          let Just node = G.connectedFrom M0.IsOnHardware ctrl rg :: Maybe M0.Node
+          let Just (node :: M0.Node) = G.connectedFrom M0.IsOnHardware ctrl rg
           m0synchronously lift $ addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
           let disks = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
           for_ disks $ \disk -> do
@@ -745,9 +746,11 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   -- Nodes, processes, services, sdevs
   for_ (M0.getM0Nodes rg) $ \node -> do
     let attrs =
-          [ a | Just ctrl <- [G.connectedTo node M0.IsOnHardware rg :: Maybe M0.Controller]
-              , Just host <- [G.connectedTo ctrl M0.At rg :: Maybe Host]
-              , a <- G.connectedTo host Has rg :: [HostAttr]]
+          [ a
+          | Just (ctrl :: M0.Controller) <- [G.connectedTo node M0.IsOnHardware rg]
+          , Just (host :: Host) <- [G.connectedTo ctrl M0.At rg]
+          , a :: HostAttr <- G.connectedTo host Has rg
+          ]
         defaultMem = 1024
         defCPUCount = 1
         memsize = maybe defaultMem fromIntegral
@@ -771,8 +774,8 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
           (ServiceInfo s_type $ fmap ep2s s_endpoints)
         let sdevs = G.connectedTo serv M0.IsParentOf rg :: [M0.SDev]
         for_ sdevs $ \(sdev@M0.SDev{..}) -> do
-          let disk = G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk
-          m0synchronously lift $ addDevice t d_fid s_fid (fmap M0.fid disk) d_idx
+          let mdisk = G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk
+          m0synchronously lift $ addDevice t d_fid s_fid (M0.fid <$> mdisk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
                    M0_CFG_DEVICE_MEDIA_DISK d_bsize d_size 0 0 d_path
   Log.rcLog' Log.DEBUG "Finished adding concrete entities."
@@ -793,19 +796,19 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
           for_ sitevs $ \sitev -> do
             let rackvs = G.connectedTo sitev M0.IsParentOf rg :: [M0.RackV]
             for_ rackvs $ \rackv -> do
-              let (Just (rack :: M0.Rack)) = G.connectedFrom M0.IsRealOf rackv rg
+              let Just (rack :: M0.Rack) = G.connectedFrom M0.IsRealOf rackv rg
               m0synchronously lift $ addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
               let enclvs = G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
               for_ enclvs $ \enclv -> do
-                let (Just (encl :: M0.Enclosure)) = G.connectedFrom M0.IsRealOf enclv rg
+                let Just (encl :: M0.Enclosure) = G.connectedFrom M0.IsRealOf enclv rg
                 m0synchronously lift $ addEnclosureV t (M0.fid enclv) (M0.fid rackv) (M0.fid encl)
                 let ctrlvs = G.connectedTo enclv M0.IsParentOf rg :: [M0.ControllerV]
                 for_ ctrlvs $ \ctrlv -> do
-                  let (Just (ctrl :: M0.Controller)) = G.connectedFrom M0.IsRealOf ctrlv rg
+                  let Just (ctrl :: M0.Controller) = G.connectedFrom M0.IsRealOf ctrlv rg
                   m0synchronously lift $ addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
                   let diskvs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
                   for_ diskvs $ \diskv -> do
-                    let (Just (disk :: M0.Disk)) = G.connectedFrom M0.IsRealOf diskv rg
+                    let Just (disk :: M0.Disk) = G.connectedFrom M0.IsRealOf diskv rg
                     m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
         pvf@M0.PVerFormulaic{} -> do

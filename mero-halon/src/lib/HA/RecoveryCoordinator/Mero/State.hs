@@ -370,12 +370,12 @@ diskFailsPVer = StateCascadeRule
   Transition.diskFailsPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fenc, fctrl, fdisk] _))) = do
-     (sitesv :: [M0.SiteV])       <- check fsite [pver] (Proxy :: Proxy M0.Site)
-     (racksv :: [M0.RackV])       <- check frack sitesv (Proxy :: Proxy M0.Rack)
-     (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
-     (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
-     void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+   checkBroken rg pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fencl, fctrl, fdisk] _)) = do
+     sitevs :: [M0.SiteV]       <- check fsite [pver] (Proxy :: Proxy M0.Site)
+     rackvs :: [M0.RackV]       <- check frack sitevs (Proxy :: Proxy M0.Rack)
+     enclvs :: [M0.EnclosureV]  <- check fencl rackvs (Proxy :: Proxy M0.Enclosure)
+     ctrlvs :: [M0.ControllerV] <- check fctrl enclvs (Proxy :: Proxy M0.Controller)
+     void (check fdisk ctrlvs (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
        check :: forall a b c . ( G.Relation M0.IsParentOf a b
                                , G.Relation M0.IsRealOf c b
@@ -384,9 +384,9 @@ diskFailsPVer = StateCascadeRule
                                , M0.HasConfObjectState c)
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
-         let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength [ realm
-                                    | n     <- next
+         let next = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
+             broken = genericLength [ realm
+                                    | n <- next
                                     , Just realm <- [G.connectedFrom M0.IsRealOf n rg :: Maybe c]
                                     , M0.M0_NC_FAILED == M0.getConfObjState realm rg
                                     ]

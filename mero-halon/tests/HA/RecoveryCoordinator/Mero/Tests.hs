@@ -77,11 +77,15 @@ testDriveManagerUpdate transport pg = do
                  , H._to_initial_data = iData }
   H.run' transport pg [testRule] tos' $ \ts -> do
     self <- getSelfPid
-    let interestingSN : _ = [ CI.m0d_serial d | s <- CI.id_m0_servers iData
-                                              , d <- CI.m0h_devices s ]
-        enc : _ = [ CI.enc_id e | s <- CI.id_sites iData
-                                , r <- CI.site_racks s
-                                , e <- CI.rack_enclosures r ]
+    let interestingSN = head [ CI.m0d_serial dev
+                             | host <- CI.id_m0_servers iData
+                             , dev <- CI.m0h_devices host
+                             ]
+        enc = head [ CI.enc_id encl
+                   | site <- CI.id_sites iData
+                   , rack <- CI.site_racks site
+                   , encl <- CI.rack_enclosures rack
+                   ]
         respDM = mkResponseDriveManager (T.pack enc) (T.pack interestingSN) 1
 
     registerInterceptor $ \case

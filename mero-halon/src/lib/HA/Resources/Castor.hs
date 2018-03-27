@@ -34,13 +34,13 @@ import GHC.Generics (Generic)
 -- Resources                                                                  --
 --------------------------------------------------------------------------------
 
-newtype Site = Site Int -- ^ Site index
+newtype Site = Site Int -- ^ Site index.
   deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 storageIndex ''Site "521f5803-9277-40b4-ae5e-6bbb57a25403"
 deriveSafeCopy 0 'base ''Site
 
-newtype Rack = Rack Int -- ^ Rack index
+newtype Rack = Rack Int -- ^ Rack index.
   deriving (Eq, Generic, Hashable, Show, Typeable, ToJSON)
 
 storageIndex ''Rack "227a4ae1-529b-40b0-a0b4-7466605764c2"

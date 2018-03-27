@@ -113,31 +113,28 @@ ruleInitialDataLoad =
     else err "" "Initial data is already loaded."
 
 goSite :: CI.Site -> PhaseM RC l ()
-goSite CI.Site{..} = let site = Site site_idx in do
-  registerSite site
-  mapM_ (goRack site) site_racks
+goSite CI.Site{..} = do
+    let site = Site site_idx
+    registerSite site
+    mapM_ (goRack site) site_racks
 
 goRack :: Site -> CI.Rack -> PhaseM RC l ()
-goRack site CI.Rack{..} = let
-    rack = Rack rack_idx
-  in do
+goRack site CI.Rack{..} = do
+    let rack = Rack rack_idx
     registerRack site rack
     mapM_ (goEnc rack) rack_enclosures
 
 goEnc :: Rack -> CI.Enclosure -> PhaseM RC l ()
-goEnc rack CI.Enclosure{..} = let
-    enclosure = Enclosure enc_id
-  in do
-    registerEnclosure rack enclosure
-    mapM_ (registerBMC enclosure) enc_bmc
-    mapM_ (goHost enclosure) enc_hosts
+goEnc rack CI.Enclosure{..} = do
+    let encl = Enclosure enc_id
+    registerEnclosure rack encl
+    mapM_ (registerBMC encl) enc_bmc
+    mapM_ (goHost encl) enc_hosts
 
 goHost :: Enclosure -> CI.Host -> PhaseM RC l ()
-goHost enc CI.Host{..} = let
-    host = Host $ T.unpack h_fqdn
-    -- Nodes mentioned in ID are not clients in the 'dynamic' sense.
-    remAttrs = [HA_M0CLIENT]
-  in do
+goHost encl CI.Host{..} = do
+    let host = Host (T.unpack h_fqdn)
     registerHost host
-    locateHostInEnclosure host enc
-    mapM_ (unsetHostAttr host) remAttrs
+    locateHostInEnclosure host encl
+    -- Nodes mentioned in InitialData are not clients in the "dynamic" sense.
+    unsetHostAttr host HA_M0CLIENT

@@ -1010,10 +1010,10 @@ $(mkDicts
   , (''Enclosure, ''At, ''R.Enclosure)
   , (''Disk, ''At, ''R.StorageDevice)
     -- Parent/child relationships between conf entities
-  , (''Root, ''IsParentOf, ''Node)
-  , (''Root, ''IsParentOf, ''Site)
-  , (''Root, ''IsParentOf, ''Pool)
   , (''Root, ''IsParentOf, ''Profile)
+  , (''Root, ''IsParentOf, ''Site)
+  , (''Root, ''IsParentOf, ''Node)
+  , (''Root, ''IsParentOf, ''Pool)
     -- XXX-MULTIPOOLS: retire filesystem, update relations
   , (''Profile, ''IsParentOf, ''Filesystem)
   , (''Node, ''IsParentOf, ''Process)
@@ -1089,10 +1089,10 @@ $(mkResRel
   , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
   , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
     -- Parent/child relationships between conf entities
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Root, AtMostOne, ''IsParentOf, AtMostOne, ''Profile)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
+  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
   , (''Profile, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
