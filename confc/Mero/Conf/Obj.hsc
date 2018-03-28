@@ -195,6 +195,7 @@ data PVer = PVer {
   , pv_type :: PVerType
 } deriving (Show)
 
+-- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
 data PVerType
   = PVerSubtree
     { pvs_attr :: PDClustAttr   -- ^ Layout attributes.

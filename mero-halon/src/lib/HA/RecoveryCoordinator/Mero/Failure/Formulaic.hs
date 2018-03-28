@@ -53,9 +53,9 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
         , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
         , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
         ]
-    -- Following change is temporary, and would work as long as failures
-    -- above controllers (encl, racks) are not to be supported
-    -- (ref. HALON-406)
+      -- Following change is temporary, and would work as long as failures
+      -- above controllers (encl, racks) are not to be supported
+      -- (ref. HALON-406)
       quotient =  (n + 2*k) `quot` fromIntegral noCtrls
       remainder = (n + 2*k) `rem` fromIntegral noCtrls
       kc = remainder * (quotient + 1)
@@ -75,5 +75,5 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                                                    <*> pure formula
                                                    <*> pure (M0.fid pver))
               modify (G.connect pool M0.IsParentOf pvf)
-  Just (addFormulas $ createPoolVersions
-                        [PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs] True rg)
+      pv = PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs
+  Just . addFormulas $ createPoolVersions [pv] DevicesFailed rg

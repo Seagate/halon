@@ -4,7 +4,8 @@
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Failure.Internal
-  ( Failures(..)
+  ( ConditionOfDevices(..)
+  , Failures(..)
   , PoolVersion(..)
   , UpdateType(..)
   , failuresToArray
@@ -49,6 +50,11 @@ data Failures = Failures {
   , f_disk :: !Word32
 } deriving (Eq, Ord, Show)
 
+-- | Convert failure tolerance vector to a straight array of Words for
+--   passing to Mero.
+failuresToArray :: Failures -> [Word32]
+failuresToArray f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+
 -- |  Minimal representation of a pool version for generation.
 --
 -- Note that the value for @_pa_P@ will be overridden with the width
@@ -61,11 +67,6 @@ data PoolVersion = PoolVersion
     !PDClustAttr   -- The parity declustering attributes.
   deriving (Eq, Show)
 
--- | Convert failure tolerance vector to a straight array of Words for
---   passing to Mero.
-failuresToArray :: Failures -> [Word32]
-failuresToArray f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
-
 -- | Description of how halon run update of the graph.
 data UpdateType m
   = Monolithic (G.Graph -> m G.Graph)
@@ -76,30 +77,28 @@ data UpdateType m
     -- Returns all updates in chunks so caller can synchronize and stream
     -- graph updates in chunks of reasonable size.
 
+data ConditionOfDevices = DevicesWorking | DevicesFailed
+  deriving (Eq, Show)
+
 -- | Create pool versions for the given pool.
 createPoolVersionsInPool :: M0.Pool
                          -> [PoolVersion]
-                         -> Bool -- ^ If specified, the pool version
-                                 -- is assumed to contain failed devices,
-                                 -- rather than working ones.
-                                 --
-                                 -- XXX TODO: Use descriptive type instead of Bool.
+                         -> ConditionOfDevices
                          -> G.Graph
                          -> G.Graph
-createPoolVersionsInPool pool pvers invert =
-    let mk = createPoolVersion pool invert
-    in S.execState (mapM_ mk pvers)
+createPoolVersionsInPool pool pvers cond =
+    S.execState $ mapM_ (createPoolVersion pool cond) pvers
 
 createPoolVersion :: M0.Pool
-                  -> Bool -- XXX Replace Bool with a descriptive type.
+                  -> ConditionOfDevices
                   -> PoolVersion
                   -> S.State G.Graph ()
-createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
+createPoolVersion pool cond (PoolVersion mfid fids failures attrs) = do
     rg <- S.get
     let fids_drv = Set.filter (M0.fidIsType (Proxy :: Proxy M0.Disk)) fids
-        width = if invert
-                then totalDrives rg - Set.size fids_drv -- TODO: check this
-                else Set.size fids_drv
+        width = case cond of
+            DevicesWorking -> Set.size fids_drv
+            DevicesFailed  -> totalDrives rg - Set.size fids_drv -- TODO: check this
     S.when (width > 0) $ do
         pver <- M0.PVer <$> (case mfid of
                                 Just fid -> pure fid
@@ -120,7 +119,9 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
 
     filterByFids :: M0.ConfObj a => [a] -> [a]
     filterByFids =
-        let check = if invert then Set.notMember else Set.member
+        let check = case cond of
+                DevicesWorking -> Set.member
+                DevicesFailed  -> Set.notMember
         in filter $ \x -> check (M0.fid x) fids
 
     runPVer :: M0.PVer -> S.State G.Graph ()
@@ -187,13 +188,9 @@ createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
 
 -- | Create specified pool versions in the resource graph. These will be
 --   created inside all IO pools (e.g. not mdpool or imeta)
-createPoolVersions :: [PoolVersion]
-                   -> Bool -- If specified, the pool version is assumed to
-                           -- contain failed devices, rather than working ones.
-                   -> G.Graph
-                   -> G.Graph
-createPoolVersions pvers invert rg =
-    foldl' (\g p -> createPoolVersionsInPool p pvers invert g) rg pools
+createPoolVersions :: [PoolVersion] -> ConditionOfDevices -> G.Graph -> G.Graph
+createPoolVersions pvers cond rg =
+    foldl' (\g p -> createPoolVersionsInPool p pvers cond g) rg pools
   where
     root = M0.getM0Root rg
     mdpool = M0.Pool (M0.rt_mdpool root)

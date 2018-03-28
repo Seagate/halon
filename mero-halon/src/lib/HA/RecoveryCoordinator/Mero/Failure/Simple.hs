@@ -51,7 +51,7 @@ simpleUpdate df cf cfe = Iterative $ \rg ->
              go g (c:cs) =
                 let pvs = fmap (\(fs', fids) -> PoolVersion Nothing fids fs' attrs) c
                 in do
-                    g' <- sync $ createPoolVersions pvs True g
+                    g' <- sync $ createPoolVersions pvs DevicesFailed g
                     go g' cs
          in go rg chunks
 

@@ -305,7 +305,7 @@ createMDPoolPVer fs = do
                 }
         pver = PoolVersion Nothing fids failures attrs
     Log.rcLog' Log.DEBUG $ "Creating PVer in metadata pool: " ++ show pver
-    modifyGraph $ createPoolVersionsInPool mdpool [pver] False
+    modifyGraph $ createPoolVersionsInPool mdpool [pver] DevicesWorking
 
 -- | Create an imeta_pver along with all associated structures. This should
 --   create:
@@ -369,6 +369,6 @@ createIMeta fs = do
       updateGraph = if null cas
         then G.mergeResources head [root {M0.rt_imeta_pver = m0_fid0}, root]
         else G.connect root M0.IsParentOf pool
-          >>> createPoolVersionsInPool pool [pver] False
+          >>> createPoolVersionsInPool pool [pver] DevicesWorking
 
   modifyGraph updateGraph
