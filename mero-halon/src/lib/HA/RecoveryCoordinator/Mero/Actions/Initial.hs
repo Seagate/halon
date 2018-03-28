@@ -286,11 +286,12 @@ createMDPoolPVer fs = do
         -- `id_pools` section of the facts file.
         disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
                 =<< ctrls
-        fids = Set.unions . (fmap Set.fromList) $
-                [ (M0.fid <$> racks)
-                , (M0.fid <$> encls)
-                , (M0.fid <$> ctrls)
-                , (M0.fid <$> disks)
+        fids = Set.unions . fmap Set.fromList $
+                [ M0.fid <$> sites
+                , M0.fid <$> racks
+                , M0.fid <$> encls
+                , M0.fid <$> ctrls
+                , M0.fid <$> disks
                 ]
         failures = Failures 0 0 0 1 0
         -- XXX FIXME: Get this info from facts file.

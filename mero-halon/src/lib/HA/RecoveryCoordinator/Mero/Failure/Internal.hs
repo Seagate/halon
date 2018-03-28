@@ -82,6 +82,8 @@ createPoolVersionsInPool :: M0.Pool
                          -> Bool -- ^ If specified, the pool version
                                  -- is assumed to contain failed devices,
                                  -- rather than working ones.
+                                 --
+                                 -- XXX TODO: Use descriptive type instead of Bool.
                          -> G.Graph
                          -> G.Graph
 createPoolVersionsInPool pool pvers invert =
@@ -89,7 +91,7 @@ createPoolVersionsInPool pool pvers invert =
     in S.execState (mapM_ mk pvers)
 
 createPoolVersion :: M0.Pool
-                  -> Bool
+                  -> Bool -- XXX Replace Bool with a descriptive type.
                   -> PoolVersion
                   -> S.State G.Graph ()
 createPoolVersion pool invert (PoolVersion mfid fids failures attrs) = do
