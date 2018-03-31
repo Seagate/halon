@@ -19,44 +19,43 @@ module HA.RecoveryCoordinator.Mero.State
   , stateSet
   ) where
 
-import HA.Encode (encodeP)
-import HA.RecoveryCoordinator.Castor.Drive.Internal
-import HA.RecoveryCoordinator.RC.Actions
-import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import HA.RecoveryCoordinator.Mero.Events
-import HA.RecoveryCoordinator.Mero.Transitions.Internal
+import           HA.Encode (encodeP)
+import           HA.RecoveryCoordinator.Castor.Drive.Internal
+import           HA.RecoveryCoordinator.Mero.Events
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Transition
+import           HA.RecoveryCoordinator.Mero.Transitions.Internal
+import           HA.RecoveryCoordinator.RC.Actions
+import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
+import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import qualified HA.ResourceGraph as G
-import HA.Services.Mero.RC
+import           HA.Services.Mero.RC
 
-import Mero.ConfC (ServiceType(..), Fid)
-import Mero.Notification (Set(..))
-import Mero.Notification.HAState (Note(..))
+import           Mero.ConfC (ServiceType(..), Fid)
+import           Mero.Notification (Set(..))
+import           Mero.Notification.HAState (Note(..))
 
-import Control.Applicative (liftA2)
-import Control.Category ((>>>))
-import Control.Arrow (first)
-import Control.Distributed.Static (Static, staticApplyPtr)
-import Control.Monad (join, when, guard)
-import Control.Monad.Fix (fix)
+import           Control.Applicative (liftA2)
+import           Control.Arrow (first)
+import           Control.Category ((>>>))
+import           Control.Distributed.Static (Static, staticApplyPtr)
+import           Control.Monad (join, when, guard)
+import           Control.Monad.Fix (fix)
 
-import Data.Constraint (Dict)
-import Data.Either (lefts)
-import Data.Either (partitionEithers)
-import Data.Foldable (for_)
-import Data.Functor (void)
-import Data.List (nub, genericLength)
-import Data.Maybe (catMaybes, maybeToList)
-import Data.Monoid
+import           Data.Constraint (Dict)
+import           Data.Either (lefts, partitionEithers)
+import           Data.Foldable (for_)
+import           Data.Functor (void)
+import           Data.List (nub, genericLength)
+import           Data.Maybe (catMaybes, maybeToList)
+import           Data.Monoid
 import qualified Data.Set as S
-import Data.Traversable (mapAccumL)
-import Data.Typeable
-import Data.Word
-import Text.Printf (printf)
+import           Data.Traversable (mapAccumL)
+import           Data.Typeable
+import           Data.Word
+import           Text.Printf (printf)
 
-import Network.CEP
+import           Network.CEP
 
 -- | A set of deferred state changes. Consists of a graph
 --   update function, a `Set` event for Mero, and an
