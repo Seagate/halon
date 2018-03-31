@@ -15,6 +15,7 @@ module HA.RecoveryCoordinator.Castor.Cluster.Actions
   ) where
 
 import           Control.Distributed.Process (Process, usend)
+import           Data.Either (isLeft)
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe, isJust, listToMaybe)
 import           Data.Monoid (All(..), Any(..))
@@ -97,10 +98,10 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
         ss -> fmap (getAny . mconcat) . for pools $ \pool -> do -- XXX-MULTIPOOLS: Do we need to check for sites here?
                 return $ mconcat [ Any result
                                  | pver <- G.connectedTo pool M0.IsParentOf rg
-                                 , let result = case pver of
-                                         (M0.PVer _ M0.PVerActual{}) -> checkActual pver
-                                         (M0.PVer _ M0.PVerFormulaic{v_allowance=z}) ->
-                                            any ((z ==) . failuresToArray) ss
+                                 , let result = case M0.v_data pver of
+                                         Right _  -> checkActual pver
+                                         Left pvf ->
+                                            any ((M0.vf_allowance pvf ==) . failuresToArray) ss
                                  ]
     return $ Event.ClusterLiveness havePVers haveOngoingSNS haveQuorum havePrincipalRM
   where
@@ -112,6 +113,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
       return result
 
     checkActual :: M0.PVer -> Bool
+    checkActual pver | isLeft (M0.v_data pver) = error "Actual pver expected"
     checkActual pver = getAll $ mconcat
       [ mconcat $ All (deviceIsOK site rg) :
         [ mconcat $ All (deviceIsOK rack rg) :

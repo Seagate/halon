@@ -17,7 +17,8 @@ import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless, void)
 import           Data.Bifunctor (first)
 import           Data.Foldable (for_)
-import           Data.List (partition, nub)
+import           Data.Either (isRight, lefts)
+import           Data.List (nub)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
 import qualified Data.Set as Set
@@ -190,7 +191,8 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings
                { _id_servers = 4
                , _id_drives = 4
-               , _id_globals = defaultGlobals { CI.m0_failure_set_gen = CI.Formulaic sets} }
+               , _id_globals = defaultGlobals {CI.m0_failure_set_gen = CI.Formulaic sets}
+               }
     (ls', _) <- run ls $ do
       initialDataLoad iData
       Just (Monolithic update) <- getCurrentGraphUpdateType
@@ -202,19 +204,19 @@ testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
                  , let pvers :: [M0.PVer] = G.connectedTo pool M0.IsParentOf rg
                  ]
     for_ ppvers $ \(_, pvers) -> do
-      unless (Prelude.null pvers) $ do -- skip metadata pool
-        let (actual, formulaic) = partition (\(M0.PVer _ t) -> case t of M0.PVerActual{} -> True ; _ -> False) pvers
+      unless (null pvers) $ do -- skip metadata pool
+        let actual@[M0.PVer fid _] = filter (isRight . M0.v_data) pvers
+            formulaic = lefts $ map M0.v_data pvers
         liftIO $ Tasty.assertEqual "There should be only one actual PVer for Pool" 1 (length actual)
         liftIO $ Tasty.assertEqual "Each formula should be presented" (length sets) (length formulaic)
-        let [M0.PVer fid _] = actual
-        for_ formulaic $ \f -> do
-          liftIO $ Tasty.assertEqual "base fid should be equal to actual pver" fid (M0.v_base $ M0.v_type f)
-        let sets2 = Set.fromList $ map (\(M0.PVer _ (M0.PVerFormulaic _ a _)) -> a) formulaic
+        for_ formulaic $ \f ->
+          liftIO $ Tasty.assertEqual "base fid should be equal to actual pver" fid (M0.vf_base f)
+        let sets2 = Set.fromList $ map M0.vf_allowance formulaic
         liftIO $ Tasty.assertEqual "all formulas should be presented" (Set.fromList sets) sets2
-        let ids = Set.fromList $ map (\(M0.PVer _ (M0.PVerFormulaic i _ _)) -> i) formulaic
+        let ids = Set.fromList $ map M0.vf_id formulaic
         liftIO $ Tasty.assertBool "all ids should be unique" (Set.size ids == length sets)
   where
-    sets = [[0,0,0,0,1],[0,0,0,1,1]]
+    sets = [[0,0,0,0,1], [0,0,0,1,1]]
 
 -- | Test that failure domain logic works correctly when we are
 testControllerFailureDomain :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
@@ -257,8 +259,7 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
                             enclsH
         disksByHost = catMaybes $ fmap (\s -> G.connectedFrom M0.At s rg :: Maybe M0.Disk) sdevs
 
-        disk1 = head disks
-        dvers1 = G.connectedTo disk1 M0.IsRealOf rg :: [M0.DiskV]
+        diskvs1 = G.connectedTo (head disks) M0.IsRealOf rg :: [M0.DiskV]
 
     assertMsg "Number of pvers" $ length pvers == 5
     assertMsg "Number of sites" $ length sites == 1
@@ -268,22 +269,22 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     assertMsg "Number of storage devices" $ length sdevs == 16
     assertMsg "Number of disks (reached by host)" $ length disksByHost == 16
     assertMsg "Number of disks" $ length disks == 16
-    assertMsg "Number of disk versions" $ length dvers1 == 4
+    assertMsg "Number of disk versions" $ length diskvs1 == 4
     forM_ (G.getResourcesOfType rg :: [M0.PVer]) $ \pver -> do
-      let PDClustAttr { _pa_N = paN
-                      , _pa_K = paK
-                      , _pa_P = paP
-                      } = M0.v_attrs $ (\(M0.PVer _ a) -> a) $ pver
-      assertMsg "N in PVer" $ CI.m0_data_units (CI.id_m0_globals iData) == paN
-      assertMsg "K in PVer" $ CI.m0_parity_units (CI.id_m0_globals iData) == paK
-      let dver = [ diskv
-                 | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
-                 , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
-                 , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
-                 , cntrv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
-                 , diskv :: M0.DiskV <- G.connectedTo cntrv M0.IsParentOf rg
-                 ]
-      liftIO $ Tasty.assertEqual "P in PVer" paP $ fromIntegral (length dver)
+      let Right pva = M0.v_data pver
+          attrs = M0.va_attrs pva
+          globs = CI.id_m0_globals iData
+      assertMsg "N in PVer" $ CI.m0_data_units globs == _pa_N attrs
+      assertMsg "K in PVer" $ CI.m0_parity_units globs == _pa_K attrs
+      let nr_diskvs = length
+            [ diskv
+            | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
+            , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
+            , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+            , cntrv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+            , diskv :: M0.DiskV <- G.connectedTo cntrv M0.IsParentOf rg
+            ]
+      liftIO $ Tasty.assertEqual "P in PVer" (_pa_P attrs) (fromIntegral nr_diskvs)
 
 -- | Test that applying state changes works
 testApplyStateChanges :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()

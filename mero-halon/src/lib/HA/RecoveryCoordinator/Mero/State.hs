@@ -356,81 +356,86 @@ diskFailsPVer = StateCascadeRule
   (const True)
   (M0.SDSFailed ==)
   (\x rg -> let pvers = nub $
-                 do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
-                    Just pver <- [ do
-                      contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
-                      enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
-                      rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
-                      sitev <- G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.SiteV
-                      G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer]
-                    guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
-                    return pver
+                  do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
+                     Just pver <- [ do
+                       ctrlv :: M0.ControllerV <- G.connectedFrom M0.IsParentOf diskv rg
+                       enclv :: M0.EnclosureV <- G.connectedFrom M0.IsParentOf ctrlv rg
+                       rackv :: M0.RackV <- G.connectedFrom M0.IsParentOf enclv rg
+                       sitev :: M0.SiteV <- G.connectedFrom M0.IsParentOf rackv rg
+                       G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer ]
+                     guard (M0.M0_NC_FAILED /= M0.getConfObjState pver rg)
+                     return pver
             in lefts $ map (checkBroken rg) pvers)
   Transition.diskFailsPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fencl, fctrl, fdisk] _)) = do
+   checkBroken rg pver@(M0.PVer _ (Right pva)) = do
+     let fsite:frack:fencl:fctrl:fdisk:[] = M0.va_tolerance pva
      sitevs :: [M0.SiteV]       <- check fsite [pver] (Proxy :: Proxy M0.Site)
      rackvs :: [M0.RackV]       <- check frack sitevs (Proxy :: Proxy M0.Rack)
      enclvs :: [M0.EnclosureV]  <- check fencl rackvs (Proxy :: Proxy M0.Enclosure)
      ctrlvs :: [M0.ControllerV] <- check fctrl enclvs (Proxy :: Proxy M0.Controller)
      void (check fdisk ctrlvs (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . ( G.Relation M0.IsParentOf a b
-                               , G.Relation M0.IsRealOf c b
-                               , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
-                               , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
-                               , M0.HasConfObjectState c)
+       check :: forall a b c. ( G.Relation M0.IsParentOf a b
+                              , G.Relation M0.IsRealOf c b
+                              , M0.HasConfObjectState c
+                              , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
+                              , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
+                              )
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
          let next = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-             broken = genericLength [ realm
-                                    | n <- next
-                                    , Just realm <- [G.connectedFrom M0.IsRealOf n rg :: Maybe c]
-                                    , M0.M0_NC_FAILED == M0.getConfObjState realm rg
-                                    ]
+             broken = genericLength
+               [ realm
+               | n <- next
+               , Just (realm :: c) <- [G.connectedFrom M0.IsRealOf n rg]
+               , M0.M0_NC_FAILED == M0.getConfObjState realm rg
+               ]
          when (broken > limit) $ Left pver
          return next
    checkBroken _ _ = Right ()
 
+-- XXX REFACTORME: 'diskFailsPVer' and 'diskFixesPVer' share lots of code.
 diskFixesPVer :: StateCascadeRule M0.Disk M0.PVer
 diskFixesPVer = StateCascadeRule
   (const True)
-  (M0.SDSOnline==)
+  (M0.SDSOnline ==)
   (\x rg -> let pvers = nub $
                   do diskv <- G.connectedTo x M0.IsRealOf rg :: [M0.DiskV]
                      Just pver <- [ do
-                       contv <- G.connectedFrom M0.IsParentOf diskv rg :: Maybe M0.ControllerV
-                       enclv <- G.connectedFrom M0.IsParentOf contv rg :: Maybe M0.EnclosureV
-                       rackv <- G.connectedFrom M0.IsParentOf enclv rg :: Maybe M0.RackV
-                       sitev <- G.connectedFrom M0.IsParentOf rackv rg :: Maybe M0.SiteV
-                       G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer]
+                       ctrlv :: M0.ControllerV <- G.connectedFrom M0.IsParentOf diskv rg
+                       enclv :: M0.EnclosureV <- G.connectedFrom M0.IsParentOf ctrlv rg
+                       rackv :: M0.RackV <- G.connectedFrom M0.IsParentOf enclv rg
+                       sitev :: M0.SiteV <- G.connectedFrom M0.IsParentOf rackv rg
+                       G.connectedFrom M0.IsParentOf sitev rg :: Maybe M0.PVer ]
                      guard (M0.M0_NC_ONLINE /= M0.getConfObjState pver rg)
                      return pver
             in lefts $ map (checkBroken rg) pvers)
   Transition.diskFixesPVer
   where
    checkBroken :: G.Graph -> M0.PVer -> Either M0.PVer ()
-   checkBroken rg (pver@(M0.PVer _ (M0.PVerActual [fsite, frack, fenc, fctrl, fdisk] _))) = do
-     (sitesv :: [M0.SiteV])       <- check fsite [pver] (Proxy :: Proxy M0.Site)
-     (racksv :: [M0.RackV])       <- check frack sitesv (Proxy :: Proxy M0.Rack)
-     (enclsv :: [M0.EnclosureV])  <- check fenc racksv  (Proxy :: Proxy M0.Enclosure)
-     (ctrlsv :: [M0.ControllerV]) <- check fctrl enclsv  (Proxy :: Proxy M0.Controller)
-     void (check fdisk ctrlsv (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
+   checkBroken rg pver@(M0.PVer _ (Right pva)) = do
+     let fsite:frack:fencl:fctrl:fdisk:[] = M0.va_tolerance pva
+     sitevs :: [M0.SiteV]       <- check fsite [pver] (Proxy :: Proxy M0.Site)
+     rackvs :: [M0.RackV]       <- check frack sitevs (Proxy :: Proxy M0.Rack)
+     enclvs :: [M0.EnclosureV]  <- check fencl rackvs (Proxy :: Proxy M0.Enclosure)
+     ctrlvs :: [M0.ControllerV] <- check fctrl enclvs (Proxy :: Proxy M0.Controller)
+     void (check fdisk ctrlvs (Proxy :: Proxy M0.Disk) :: Either M0.PVer [M0.DiskV])
      where
-       check :: forall a b c . ( G.Relation M0.IsParentOf a b
-                               , G.Relation M0.IsRealOf c b
-                               , M0.HasConfObjectState c
-                               , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
-                               , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
-                               )
+       check :: forall a b c. ( G.Relation M0.IsParentOf a b
+                              , G.Relation M0.IsRealOf c b
+                              , M0.HasConfObjectState c
+                              , G.CardinalityTo M0.IsParentOf a b ~ 'G.Unbounded
+                              , G.CardinalityFrom M0.IsRealOf c b ~ 'G.AtMostOne
+                              )
              => Word32 -> [a] -> Proxy c -> Either M0.PVer [b]
        check limit objects Proxy = do
-         let next   = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
-         let broken = genericLength
+         let next = (\o -> G.connectedTo o M0.IsParentOf rg :: [b]) =<< objects
+             broken = genericLength
                [ realm
-               | n     <- next
-               , Just realm <- [G.connectedFrom M0.IsRealOf n rg :: Maybe c]
+               | n <- next
+               , Just (realm :: c) <- [G.connectedFrom M0.IsRealOf n rg]
                , M0.M0_NC_ONLINE == M0.getConfObjState realm rg
                ]
          when (broken <= limit) $ Left pver

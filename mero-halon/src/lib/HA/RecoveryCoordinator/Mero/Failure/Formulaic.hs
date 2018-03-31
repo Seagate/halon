@@ -63,17 +63,20 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
           | kc > k = k `quot` (quotient + 1)
           | kc < k = (k - remainder) `quot` quotient
           | otherwise = remainder
+
+      addFormulas :: G.Graph -> G.Graph
       addFormulas g = flip execState g $ do
-        for_ (filter (/= mdpool) $
-          G.connectedTo root M0.IsParentOf g) $ \(pool :: M0.Pool) ->
+        for_ (filter (/= mdpool) $ G.connectedTo root M0.IsParentOf g) $
+          \(pool :: M0.Pool) ->
           for_ (filter ((/= imeta_pver) . M0.fid) $ G.connectedTo pool M0.IsParentOf g) $
             \(pver :: M0.PVer) -> do
             for_ formulas $ \formula -> do
-              let f = either error id . mkPVerFormulaicFid
-              pvf <- M0.PVer <$> state (first f . newFid (Proxy :: Proxy M0.PVer))
-                             <*> (M0.PVerFormulaic <$> state uniquePVerCounter
-                                                   <*> pure formula
-                                                   <*> pure (M0.fid pver))
-              modify (G.connect pool M0.IsParentOf pvf)
+              let mkFormulaic :: Fid -> Fid
+                  mkFormulaic = either error id . mkPVerFormulaicFid
+              pvf <- M0.PVer <$> state (first mkFormulaic . newFid (Proxy :: Proxy M0.PVer))
+                             <*> (Left <$> (M0.PVerFormulaic <$> state uniquePVerCounter
+                                                             <*> pure (M0.fid pver)
+                                                             <*> pure formula))
+              modify $ G.connect pool M0.IsParentOf pvf
       pv = PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs
   Just . addFormulas $ createPoolVersions [pv] DevicesFailed rg

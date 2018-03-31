@@ -521,25 +521,32 @@ instance ConfObj Pool where
 storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
--- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
-data PVerType = PVerActual {
-    v_tolerance :: [Word32]
-  , v_attrs :: PDClustAttr
-} | PVerFormulaic {
-    v_id :: Word32
-  , v_allowance :: [Word32]
-  , v_base  :: Fid
-} deriving (Eq, Show, Generic, Typeable)
+data PVerActual = PVerActual
+  { va_attrs :: PDClustAttr
+  , va_tolerance :: [Word32]
+  } deriving (Eq, Show, Generic, Typeable)
 
-instance Hashable PVerType
-instance ToJSON PVerType
+instance Hashable PVerActual
+instance ToJSON PVerActual
 
-storageIndex ''PVerType "eb620a23-ffd8-4705-871f-c0674ad84cb7"
-deriveSafeCopy 0 'base ''PVerType
+storageIndex ''PVerActual "b8c311f6-bf87-4ff3-8b46-485cd463dda1"
+deriveSafeCopy 0 'base ''PVerActual
+
+data PVerFormulaic = PVerFormulaic
+  { vf_id :: Word32
+  , vf_base :: Fid
+  , vf_allowance :: [Word32]
+  } deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable PVerFormulaic
+instance ToJSON PVerFormulaic
+
+storageIndex ''PVerFormulaic "278a3e83-f9c3-4800-9944-a7583012e8ab"
+deriveSafeCopy 0 'base ''PVerFormulaic
 
 data PVer = PVer
   { v_fid :: Fid
-  , v_type :: PVerType
+  , v_data :: Either PVerFormulaic PVerActual
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable PVer
@@ -548,12 +555,12 @@ instance ToJSON PVer
 storageIndex ''PVer "055c3f88-4bdd-419a-837b-a029c7f4effd"
 deriveSafeCopy 0 'base ''PVer
 
-newtype PVerCounter = PVerCounter Word32
-  deriving (Eq, Ord, Show, Generic, Typeable, Hashable, ToJSON)
-
 instance ConfObj PVer where
   fidType _ = fromIntegral . ord $ 'v'
   fid = v_fid
+
+newtype PVerCounter = PVerCounter Word32
+  deriving (Eq, Ord, Show, Generic, Typeable, Hashable, ToJSON)
 
 storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter

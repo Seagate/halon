@@ -104,8 +104,9 @@ createPoolVersion pool cond (PoolVersion mfid fids failures attrs) = do
                                 Just fid -> pure fid
                                 Nothing -> S.state (newFid (Proxy :: Proxy M0.PVer))
                             )
-                        <*> pure (M0.PVerActual (failuresToArray failures)
-                                                (attrs { _pa_P = fromIntegral width }))
+                        <*> (pure . Right $
+                             M0.PVerActual (attrs {_pa_P = fromIntegral width})
+                                           (failuresToArray failures))
         runPVer pver
   where
     totalDrives rg = length

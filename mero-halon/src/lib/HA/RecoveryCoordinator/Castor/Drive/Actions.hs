@@ -229,10 +229,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
   Nothing -> Right $ stateSet sdev (TrI.constTransition st)
   where
     getK :: M0.PVer -> Maybe Word32
-    getK pver = case M0.v_type pver of
-      pva@M0.PVerActual{} -> case M0.v_attrs pva of
-        PDClustAttr _ k _ _ _ -> Just k
-      _ -> Nothing
+    getK = either (const Nothing) (Just . _pa_K . M0.va_attrs) . M0.v_data
 
     failingState :: M0.SDev -> M0.SDevState -> Bool
     failingState d s = M0.toConfObjState d s `elem` [ M0.M0_NC_FAILED

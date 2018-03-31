@@ -764,16 +764,16 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
     m0synchronously lift $ addNode t (M0.fid node) (M0.fid fs) memsize cpucount 0 0 rt_mdpool
     let procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
         ep2s = T.unpack . encodeEndpoint
-    for_ procs $ \(proc@M0.Process{..}) -> do
+    for_ procs $ \proc@M0.Process{..} -> do
       m0synchronously lift $ addProcess t r_fid (M0.fid node) r_cores
                             r_mem_as r_mem_rss r_mem_stack r_mem_memlock
                             (T.unpack . encodeEndpoint $ r_endpoint)
       let servs = G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
-      for_ servs $ \(serv@M0.Service{..}) -> do
+      for_ servs $ \serv@M0.Service{..} -> do
         m0synchronously lift $ addService t s_fid r_fid
           (ServiceInfo s_type $ fmap ep2s s_endpoints)
         let sdevs = G.connectedTo serv M0.IsParentOf rg :: [M0.SDev]
-        for_ sdevs $ \(sdev@M0.SDev{..}) -> do
+        for_ sdevs $ \sdev@M0.SDev{..} -> do
           let mdisk = G.connectedTo sdev M0.IsOnHardware rg :: Maybe M0.Disk
           m0synchronously lift $ addDevice t d_fid s_fid (M0.fid <$> mdisk) d_idx
                    M0_CFG_DEVICE_INTERFACE_SATA
@@ -782,16 +782,16 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   -- Pool versions
   let pools = G.connectedTo root M0.IsParentOf rg :: [M0.Pool]
       pvNegWidth pver = case pver of
-                         M0.PVer _ a@M0.PVerActual{} -> negate . _pa_P . M0.v_attrs $ a
-                         M0.PVer _ M0.PVerFormulaic{} -> 0
+                         M0.PVer _ (Right pva) -> negate . _pa_P $ M0.va_attrs pva
+                         M0.PVer _ _ -> 0
   for_ pools $ \pool -> do
     m0synchronously lift $ addPool t (M0.fid pool) (M0.fid fs) 0
     let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
     for_ pvers $ \pver -> do
-      case M0.v_type pver of
-        pva@M0.PVerActual{} -> do
+      case M0.v_data pver of
+        Right pva -> do
           -- XXX-MULTIPOOLS: M0.SiteV
-          m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.v_attrs pva) (M0.v_tolerance pva)
+          m0synchronously lift $ addPVerActual t (M0.fid pver) (M0.fid pool) (M0.va_attrs pva) (M0.va_tolerance pva)
           let sitevs = G.connectedTo pver M0.IsParentOf rg :: [M0.SiteV]
           for_ sitevs $ \sitev -> do
             let rackvs = G.connectedTo sitev M0.IsParentOf rg :: [M0.RackV]
@@ -811,16 +811,16 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                     let Just (disk :: M0.Disk) = G.connectedFrom M0.IsRealOf diskv rg
                     m0synchronously lift $ addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
           m0synchronously lift $ poolVersionDone t (M0.fid pver)
-        pvf@M0.PVerFormulaic{} -> do
-          base <- lookupConfObjByFid (M0.v_base pvf)
-          case fmap M0.v_type base of
+        Left pvf -> do
+          base <- lookupConfObjByFid (M0.vf_base pvf)
+          case M0.v_data <$> base of
             Nothing -> Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
-                   ++ " because base pver can't be found"
-            Just (pva@M0.PVerActual{}) -> do
-              let(PDClustAttr n k p _ _) = M0.v_attrs pva
-              if (M0.v_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k))
+                   ++ " because base pver cannot be found"
+            Just (Right pva) -> do
+              let PDClustAttr n k p _ _ = M0.va_attrs pva
+              if M0.vf_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k)
               then m0synchronously lift $ addPVerFormulaic t (M0.fid pver) (M0.fid pool)
-                            (M0.v_id pvf) (M0.v_base pvf) (M0.v_allowance pvf)
+                            (M0.vf_id pvf) (M0.vf_base pvf) (M0.vf_allowance pvf)
               else Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                      ++ " because it doesn't meet"
                      ++ " allowance[M0_CONF_PVER_LVL_DISKS] <=  P - (N+2K) criteria"
