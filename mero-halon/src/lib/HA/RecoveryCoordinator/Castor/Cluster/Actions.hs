@@ -26,8 +26,8 @@ import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Cluster(..), Has(..))
+import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.Notification (getSpielAddress)
@@ -43,7 +43,7 @@ barrierPass :: (M0.MeroClusterState -> Bool)
             -> l
             -> Process (Maybe ())
 barrierPass rightState (Event.ClusterStateChange _ state') _ _ =
-  if rightState state' then return (Just ()) else return Nothing
+  return $ if rightState state' then Just () else Nothing
 
 -- | Send a notification when the cluster state transitions.
 --
@@ -61,13 +61,13 @@ notifyOnClusterTransition = do
   rg <- getGraph
   newRunLevel <- calculateRunLevel
   newStopLevel <- calculateStopLevel
-  let disposition = fromMaybe M0.OFFLINE $ G.connectedTo R.Cluster R.Has rg
+  let disposition = fromMaybe M0.OFFLINE $ G.connectedTo Cluster Has rg
       oldState = getClusterStatus rg
       newState = M0.MeroClusterState disposition newRunLevel newStopLevel
   Log.actLog "Cluster transition" [ ("old state", show oldState)
                                   , ("new state", show newState) ]
-  modifyGraph $ G.connect R.Cluster M0.StopLevel newStopLevel
-              . G.connect R.Cluster M0.RunLevel newRunLevel
+  modifyGraph $ G.connect Cluster M0.StopLevel newStopLevel
+              . G.connect Cluster M0.RunLevel newRunLevel
   registerSyncGraphCallback $ \self _ -> do
     usend self (Event.ClusterStateChange oldState newState)
 
@@ -81,7 +81,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
             ( length fs > q
             , fromMaybe False $ listToMaybe
                [ M0.SSOnline == M0.getState srv rg
-               | srv :: M0.Service <- G.connectedFrom R.Is M0.PrincipalRM rg
+               | srv :: M0.Service <- G.connectedFrom Is M0.PrincipalRM rg
                ]
             )
         pools = Pool.getNonMD rg
@@ -95,7 +95,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
         [] -> return True -- No errors here, unexpected fast path!!
         [Failures 0 0 0 0 0] -> return True
         ss -> fmap (getAny . mconcat) . for pools $ \pool -> do -- XXX-MULTIPOOLS: Do we need to check for sites here?
-                return $ mconcat [Any result
+                return $ mconcat [ Any result
                                  | pver <- G.connectedTo pool M0.IsParentOf rg
                                  , let result = case pver of
                                          (M0.PVer _ M0.PVerActual{}) -> checkActual pver
