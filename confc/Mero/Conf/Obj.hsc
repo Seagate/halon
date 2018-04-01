@@ -95,7 +95,7 @@ data Root = Root
   { rt_ptr :: Ptr Obj
   , rt_fid :: Fid
   , rt_verno :: Word64
-  } deriving (Show)
+  } deriving Show
 
 getRoot :: Ptr Obj -> IO Root
 getRoot po = do
@@ -112,7 +112,7 @@ getRoot po = do
 data Profile = Profile
     { cp_ptr :: Ptr Obj
     , cp_fid :: Fid
-    } deriving (Show)
+    } deriving Show
 
 getProfile :: Ptr Obj -> IO Profile
 getProfile po = do
@@ -132,7 +132,7 @@ data Filesystem = Filesystem
     , cf_imeta_pver :: Fid
     , cf_redundancy :: Word32
     , cf_params   :: [String]
-    } deriving (Show)
+    } deriving Show
 
 -- XXX-MULTIPOOLS: replace with getRoot
 getFilesystem :: Ptr Obj -> IO Filesystem
@@ -158,7 +158,7 @@ data Pool = Pool {
     pl_ptr   :: Ptr Obj
   , pl_fid   :: Fid
   , pl_pver_policy :: Word32
-} deriving (Show)
+} deriving Show
 
 getPool :: Ptr Obj -> IO Pool
 getPool po = do
@@ -193,7 +193,7 @@ data PVer = PVer {
     pv_ptr :: Ptr Obj
   , pv_fid :: Fid
   , pv_type :: PVerType
-} deriving (Show)
+} deriving Show
 
 -- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
 data PVerType
@@ -206,7 +206,7 @@ data PVerType
     , pvf_base :: Fid           -- ^ Fid of the base pool version.
     , pvf_allowance :: [Word32] -- ^ Objects failed in this version.
     }
-  deriving (Show)
+  deriving Show
 
 confPVerHeight :: Int
 confPVerHeight = #{const M0_CONF_PVER_HEIGHT}
@@ -238,7 +238,7 @@ data ObjV = ObjV
   { cv_ptr :: Ptr Obj
   , cv_fid :: Fid
   , cv_real :: Fid
-  } deriving (Show)
+  } deriving Show
 
 -- | Temporary workaround for MERO-1088
 foreign import capi "confc_helpers.h cv_real_fid"
@@ -256,14 +256,15 @@ getObjV po = do
     , cv_real = real
   }
 
+-- XXX-MULTIPOOLS: SiteV
 newtype RackV = RackV ObjV
-  deriving (Show)
+  deriving Show
 newtype EnclV = EnclV ObjV
-  deriving (Show)
+  deriving Show
 newtype CtrlV = CtrlV ObjV
-  deriving (Show)
+  deriving Show
 newtype DiskV = DiskV ObjV
-  deriving (Show)
+  deriving Show
 
 -- | Represetation of `m0_conf_node`.
 data Node = Node
@@ -274,7 +275,7 @@ data Node = Node
   , cn_last_state :: Word64
   , cn_flags      :: Word64
   , cn_pool_fid   :: Fid
-  } deriving (Show)
+  } deriving Show
 
 -- | Temporary workaround for MERO-1088
 foreign import capi "confc_helpers.h cn_pool_fid"
