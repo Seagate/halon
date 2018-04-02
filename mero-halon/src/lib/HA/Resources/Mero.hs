@@ -30,7 +30,7 @@ import           Data.Char (ord)
 import           Data.Either (rights)
 import           Data.Hashable (Hashable(..))
 import           Data.Int (Int64)
-import           Data.Maybe (fromJust, listToMaybe)
+import           Data.Maybe (fromMaybe, listToMaybe)
 import           Data.Ord (comparing)
 import           Data.Proxy (Proxy(..))
 import           Data.Scientific
@@ -1150,8 +1150,9 @@ $(mkResRel
   []
   )
 
-getM0Root :: G.Graph -> Root
-getM0Root = fromJust . G.connectedTo R.Cluster R.Has
+getM0Root :: G.Graph -> Root -- XXX FIXME: s/Root/Maybe Root/
+getM0Root = let err = error "getM0Root: Root is not linked to Cluster"
+            in fromMaybe err . G.connectedTo R.Cluster R.Has
 
 -- | Get all 'Node's running on the 'Cluster'.
 getM0Nodes :: G.Graph -> [Node]

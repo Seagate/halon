@@ -70,7 +70,7 @@ getProfiles :: PhaseM RC l [M0.Profile]
 getProfiles = do
     rg <- getGraph
     pure [ prof
-         | let root = M0.getM0Root rg
+         | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
          , prof <- G.connectedTo root M0.IsParentOf rg
          ]
 
@@ -88,7 +88,7 @@ getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
 getFilesystem = do
     rg <- getGraph
     pure $ listToMaybe [ fs
-                       | let root = M0.getM0Root rg
+                       | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
                        , fs <- G.connectedTo root M0.IsParentOf rg
                        ]
 
