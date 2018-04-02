@@ -53,10 +53,10 @@ import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.Service.Events
 import qualified HA.ResourceGraph as G
-import           HA.Resources (Has(..))
-import qualified HA.Resources as Res
+import           HA.Resources (Cluster(..), Has(..))
+import qualified HA.Resources as R (Node)
 import           HA.Resources.Castor (Is(..))
-import qualified HA.Resources.Castor as Castor
+import qualified HA.Resources.Castor as Cas
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -94,7 +94,7 @@ rmsAddress lnid = Endpoint {
 -- | Create the necessary configuration in the resource graph to support
 -- loading the Mero kernel. Currently this consists of creating a unique node
 -- UUID and storing the LNet nid.
-createMeroKernelConfig :: Castor.Host
+createMeroKernelConfig :: Cas.Host
                        -> LNid -- ^ LNet interface address
                        -> PhaseM RC a ()
 createMeroKernelConfig host lnid = do
@@ -105,7 +105,7 @@ createMeroKernelConfig host lnid = do
 --
 -- If the 'Host' already contains all the required information, no new
 -- information will be added.
-createMeroClientConfig :: Castor.Host
+createMeroClientConfig :: Cas.Host
                        -> M0.HostHardwareInfo
                        -> PhaseM RC a ()
 createMeroClientConfig host (M0.HostHardwareInfo memsize cpucnt lnid) = do
@@ -265,9 +265,9 @@ calculateStopLevel = do
 -- | Get an aggregate cluster status report.
 getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState
 getClusterStatus rg = let
-    dispo = G.connectedTo Res.Cluster Has rg
-    runLevel = G.connectedTo Res.Cluster M0.RunLevel rg
-    stopLevel = G.connectedTo Res.Cluster M0.StopLevel rg
+    dispo = G.connectedTo Cluster Has rg
+    runLevel = G.connectedTo Cluster M0.RunLevel rg
+    stopLevel = G.connectedTo Cluster M0.StopLevel rg
   in M0.MeroClusterState <$> dispo <*> runLevel <*> stopLevel
 
 -- | Is the cluster completely stopped?
@@ -313,8 +313,8 @@ configureMeroProcess sender p runType = do
   return uid
 
 -- | Dispatch a request to start @halon:m0d@ on the given
--- 'Castor.Host'.
-startMeroService :: Castor.Host -> Res.Node -> PhaseM RC a ()
+-- 'Cas.Host'.
+startMeroService :: Cas.Host -> R.Node -> PhaseM RC a ()
 startMeroService host node = do
   Log.rcLog' Log.DEBUG $ "Trying to start mero service on "
                       ++ show (host, node)
@@ -368,7 +368,7 @@ startMeroService host node = do
 retriggerMeroNodeBootstrap :: M0.Node -> PhaseM RC a ()
 retriggerMeroNodeBootstrap n = do
   rg <- getGraph
-  case G.connectedTo Res.Cluster Has rg of
+  case G.connectedTo Cluster Has rg of
     Just M0.ONLINE -> restartMeroOnNode
     cst -> Log.rcLog' Log.DEBUG $
              "Not trying to retrigger mero as cluster state is " ++ show cst
@@ -380,21 +380,21 @@ retriggerMeroNodeBootstrap n = do
         Just h  -> announceTheseMeroHosts [h] (\_ _ -> True)
 
 -- | Send notifications about new mero nodes and new mero servers for
--- the given set of 'Castor.Host's.
+-- the given set of 'Cas.Host's.
 --
 -- Used during startup by 'requestClusterStart'.
-announceTheseMeroHosts :: [Castor.Host] -- ^ Candidate hosts
+announceTheseMeroHosts :: [Cas.Host] -- ^ Candidate hosts
                        -> (M0.Node -> G.Graph -> Bool) -- ^ Predicate on nodes belonging to hosts
                        -> PhaseM RC a ()
 announceTheseMeroHosts hosts p = do
   rg' <- getGraph
   let clientHosts =
         [ host | host <- hosts
-               , G.isConnected host Has Castor.HA_M0CLIENT rg' -- which are clients
+               , G.isConnected host Has Cas.HA_M0CLIENT rg' -- which are clients
                ]
       serverHosts =
         [ host | host <- hosts
-               , G.isConnected host Has Castor.HA_M0SERVER rg'
+               , G.isConnected host Has Cas.HA_M0SERVER rg'
                ]
 
       -- Don't announced failed nodes
