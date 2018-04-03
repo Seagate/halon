@@ -50,7 +50,7 @@ jobs:
               ./scripts/setup-node localhost \
                         --verbose \
                         --local \
-                        --skip-tags reboot,upgrade,start-services,debug
+                        --skip-tags reboot,upgrade,start-services,debug,never
 
       - run:
           name: Building Mero master
