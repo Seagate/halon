@@ -11,6 +11,7 @@ module Mero.Spiel
   , module Mero.Spiel.Context
   ) where
 
+import Mero.Conf.Obj (PVerFormulaic(..), PVerSubtree(..))
 import Mero.ConfC
 import Mero.Spiel.Context
 import Mero.Spiel.Internal
@@ -524,9 +525,9 @@ instance Spliceable Rack where
     mapM_ (spliceTree t (cr_fid o)) kids
 
 instance Spliceable PVer where
-  splice t p o = case pv_type o of
-    s@PVerSubtree{}   -> addPVerActual t (pv_fid o) p (pvs_attr s) (pvs_tolerance s)
-    s@PVerFormulaic{} -> addPVerFormulaic t (pv_fid o) p (pvf_id s) (pvf_base s) (pvf_allowance s)
+  splice t p o = case pv_data o of
+    Right s -> addPVerActual t (pv_fid o) p (pvs_attr s) (pvs_tolerance s)
+    Left s -> addPVerFormulaic t (pv_fid o) p (pvf_id s) (pvf_base s) (pvf_allowance s)
   spliceTree t p o = do
     splice t p o
     kids <- children o :: IO [RackV]

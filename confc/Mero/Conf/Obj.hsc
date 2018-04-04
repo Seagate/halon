@@ -28,7 +28,8 @@ module Mero.Conf.Obj
   , Pool(..)
   , getPool
   , PVer(..)
-  , PVerType(..)
+  , PVerFormulaic(..)
+  , PVerSubtree(..)
   , getPVer
   , ObjV(..)
   , getObjV
@@ -189,24 +190,22 @@ instance Enum PVerKind where
 -- | Stub implementation of pool version object
 
 -- @m0_conf_pver@
-data PVer = PVer {
-    pv_ptr :: Ptr Obj
+data PVer = PVer
+  { pv_ptr :: Ptr Obj
   , pv_fid :: Fid
-  , pv_type :: PVerType
-} deriving Show
+  , pv_data :: Either PVerFormulaic PVerSubtree
+  } deriving Show
 
--- XXX FIXME: Mixing sum types and record syntax is a terrible thing to do.
-data PVerType
-  = PVerSubtree
-    { pvs_attr :: PDClustAttr   -- ^ Layout attributes.
-    , pvs_tolerance :: [Word32] -- ^ Allowed failures.
-    }
-  | PVerFormulaic
-    { pvf_id :: Word32          -- ^ Cluster wide unique identifier.
-    , pvf_base :: Fid           -- ^ Fid of the base pool version.
-    , pvf_allowance :: [Word32] -- ^ Objects failed in this version.
-    }
-  deriving Show
+data PVerFormulaic = PVerFormulaic
+  { pvf_id :: Word32          -- ^ Cluster wide unique identifier.
+  , pvf_base :: Fid           -- ^ Fid of the base pool version.
+  , pvf_allowance :: [Word32] -- ^ Objects failed in this version.
+  } deriving Show
+
+data PVerSubtree = PVerSubtree
+  { pvs_attr :: PDClustAttr   -- ^ Layout attributes.
+  , pvs_tolerance :: [Word32] -- ^ Allowed failures.
+  } deriving Show
 
 confPVerHeight :: Int
 confPVerHeight = #{const M0_CONF_PVER_HEIGHT}
@@ -224,14 +223,21 @@ getPVer po = do
           let formulaic = #{ptr struct m0_conf_pver, pv_u.formulaic} pv
           pvfid <- #{peek struct m0_conf_pver_formulaic, pvf_id} formulaic
           pvfbase <- #{peek struct m0_conf_pver_formulaic, pvf_base} formulaic
-          failures <- peekArray confPVerHeight (#{ptr struct m0_conf_pver_formulaic, pvf_allowance} formulaic)
-          return PVerFormulaic{pvf_id = pvfid, pvf_base = pvfbase, pvf_allowance = failures}
+          allowance <- peekArray confPVerHeight $
+            #{ptr struct m0_conf_pver_formulaic, pvf_allowance} formulaic
+          return . Left $ PVerFormulaic { pvf_id = pvfid
+                                        , pvf_base = pvfbase
+                                        , pvf_allowance = allowance
+                                        }
         else do
           let subtree = #{ptr struct m0_conf_pver, pv_u.subtree} pv
           attr <- #{peek struct m0_conf_pver_subtree, pvs_attr} subtree
-          failures <- peekArray confPVerHeight (#{ptr struct m0_conf_pver_subtree, pvs_tolerance} subtree)
-          return PVerSubtree{pvs_attr  = attr, pvs_tolerance = failures }
-  return PVer { pv_ptr = po, pv_fid = fid, pv_type = tp }
+          tolerance <- peekArray confPVerHeight $
+            #{ptr struct m0_conf_pver_subtree, pvs_tolerance} subtree
+          return . Right $ PVerSubtree { pvs_attr = attr
+                                       , pvs_tolerance = tolerance
+                                       }
+  return PVer { pv_ptr = po, pv_fid = fid, pv_data = tp }
 
 -- @m0_conf_objv@
 data ObjV = ObjV
