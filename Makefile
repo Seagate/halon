@@ -1,65 +1,146 @@
 # This project uses The Stack build tool. Please refer to the README
 # for build instructions.
 
-BUILD_NUMBER = 000
-VERSION = $(shell git describe --long --always | tr '-' '_')
-MOCK_CONFIG = default
-SRC_RPM_DIR := $(shell mktemp -du)
-RPMBUILD_DIR = $(HOME)/rpmbuild
+BUILD_NUMBER    := 1
+GITREV          := git$(shell git rev-parse --short HEAD)
+# assume the first part of `git describe` is a tag in format 'n.m'
+VERSION         := $(shell git describe | cut -f1 -d-)
+# assume that Mero package release has format 'buildnum_gitid_kernelver',
+MERO_GITREV     := m0$(shell rpm -q --queryformat '%{RELEASE}' mero | cut -f2 -d_)
+MERO_VERSION    := $(shell rpm -q --queryformat '%{VERSION}' mero)
+GHC_OPTIONS     := -g -j4
+DIST_FILE       := halon-$(VERSION).tar.gz
+M0_SRC_DIR      := /usr/include/mero
+MOCK_CONFIG     := $(M0_SRC_DIR)/mero-mock.cfg
+RPMBUILD_FLAGS  :=
+RPMBUILD_DIR    := $(HOME)/rpmbuild
+RPMBUILD_TOPDIR := $(abspath $(RPMBUILD_DIR))
+RPMSOURCES_DIR  := $(RPMBUILD_DIR)/SOURCES
+RPMSPECS_DIR    := $(RPMBUILD_DIR)/SPECS
+RPMSRPMS_DIR    := $(RPMBUILD_DIR)/SRPMS
+RPMMOCK_DIR     := $(RPMBUILD_DIR)/MOCK-RPMS
 
-.PHONY: rpm
-rpm:
-	mkdir -p $(RPMBUILD_DIR)
+
+.PHONY: all
+all: tests
+
+.PHONY: halon
+halon:
+	stack build mero-halon \
+		--extra-include-dirs=$(M0_SRC_DIR) \
+		--ghc-options='$(GHC_OPTIONS)' \
+		--no-test
+
+.PHONY: tests
+tests:
+	stack build mero-halon \
+		--extra-include-dirs=$(M0_SRC_DIR) \
+		--ghc-options='$(GHC_OPTIONS)' \
+		--test \
+		--no-run-tests
+
+.PHONY: setup
+setup:
+	stack setup
+
+.PHONY: dist
+dist:
 	echo "module Version where \
 	      gitDescribe = \"$(shell git describe --long --always || echo UNKNOWN)\"; \
 	      gitCommitHash = \"$(shell git rev-parse HEAD || echo UNKNOWN)\"; \
 	      gitCommitDate = \"$(shell git log -1 --format='%cd' || echo UNKNOWN)\";" \
-          > mero-halon/src/lib/Version.hs
-	git archive --format=tar --prefix=halon/ HEAD | gzip > $(RPMBUILD_DIR)/halon.tar.gz
+	      > mero-halon/src/lib/Version.hs
+	git archive --format=tar.gz --prefix=halon/ HEAD -o $(DIST_FILE)
+	git checkout mero-halon/src/lib/Version.hs
+
+.PHONY: __rpm_pre
+__rpm_pre:
+	$(MAKE) dist
+	mkdir -p $(RPMSOURCES_DIR) \
+	         $(RPMSPECS_DIR) \
+	         $(RPMSRPMS_DIR) \
+	         $(RPMMOCK_DIR)
+	mv $(DIST_FILE) $(RPMSOURCES_DIR)
+	chown $$(id -u):$$(id -g) $(RPMSOURCES_DIR)/$(DIST_FILE)
+	cp halon.spec $(RPMSPECS_DIR)
+	chown $$(id -u):$$(id -g) $(RPMSPECS_DIR)/halon.spec
+
+.PHONY: __rpm
+__rpm:
+	rpmbuild -ba $(RPMSPECS_DIR)/halon.spec \
+		 --define "_topdir $(RPMBUILD_TOPDIR)" \
+		 --define "_version ${VERSION}" \
+		 --define "_buildnumber ${BUILD_NUMBER}" \
+		 --define "_gitrevision ${GITREV}" \
+		 --define "_merogitrev ${MERO_GITREV}" \
+		 --define "_meroversion ${MERO_VERSION}" \
+		 $(RPMBUILD_FLAGS)
+
+.PHONY: __rpm_srpm
+__rpm_srpm:
+	rpmbuild -bs $(RPMSPECS_DIR)/halon.spec \
+		 --define "_topdir $(RPMBUILD_TOPDIR)" \
+		 --define "_version ${VERSION}" \
+		 --define "_buildnumber ${BUILD_NUMBER}" \
+		 --define "_gitrevision ${GITREV}" \
+		 --define "_merogitrev ${MERO_GITREV}" \
+		 --define "_meroversion ${MERO_VERSION}" \
+		 $(RPMBUILD_FLAGS)
+
+.PHONY: __rpm_mock
+__rpm_mock:
 	mock -r $(MOCK_CONFIG) --buildsrpm \
-		--spec halon.spec --sources $(RPMBUILD_DIR) \
-		--resultdir $(SRC_RPM_DIR) \
-		--define "_gitversion ${VERSION}" \
-		--define "_buildnumber ${BUILD_NUMBER}"
-	mock -r $(MOCK_CONFIG) --rebuild $(SRC_RPM_DIR)/*.src.rpm \
-		--resultdir $(RPMBUILD_DIR) \
-    --define "_gitversion ${VERSION}" \
-		--define "_buildnumber ${BUILD_NUMBER}"
+		--spec $(RPMSPECS_DIR)/halon.spec \
+		--sources $(RPMSOURCES_DIR) \
+		--resultdir $(RPMMOCK_DIR) \
+		--define "_version ${VERSION}" \
+		--define "_buildnumber ${BUILD_NUMBER}" \
+		--define "_gitrevision ${GITREV}" \
+		--define "_merogitrev ${MERO_GITREV}" \
+		--define "_meroversion ${MERO_VERSION}" \
+		--no-clean --no-cleanup-after
+	mock -r $(MOCK_CONFIG) --install \
+		$(RPMBUILD_DIR)/RPMS/x86_64/mero-[[:digit:]]*.rpm \
+		$(RPMBUILD_DIR)/RPMS/x86_64/mero-devel*.rpm \
+		--resultdir $(RPMMOCK_DIR) \
+		--no-clean --no-cleanup-after
+	mock -r $(MOCK_CONFIG) --rebuild $(RPMMOCK_DIR)/halon*.src.rpm \
+		--resultdir $(RPMMOCK_DIR) \
+		--define "_version ${VERSION}" \
+		--define "_buildnumber ${BUILD_NUMBER}" \
+		--define "_gitrevision ${GITREV}" \
+		--define "_merogitrev ${MERO_GITREV}" \
+		--define "_meroversion ${MERO_VERSION}" \
+		--enable-network \
+		--no-clean
 
-ifeq ($(RPMBUILD_DIR),rpmbuild)
-    RPMBUILD_TOPDIR := $(CURDIR)/$(RPMBUILD_DIR)
-else
-    RPMBUILD_TOPDIR := $(RPMBUILD_DIR)
-endif
+.PHONY: rpms
+rpms:
+	$(MAKE) __rpm_pre
+	$(MAKE) __rpm
 
-# This target will generate a distributable RPM based on the current checkout.
-# By default, it will generate a binary RPM in ./rpmbuild/RPMS/x86_64 and
-# a pseudo-source tar in ./rpmbuild/SRPMS. It's possible to override the default
-# output location by specifying a new value of RPMBUILD_DIR variable in the
-# command-line, e.g. `make rpm-dev RPMBUILD_DIR=~/rpmbuild`.
-rpm-dev:
-	mkdir -p $(RPMBUILD_DIR)
-	mkdir -p $(RPMBUILD_DIR)/SOURCES/role_maps
-	mkdir -p $(RPMBUILD_DIR)/SOURCES/systemd
-	mkdir -p $(RPMBUILD_DIR)/SOURCES/tmpfiles.d
-	mkdir -p $(RPMBUILD_DIR)/SPECS
-	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halond $(RPMBUILD_DIR)/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halonctl $(RPMBUILD_DIR)/SOURCES/
-	cp .stack-work/install/x86_64-linux/lts-8.3/8.0.2/bin/halon-cleanup $(RPMBUILD_DIR)/SOURCES/
-	cp systemd/halond.service $(RPMBUILD_DIR)/SOURCES/
-	cp systemd/halon-satellite.service $(RPMBUILD_DIR)/SOURCES/
-	cp systemd/halon-cleanup.service $(RPMBUILD_DIR)/SOURCES/
-	cp systemd/sysconfig/halond.example $(RPMBUILD_DIR)/SOURCES/
-	cp mero-halon/scripts/localcluster $(RPMBUILD_DIR)/SOURCES/halon-simplelocalcluster
-	cp mero-halon/scripts/hctl $(RPMBUILD_DIR)/SOURCES/hctl
-	cp mero-halon/scripts/setup-rabbitmq-perms.sh $(RPMBUILD_DIR)/SOURCES/setup-rabbitmq-perms.sh
-	cp mero-halon/scripts/mero_clovis_role_mappings.ede $(RPMBUILD_DIR)/SOURCES/role_maps/clovis.ede
-	cp mero-halon/scripts/mero_provisioner_role_mappings.ede $(RPMBUILD_DIR)/SOURCES/role_maps/prov.ede
-	cp mero-halon/scripts/mero_s3server_role_mappings.ede $(RPMBUILD_DIR)/SOURCES/role_maps/s3server.ede
-	cp mero-halon/scripts/halon_roles.yaml $(RPMBUILD_DIR)/SOURCES/role_maps/halon_role_mappings
-	cp mero-halon/scripts/tmpfiles.d/halond.conf $(RPMBUILD_DIR)/SOURCES/tmpfiles.d/halond.conf
-	cp halon-dev.spec $(RPMBUILD_DIR)/SPECS/
-	chown -R $$(id -u):$$(id -g) $(RPMBUILD_DIR)/
-	rpmbuild --define "_topdir $(RPMBUILD_TOPDIR)" \
-		 --define "_gitversion ${VERSION}" \
-		 -ba $(RPMBUILD_DIR)/SPECS/halon-dev.spec
+.PHONY: rpms-mock
+rpms-mock:
+	$(MAKE) __rpm_pre
+	$(MAKE) __rpm_mock
+
+.PHONY: srpm
+srpm:
+	$(MAKE) __rpm_pre
+	$(MAKE) __rpm_srpm
+
+.PHONY: help
+help:
+	@echo 'Setup targets:'
+	@echo '  setup           - set up Haskell build environment'
+	@echo ''
+	@echo 'Build targets:'
+	@echo '  tests           - build Halon and tests, this is default target'
+	@echo '  halon           - build only Halon without tests'
+	@echo ''
+	@echo 'Distribution targets:'
+	@echo '  dist            - recreate package.tar.gz from all source files'
+	@echo '  srpm            - build Halon source rpm package'
+	@echo '  rpms            - build Halon rpm and srpm packages'
+	@echo '  rpms-mock       - build Halon rpm and srpm packages using'
+	@echo '                    "mock" environment (ensures clean rpm deps)'
