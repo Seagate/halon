@@ -1,10 +1,10 @@
 Summary: halon
 Name: halon
-Version: %{_gitversion}%{?dist}
-Release: %{_buildnumber}
+Version: %{_version}
+Release: %{_buildnumber}_%{_gitrevision}_%{_merogitrev}%{?dist}
 License: All rights reserved
 Group: System Environment/Daemons
-Source: %{name}.tar.gz
+Source: %{name}-%{_version}.tar.gz
 
 BuildRequires: binutils-devel
 BuildRequires: libgenders-devel
@@ -20,7 +20,7 @@ BuildRequires: stack
 Requires: genders
 Requires: gmp
 Requires: leveldb
-Requires: mero
+Requires: mero = %{_meroversion}
 Requires: pcre
 
 %description
