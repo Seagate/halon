@@ -16,58 +16,21 @@ import Mero.ConfC
 import Mero.Spiel.Context
 import Mero.Spiel.Internal
 
-import Control.Exception
-  ( bracket
-  , bracket_
-  , mask
-  )
+import Control.Exception (bracket, bracket_, mask)
 
 import Data.ByteString (ByteString, packCString)
-import Data.Word ( Word32, Word64 )
+import Data.Word (Word32, Word64)
 
-import Foreign.C.Error
-  ( Errno(..)
-  , eOK
-  , eBUSY
-  , eNOENT
-  )
-import Foreign.C.String
-  ( newCString
-  , withCString
-  , peekCString
-  )
-import Foreign.C.Types
-  ( CUInt(..)
-  , CSize(..)
-  )
-import Foreign.ForeignPtr
-  ( ForeignPtr
-  , mallocForeignPtrBytes
-  , withForeignPtr
-  )
-import Foreign.Marshal.Alloc
-  ( alloca
-  , free
-  )
-import Foreign.Marshal.Array
-  ( peekArray
-  , withArray0
-  , withArrayLen
-  )
+import Foreign.C.Error (Errno(..), eOK, eBUSY, eNOENT)
+import Foreign.C.String (newCString, withCString, peekCString)
+import Foreign.C.Types (CUInt(..), CSize(..))
+import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr)
+import Foreign.Marshal.Alloc (alloca, free)
+import Foreign.Marshal.Array (peekArray, withArray0, withArrayLen)
 import Foreign.Marshal.Error (throwIfNeg, throwIf_)
-import Foreign.Marshal.Utils
-  ( fillBytes
-  , with
-  , withMany
-  , maybeWith
-  , maybePeek
-  )
-import Foreign.Ptr
-  ( nullPtr )
-import Foreign.Storable
-  ( peek
-  , poke
-  )
+import Foreign.Marshal.Utils (fillBytes, with, withMany, maybeWith, maybePeek)
+import Foreign.Ptr (nullPtr)
+import Foreign.Storable (peek, poke)
 
 -- | Start rconfc server associated with spiel context.
 rconfStart :: IO ()
