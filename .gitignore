@@ -1,36 +1,57 @@
-cabal.sandbox.config
-.cabal-sandbox*
-.stack-work
-dist/
-test_output/
-tests.eventlog
-mk/local.mk
-*.tix
-*.mix
-coverage/
-*.o
-rpclite/rpclite/rpclite_fop_ff.*
-rpclite/rpclite/test?
-rpclite/rpclite/test
-rpclite/rpclite/test-epoch
-confc/tests/unit-tests.c
-mero-halon/src/lib/Version/Read.c
-m0trace.*
-core
-core.*
+# NOTE1! Don't add files that are generated in specific
+# subdirectories here. Add them in the ".gitignore" file
+# in that subdirectory instead.
+#
+# NOTE2! Please use `git ls-files -i --exclude-standard`
+# command after changing this file, to see if there are
+# any tracked files which get ignored after the change.
+
+# ctags, cscope, emacs tag files, gnu global etc.
 /tags
-TAGS
 /cscope.*
 /ncscope.*
+TAGS
 GPATH
 GRTAGS
 GSYMS
 GTAGS
-*.swp
+
+# backup files
+*.orig
+*~
+\#*#
+.*.swp
+
+# generated sources?
+confc/tests/unit-tests.c
+mero-halon/src/lib/Version/Read.c
 mero-halon/doc/diagrams/*.png
-rpmbuild/BUILD/
-rpmbuild/BUILDROOT/
-rpmbuild/RPMS/
-rpmbuild/SOURCES/
-rpmbuild/SPECS/
-rpmbuild/SRPMS/
+rpclite/rpclite/rpclite_fop_ff.*
+rpclite/rpclite/test?
+rpclite/rpclite/test
+rpclite/rpclite/test-epoch
+
+# build
+/halon-*.tar.gz
+*.tix
+*.mix
+*.o
+.cabal-sandbox*
+.stack-work
+cabal.sandbox.config
+coverage/
+dist/
+mk/local.mk
+
+# rpm stuff
+/rpmbuild
+!README
+
+# tests
+test_output/
+tests.eventlog
+
+# runtime files
+/m0trace.*
+/core
+/core.*
