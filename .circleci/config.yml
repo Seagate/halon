@@ -18,12 +18,6 @@ jobs:
       - checkout
 
       - run:
-          name: Checking-out git submodules
-          command: |
-              git submodule sync --recursive
-              git submodule update --init --recursive
-
-      - run:
           name: Halon revision
           command: git --no-pager log -1
 
