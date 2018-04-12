@@ -327,13 +327,15 @@ dixInit mc imeta = do
 
 -- | Convert a process run type and 'Fid' to the corresponding systemd
 -- service string.
-unitString :: ProcessRunType       -- ^ Type of the process.
-           -> M0.Process           -- ^ Process.
+unitString :: ProcessRunType -- ^ Type of the process.
+           -> M0.Process     -- ^ Process.
            -> String
-unitString run p = case run of
-  M0T1FS -> "m0t1fs@" ++ fidToStr (M0.fid p) ++ ".service"
-  M0D -> "m0d@" ++ fidToStr (M0.fid p)  ++ ".service"
-  CLOVIS s -> s ++ "@" ++ fidToStr (M0.fid p) ++ ".service"
+unitString t p = name ++ "@" ++ fidToStr (M0.fid p) ++ ".service"
+  where
+    name = case t of
+        M0D      -> "m0d"
+        M0T1FS   -> "m0t1fs"
+        CLOVIS s -> s
 
 -- | Write out the @conf.xc@ file for a confd server. See also
 -- 'confXCPath'. Creates parent directories if missing.
