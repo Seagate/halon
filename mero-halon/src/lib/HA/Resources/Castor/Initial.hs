@@ -224,14 +224,14 @@ instance FromJSON M0Host
 instance ToJSON M0Host
 
 data M0ProcessType =
-    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
+    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String Bool -- ^ Process lives as part of a Clovis client, with
                          --   given name. If the second parameter is set to
                          --   'True', then the process is independently
                          --   controlled and should not be started/stopped
                          --   by Halon.
   | PLM0d Word64  -- ^ Process runs in m0d at the given boot level.
-                  --   Currently 0 = confd, 1 = other
+                  --   Currently 0 = confd, 1 = other.
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Data, Show, Typeable, Generic)
 instance Hashable M0ProcessType

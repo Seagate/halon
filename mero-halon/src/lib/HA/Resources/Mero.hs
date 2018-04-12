@@ -845,13 +845,14 @@ deriveSafeCopy 0 'base ''ProcessLabel_0
 -- | Label to attach to a Mero process providing extra context about how
 --   it should run.
 data ProcessLabel =
-    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space
+    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String Bool -- ^ Process lives as part of a Clovis client, with
                          --   given name. If the second parameter is set to
-                         --   'True', then the process is indendently controlled
-                         --   and should not be started/stopped by Halon.
+                         --   'True', then the process is independently
+                         --   controlled and should not be started/stopped
+                         --   by Halon.
   | PLM0d BootLevel -- ^ Process runs in m0d at the given boot level.
-                    --   Currently 0 = confd, 1 = other0
+                    --   Currently 0 = confd, 1 = other.
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Show, Generic, Typeable)
 
