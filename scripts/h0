@@ -40,7 +40,7 @@ cmd_setup() {
 cmd_make() {
     PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         MERO_ROOT=$M0_SRC_DIR \
-        cmd_stack build mero-halon --ghc-options='-g -j4' --test \
+        cmd_stack build mero-halon --ghc-options="${GHC_OPTS:--g -j4}" --test \
         --no-run-tests "$@"
 }
 
