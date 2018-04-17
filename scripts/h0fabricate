@@ -249,8 +249,13 @@ class Pool(ToYaml):
 
     def __init__(self, id, drive_refs):
         assert id and type(id) is str
-        assert drive_refs and all(type(x) is DriveRef for x in drive_refs)
-        self.id, self.drive_refs = id, drive_refs
+        self.id = id
+        # `drive_refs` may be the result of map() call. This is an iterator
+        # in Python 3, and iterators can only be consumed once.
+        # Convert to list to allow repeated iterations.
+        self.drive_refs = list(drive_refs)
+        assert self.drive_refs and \
+            all(type(x) is DriveRef for x in self.drive_refs)
 
     def to_yaml(self, depth):
         lines = []
