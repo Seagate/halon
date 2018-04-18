@@ -13,6 +13,7 @@ export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 ### ------------------------------------------------------------------
 
 die() { echo "$@" >&2; exit 1; }
+warn() { echo "*WARNING* $@" >&2; }
 
 H0_SRC_DIR="$(readlink -f $0)"
 H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
@@ -68,13 +69,12 @@ cmd_install() {
 
 cmd_uninstall() {
     case ${1:-pass} in
-        -c|--clean) sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-                    sudo systemctl start halon-cleanup
-                    sudo systemctl start mero-cleanup
-                    ;;
-        pass)       ;;
-        *)          echo "$PROG: WARN: uninstall: no such option '$1'" >&2
-                    ;;
+        -c|--clean)
+            sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
+            sudo systemctl start halon-cleanup
+            sudo systemctl start mero-cleanup;;
+        pass) ;;
+        *) warn "[uninstall] Unknown option: $1";;
     esac
 
     sudo $M0_SRC_DIR/scripts/install-mero-service -u
@@ -103,11 +103,9 @@ cmd_stop() {
     sudo systemctl stop mero-kernel
 
     case ${1:-pass} in
-        -u|--uninstall) cmd_uninstall --clean
-                        ;;
-        pass)           ;;
-        *)              echo "$PROG: WARN: stop: no such option '$1'" >&2
-                        ;;
+        -u|--uninstall) cmd_uninstall --clean;;
+        pass) ;;
+        *) warn "[stop] Unknown option: $1";;
     esac
 }
 
@@ -155,15 +153,16 @@ Commands:
     make [OPTION]...     Build Halon.
                          (Use \`$PROG rebuild' if Mero was updated.)
     rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
-    clean [OPTION]...    Clean the local packages.
+    clean [OPTION]...    Clean local packages.
     test [OPTION]...     Run unit tests.
     start                Start cluster.
-    stop [-u]            Stop cluster. With \`-u' option perform Mero/Halon
-                         meta-data and configs cleanup, then uninstall services.
-    install              Install Mero/Halon services and binaries system-wide.
-    uninstall [-c]       Uninstall Mero/Halon services and binaries system-wide.
-                         With \`-c' option perform Mero/Halon meta-data and
-                         configs cleanup before uninstalling.
+    stop [-u]            Stop cluster. \`stop -u' is equivalent to
+                         \`stop uninstall -c'.
+    install              Install Mero/Halon services and binaries.
+    uninstall [-c]       Uninstall Mero/Halon services and binaries.
+                         If \`-c' option is provided, clean Mero/Halon
+                         metadata and configuration files before
+                         uninstalling services.
     path                 Print out handy path information.
     env                  Print shell commands that, if evaluated, simplify
                          execution of Halon binaries located in the sources
