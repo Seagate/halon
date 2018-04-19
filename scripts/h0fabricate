@@ -538,11 +538,6 @@ class RoleMero(ToYaml):
             lines.append(indent(depth+6) + 'contents: []')
             lines.append(indent(depth+5) +
                          'm0s_endpoints: ["{}"]'.format(self.endpoint))
-            lines.append(indent(depth+5) + 'm0s_params:')
-            lines.append(indent(depth+6) + 'tag: SP{}'.format(
-                'ConfDBPath' if svc in ('HA', 'CONFD') else 'Unused'))
-            lines.append(indent(depth+6) + 'contents: {}'.format(
-                '"/var/mero/confd"' if svc in ('HA', 'CONFD') else '[]'))
         if self.multiplicity is not None:
             assert self.name == 'c0cat'
             assert self.multiplicity > 0

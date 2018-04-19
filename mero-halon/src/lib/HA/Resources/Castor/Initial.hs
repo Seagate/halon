@@ -34,7 +34,7 @@ import           HA.Aeson (FromJSON, ToJSON, (.:), (.=))
 import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
-import           Mero.ConfC (ServiceParams, ServiceType)
+import           Mero.ConfC (ServiceType)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
@@ -277,11 +277,9 @@ instance ToJSON M0Process
 
 -- | Information about a service
 data M0Service = M0Service {
-    m0s_type :: ServiceType -- ^ e.g. ioservice, haservice
-  , m0s_endpoints :: [Endpoint]
-  -- ^ Listen endpoints for the service itself.
-  , m0s_params :: ServiceParams
-  , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN
+    m0s_type :: ServiceType        -- ^ E.g. ioservice, haservice.
+  , m0s_endpoints :: [Endpoint]    -- ^ Listen endpoints for the service itself.
+  , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN.
 } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Service

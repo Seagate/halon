@@ -15,7 +15,6 @@ module Mero.Spiel.Context where
 
 import Mero.ConfC
   ( Fid
-  , ServiceParams(..)
   , ServiceType(..)
   )
 

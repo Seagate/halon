@@ -107,26 +107,26 @@ transaction server1_endpoint server2_endpoint tx = do
   poolVersionDone tx (fids "pver")
   addProcess tx (fids "process")  (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
   addProcess tx (fids "process2") (fids "node") (Bitmap 2 [3]) 0 0 0 0 server1_endpoint
-  addService tx (fids "confd")    (fids "process")
-    $ ServiceInfo CST_CONFD [server1_endpoint] (SPConfDBPath server1_endpoint)
-  addService tx (fids "confd2")   (fids "process2")
-    $ ServiceInfo CST_CONFD [server2_endpoint] (SPConfDBPath server1_endpoint)
-  addService tx (fids "rms")   (fids "process")
-    $ ServiceInfo CST_RMS [server1_endpoint] (SPConfDBPath server1_endpoint)
-  addService tx (fids "ha")    (fids "process2")
-    $ ServiceInfo CST_HA [server2_endpoint] SPUnused
-  addService tx (fids "ios")    (fids "process2")
-    $ ServiceInfo CST_HA [server2_endpoint] SPUnused
+  addService tx (fids "confd") (fids "process")
+    $ ServiceInfo CST_CONFD [server1_endpoint]
+  addService tx (fids "confd2") (fids "process2")
+    $ ServiceInfo CST_CONFD [server2_endpoint]
+  addService tx (fids "rms") (fids "process")
+    $ ServiceInfo CST_RMS [server1_endpoint]
+  addService tx (fids "ha") (fids "process2")
+    $ ServiceInfo CST_HA [server2_endpoint]
+  addService tx (fids "ios") (fids "process2")
+    $ ServiceInfo CST_HA [server2_endpoint]
   addService tx (fids "sns_repair") (fids "process2")
-    $ ServiceInfo CST_SNS_REP [server2_endpoint] SPUnused
+    $ ServiceInfo CST_SNS_REP [server2_endpoint]
   addService tx (fids "addb2") (fids "process2")
-    $ ServiceInfo CST_ADDB2 [server2_endpoint] SPUnused
+    $ ServiceInfo CST_ADDB2 [server2_endpoint]
   addService tx (fids "sns_rebalance") (fids "process2")
-    $ ServiceInfo CST_SNS_REB [server2_endpoint] SPUnused
+    $ ServiceInfo CST_SNS_REB [server2_endpoint]
   addService tx (fids "mds") (fids "process")
-    $ ServiceInfo CST_MDS [server1_endpoint] SPUnused
+    $ ServiceInfo CST_MDS [server1_endpoint]
   addService tx (fids "mds2") (fids "process2")
-    $ ServiceInfo CST_MDS [server2_endpoint] SPUnused
+    $ ServiceInfo CST_MDS [server2_endpoint]
   addDevice tx (fids "sdev0") (fids "mds2") (Just $ fids "disk0") 1 M0_CFG_DEVICE_INTERFACE_SCSI
     M0_CFG_DEVICE_MEDIA_SSD 1024 (2 * devSize) 123 0x55 "dev/loop0"
   addDevice tx (fids "sdev1") (fids "ios") (Just $ fids "disk1") 2 M0_CFG_DEVICE_INTERFACE_SCSI

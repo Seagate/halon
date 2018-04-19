@@ -17,16 +17,10 @@
             tag: CST_HA
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:34:101"]
-          m0s_params:
-            tag: SPConfDBPath
-            contents: "/var/mero/confd"
         - m0s_type:
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:34:101"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
 - name: "confd"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:44:101"
@@ -46,16 +40,10 @@
             tag: CST_CONFD
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:44:101"]
-          m0s_params:
-            tag: SPConfDBPath
-            contents: "/var/mero/confd"
         - m0s_type:
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:44:101"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
 - name: "mds"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:201"
@@ -75,23 +63,14 @@
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_MDS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_ADDB2
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:201"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
 - name: "storage"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:401"
@@ -111,37 +90,22 @@
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_IOS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_SNS_REP
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_SNS_REB
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
         - m0s_type:
             tag: CST_ADDB2
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
-          m0s_params:
-            tag: SPUnused
-            contents: []
 - name: "m0t1fs"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:301"
@@ -161,6 +125,3 @@
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:301"]
-          m0s_params:
-            tag: SPUnused
-            contents: []

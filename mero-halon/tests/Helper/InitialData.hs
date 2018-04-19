@@ -23,7 +23,7 @@ import qualified Data.Text as T
 import           GHC.Word (Word8)
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
-import           Mero.ConfC (ServiceParams(..), ServiceType(..))
+import           Mero.ConfC (ServiceType(..))
 import           Mero.Lnet
 import           Network.BSD (getHostName)
 import           Text.Printf
@@ -203,12 +203,10 @@ haProcess ifaddr = CI.M0Process
     [ CI.M0Service
       { CI.m0s_type = CST_HA
       , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
-      , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
       { CI.m0s_type = CST_RMS
       , CI.m0s_endpoints = [mkEP ifaddr 12345 34 101]
-      , CI.m0s_params = SPUnused
       , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
@@ -230,12 +228,10 @@ confdProcess ifaddr = CI.M0Process
     [ CI.M0Service
         { CI.m0s_type = CST_CONFD
         , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
-        , CI.m0s_params = SPConfDBPath "/var/mero/confd"
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 44 101]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
@@ -257,17 +253,14 @@ mdsProcess ifaddr = CI.M0Process
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_MDS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_ADDB2
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 201]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
@@ -289,27 +282,22 @@ iosProcess ifaddr = CI.M0Process
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_IOS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_SNS_REP
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
             , CI.M0Service
         { CI.m0s_type = CST_SNS_REB
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     , CI.M0Service
         { CI.m0s_type = CST_ADDB2
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing
@@ -332,7 +320,6 @@ m0t1fsProcess ifaddr = CI.M0Process
     [ CI.M0Service
         { CI.m0s_type = CST_RMS
         , CI.m0s_endpoints = [mkEP ifaddr 12345 41 401]
-        , CI.m0s_params = SPUnused
         , CI.m0s_pathfilter = Nothing }
     ]
   , CI.m0p_environment = Nothing

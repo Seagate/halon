@@ -51,7 +51,6 @@ import           Mero.ConfC
   ( Bitmap
   , Fid(..)
   , PDClustAttr(..)
-  , ServiceParams
   , ServiceType
   )
 import           Mero.Lnet (Endpoint, readEndpoint)
@@ -334,7 +333,6 @@ data Service_v0 = Service_v0
   { s_fid_v0 :: Fid
   , s_type_v0 :: ServiceType -- ^ e.g. ioservice, haservice
   , s_endpoints_v0 :: [String]
-  , s_params_v0 :: ServiceParams
   } deriving (Eq, Show, Generic, Typeable)
 
 data Service = Service

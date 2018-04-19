@@ -42,7 +42,6 @@ module Mero.Conf.Obj
   , Process(..)
   , getProcess
   , Service(..)
-  , ServiceParams(..)
   , ServiceType(..)
   , getService
   , Rack(..)
@@ -395,23 +394,11 @@ instance Enum ServiceType where
   fromEnum CST_FDMI         = #{const M0_CST_FDMI}
   fromEnum (CST_UNKNOWN i)  = i
 
-data ServiceParams =
-      SPRepairLimits !Word32
-    | SPADDBStobFid !Fid
-    | SPConfDBPath String
-    | SPUnused
-  deriving (Eq, Show, Generic, Data, Typeable)
-
-instance Binary ServiceParams
-instance Hashable ServiceParams
-instance FromJSON ServiceParams
-instance ToJSON ServiceParams
-
 -- | Representation of `m0_conf_service`.
 data Service = Service
   { cs_ptr :: Ptr Obj
   , cs_fid :: Fid
-  , cs_type      :: ServiceType
+  , cs_type :: ServiceType
   , cs_endpoints :: [String]
   } deriving Show
 
@@ -578,4 +565,3 @@ peekStringArray p = mapM peekCString
                   $ iterate (`advancePtr` 1) p
 
 deriveSafeCopy 0 'base ''ServiceType
-deriveSafeCopy 0 'base ''ServiceParams
