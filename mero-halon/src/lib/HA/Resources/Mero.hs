@@ -990,11 +990,11 @@ $(mkDicts
   , (''R.Cluster, ''R.Has, ''Disposition)
   , (''R.Cluster, ''R.Has, ''PVerCounter)
   , (''R.Cluster, ''R.Has, ''ConfUpdateVersion)
-  , (''Controller, ''At, ''R.Host)
-  , (''Site, ''At, ''R.Site)
-  , (''Rack, ''At, ''R.Rack)
-  , (''Enclosure, ''At, ''R.Enclosure)
-  , (''Disk, ''At, ''R.StorageDevice)
+  , (''Controller, ''At, ''Cas.Host)
+  , (''Site, ''At, ''Cas.Site)
+  , (''Rack, ''At, ''Cas.Rack)
+  , (''Enclosure, ''At, ''Cas.Enclosure)
+  , (''Disk, ''At, ''Cas.StorageDevice)
     -- Parent/child relationships between conf entities
   , (''Root, ''IsParentOf, ''Profile)
   , (''Root, ''IsParentOf, ''Site)
@@ -1023,7 +1023,7 @@ $(mkDicts
   , (''Disk, ''IsRealOf, ''DiskV)
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, ''IsOnHardware, ''Disk)
-  , (''SDev, ''At, ''R.Slot)
+  , (''SDev, ''At, ''Cas.Slot)
   , (''Node, ''IsOnHardware, ''Controller)
   , (''Profile, ''R.Has, ''Pool) -- XXX USEME
     -- Other things!
@@ -1033,18 +1033,18 @@ $(mkDicts
   , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
-  , (''R.Host, ''R.Has, ''LNid)
-  , (''R.Host, ''R.Runs, ''Node)
+  , (''Cas.Host, ''R.Has, ''LNid)
+  , (''Cas.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''ProcessLabel)
   , (''Process, ''R.Has, ''ProcessEnv)
   , (''Process, ''R.Has, ''PID)
-  , (''Process, ''R.Is, ''ProcessBootstrapped)
-  , (''Process, ''R.Is, ''ProcessState)
-  , (''Service, ''R.Is, ''ServiceState)
-  , (''SDev, ''R.Is, ''SDevState)
-  , (''Node, ''R.Is, ''NodeState)
-  , (''Controller, ''R.Is, ''ControllerState)
-  , (''Disk, ''R.Is, ''Replaced)
+  , (''Process, ''Cas.Is, ''ProcessBootstrapped)
+  , (''Process, ''Cas.Is, ''ProcessState)
+  , (''Service, ''Cas.Is, ''ServiceState)
+  , (''SDev, ''Cas.Is, ''SDevState)
+  , (''Node, ''Cas.Is, ''NodeState)
+  , (''Controller, ''Cas.Is, ''ControllerState)
+  , (''Disk, ''Cas.Is, ''Replaced)
   , (''Root, ''R.Has, ''FilesystemStats)
   , (''Root, ''R.Has, ''DIXInitialised)
   ]
@@ -1068,12 +1068,12 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Disposition)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''PVerCounter)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''ConfUpdateVersion)
-  , (''Controller, AtMostOne, ''At, AtMostOne, ''R.Host)
-  , (''Site, AtMostOne, ''At, AtMostOne, ''R.Site)
-  , (''Rack, AtMostOne, ''At, AtMostOne, ''R.Rack)
-  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''R.Enclosure)
-  , (''Disk, AtMostOne, ''At, AtMostOne, ''R.StorageDevice)
-  , (''SDev, AtMostOne, ''At, AtMostOne, ''R.Slot)
+  , (''Controller, AtMostOne, ''At, AtMostOne, ''Cas.Host)
+  , (''Site, AtMostOne, ''At, AtMostOne, ''Cas.Site)
+  , (''Rack, AtMostOne, ''At, AtMostOne, ''Cas.Rack)
+  , (''Enclosure, AtMostOne, ''At, AtMostOne, ''Cas.Enclosure)
+  , (''Disk, AtMostOne, ''At, AtMostOne, ''Cas.StorageDevice)
+  , (''SDev, AtMostOne, ''At, AtMostOne, ''Cas.Slot)
     -- Parent/child relationships between conf entities
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Profile)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
@@ -1110,18 +1110,18 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
-  , (''R.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
-  , (''R.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
+  , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
+  , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
   , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
-  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessBootstrapped)
-  , (''Process, Unbounded, ''R.Is, AtMostOne, ''ProcessState)
-  , (''Service, Unbounded, ''R.Is, AtMostOne, ''ServiceState)
-  , (''SDev, Unbounded, ''R.Is, AtMostOne, ''SDevState)
-  , (''Node, Unbounded, ''R.Is, AtMostOne, ''NodeState)
-  , (''Controller, Unbounded, ''R.Is, AtMostOne, ''ControllerState)
-  , (''Disk, Unbounded, ''R.Is, Unbounded, ''Replaced)
+  , (''Process, Unbounded, ''Cas.Is, AtMostOne, ''ProcessBootstrapped)
+  , (''Process, Unbounded, ''Cas.Is, AtMostOne, ''ProcessState)
+  , (''Service, Unbounded, ''Cas.Is, AtMostOne, ''ServiceState)
+  , (''SDev, Unbounded, ''Cas.Is, AtMostOne, ''SDevState)
+  , (''Node, Unbounded, ''Cas.Is, AtMostOne, ''NodeState)
+  , (''Controller, Unbounded, ''Cas.Is, AtMostOne, ''ControllerState)
+  , (''Disk, Unbounded, ''Cas.Is, Unbounded, ''Replaced)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
@@ -1168,12 +1168,12 @@ lookupConfObjByFid f =
 -- 'nodeToM0Node' for inverse.
 m0nodeToNode :: Node -> G.Graph -> Maybe R.Node
 m0nodeToNode m0node rg = listToMaybe
-  [ node | Just (h :: R.Host) <- [G.connectedFrom R.Runs m0node rg]
+  [ node | Just (h :: Cas.Host) <- [G.connectedFrom R.Runs m0node rg]
          , node <- G.connectedTo h R.Runs rg ]
 
 -- | Lookup 'R.Node' associated with the given 'Node'. See
 -- 'm0nodeToNode' for inverse.
 nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
-  [ m0n | Just (h :: R.Host) <- [G.connectedFrom R.Runs node rg]
+  [ m0n | Just (h :: Cas.Host) <- [G.connectedFrom R.Runs node rg]
         , m0n <- G.connectedTo h R.Runs rg ]

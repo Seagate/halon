@@ -24,7 +24,7 @@ import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(..))
@@ -68,7 +68,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
                if spid == -1
                then return True -- if message is old and does not contain pid, we accept message.
                else do
-                 M0.PID pid <- G.connectedTo p R.Has rg
+                 M0.PID pid <- G.connectedTo p Has rg
                  return (spid == fromIntegral pid)
 
       isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline

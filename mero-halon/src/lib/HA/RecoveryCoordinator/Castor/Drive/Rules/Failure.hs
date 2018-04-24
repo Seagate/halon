@@ -41,8 +41,8 @@ import           HA.RecoveryCoordinator.Mero.State
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Has(..))
+import qualified HA.Resources.Castor as Cas
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0

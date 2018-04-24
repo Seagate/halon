@@ -25,7 +25,7 @@ module HA.Resources.Mero.Note where
 import           HA.Aeson (FromJSON, ToJSON)
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster, Has(..))
-import           HA.Resources.Castor
+import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note.TH
 import           HA.Resources.TH

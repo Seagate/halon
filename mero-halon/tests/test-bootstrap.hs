@@ -18,28 +18,26 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-import HA.Aeson
-import HA.RecoveryCoordinator.Castor.Cluster.Events
-import HA.Resources.Mero
-import Helper.Environment
-import Mero.ConfC
+import           HA.Aeson
+import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import qualified HA.Resources.Mero as M0
+import           Helper.Environment
+import           Mero.ConfC (ServiceType(CST_HA))
 
-import Control.Concurrent
-import Control.Exception
-import Control.Monad
+import           Control.Concurrent
+import           Control.Exception
+import           Control.Monad
 import qualified Data.ByteString.Lazy as BSL (empty)
 import qualified Data.ByteString.Lazy.Char8 as BSL (hPutStrLn)
-import GHC.IO.Handle (hDuplicateTo, hDuplicate)
--- import GHC.Stack
-import Language.Haskell.TH
-import System.Directory
-import System.Environment
-import System.Exit
-import System.FilePath
-import System.IO
-import System.Process
+import           GHC.IO.Handle (hDuplicateTo, hDuplicate)
+import           Language.Haskell.TH
+import           System.Directory
+import           System.Environment
+import           System.Exit
+import           System.FilePath
+import           System.IO
+import           System.Process
 import qualified System.Process.ByteString.Lazy as BSL
-
 
 -- Absolute path of the source code of the current module.
 absSrcPath :: String
@@ -89,7 +87,7 @@ main = withMeroRoot $ \mero_root -> do
         [ "-l", ip ++ ":9010", "-a", ip ++ ":9000"
         , "cluster", "status", "--json"
         ]
-        BSL.empty >>= checkStatus (`elem` [PSOnline, PSUnknown])
+        BSL.empty >>= checkStatus (`elem` [M0.PSOnline, M0.PSUnknown])
                                   "Got a bad status after starting the cluster."
       putStrLn "Calling dd ..."
       callProcess "sudo"
@@ -104,7 +102,7 @@ main = withMeroRoot $ \mero_root -> do
         [ "-l", ip ++ ":9010", "-a", ip ++ ":9000"
         , "cluster", "status", "--json"
         ]
-        BSL.empty >>= checkStatus (`elem` [PSOffline, PSUnknown])
+        BSL.empty >>= checkStatus (`elem` [M0.PSOffline, M0.PSUnknown])
                                   "Got a bad status after stoping the cluster."
   putStrLn "SUCCESS!"
   where
@@ -117,7 +115,7 @@ main = withMeroRoot $ \mero_root -> do
                       | (_, host) <- csrHosts cs
                       , (_, proc') <- crnProcesses host
                         -- filter halon process from checks
-                      , all (/= CST_HA) $ map (s_type . crsService) $ crpServices proc'
+                      , all (/= CST_HA) $ map (M0.s_type . crsService) $ crpServices proc'
                       ]
                  in if valid then Right ()
                     else Left "Some process state is not valid."

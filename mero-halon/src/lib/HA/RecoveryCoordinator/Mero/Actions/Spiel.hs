@@ -750,8 +750,8 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
     let attrs =
           [ a
           | Just (ctrl :: M0.Controller) <- [G.connectedTo node M0.IsOnHardware rg]
-          , Just (host :: Host) <- [G.connectedTo ctrl M0.At rg]
-          , a :: HostAttr <- G.connectedTo host Has rg
+          , Just (host :: Cas.Host) <- [G.connectedTo ctrl M0.At rg]
+          , a :: Cas.HostAttr <- G.connectedTo host Has rg
           ]
         defaultMem = 1024
         defCPUCount = 1
@@ -759,9 +759,9 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                 $ listToMaybe . catMaybes $ fmap getMem attrs
         cpucount = maybe defCPUCount fromIntegral
                  $ listToMaybe . catMaybes $ fmap getCpuCount attrs
-        getMem (HA_MEMSIZE_MB x) = Just x
+        getMem (Cas.HA_MEMSIZE_MB x) = Just x
         getMem _ = Nothing
-        getCpuCount (HA_CPU_COUNT x) = Just x
+        getCpuCount (Cas.HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
     m0synchronously lift $ addNode t (M0.fid node) (M0.fid fs) memsize cpucount 0 0 rt_mdpool
     let procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]

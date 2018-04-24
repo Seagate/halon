@@ -7,7 +7,7 @@ module HA.RecoveryCoordinator.Mero.Failure.Simple where
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import           HA.Resources.Castor
+import qualified HA.Resources.Castor as Cas (Host(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid, PDClustAttr(..), Word128(..))
@@ -67,7 +67,7 @@ generateFailureSets df cf cfe rg globs = let
     k = CI.m0_parity_units globs
     allCtrls =
       [ ctrl
-      | host :: Host <- G.connectedTo Cluster Has rg
+      | host :: Cas.Host <- G.connectedTo Cluster Has rg
       , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to

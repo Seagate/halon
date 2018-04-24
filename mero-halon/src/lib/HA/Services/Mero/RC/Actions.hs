@@ -35,23 +35,24 @@ import           HA.EventQueue (promulgateWait)
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import           HA.ResourceGraph                      (Graph)
-import qualified HA.ResourceGraph                      as G
-import qualified HA.Resources                          as R
-import qualified HA.Resources.Castor                   as R
-import           HA.Resources.HalonVars                (getHalonVar)
-import qualified HA.Resources.Mero                     as M0
-import qualified HA.Resources.Mero.Note                as M0
-import           HA.Service                            (getInterface)
+import           HA.ResourceGraph (Graph)
+import qualified HA.ResourceGraph as G
+import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import qualified HA.Resources as R (Node(..))
+import qualified HA.Resources.Castor as Cas
+import           HA.Resources.HalonVars (getHalonVar)
+import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero.Note as M0
+import           HA.Service (getInterface)
 import           HA.Service.Interface
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Events
 import           HA.Services.Mero.RC.Resources
 import           Mero.ConfC                            (Fid (..))
 import qualified Mero.Notification
-import           Mero.Notification.HAState             (Note (..))
+import           Mero.Notification.HAState (Note (..))
 import           Network.CEP
-import           Prelude                               hiding (id, (.))
+import           Prelude hiding (id, (.))
 
 -- | Return the set of processes that should be notified together with channels
 -- that could be used for notifications.
@@ -64,8 +65,8 @@ getNotificationNodes = do
   rg <- getGraph
   let nodes =
         [ (node, m0node)
-        | host <- G.connectedTo R.Cluster R.Has rg :: [R.Host]
-        , node <- G.connectedTo host R.Runs rg
+        | host <- G.connectedTo Cluster Has rg :: [Cas.Host]
+        , node <- G.connectedTo host Runs rg
         , Just m0node <- [M0.nodeToM0Node node rg]
         ]
   things <-
@@ -93,13 +94,13 @@ mkStateDiff f msg onCommit = do
   let idx = StateDiffIndex epoch
       diff = StateDiff epoch msg onCommit
   rc <- getCurrentRC
-  modifyGraph $ G.connect idx R.Is diff >>> G.connect rc R.Has diff >>> f
+  modifyGraph $ G.connect idx Cas.Is diff >>> G.connect rc Has diff >>> f
   return diff
 
 -- | Find 'StateDiff' by it's index. This function can find not yet garbage
 -- collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM RC l (Maybe StateDiff)
-getStateDiffByEpoch idx = G.connectedTo epoch R.Is <$> getGraph
+getStateDiffByEpoch idx = G.connectedTo epoch Cas.Is <$> getGraph
   where
     epoch = StateDiffIndex idx
 
@@ -146,7 +147,7 @@ tryCompleteStateDiff diff = do
   -- If the diff is connected it means we haven't entered past the
   -- guard below yet: this ensures we only send result of
   -- notifications once.
-  notSent <- G.isConnected rc R.Has diff <$> getGraph
+  notSent <- G.isConnected rc Has diff <$> getGraph
   -- Processes we haven't heard success/failure from yet
   pendingPs <- G.connectedTo diff ShouldDeliverTo <$> getGraph
   Log.rcLog'
@@ -228,7 +229,7 @@ notifyMeroAsync diff s = do
   if null nodes
     then tryCompleteStateDiff diff
     else do
-      notificationTimeout <- getHalonVar R._hv_notification_timeout
+      notificationTimeout <- getHalonVar Cas._hv_notification_timeout
       liftProcess $
       -- Fork a process which will send a timeout for this epoch
        do

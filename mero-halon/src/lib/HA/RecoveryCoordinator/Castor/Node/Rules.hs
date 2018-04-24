@@ -123,8 +123,9 @@ import qualified HA.RecoveryCoordinator.RC.Events.Cluster as Event
 import           HA.RecoveryCoordinator.Service.Actions (lookupInfoMsg)
 import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import           HA.Resources (Has(..))
+import qualified HA.Resources as R (Node(..))
+import qualified HA.Resources.Castor as Cas (Host)
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
@@ -173,7 +174,7 @@ type FldLnetInfo = '("mLnetInfo", Maybe LnetInfo)
 fldLnetInfo :: Proxy FldLnetInfo
 fldLnetInfo = Proxy
 
-type FldHost = '("host", Maybe R.Host)
+type FldHost = '("host", Maybe Cas.Host)
 fldHost :: Proxy FldHost
 fldHost = Proxy
 
@@ -302,7 +303,7 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                    -- Take LNid address. If we don't have it, take the
                    -- address from the CST_HA service as the listen
                    -- address.
-                   let meroAddr = [ ep | M0.LNid ep <- G.connectedTo host R.Has rg ]
+                   let meroAddr = [ ep | M0.LNid ep <- G.connectedTo host Has rg ]
                                ++ [ ep | ha_p <- maybeToList $ Process.getHA m0node rg
                                        , svc <- G.connectedTo ha_p M0.IsParentOf rg
                                        , M0.s_type svc == CST_HA
@@ -315,8 +316,8 @@ requestStartHalonM0d = defineSimpleTask "castor::node::request::start-halon-m0d"
                        Log.rcLog' Log.DEBUG $ "node.addr = " ++ show addr
                        createMeroKernelConfig host addr
                        startMeroService host node
-                 Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show node
-             Nothing -> Log.rcLog' Log.ERROR $ "Can't find R.Host for node " ++ show m0node
+                 Nothing -> Log.rcLog' Log.ERROR $ "Can't find Cas.Host for node " ++ show node
+             Nothing -> Log.rcLog' Log.ERROR $ "Can't find Cas.Host for node " ++ show m0node
 
 halonM0dStopJob :: Job StopHalonM0dRequest StopHalonM0dResult
 halonM0dStopJob = Job "castor::node::request::stop-halon-m0d"
@@ -965,7 +966,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
           )
      case stillUnstopped of
        [] -> do let msg :: String
-                    msg = printf "%s R.Has no services on level %s - skipping to the next level"
+                    msg = printf "%s has no services on level %s - skipping to the next level"
                                  (show node) (show lvl)
                 Log.rcLog' Log.DEBUG msg
                 continue lower_boot_level

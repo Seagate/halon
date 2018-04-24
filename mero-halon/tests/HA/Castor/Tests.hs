@@ -253,9 +253,9 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
         encls = join $ fmap (\r -> G.connectedTo r M0.IsParentOf rg :: [M0.Enclosure]) racks
         ctrls = join $ fmap (\e -> G.connectedTo e M0.IsParentOf rg :: [M0.Controller]) encls
         disks = join $ fmap (\c -> G.connectedTo c M0.IsParentOf rg :: [M0.Disk]) ctrls
-        enclsH = catMaybes $ fmap (\h -> G.connectedFrom Has h rg :: Maybe Enclosure) hosts
-        sdevs = join $ fmap (\e -> [ d | s <- G.connectedTo e Has rg :: [Slot]
-                                       , d <- maybeToList (G.connectedFrom Has s rg :: Maybe StorageDevice) ])
+        enclsH = catMaybes $ fmap (\h -> G.connectedFrom Has h rg :: Maybe Cas.Enclosure) hosts
+        sdevs = join $ fmap (\e -> [ d | s <- G.connectedTo e Has rg :: [Cas.Slot]
+                                       , d <- maybeToList (G.connectedFrom Has s rg :: Maybe Cas.StorageDevice) ])
                             enclsH
         disksByHost = catMaybes $ fmap (\s -> G.connectedFrom M0.At s rg :: Maybe M0.Disk) sdevs
 
