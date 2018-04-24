@@ -52,7 +52,7 @@ import           HA.Services.SSPL.LL.CEP
   , updateDriveManagerWithFailure
   )
 import           HA.Services.SSPL.IEM (logFailureOverK)
-import           Mero.ConfC
+import           Mero.ConfC (fidToStr)
 import           Network.CEP
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
@@ -184,9 +184,9 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
       expanderResetThreshold <- getHalonVar _hv_expander_reset_threshold
       let failuresInEnclosure =
             [ disk
-            | Just encl <- [R.slotEnclosure <$> G.connectedTo sdev R.Has rg]
-            , slot <- G.connectedTo encl R.Has rg :: [R.Slot]
-            , Just disk <- [G.connectedFrom R.Has slot rg :: Maybe R.StorageDevice]
+            | Just encl <- [Cas.slotEnclosure <$> G.connectedTo sdev Has rg]
+            , slot <- G.connectedTo encl Has rg :: [Cas.Slot]
+            , Just disk <- [G.connectedFrom Has slot rg :: Maybe Cas.StorageDevice]
             , Just m0disk <- [G.connectedFrom M0.At disk rg :: Maybe M0.Disk]
             , isTransient $ M0.getState m0disk rg
             ]
@@ -243,6 +243,6 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
 
     startFork transient_msg args
   where
-    fldHardware = Proxy :: Proxy '("hardware", Maybe (M0.SDev, R.StorageDevice))
+    fldHardware = Proxy :: Proxy '("hardware", Maybe (M0.SDev, Cas.StorageDevice))
     args = fldHardware =: Nothing
        <+> fldUUID =: Nothing

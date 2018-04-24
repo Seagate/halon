@@ -46,7 +46,7 @@ import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import qualified HA.Resources.Castor as R
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           Mero.ConfC (ServiceType(..))
+import           Mero.ConfC (ServiceType(CST_CONFD,CST_IOS,CST_MDS,CST_RMS))
 import           Network.CEP
 
 import           Control.Applicative

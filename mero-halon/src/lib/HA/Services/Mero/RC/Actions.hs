@@ -48,7 +48,7 @@ import           HA.Service.Interface
 import           HA.Services.Mero
 import           HA.Services.Mero.RC.Events
 import           HA.Services.Mero.RC.Resources
-import           Mero.ConfC                            (Fid (..))
+import           Mero.ConfC (Fid (..))
 import qualified Mero.Notification
 import           Mero.Notification.HAState (Note (..))
 import           Network.CEP

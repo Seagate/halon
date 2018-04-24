@@ -55,7 +55,7 @@ import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
-import           Mero.ConfC
+import           Mero.ConfC (PDClustAttr(_pa_K))
 import qualified Mero.Spiel as Spiel
 
 import           Control.Distributed.Process hiding (try)

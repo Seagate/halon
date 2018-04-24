@@ -31,7 +31,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Reader (ask)
 import           Data.Functor (void)
 import           Data.Proxy
-import           Data.Word ( Word64, Word32 )
+import           Data.Word (Word32, Word64)
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -40,7 +40,7 @@ import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           HA.Services.Mero (getM0Worker)
-import           Mero.ConfC (Fid(..))
+import           Mero.ConfC (Fid)
 import           Mero.M0Worker
 import           Network.CEP
 

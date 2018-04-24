@@ -51,7 +51,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
 import           HA.Service.Interface
 import           HA.Services.Mero.Types
-import           Mero.ConfC (ServiceType(..))
+import           Mero.ConfC (ServiceType(CST_HA))
 import           Mero.Notification.HAState
 import           Network.CEP
 import           Text.Printf

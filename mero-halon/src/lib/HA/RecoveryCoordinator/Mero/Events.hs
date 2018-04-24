@@ -43,7 +43,7 @@ module HA.RecoveryCoordinator.Mero.Events
 
 import           Control.Applicative (many)
 import           Control.Distributed.Process (ProcessId, RemoteTable, Static, SendPort)
-import           Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
+import           Control.Distributed.Process.Internal.Types (processNode, remoteTable)
 import           Control.Distributed.Static (unstatic)
 import           Control.Exception (Exception)
 import           Control.Monad.Reader (ask)
@@ -62,17 +62,17 @@ import           GHC.Generics
 import           HA.Aeson
 import           HA.Encode (ProcessEncode(..))
 import           HA.RecoveryCoordinator.Mero.Transitions
-import           HA.Resources
-import           HA.Resources.Castor
+import qualified HA.Resources as R (Node(..))
+import qualified HA.Resources.Castor as Cas (Host(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
 import           HA.SafeCopy
-import qualified Mero.ConfC as M0 (Fid)
+import           Mero.ConfC (Fid)
 import           Mero.Notification.HAState (Note(..))
 
 -- | Request force update of the configuration object state.
 data ForceObjectStateUpdateRequest = ForceObjectStateUpdateRequest
-  [(M0.Fid, String)]
+  [(Fid, String)]
   (SendPort ForceObjectStateUpdateReply)
   deriving (Generic, Typeable, Show)
 
@@ -85,7 +85,7 @@ data UpdateResult
       deriving (Generic, Typeable, Show)
 
 -- | Reply to the 'ForceObjectStateUpdateRequest'
-newtype ForceObjectStateUpdateReply = ForceObjectStateUpdateReply [(M0.Fid, UpdateResult)]
+newtype ForceObjectStateUpdateReply = ForceObjectStateUpdateReply [(Fid, UpdateResult)]
   deriving (Generic, Typeable, Show)
 
 -- | Local sync to confd has completed.
@@ -94,21 +94,21 @@ data SyncComplete = SyncComplete UUID
 instance Binary SyncComplete
 
 -- | New mero server was connected.
-data NewMeroServer = NewMeroServer Node
-                   | NewMeroServerFailure Node
+data NewMeroServer = NewMeroServer R.Node
+                   | NewMeroServerFailure R.Node
       deriving (Eq, Show, Typeable, Generic)
 instance Binary NewMeroServer
 
 -- | Event about processing 'NewMeroClient' event.
-data NewMeroClientProcessed = NewMeroClientProcessed Host
+data NewMeroClientProcessed = NewMeroClientProcessed Cas.Host
        deriving (Eq, Show, Typeable, Generic)
 
 instance Binary NewMeroClientProcessed
 
 -- | Request for 'SpielAddress'.
 data GetSpielAddress = GetSpielAddress
-       { entrypointProcessFid :: M0.Fid
-       , entrypointProfileFid :: M0.Fid
+       { entrypointProcessFid :: Fid
+       , entrypointProfileFid :: Fid
        , entrypointRequester  :: ProcessId
        } deriving (Eq, Show, Typeable, Generic)
 
@@ -226,7 +226,7 @@ data RestartSNSOperationResult =
 instance Binary RestartSNSOperationResult
 
 -- | Failure vector request.
-data GetFailureVector = GetFailureVector M0.Fid (SendPort (Maybe [Note]))
+data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
   deriving (Eq, Show, Typeable, Generic)
 
 data DixInitRequest = DixInitRequest

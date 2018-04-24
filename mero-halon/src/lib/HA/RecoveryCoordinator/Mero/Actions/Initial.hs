@@ -41,7 +41,7 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC
   ( PDClustAttr(..)
-  , ServiceType(..)
+  , ServiceType(CST_CAS,CST_IOS)
   , Word128(..)
   , bitmapFromArray
   , m0_fid0

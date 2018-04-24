@@ -64,7 +64,10 @@ import qualified HA.Resources.Mero.Note as M0
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero
-import           Mero.ConfC hiding (Process)
+import           Mero.ConfC
+  ( bitmapFromArray
+  , ServiceType(CST_CAS,CST_CONFD,CST_HA,CST_RMS)
+  )
 import           Mero.Lnet
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP

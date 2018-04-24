@@ -66,19 +66,18 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
-import           HA.Resources.Castor
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
-import           Mero.ConfC (PDClustAttr(..), confPVerLvlDisks)
+import           Mero.ConfC (Fid, PDClustAttr(..), confPVerLvlDisks)
 import           Mero.Lnet
+import           Mero.M0Worker
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Spiel (SpielTransaction)
 import qualified Mero.Spiel as Spiel
-import           Mero.ConfC (Fid)
-import           Mero.M0Worker
 
 import           Control.Applicative
 import qualified Control.Distributed.Process as DP

@@ -45,14 +45,14 @@ import qualified HA.RecoveryCoordinator.RC.Rules as RC
 import           HA.Replicator (RGroup(..))
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
-import           HA.Resources.Castor
+import           HA.Resources.Castor (Is(..))
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Helper.InitialData
 import           Helper.RC
-import           Mero.ConfC (PDClustAttr(..))
-import qualified Mero.ConfC as ConfC
+import           Mero.ConfC (PDClustAttr(..), ServiceType(CST_CONFD,CST_IOS))
 import           Network.CEP (Application(..), Buffer, PhaseM, emptyFifoBuffer)
 import           Network.CEP.Testing (runPhase, runPhaseGet)
 import           Network.Transport (Transport)
@@ -321,7 +321,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getGraph
            let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
                                  , srv <- G.connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_CONFD
+                                 , M0.s_type srv == CST_CONFD
                                  , any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                        (G.connectedTo ps M0.IsParentOf rg)
                                  ]
@@ -334,7 +334,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getGraph
            let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
                                  , srv <- G.connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_CONFD
+                                 , M0.s_type srv == CST_CONFD
                                  , not $ any (\s -> G.isConnected (s::M0.Service) Is M0.PrincipalRM rg)
                                              (G.connectedTo ps M0.IsParentOf rg)
                                  ]
@@ -347,7 +347,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getGraph
            let confds = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
                                  , srv <- G.connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_CONFD
+                                 , M0.s_type srv == CST_CONFD
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 3 confds
            )
@@ -361,7 +361,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getGraph
            let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
                                  , srv <- G.connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_IOS
+                                 , M0.s_type srv == CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 1 ios
            )
@@ -372,7 +372,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
            rg <- getGraph
            let ios = nub [ ps | ps :: M0.Process <- G.getResourcesOfType rg
                                  , srv <- G.connectedTo ps M0.IsParentOf rg
-                                 , M0.s_type srv == ConfC.CST_IOS
+                                 , M0.s_type srv == CST_IOS
                                  ]
            void . applyStateChanges $ (`stateSet` TrI.constTransition (M0.PSFailed "test")) <$> take 2 ios
            )

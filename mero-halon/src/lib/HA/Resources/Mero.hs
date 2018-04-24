@@ -43,14 +43,14 @@ import           GHC.Generics (Generic)
 import           HA.Aeson
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.TH
 import           HA.SafeCopy hiding (Profile)
 import           Mero.ConfC
   ( Bitmap
   , Fid(..)
-  , PDClustAttr(..)
+  , PDClustAttr
   , ServiceType
   )
 import           Mero.Lnet (Endpoint, readEndpoint)

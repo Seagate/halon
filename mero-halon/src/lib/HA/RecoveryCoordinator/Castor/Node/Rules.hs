@@ -136,7 +136,7 @@ import           HA.Services.Mero
 import           HA.Services.SSPL.IEM (logMeroBEError)
 import           HA.Services.SSPL.LL.CEP (sendInterestingEvent)
 import           HA.Services.SSPL.LL.Resources ( InterestingEventMessage(..) )
-import           Mero.ConfC (ServiceType(..))
+import           Mero.ConfC (ServiceType(CST_CAS,CST_HA))
 import           Mero.Lnet
 import           Mero.Notification.HAState (BEIoErr, HAMsg(..), HAMsgMeta(..))
 import           Network.CEP
