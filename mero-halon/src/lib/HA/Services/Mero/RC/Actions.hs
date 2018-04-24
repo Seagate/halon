@@ -18,20 +18,20 @@ module HA.Services.Mero.RC.Actions
   , orderSet
   ) where
 
-import           Control.Arrow                         (second)
+import           Control.Arrow (second)
 import           Control.Category
 import           Control.Distributed.Process
-import           Control.Monad                         (unless, void, when)
-import           Control.Monad.Trans.State             (execState)
-import qualified Control.Monad.Trans.State             as State
-import           Data.Foldable                         (for_)
-import           Data.Function                         (on)
-import           Data.List                             (sortBy)
-import           Data.Maybe                            (catMaybes)
-import           Data.Proxy                            (Proxy (..))
-import           Data.Traversable                      (for)
-import           Data.Word                             (Word64)
-import           HA.EventQueue                         (promulgateWait)
+import           Control.Monad (unless, void, when)
+import           Control.Monad.Trans.State (execState)
+import qualified Control.Monad.Trans.State as State
+import           Data.Foldable (for_)
+import           Data.Function (on)
+import           Data.List (sortBy)
+import           Data.Maybe (catMaybes)
+import           Data.Proxy (Proxy (..))
+import           Data.Traversable (for)
+import           Data.Word (Word64)
+import           HA.EventQueue (promulgateWait)
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log

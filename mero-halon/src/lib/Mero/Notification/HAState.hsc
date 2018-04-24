@@ -53,31 +53,31 @@ module Mero.Notification.HAState
 
 import HA.Resources.Mero.Note
 import HA.SafeCopy
-import HA.Aeson               ( ToJSON )
+import HA.Aeson (ToJSON)
 
-import Mero.ConfC             (Cookie, Fid, Word128, ServiceType)
-import Network.RPC.RPCLite    (RPCAddress(..), RPCMachine(..), RPCMachineV)
+import Mero.ConfC (Cookie, Fid, Word128, ServiceType)
+import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
-import Control.Exception      ( Exception, throwIO, SomeException, evaluate )
-import Control.Monad          ( liftM2, liftM3, liftM5, void )
-import Control.Monad.Catch    ( catch )
+import Control.Exception (Exception, throwIO, SomeException, evaluate)
+import Control.Monad (liftM2, liftM3, liftM5, void)
+import Control.Monad.Catch (catch)
 
-import Data.ByteString as B   ( useAsCString )
-import Data.Dynamic           ( Typeable )
-import Data.Hashable          ( Hashable )
-import Data.IORef             ( atomicModifyIORef, modifyIORef, IORef , newIORef )
+import Data.ByteString as B (useAsCString)
+import Data.Dynamic (Typeable)
+import Data.Hashable (Hashable)
+import Data.IORef (atomicModifyIORef, modifyIORef, IORef , newIORef)
 import Data.Int
-import Data.Word              ( Word8, Word32, Word64 )
-import Foreign.C.Types        ( CInt(..) )
-import Foreign.C.String       ( CString, withCString )
-import Foreign.Marshal.Alloc  ( allocaBytesAligned, alloca)
-import Foreign.Marshal.Array  ( peekArray, withArrayLen, withArrayLen0, pokeArray )
-import Foreign.Marshal.Utils  ( with, withMany )
-import Foreign.Ptr            ( Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr )
-import Foreign.Storable       ( Storable(..) )
-import GHC.Generics           ( Generic )
-import System.IO              ( hPutStrLn, stderr )
-import System.IO.Unsafe       ( unsafePerformIO )
+import Data.Word (Word8, Word32, Word64)
+import Foreign.C.Types (CInt(..))
+import Foreign.C.String (CString, withCString)
+import Foreign.Marshal.Alloc (allocaBytesAligned, alloca)
+import Foreign.Marshal.Array (peekArray, withArrayLen, withArrayLen0, pokeArray)
+import Foreign.Marshal.Utils (with, withMany)
+import Foreign.Ptr (Ptr, FunPtr, freeHaskellFunPtr, nullPtr, castPtr, plusPtr)
+import Foreign.Storable (Storable(..))
+import GHC.Generics (Generic)
+import System.IO (hPutStrLn, stderr)
+import System.IO.Unsafe (unsafePerformIO)
 
 #include "hastate.h"
 
@@ -93,7 +93,7 @@ import System.IO.Unsafe       ( unsafePerformIO )
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
 #endif
 
--- | ha_msg_metadata
+-- | m0_ha_msg metadata
 data HAMsgMeta = HAMsgMeta
   { _hm_fid :: Fid
   , _hm_source_process :: Fid
@@ -167,7 +167,7 @@ data {-# CTYPE "conf/ha.h" "struct m0_conf_ha_service_event" #-}
 instance Hashable ServiceEventType
 deriveSafeCopy 0 'base ''ServiceEventType
 
--- | @m0_conf_ha_service@.
+-- | @m0_conf_ha_service@
 data ServiceEvent = ServiceEvent
   { _chs_event :: ServiceEventType
   , _chs_type :: ServiceType

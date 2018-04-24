@@ -15,34 +15,23 @@
 
 module Mero.Conf.Context where
 
-import Mero.Conf.Fid ( Fid(..) )
+import           Mero.Conf.Fid (Fid(..))
 
-import Control.Monad (when)
-import Data.Aeson
-import Data.Binary (Binary)
-import Data.Bits
-  ( setBit
-  , shiftR
-  , zeroBits
-  )
-import Data.Hashable (Hashable)
+import           Control.Monad (when)
+import           Data.Aeson
+import           Data.Binary (Binary)
+import           Data.Bits (setBit, shiftR, zeroBits)
+import           Data.Hashable (Hashable)
 import qualified Data.List as List
 import qualified Data.Map as Map
-import Data.SafeCopy
-import Data.Serialize
-import Data.Word ( Word32, Word64 )
+import           Data.SafeCopy
+import           Data.Serialize
+import           Data.Word (Word32, Word64)
 
-import Foreign.Marshal.Array
-  ( peekArray
-  , pokeArray
-  )
-import Foreign.Ptr
-  ( Ptr
-  , nullPtr
-  )
-import Foreign.Storable
-  ( Storable(..) )
-import GHC.Generics
+import           Foreign.Marshal.Array (peekArray, pokeArray)
+import           Foreign.Ptr (Ptr, nullPtr)
+import           Foreign.Storable (Storable(..))
+import           GHC.Generics
 
 import qualified Language.C.Inline as C
 import qualified Language.C.Inline.Context as C

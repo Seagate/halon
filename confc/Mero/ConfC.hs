@@ -22,10 +22,7 @@ import Mero.Conf.Internal (withConfC)
 import Mero.Conf.Obj
 import Mero.Conf.Tree
 
-import Network.RPC.RPCLite
-  ( RPCMachine
-  , RPCAddress
-  )
+import Network.RPC.RPCLite (RPCMachine, RPCAddress)
 
 import Control.Exception (bracket_)
 import Foreign.Ptr (Ptr)
