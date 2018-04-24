@@ -506,9 +506,10 @@ ruleProcessStarting = define "castor::process::starting" $ do
     onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_M0MKFS, _) -> Nothing
         (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTING, _, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
@@ -575,9 +576,10 @@ ruleProcessOnline = define "castor::process::online" $ do
     startedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
       return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process)) | pid /= 0 ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0MKFS, _) -> Nothing
         (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
+          Just (eid, p, M0.PID $ fromIntegral pid)
+        (TAG_M0_CONF_HA_PROCESS_STARTED, _, Just (p :: M0.Process)) | pid /= 0 ->
           Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
 
@@ -613,7 +615,7 @@ ruleProcessStopping = define "castor::process::stopping" $ do
     stoppingProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
       let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
       return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STOPPING, TAG_M0_CONF_HA_PROCESS_M0D, Just (p :: M0.Process))
+        (TAG_M0_CONF_HA_PROCESS_STOPPING, _, Just (p :: M0.Process))
           | pid /= 0 && isEphemeral p (lsGraph ls) ->
             Just (eid, p, M0.PID $ fromIntegral pid)
         _ -> Nothing
@@ -667,7 +669,7 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
         Just pd -> do
           let mpid = G.connectedTo pd Has (lsGraph ls)
           return $ case (t, pt, pd) of
-            (TAG_M0_CONF_HA_PROCESS_STOPPED, TAG_M0_CONF_HA_PROCESS_M0D, p :: M0.Process)
+            (TAG_M0_CONF_HA_PROCESS_STOPPED, _, p :: M0.Process)
                | pid /= 0
                , Just (M0.PID ppid) <- mpid
                , ppid == fromIntegral pid -> Just (eid, p, M0.PID $ fromIntegral pid)

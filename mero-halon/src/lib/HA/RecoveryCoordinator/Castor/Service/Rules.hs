@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Service.Rules
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
@@ -10,6 +11,7 @@ module HA.RecoveryCoordinator.Castor.Service.Rules
   ( rules
   ) where
 
+import           Debug.Trace (trace,traceM)
 import           Control.Lens
 import           Control.Monad (void)
 import           Data.Foldable (for_)
@@ -58,29 +60,44 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
             Just (s :: M0.Service) | p se && isStateChanged s -> Just (eid, s, typ, st)
             _ -> Nothing
 
+      traceXXX func msg =
+        trace $ "[ruleNotificationHandler." ++ func ++ ":"
+                ++ show (__LINE__ :: Int) ++ "] " ++ msg
+
+      servicePidMatches (HAMsg (ServiceEvent _ _ spid) m) _
+        | traceXXX "servicePidMatches"
+          ("fid=" ++ show (_hm_fid m) ++ " pid=" ++ show spid) False = undefined
       servicePidMatches (HAMsg (ServiceEvent _ _ spid) m) ls =
         let rg = lsGraph ls
-            msd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls) :: Maybe M0.Service
+            msd = M0.lookupConfObjByFid (_hm_fid m) rg :: Maybe M0.Service
         in case msd of
              Nothing -> False
              Just srv -> fromMaybe False $ do
+               traceM ("[servicePidMatches:" ++ show (__LINE__ :: Int) ++ "] "
+                       ++ "srv=" ++ show srv)
                p :: M0.Process <- G.connectedFrom M0.IsParentOf srv rg
-               is_m0t1fs <- Just $ all (\s -> M0.s_type s `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA])
-                                       (G.connectedTo p M0.IsParentOf rg)
+               traceM ("[servicePidMatches:" ++ show (__LINE__ :: Int) ++ "] "
+                       ++ "proc=" ++ show p)
                if spid == -1
                then return True -- if message is old and does not contain pid, we accept message.
-               else if is_m0t1fs
-                    then return (spid == 0)
-                    else do M0.PID pid <- G.connectedTo p R.Has rg
-                            return (spid == fromIntegral pid)
+               else do
+                 traceM ("[servicePidMatches:" ++ show (__LINE__ :: Int) ++ "] "
+                         ++ "spid=" ++ show spid)
+                 M0.PID pid <- G.connectedTo p R.Has rg
+                 traceM ("[servicePidMatches:" ++ show (__LINE__ :: Int) ++ "] "
+                         ++ "pid=" ++ show pid)
+                 return (spid == fromIntegral pid)
 
       isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
       isServiceStopped = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STOPPED) M0.SSOffline
 
+      startOrStop (HAEvent _ (HAMsg se@(ServiceEvent _ _ _) _)) _ _
+        | trace ("[startOrStop:" ++ show (__LINE__ :: Int) ++ "] " ++ show se) False = undefined
       startOrStop msg@(HAEvent _ v) ls _ = return $
         if servicePidMatches v ls
         then case isServiceOnline msg ls of
-               Nothing -> isServiceStopped msg ls
+               Nothing -> let res = isServiceStopped msg ls
+                          in traceXXX "startOrStop" (show res) res
                Just x -> Just x
         else Nothing
 
