@@ -29,19 +29,14 @@ export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 
 PROG="${0##*/}"
 
-cmd_stack() {
-    cd "$H0_SRC_DIR"
-    stack "$@"
-}
-
 cmd_setup() {
-    cmd_stack setup
+    stack setup
 }
 
 cmd_make() {
     PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         MERO_ROOT=$M0_SRC_DIR \
-        cmd_stack build mero-halon --ghc-options="${GHC_OPTS:--g -j4}" --test \
+        stack build mero-halon --ghc-options="${GHC_OPTS:--g -j4}" --test \
         --no-run-tests "$@"
 }
 
@@ -49,7 +44,7 @@ cmd_rebuild() {
     # XXX TODO: The script should be able to determine automatically
     # whether Mero has been updated since last Halon compilation.
     # One possible solution is to reimplement this script as a Makefile.
-    cmd_stack clean rpclite
+    stack clean rpclite
     cmd_make "$@"
 }
 
@@ -59,7 +54,7 @@ cmd_test() {
 }
 
 local_install_root() {
-    cmd_stack path --local-install-root
+    stack path --local-install-root
 }
 
 cmd_install() {
@@ -128,7 +123,7 @@ cmd_env() {
 }
 
 cmd_clean() {
-    cmd_stack clean "$@"
+    stack clean "$@"
 }
 
 cmd_help() {
@@ -167,7 +162,6 @@ Commands:
     env                  Print shell commands that, if evaluated, simplify
                          execution of Halon binaries located in the sources
                          directory.
-    stack [OPTION]...    Run \`stack' in Halon sources directory.
     help                 Show this help and exit.
 
 Options:
@@ -179,11 +173,13 @@ Environment variables:
 EOF
 }
 
+cd "$H0_SRC_DIR"
+
 CMD=
 OPTS=
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|path|env|clean|stack|help) ;& # fall through
+        setup|make|rebuild|test|path|env|clean|help) ;& # fall through
         install|uninstall|start|stop)
             [[ -z $CMD ]] || _exec $CMD $OPTS
             CMD=cmd_${1//-/_}
