@@ -503,15 +503,25 @@ ruleProcessStarting = define "castor::process::starting" $ do
     isEphemeral p rg = case G.connectedTo p Has rg of
       Just (M0.PLClovis _ True) -> True
       _ -> False
-    onlineProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
-      let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
-      return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_M0MKFS, _) -> Nothing
-        (TAG_M0_CONF_HA_PROCESS_STARTING, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
-        (TAG_M0_CONF_HA_PROCESS_STARTING, _, Just (p :: M0.Process)) | pid /= 0 ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
-        _ -> Nothing
+    onlineProc = select TAG_M0_CONF_HA_PROCESS_STARTING
+
+select :: Monad m
+       => ProcessEventType
+       -> HAEvent (HAMsg ProcessEvent)
+       -> LoopState
+       -> l
+       -> m (Maybe (UUID.UUID, M0.Process, M0.PID))
+select pet (HAEvent eid (HAMsg (ProcessEvent et pt pid) m)) ls _ | pet == et =
+  -- XXX TODO: Report error if
+  -- (pt == TAG_M0_CONF_HA_PROCESS_KERNEL) /= (pid == 0)
+  let mp = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
+      rpid = M0.PID (fromIntegral pid)
+  in return $ case (pt, mp) of
+    (TAG_M0_CONF_HA_PROCESS_KERNEL, Just p) -> Just (eid, p, rpid)
+    (TAG_M0_CONF_HA_PROCESS_M0MKFS, _)      -> Nothing
+    (_, Just p) | pid /= 0                  -> Just (eid, p, rpid)
+    _                                       -> Nothing
+select _ _ _ _ = return Nothing
 
 -- | Handle process started notifications.
 ruleProcessOnline :: Definitions RC ()
@@ -573,15 +583,7 @@ ruleProcessOnline = define "castor::process::online" $ do
 
   start rule_init Nothing
   where
-    startedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) m)) ls _ = do
-      let mpd = M0.lookupConfObjByFid (_hm_fid m) (lsGraph ls)
-      return $ case (t, pt, mpd) of
-        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_M0MKFS, _) -> Nothing
-        (TAG_M0_CONF_HA_PROCESS_STARTED, TAG_M0_CONF_HA_PROCESS_KERNEL, Just (p :: M0.Process)) ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
-        (TAG_M0_CONF_HA_PROCESS_STARTED, _, Just (p :: M0.Process)) | pid /= 0 ->
-          Just (eid, p, M0.PID $ fromIntegral pid)
-        _ -> Nothing
+    startedProc = select TAG_M0_CONF_HA_PROCESS_STARTED
 
 -- | Listen for process event notifications about a stopping process.
 --   This is only of particular interest for ephemeral processes,
