@@ -614,9 +614,9 @@ ruleProcessStopping = define "castor::process::stopping" $ do
     isEphemeral p rg = case G.connectedTo p Has rg of
       Just (M0.PLClovis _ True) -> True
       _ -> False
-    stoppingProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
-      let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
-      return $ case (t, pt, mpd) of
+    stoppingProc (HAEvent eid (HAMsg (ProcessEvent et pt pid) meta)) ls _ = do
+      let mp = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
+      return $ case (et, pt, mp) of
         (TAG_M0_CONF_HA_PROCESS_STOPPING, _, Just (p :: M0.Process))
           | pid /= 0 && isEphemeral p (lsGraph ls) ->
             Just (eid, p, M0.PID $ fromIntegral pid)
@@ -665,18 +665,17 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       M0.PSOffline -> True
       _ -> False
 
-    stoppedProc (HAEvent eid (HAMsg (ProcessEvent t pt pid) meta)) ls _ = do
-      let mpd = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
-      case mpd of
-        Just pd -> do
-          let mpid = G.connectedTo pd Has (lsGraph ls)
-          return $ case (t, pt, pd) of
-            (TAG_M0_CONF_HA_PROCESS_STOPPED, _, p :: M0.Process)
+    stoppedProc (HAEvent eid (HAMsg (ProcessEvent et pt pid) meta)) ls _ = do
+      let rg = lsGraph ls
+      return $ case M0.lookupConfObjByFid (_hm_fid meta) rg of
+        Just (proc :: M0.Process) -> case (et, pt, proc) of
+            (TAG_M0_CONF_HA_PROCESS_STOPPED, _, p)
                | pid /= 0
-               , Just (M0.PID ppid) <- mpid
-               , ppid == fromIntegral pid -> Just (eid, p, M0.PID $ fromIntegral pid)
-            _ -> Nothing
-        Nothing -> return Nothing
+               , Just (M0.PID pid') <- G.connectedTo proc Has rg
+               , pid' == fromIntegral pid
+                -> Just (eid, p, M0.PID $ fromIntegral pid)
+            _   -> Nothing
+        Nothing -> Nothing
 
 jobProcessStop :: Job StopProcessRequest StopProcessResult
 jobProcessStop = Job "castor::process::stop"
