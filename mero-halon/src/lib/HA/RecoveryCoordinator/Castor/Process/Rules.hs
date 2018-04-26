@@ -614,13 +614,14 @@ ruleProcessStopping = define "castor::process::stopping" $ do
     isEphemeral p rg = case G.connectedTo p Has rg of
       Just (M0.PLClovis _ True) -> True
       _ -> False
-    stoppingProc (HAEvent eid (HAMsg (ProcessEvent et pt pid) meta)) ls _ = do
+
+    stoppingProc (HAEvent eid (HAMsg (ProcessEvent et _ pid) meta)) ls _ = do
       let mp = M0.lookupConfObjByFid (_hm_fid meta) (lsGraph ls)
-      return $ case (et, pt, mp) of
-        (TAG_M0_CONF_HA_PROCESS_STOPPING, _, Just (p :: M0.Process))
-          | pid /= 0 && isEphemeral p (lsGraph ls) ->
-            Just (eid, p, M0.PID $ fromIntegral pid)
-        _ -> Nothing
+      return $ case (et, mp) of
+        (TAG_M0_CONF_HA_PROCESS_STOPPING, Just (p :: M0.Process))
+          | pid /= 0 && isEphemeral p (lsGraph ls)
+            -> Just (eid, p, M0.PID $ fromIntegral pid)
+        _   -> Nothing
 
 -- | Listen for process event notifications about a stopped process
 -- and decide whether we want to fail the process. If we do fail the
@@ -665,17 +666,16 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
       M0.PSOffline -> True
       _ -> False
 
-    stoppedProc (HAEvent eid (HAMsg (ProcessEvent et pt pid) meta)) ls _ = do
+    stoppedProc (HAEvent eid (HAMsg (ProcessEvent et _ pid) meta)) ls _ = do
       let rg = lsGraph ls
-      return $ case M0.lookupConfObjByFid (_hm_fid meta) rg of
-        Just (proc :: M0.Process) -> case (et, pt, proc) of
-            (TAG_M0_CONF_HA_PROCESS_STOPPED, _, p)
-               | pid /= 0
-               , Just (M0.PID pid') <- G.connectedTo proc Has rg
-               , pid' == fromIntegral pid
-                -> Just (eid, p, M0.PID $ fromIntegral pid)
-            _   -> Nothing
-        Nothing -> Nothing
+          mp = M0.lookupConfObjByFid (_hm_fid meta) rg
+      return $ case (et, mp) of
+        (TAG_M0_CONF_HA_PROCESS_STOPPED, Just (p :: M0.Process))
+          | pid /= 0
+          , Just (M0.PID pid') <- G.connectedTo p Has rg
+          , pid' == fromIntegral pid
+            -> Just (eid, p, M0.PID $ fromIntegral pid)
+        _   -> Nothing
 
 jobProcessStop :: Job StopProcessRequest StopProcessResult
 jobProcessStop = Job "castor::process::stop"
