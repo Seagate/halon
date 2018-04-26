@@ -78,9 +78,9 @@ import           HA.EventQueue.Producer
 import qualified HA.Resources.Mero as M0
 import           HA.Service
 import           HA.Service.Interface
-import           HA.Services.Mero ( confXCPath, InternalStarted(..), unitString )
+import           HA.Services.Mero (confXCPath, InternalStarted(..), unitString)
 import           HA.Services.Mero.Types
-import           Mero.ConfC (Fid(..), fidToStr, ServiceType(..))
+import           Mero.ConfC (Fid(..), fidToStr, m0_fid0, ServiceType(..))
 import           Mero.Lnet (encodeEndpoint)
 import           Mero.Notification.HAState
 import qualified "distributed-process-scheduler" System.Clock as C
@@ -218,14 +218,14 @@ sendProcessEvents p petype setype pid = do
     sendProcessEvent pt = do
       t <- liftIO $ C.sec <$> C.getTime C.Realtime
       let pid' = if pt == TAG_M0_CONF_HA_PROCESS_KERNEL
-                   then 0
-                   else fromIntegral pid
+                 then 0
+                 else fromIntegral pid
           ev = ProcessEvent { _chp_event = petype
-                            , _chp_type  = pt
+                            , _chp_type = pt
                             , _chp_pid = pid' }
           meta = HAMsgMeta { _hm_fid = M0.fid p
-                           , _hm_source_process = Fid 0 0
-                           , _hm_source_service = Fid 0 0
+                           , _hm_source_process = m0_fid0
+                           , _hm_source_service = m0_fid0
                            , _hm_time = fromIntegral t
                            , _hm_epoch = 0 }
       promulgateWait $ HAMsg ev meta
@@ -237,8 +237,8 @@ sendProcessEvents p petype setype pid = do
                             , _chs_type = M0.s_type s
                             , _chs_pid = fromIntegral pid }
           meta = HAMsgMeta { _hm_fid = M0.fid s
-                           , _hm_source_process = Fid 0 0
-                           , _hm_source_service = Fid 0 0
+                           , _hm_source_process = m0_fid0
+                           , _hm_source_service = m0_fid0
                            , _hm_time = fromIntegral t
                            , _hm_epoch = 0 }
       promulgateWait $ HAMsg ev meta
