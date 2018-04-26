@@ -217,9 +217,12 @@ sendProcessEvents p petype setype pid = do
     sendProcessEvent :: ProcessType -> Process ()
     sendProcessEvent pt = do
       t <- liftIO $ C.sec <$> C.getTime C.Realtime
-      let ev = ProcessEvent { _chp_event = petype
+      let pid' = if pt == TAG_M0_CONF_HA_PROCESS_KERNEL
+                   then 0
+                   else fromIntegral pid
+          ev = ProcessEvent { _chp_event = petype
                             , _chp_type  = pt
-                            , _chp_pid = fromIntegral pid }
+                            , _chp_pid = pid' }
           meta = HAMsgMeta { _hm_fid = M0.fid p
                            , _hm_source_process = Fid 0 0
                            , _hm_source_service = Fid 0 0
