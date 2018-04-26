@@ -632,28 +632,29 @@ ruleProcessStopped = define "castor::process::process-stopped" $ do
   rule_init <- phaseHandle "rule_init"
 
   setPhaseIfConsume rule_init stoppedProc $ \(eid, p, _) -> do
-    getGraph >>= \rg -> case alreadyFailed p rg of
+    rg <- getGraph
+    if alreadyFailed p rg
+    then
       -- The process is already in what we consider a failed state:
       -- either we're already done dealing with it (it's offline or it
       -- failed).
-      True -> Log.rcLog' Log.WARN $
-                "Failed notification for already failed process: " ++ show p
-
-      -- Make sure we're not in PSStarting state: this means that SSPL
-      -- restarted process or mero sent ONLINE (indicating a potential
-      -- process restart) which means we shouldn't try to restart again
-      False -> case getState p rg of
-        M0.PSStarting ->
-          Log.rcLog' Log.WARN $ "Proceess in starting state, not restarting: "
+      Log.rcLog' Log.WARN $ "Failed notification for already failed process: "
                           ++ show p
+    else
+      case getState p rg of
+        M0.PSStarting ->
+          -- SSPL restarted process or mero sent ONLINE (indicating a potential
+          -- process restart). We shouldn't try to restart again.
+          Log.rcLog' Log.WARN $ "Process in starting state, not restarting: "
+                              ++ show p
         M0.PSStopping ->
           -- We are intending to stop this process. Either this or the
           -- notification from systemd should be sufficient to mark it
           -- as stopped.
           void $ applyStateChanges [stateSet p Tr.processOffline]
-        -- Harmless case, we have probably just stopped the process
-        -- through ruleProcessStop already.
         M0.PSOffline ->
+          -- Harmless case, we have probably just stopped the process
+          -- through ruleProcessStop already.
           Log.rcLog' Log.DEBUG $ "PROCESS_STOPPED for already-offline process"
         _ -> void $ applyStateChanges [stateSet p $ Tr.processFailed "MERO-failed"]
     done eid
