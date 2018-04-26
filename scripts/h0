@@ -176,25 +176,32 @@ EOF
 cd "$H0_SRC_DIR"
 
 CMD=
-OPTS=
+OPTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         setup|make|rebuild|test|path|env|clean|help) ;& # fall through
         install|uninstall|start|stop)
-            [[ -z $CMD ]] || _exec $CMD $OPTS
+            [[ -z $CMD ]] || {
+                if [[ ${#OPTS[@]} == 0 ]]; then
+                    _exec $CMD
+                else
+                    _exec $CMD "${OPTS[@]}"
+                fi
+            }
             CMD=cmd_${1//-/_}
-            OPTS=;;
+            OPTS=();;
         *)
             [[ -n $CMD ]] || {
                 echo "Invalid command: $1" >&2
                 die "Type \`$PROG help' for usage."
             }
-            OPTS+=" $1";;
+            OPTS+=("$1");;
     esac
     shift
 done
-if [[ -n $CMD ]]; then
-    _exec $CMD $OPTS
+[[ -n $CMD ]] || cmd_help 1  # exits
+if [[ ${#OPTS[@]} == 0 ]]; then
+    _exec $CMD
 else
-    cmd_help 1
+    _exec $CMD "${OPTS[@]}"
 fi
