@@ -347,6 +347,7 @@ data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     | CST_DS2     -- ^ Dummy service 2
     | CST_FIS     -- ^ Fault injection service
     | CST_FDMI    -- ^ FDMI service
+    | CST_BE      -- ^ BE service
     | CST_UNKNOWN Int
   deriving (Data, Eq, Generic, Ord, Read, Show )
 
@@ -373,6 +374,7 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_DS2}      = CST_DS2
   toEnum #{const M0_CST_FIS}      = CST_FIS
   toEnum #{const M0_CST_FDMI}     = CST_FDMI
+  toEnum #{const M0_CST_BE}       = CST_BE
   toEnum i                        = CST_UNKNOWN i
 
   fromEnum CST_MDS          = #{const M0_CST_MDS}
@@ -392,6 +394,7 @@ instance Enum ServiceType where
   fromEnum CST_DS2          = #{const M0_CST_DS2}
   fromEnum CST_FIS          = #{const M0_CST_FIS}
   fromEnum CST_FDMI         = #{const M0_CST_FDMI}
+  fromEnum CST_BE           = #{const M0_CST_BE}
   fromEnum (CST_UNKNOWN i)  = i
 
 -- | Representation of `m0_conf_service`.
