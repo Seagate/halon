@@ -1,11 +1,11 @@
-{-# LANGUAGE CApiFFI #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE CApiFFI                  #-}
+{-# LANGUAGE DeriveDataTypeable       #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE EmptyDataDecls           #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE MultiWayIf               #-}
+{-# LANGUAGE TemplateHaskell          #-}
+{-# LANGUAGE TupleSections            #-}
 
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
@@ -66,19 +66,19 @@ import Mero.Conf.Context
 import Mero.Conf.Fid
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Binary ( Binary )
-import Data.Data ( Data )
-import Data.Hashable ( Hashable )
-import Data.Word ( Word32, Word64 )
+import Data.Binary (Binary)
+import Data.Data (Data)
+import Data.Hashable (Hashable)
 import Data.SafeCopy (deriveSafeCopy, base)
-import Data.Typeable ( Typeable )
-import Foreign.C.String ( CString, peekCString )
-import Foreign.C.Types ( CInt(..) )
-import Foreign.Marshal.Array ( advancePtr, peekArray )
-import Foreign.Ptr ( Ptr, nullPtr, plusPtr )
-import Foreign.Storable ( Storable(..) )
+import Data.Typeable (Typeable)
+import Data.Word (Word32, Word64)
+import Foreign.C.String (CString, peekCString)
+import Foreign.C.Types (CInt(..))
+import Foreign.Marshal.Array (advancePtr, peekArray)
+import Foreign.Ptr (Ptr, nullPtr, plusPtr)
+import Foreign.Storable (Storable(..))
 import GHC.Generics (Generic)
-import System.IO.Unsafe ( unsafePerformIO )
+import System.IO.Unsafe (unsafePerformIO)
 
 --------------------------------------------------------------------------------
 -- Generic Configuration
@@ -349,7 +349,7 @@ data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     | CST_FDMI    -- ^ FDMI service
     | CST_BE      -- ^ BE service
     | CST_UNKNOWN Int
-  deriving (Data, Eq, Generic, Ord, Read, Show )
+  deriving (Data, Eq, Generic, Ord, Read, Show)
 
 instance Binary ServiceType
 instance Hashable ServiceType
