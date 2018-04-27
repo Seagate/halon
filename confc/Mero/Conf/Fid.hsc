@@ -1,10 +1,10 @@
-{-# LANGUAGE CApiFFI #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE CApiFFI                  #-}
+{-# LANGUAGE DeriveDataTypeable       #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE EmptyDataDecls           #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE MultiWayIf               #-}
+{-# LANGUAGE TupleSections            #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -14,28 +14,31 @@
 -- stored in the filesystem.
 --
 module Mero.Conf.Fid
-  ( Fid(..), fidToStr, strToFid , m0_fid0) where
+  ( Fid(..)
+  , fidToStr
+  , strToFid
+  , m0_fid0
+  ) where
 
 #include "confc_helpers.h"
 #if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
 #endif
 
-import Data.Aeson (FromJSON, ToJSON)
-import Control.Monad ( liftM2 )
-import Data.Binary (Binary)
-import Data.Data (Data)
-import Data.Hashable (Hashable)
+import           Control.Monad (liftM2)
+import           Data.Aeson (FromJSON, ToJSON)
+import           Data.Binary (Binary)
+import           Data.Data (Data)
+import           Data.Hashable (Hashable)
+import           Data.SafeCopy
+import           Data.Serialize
 import qualified Data.Text as T
-import Data.SafeCopy
-import Data.Serialize
-import Data.Typeable ( Typeable )
-import Data.Word ( Word64 )
-import Foreign.Storable ( Storable(..) )
-import GHC.Generics ( Generic )
-import Text.Printf (printf)
-import Text.Read (readMaybe)
-
+import           Data.Typeable (Typeable)
+import           Data.Word (Word64)
+import           Foreign.Storable (Storable(..))
+import           GHC.Generics (Generic)
+import           Text.Printf (printf)
+import           Text.Read (readMaybe)
 
 -- | Representation of @struct m0_fid@. It is an identifier for objects in
 -- confc.
