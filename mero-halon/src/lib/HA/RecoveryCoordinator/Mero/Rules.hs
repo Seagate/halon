@@ -131,6 +131,7 @@ ruleDixInit = mkJobRule jobDixInit args $ \(JobHandle _ finish) -> do
             Log.rcLog' Log.DEBUG "DIX subsystem already initialised."
             modify Local $ rlens fldRep .~
               Field (Just $ DixInitSuccess)
+            continue finish
           else Log.withLocalContext' $ do
             Log.tagLocalContext node Nothing
             Log.rcLog Log.DEBUG "Initialising DIX subsystem"
