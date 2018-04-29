@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2018 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Bindings to the spiel interface.

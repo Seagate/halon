@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
+-- Copyright : (C) 2018 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- High-level bindings to the confc client library. confc allows programs to
