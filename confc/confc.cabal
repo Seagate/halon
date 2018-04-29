@@ -13,11 +13,9 @@ Library
   Default-Language:    Haskell2010
   exposed-modules:     Mero.ConfC
                      , Mero.Spiel
-  other-modules:       Mero.Conf.Fid
-                     , Mero.Conf.Internal
+  other-modules:       Mero.Conf.Context
+                     , Mero.Conf.Fid
                      , Mero.Conf.Obj
-                     , Mero.Conf.Tree
-                     , Mero.Conf.Context
                      , Mero.Spiel.Context
                      , Mero.Spiel.Internal
   build-depends:       base
@@ -39,9 +37,9 @@ Library
   default-extensions:  CPP
   other-extensions:    TemplateHaskell, QuasiQuotes, CApiFFI
 
-  include-dirs: .
-                ../rpclite/rpclite
-  c-sources:  confc_helpers.c
+  include-dirs:      .
+                     ../rpclite/rpclite
+  c-sources:         confc_helpers.c
   pkgconfig-depends: mero >= 0.1.0
 
 Test-Suite unit-tests
