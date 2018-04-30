@@ -4,146 +4,76 @@ Halon is a fault tolerant, resilient system for maintaining a globally
 consistent view of large clusters and automatically repairing them in
 real-time as faults arise.
 
-# Checking out this repository
+# Building from sources
 
-This repository includes a number of submodules. To check everything
-out at once, use
+Prerequisites:
 
-```
-git clone --recursive git@github.com:seagate-ssg/halon.git
-```
+```shell
+sudo yum install leveldb-devel libgenders-devel
 
-**Note:** You may need to patch up the default URL's for Mero
-submodules, if you do not have access to their upstream location:
+# Install the Haskell Tool Stack
+curl -sSL https://get.haskellstack.org/ | sh
 
-```
-git clone git@github.com:seagate-ssg/halon
-git submodule sync
-git submodule update --init
-cd vendor/mero
-git submodule init
-git config submodule.extra-libs/gf-complete.url git@github.com:seagate-ssg/gf-complete.git
-git submodule update
+# Get GHC
+scripts/h0 setup
 ```
 
-You can still build Halon even if you don't checkout any of the Mero
-submodules, but without Mero support.
+Build Mero first
 
-# How to build
-
-Prerequesites:
-* [Docker][docker] >= 1.8
-* [Haskell Stack][haskell-stack] >= 0.1.8
-
-The build will happen inside an ephemeral Docker container within
-which the project root directory is mounted as a volume. As such,
-there are no particular installation requirements on the host beyond
-being able to launch Docker and to invoke Stack commands.
-
-Login to [quay.io][quay] to pull the private base Docker image, using
-the credentials provided to you:
-
-```
-docker login quay.io
+```shell
+(cd /path/to/mero && scripts/m0 make)
 ```
 
-This step is required only once. To initialize the project (from the
-project's root directory):
+then build Halon
 
-```
-# Implicitly mount Mero source as a volume inside container.
-alias stack="stack --docker-mount `pwd`/vendor/mero:/mero"
-stack docker pull
-stack setup                           # Download compiler toolchain.
+```shell
+M0_SRC_DIR=/path/to/mero scripts/h0 rebuild
 ```
 
-You need to build Mero first. If your host's kernel version matches
-that expected by mero, you can configure and build in a single
-command:
+# Building and installing rpm packages
 
+```shell
+( cd /path/to/mero &&
+  make rpms-notests &&
+  sudo yum install ~/rpmbuild/RPMS/x86_64/mero*.rpm )
+make rpms
+sudo yum install ~/rpmbuild/RPMS/x86_64/halon*.rpm
 ```
-stack exec ./vendor/mero/scripts/m0 rebuild
-```
-
-Otherwise try the following:
-
-```
-cd vendor/mero
-stack exec -- ./autogen.sh
-stack exec -- ./configure --with-linux="/usr/src/kernels/*"
-stack exec -- make
-```
-
-Building Halon is then simply:
-
-```
-stack build
-```
-
-See the [Stack documentation][stack-doc] for further information on
-how to run tests, benchmarks, or build the API documentation. You can
-do all of that at once with
-
-```
-stack build --test --haddock --bench
-```
-
-**Note:** Mero support, together with tests when Mero support is
-enabled, requires Mero kernel modules to be loadable in the host
-kernel. See [tweag/seagate-boxes][seagate-boxes] to construct a VM
-with a kernel suitable for this.
-
-To run mero-enabled tests, you have to prepare your machine and start
-mero itself. From inside the mero directory, execute the
-following.
-
-```
-# After mero builds, create service symlinks back to the service
-# files so systemd can start services
-sudo ./scripts/install-mero-service -l
-
-# Create loop-back devices, genders file &c.
-sudo ./utils/m0setup
-
-# Start up the services preparing then running mero. This is probably
-# best done after everything builds, right before testing otherwise
-# mero will hog resources and make the build slower.
-sudo systemctl start mero-mkfs
-sudo systemctl start mero
-
-# Nothing special should be needed to run the USE_MERO tests
-# themselves. 'stack test --flag mero:mero-halon' should be enough
-# to run things. If you're using stack + docker, you may need
-# ‘--docker-persist’ flag for the above commands.
-```
-
-[docker]: https://www.docker.com/
-[haskell-stack]: https://github.com/commercialhaskell/stack
-[quay]: https://quay.io
-[seagate-boxes]: https://github.com/tweag/seagate-boxes
-[stack-doc]: http://docs.haskellstack.org/en/stable/README.html
 
 # Documentation
 
 The full documentation for Halon is kept in the `doc/` directory. To
 build the documentation and view it in your browser:
 
-```
-$ cd doc
-$ stack exec make html
+```shell
+cd doc
+stack exec make html
 ```
 
 You can also generate PDF's for each document in the set, as well as
 the man pages for user commands:
 
-```
-$ stack exec make latexpdf
-$ stack exec make man
+```shell
+stack exec make latexpdf
+stack exec make man
 ```
 
-# Running
+# Unit tests
 
-There is an example script in `mero-halon/scripts/simplecluster.sh`
+```shell
+scripts/h0 test
+```
+
+# Starting/stopping the cluster
+
+Single-node cluster:
+
+```shell
+scripts/h0 start
+scripts/h0 stop
+```
+
+There is also an example script in `mero-halon/scripts/simplecluster.sh`
 which runs a small two node cluster on the localhost. This script
 relies on `HALON_ROOT` being set to a directory containing the
 `halond` and `halonctl` binaries.
