@@ -40,34 +40,34 @@ import System.IO.Unsafe (unsafePerformIO)
 
 -- | @conf/schema.h m0_cfg_storage_device_interface_type@
 data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_interface_type" #-}
-  StorageDeviceInterfaceType =
-      M0_CFG_DEVICE_INTERFACE_ATA
-    | M0_CFG_DEVICE_INTERFACE_SATA
-    | M0_CFG_DEVICE_INTERFACE_SCSI
-    | M0_CFG_DEVICE_INTERFACE_SATA2
-    | M0_CFG_DEVICE_INTERFACE_SCSI2
-    | M0_CFG_DEVICE_INTERFACE_SAS
-    | M0_CFG_DEVICE_INTERFACE_SAS2
-    | M0_CFG_DEVICE_INTERFACE_UNKNOWN Int
-    deriving (Eq, Show)
+  StorageDeviceInterfaceType
+  = M0_CFG_DEVICE_INTERFACE_ATA
+  | M0_CFG_DEVICE_INTERFACE_SATA
+  | M0_CFG_DEVICE_INTERFACE_SCSI
+  | M0_CFG_DEVICE_INTERFACE_SATA2
+  | M0_CFG_DEVICE_INTERFACE_SCSI2
+  | M0_CFG_DEVICE_INTERFACE_SAS
+  | M0_CFG_DEVICE_INTERFACE_SAS2
+  | M0_CFG_DEVICE_INTERFACE_UNKNOWN Int
+  deriving (Eq, Show)
 
 instance Enum StorageDeviceInterfaceType where
-  toEnum #{const M0_CFG_DEVICE_INTERFACE_ATA} = M0_CFG_DEVICE_INTERFACE_ATA
-  toEnum #{const M0_CFG_DEVICE_INTERFACE_SATA} = M0_CFG_DEVICE_INTERFACE_SATA
-  toEnum #{const M0_CFG_DEVICE_INTERFACE_SCSI} = M0_CFG_DEVICE_INTERFACE_SCSI
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_ATA}   = M0_CFG_DEVICE_INTERFACE_ATA
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SATA}  = M0_CFG_DEVICE_INTERFACE_SATA
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SCSI}  = M0_CFG_DEVICE_INTERFACE_SCSI
   toEnum #{const M0_CFG_DEVICE_INTERFACE_SATA2} = M0_CFG_DEVICE_INTERFACE_SATA2
   toEnum #{const M0_CFG_DEVICE_INTERFACE_SCSI2} = M0_CFG_DEVICE_INTERFACE_SCSI2
-  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS} = M0_CFG_DEVICE_INTERFACE_SAS
-  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS2} = M0_CFG_DEVICE_INTERFACE_SAS2
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS}   = M0_CFG_DEVICE_INTERFACE_SAS
+  toEnum #{const M0_CFG_DEVICE_INTERFACE_SAS2}  = M0_CFG_DEVICE_INTERFACE_SAS2
   toEnum i = M0_CFG_DEVICE_INTERFACE_UNKNOWN i
 
-  fromEnum M0_CFG_DEVICE_INTERFACE_ATA = #{const M0_CFG_DEVICE_INTERFACE_ATA }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SATA = #{const M0_CFG_DEVICE_INTERFACE_SATA }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI = #{const M0_CFG_DEVICE_INTERFACE_SCSI }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SATA2 = #{const M0_CFG_DEVICE_INTERFACE_SATA2 }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI2 = #{const M0_CFG_DEVICE_INTERFACE_SCSI2 }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SAS = #{const M0_CFG_DEVICE_INTERFACE_SAS }
-  fromEnum M0_CFG_DEVICE_INTERFACE_SAS2 = #{const M0_CFG_DEVICE_INTERFACE_SAS2 }
+  fromEnum M0_CFG_DEVICE_INTERFACE_ATA   = #{const M0_CFG_DEVICE_INTERFACE_ATA}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SATA  = #{const M0_CFG_DEVICE_INTERFACE_SATA}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI  = #{const M0_CFG_DEVICE_INTERFACE_SCSI}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SATA2 = #{const M0_CFG_DEVICE_INTERFACE_SATA2}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SCSI2 = #{const M0_CFG_DEVICE_INTERFACE_SCSI2}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SAS   = #{const M0_CFG_DEVICE_INTERFACE_SAS}
+  fromEnum M0_CFG_DEVICE_INTERFACE_SAS2  = #{const M0_CFG_DEVICE_INTERFACE_SAS2}
   fromEnum (M0_CFG_DEVICE_INTERFACE_UNKNOWN i) = i
 
 instance Storable StorageDeviceInterfaceType where
@@ -76,27 +76,27 @@ instance Storable StorageDeviceInterfaceType where
   peek p = fmap toEnum $ peek (castPtr p)
   poke p s = poke (castPtr p) $ fromEnum s
 
--- | @schema.h m0_cfg_storage_device_media_type@
+-- | @conf/schema.h m0_cfg_storage_device_media_type@
 data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_media_type" #-}
-  StorageDeviceMediaType =
-      M0_CFG_DEVICE_MEDIA_DISK
-    | M0_CFG_DEVICE_MEDIA_SSD
-    | M0_CFG_DEVICE_MEDIA_TAPE
-    | M0_CFG_DEVICE_MEDIA_ROM
-    | M0_CFG_DEVICE_MEDIA_UNKNOWN Int
-    deriving (Eq, Show)
+  StorageDeviceMediaType
+  = M0_CFG_DEVICE_MEDIA_DISK
+  | M0_CFG_DEVICE_MEDIA_SSD
+  | M0_CFG_DEVICE_MEDIA_TAPE
+  | M0_CFG_DEVICE_MEDIA_ROM
+  | M0_CFG_DEVICE_MEDIA_UNKNOWN Int
+  deriving (Eq, Show)
 
 instance Enum StorageDeviceMediaType where
   toEnum #{const M0_CFG_DEVICE_MEDIA_DISK} = M0_CFG_DEVICE_MEDIA_DISK
-  toEnum #{const M0_CFG_DEVICE_MEDIA_SSD} = M0_CFG_DEVICE_MEDIA_SSD
+  toEnum #{const M0_CFG_DEVICE_MEDIA_SSD}  = M0_CFG_DEVICE_MEDIA_SSD
   toEnum #{const M0_CFG_DEVICE_MEDIA_TAPE} = M0_CFG_DEVICE_MEDIA_TAPE
-  toEnum #{const M0_CFG_DEVICE_MEDIA_ROM} = M0_CFG_DEVICE_MEDIA_ROM
+  toEnum #{const M0_CFG_DEVICE_MEDIA_ROM}  = M0_CFG_DEVICE_MEDIA_ROM
   toEnum i = M0_CFG_DEVICE_MEDIA_UNKNOWN i
 
-  fromEnum M0_CFG_DEVICE_MEDIA_DISK = #{const M0_CFG_DEVICE_MEDIA_DISK }
-  fromEnum M0_CFG_DEVICE_MEDIA_SSD = #{const M0_CFG_DEVICE_MEDIA_SSD }
-  fromEnum M0_CFG_DEVICE_MEDIA_TAPE = #{const M0_CFG_DEVICE_MEDIA_TAPE }
-  fromEnum M0_CFG_DEVICE_MEDIA_ROM = #{const M0_CFG_DEVICE_MEDIA_ROM }
+  fromEnum M0_CFG_DEVICE_MEDIA_DISK = #{const M0_CFG_DEVICE_MEDIA_DISK}
+  fromEnum M0_CFG_DEVICE_MEDIA_SSD  = #{const M0_CFG_DEVICE_MEDIA_SSD}
+  fromEnum M0_CFG_DEVICE_MEDIA_TAPE = #{const M0_CFG_DEVICE_MEDIA_TAPE}
+  fromEnum M0_CFG_DEVICE_MEDIA_ROM  = #{const M0_CFG_DEVICE_MEDIA_ROM}
   fromEnum (M0_CFG_DEVICE_MEDIA_UNKNOWN i) = i
 
 instance Storable StorageDeviceMediaType where
@@ -128,29 +128,28 @@ instance Storable ServiceInfo where
     #{poke struct m0_spiel_service_info, svi_endpoints} p cstr_arr_ptr
 
 -- | @sns/cm/cm.h m0_sns_cm_status@
-data {-# CTYPE "sns/cm/cm.h" "struct m0_sns_cm_status" #-}
-  SnsCmStatus =
-      M0_SNS_CM_STATUS_INVALID
-    | M0_SNS_CM_STATUS_IDLE
-    | M0_SNS_CM_STATUS_STARTED
-    | M0_SNS_CM_STATUS_FAILED
-    | M0_SNS_CM_STATUS_PAUSED
-    | M0_SNS_CM_STATUS_UNKNOWN Int
-    deriving (Eq, Show)
+data {-# CTYPE "sns/cm/cm.h" "struct m0_sns_cm_status" #-} SnsCmStatus
+  = M0_SNS_CM_STATUS_INVALID
+  | M0_SNS_CM_STATUS_IDLE
+  | M0_SNS_CM_STATUS_STARTED
+  | M0_SNS_CM_STATUS_FAILED
+  | M0_SNS_CM_STATUS_PAUSED
+  | M0_SNS_CM_STATUS_UNKNOWN Int
+  deriving (Eq, Show)
 
 instance Enum SnsCmStatus where
   toEnum #{const SNS_CM_STATUS_INVALID} = M0_SNS_CM_STATUS_INVALID
-  toEnum #{const SNS_CM_STATUS_IDLE} = M0_SNS_CM_STATUS_IDLE
+  toEnum #{const SNS_CM_STATUS_IDLE}    = M0_SNS_CM_STATUS_IDLE
   toEnum #{const SNS_CM_STATUS_STARTED} = M0_SNS_CM_STATUS_STARTED
-  toEnum #{const SNS_CM_STATUS_FAILED} = M0_SNS_CM_STATUS_FAILED
-  toEnum #{const SNS_CM_STATUS_PAUSED} = M0_SNS_CM_STATUS_PAUSED
+  toEnum #{const SNS_CM_STATUS_FAILED}  = M0_SNS_CM_STATUS_FAILED
+  toEnum #{const SNS_CM_STATUS_PAUSED}  = M0_SNS_CM_STATUS_PAUSED
   toEnum i = M0_SNS_CM_STATUS_UNKNOWN i
 
   fromEnum M0_SNS_CM_STATUS_INVALID = #{const SNS_CM_STATUS_INVALID}
-  fromEnum M0_SNS_CM_STATUS_IDLE = #{const SNS_CM_STATUS_IDLE}
+  fromEnum M0_SNS_CM_STATUS_IDLE    = #{const SNS_CM_STATUS_IDLE}
   fromEnum M0_SNS_CM_STATUS_STARTED = #{const SNS_CM_STATUS_STARTED}
-  fromEnum M0_SNS_CM_STATUS_FAILED = #{const SNS_CM_STATUS_FAILED}
-  fromEnum M0_SNS_CM_STATUS_PAUSED = #{const SNS_CM_STATUS_PAUSED}
+  fromEnum M0_SNS_CM_STATUS_FAILED  = #{const SNS_CM_STATUS_FAILED}
+  fromEnum M0_SNS_CM_STATUS_PAUSED  = #{const SNS_CM_STATUS_PAUSED}
   fromEnum (M0_SNS_CM_STATUS_UNKNOWN i) = i
 
 instance Storable SnsCmStatus where
@@ -159,15 +158,15 @@ instance Storable SnsCmStatus where
   peek p = fmap (toEnum . fromIntegral) $ peek (castPtr p :: Ptr CInt)
   poke p s = poke (castPtr p :: Ptr CInt) . fromIntegral $ fromEnum s
 
-
 -- | @spiel.h m0_spiel_sns_status@
-data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_sns_status" #-} SnsStatus =
-  SnsStatus {
-      _sss_fid :: Fid
-    , _sss_state :: SnsCmStatus
-    , _sss_progress :: CUInt
+--
+-- XXX TODO: Replace with m0_spiel_repreb_status.
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_sns_status" #-} SnsStatus
+  = SnsStatus
+  { _sss_fid :: Fid
+  , _sss_state :: SnsCmStatus
+  , _sss_progress :: CUInt
   } deriving (Eq, Show)
-
 
 instance Storable SnsStatus where
   sizeOf _ = #{size struct m0_spiel_sns_status}
@@ -187,15 +186,14 @@ instance Binary SnsStatus where
   get = SnsStatus <$> get <*> fmap toEnum get <*> fmap fromIntegral (get :: Get Word64)
 
 -- | @spiel.h m0_fs_stats@
--- XXX-MULTIPOOLS: Rename to site/pool stats?
-data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
-  FSStats {
-      _fss_free_seg :: Word64
-    , _fss_total_seg :: Word64
-    , _fss_free_disk :: Word64
-    , _fss_total_disk :: Word64
-    , _fss_svc_total :: Word32
-    , _fss_svc_replied :: Word32
+data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats
+  = FSStats
+  { _fss_free_seg :: Word64
+  , _fss_total_seg :: Word64
+  , _fss_free_disk :: Word64
+  , _fss_total_disk :: Word64
+  , _fss_svc_total :: Word32
+  , _fss_svc_replied :: Word32
   } deriving (Eq, Generic, Show)
 
 instance Hashable FSStats
