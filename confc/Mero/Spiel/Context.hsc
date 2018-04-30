@@ -11,55 +11,34 @@
 -- inline-c context for the spiel interface.
 --
 
-module Mero.Spiel.Context where
+module Mero.Spiel.Context
+  ( FSStats(..)
+  , ServiceInfo(..)
+  , SnsCmStatus(..)
+  , SnsStatus(..)
+  , StorageDeviceInterfaceType(..)
+  , StorageDeviceMediaType(..)
+  ) where
 
-import Mero.ConfC
-  ( Fid
-  , ServiceType(..)
-  )
+import Mero.ConfC (Fid, ServiceType)
 
-import Control.Monad (liftM2, liftM3)
-
+import Control.Monad (liftM3)
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Binary
+import Data.Binary (Binary(get,put), Get)
 import Data.Hashable (Hashable)
-import qualified Data.Map as Map
-
-import Foreign.C.String
-  ( CString
-  , newCString
-  , peekCString
-  )
-import Foreign.C.Types ( CInt, CUInt )
-import Foreign.Marshal.Array
-  ( advancePtr
-  , newArray0
-  )
-import Foreign.Ptr
-  ( Ptr
-  , castPtr
-  , nullPtr
-  , plusPtr
-  )
-import Foreign.Storable
-  ( Storable(..) )
-
-import GHC.Generics
-
-import qualified Language.C.Inline as C
-import qualified Language.C.Inline.Context as C
-import qualified Language.C.Types as C
-
-import System.IO.Unsafe ( unsafePerformIO )
+import Data.Word (Word32, Word64)
+import Foreign.C.String (CString, newCString, peekCString)
+import Foreign.C.Types (CInt, CUInt)
+import Foreign.Marshal.Array (advancePtr, newArray0)
+import Foreign.Ptr (Ptr, castPtr, nullPtr, plusPtr)
+import Foreign.Storable (Storable(..))
+import GHC.Generics (Generic)
+import System.IO.Unsafe (unsafePerformIO)
 
 #include "spiel/spiel.h"
 #include "sns/cm/cm.h"
 
-#if __GLASGOW_HASKELL__ < 800
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
-#endif
-
--- | @schema.h m0_cfg_storage_device_interface_type@
+-- | @conf/schema.h m0_cfg_storage_device_interface_type@
 data {-# CTYPE "conf/schema.h" "struct m0_cfg_storage_device_interface_type" #-}
   StorageDeviceInterfaceType =
       M0_CFG_DEVICE_INTERFACE_ATA
@@ -126,30 +105,11 @@ instance Storable StorageDeviceMediaType where
   peek p = fmap toEnum $ peek (castPtr p)
   poke p s = poke (castPtr p) $ fromEnum s
 
--- | @spiel.h m0_spiel_running_svc@
-data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_running_svc" #-} RunningService =
-  RunningService {
-      _rs_fid :: Fid
-    , _rs_name :: String
-  } deriving (Eq, Show)
-
-instance Storable RunningService where
-  sizeOf _ = #{size struct m0_spiel_running_svc}
-  alignment _ = #{alignment struct m0_spiel_running_svc}
-  peek p = liftM2 RunningService
-    (#{peek struct m0_spiel_running_svc, spls_fid} p)
-    (peekCString $ #{ptr struct m0_spiel_running_svc, spls_name} p)
-
-  poke p (RunningService f n) = do
-    c_name <- newCString n
-    #{poke struct m0_spiel_running_svc, spls_fid} p f
-    #{poke struct m0_spiel_running_svc, spls_name} p c_name
-
 -- @spiel.h m0_spiel_service_info@
-data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_service_info" #-} ServiceInfo =
-  ServiceInfo {
-      _svi_type :: ServiceType
-    , _svi_endpoints :: [String]
+data {-# CTYPE "spiel/spiel.h" "struct m0_spiel_service_info" #-} ServiceInfo
+  = ServiceInfo
+  { _svi_type :: ServiceType
+  , _svi_endpoints :: [String]
   } deriving (Eq, Show)
 
 instance Storable ServiceInfo where
@@ -226,15 +186,6 @@ instance Binary SnsStatus where
   put (SnsStatus f s u) = put f >> put (fromEnum s) >> put (fromIntegral u :: Word64)
   get = SnsStatus <$> get <*> fmap toEnum get <*> fmap fromIntegral (get :: Get Word64)
 
-spielCtx :: C.Context
-spielCtx = mempty {
-  C.ctxTypesTable = Map.fromList [
-      (C.Struct "m0_spiel_running_svc", [t| RunningService |])
-    , (C.Struct "m0_spiel_service_info", [t| ServiceInfo |])
-    , (C.Struct "m0_spiel_sns_status", [t| SnsStatus |])
-  ]
-}
-
 -- | @spiel.h m0_fs_stats@
 -- XXX-MULTIPOOLS: Rename to site/pool stats?
 data {-# CTYPE "spiel/spiel.h" "struct m0_fs_stats" #-} FSStats =
@@ -269,6 +220,7 @@ instance Storable FSStats where
     #{poke struct m0_fs_stats, fs_total_disk} p (_fss_total_disk f)
     #{poke struct m0_fs_stats, fs_svc_total} p (_fss_svc_total f)
     #{poke struct m0_fs_stats, fs_svc_replied} p (_fss_svc_replied f)
+
 --------------------------------------------------------------------------------
 -- Utility
 --------------------------------------------------------------------------------

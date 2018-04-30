@@ -13,38 +13,36 @@
 -- inline-c context for the conf interface.
 --
 
-module Mero.Conf.Context where
+module Mero.Conf.Context
+  ( Bitmap(..)
+  , Cookie(..)
+  , PDClustAttr(..)
+  , Word128(..)
+  , bitmapInit
+  , bitmapFini
+  , bitmapFromArray
+  ) where
 
-import           Mero.Conf.Fid (Fid(..))
+import Control.Monad (when)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Binary (Binary)
+import Data.Bits (setBit, shiftR, zeroBits)
+import Data.Hashable (Hashable)
+import Data.List (splitAt, foldl')
+import Data.SafeCopy
+import Data.Serialize
+import Data.Word (Word32, Word64)
 
-import           Control.Monad (when)
-import           Data.Aeson
-import           Data.Binary (Binary)
-import           Data.Bits (setBit, shiftR, zeroBits)
-import           Data.Hashable (Hashable)
-import qualified Data.List as List
-import qualified Data.Map as Map
-import           Data.SafeCopy
-import           Data.Serialize
-import           Data.Word (Word32, Word64)
+import Foreign.Marshal.Array (peekArray, pokeArray)
+import Foreign.Ptr (Ptr, nullPtr)
+import Foreign.Storable (Storable(..))
+import GHC.Generics (Generic)
+import Language.C.Inline (CInt(..))
 
-import           Foreign.Marshal.Array (peekArray, pokeArray)
-import           Foreign.Ptr (Ptr, nullPtr)
-import           Foreign.Storable (Storable(..))
-import           GHC.Generics
-
-import qualified Language.C.Inline as C
-import qualified Language.C.Inline.Context as C
-import qualified Language.C.Types as C
-
-#include "confc_helpers.h"
 #include "layout/pdclust.h"
 #include "lib/bitmap.h"
+#include "lib/cookie.h"
 #include "lib/types.h"
-
-#if __GLASGOW_HASKELL__ < 800
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
-#endif
 
 -- @bitmap.h m0_bitmap@
 data Bitmap = Bitmap !Int [Word64]
@@ -85,21 +83,18 @@ bitmapInit bmptr sz = do
   when (rc /= 0) $ error "Bitmap can't be allocated"
 
 foreign import capi unsafe "lib/bitmap.h m0_bitmap_init"
-   c_bitmap_init :: Ptr Bitmap -> C.CInt -> IO C.CInt
+   c_bitmap_init :: Ptr Bitmap -> CInt -> IO CInt
 
 foreign import capi unsafe "lib/bitmap.h m0_bitmap_fini"
    bitmapFini :: Ptr Bitmap -> IO ()
 
 bitmapFromArray :: [Bool] -> Bitmap
 bitmapFromArray bs = Bitmap n $ go [] bs where
-  go acc arr = case List.splitAt 64 arr of
+  go acc arr = case splitAt 64 arr of
     ([], _) -> acc
     (x, xs) -> bits2word x : go acc xs
-  bits2word xs = List.foldl'
-    (\bm (idx, a) -> case a of
-      False -> bm
-      True -> setBit bm idx
-    )
+  bits2word xs = foldl'
+    (\bm (idx, a) -> if a then setBit bm idx else bm)
     zeroBits
     (zip [0 .. length xs - 1] xs)
   n = length bs
@@ -166,17 +161,6 @@ instance Storable PDClustAttr where
     #{poke struct m0_pdclust_attr, pa_P} p p'
     #{poke struct m0_pdclust_attr, pa_unit_size} p u
     #{poke struct m0_pdclust_attr, pa_seed} p s
-
-confCtx :: C.Context
-confCtx = mempty {
-  C.ctxTypesTable = Map.fromList [
-      (C.Struct "m0_fid", [t| Fid |])
-    , (C.Struct "m0_uint128", [t| Word128 |])
-    , (C.Struct "m0_cookie", [t| Cookie |])
-    , (C.Struct "m0_pdclust_attr", [t| PDClustAttr |])
-    , (C.Struct "m0_bitmap", [t| Bitmap |])
-  ]
-}
 
 deriveSafeCopy 0 'base ''PDClustAttr
 instance ToJSON PDClustAttr

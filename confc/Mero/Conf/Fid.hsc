@@ -20,10 +20,7 @@ module Mero.Conf.Fid
   , m0_fid0
   ) where
 
-#include "confc_helpers.h"
-#if __GLASGOW_HASKELL__ < 800
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
-#endif
+#include "fid/fid.h"
 
 import           Control.Monad (liftM2)
 import           Data.Aeson (FromJSON, ToJSON)

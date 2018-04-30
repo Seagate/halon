@@ -7,28 +7,68 @@
 --
 
 module Mero.Spiel
-  ( module Mero.Spiel
-  , module Mero.Spiel.Context
+  ( module Mero.Spiel.Context
+  , SpielTransaction
+  , addRoot
+  , addProfile
+  , addFilesystem
+  , addNode
+  , addProcess
+  , addService
+  , addDevice
+  , addRack
+  , addEnclosure
+  , addController
+  , addDisk
+  , addPool
+  , addPVerActual
+  , addPVerFormulaic
+  , addRackV
+  , addEnclosureV
+  , addControllerV
+  , addDiskV
+  , poolVersionDone
+  , closeTransaction
+  , commitTransactionForced
+  , deviceAttach
+  , deviceDetach
+  , filesystemStatsFetch
+  , openLocalTransaction
+  , openTransaction
+  , poolRepairStart
+  , poolRepairContinue
+  , poolRepairQuiesce
+  , poolRepairStatus
+  , poolRepairAbort
+  , poolRebalanceStart
+  , poolRebalanceContinue
+  , poolRebalanceQuiesce
+  , poolRebalanceStatus
+  , poolRebalanceAbort
+  , rconfStart
+  , rconfStop
+  , setCmdProfile
+  , txToBS
+  , txValidateTransactionCache
   ) where
 
-import Mero.Conf.Obj (PVerFormulaic(..), PVerSubtree(..))
-import Mero.ConfC
+import Mero.ConfC (Bitmap, Fid, PDClustAttr, withBitmap)
 import Mero.Spiel.Context
 import Mero.Spiel.Internal
 
-import Control.Exception (bracket, bracket_, mask)
+import Control.Exception (bracket, mask)
 
 import Data.ByteString (ByteString, packCString)
 import Data.Word (Word32, Word64)
 
 import Foreign.C.Error (Errno(..), eOK, eBUSY, eNOENT)
 import Foreign.C.String (newCString, withCString, peekCString)
-import Foreign.C.Types (CUInt(..), CSize(..))
+import Foreign.C.Types (CUInt(..), CSize)
 import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Alloc (alloca, free)
 import Foreign.Marshal.Array (peekArray, withArray0, withArrayLen)
-import Foreign.Marshal.Error (throwIfNeg, throwIf_)
-import Foreign.Marshal.Utils (fillBytes, with, withMany, maybeWith, maybePeek)
+import Foreign.Marshal.Error (throwIf_)
+import Foreign.Marshal.Utils (fillBytes, maybeWith, with, withMany)
 import Foreign.Ptr (nullPtr)
 import Foreign.Storable (peek, poke)
 
@@ -42,22 +82,13 @@ rconfStart =
 rconfStop :: IO ()
 rconfStop = c_spiel >>= c_spiel_rconfc_stop
 
--------------------------------------------------------------------------------
--- Backcompatibility functions
--------------------------------------------------------------------------------
-
--- | Helper function to run actions with rconfc setup.
-withRConf :: IO a       -- ^ Action to undertake with configuration manager
-          -> IO a
-withRConf = bracket_ rconfStart rconfStop
-
 ---------------------------------------------------------------
 -- Configuration management                                  --
 ---------------------------------------------------------------
 
 newtype SpielTransaction = SpielTransaction (ForeignPtr SpielTransactionV)
 
-openTransaction :: IO (SpielTransaction)
+openTransaction :: IO SpielTransaction
 openTransaction = do
   sc <- c_spiel
   st <- mallocForeignPtrBytes m0_spiel_tx_size
@@ -67,16 +98,6 @@ openTransaction = do
 closeTransaction :: SpielTransaction
                  -> IO ()
 closeTransaction (SpielTransaction ptr) = withForeignPtr ptr c_spiel_tx_close
-
-commitTransaction :: SpielTransaction
-                  -> IO (Maybe String)
-commitTransaction tx@(SpielTransaction ptr) =
-  txValidateTransactionCache tx >>= \case
-    Nothing -> do
-      throwIfNonZero_ (\rc -> "Cannot commit Spiel transaction: " ++ show rc)
-        $ withForeignPtr ptr c_spiel_tx_commit
-      return Nothing
-    Just err -> return $ Just err
 
 commitTransactionForced :: SpielTransaction
                         -> Bool
@@ -90,13 +111,6 @@ commitTransactionForced tx@(SpielTransaction ptr) forced ver =
           c_spiel_tx_commit_forced c_ptr forced ver q_ptr
       return $ Right ()
     Just err -> return $ Left err
-
-withTransaction :: (SpielTransaction -> IO a)
-                -> IO a
-withTransaction f = bracket
-    openTransaction
-    closeTransaction
-    (\t -> f t >>= \x -> commitTransaction t >> return x)
 
 txToBS :: SpielTransaction
        -> Word64
@@ -112,30 +126,7 @@ txToBS (SpielTransaction ptr) verno = withForeignPtr ptr $ \c_ptr -> do
           return bs
     x | x == eBUSY -> error "Not all objects are ready."
     x | x == eNOENT -> error "Not all objects have a parent."
-    (Errno x) -> error $ "Unknown error return: " ++ show x
-
-dumpTransaction :: SpielTransaction
-                -> Word64 -- ^ Version number
-                -> FilePath -- ^ File to dump to
-                -> IO ()
-dumpTransaction (SpielTransaction ptr) verno fp = withForeignPtr ptr $ \c_ptr -> do
-  valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
-  case valid of
-    x | x == eOK -> throwIfNonZero_ (\rc -> "Cannot dump Spiel transaction: " ++ show rc)
-      $ withCString fp $ \c_fp -> c_spiel_tx_dump c_ptr verno c_fp
-    x | x == eBUSY -> error "Not all objects are ready."
-    x | x == eNOENT -> error "Not all objects have a parent."
-    (Errno x) -> error $ "Unknown error return: " ++ show x
-
--- | Dump transaction to file, this call is required to be running in m0thread,
--- but it's possible to run it without setting rpc server, creating confd connection,
--- or spiel context. Usafe of 'commitTransaction' functions will lead to undefined
--- behavior.
-withTransactionDump :: FilePath -> Word64 -> (SpielTransaction -> IO a) -> IO a
-withTransactionDump fp verno transaction = bracket
-  openLocalTransaction
-  closeTransaction
-  $ \t -> transaction t >>= \x -> dumpTransaction t verno fp >> return x
+    Errno x -> error $ "Unknown error return: " ++ show x
 
 -- | Open transaction that doesn't require communication with conf or rms service.
 -- Such transaction can be run in non privileged mode without prior creation of
@@ -290,16 +281,6 @@ addDevice (SpielTransaction fsc) fid parentFid mdiskFid devIdx ifType medType
                                   bsize size lastState flags
                                   c_filename
 
-addPool :: SpielTransaction
-        -> Fid
-        -> Fid
-        -> Word32
-        -> IO ()
-addPool (SpielTransaction fsc) fid fsFid order = withForeignPtr fsc $ \sc ->
-  withMany with [fid, fsFid] $ \[fid_ptr, fs_ptr] ->
-    throwIfNonZero_ (\rc -> "Cannot add pool: " ++ show rc)
-      $ c_spiel_pool_add sc fid_ptr fs_ptr order
-
 addRack :: SpielTransaction
         -> Fid
         -> Fid
@@ -328,6 +309,25 @@ addController (SpielTransaction fsc) fid fsFid nodeFid = withForeignPtr fsc $ \s
     throwIfNonZero_ (\rc -> "Cannot add controller: " ++ show rc)
       $ c_spiel_controller_add sc fid_ptr fs_ptr node_ptr
 
+addDisk :: SpielTransaction
+        -> Fid
+        -> Fid
+        -> IO ()
+addDisk (SpielTransaction fsc) fid fsFid = withForeignPtr fsc $ \sc ->
+  withMany with [fid, fsFid] $ \[fid_ptr, fs_ptr] ->
+    throwIfNonZero_ (\rc -> "Cannot add disk: " ++ show rc)
+      $ c_spiel_disk_add sc fid_ptr fs_ptr
+
+addPool :: SpielTransaction
+        -> Fid
+        -> Fid
+        -> Word32
+        -> IO ()
+addPool (SpielTransaction fsc) fid fsFid order = withForeignPtr fsc $ \sc ->
+  withMany with [fid, fsFid] $ \[fid_ptr, fs_ptr] ->
+    throwIfNonZero_ (\rc -> "Cannot add pool: " ++ show rc)
+      $ c_spiel_pool_add sc fid_ptr fs_ptr order
+
 addPVerActual :: SpielTransaction
               -> Fid
               -> Fid -- ^ Parent pool
@@ -355,15 +355,6 @@ addPVerFormulaic (SpielTransaction fsc) fid parent idx base allowance =
       withArrayLen allowance $ \allow_len allow_ptr ->
           throwIfNonZero_ (\rc -> "Cannot add pool version: " ++ show rc)
             $ c_spiel_pver_formulaic_add sc fid_ptr parent_ptr idx base_ptr allow_ptr (fromIntegral allow_len)
-
-addDisk :: SpielTransaction
-        -> Fid
-        -> Fid
-        -> IO ()
-addDisk (SpielTransaction fsc) fid fsFid = withForeignPtr fsc $ \sc ->
-  withMany with [fid, fsFid] $ \[fid_ptr, fs_ptr] ->
-    throwIfNonZero_ (\rc -> "Cannot add disk: " ++ show rc)
-      $ c_spiel_disk_add sc fid_ptr fs_ptr
 
 addRackV :: SpielTransaction
          -> Fid
@@ -413,207 +404,9 @@ poolVersionDone (SpielTransaction fsc) fid = withForeignPtr fsc $ \sc ->
     throwIfNonZero_ (\rc -> "Cannot finish pool: " ++ show rc)
       $ c_spiel_pool_version_done sc fid_ptr
 
-deleteElement :: SpielTransaction
-              -> Fid
-              -> IO ()
-deleteElement (SpielTransaction fsc) fid = withForeignPtr fsc $ \sc ->
-  with fid $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot delete element: " ++ show rc)
-      $ c_spiel_element_del sc fid_ptr
-
----------------------------------------------------------------
--- Splicing configuration trees                              --
----------------------------------------------------------------
-
--- | A type providing an instance of Splicable may be spliced into a
---   configuration database, given an open Spiel Transaction.
-class Spliceable a where
-
-  -- | Splice just this object into the configuration database.
-  splice :: SpielTransaction
-         -> Fid -- ^ Parent fid to splice entity as a child of
-         -> a  -- ^ Entity to splice
-         -> IO ()
-
-  -- | Splice this object and any children into the configuration
-  --   database. The implementation is responsible for determining
-  --   how children may be accessed.
-  spliceTree :: SpielTransaction
-             -> Fid -- ^ Parent fid to splice the subtree onto
-             -> a -- ^ Root of the subtree to splice
-             -> IO ()
-
-instance Spliceable Profile where
-  splice t _ o = addProfile t (cp_fid o)
-  spliceTree t p o = do
-    splice t p o
-    fs <- children o :: IO [Filesystem]
-    mapM_ (spliceTree t (cp_fid o)) fs
-
--- XXX-MULTIPOOLS: use Root instead
-instance Spliceable Filesystem where
-  splice t p fs = addFilesystem t (cf_fid fs) p
-                                  (cf_redundancy fs) (cf_rootfid fs)
-                                  (cf_mdpool fs) (cf_imeta_pver fs)
-                                  (cf_params fs)
-  spliceTree t p fs = do
-    splice t p fs
-    nodes <- children fs :: IO [Node]
-    pools <- children fs :: IO [Pool]
-    racks <- children fs :: IO [Rack]
-    mapM_ (spliceTree t (cf_fid fs)) racks
-    mapM_ (spliceTree t (cf_fid fs)) nodes
-    mapM_ (spliceTree t (cf_fid fs)) pools
-
-instance Spliceable Node where
-  splice t p n = addNode t (cn_fid n) p (cn_memsize n) (cn_nr_cpu n)
-                           (cn_last_state n) (cn_flags n) (cn_pool_fid n)
-  spliceTree t p n = do
-    splice t p n
-    procs <- children n :: IO [Process]
-    mapM_ (spliceTree t (cn_fid n)) procs
-
-instance Spliceable Pool where
-  splice t p o = addPool t (pl_fid o) p (pl_pver_policy o)
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [PVer]
-    mapM_ (spliceTree t (pl_fid o)) kids
-
-instance Spliceable Rack where
-  splice t p o = addRack t (cr_fid o) p
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [Enclosure]
-    mapM_ (spliceTree t (cr_fid o)) kids
-
-instance Spliceable PVer where
-  splice t p o = case pv_data o of
-    Right s -> addPVerActual t (pv_fid o) p (pvs_attr s) (pvs_tolerance s)
-    Left s -> addPVerFormulaic t (pv_fid o) p (pvf_id s) (pvf_base s) (pvf_allowance s)
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [RackV]
-    mapM_ (spliceTree t (pv_fid o)) kids
-    poolVersionDone t (pv_fid o)
-
-instance Spliceable RackV where
-  splice t p o = let (RackV v) = o in addRackV t (cv_fid v) p (cv_real v)
-  spliceTree t p o = do
-    let (RackV v) = o
-    splice t p o
-    kids <- children o :: IO [EnclV]
-    mapM_ (spliceTree t (cv_fid v)) kids
-
-instance Spliceable EnclV where
-  splice t p o = let (EnclV v) = o in addEnclosureV t (cv_fid v) p (cv_real v)
-  spliceTree t p o = do
-    let (EnclV v) = o
-    splice t p o
-    kids <- children o :: IO [CtrlV]
-    mapM_ (spliceTree t (cv_fid v)) kids
-
-instance Spliceable CtrlV where
-  splice t p o = let (CtrlV v) = o in addControllerV t (cv_fid v) p (cv_real v)
-  spliceTree t p o = do
-    let (CtrlV v) = o
-    splice t p o
-    kids <- children o :: IO [DiskV]
-    mapM_ (spliceTree t (cv_fid v)) kids
-
-instance Spliceable DiskV where
-  splice t p o = let (DiskV v) = o in addDiskV t (cv_fid v) p (cv_real v)
-  spliceTree = splice
-
-instance Spliceable Process where
-  splice t p o = addProcess t (pc_fid o) p (pc_cores o) (pc_memlimit_as o)
-                              (pc_memlimit_rss o) (pc_memlimit_stack o)
-                              (pc_memlimit_memlock o) (pc_endpoint o)
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [Service]
-    mapM_ (spliceTree t (pc_fid o)) kids
-
-instance Spliceable Service where
-  splice t p o = addService t (cs_fid o) p $ ServiceInfo (cs_type o)
-                                                         (cs_endpoints o)
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [Sdev]
-    mapM_ (spliceTree t (cs_fid o)) kids
-
-instance Spliceable Sdev where
-  splice t p o = do
-     msd <- maybePeek peek (sd_disk o)
-     addDevice t (sd_fid o) p msd (sd_dev_idx o)
-               (toEnum . fromIntegral $ sd_iface o)
-               (toEnum . fromIntegral $ sd_media o)
-               (sd_bsize o) (sd_size o)
-               (sd_last_state o) (sd_flags o)
-               (sd_filename o)
-  spliceTree = splice
-
-instance Spliceable Enclosure where
-  splice t p o = addEnclosure t (ce_fid o) p
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [Controller]
-    mapM_ (spliceTree t (ce_fid o)) kids
-
-instance Spliceable Controller where
-  splice t p o = addController t (cc_fid o) p (cc_node_fid o)
-  spliceTree t p o = do
-    splice t p o
-    kids <- children o :: IO [Disk]
-    mapM_ (spliceTree t (cc_fid o)) kids
-
-instance Spliceable Disk where
-  splice t p o = addDisk t (ck_fid o) p
-  spliceTree t p o = splice t p o
-
----------------------------------------------------------------
--- Command interface                                         --
----------------------------------------------------------------
-
-serviceInit :: Service
-            -> IO ()
-serviceInit cs =
-  with (cs_fid cs) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot initialise service: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_service_init sc fid_ptr
-
-serviceStart :: Service
-             -> IO ()
-serviceStart cs =
-  with (cs_fid cs) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot start service: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_service_start sc fid_ptr
-
-serviceStop :: Service
-            -> IO ()
-serviceStop cs =
-  with (cs_fid cs) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot stop service: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_service_stop sc fid_ptr
-
-serviceHealth :: Service
-              -> IO ServiceHealth
-serviceHealth cs =
-  with (cs_fid cs) $ \fid_ptr ->
-    fmap ServiceHealth
-      $ throwIfNeg (\rc -> "Cannot query service health: " ++ show rc)
-        $ fmap (fromIntegral) $ c_spiel >>= \sc -> c_spiel_service_health sc fid_ptr
-
-serviceQuiesce :: Service
-               -> IO ()
-serviceQuiesce cs =
-  with (cs_fid cs) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot quiesce service: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_service_quiesce sc fid_ptr
-
 deviceAttach :: Fid  -- ^ Disk
              -> IO ()
-deviceAttach  fid =
+deviceAttach fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot attach device: " ++ show rc)
       $ c_spiel >>= \sc -> c_spiel_device_attach sc fid_ptr
@@ -624,59 +417,6 @@ deviceDetach fid =
   with fid $ \fid_ptr ->
     throwIfNonZero_ (\rc -> "Cannot detach device: " ++ show rc)
       $ c_spiel >>= \sc -> c_spiel_device_detach sc fid_ptr
-
-deviceFormat :: Disk
-             -> IO ()
-deviceFormat ck =
-  with (ck_fid ck) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot format device: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_device_format sc fid_ptr
-
-processStop :: Process
-            -> IO ()
-processStop pc =
-  with (pc_fid pc) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot stop process: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_process_stop sc fid_ptr
-
-processReconfig :: Process
-                -> IO ()
-processReconfig pc =
-  with (pc_fid pc) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot reconfigure process: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_process_reconfig sc fid_ptr
-
-processHealth :: Process
-              -> IO ServiceHealth
-processHealth pc =
-  with (pc_fid pc) $ \fid_ptr ->
-    fmap ServiceHealth
-      $ throwIfNeg (\rc -> "Cannot query process health: " ++ show rc)
-        $ fmap (fromIntegral) $ c_spiel >>= \sc -> c_spiel_process_health sc fid_ptr
-
-processQuiesce :: Process
-               -> IO ()
-processQuiesce pc =
-  with (pc_fid pc) $ \fid_ptr ->
-    throwIfNonZero_ (\rc -> "Cannot quiesce process: " ++ show rc)
-      $ c_spiel >>= \sc -> c_spiel_process_quiesce sc fid_ptr
-
-processListServices :: Process
-                    -> IO [RunningService]
-processListServices pc = mask $ \restore ->
-    alloca $ \fid_ptr ->
-      alloca $ \arr_ptr -> do
-        sc <- c_spiel
-        poke fid_ptr (pc_fid pc)
-        rc <- fmap fromIntegral . restore
-              $ c_spiel_process_list_services sc fid_ptr arr_ptr
-        if rc < 0
-        then error $ "Cannot list process services: " ++ show rc
-        else do
-          elt <- peek arr_ptr
-          services <- peekArray rc elt
-          -- _ <- freeRunningServices elt
-          return services
 
 poolRepairStart :: Fid -- ^ Pool Fid
                 -> IO ()
@@ -766,9 +506,7 @@ poolRebalanceStatus fid = mask $ \restore ->
           elt <- peek arr_ptr
           peekArray rc elt
 
--- XXX-MULTIPOOLS: Change it to site/pool stats?
-filesystemStatsFetch :: Fid
-                     -> IO FSStats
+filesystemStatsFetch :: Fid -> IO FSStats
 filesystemStatsFetch fid = with fid $ \fid_ptr -> do
   alloca $ \stats -> do
     rc <- c_spiel >>= \sc -> c_spiel_filesystem_stats_fetch sc fid_ptr stats
