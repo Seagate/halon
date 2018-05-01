@@ -70,7 +70,7 @@ data Host = Host
   -- ^ Halon settings, if any. Note that if unset, the node is ignored
   -- during @hctl bootstrap cluster@ command. This does not imply that
   -- the host is not loaded as part of the initial data.
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Host
 instance FromJSON Host
@@ -85,7 +85,7 @@ data BMC = BMC
   -- ^ Username
   , bmc_pass :: String
   -- ^ Password
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable BMC
 instance FromJSON BMC
@@ -101,7 +101,7 @@ data Enclosure = Enclosure
   -- ^ List of 'BMC' interfaces.
   , enc_hosts :: [Host]
   -- ^ List of 'Host's in the enclosure.
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable Enclosure
 instance FromJSON Enclosure
@@ -168,8 +168,8 @@ instance ToJSON HalonRole where
   toJSON = A.genericToJSON halonConfigOptions
 
 -- | Facts about the cluster.
-data M0Globals = M0Globals {
-    m0_data_units :: Word32 -- ^ As in genders
+data M0Globals = M0Globals
+  { m0_data_units :: Word32 -- ^ As in genders
   , m0_parity_units :: Word32  -- ^ As in genders
   , m0_md_redundancy :: Word32 -- ^ Metadata redundancy count
   , m0_failure_set_gen :: FailureSetScheme
@@ -187,21 +187,21 @@ data M0Globals = M0Globals {
   , m0_be_txgr_tx_nr_max :: Maybe Word32
   , m0_block_size :: Maybe Word32
   , m0_min_rpc_recvq_len :: Maybe Word32
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Globals
 instance FromJSON M0Globals
 instance ToJSON M0Globals
 
 -- | Devices attached to a 'M0Host'
-data M0Device = M0Device {
-    m0d_wwn :: String -- ^ World Wide Name of the device
+data M0Device = M0Device
+  { m0d_wwn :: String -- ^ World Wide Name of the device
   , m0d_serial :: String -- ^ Serial number of the device
   , m0d_bsize :: Word32 -- ^ Block size
   , m0d_size :: Word64 -- ^ Size of disk (in MB)
   , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
   , m0d_slot :: Int -- ^ Slot within the enclosure the device is in
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Device
 instance FromJSON M0Device
@@ -217,22 +217,22 @@ data M0Host = M0Host
   -- ^ Processes that should run on the host.
   , m0h_devices :: ![M0Device]
   -- ^ Information about devices attached to the host.
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Host
 instance FromJSON M0Host
 instance ToJSON M0Host
 
-data ProcessOwnership =
-    Managed      -- ^ Process is started/monitored/stopped by Halon.
+data ProcessOwnership
+  = Managed      -- ^ Process is started/monitored/stopped by Halon.
   | Independent  -- ^ Process is not controlled by Halon.
   deriving (Eq, Data, Show, Generic)
 instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership
 instance ToJSON ProcessOwnership
 
-data M0ProcessType =
-    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
+data M0ProcessType
+  = PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String ProcessOwnership -- ^ Process lives as part of a
                                      --   Clovis client, with given name.
   | PLM0d Word64  -- ^ Process runs in m0d at the given boot level.
@@ -274,18 +274,18 @@ data M0Process = M0Process
   -- ^ Process environment - additional
   , m0p_multiplicity :: Maybe Int
   -- ^ Process multiplicity - how many instances of this process should be started?
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Process
 instance FromJSON M0Process
 instance ToJSON M0Process
 
 -- | Information about a service
-data M0Service = M0Service {
-    m0s_type :: ServiceType        -- ^ E.g. ioservice, haservice.
+data M0Service = M0Service
+  { m0s_type :: ServiceType        -- ^ E.g. ioservice, haservice.
   , m0s_endpoints :: [Endpoint]    -- ^ Listen endpoints for the service itself.
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN.
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Service
 instance FromJSON M0Service
@@ -336,13 +336,13 @@ instance ToJSON M0Profile
 
 -- | Parsed initial data that halon buids its initial knowledge base
 -- about the cluster from.
-data InitialData = InitialData {
-    id_sites :: [Site]
+data InitialData = InitialData
+  { id_sites :: [Site]
   , id_m0_servers :: [M0Host]
   , id_m0_globals :: M0Globals
   , id_pools :: [M0Pool]
   , id_profiles :: [M0Profile]
-} deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable InitialData
 instance FromJSON InitialData

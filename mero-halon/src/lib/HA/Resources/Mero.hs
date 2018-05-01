@@ -47,12 +47,7 @@ import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.TH
 import           HA.SafeCopy hiding (Profile)
-import           Mero.ConfC
-  ( Bitmap
-  , Fid(..)
-  , PDClustAttr
-  , ServiceType
-  )
+import           Mero.ConfC (Bitmap, Fid(..), PDClustAttr, ServiceType)
 import           Mero.Lnet (Endpoint, readEndpoint)
 import qualified Mero.Lnet as Lnet
 import           Mero.Spiel (FSStats)
