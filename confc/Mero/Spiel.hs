@@ -119,7 +119,8 @@ txToBS (SpielTransaction ptr) verno = withForeignPtr ptr $ \c_ptr -> do
   valid <- Errno . negate <$> c_spiel_tx_validate c_ptr
   case valid of
     x | x == eOK -> alloca $ \c_str_ptr -> do
-          _ <- throwIf_ (/= 0) (\rc -> "Cannot dump Spiel transaction: " ++ show rc) (c_spiel_tx_to_str c_ptr verno c_str_ptr)
+          throwIfNonZero_ (\rc -> "Cannot dump Spiel transaction: " ++ show rc)
+            $ c_spiel_tx_to_str c_ptr verno c_str_ptr
           cs <- peek c_str_ptr
           bs <- packCString cs
           c_spiel_tx_str_free cs
@@ -507,9 +508,16 @@ poolRebalanceStatus fid = mask $ \restore ->
           peekArray rc elt
 
 filesystemStatsFetch :: Fid -> IO FSStats
-filesystemStatsFetch fid = with fid $ \fid_ptr -> do
-  alloca $ \stats -> do
-    rc <- c_spiel >>= \sc -> c_spiel_filesystem_stats_fetch sc fid_ptr stats
-    if rc < 0
-    then error $ "Cannot fetch filesystem stats: " ++ show rc
-    else peek stats
+filesystemStatsFetch fid =
+  with fid $ \fid_ptr ->
+    alloca $ \stats -> do
+      throwIfNonZero_ (\rc -> "Cannot fetch filesystem stats: " ++ show rc)
+        $ (c_spiel >>= \sc -> c_spiel_filesystem_stats_fetch sc fid_ptr stats)
+      peek stats
+
+---------------------------------------------------------------
+-- Utility                                                   --
+---------------------------------------------------------------
+
+throwIfNonZero_ :: (Eq a, Num a) => (a -> String) -> IO a -> IO ()
+throwIfNonZero_ = throwIf_ (/= 0)

@@ -61,7 +61,6 @@ module Mero.Spiel.Internal
   , c_spiel_tx_validate
   , m0_spiel_size
   , m0_spiel_tx_size
-  , throwIfNonZero_
   ) where
 
 import Mero.ConfC (Bitmap, Fid, PDClustAttr)
@@ -71,7 +70,6 @@ import Data.Word (Word32, Word64)
 
 import Foreign.C.String (CString)
 import Foreign.C.Types (CChar, CInt(..), CUInt(..), CSize(..))
-import Foreign.Marshal.Error (throwIf_)
 import Foreign.Ptr (Ptr)
 
 #include "confc_helpers.h"
@@ -367,13 +365,6 @@ foreign import capi "spiel/spiel.h m0_spiel_filesystem_stats_fetch"
                                  -> Ptr Fid
                                  -> Ptr FSStats
                                  -> IO CInt
-
----------------------------------------------------------------
--- Utility                                                   --
----------------------------------------------------------------
-
-throwIfNonZero_ :: (Eq a, Num a) => (a -> String) -> IO a -> IO ()
-throwIfNonZero_ = throwIf_ (/= 0)
 
 ---------------------------------------------------------------
 -- Cache validation                                          --
