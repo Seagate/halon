@@ -72,14 +72,14 @@ import           HA.Resources.HalonVars
 import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
 
-import           Mero.ConfC (Fid, PDClustAttr(..), confPVerLvlDisks)
+import           Mero.ConfC (Fid, PDClustAttr(..), confPVerLvlDrives)
 import           Mero.Lnet
 import           Mero.M0Worker
 import           Mero.Notification hiding (notifyMero)
 import           Mero.Spiel (SpielTransaction)
 import qualified Mero.Spiel as Spiel
 
-import           Control.Applicative
+import           Control.Applicative (liftA2)
 import qualified Control.Distributed.Process as DP
 import           Control.Monad (void, join)
 import           Control.Monad.Catch
@@ -678,14 +678,13 @@ txSyncToConfd force luuid lift tx = do
   else Log.rcLog' Log.DEBUG $ "Conf unchanged with hash " ++ show h' ++ ", not committing"
   Log.rcLog' Log.DEBUG "Transaction closed."
 
--- XXX-MULTIPOOLS: There should be multiple profiles and no filesystem.
-data TxConfData = TxConfData M0.M0Globals M0.Profile M0.Filesystem
+-- XXX-MULTIPOOLS: There should be multiple profiles.
+data TxConfData = TxConfData M0.M0Globals M0.Profile
 
 loadConfData :: PhaseM RC l (Maybe TxConfData)
-loadConfData = liftA3 TxConfData
+loadConfData = liftA2 TxConfData
             <$> getM0Globals
             <*> theProfile    -- XXX-MULTIPOOLS: no "global profile", please
-            <*> getFilesystem -- XXX-MULTIPOOLS: delete
 
 -- | Gets the current 'ConfUpdateVersion' used when dumping
 -- 'SpielTransaction' out. If this is not set, it's set to the default of @1@.
@@ -709,7 +708,7 @@ modifyConfUpdateVersion f = do
 
 -- XXX REFACTORME
 txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTransaction
-txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
+txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid)) t = do
   rg <- getGraph
   let root@M0.Root{..} = M0.getM0Root rg
       -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
@@ -725,15 +724,14 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
   m0synchronously lift $ do
     Spiel.addRoot t rt_fid rt_mdpool rt_imeta_pver m0_md_redundancy rootParams
     Spiel.addProfile t pfid -- XXX-MULTIPOOLS: multiple profiles
-    Spiel.addFilesystem t (M0.fid fs) pfid -- XXX-MULTIPOOLS: DELETEME
-        m0_md_redundancy rt_fid rt_mdpool rt_imeta_pver rootParams
   Log.rcLog' Log.DEBUG "Added root and profile"
   -- Sites, racks, encls, controllers, disks
   let sites = G.connectedTo root M0.IsParentOf rg :: [M0.Site]
   for_ sites $ \site -> do
+    m0synchronously lift $ Spiel.addSite t (M0.fid site)
     let racks = G.connectedTo site M0.IsParentOf rg :: [M0.Rack]
     for_ racks $ \rack -> do
-      m0synchronously lift $ Spiel.addRack t (M0.fid rack) (M0.fid fs)
+      m0synchronously lift $ Spiel.addRack t (M0.fid rack) (M0.fid site)
       let encls = G.connectedTo rack M0.IsParentOf rg :: [M0.Enclosure]
       for_ encls $ \encl -> do
         m0synchronously lift $ Spiel.addEnclosure t (M0.fid encl) (M0.fid rack)
@@ -742,9 +740,9 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
           -- Get node fid
           let Just (node :: M0.Node) = G.connectedFrom M0.IsOnHardware ctrl rg
           m0synchronously lift $ Spiel.addController t (M0.fid ctrl) (M0.fid encl) (M0.fid node)
-          let disks = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
-          for_ disks $ \disk -> do
-            m0synchronously lift $ Spiel.addDisk t (M0.fid disk) (M0.fid ctrl)
+          let drives = G.connectedTo ctrl M0.IsParentOf rg :: [M0.Disk]
+          for_ drives $ \drive -> do
+            m0synchronously lift $ Spiel.addDrive t (M0.fid drive) (M0.fid ctrl)
   -- Nodes, processes, services, sdevs
   for_ (M0.getM0Nodes rg) $ \node -> do
     let attrs =
@@ -763,7 +761,7 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
         getMem _ = Nothing
         getCpuCount (Cas.HA_CPU_COUNT x) = Just x
         getCpuCount _ = Nothing
-    m0synchronously lift $ Spiel.addNode t (M0.fid node) (M0.fid fs) memsize cpucount 0 0 rt_mdpool
+    m0synchronously lift $ Spiel.addNode t (M0.fid node) memsize cpucount 0 0
     let procs = G.connectedTo node M0.IsParentOf rg :: [M0.Process]
         ep2s = T.unpack . encodeEndpoint
     for_ procs $ \proc@M0.Process{..} -> do
@@ -787,19 +785,22 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                          M0.PVer _ (Right pva) -> negate . _pa_P $ M0.va_attrs pva
                          M0.PVer _ _ -> 0
   for_ pools $ \pool -> do
-    m0synchronously lift $ Spiel.addPool t (M0.fid pool) (M0.fid fs) 0
+    m0synchronously lift $ do
+      Spiel.addProfilePool t pfid (M0.fid pool)
+      Spiel.addPool t (M0.fid pool) 0
     let pvers = sortOn pvNegWidth $ G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
     for_ pvers $ \pver -> do
       case M0.v_data pver of
         Right pva -> do
-          -- XXX-MULTIPOOLS: M0.SiteV
           m0synchronously lift $ Spiel.addPVerActual t (M0.fid pver) (M0.fid pool) (M0.va_attrs pva) (M0.va_tolerance pva)
           let sitevs = G.connectedTo pver M0.IsParentOf rg :: [M0.SiteV]
           for_ sitevs $ \sitev -> do
+            let Just (site :: M0.Site) = G.connectedFrom M0.IsRealOf sitev rg
+            m0synchronously lift $ Spiel.addSiteV t (M0.fid sitev) (M0.fid pver) (M0.fid site)
             let rackvs = G.connectedTo sitev M0.IsParentOf rg :: [M0.RackV]
             for_ rackvs $ \rackv -> do
               let Just (rack :: M0.Rack) = G.connectedFrom M0.IsRealOf rackv rg
-              m0synchronously lift $ Spiel.addRackV t (M0.fid rackv) (M0.fid pver) (M0.fid rack)
+              m0synchronously lift $ Spiel.addRackV t (M0.fid rackv) (M0.fid sitev) (M0.fid rack)
               let enclvs = G.connectedTo rackv M0.IsParentOf rg :: [M0.EnclosureV]
               for_ enclvs $ \enclv -> do
                 let Just (encl :: M0.Enclosure) = G.connectedFrom M0.IsRealOf enclv rg
@@ -808,10 +809,10 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                 for_ ctrlvs $ \ctrlv -> do
                   let Just (ctrl :: M0.Controller) = G.connectedFrom M0.IsRealOf ctrlv rg
                   m0synchronously lift $ Spiel.addControllerV t (M0.fid ctrlv) (M0.fid enclv) (M0.fid ctrl)
-                  let diskvs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
-                  for_ diskvs $ \diskv -> do
-                    let Just (disk :: M0.Disk) = G.connectedFrom M0.IsRealOf diskv rg
-                    m0synchronously lift $ Spiel.addDiskV t (M0.fid diskv) (M0.fid ctrlv) (M0.fid disk)
+                  let drivevs = G.connectedTo ctrlv M0.IsParentOf rg :: [M0.DiskV]
+                  for_ drivevs $ \drivev -> do
+                    let Just (drive :: M0.Disk) = G.connectedFrom M0.IsRealOf drivev rg
+                    m0synchronously lift $ Spiel.addDriveV t (M0.fid drivev) (M0.fid ctrlv) (M0.fid drive)
           m0synchronously lift $ Spiel.poolVersionDone t (M0.fid pver)
         Left pvf -> do
           base <- lookupConfObjByFid (M0.vf_base pvf)
@@ -820,12 +821,12 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid) fs) t = do
                    ++ " because base pver cannot be found"
             Just (Right pva) -> do
               let PDClustAttr n k p _ _ = M0.va_attrs pva
-              if M0.vf_allowance pvf !! confPVerLvlDisks <= p - (n + 2*k)
+              if M0.vf_allowance pvf !! confPVerLvlDrives <= p - (n + 2*k)
               then m0synchronously lift $ Spiel.addPVerFormulaic t (M0.fid pver) (M0.fid pool)
                             (M0.vf_id pvf) (M0.vf_base pvf) (M0.vf_allowance pvf)
               else Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                      ++ " because it doesn't meet"
-                     ++ " allowance[M0_CONF_PVER_LVL_DISKS] <=  P - (N+2K) criteria"
+                     ++ " allowance[M0_CONF_PVER_LVL_DRIVES] <=  P - (N+2K) criteria"
             Just _ ->
               Log.rcLog' Log.WARN $ "Ignoring pool version " ++ show pvf
                  ++ " because base pver is not an actual pversion"

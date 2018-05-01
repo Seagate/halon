@@ -317,7 +317,6 @@ data HAStateCallbacks = HSC
 --
 initHAState :: RPCAddress
             -> Fid -- ^ Process Fid
-            -> Fid -- ^ Profile Fid -- XXX-MULTIPOOLS: drop `profFid` argument?
             -> Fid -- ^ HA Service Fid
             -> Fid -- ^ RM Service Fid
             -> HAStateCallbacks
@@ -340,7 +339,7 @@ initHAState :: RPCAddress
             -> (HALink -> Word64 -> IO ())
                -- ^ Message on the given link will never be delivered.
             -> IO ()
-initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
+initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
             ha_state_entrypoint_cb
             ha_state_link_connected ha_state_link_reused
             ha_state_link_disconnecting ha_state_link_disconnected
@@ -377,10 +376,9 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
         . (SomeFunPtr wmsgcallback:)
         )
       rc <- with procFid $ \procPtr ->
-              with profFid $ \profPtr ->
-                with haFid $ \haPtr ->
-                  with rmFid $ \rmPtr ->
-                    ha_state_init cRPCAddr procPtr profPtr haPtr rmPtr pcbs
+            with haFid $ \haPtr ->
+            with rmFid $ \rmPtr ->
+            ha_state_init cRPCAddr procPtr haPtr rmPtr pcbs
       check_rc "initHAState" rc
   where
 
@@ -466,11 +464,11 @@ initHAState (RPCAddress rpcAddr) procFid profFid haFid rmFid hsc
     wrapIsDeliveredCB = cwrapIsDeliveredCB $ \hl tag ->
         catch (ha_state_is_delivered (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
-            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+            "initHAState.wrapIsDeliveredCB: " ++ show (e :: SomeException)
     wrapIsCancelledCB = cwrapIsDeliveredCB $ \hl tag ->
         catch (ha_state_is_cancelled (HALink hl) tag) $ \e ->
           hPutStrLn stderr $
-            "initHAState.wrapDisconnectingCB: " ++ show (e :: SomeException)
+            "initHAState.wrapIsCancelledCB: " ++ show (e :: SomeException)
 
 peekNote :: Ptr NVec -> IO NVec
 peekNote p = do
@@ -481,7 +479,7 @@ peekNote p = do
 data HAStateCallbacksV
 
 foreign import capi ha_state_init ::
-    CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
+    CString -> Ptr Fid -> Ptr Fid -> Ptr Fid -> Ptr HAStateCallbacksV -> IO CInt
 
 foreign import ccall "wrapper" cwrapEntryCB ::
                   (Ptr Word128 -> Ptr Fid -> Ptr Fid -> IO ())

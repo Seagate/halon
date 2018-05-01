@@ -12,31 +12,36 @@
 --
 
 module Mero.Spiel.Internal
-  ( SpielTransactionV
+  ( SpielContextV
+  , SpielTransactionV
   , c_confc_validate_cache_of_tx
   , c_spiel
   , c_spiel_cmd_profile_set
-  , c_spiel_profile_add
-  , c_spiel_filesystem_add
+  , c_spiel_root_add
 
   , c_spiel_node_add
   , c_spiel_process_add
   , c_spiel_service_add
   , c_spiel_device_add
 
+  , c_spiel_site_add
   , c_spiel_rack_add
   , c_spiel_enclosure_add
   , c_spiel_controller_add
-  , c_spiel_disk_add
+  , c_spiel_drive_add
 
   , c_spiel_pool_add
   , c_spiel_pver_actual_add
   , c_spiel_pver_formulaic_add
+  , c_spiel_site_v_add
   , c_spiel_rack_v_add
   , c_spiel_enclosure_v_add
   , c_spiel_controller_v_add
-  , c_spiel_disk_v_add
+  , c_spiel_drive_v_add
   , c_spiel_pool_version_done
+
+  , c_spiel_profile_add
+  , c_spiel_profile_pool_add
 
   , c_spiel_device_attach
   , c_spiel_device_detach
@@ -134,6 +139,7 @@ foreign import ccall "spiel/spiel.h m0_spiel_tx_to_str"
 foreign import capi "spiel/spiel.h m0_spiel_tx_str_free"
   c_spiel_tx_str_free :: CString -> IO ()
 
+-- XXX-MULTIPOOLS: DELETEME?
 foreign import capi "spiel/spiel.h m0_spiel_cmd_profile_set"
   c_spiel_cmd_profile_set :: Ptr SpielContextV
                           -> CString
@@ -143,152 +149,164 @@ foreign import capi "spiel/spiel.h m0_spiel_cmd_profile_set"
 -- Configuration management                                  --
 ---------------------------------------------------------------
 
-foreign import capi "spiel/spiel.h m0_spiel_profile_add"
-  c_spiel_profile_add :: Ptr SpielTransactionV
-                      -> Ptr Fid
-                      -> IO CInt
-
--- XXX FIXME: ccall/capi const
-foreign import ccall "spiel/spiel.h m0_spiel_filesystem_add"
-  c_spiel_filesystem_add :: Ptr SpielTransactionV
-                         -> Ptr Fid -- ^ fid of the filesystem
-                         -> Ptr Fid -- ^ fid of the parent profile
-                         -> CUInt   -- ^ metadata redundancy count
-                         -> Ptr Fid -- ^ root's fid of filesystem
-                         -> Ptr Fid -- ^ metadata pool
-                         -> Ptr Fid -- ^ imeta pver
-                         -> Ptr (Ptr CChar) -- ^ NULL-terminated array of command-line like parameters
-                         -> IO CInt
+-- XXX ccall/capi const?
+foreign import ccall "spiel/spiel.h m0_spiel_root_add"
+  c_spiel_root_add :: Ptr SpielTransactionV
+                   -> Ptr Fid         -- ^ rootfid
+                   -> Ptr Fid         -- ^ mdpool
+                   -> Ptr Fid         -- ^ imeta_pver
+                   -> CUInt           -- ^ mdredundancy
+                   -> Ptr (Ptr CChar) -- ^ params (NULL-terminated array)
+                   -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_node_add"
   c_spiel_node_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the filesystem
-                   -> Ptr Fid -- ^ fid of the parent profile
-                   -> Word32
-                   -> Word32
-                   -> Word64
-                   -> Word64
-                   -> Ptr Fid -- ^ Pool fid
+                   -> Ptr Fid
+                   -> Word32  -- ^ memsize
+                   -> Word32  -- ^ nr_cpu
+                   -> Word64  -- ^ last_state
+                   -> Word64  -- ^ flags
                    -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_process_add"
   c_spiel_process_add :: Ptr SpielTransactionV
-                      -> Ptr Fid -- ^ fid of the filesystem
-                      -> Ptr Fid -- ^ fid of the parent profile
-                      -> Ptr Bitmap
-                      -> Word64
-                      -> Word64
-                      -> Word64
-                      -> Word64
-                      -> CString -- ^ Process endpoint
+                      -> Ptr Fid
+                      -> Ptr Fid    -- ^ parent
+                      -> Ptr Bitmap -- ^ cores
+                      -> Word64     -- ^ memlimit_as
+                      -> Word64     -- ^ memlimit_rss
+                      -> Word64     -- ^ memlimit_stack
+                      -> Word64     -- ^ memlimit_memlock
+                      -> CString    -- ^ endpoint
                       -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_service_add"
   c_spiel_service_add :: Ptr SpielTransactionV
-                      -> Ptr Fid -- ^ fid of the filesystem
-                      -> Ptr Fid -- ^ fid of the parent profile
+                      -> Ptr Fid
+                      -> Ptr Fid -- ^ parent
                       -> Ptr ServiceInfo
                       -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_device_add"
   c_spiel_device_add :: Ptr SpielTransactionV
-                     -> Ptr Fid -- ^ fid of the filesystem
-                     -> Ptr Fid -- ^ fid of the parent service
-                     -> Ptr Fid -- ^ fid of the parent disk
-                     -> Word32 -- ^ Device index
-                     -> CInt -- ^ StorageDeviceInterfaceType
-                     -> CInt -- ^ StorageDeviceMediaType
-                     -> Word32
-                     -> Word64
-                     -> Word64
-                     -> Word64
-                     -> CString
+                     -> Ptr Fid
+                     -> Ptr Fid -- ^ parent
+                     -> Ptr Fid -- ^ drive
+                     -> Word32  -- ^ dev_idx
+                     -> CInt    -- ^ iface :: StorageDeviceInterfaceType
+                     -> CInt    -- ^ media :: StorageDeviceMediaType
+                     -> Word32  -- ^ bsize
+                     -> Word64  -- ^ size
+                     -> Word64  -- ^ last_state
+                     -> Word64  -- ^ flags
+                     -> CString -- ^ filename
                      -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_site_add"
+  c_spiel_site_add :: Ptr SpielTransactionV
+                   -> Ptr Fid
+                   -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_rack_add"
   c_spiel_rack_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the rack
-                   -> Ptr Fid -- ^ fid of the parent filesystem
+                   -> Ptr Fid
+                   -> Ptr Fid -- ^ parent
                    -> IO CInt
-
 
 foreign import capi "spiel/spiel.h m0_spiel_enclosure_add"
   c_spiel_enclosure_add :: Ptr SpielTransactionV
-                        -> Ptr Fid -- ^ fid of the enclosure
-                        -> Ptr Fid -- ^ fid of the parent rack
+                        -> Ptr Fid
+                        -> Ptr Fid -- ^ parent
                         -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_controller_add"
   c_spiel_controller_add :: Ptr SpielTransactionV
-                         -> Ptr Fid -- ^ fid of the filesystem
-                         -> Ptr Fid -- ^ fid of the parent profile
-                         -> Ptr Fid -- ^ Node
+                         -> Ptr Fid
+                         -> Ptr Fid -- ^ parent
+                         -> Ptr Fid -- ^ node
                          -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_disk_add"
-  c_spiel_disk_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the filesystem
-                   -> Ptr Fid -- ^ fid of the parent profile
-                   -> IO CInt
+foreign import capi "spiel/spiel.h m0_spiel_drive_add"
+  c_spiel_drive_add :: Ptr SpielTransactionV
+                    -> Ptr Fid
+                    -> Ptr Fid -- ^ parent
+                    -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pool_add"
   c_spiel_pool_add :: Ptr SpielTransactionV
-                   -> Ptr Fid -- ^ fid of the pool
-                   -> Ptr Fid -- ^ fid of the parent filesystem
-                   -> Word32  -- ^ pool order
+                   -> Ptr Fid
+                   -> Word32  -- ^ pver_policy
                    -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pver_actual_add"
   c_spiel_pver_actual_add :: Ptr SpielTransactionV
-                          -> Ptr Fid -- ^ fid of the pver
-                          -> Ptr Fid -- ^ fid of the parent pool
-                          -> Ptr PDClustAttr
-                          -> Ptr Word32 -- ^ failures vec
-                          -> Word32     -- ^ failures vec length
+                          -> Ptr Fid
+                          -> Ptr Fid         -- ^ parent
+                          -> Ptr PDClustAttr -- ^ attrs
+                          -> Ptr Word32      -- ^ tolerance
+                          -> Word32          -- ^ tolerance_len
                           -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pver_formulaic_add"
   c_spiel_pver_formulaic_add :: Ptr SpielTransactionV
-                             -> Ptr Fid -- ^ fid of the pver
-                             -> Ptr Fid -- ^ fid of the parent pool
-                             -> Word32  -- ^ index
-                             -> Ptr Fid -- ^ fid of the base pver
-                             -> Ptr Word32 -- ^ allowance vector
-                             -> Word32     -- ^ allowance vector length
+                             -> Ptr Fid
+                             -> Ptr Fid    -- ^ parent
+                             -> Word32     -- ^ index
+                             -> Ptr Fid    -- ^ base_pver
+                             -> Ptr Word32 -- ^ allowance
+                             -> Word32     -- ^ allowance_len
                              -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_site_v_add"
+  c_spiel_site_v_add :: Ptr SpielTransactionV
+                     -> Ptr Fid
+                     -> Ptr Fid -- ^ parent
+                     -> Ptr Fid -- ^ real
+                     -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_rack_v_add"
   c_spiel_rack_v_add :: Ptr SpielTransactionV
-                     -> Ptr Fid -- ^ fid of the filesystem
-                     -> Ptr Fid -- ^ fid of the parent profile
-                     -> Ptr Fid -- ^ Node
+                     -> Ptr Fid
+                     -> Ptr Fid -- ^ parent
+                     -> Ptr Fid -- ^ real
                      -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_enclosure_v_add"
   c_spiel_enclosure_v_add :: Ptr SpielTransactionV
-                          -> Ptr Fid -- ^ fid of the filesystem
-                          -> Ptr Fid -- ^ fid of the parent profile
-                          -> Ptr Fid -- ^ Node
+                          -> Ptr Fid
+                          -> Ptr Fid -- ^ parent
+                          -> Ptr Fid -- ^ real
                           -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_controller_v_add"
   c_spiel_controller_v_add :: Ptr SpielTransactionV
-                           -> Ptr Fid -- ^ fid of the filesystem
-                           -> Ptr Fid -- ^ fid of the parent profile
-                           -> Ptr Fid -- ^ Node
+                           -> Ptr Fid
+                           -> Ptr Fid -- ^ parent
+                           -> Ptr Fid -- ^ real
                            -> IO CInt
 
-foreign import capi "spiel/spiel.h m0_spiel_disk_v_add"
-  c_spiel_disk_v_add :: Ptr SpielTransactionV
-                     -> Ptr Fid -- ^ fid of the disk_v
-                     -> Ptr Fid -- ^ fid of the parent controller_v
-                     -> Ptr Fid -- ^ Real
-                     -> IO CInt
+foreign import capi "spiel/spiel.h m0_spiel_drive_v_add"
+  c_spiel_drive_v_add :: Ptr SpielTransactionV
+                      -> Ptr Fid
+                      -> Ptr Fid -- ^ parent
+                      -> Ptr Fid -- ^ real
+                      -> IO CInt
 
 foreign import capi "spiel/spiel.h m0_spiel_pool_version_done"
   c_spiel_pool_version_done :: Ptr SpielTransactionV
-                            -> Ptr Fid -- ^ fid of the filesystem
+                            -> Ptr Fid
                             -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_profile_add"
+  c_spiel_profile_add :: Ptr SpielTransactionV
+                      -> Ptr Fid
+                      -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_profile_pool_add"
+  c_spiel_profile_pool_add :: Ptr SpielTransactionV
+                           -> Ptr Fid -- ^ profile
+                           -> Ptr Fid -- ^ pool
+                           -> IO CInt
 
 ---------------------------------------------------------------
 -- Command interface                                         --
@@ -362,7 +380,6 @@ foreign import capi "confc_helpers.h halon_interface_spiel"
 
 foreign import capi "spiel/spiel.h m0_spiel_filesystem_stats_fetch"
   c_spiel_filesystem_stats_fetch :: Ptr SpielContextV
-                                 -> Ptr Fid
                                  -> Ptr FSStats
                                  -> IO CInt
 

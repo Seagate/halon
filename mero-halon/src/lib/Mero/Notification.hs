@@ -195,13 +195,12 @@ globalResourceGraphCache = unsafePerformIO $ newIORef Nothing
 withNI :: forall m a. (MonadIO m, MonadProcess m, MonadCatch m)
                => RPCAddress
                -> Fid -- ^ Process Fid
-               -> Fid -- ^ Profile Fid
                -> Fid -- ^ HA Service Fid
                -> Fid -- ^ RM Service Fid
                -> (NIRef -> m a)
                -> m a
-withNI addr processFid profileFid haFid rmFid f =
-    liftProcess (initializeInternal addr processFid profileFid haFid rmFid)
+withNI addr processFid haFid rmFid f =
+    liftProcess (initializeInternal addr processFid haFid rmFid)
       >>= (`withMVarProcess` f)
   where
     trySome :: m a -> m (Either SomeException a)
@@ -234,13 +233,12 @@ withNI addr processFid profileFid haFid rmFid f =
 -- 'withNI' which will release the lock. This is to ensure
 -- that finalization doesn't happen between 'initializeInternal' and
 -- 'withNI'.
-initializeInternal :: RPCAddress -- ^ Listen address.
+initializeInternal :: RPCAddress -- ^ Listen address
                    -> Fid        -- ^ Process FID
-                   -> Fid        -- ^ Profile FID
                    -> Fid        -- ^ HA Service FID
                    -> Fid        -- ^ RM Service FID
                    -> Process (MVar EndpointRef, EndpointRef, NIRef)
-initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
+initializeInternal addr processFid haFid rmFid = liftIO (takeMVar globalEndpointRef) >>= \ref -> case ref of
   EndpointRef { _erNIRef = Just niRef } -> do
     say "initializeInternal: using existing endpoint"
     return (globalEndpointRef, ref, niRef)
@@ -254,7 +252,7 @@ initializeInternal addr processFid profileFid haFid rmFid = liftIO (takeMVar glo
         fdone <- liftIO $ newEmptyMVar
         (barrier, niRef) <- liftGlobalM0 $
            initializeHAStateCallbacks (processNode proc)
-             addr processFid profileFid haFid rmFid fbarrier fdone
+             addr processFid haFid rmFid fbarrier fdone
         eresult <- liftIO $ takeMVar barrier
         case eresult of
           Left exc -> Catch.throwM exc
@@ -324,7 +322,6 @@ actionOnNi ref = atomically . writeTChan (_ni_worker ref)
 initializeHAStateCallbacks :: LocalNode
                            -> RPCAddress
                            -> Fid -- ^ Process Fid.
-                           -> Fid -- ^ Profile Fid.
                            -> Fid -- ^ HA Service Fid.
                            -> Fid -- ^ RM Service Fid.
                            -> TMVar () -- ^ The caller should fill this TMVar when
@@ -332,7 +329,7 @@ initializeHAStateCallbacks :: LocalNode
                            -> MVar () -- ^ This MVar will be filled when the ha_interface
                                       -- is terminated.
                            -> IO (MVar (Either SomeException M0Worker), NIRef)
-initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier fdone = do
+initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
     taskPool <- newTChanIO
     niRef <- NIRef <$> newMVar  Map.empty
                    <*> newIORef Map.empty
@@ -352,7 +349,7 @@ initializeHAStateCallbacks lnode addr processFid profileFid haFid rmFid fbarrier
          }
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
-             er <- Catch.try $ initHAState addr processFid profileFid haFid rmFid
+             er <- Catch.try $ initHAState addr processFid haFid rmFid
                             hsc
                             (ha_entrypoint niRef)
                             (ha_connected niRef)

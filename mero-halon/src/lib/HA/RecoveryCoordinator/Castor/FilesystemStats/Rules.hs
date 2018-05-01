@@ -15,11 +15,7 @@ module HA.RecoveryCoordinator.Castor.FilesystemStats.Rules
 import           HA.RecoveryCoordinator.Actions.Mero (getClusterStatus)
 import           HA.RecoveryCoordinator.Castor.FilesystemStats.Events
   (StatsUpdated(..))
-import           HA.RecoveryCoordinator.Mero.Actions.Conf
-  ( getFilesystem
-  , getRoot
-  , theProfile
-  )
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (getRoot, theProfile)
 import           HA.RecoveryCoordinator.Mero.Actions.Core (mkUnliftProcess)
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( withSpielIO
@@ -75,18 +71,16 @@ periodicQueryStats = define "castor::filesystem::stats::fetch" $ do
                   . right (M0.FilesystemStats now)
                   $ x
 
-    mfs <- getFilesystem -- XXX-MULTIPOOLS
     mstatus <- getClusterStatus <$> getGraph
-    case ((,) <$> mfs <*> mstatus) of
-      Nothing ->
-        Log.rcLog' Log.DEBUG "No filesystem found in graph."
-      Just (_, M0.MeroClusterState _ rl _) | rl <= M0.BootLevel 1 ->
+    case mstatus of
+      Nothing -> Log.rcLog' Log.DEBUG "No M0.MeroClusterState found in graph."
+      Just (M0.MeroClusterState _ rl _) | rl <= M0.BootLevel 1 ->
         Log.rcLog' Log.DEBUG $ "Cluster is on runlevel " ++ show rl
-      Just (fs, _) -> do
+      Just _ -> do
         -- XXX-MULTIPOOLS: We should support multiple profiles here.
         mprof <- theProfile
         void . withSpielIO . withRConfIO mprof
-          $ try (Spiel.filesystemStatsFetch (M0.fid fs)) >>= unlift . next
+          $ try Spiel.filesystemStatsFetch >>= unlift . next
         continue stats_fetched
     continue $ timeout queryInterval stats_fetch
 

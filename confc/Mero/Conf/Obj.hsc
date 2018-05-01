@@ -19,10 +19,10 @@
 --
 module Mero.Conf.Obj
   ( ServiceType(..)
-  , confPVerLvlDisks
+  , confPVerLvlDrives
   ) where
 
-#include "conf/obj.h" /* M0_CONF_PVER_LVL_DISKS */
+#include "conf/obj.h"  /* M0_CONF_PVER_LVL_DISKS */
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
@@ -31,8 +31,8 @@ import Data.Hashable (Hashable)
 import Data.SafeCopy (deriveSafeCopy, base)
 import GHC.Generics (Generic)
 
-confPVerLvlDisks :: Int
-confPVerLvlDisks = #{const M0_CONF_PVER_LVL_DISKS}
+confPVerLvlDrives :: Int
+confPVerLvlDrives = #{const M0_CONF_PVER_LVL_DRIVES}
 
 data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     = CST_MDS     -- ^ Meta-data service

@@ -136,8 +136,8 @@ instance Storable Cookie where
     #{poke struct m0_cookie, co_generation} p gen
 
 -- | @pdclust.h m0_pdclust_attr@
-data PDClustAttr = PDClustAttr {
-    _pa_N :: Word32
+data PDClustAttr = PDClustAttr
+  { _pa_N :: Word32
   , _pa_K :: Word32
   , _pa_P :: Word32
   , _pa_unit_size :: Word64

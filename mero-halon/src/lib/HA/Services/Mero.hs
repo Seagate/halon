@@ -406,13 +406,12 @@ m0dProcess parent conf = do
           "mero-kernel service failed to start: " ++ show i
         Control.Distributed.Process.die Shutdown
   where
-    profileFid = mcProfile conf
     processFid = mcProcess conf
     rmFid      = mcRM      conf
     haFid      = mcHA      conf
     haAddr = RPC.rpcAddress $ mcHAAddress conf
     withEp = Mero.Notification.withMero
-           . Mero.Notification.withNI haAddr processFid profileFid haFid rmFid
+           . Mero.Notification.withNI haAddr processFid haFid rmFid
 
     epHandler :: IOException -> Process ()
     epHandler e = do

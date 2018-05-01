@@ -36,7 +36,6 @@ typedef struct ha_state_callbacks {
    *      ha_state_link_connected request.
    *  * process_fid - Fid of the remote process that is requesting
    *      entrypoint.
-   *  * profile_fid - Fid of the remote prccess's profile.
    *
    * For each incoming request it's guarantees that either
    * ha_state_link_connected or ha_state_link_reused will be called, so
@@ -45,7 +44,6 @@ typedef struct ha_state_callbacks {
    */
   void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
                                    , const struct m0_fid *process_fid
-                                   , const struct m0_fid *profile_fid
                                    );
 
   /**
@@ -100,11 +98,9 @@ typedef struct ha_state_callbacks {
  *   * local_rpc_endpoint - endpoint address that HA interface should be
  *       listening on.
  *   * process_fid - Fid of the local HA process.
- *   * profile_fid - Fid of the profile that local HA process belongs to.
  * */
 int ha_state_init( const char *local_rpc_endpoint
                  , const struct m0_fid *process_fid
-                 , const struct m0_fid *profile_fid
                  , const struct m0_fid *ha_service_fid
                  , const struct m0_fid *rm_service_fid
                  , ha_state_callbacks_t *cbs);

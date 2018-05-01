@@ -60,26 +60,26 @@ import           Options.Schema.Builder
 
 -- | Mero kernel module configuration parameters
 data MeroKernelConf = MeroKernelConf
-       { mkcNodeUUID :: UUID    -- ^ Node UUID
-       } deriving (Eq, Generic, Show, Typeable)
+  { mkcNodeUUID :: UUID
+  } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroKernelConf
 instance ToJSON MeroKernelConf
 
 -- | Mero service configuration
 data MeroConf = MeroConf
-       { mcHAAddress        :: String         -- ^ Address of the HA service endpoint
-       , mcProfile          :: Fid            -- ^ FID of the current profile
-       , mcProcess          :: Fid            -- ^ Fid of the current process.
-       , mcHA               :: Fid            -- ^ Fid of the HA service.
-       , mcRM               :: Fid            -- ^ Fid of the RM service.
-       , mcKeepaliveFrequency :: Int
-       -- ^ Frequency of keepalive requests in seconds.
-       , mcKeepaliveTimeout :: Int
-       -- ^ Number of seconds after keepalive request until the
-       -- process is considered dead.
-       , mcKernelConfig     :: MeroKernelConf -- ^ Kernel configuration
-       }
-   deriving (Eq, Generic, Show, Typeable)
+  { mcHAAddress :: String -- ^ Address of the HA service endpoint.
+    -- XXX-MULTIPOOLS: Get rid of `mcProfile` field.
+  , mcProfile :: Fid      -- ^ FID of the current profile.
+  , mcProcess :: Fid      -- ^ Fid of the current process.
+  , mcHA :: Fid           -- ^ Fid of the HA service.
+  , mcRM :: Fid           -- ^ Fid of the RM service.
+  , mcKeepaliveFrequency :: Int
+  -- ^ Frequency of keepalive requests in seconds.
+  , mcKeepaliveTimeout :: Int
+  -- ^ Number of seconds after keepalive request until the
+  -- process is considered dead.
+  , mcKernelConfig :: MeroKernelConf -- ^ Kernel configuration.
+  } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
@@ -184,9 +184,9 @@ instance Binary InternalServiceReconnectReply
 --   - As part of the kernel (m0t1fs)
 --   - As a regular user-space m0d process (m0d)
 --   - Inside another process as a Clovis client
-data ProcessRunType =
-    M0D -- ^ Run 'm0d' service.
-  | M0T1FS -- ^ Run 'm0t1fs' service.
+data ProcessRunType
+  = M0D           -- ^ Run 'm0d' service.
+  | M0T1FS        -- ^ Run 'm0t1fs' service.
   | CLOVIS String -- ^ Run 'clovis' service under the given name.
   deriving (Ord, Eq, Show, Typeable, Generic)
 instance Hashable ProcessRunType

@@ -494,7 +494,7 @@ instance ToJSON ControllerState
 storageIndex ''ControllerState "83139b83-4170-47e2-be95-8a726c8159a6"
 deriveSafeCopy 0 'base ''ControllerState
 
-newtype Disk = Disk Fid
+newtype Disk = Disk Fid -- XXX-MULTIPOOLS: s/Disk/Drive/
   deriving (Eq, Ord, Show, Generic, Hashable, Typeable, ToJSON)
 
 instance ConfObj Disk where
@@ -598,7 +598,7 @@ instance ConfObj ControllerV where
 storageIndex ''ControllerV "d3ab3c01-198d-4612-9281-ddf8ce217910"
 deriveSafeCopy 0 'base ''ControllerV
 
-newtype DiskV = DiskV Fid
+newtype DiskV = DiskV Fid -- XXX-MULTIPOOLS: s/DiskV/DriveV/
   deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
 
 instance ConfObj DiskV where
