@@ -142,7 +142,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["s3cloviskvscli", True]
+        contents: ["s3cloviskvscli", Independent]
       m0p_services:
         - m0s_type:
             tag: CST_RMS
@@ -161,7 +161,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["s3server", False]
+        contents: ["s3server", ManagedByHalon]
       m0p_services:
         - m0s_type:
             tag: CST_RMS

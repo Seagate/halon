@@ -142,7 +142,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["clovis-app", True]
+        contents: ["clovis-app", Independent]
       m0p_services:
         - m0s_type:
             tag: CST_RMS
@@ -162,7 +162,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["s3server", False]
+        contents: ["s3server", ManagedByHalon]
       m0p_services:
         - m0s_type:
             tag: CST_RMS

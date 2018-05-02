@@ -125,6 +125,7 @@ import           HA.RecoveryCoordinator.Service.Events as Service
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources as R
 import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -953,7 +954,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
 
      let pLabel = if lvl == m0t1fsBootLevel
                   then (\case M0.PLM0t1fs -> True
-                              M0.PLClovis _ False -> True
+                              M0.PLClovis _ CI.ManagedByHalon -> True
                               _ -> False )
                   else (== (M0.PLM0d lvl))
 

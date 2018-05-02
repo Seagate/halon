@@ -57,6 +57,7 @@ import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources as R (Node)
 import           HA.Resources.Castor (Is(..))
 import qualified HA.Resources.Castor as Cas
+import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -242,7 +243,7 @@ calculateStopLevel = do
       -- We allow stopping a process on level 1 if there are no running
       -- PLM0t1fs processes or controlled PLClovis processes
       stillUnstopped <- unstoppedWithLabel
-                          (\case  (M0.PLClovis _ False) -> True
+                          (\case  (M0.PLClovis _ CI.ManagedByHalon) -> True
                                   M0.PLM0t1fs -> True
                                   _ -> False)
       return $ null stillUnstopped

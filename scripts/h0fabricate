@@ -527,7 +527,7 @@ class RoleMero(ToYaml):
         lines.append(indent(depth+3) + 'm0p_boot_level:')
         lines.append(indent(depth+4) + 'tag: PL{}'.format(self.proc_tag))
         if self.name in ('c0cat', 's3server'):
-            contents = '["{}", True]'.format(self.name)
+            contents = '["{}", Independent]'.format(self.name)
         else:
             contents = repr(self.proc_contents)
         lines.append(indent(depth+4) + 'contents: {}'.format(contents))

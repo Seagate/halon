@@ -45,6 +45,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..), Runs(..), Node(..))
 import           HA.Resources.Castor (Host(..), Is(..))
+import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note (getState, NotifyFailureEndpoints(..), showFid)
@@ -223,7 +224,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       messageProcessed uid
       Log.rcLog' Log.DEBUG $ "Configuration successful for " ++ showFid p
       case label of
-        M0.PLClovis _ True -> do
+        M0.PLClovis _ CI.Independent -> do
           Log.rcLog' Log.DEBUG
                       "Independent CLOVIS process; only writing configuration."
           modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
@@ -501,7 +502,7 @@ ruleProcessStarting = define "castor::process::starting" $ do
   start rule_init Nothing
   where
     isEphemeral p rg = case G.connectedTo p Has rg of
-      Just (M0.PLClovis _ True) -> True
+      Just (M0.PLClovis _ CI.Independent) -> True
       _ -> False
     onlineProc = select TAG_M0_CONF_HA_PROCESS_STARTING
 
@@ -612,7 +613,7 @@ ruleProcessStopping = define "castor::process::stopping" $ do
   startFork rule_init ()
   where
     isEphemeral p rg = case G.connectedTo p Has rg of
-      Just (M0.PLClovis _ True) -> True
+      Just (M0.PLClovis _ CI.Independent) -> True
       _ -> False
 
     stoppingProc (HAEvent eid (HAMsg (ProcessEvent et _ pid) meta)) ls _ = do
@@ -735,7 +736,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
       Just sender -> do
         let runType = case G.connectedTo p Has rg of
               Just M0.PLM0t1fs -> M0T1FS
-              Just (M0.PLClovis s False) -> CLOVIS s
+              Just (M0.PLClovis s CI.ManagedByHalon) -> CLOVIS s
               _                -> M0D
         sender . ProcessMsg $! StopProcess runType p
         t <- getHalonVar _hv_process_stop_timeout

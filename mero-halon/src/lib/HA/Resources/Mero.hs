@@ -844,11 +844,8 @@ deriveSafeCopy 0 'base ''ProcessLabel_0
 --   it should run.
 data ProcessLabel =
     PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
-  | PLClovis String Bool -- ^ Process lives as part of a Clovis client, with
-                         --   given name. If the second parameter is set to
-                         --   'True', then the process is independently
-                         --   controlled and should not be started/stopped
-                         --   by Halon.
+  | PLClovis String CI.ProcessOwnership -- ^ Process lives as part of a
+                                        --   Clovis client, with given name.
   | PLM0d BootLevel -- ^ Process runs in m0d at the given boot level.
                     --   Currently 0 = confd, 1 = other.
   | PLHalon  -- ^ Process lives inside Halon program space.
