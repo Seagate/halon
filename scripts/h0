@@ -28,6 +28,7 @@ export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
 ## -------------------------------------------------------------------
 
 PROG="${0##*/}"
+SUDO='sudo -E'
 
 cmd_setup() {
     stack setup
@@ -58,31 +59,31 @@ local_install_root() {
 }
 
 cmd_install() {
-    sudo $H0_SRC_DIR/scripts/install-halon-services -l
-    sudo $M0_SRC_DIR/scripts/install-mero-service -l
+    $SUDO $H0_SRC_DIR/scripts/install-halon-services -l
+    $SUDO $M0_SRC_DIR/scripts/install-mero-service -l
 }
 
 cmd_uninstall() {
     case ${1:-pass} in
         -c|--clean)
-            sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-            sudo systemctl start halon-cleanup
-            sudo systemctl start mero-cleanup;;
+            $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
+            $SUDO systemctl start halon-cleanup
+            $SUDO systemctl start mero-cleanup;;
         pass) ;;
         *) warn "[uninstall] Unknown option: $1";;
     esac
 
-    sudo $M0_SRC_DIR/scripts/install-mero-service -u
-    sudo $H0_SRC_DIR/scripts/install-halon-services -u
+    $SUDO $M0_SRC_DIR/scripts/install-mero-service -u
+    $SUDO $H0_SRC_DIR/scripts/install-halon-services -u
 }
 
 cmd_start() {
     cmd_uninstall
     cmd_install
-    sudo systemctl start halon-cleanup
-    sudo $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-    sudo $M0_SRC_DIR/utils/m0setup --halon-facts
-    sudo systemctl start halond
+    $SUDO systemctl start halon-cleanup
+    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
+    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts
+    $SUDO systemctl start halond
     halonctl mero bootstrap --verbose
     # display bootstrap progress, usually it completes under a minute
     { sleep 70; pkill -x watch; } &
@@ -94,8 +95,8 @@ cmd_start() {
 cmd_stop() {
     halonctl mero stop
     halonctl mero status
-    sudo systemctl stop halond
-    sudo systemctl stop mero-kernel
+    $SUDO systemctl stop halond
+    $SUDO systemctl stop mero-kernel
 
     case ${1:-pass} in
         -u|--uninstall) cmd_uninstall --clean;;
