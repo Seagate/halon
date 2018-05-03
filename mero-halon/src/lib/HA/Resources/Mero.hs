@@ -830,16 +830,6 @@ newtype BootLevel = BootLevel { unBootLevel :: Int }
 storageIndex ''BootLevel "1d4cb2fc-6dbf-4dd9-ae3e-e48bb7accce7"
 deriveSafeCopy 0 'base ''BootLevel
 
-data ProcessLabel_0 =
-    PLM0t1fs_0
-  | PLBootLevel_0 BootLevel -- ^ Process boot level. Currently 0 = confd, 1 = other0
-  | PLNoBoot_0  -- ^ Tag processes which should not boot.
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Hashable ProcessLabel_0
-
-deriveSafeCopy 0 'base ''ProcessLabel_0
-
 -- | Label to attach to a Mero process providing extra context about how
 --   it should run.
 data ProcessLabel =
@@ -855,13 +845,7 @@ instance Hashable ProcessLabel
 instance ToJSON ProcessLabel
 
 storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
-deriveSafeCopy 1 'extension ''ProcessLabel
-
-instance Migrate ProcessLabel where
-  type MigrateFrom ProcessLabel = ProcessLabel_0
-  migrate PLM0t1fs_0 = PLM0t1fs
-  migrate (PLBootLevel_0 x) = PLM0d x
-  migrate PLNoBoot_0 = PLHalon
+deriveSafeCopy 0 'base ''ProcessLabel
 
 -- | Process environment. Values stored here will be added to the environment
 --   file for the process.
