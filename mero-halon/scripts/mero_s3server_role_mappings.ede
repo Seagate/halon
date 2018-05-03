@@ -161,7 +161,7 @@
 {% endfor %}
       m0p_boot_level:
         tag: PLClovis
-        contents: ["s3server", ManagedByHalon]
+        contents: ["s3server", Managed]
       m0p_services:
         - m0s_type:
             tag: CST_RMS

@@ -224,8 +224,8 @@ instance FromJSON M0Host
 instance ToJSON M0Host
 
 data ProcessOwnership =
-    ManagedByHalon -- ^ Process is started/monitored/stopped by Halon.
-  | Independent    -- ^ Process is not controlled by Halon.
+    Managed      -- ^ Process is started/monitored/stopped by Halon.
+  | Independent  -- ^ Process is not controlled by Halon.
   deriving (Eq, Data, Show, Generic)
 instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership

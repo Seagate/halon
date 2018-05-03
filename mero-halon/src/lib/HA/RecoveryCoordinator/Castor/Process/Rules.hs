@@ -736,7 +736,7 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
       Just sender -> do
         let runType = case G.connectedTo p Has rg of
               Just M0.PLM0t1fs -> M0T1FS
-              Just (M0.PLClovis s CI.ManagedByHalon) -> CLOVIS s
+              Just (M0.PLClovis s CI.Managed) -> CLOVIS s
               _                -> M0D
         sender . ProcessMsg $! StopProcess runType p
         t <- getHalonVar _hv_process_stop_timeout

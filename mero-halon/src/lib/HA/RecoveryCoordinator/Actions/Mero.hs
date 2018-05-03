@@ -243,7 +243,7 @@ calculateStopLevel = do
       -- We allow stopping a process on level 1 if there are no running
       -- PLM0t1fs processes or controlled PLClovis processes
       stillUnstopped <- unstoppedWithLabel
-                          (\case  (M0.PLClovis _ CI.ManagedByHalon) -> True
+                          (\case  (M0.PLClovis _ CI.Managed) -> True
                                   M0.PLM0t1fs -> True
                                   _ -> False)
       return $ null stillUnstopped

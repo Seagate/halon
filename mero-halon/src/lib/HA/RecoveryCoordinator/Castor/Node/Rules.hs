@@ -954,7 +954,7 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
 
      let pLabel = if lvl == m0t1fsBootLevel
                   then (\case M0.PLM0t1fs -> True
-                              M0.PLClovis _ CI.ManagedByHalon -> True
+                              M0.PLClovis _ CI.Managed -> True
                               _ -> False )
                   else (== (M0.PLM0d lvl))
 
