@@ -35,10 +35,12 @@ cmd_setup() {
 }
 
 cmd_make() {
-    PKG_CONFIG_PATH=$M0_SRC_DIR LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        MERO_ROOT=$M0_SRC_DIR \
-        stack build mero-halon --ghc-options="${GHC_OPTS:--g -j4}" --test \
-        --no-run-tests "$@"
+    PKG_CONFIG_PATH=$M0_SRC_DIR \
+    MERO_ROOT=$M0_SRC_DIR \
+    stack build --ghc-options="${GHC_OPTS:--g -j4}" \
+        --extra-include-dirs="$M0_SRC_DIR" \
+        --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
+        --test --no-run-tests "$@"
 }
 
 cmd_rebuild() {
