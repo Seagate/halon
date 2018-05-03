@@ -1,18 +1,11 @@
 [mero]
-# the repo URL can be specified here if it's not the default
-# only one URL may be specified
-# example: the gerrit repo
+# Repository URL (e.g. https://github.com/seagate-ssg/halon.git).
 #repo = http://gerrit-sage.dco.colo.seagate.com:8080/mero
-# another example: a github mirror
-#repo = https://github.com/seagate-ssg/mero.git
 
-# revision can be any valid argument for `git rev-parse`,
-# e.g. branch name, commit id, HEAD etc.
-revision = master
-# a raw Gerrit refspec can be specified instead of revision
-#refspec = refs/changes/60/17060/1
-
-# other projects can be added in future
-#[sspl]
-#repo = XXX
+# Revision parameter as understood by `git rev-parse`
+# (e.g. branch name, commit sha1, HEAD~2).
 #revision = master
+
+# Gerrit refspec (e.g. refs/changes/60/17060/1).
+# NOTE: `refspec` value is ignored if `revision` is provided.
+#refspec =
