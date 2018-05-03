@@ -825,23 +825,6 @@ newtype BootLevel = BootLevel { unBootLevel :: Int }
 storageIndex ''BootLevel "1d4cb2fc-6dbf-4dd9-ae3e-e48bb7accce7"
 deriveSafeCopy 0 'base ''BootLevel
 
--- | Label to attach to a Mero process providing extra context about how
---   it should run.
-data ProcessLabel =
-    PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
-  | PLClovis String CI.ProcessOwnership -- ^ Process lives as part of a
-                                        --   Clovis client, with given name.
-  | PLM0d BootLevel -- ^ Process runs in m0d at the given boot level.
-                    --   Currently 0 = confd, 1 = other.
-  | PLHalon  -- ^ Process lives inside Halon program space.
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Hashable ProcessLabel
-instance ToJSON ProcessLabel
-
-storageIndex ''ProcessLabel "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
-deriveSafeCopy 0 'base ''ProcessLabel
-
 -- | Process environment. Values stored here will be added to the environment
 --   file for the process.
 data ProcessEnv =
@@ -972,7 +955,7 @@ $(mkDicts
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''HostHardwareInfo, ''CI.M0ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1030,7 +1013,7 @@ $(mkDicts
   , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''Cas.Host, ''R.Has, ''LNid)
   , (''Cas.Host, ''R.Runs, ''Node)
-  , (''Process, ''R.Has, ''ProcessLabel)
+  , (''Process, ''R.Has, ''CI.M0ProcessType)
   , (''Process, ''R.Has, ''ProcessEnv)
   , (''Process, ''R.Has, ''PID)
   , (''Process, ''Cas.Is, ''ProcessBootstrapped)
@@ -1050,7 +1033,7 @@ $(mkResRel
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''ProcessLabel, ''ConfUpdateVersion
+  , ''HostHardwareInfo, ''CI.M0ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1107,7 +1090,7 @@ $(mkResRel
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
   , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
-  , (''Process, Unbounded, ''R.Has, AtMostOne, ''ProcessLabel)
+  , (''Process, Unbounded, ''R.Has, AtMostOne, ''CI.M0ProcessType)
   , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
   , (''Process, Unbounded, ''Cas.Is, AtMostOne, ''ProcessBootstrapped)

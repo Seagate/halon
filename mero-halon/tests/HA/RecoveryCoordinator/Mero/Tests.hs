@@ -256,7 +256,7 @@ testProcessMultiplicity t pg = runDefaultTest t $ do
       unless (r == InitialDataLoaded) $ do
         fail $ "Initial data loaded unexpectedly with " ++ show r
       graph <- G.getGraph $ ta_mm ta
-      let procs = Process.getLabeled M0.PLM0t1fs graph
+      let procs = Process.getLabeled CI.PLM0t1fs graph
       liftIO $ assertEqual "Three m0t1fs processes" 3 (length procs)
   where
     mkData = do

@@ -224,7 +224,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       messageProcessed uid
       Log.rcLog' Log.DEBUG $ "Configuration successful for " ++ showFid p
       case label of
-        M0.PLClovis _ CI.Independent -> do
+        CI.PLClovis _ CI.Independent -> do
           Log.rcLog' Log.DEBUG
                       "Independent CLOVIS process; only writing configuration."
           modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
@@ -345,7 +345,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldHost = Proxy :: Proxy '("host", Maybe Host)
     fldSender = Proxy :: Proxy '("sender", Maybe (MeroToSvc -> Process ()))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
-    fldLabel = Proxy :: Proxy '("label", Maybe M0.ProcessLabel)
+    fldLabel = Proxy :: Proxy '("label", Maybe CI.M0ProcessType)
     fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
     fldStopJob = Proxy :: Proxy '("stop-listener", Maybe ListenerId)
 
@@ -430,18 +430,18 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       Nothing -> (False, "Can't retrieve process boot level or cluster status")
       Just (_, M0.MeroClusterState M0.OFFLINE _ _) ->
         (False, "Cluster disposition is offline")
-      Just (M0.PLM0d pl, M0.MeroClusterState M0.ONLINE rl _) ->
-        ( rl >= pl
+      Just (CI.PLM0d pl, M0.MeroClusterState M0.ONLINE rl _) ->
+        ( rl >= (M0.BootLevel pl)
         , printf "Can't start %s on cluster boot level %s" (showFid p) (show rl))
-      Just (M0.PLM0t1fs, M0.MeroClusterState M0.ONLINE rl _) ->
+      Just (CI.PLM0t1fs, M0.MeroClusterState M0.ONLINE rl _) ->
         ( True -- Allow starting m0t1fs on any level.
         , printf "Can't start m0t1fs on cluster boot level %s" (show rl)
         )
-      Just (M0.PLClovis _ _, M0.MeroClusterState M0.ONLINE rl _) ->
+      Just (CI.PLClovis _ _, M0.MeroClusterState M0.ONLINE rl _) ->
         ( rl >= m0t1fsBootLevel
         , printf "Can't start clovis on cluster boot level %s" (show rl)
         )
-      Just (M0.PLHalon, _) ->
+      Just (CI.PLHalon, _) ->
         (False, "Halon process should be started in halon:m0d.")
 
     checkIsNotHA p rg =
@@ -457,8 +457,8 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     warnProcessAlreadyOnline p rg = ( getState p rg == M0.PSOnline
                                     , "Process already online, restart will occur")
 
-    toType M0.PLM0t1fs = M0T1FS
-    toType (M0.PLClovis s _) = CLOVIS s
+    toType CI.PLM0t1fs = M0T1FS
+    toType (CI.PLClovis s _) = CLOVIS s
     toType _ = M0D
 
 -- | Handle process Starting notifications.
@@ -502,7 +502,7 @@ ruleProcessStarting = define "castor::process::starting" $ do
   start rule_init Nothing
   where
     isEphemeral p rg = case G.connectedTo p Has rg of
-      Just (M0.PLClovis _ CI.Independent) -> True
+      Just (CI.PLClovis _ CI.Independent) -> True
       _ -> False
     onlineProc = select TAG_M0_CONF_HA_PROCESS_STARTING
 
@@ -613,7 +613,7 @@ ruleProcessStopping = define "castor::process::stopping" $ do
   startFork rule_init ()
   where
     isEphemeral p rg = case G.connectedTo p Has rg of
-      Just (M0.PLClovis _ CI.Independent) -> True
+      Just (CI.PLClovis _ CI.Independent) -> True
       _ -> False
 
     stoppingProc (HAEvent eid (HAMsg (ProcessEvent et _ pid) meta)) ls _ = do
@@ -735,8 +735,8 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
     case msender of
       Just sender -> do
         let runType = case G.connectedTo p Has rg of
-              Just M0.PLM0t1fs -> M0T1FS
-              Just (M0.PLClovis s CI.Managed) -> CLOVIS s
+              Just CI.PLM0t1fs -> M0T1FS
+              Just (CI.PLClovis s CI.Managed) -> CLOVIS s
               _                -> M0D
         sender . ProcessMsg $! StopProcess runType p
         t <- getHalonVar _hv_process_stop_timeout

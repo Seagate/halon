@@ -610,7 +610,7 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 --
 -- * Clients start after boot level 1 is finished and cluster enters
 -- the 'M0.MeroClusterRunning' state. Currently this means
--- 'M0.PLM0t1fs' processes.
+-- 'CI.PLM0t1fs' processes.
 --
 -- This job always returns: it's not necessary for the caller to have
 -- a timeout.
@@ -726,7 +726,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     directly boot_level_0 $ do
       Just host <- getField . rget fldHost <$> get Local
-      startProcesses host (== M0.PLM0d (M0.BootLevel 0)) >>= \case
+      startProcesses host (== CI.PLM0d 0) >>= \case
         [] -> do
           notifyOnClusterTransition
           continue boot_level_1
@@ -739,7 +739,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     setPhaseIf boot_level_1
       (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 1) $ \() -> do
         Just host <- getField . rget fldHost <$> get Local
-        startProcesses host (== M0.PLM0d (M0.BootLevel 1)) >>= \case
+        startProcesses host (== CI.PLM0d 1) >>= \case
           [] -> do
             notifyOnClusterTransition
             continue boot_level_2
@@ -809,10 +809,10 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
        <+> fldWaitingProcs =: []
        <+> fldDispatch =: Dispatch [] (error "ruleStartProcessOnNode dispatcher") Nothing
 
-    m0t1fsProcess M0.PLM0t1fs = True
+    m0t1fsProcess CI.PLM0t1fs = True
     m0t1fsProcess _ = False
 
-    clovisProcess (M0.PLClovis _ _) = True
+    clovisProcess (CI.PLClovis _ _) = True
     clovisProcess _ = False
 
     dixInitSuccess DixInitSuccess _ _ = return $ Just ()
@@ -954,10 +954,10 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
      rg <- getGraph
 
      let pLabel = if lvl == m0t1fsBootLevel
-                  then (\case M0.PLM0t1fs -> True
-                              M0.PLClovis _ CI.Managed -> True
+                  then (\case CI.PLM0t1fs -> True
+                              CI.PLClovis _ CI.Managed -> True
                               _ -> False )
-                  else (== (M0.PLM0d lvl))
+                  else (== (CI.PLM0d $ M0.unBootLevel lvl))
 
          stillUnstopped = Node.getLabeledProcessesP node pLabel rg & filter
           (\p ->

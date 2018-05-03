@@ -31,6 +31,7 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import qualified HA.Resources.Castor.Initial as CI
 import           Helper.InitialData
 import qualified Helper.Runner as H
 import           Mero.Notification
@@ -76,7 +77,7 @@ testStopStart transport pg = do
       setPhase rule_init $ \(H.RuleHook caller) -> do
         rg <- getGraph
         let ps = listToMaybe $
-                 Process.getLabeled (M0.PLM0d $ M0.BootLevel 1) rg
+                 Process.getLabeled (CI.PLM0d 1) rg
                   & filter (\p -> getState p rg == M0.PSOnline)
         case ps of
           Nothing ->
@@ -150,7 +151,7 @@ testClientStartsAnyBootlevel transport pg = do
         rg <- getGraph
         case getClusterStatus rg of
           Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> do
-            case Process.getLabeled M0.PLM0t1fs rg of
+            case Process.getLabeled CI.PLM0t1fs rg of
               p : _ -> do
                 modify Local $ rlens fldCaller . rfield .~ Just caller
                 modify Local $ rlens fldOurProc . rfield .~ Just p

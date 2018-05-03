@@ -156,7 +156,7 @@ createMeroClientConfig host (M0.HostHardwareInfo memsize cpucnt lnid) = do
     let rg' = G.connect m0node M0.IsParentOf process
           >>> G.connect process M0.IsParentOf rmsService
           >>> G.connect process M0.IsParentOf haService
-          >>> G.connect process Has M0.PLM0t1fs
+          >>> G.connect process Has CI.PLM0t1fs
           >>> G.connect process Is M0.PSUnknown
           >>> G.connect (M0.getM0Root rg) M0.IsParentOf m0node
           >>> G.connect host Runs m0node
@@ -178,7 +178,7 @@ calculateRunLevel = do
       -- where we have a principal RM selected.
       prm <- getPrincipalRM
       confdprocs <- getGraph <&> \rg ->
-        Process.getLabeled (M0.PLM0d $ M0.BootLevel 0) rg & filter
+        Process.getLabeled (CI.PLM0d 0) rg & filter
           (\p -> any
               (\s -> M0.s_type s == CST_CONFD)
               (G.connectedTo p M0.IsParentOf rg)
@@ -196,7 +196,7 @@ calculateRunLevel = do
       -- We allow boot level 2 processes to start when all processes
       -- at level 1 have started.
       lvl1procs <- getGraph <&>
-        Process.getLabeled (M0.PLM0d $ M0.BootLevel 1)
+        Process.getLabeled (CI.PLM0d 1)
       onlineProcs <- getGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
       return $ length onlineProcs == length lvl1procs
@@ -240,14 +240,14 @@ calculateStopLevel = do
     guard (M0.BootLevel 0) = do
       -- We allow stopping a process on level i if there are no running
       -- processes on level i+1
-      stillUnstopped <- unstoppedWithLabel (== (M0.PLM0d $ M0.BootLevel 1))
+      stillUnstopped <- unstoppedWithLabel (== (CI.PLM0d 1))
       return $ null stillUnstopped
     guard (M0.BootLevel 1) = do
       -- We allow stopping a process on level 1 if there are no running
       -- PLM0t1fs processes or controlled PLClovis processes
       stillUnstopped <- unstoppedWithLabel
-                          (\case  (M0.PLClovis _ CI.Managed) -> True
-                                  M0.PLM0t1fs -> True
+                          (\case  (CI.PLClovis _ CI.Managed) -> True
+                                  CI.PLM0t1fs -> True
                                   _ -> False)
       return $ null stillUnstopped
     guard (M0.BootLevel 2) = return True

@@ -235,8 +235,8 @@ data M0ProcessType
   = PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String ProcessOwnership -- ^ Process lives as part of a
                                      --   Clovis client, with given name.
-  | PLM0d Word64  -- ^ Process runs in m0d at the given boot level.
-                  --   Currently 0 = confd, 1 = other.
+  | PLM0d Int  -- ^ Process runs in m0d at the given boot level.
+               --   Currently 0 = confd, 1 = other.
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Data, Show, Typeable, Generic)
 instance Hashable M0ProcessType
@@ -618,6 +618,7 @@ deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''ProcessOwnership
 deriveSafeCopy 0 'base ''M0ProcessType
+storageIndex           ''M0ProcessType "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC

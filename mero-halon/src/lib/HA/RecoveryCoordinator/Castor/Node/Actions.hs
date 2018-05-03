@@ -28,15 +28,16 @@ import qualified HA.Resources as R (Node)
 import           HA.Resources.Castor (Host(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
+import qualified HA.Resources.Castor.Initial as CI
 import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
--- the given 'M0.ProcessLabel'.
+-- the given 'CI.M0ProcessType'.
 --
 -- For processes on any node, see 'Node.getLabeled'.
 getLabeledProcesses :: R.Node
-                    -> M0.ProcessLabel
+                    -> CI.M0ProcessType
                     -> G.Graph
                     -> [M0.Process]
 getLabeledProcesses node label rg =
@@ -46,17 +47,17 @@ getLabeledProcesses node label rg =
    ]
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
--- a 'M0.ProcessLabel' satisfying the predicate.
+-- a 'CI.M0ProcessType' satisfying the predicate.
 --
 -- For processes on any node, see 'Node.getLabeledP'.
 getLabeledProcessesP :: R.Node
-                     -> (M0.ProcessLabel -> Bool)
+                     -> (CI.M0ProcessType -> Bool)
                      -> G.Graph
                      -> [M0.Process]
 getLabeledProcessesP node labelP rg =
   [ proc
   | proc <- getProcesses node rg
-  , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo proc Has rg]
+  , Just (lbl :: CI.M0ProcessType) <- [G.connectedTo proc Has rg]
   , labelP lbl
   ]
 
@@ -85,14 +86,14 @@ getUnstartedProcesses node rg =
 
 -- | Start all Mero processes labelled with the specified process label on
 -- a given node. Returns all the processes which are being started.
-startProcesses :: Host -> (M0.ProcessLabel -> Bool) -> PhaseM RC a [M0.Process]
+startProcesses :: Host -> (CI.M0ProcessType -> Bool) -> PhaseM RC a [M0.Process]
 startProcesses host labelP = do
   Log.actLog "startProcesses" [("host", show host)]
   rg <- getGraph
   let procs = [ proc
               | m0node :: M0.Node <- G.connectedTo host Runs rg
               , proc <- G.connectedTo m0node M0.IsParentOf rg
-              , Just (lbl :: M0.ProcessLabel) <- [G.connectedTo proc Has rg]
+              , Just (lbl :: CI.M0ProcessType) <- [G.connectedTo proc Has rg]
               , labelP lbl
               ]
   unless (null procs) $ do

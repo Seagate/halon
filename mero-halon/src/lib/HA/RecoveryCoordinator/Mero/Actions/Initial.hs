@@ -213,11 +213,7 @@ addProcess node devs CI.M0Process{..} = let
     mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss
                             m0p_mem_stack m0p_mem_memlock
                             cores ep
-    procLabel = case m0p_boot_level of
-      CI.PLM0t1fs -> M0.PLM0t1fs
-      CI.PLClovis a b -> M0.PLClovis a b
-      CI.PLM0d x -> M0.PLM0d $ M0.BootLevel (fromIntegral x)
-      CI.PLHalon -> M0.PLHalon
+    procLabel = m0p_boot_level
     mkEndpoint = do
         exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getGraph
         return $ findEP m0p_endpoint exProcEps

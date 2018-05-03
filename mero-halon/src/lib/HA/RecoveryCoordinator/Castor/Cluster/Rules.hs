@@ -44,6 +44,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC (ServiceType(CST_CONFD,CST_IOS,CST_MDS,CST_RMS))
@@ -193,9 +194,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
         , csrHosts  = hosts
         }
   where
-    getType (Just M0.PLM0t1fs) _ = "m0t1fs"
-    getType (Just (M0.PLClovis s _)) _ = s
-    getType (Just M0.PLHalon) _ = "halon"
+    getType (Just CI.PLM0t1fs) _ = "m0t1fs"
+    getType (Just (CI.PLClovis s _)) _ = s
+    getType (Just CI.PLHalon) _ = "halon"
     getType _ srvs = inferType srvs
     inferType srvs
       | any (\(M0.Service _ t _) -> t == CST_IOS) srvs = "ioservice"
@@ -467,7 +468,7 @@ requestStopMeroClient = defineSimpleTask "castor::cluster::client::request::stop
       Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
       Just p -> do
         rg <- getGraph
-        if G.isConnected p Has M0.PLM0t1fs rg
+        if G.isConnected p Has CI.PLM0t1fs rg
         then promulgateRC $ StopProcessRequest p
         else Log.rcLog' Log.WARN "Not a client process."
 
@@ -482,7 +483,7 @@ requestStartMeroClient = defineSimpleTask "castor::cluster::client::request::sta
     Log.rcLog' Log.DEBUG $ "Start mero client requested."
     lookupConfObjByFid fid >>= \case
       Nothing -> Log.rcLog' Log.WARN "Could not find associated process."
-      Just p -> G.isConnected p Has M0.PLM0t1fs <$> getGraph >>= \case
+      Just p -> G.isConnected p Has CI.PLM0t1fs <$> getGraph >>= \case
         True -> promulgateRC $ ProcessStartRequest p
         False -> Log.rcLog' Log.WARN "Not a client process."
 
