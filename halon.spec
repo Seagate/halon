@@ -1,10 +1,20 @@
+# build number
+%define h_build_num  %(test -n "$build_number" && echo "$build_number" || echo 1)
+
+# mero git revision
+#   assume that Mero package release has format 'buildnum_gitid_kernelver'
+%define h_mero_git_rev %(rpm -q --queryformat '%{RELEASE}' mero | cut -f2 -d_)
+
+# mero version
+%define h_mero_version %(rpm -q --queryformat '%{VERSION}-%{RELEASE}' mero)
+
 Summary: halon
 Name: halon
-Version: %{_version}
-Release: %{_buildnumber}_%{_gitrevision}_%{_merogitrev}%{?dist}
+Version: %{h_version}
+Release: %{h_build_num}_%{h_git_revision}_m0%{h_mero_git_rev}%{?dist}
 License: All rights reserved
 Group: System Environment/Daemons
-Source: %{name}-%{_version}.tar.gz
+Source: %{name}-%{h_version}.tar.gz
 
 BuildRequires: binutils-devel
 BuildRequires: libgenders-devel
@@ -20,7 +30,7 @@ BuildRequires: stack
 Requires: genders
 Requires: gmp
 Requires: leveldb
-Requires: mero = %{_meroversion}
+Requires: mero = %{h_mero_version}
 Requires: pcre
 
 %description

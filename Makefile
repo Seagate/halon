@@ -1,13 +1,9 @@
 # This project uses The Stack build tool. Please refer to the README
 # for build instructions.
 
-BUILD_NUMBER    := 1
 GITREV          := git$(shell git rev-parse --short HEAD)
 # assume the first part of `git describe` is a tag in format 'n.m'
 VERSION         := $(shell git describe | cut -f1 -d-)
-# assume that Mero package release has format 'buildnum_gitid_kernelver',
-MERO_GITREV     := m0$(shell rpm -q --queryformat '%{RELEASE}' mero | cut -f2 -d_)
-MERO_VERSION    := $(shell rpm -q --queryformat '%{VERSION}' mero)
 GHC_OPTIONS     := -g -j4
 DIST_FILE       := halon-$(VERSION).tar.gz
 M0_SRC_DIR      := /usr/include/mero
@@ -69,22 +65,16 @@ __rpm_pre:
 __rpm:
 	rpmbuild -ba $(RPMSPECS_DIR)/halon.spec \
 		 --define "_topdir $(RPMBUILD_TOPDIR)" \
-		 --define "_version ${VERSION}" \
-		 --define "_buildnumber ${BUILD_NUMBER}" \
-		 --define "_gitrevision ${GITREV}" \
-		 --define "_merogitrev ${MERO_GITREV}" \
-		 --define "_meroversion ${MERO_VERSION}" \
+		 --define "h_version ${VERSION}" \
+		 --define "h_git_revision ${GITREV}" \
 		 $(RPMBUILD_FLAGS)
 
 .PHONY: __rpm_srpm
 __rpm_srpm:
 	rpmbuild -bs $(RPMSPECS_DIR)/halon.spec \
 		 --define "_topdir $(RPMBUILD_TOPDIR)" \
-		 --define "_version ${VERSION}" \
-		 --define "_buildnumber ${BUILD_NUMBER}" \
-		 --define "_gitrevision ${GITREV}" \
-		 --define "_merogitrev ${MERO_GITREV}" \
-		 --define "_meroversion ${MERO_VERSION}" \
+		 --define "h_version ${VERSION}" \
+		 --define "h_git_revision ${GITREV}" \
 		 $(RPMBUILD_FLAGS)
 
 .PHONY: __rpm_mock
@@ -93,11 +83,8 @@ __rpm_mock:
 		--spec $(RPMSPECS_DIR)/halon.spec \
 		--sources $(RPMSOURCES_DIR) \
 		--resultdir $(RPMMOCK_DIR) \
-		--define "_version ${VERSION}" \
-		--define "_buildnumber ${BUILD_NUMBER}" \
-		--define "_gitrevision ${GITREV}" \
-		--define "_merogitrev ${MERO_GITREV}" \
-		--define "_meroversion ${MERO_VERSION}" \
+		--define "h_version ${VERSION}" \
+		--define "h_git_revision ${GITREV}" \
 		--no-clean --no-cleanup-after
 	mock -r $(MOCK_CONFIG) --install \
 		$(RPMBUILD_DIR)/RPMS/x86_64/mero-[[:digit:]]*.rpm \
@@ -106,11 +93,8 @@ __rpm_mock:
 		--no-clean --no-cleanup-after
 	mock -r $(MOCK_CONFIG) --rebuild $(RPMMOCK_DIR)/halon*.src.rpm \
 		--resultdir $(RPMMOCK_DIR) \
-		--define "_version ${VERSION}" \
-		--define "_buildnumber ${BUILD_NUMBER}" \
-		--define "_gitrevision ${GITREV}" \
-		--define "_merogitrev ${MERO_GITREV}" \
-		--define "_meroversion ${MERO_VERSION}" \
+		--define "h_version ${VERSION}" \
+		--define "h_git_revision ${GITREV}" \
 		--enable-network \
 		--no-clean
 
