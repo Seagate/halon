@@ -29,7 +29,7 @@ import           HA.Resources.Castor (Host(..))
 import           HA.Resources.Castor.Initial (ProcessType)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import           Mero.ConfC (ServiceType(..))
+import qualified HA.Resources.Castor.Initial as CI
 import           Network.CEP
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
@@ -68,16 +68,19 @@ getProcesses node rg =
 -- | Find all processes on the given 'M0.Node' such that:
 --
 -- * The process is not properly started, i.e. not in 'M0.PSOnline' state.
--- * The process is not a @m0t1fs@ process.
+-- * The process is not a client process (like m0t1fs or clovis).
 getUnstartedProcesses :: M0.Node -> G.Graph -> [(M0.Process, M0.ProcessState)]
 getUnstartedProcesses node rg =
   [ (proc, M0.getState proc rg)
   | proc <- G.connectedTo node M0.IsParentOf rg
   , M0.getState proc rg /= M0.PSOnline
-  , not . any isM0t1fs $ G.connectedTo proc M0.IsParentOf rg
+  , Just (t :: CI.ProcessType) <- [G.connectedTo proc Has rg]
+  , isNotClient t
   ]
   where
-    isM0t1fs svc = M0.s_type svc `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA]
+    isNotClient (CI.PLM0d _) = True
+    isNotClient  CI.PLHalon  = True
+    isNotClient  _           = False
 
 -- | Start all Mero processes of the specified type on a given node.
 -- Return all the processes which are being started.
