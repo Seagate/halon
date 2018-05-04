@@ -33,11 +33,11 @@ import           Mero.ConfC (ServiceType(..))
 import           Network.CEP
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
--- the given 'CI.M0ProcessType'.
+-- the given 'CI.ProcessType'.
 --
 -- For processes on any node, see 'Node.getLabeled'.
 getLabeledProcesses :: R.Node
-                    -> CI.M0ProcessType
+                    -> CI.ProcessType
                     -> G.Graph
                     -> [M0.Process]
 getLabeledProcesses node label rg =
@@ -47,17 +47,17 @@ getLabeledProcesses node label rg =
    ]
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
--- a 'CI.M0ProcessType' satisfying the predicate.
+-- a 'CI.ProcessType' satisfying the predicate.
 --
 -- For processes on any node, see 'Node.getLabeledP'.
 getLabeledProcessesP :: R.Node
-                     -> (CI.M0ProcessType -> Bool)
+                     -> (CI.ProcessType -> Bool)
                      -> G.Graph
                      -> [M0.Process]
 getLabeledProcessesP node labelP rg =
   [ proc
   | proc <- getProcesses node rg
-  , Just (lbl :: CI.M0ProcessType) <- [G.connectedTo proc Has rg]
+  , Just (lbl :: CI.ProcessType) <- [G.connectedTo proc Has rg]
   , labelP lbl
   ]
 
@@ -86,14 +86,14 @@ getUnstartedProcesses node rg =
 
 -- | Start all Mero processes labelled with the specified process label on
 -- a given node. Returns all the processes which are being started.
-startProcesses :: Host -> (CI.M0ProcessType -> Bool) -> PhaseM RC a [M0.Process]
+startProcesses :: Host -> (CI.ProcessType -> Bool) -> PhaseM RC a [M0.Process]
 startProcesses host labelP = do
   Log.actLog "startProcesses" [("host", show host)]
   rg <- getGraph
   let procs = [ proc
               | m0node :: M0.Node <- G.connectedTo host Runs rg
               , proc <- G.connectedTo m0node M0.IsParentOf rg
-              , Just (lbl :: CI.M0ProcessType) <- [G.connectedTo proc Has rg]
+              , Just (lbl :: CI.ProcessType) <- [G.connectedTo proc Has rg]
               , labelP lbl
               ]
   unless (null procs) $ do

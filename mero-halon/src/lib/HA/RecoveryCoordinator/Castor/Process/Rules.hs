@@ -345,7 +345,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldHost = Proxy :: Proxy '("host", Maybe Host)
     fldSender = Proxy :: Proxy '("sender", Maybe (MeroToSvc -> Process ()))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
-    fldLabel = Proxy :: Proxy '("label", Maybe CI.M0ProcessType)
+    fldLabel = Proxy :: Proxy '("label", Maybe CI.ProcessType)
     fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
     fldStopJob = Proxy :: Proxy '("stop-listener", Maybe ListenerId)
 

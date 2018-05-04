@@ -955,7 +955,7 @@ $(mkDicts
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''CI.M0ProcessType, ''ConfUpdateVersion
+  , ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1013,7 +1013,7 @@ $(mkDicts
   , (''Pool, ''R.Has, ''DiskFailureVector)
   , (''Cas.Host, ''R.Has, ''LNid)
   , (''Cas.Host, ''R.Runs, ''Node)
-  , (''Process, ''R.Has, ''CI.M0ProcessType)
+  , (''Process, ''R.Has, ''CI.ProcessType)
   , (''Process, ''R.Has, ''ProcessEnv)
   , (''Process, ''R.Has, ''PID)
   , (''Process, ''Cas.Is, ''ProcessBootstrapped)
@@ -1033,7 +1033,7 @@ $(mkResRel
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''CI.M0ProcessType, ''ConfUpdateVersion
+  , ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1090,7 +1090,7 @@ $(mkResRel
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
   , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
-  , (''Process, Unbounded, ''R.Has, AtMostOne, ''CI.M0ProcessType)
+  , (''Process, Unbounded, ''R.Has, AtMostOne, ''CI.ProcessType)
   , (''Process, Unbounded, ''R.Has, Unbounded, ''ProcessEnv)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''PID)
   , (''Process, Unbounded, ''Cas.Is, AtMostOne, ''ProcessBootstrapped)

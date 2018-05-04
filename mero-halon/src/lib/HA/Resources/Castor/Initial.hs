@@ -231,7 +231,7 @@ instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership
 instance ToJSON ProcessOwnership
 
-data M0ProcessType
+data ProcessType
   = PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String ProcessOwnership -- ^ Process lives as part of a
                                      --   Clovis client, with given name.
@@ -239,9 +239,9 @@ data M0ProcessType
                --   Currently 0 = confd, 1 = other.
   | PLHalon  -- ^ Process lives inside Halon program space.
   deriving (Eq, Data, Show, Typeable, Generic)
-instance Hashable M0ProcessType
-instance FromJSON M0ProcessType
-instance ToJSON M0ProcessType
+instance Hashable ProcessType
+instance FromJSON ProcessType
+instance ToJSON ProcessType
 
 -- | Mero process environment. Values of this type become additional Environment
 --   variables in the sysconfig file for this process.
@@ -268,7 +268,7 @@ data M0Process = M0Process
   -- ^ Treated as a bitmap of length (@no_cpu@) indicating which CPUs to use
   , m0p_services :: [M0Service]
   -- ^ List of services this process should run.
-  , m0p_boot_level :: M0ProcessType
+  , m0p_boot_level :: ProcessType
   -- ^ Type of process, governing how it should run.
   , m0p_environment :: Maybe [(String, M0ProcessEnv)]
   -- ^ Process environment - additional
@@ -617,8 +617,8 @@ deriveSafeCopy 0 'base ''M0Profile
 deriveSafeCopy 0 'base ''M0Host
 deriveSafeCopy 0 'base ''M0ProcessEnv
 deriveSafeCopy 0 'base ''ProcessOwnership
-deriveSafeCopy 0 'base ''M0ProcessType
-storageIndex           ''M0ProcessType "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
+deriveSafeCopy 0 'base ''ProcessType
+storageIndex           ''ProcessType "4aa03302-90c7-4a6f-85d5-5b8a716b60e3"
 deriveSafeCopy 0 'base ''M0Process
 deriveSafeCopy 0 'base ''M0Service
 deriveSafeCopy 0 'base ''BMC
