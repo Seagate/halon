@@ -128,7 +128,7 @@ mkJobRule (Job name)
                 Right (def, next) -> fork CopyNewerBuffer $ do
                   modify Local $ rlens fldReply . rfield .~ Just def
                   Log.tagContext Log.SM [ ("request", show request)
-                                        , ("uuid", show eid)
+                                        , ("eid", show eid)
                                         , ("listeners", show listeners)
                                         ] Nothing
                   insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)

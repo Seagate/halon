@@ -209,29 +209,32 @@ sendProcessEvents p petype setype pid = do
   liftIO $ D.traceEventIO "START sendProcessEvents"
   pmap <- liftIO $ _m_process_map <$> readIORef mockLocalState
   case Map.lookup p pmap of
-    Nothing -> sendProcessEvent TAG_M0_CONF_HA_PROCESS_M0D
-    Just (_ps_svcs -> srvs) -> do
-      for_ srvs $ \s -> sendServiceEvent s
-      sendProcessEvent (guessProcessType srvs)
+    Nothing -> sendProcessEvent pid TAG_M0_CONF_HA_PROCESS_M0D
+    Just (_ps_svcs -> svcs) -> do
+      let pt = guessProcessType svcs
+          pid' = if (pt == TAG_M0_CONF_HA_PROCESS_KERNEL) then 0
+                                                          else pid
+      for_ svcs $ \s -> sendServiceEvent pid' s
+      D.traceM $ "sendProcessEvents: svcs=" ++ show svcs ++
+                 " type=" ++ show pt
+      sendProcessEvent pid' pt
   liftIO $ D.traceEventIO "STOP sendProcessEvents"
   where
     guessProcessType :: [M0.Service] -> ProcessType
     guessProcessType [] = TAG_M0_CONF_HA_PROCESS_M0D
-    guessProcessType srvs | any isM0T1FS srvs = TAG_M0_CONF_HA_PROCESS_KERNEL
-                          | otherwise = TAG_M0_CONF_HA_PROCESS_M0D
+    guessProcessType svcs | any isNotClientSvc svcs = TAG_M0_CONF_HA_PROCESS_M0D
+                          | otherwise = TAG_M0_CONF_HA_PROCESS_KERNEL
       where
-        isM0T1FS :: M0.Service -> Bool
-        isM0T1FS (M0.s_type -> t) = t `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA]
+        isNotClientSvc :: M0.Service -> Bool
+        isNotClientSvc (M0.s_type -> t) = t `elem` [CST_IOS, CST_MDS, CST_CONFD,
+                                                    CST_CAS, CST_ADDB2, CST_HA]
 
-    sendProcessEvent :: ProcessType -> Process ()
-    sendProcessEvent pt = do
+    sendProcessEvent :: Int -> ProcessType -> Process ()
+    sendProcessEvent pid' pt = do
       t <- liftIO $ C.sec <$> C.getTime C.Realtime
-      let pid' = if pt == TAG_M0_CONF_HA_PROCESS_KERNEL
-                 then 0
-                 else fromIntegral pid
-          ev = ProcessEvent { _chp_event = petype
+      let ev = ProcessEvent { _chp_event = petype
                             , _chp_type = pt
-                            , _chp_pid = pid' }
+                            , _chp_pid = fromIntegral pid' }
           meta = HAMsgMeta { _hm_fid = M0.fid p
                            , _hm_source_process = m0_fid0
                            , _hm_source_service = m0_fid0
@@ -239,12 +242,12 @@ sendProcessEvents p petype setype pid = do
                            , _hm_epoch = 0 }
       promulgateWait $ HAMsg ev meta
 
-    sendServiceEvent :: M0.Service -> Process ()
-    sendServiceEvent s = do
+    sendServiceEvent :: Int -> M0.Service -> Process ()
+    sendServiceEvent pid' s = do
       t <- liftIO $ C.sec <$> C.getTime C.Realtime
       let ev = ServiceEvent { _chs_event = setype
                             , _chs_type = M0.s_type s
-                            , _chs_pid = fromIntegral pid }
+                            , _chs_pid = fromIntegral pid' }
           meta = HAMsgMeta { _hm_fid = M0.fid s
                            , _hm_source_process = m0_fid0
                            , _hm_source_service = m0_fid0

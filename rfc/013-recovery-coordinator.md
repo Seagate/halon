@@ -290,7 +290,7 @@ rcInitial = [SM "node-restart" softSSPL [] undefined
 The initial recovery co-ordinator consists of a single state machine in its
 first phase, with no messages in the buffer and some undefined state.
 
-Now let us suppose that a `HostRestartRequest node1` message arrives. The type
+Now let us suppose that a `NodeRestartRequest node1` message arrives. The type
 of message is looked up in the map, and the state machine(s) corresponding to
 that rule are looked up and run. The execution of the state machine takes three
 steps:

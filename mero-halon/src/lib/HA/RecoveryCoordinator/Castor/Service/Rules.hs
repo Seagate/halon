@@ -53,7 +53,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
       -- check that it's not in the given state in RG already.
   let serviceTagged p typ (HAEvent eid (HAMsg (ServiceEvent se st _pid) m)) ls =
         let rg = lsGraph ls
-            isStateChanged s = M0.getState s (lsGraph ls) /= typ
+            isStateChanged s = M0.getState s rg /= typ
         in case M0.lookupConfObjByFid (_hm_fid m) rg of
             Just (s :: M0.Service) | p se && isStateChanged s -> Just (eid, s, typ, st)
             _ -> Nothing
@@ -103,11 +103,23 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
         modify Local $ rlens fldServiceState . rfield .~ Just st
         let tr = if st == M0.SSOnline then Tr.serviceOnline else Tr.serviceOffline
         notifications <- applyStateChanges [stateSet service tr]
-        setExpectedNotifications notifications
-        onTimeout 30 timed_out
-        onSuccess service_notified
-        waitFor notifier
-        continue dispatcher
+        if st == M0.SSOffline
+        then
+          -- Don't wait for offline notifications ACKs - they may never come..
+          -- And when they do come - they may be stale already and affect the
+          -- new service states. For example, consider the cluster stop-start
+          -- scenario: process rules may finish with cluster stopping and by
+          -- user (or script) command may commence starting already when the
+          -- stale offline ACKs would come and spoil everything. This situation
+          -- was observed on the "Process stop then start" UT and may as well
+          -- happen on a real cluster configuration.
+          continue finish
+        else do
+          setExpectedNotifications notifications
+          onTimeout 30 timed_out
+          onSuccess service_notified
+          waitFor notifier
+          continue dispatcher
       -- We're working with services for halon process: ignore these
       -- service messages as
       --
