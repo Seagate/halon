@@ -87,11 +87,21 @@ cmd_start() {
     $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts
     $SUDO systemctl start halond
     halonctl mero bootstrap --verbose
-    # display bootstrap progress, usually it completes under a minute
+
+    # Display bootstrap progress, usually it completes under a minute.
     { sleep 70; pkill -x watch; } &
     watch halonctl mero status
-    # show final status (`watch` clears it's output after exit)
+
+    local rc=0
+    # Possible failure of m0t1fs has no impact on exit code of
+    # `halonctl mero bootstrap` command above.
+    if halonctl mero status | grep -q failed; then
+        rc=1
+    fi
+
+    # Show final status (`watch` clears it's output after exit).
     halonctl mero status
+    return $rc
 }
 
 cmd_stop() {
