@@ -17,7 +17,7 @@ import           Data.Foldable (for_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
   (ProcessStartRequest(..))
 import           HA.RecoveryCoordinator.RC.Actions.Core
-  (RC
+  ( RC
   , getGraph
   , promulgateRC
   )
@@ -35,7 +35,8 @@ import           Network.CEP
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
 -- the given 'CI.ProcessType'.
 --
--- For processes on any node, see 'Node.getLabeled'.
+-- For processes on any node, see
+-- 'HA.RecoveryCoordinator.Castor.Process.Actions.getLabeled'.
 getLabeledProcesses :: R.Node
                     -> CI.ProcessType
                     -> G.Graph

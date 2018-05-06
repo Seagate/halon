@@ -14,14 +14,14 @@ module HA.RecoveryCoordinator.Castor.Process.Actions
 
 import           Data.Maybe (listToMaybe)
 import qualified HA.ResourceGraph as G
-import qualified HA.Resources as R
+import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Castor.Initial as CI
 import           Mero.ConfC (ServiceType(CST_HA))
 
 -- | Get the process label, if attached.
 getLabel :: M0.Process -> G.Graph -> Maybe CI.ProcessType
-getLabel p = G.connectedTo p R.Has
+getLabel p = G.connectedTo p Has
 
 -- | Get all 'M0.Processes' associated the given 'CI.ProcessType'.
 getLabeled :: CI.ProcessType -> G.Graph -> [M0.Process]
@@ -33,11 +33,11 @@ getLabeledP :: (CI.ProcessType -> Bool) -> G.Graph -> [M0.Process]
 getLabeledP labelP rg =
   [ proc
   | proc <- M0.getM0Processes rg
-  , Just (lbl :: CI.ProcessType) <- [G.connectedTo proc R.Has rg]
+  , Just (lbl :: CI.ProcessType) <- [G.connectedTo proc Has rg]
   , labelP lbl
   ]
 
--- | Find every 'M0.Process' in the 'R.Cluster'.
+-- | Find every 'M0.Process' in the 'Cluster'.
 getAll :: G.Graph -> [M0.Process]
 getAll = M0.getM0Processes
 
