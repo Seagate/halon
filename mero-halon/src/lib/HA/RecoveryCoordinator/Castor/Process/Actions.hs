@@ -16,24 +16,24 @@ import           Data.Maybe (listToMaybe)
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Castor.Initial as CI
+import           HA.Resources.Castor.Initial (ProcessType)
 import           Mero.ConfC (ServiceType(CST_HA))
 
 -- | Get the process label, if attached.
-getLabel :: M0.Process -> G.Graph -> Maybe CI.ProcessType
+getLabel :: M0.Process -> G.Graph -> Maybe ProcessType
 getLabel p = G.connectedTo p Has
 
--- | Get all 'M0.Processes' associated the given 'CI.ProcessType'.
-getLabeled :: CI.ProcessType -> G.Graph -> [M0.Process]
+-- | Get all 'M0.Processes' associated the given 'ProcessType'.
+getLabeled :: ProcessType -> G.Graph -> [M0.Process]
 getLabeled label = getLabeledP (== label)
 
--- | Get all 'M0.Process' entities whose `CI.ProcessType` satisfies a given
+-- | Get all 'M0.Process' entities whose 'ProcessType' satisfies a given
 --   predicate.
-getLabeledP :: (CI.ProcessType -> Bool) -> G.Graph -> [M0.Process]
+getLabeledP :: (ProcessType -> Bool) -> G.Graph -> [M0.Process]
 getLabeledP labelP rg =
   [ proc
   | proc <- M0.getM0Processes rg
-  , Just (lbl :: CI.ProcessType) <- [G.connectedTo proc Has rg]
+  , Just (lbl :: ProcessType) <- [G.connectedTo proc Has rg]
   , labelP lbl
   ]
 
