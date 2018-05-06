@@ -1,6 +1,6 @@
 -- |
--- Copyright:  (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- Copyright: (C) 2018 Xyratex Technology Limited
+-- License:   All rights reserved
 --
 -- Debug functions that make use of eventlog subsystem.
 -- Eventlog provides a way to offline monitor program. And
@@ -15,10 +15,10 @@ module HA.Debug
   , traceEventP
   ) where
 
-import Control.Distributed.Process
-import GHC.Conc
-import Debug.Trace
-import Network.CEP (MonadProcess(..))
+import Control.Distributed.Process (Process, ProcessId, liftIO, spawnLocal)
+import GHC.Conc (labelThread, myThreadId)
+import Debug.Trace (traceEventIO, traceMarkerIO)
+import Network.CEP (MonadProcess(liftProcess))
 
 -- | Add label to the 'Process', this way haskell thread
 -- will have a label in the event logs.
