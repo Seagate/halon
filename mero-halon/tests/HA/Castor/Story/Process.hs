@@ -77,7 +77,7 @@ testStopStart transport pg = do
       setPhase rule_init $ \(H.RuleHook caller) -> do
         rg <- getGraph
         let ps = listToMaybe $
-                 Process.getLabeled (CI.PLM0d 1) rg
+                 Process.getTyped (CI.PLM0d 1) rg
                   & filter (\p -> getState p rg == M0.PSOnline)
         case ps of
           Nothing ->
@@ -151,7 +151,7 @@ testClientStartsAnyBootlevel transport pg = do
         rg <- getGraph
         case getClusterStatus rg of
           Just (M0.MeroClusterState M0.ONLINE (M0.BootLevel 0) _) -> do
-            case Process.getLabeled CI.PLM0t1fs rg of
+            case Process.getTyped CI.PLM0t1fs rg of
               p : _ -> do
                 modify Local $ rlens fldCaller . rfield .~ Just caller
                 modify Local $ rlens fldOurProc . rfield .~ Just p

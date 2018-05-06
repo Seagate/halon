@@ -426,7 +426,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     runWarnings :: M0.Process -> G.Graph -> [String]
     runWarnings p rg = [ warnMsg | w <- warnings, let (r, warnMsg) = w p rg, r ]
 
-    checkBootlevel p rg = case (,) <$> Process.getLabel p rg <*> getClusterStatus rg of
+    checkBootlevel p rg = case (,) <$> Process.getType p rg <*> getClusterStatus rg of
       Nothing -> (False, "Can't retrieve process boot level or cluster status")
       Just (_, M0.MeroClusterState M0.OFFLINE _ _) ->
         (False, "Cluster disposition is offline")

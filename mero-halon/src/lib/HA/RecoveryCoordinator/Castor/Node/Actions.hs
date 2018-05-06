@@ -5,8 +5,8 @@
 --
 -- Actions on 'M0.Node's.
 module HA.RecoveryCoordinator.Castor.Node.Actions
-  ( getLabeledProcesses
-  , getLabeledProcessesP
+  ( getTypedProcesses
+  , getTypedProcessesP
   , getProcesses
   , getUnstartedProcesses
   , startProcesses
@@ -36,30 +36,24 @@ import           Network.CEP
 -- the given 'ProcessType'.
 --
 -- For processes on any node, see
--- 'HA.RecoveryCoordinator.Castor.Process.Actions.getLabeled'.
-getLabeledProcesses :: R.Node
-                    -> ProcessType
-                    -> G.Graph
-                    -> [M0.Process]
-getLabeledProcesses node label rg =
+-- 'HA.RecoveryCoordinator.Castor.Process.Actions.getTyped'.
+getTypedProcesses :: R.Node -> ProcessType -> G.Graph -> [M0.Process]
+getTypedProcesses node procType rg =
    [ proc
    | proc <- getProcesses node rg
-   , G.isConnected proc Has label rg
+   , G.isConnected proc Has procType rg
    ]
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
 -- a 'ProcessType' satisfying the predicate.
 --
--- For processes on any node, see 'Node.getLabeledP'.
-getLabeledProcessesP :: R.Node
-                     -> (ProcessType -> Bool)
-                     -> G.Graph
-                     -> [M0.Process]
-getLabeledProcessesP node labelP rg =
+-- For processes on any node, see 'Node.getTypedP'.
+getTypedProcessesP :: R.Node -> (ProcessType -> Bool) -> G.Graph -> [M0.Process]
+getTypedProcessesP node procTypeP rg =
   [ proc
   | proc <- getProcesses node rg
-  , Just (lbl :: ProcessType) <- [G.connectedTo proc Has rg]
-  , labelP lbl
+  , Just (t :: ProcessType) <- [G.connectedTo proc Has rg]
+  , procTypeP t
   ]
 
 -- | Get all 'M0.Process'es on the given 'R.Node'.
@@ -85,17 +79,17 @@ getUnstartedProcesses node rg =
   where
     isM0t1fs svc = M0.s_type svc `notElem` [CST_IOS, CST_MDS, CST_CONFD, CST_HA]
 
--- | Start all Mero processes labelled with the specified process label on
--- a given node. Returns all the processes which are being started.
+-- | Start all Mero processes of the specified type on a given node.
+-- Return all the processes which are being started.
 startProcesses :: Host -> (ProcessType -> Bool) -> PhaseM RC a [M0.Process]
-startProcesses host labelP = do
+startProcesses host procTypeP = do
   Log.actLog "startProcesses" [("host", show host)]
   rg <- getGraph
   let procs = [ proc
               | m0node :: M0.Node <- G.connectedTo host Runs rg
               , proc <- G.connectedTo m0node M0.IsParentOf rg
-              , Just (lbl :: ProcessType) <- [G.connectedTo proc Has rg]
-              , labelP lbl
+              , Just (t :: ProcessType) <- [G.connectedTo proc Has rg]
+              , procTypeP t
               ]
   unless (null procs) $ do
     Log.rcLog' Log.DEBUG ("processes", show (M0.showFid <$> procs))

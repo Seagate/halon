@@ -953,16 +953,17 @@ ruleStopProcessesOnNode = mkJobRule processStopProcessesOnNode args $ \(JobHandl
      lvl  <- getField . rget fldBootLevel <$> get Local
      rg <- getGraph
 
-     let pLabel = if lvl == m0t1fsBootLevel
-                  then (\case CI.PLM0t1fs -> True
-                              CI.PLClovis _ CI.Managed -> True
-                              _ -> False )
-                  else (== (CI.PLM0d $ M0.unBootLevel lvl))
+     let procType = if lvl == m0t1fsBootLevel
+                    then (\case CI.PLM0t1fs              -> True
+                                CI.PLClovis _ CI.Managed -> True
+                                _                        -> False)
+                    else (== (CI.PLM0d $ M0.unBootLevel lvl))
 
-         stillUnstopped = Node.getLabeledProcessesP node pLabel rg & filter
-          (\p ->
-            M0.getState p rg `elem` [ M0.PSOnline, M0.PSQuiescing
-                                    , M0.PSStopping, M0.PSStarting ]
+         stillUnstopped = Node.getTypedProcessesP node procType rg & filter
+          (\p -> M0.getState p rg `elem` [ M0.PSOnline
+                                         , M0.PSQuiescing
+                                         , M0.PSStarting
+                                         , M0.PSStopping ]
           )
      case stillUnstopped of
        [] -> do let msg :: String

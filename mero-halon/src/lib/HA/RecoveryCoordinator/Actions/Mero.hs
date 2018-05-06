@@ -178,7 +178,7 @@ calculateRunLevel = do
       -- where we have a principal RM selected.
       prm <- getPrincipalRM
       confdprocs <- getGraph <&> \rg ->
-        Process.getLabeled (CI.PLM0d 0) rg & filter
+        Process.getTyped (CI.PLM0d 0) rg & filter
           (\p -> any
               (\s -> M0.s_type s == CST_CONFD)
               (G.connectedTo p M0.IsParentOf rg)
@@ -196,7 +196,7 @@ calculateRunLevel = do
       -- We allow boot level 2 processes to start when all processes
       -- at level 1 have started.
       lvl1procs <- getGraph <&>
-        Process.getLabeled (CI.PLM0d 1)
+        Process.getTyped (CI.PLM0d 1)
       onlineProcs <- getGraph <&>
         \rg -> filter (\p -> M0.getState p rg == M0.PSOnline) lvl1procs
       return $ length onlineProcs == length lvl1procs
@@ -219,10 +219,12 @@ calculateStopLevel = do
   where
     findLast = head . reverse . takeWhile snd
     lvls = M0.BootLevel <$> reverse [(-1)..3]
+
     filterHA :: G.Graph -> M0.Process -> Bool
     filterHA g p = all (\srv -> M0.s_type srv /= CST_HA)
-                       (G.connectedTo (p::M0.Process) M0.IsParentOf g)
-      -- We allow stopping m0d when there are no running Mero processes.
+                       (G.connectedTo (p :: M0.Process) M0.IsParentOf g)
+
+    -- We allow stopping m0d when there are no running Mero processes.
     guard (M0.BootLevel (-1)) = do
       stillUnstopped <- getGraph <&> \g -> filter
           ( \p -> not . null $
@@ -240,31 +242,32 @@ calculateStopLevel = do
     guard (M0.BootLevel 0) = do
       -- We allow stopping a process on level i if there are no running
       -- processes on level i+1
-      stillUnstopped <- unstoppedWithLabel (== (CI.PLM0d 1))
+      stillUnstopped <- unstoppedProcesses (== CI.PLM0d 1)
       return $ null stillUnstopped
     guard (M0.BootLevel 1) = do
       -- We allow stopping a process on level 1 if there are no running
       -- PLM0t1fs processes or controlled PLClovis processes
-      stillUnstopped <- unstoppedWithLabel
-                          (\case  (CI.PLClovis _ CI.Managed) -> True
-                                  CI.PLM0t1fs -> True
-                                  _ -> False)
+      stillUnstopped <- unstoppedProcesses
+                          (\case (CI.PLClovis _ CI.Managed) -> True
+                                 CI.PLM0t1fs                -> True
+                                 _                          -> False)
       return $ null stillUnstopped
     guard (M0.BootLevel 2) = return True
     guard (M0.BootLevel 3) = return True
     guard (M0.BootLevel _) = return False
-    unstoppedWithLabel lbl = getGraph <&> \g ->
-      ( Process.getLabeledP lbl g) & filter
-      ( \p -> not . null $
-      [ () | M0.getState p g `elem` [ M0.PSOnline
-                                    , M0.PSQuiescing
-                                    , M0.PSStopping
-                                    , M0.PSStarting
-                                    ]
-          , Just (n :: M0.Node) <- [G.connectedFrom M0.IsParentOf p g]
-          , M0.getState n g /= M0.NSFailed
-            && M0.getState n g /= M0.NSFailedUnrecoverable
-      ] )
+
+    unstoppedProcesses procTypePred = getGraph <&> \rg ->
+      (Process.getTypedP procTypePred rg) & filter
+      (\proc -> not . null $
+        [() | M0.getState proc rg `elem` [ M0.PSOnline
+                                         , M0.PSQuiescing
+                                         , M0.PSStarting
+                                         , M0.PSStopping
+                                         ]
+           , Just (node :: M0.Node) <- [G.connectedFrom M0.IsParentOf proc rg]
+           , M0.getState node rg `notElem` [M0.NSFailed, M0.NSFailedUnrecoverable]
+        ]
+      )
 
 -- | Get an aggregate cluster status report.
 getClusterStatus :: G.Graph -> Maybe M0.MeroClusterState

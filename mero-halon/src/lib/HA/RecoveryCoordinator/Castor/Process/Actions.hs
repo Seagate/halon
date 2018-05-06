@@ -6,35 +6,35 @@
 module HA.RecoveryCoordinator.Castor.Process.Actions
   ( getAll
   , getAllHostingService
-  , getLabel
-  , getLabeled
-  , getLabeledP
+  , getType
+  , getTyped
+  , getTypedP
   , getHA
   ) where
 
 import           Data.Maybe (listToMaybe)
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
-import qualified HA.Resources.Mero as M0
 import           HA.Resources.Castor.Initial (ProcessType)
+import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (ServiceType(CST_HA))
 
--- | Get the process label, if attached.
-getLabel :: M0.Process -> G.Graph -> Maybe ProcessType
-getLabel p = G.connectedTo p Has
+-- | Get the process type, if attached.
+getType :: M0.Process -> G.Graph -> Maybe ProcessType
+getType p = G.connectedTo p Has
 
 -- | Get all 'M0.Processes' associated the given 'ProcessType'.
-getLabeled :: ProcessType -> G.Graph -> [M0.Process]
-getLabeled label = getLabeledP (== label)
+getTyped :: ProcessType -> G.Graph -> [M0.Process]
+getTyped t = getTypedP (== t)
 
 -- | Get all 'M0.Process' entities whose 'ProcessType' satisfies a given
 --   predicate.
-getLabeledP :: (ProcessType -> Bool) -> G.Graph -> [M0.Process]
-getLabeledP labelP rg =
+getTypedP :: (ProcessType -> Bool) -> G.Graph -> [M0.Process]
+getTypedP typeP rg =
   [ proc
   | proc <- M0.getM0Processes rg
-  , Just (lbl :: ProcessType) <- [G.connectedTo proc Has rg]
-  , labelP lbl
+  , Just (t :: ProcessType) <- [G.connectedTo proc Has rg]
+  , typeP t
   ]
 
 -- | Find every 'M0.Process' in the 'Cluster'.
