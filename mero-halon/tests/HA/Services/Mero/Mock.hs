@@ -83,6 +83,15 @@ import           HA.Services.Mero.Types
 import           Mero.ConfC (Fid(..), fidToStr, m0_fid0, ServiceType(..))
 import           Mero.Lnet (encodeEndpoint)
 import           Mero.Notification.HAState
+  ( HAMsg(..)
+  , HAMsgMeta(..)
+  , ProcessEvent(..)
+  , ProcessEventType(..)
+  , ProcessType(..)
+  , ServiceEvent(..)
+  , ServiceEventType(..)
+  , m0_time_now
+  )
 import qualified "distributed-process-scheduler" System.Clock as C
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified System.Posix.Process as Posix
@@ -191,10 +200,10 @@ sayMock m = do
 -- | Send 'ServiceEvent's and 'ProcessEvent's about process/service
 -- start; it's usually mero's work to do this and we rely on these
 -- messages.
-sendProcessEvents :: M0.Process -- ^ Process to send events about
+sendProcessEvents :: M0.Process       -- ^ Process to send events about.
                   -> ProcessEventType -- ^ What is happening to the process?
                   -> ServiceEventType -- ^ What is happening to the services?
-                  -> Int -- ^ Process ID
+                  -> Int              -- ^ Process ID.
                   -> Process ()
 sendProcessEvents p petype setype pid = do
   liftIO $ D.traceEventIO "START sendProcessEvents"
