@@ -1,10 +1,10 @@
 Name:          confc
-Version:       0.0.3
+Version:       0.1.0
 Synopsis:      Bindings for Mero configuration client library.
 Description:   The Mero configuration client library allows programs
                to contact the confd service.
 License:       AllRightsReserved
-Copyright:     (C) 2013 Xyratex Technology Limited
+Copyright:     (C) 2018 Xyratex Technology Limited
 Category:      Network
 Build-Type:    Custom
 Cabal-Version: >= 1.10
@@ -49,7 +49,7 @@ Test-Suite unit-tests
   Main-Is:          unit-tests.hs
   cc-options: -Wno-attributes -Werror -g -DM0_INTERNAL= -DM0_EXTERN=extern
   Ghc-Options: -threaded -Wall
-  Build-Depends:   confc >= 0.0.3,
+  Build-Depends:   confc,
                    base >= 4.5,
                    inline-c,
                    tasty,
