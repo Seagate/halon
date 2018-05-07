@@ -1,5 +1,5 @@
 Name:           mero-halon
-Version:        0.1
+Version:        0.2
 Stability:      experimental
 Synopsis:       Mero interface to HA
 Description:    The High Availability system is a library that can be used
@@ -7,7 +7,7 @@ Description:    The High Availability system is a library that can be used
                 high availability of a distributed application.
 Homepage:       https://github.com/tweag/halon
 License:        AllRightsReserved
-Copyright:      (C) 2013 Xyratex Technology Limited
+Copyright:      (C) 2018 Xyratex Technology Limited
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10
