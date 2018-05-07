@@ -213,7 +213,6 @@ addProcess node devs CI.M0Process{..} = let
     mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss
                             m0p_mem_stack m0p_mem_memlock
                             cores ep
-    procLabel = m0p_boot_level
     mkEndpoint = do
         exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getGraph
         return $ findEP m0p_endpoint exProcEps
@@ -255,7 +254,7 @@ addProcess node devs CI.M0Process{..} = let
     mapM_ (goSrv proc ep) m0p_services
 
     modifyGraph $ G.connect node M0.IsParentOf proc
-              >>> G.connect proc Has procLabel
+              >>> G.connect proc Has m0p_boot_level
 
     rg <- getGraph
     for_ (procEnv rg) $ \pe ->

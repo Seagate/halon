@@ -191,7 +191,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
 
   directly configure $ do
     Just sender <- getField . rget fldSender <$> get Local
-    Just (toType -> runType) <- getField . rget fldLabel <$> get Local
+    Just (toType -> runType) <- getField . rget fldProcessType <$> get Local
     ProcessStartRequest p <- getRequest
     Log.rcLog' Log.DEBUG $ "Configuring " ++ showFid p
     confUUID <- configureMeroProcess sender p runType
@@ -219,11 +219,11 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       switch finisher
     ConfigureSuccess uid -> do
       ProcessStartRequest p <- getRequest
-      Just label <- getField . rget fldLabel <$> get Local
+      Just procType <- getField . rget fldProcessType <$> get Local
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
       messageProcessed uid
       Log.rcLog' Log.DEBUG $ "Configuration successful for " ++ showFid p
-      case label of
+      case procType of
         CI.PLClovis _ CI.Independent -> do
           Log.rcLog' Log.DEBUG
                       "Independent CLOVIS process; only writing configuration."
@@ -241,7 +241,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
   -- PSStarting, disposition still in ONLINE
   directly start_process $ do
     Just sender <- getField . rget fldSender <$> get Local
-    Just (toType -> runType) <- getField . rget fldLabel <$> get Local
+    Just (toType -> runType) <- getField . rget fldProcessType <$> get Local
     ProcessStartRequest p <- getRequest
     let msg :: String
         msg = printf "Requesting start of %s (%s)" (showFid p) (show runType)
@@ -345,7 +345,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     fldHost = Proxy :: Proxy '("host", Maybe Host)
     fldSender = Proxy :: Proxy '("sender", Maybe (MeroToSvc -> Process ()))
     fldRetryCount = Proxy :: Proxy '("retries", Int)
-    fldLabel = Proxy :: Proxy '("label", Maybe CI.ProcessType)
+    fldProcessType = Proxy :: Proxy '("process-type", Maybe CI.ProcessType)
     fldConfigureUUID = Proxy :: Proxy '("configure-uuid", Maybe UUID.UUID)
     fldStopJob = Proxy :: Proxy '("stop-listener", Maybe ListenerId)
 
@@ -353,7 +353,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
        <+> fldRep           =: Nothing
        <+> fldHost          =: Nothing
        <+> fldSender        =: Nothing
-       <+> fldLabel         =: Nothing
+       <+> fldProcessType   =: Nothing
        <+> fldConfigureUUID =: Nothing
        <+> fldStopJob       =: Nothing
        <+> fldRetryCount    =: 0
@@ -402,15 +402,15 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
            iface <- getRunningMeroInterface m0node rg
            Node nid <- M0.m0nodeToNode m0node rg
            return $ liftProcess . sendSvc iface nid
-         mlabel = G.connectedTo p Has rg
-     case (,,) <$> mh <*> msender <*> mlabel of
+         mProcType = G.connectedTo p Has rg
+     case (,,) <$> mh <*> msender <*> mProcType of
        Nothing -> return . Just $
-         printf "Could not init resources: Host: %s, Sender: %s, Label: %s"
-                (show mh) (show $ isJust msender) (show mlabel)
-       Just (host, sender, label) -> do
+         printf "Could not init resources: Host: %s, Sender: %s, ProcessType: %s"
+                (show mh) (show $ isJust msender) (show mProcType)
+       Just (host, sender, procType) -> do
          modify Local $ rlens fldHost .~ Field (Just host)
          modify Local $ rlens fldSender .~ Field (Just sender)
-         modify Local $ rlens fldLabel .~ Field (Just label)
+         modify Local $ rlens fldProcessType .~ Field (Just procType)
          return Nothing
 
     checks :: [M0.Process -> G.Graph -> (Bool, String)]
