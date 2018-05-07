@@ -231,6 +231,9 @@ instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership
 instance ToJSON ProcessOwnership
 
+-- XXX TODO:
+-- 1) s/PL/PT/
+-- 2) synchronize with Mero.Notification.HAState.ProcessType
 data ProcessType
   = PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
   | PLClovis String ProcessOwnership -- ^ Process lives as part of a
@@ -245,9 +248,9 @@ instance ToJSON ProcessType
 
 -- | Mero process environment. Values of this type become additional Environment
 --   variables in the sysconfig file for this process.
-data M0ProcessEnv =
+data M0ProcessEnv
     -- | A simple value, passed directly to the file.
-    M0PEnvValue String
+  = M0PEnvValue String
     -- | A unique range within the node. Each process shall be given a unique
     --   value within this range for the given environment key.
   | M0PEnvRange Int Int
@@ -270,6 +273,7 @@ data M0Process = M0Process
   -- ^ List of services this process should run.
   , m0p_boot_level :: ProcessType
   -- ^ Type of process, governing how it should run.
+  -- XXX TODO: s/m0p_boot_level/m0p_process_type/
   , m0p_environment :: Maybe [(String, M0ProcessEnv)]
   -- ^ Process environment - additional
   , m0p_multiplicity :: Maybe Int
