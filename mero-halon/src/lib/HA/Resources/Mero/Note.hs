@@ -143,7 +143,6 @@ instance (Generics.Datatype d) => GShowType (M1 D d a) where
 
 instance ShowFidObj M0.Root
 instance ShowFidObj M0.Profile
-instance ShowFidObj M0.Filesystem -- XXX DELETEME
 
 instance ShowFidObj M0.Node
 instance ShowFidObj M0.Process
@@ -229,7 +228,6 @@ data SomeConfObjDict = forall x. (Typeable x, M0.ConfObj x, HasConfObjectState x
 $(join <$> (mapM (mkDict ''HasConfObjectState) $
   [ ''M0.Root
   , ''M0.Profile
-  , ''M0.Filesystem
 
   , ''M0.Node
   , ''M0.Process
@@ -262,12 +260,6 @@ instance HasConfObjectState M0.Profile where
   getState _ _ = NoExplicitConfigState
   setState _ _ = id
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Profile
-  toConfObjState _ = const M0_NC_ONLINE
-instance HasConfObjectState M0.Filesystem where
-  type StateCarrier M0.Filesystem = NoExplicitConfigState
-  getState _ _ = NoExplicitConfigState
-  setState _ _ = id
-  hasStateDict = staticPtr $ static dict_HasConfObjectState_Filesystem
   toConfObjState _ = const M0_NC_ONLINE
 instance HasConfObjectState M0.Site where
   hasStateDict = staticPtr $ static dict_HasConfObjectState_Site
@@ -408,7 +400,6 @@ dictMap :: Map.Map Word64 [SomeConfObjDict]
 dictMap = Map.fromListWith (<>) . fmap (fmap (:[])) $
     [ mkTypePair (Proxy :: Proxy M0.Root)
     , mkTypePair (Proxy :: Proxy M0.Profile)
-    , mkTypePair (Proxy :: Proxy M0.Filesystem)
 
     , mkTypePair (Proxy :: Proxy M0.Node)
     , mkTypePair (Proxy :: Proxy M0.Process)

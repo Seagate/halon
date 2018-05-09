@@ -78,7 +78,7 @@ ruleInitialDataLoad =
 
         load = do
           mapM_ goSite id_sites
-          fs <- initialiseConfInRG
+          initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
           graph <- getGraph
@@ -103,8 +103,8 @@ ruleInitialDataLoad =
           -- solution will involve proper support for multiple pools and
           -- multiple types of pools. In the meantime, creating these fake
           -- devices later works.
-          createMDPoolPVer fs
-          createIMeta fs
+          createMDPoolPVer
+          createIMeta
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Site])

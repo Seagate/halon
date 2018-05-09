@@ -185,11 +185,10 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
             return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
       Just root <- getRoot
       mprof <- theProfile
-      mfs <- getFilesystem -- XXX-MULTIPOOLS
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus = getClusterStatus rg
         , csrSNS    = sort repairs
-        , csrInfo   = liftA2 (,) mprof mfs
+        , csrInfo   = mprof
         , csrStats  = G.connectedTo root Has rg
         , csrHosts  = hosts
         }
@@ -292,7 +291,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
               modify Local $ rlens fldNext . rfield .~ Just finish
               return $ Right (ClusterStartTimeout [], [wait_server_jobs])
 
-    let route ClusterStartRequest{} = getFilesystem >>= \case
+    let route ClusterStartRequest{} = getRoot >>= \case
           Nothing -> fail_job $ ClusterStartFailure "Initial data not loaded." []
           Just _ -> do
             rg <- getGraph

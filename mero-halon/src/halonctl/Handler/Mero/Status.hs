@@ -66,12 +66,10 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
   putStrLn $ "Cluster is " ++ maybe "N/A" (show . M0._mcs_disposition) status
   case info' of
     Nothing -> putStrLn "cluster information is not available, load initial data.."
-    Just (M0.Profile pfid, M0.Filesystem ffid) -> do
+    Just (M0.Profile pfid) -> do
       putStrLn   "  cluster info:"
       putStrLn $ "    profile:    " ++ fidToStr pfid
-      putStrLn $ "    filesystem: " ++ fidToStr ffid
       forM_ mstats $ \stats -> do
-        -- XXX-MULTIPOOLS: Change Filesystem stats to site/pool stats?
         putStrLn "    Filesystem stats:"
         let fss = M0._fs_stats stats
         let entries =

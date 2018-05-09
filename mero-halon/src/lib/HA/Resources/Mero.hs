@@ -220,17 +220,6 @@ instance ConfObj Profile where
 storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
--- XXX-MULTIPOOLS: DELETEME
-newtype Filesystem = Filesystem Fid
-  deriving (Eq, Ord, Show, Generic, Hashable, Typeable, FromJSON, ToJSON)
-
-instance ConfObj Filesystem where
-  fidType _ = fromIntegral . ord $ 'f'
-  fid (Filesystem f) = f
-
-storageIndex ''Filesystem "5c783c2a-f112-4364-b6b9-4e8f54387d11"
-deriveSafeCopy 0 'base ''Filesystem
-
 -- | Marker to indicate the DIX subsystem has been initialised.
 data DIXInitialised = DIXInitialised
   deriving (Eq, Show, Generic, Typeable)
@@ -951,7 +940,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Site, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
@@ -978,8 +967,6 @@ $(mkDicts
   , (''Root, ''IsParentOf, ''Site)
   , (''Root, ''IsParentOf, ''Node)
   , (''Root, ''IsParentOf, ''Pool)
-    -- XXX-MULTIPOOLS: retire filesystem, update relations
-  , (''Root, ''IsParentOf, ''Filesystem)
   , (''Node, ''IsParentOf, ''Process)
   , (''Process, ''IsParentOf, ''Service)
   , (''Service, ''IsParentOf, ''SDev)
@@ -1029,7 +1016,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Filesystem, ''Node, ''Site, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
@@ -1057,7 +1044,6 @@ $(mkResRel
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Site)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Node)
   , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Pool)
-  , (''Root, AtMostOne, ''IsParentOf, Unbounded, ''Filesystem)
   , (''Node, AtMostOne, ''IsParentOf, Unbounded, ''Process)
   , (''Process, AtMostOne, ''IsParentOf, Unbounded, ''Service)
   , (''Service, AtMostOne, ''IsParentOf, Unbounded, ''SDev)

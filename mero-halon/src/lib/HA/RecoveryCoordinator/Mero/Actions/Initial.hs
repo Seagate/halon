@@ -24,10 +24,7 @@ import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import           HA.RecoveryCoordinator.Mero.Actions.Conf
-  ( getFilesystem
-  , lookupM0Enclosure
-  )
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (lookupM0Enclosure)
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (getRoot)
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
@@ -38,7 +35,6 @@ import           HA.Resources (Cluster(..), Has(..), Runs(..))
 import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
-import qualified HA.Resources.Mero.Note as M0
 import           Mero.ConfC
   ( PDClustAttr(..)
   , ServiceType(CST_CAS,CST_IOS)
@@ -55,32 +51,27 @@ import           Text.Regex.TDFA ((=~))
 --   * Create a single profile, filesystem
 --   * Create Mero rack and enclosure entities reflecting existing
 --     entities in the graph.
-initialiseConfInRG :: PhaseM RC l M0.Filesystem
-initialiseConfInRG = getFilesystem >>= \case
-    Just fs -> return fs
-    Nothing -> do
-      root_fid <- genRootFid -- the first newFidRC call is made here
-      -- XXX-MULTIPOOLS: create as many profiles as there are in the facts file
-      profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
-      pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-      mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-      -- Note that `createIMeta` may replace this FID with m0_fid0.
-      imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
-      let root = M0.Root root_fid (M0.fid mdpool) imeta_pver
-      fs <- M0.Filesystem <$> newFidRC (Proxy :: Proxy M0.Filesystem) -- XXX-MULTIPOOLS: DELETEME
-      modifyGraph
-          $ G.connect Cluster Has root
-        >>> G.connect Cluster Has M0.OFFLINE
-        >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
-        >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
-        >>> G.connect root M0.IsParentOf profile
-        >>> G.connect root M0.IsParentOf fs -- XXX DELETEME
-        >>> G.connect root M0.IsParentOf pool
-        >>> G.connect root M0.IsParentOf mdpool
+initialiseConfInRG :: PhaseM RC l ()
+initialiseConfInRG = do
+    root_fid <- genRootFid -- the first newFidRC call is made here
+    -- XXX-MULTIPOOLS: create as many profiles as there are in the facts file
+    profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+    mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
+    -- Note that `createIMeta` may replace this FID with m0_fid0.
+    imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
+    let root = M0.Root root_fid (M0.fid mdpool) imeta_pver
+    modifyGraph
+        $ G.connect Cluster Has root
+      >>> G.connect Cluster Has M0.OFFLINE
+      >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
+      >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+      >>> G.connect root M0.IsParentOf profile
+      >>> G.connect root M0.IsParentOf pool
+      >>> G.connect root M0.IsParentOf mdpool
 
-      rg <- getGraph
-      mapM_ mirrorSite (G.connectedTo Cluster Has rg)
-      return fs
+    rg <- getGraph
+    mapM_ mirrorSite (G.connectedTo Cluster Has rg)
   where
     genRootFid = do
         let p = Proxy :: Proxy M0.Root
@@ -262,9 +253,9 @@ addProcess node devs CI.M0Process{..} = let
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.
-createMDPoolPVer :: M0.Filesystem -> PhaseM RC l ()
-createMDPoolPVer fs = do
-    Log.actLog "createMDPoolPVer" [("fs", M0.showFid fs)]
+createMDPoolPVer :: PhaseM RC l ()
+createMDPoolPVer = do
+    Log.actLog "createMDPoolPVer" []
     rg <- getGraph
     let root = M0.getM0Root rg
         mdpool = M0.Pool (M0.rt_mdpool root)
@@ -313,9 +304,9 @@ createMDPoolPVer fs = do
 --   no associated devices). In this case, we use the special FID 'M0_FID0'
 --   in the 'rt_imeta' field. This should validate correctly in Mero iff
 --   there are no CAS services.
-createIMeta :: M0.Filesystem -> PhaseM RC l ()
-createIMeta fs = do
-  Log.actLog "createIMeta" [("fs", M0.showFid fs)]
+createIMeta :: PhaseM RC l ()
+createIMeta = do
+  Log.actLog "createIMeta" []
   pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
   rg <- getGraph
   let root = M0.getM0Root rg

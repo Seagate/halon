@@ -89,10 +89,8 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
     haveOngoingSNS <- fmap (getAll . mconcat) .
       for pools $ \pool -> getPoolRepairInformation pool >>= return . All . isJust
 
-    havePVers <- getFilesystem >>= \case
-      Nothing -> return True
-      Just _  -> do
-       case mkFailuresSets of
+    havePVers <- do
+      case mkFailuresSets of
         [] -> return True -- No errors here, unexpected fast path!!
         [Failures 0 0 0 0 0] -> return True
         ss -> fmap (getAny . mconcat) . for pools $ \pool -> do -- XXX-MULTIPOOLS: Do we need to check for sites here?

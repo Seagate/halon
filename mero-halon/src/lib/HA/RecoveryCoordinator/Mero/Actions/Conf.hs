@@ -13,7 +13,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
     getRoot
   , getProfiles
   , theProfile
-  , getFilesystem
   , getSDevPool
   , getM0ServicesRC
   , getChildren
@@ -77,20 +76,6 @@ getProfiles = do
 -- XXX-MULTIPOOLS: DELETEME
 theProfile :: PhaseM RC l (Maybe M0.Profile)
 theProfile = listToMaybe <$> getProfiles
-
--- | Fetch the Mero filesystem in the system. Currently, we
---   only support a single filesystem, though in future there
---   might be multiple filesystems and this function will need
---   to change.
---
--- XXX-MULTIPOOLS: DELETEME
-getFilesystem :: PhaseM RC l (Maybe M0.Filesystem)
-getFilesystem = do
-    rg <- getGraph
-    pure $ listToMaybe [ fs
-                       | Just (root :: M0.Root) <- [G.connectedTo Cluster Has rg]
-                       , fs <- G.connectedTo root M0.IsParentOf rg
-                       ]
 
 -- | RC wrapper for 'getM0Services'.
 getM0ServicesRC :: PhaseM RC l [M0.Service]
