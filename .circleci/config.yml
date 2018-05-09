@@ -38,9 +38,16 @@ jobs:
           command: yum --assumeyes install ansible which
 
       - run:
+          name: Installing kernel
+          # this is needed for the setup-node command (following next) to pick
+          # up a correct kernel version for lustre-client-devel rpm build
+          command: yum --assumeyes install kernel
+
+      - run:
           name: Setting up build environment
           working_directory: ~/mero
           command: |
+              lustre_kver=$(ls -1r /lib/modules | head -n1) \
               ./scripts/setup-node localhost \
                         --verbose \
                         --local \
