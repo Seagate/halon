@@ -89,7 +89,7 @@ utTests transport pg =
 dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 dmRequest status reason serial num path = mkResponseDriveManager "enclosure_15" serial (fromIntegral num) status reason path
 
-mkHpiTest ::(Typeable g, RGroup g)
+mkHpiTest :: (Typeable g, RGroup g)
           => (ProcessId -> Definitions RC b)
           -> (ProcessId -> Process ())
           -> Transport
@@ -104,7 +104,7 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     sayTest $ show iData
     (ls',_)  <- run ls $ do
             mapM_ goSite (CI.id_sites iData)
-            _filesystem <- initialiseConfInRG
+            initialiseConfInRG (CI.id_pools iData) (CI.id_profiles iData)
             loadMeroGlobals (CI.id_m0_globals iData)
             loadMeroServers (CI.id_m0_servers iData)
     let testRule = mkTestRule self

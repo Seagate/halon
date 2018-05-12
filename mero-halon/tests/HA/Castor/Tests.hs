@@ -408,7 +408,7 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
 initialDataLoad :: CI.InitialData -> PhaseM RC l ()
 initialDataLoad CI.InitialData{..} = do
     mapM_ goSite id_sites
-    _filesystem <- initialiseConfInRG
+    initialiseConfInRG id_pools id_profiles
     loadMeroGlobals id_m0_globals
     loadMeroServers id_m0_servers
 

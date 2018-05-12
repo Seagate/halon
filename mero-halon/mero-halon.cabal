@@ -526,7 +526,8 @@ Test-Suite tests
   Default-Extensions: DeriveDataTypeable
                       DeriveGeneric
                       GeneralizedNewtypeDeriving
-                      RecordWildCards NamedFieldPuns
+                      NamedFieldPuns
+                      RecordWildCards
                       ScopedTypeVariables
   Build-Depends:    halon,
                     mero-halon,

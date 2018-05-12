@@ -453,14 +453,14 @@ def sample_facts():
         encls=[encl_ssu11, encl_ssu13, encl_ssu14, encl_ssu16, encl_ssu17,
                encl_c191, encl_c192, encl_c193, encl_c194])
 
-    pools = [Pool(id='tier1.IO', drive_refs=map(DriveRef, encl_ssu11.drives)),
-             Pool(id='tier2.IO', drive_refs=map(DriveRef, encl_ssu13.drives)),
-             Pool(id='tier3.IO', drive_refs=map(DriveRef,
+    pools = [Pool(id='MD.tier1', drive_refs=map(DriveRef, encl_ssu11.drives)),
+             Pool(id='IO.tier2', drive_refs=map(DriveRef, encl_ssu13.drives)),
+             Pool(id='IO.tier3', drive_refs=map(DriveRef,
                                                 encl_ssu14.drives +
                                                 encl_ssu16.drives +
                                                 encl_ssu17.drives)),
              # Drives of encl_ssu17 are shared between two pools.
-             Pool(id='tier4.IO', drive_refs=map(DriveRef, encl_ssu17.drives))]
+             Pool(id='IO.tier4', drive_refs=map(DriveRef, encl_ssu17.drives))]
 
     profiles = [Profile(id='prof-0', pools=pools[:1]),
                 Profile(id='prof-1', pools=pools[1:3]),

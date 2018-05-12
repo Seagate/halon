@@ -38,6 +38,7 @@ import           Mero.ConfC (ServiceType)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
+import           Text.Printf (printf)
 
 -- | Halon-specific settings for the 'Host'.
 data HalonSettings = HalonSettings
@@ -303,6 +304,14 @@ data M0Pool = M0Pool
 instance Hashable M0Pool
 instance FromJSON M0Pool
 instance ToJSON M0Pool
+
+-- | 'pool_id' of the metadata pool has this prefix.
+mdpoolPrefix :: String
+mdpoolPrefix = "MD."
+
+-- | Is this the metadata pool?
+isMDPool :: M0Pool -> Bool
+isMDPool = T.isPrefixOf (T.pack mdpoolPrefix) . pool_id
 
 -- | Reference to M0Device: a combination of any number of device
 -- attributes (from given subset), which uniquely identifies a device.
@@ -578,13 +587,22 @@ parseInitialData facts meroRoles halonRoles = runExceptT $ do
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData InitialData{..} = do
     check "Sites with non-unique rack_idx exist"
-        (unique . map site_idx $ id_sites)
+        (unique $ map site_idx id_sites)
     check "Racks with non-unique rack_idx exist inside a site" $
         all (unique . map rack_idx) racksPerSite
     check "Enclosures with non-unique enc_idx exist inside a rack" $
         all (unique . map enc_idx) enclsPerRack
     check "Enclosure without enc_id specified" $ all (not . null) enclIds
     check "Enclosures with non-unique enc_id exist" (unique enclIds)
+    check "Pools with non-unique pool_id exist" (unique $ map pool_id id_pools)
+    check "Profiles with non-unique profile_id exist"
+        (unique $ map prof_id id_profiles)
+
+    let nr_mdpools = length (filter isMDPool id_pools)
+        err_fmt = concat [ "1 metadata pool expected, %u provided\n"
+                         , "Format of metadata pool_id: \"%s<id>\""]
+    check (printf err_fmt nr_mdpools mdpoolPrefix) (nr_mdpools == 1)
+
   where
     check msg cond = if cond
                      then Right ()

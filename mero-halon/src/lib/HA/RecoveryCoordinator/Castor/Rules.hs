@@ -78,7 +78,7 @@ ruleInitialDataLoad =
 
         load = do
           mapM_ goSite id_sites
-          initialiseConfInRG
+          initialiseConfInRG id_pools id_profiles
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
           graph <- getGraph

@@ -163,7 +163,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
               [(1 :: Int) .. _id_drives]
           })
       serverAddrs
-  , CI.id_pools = []
+  , CI.id_pools = [CI.M0Pool "MD." []]
   , CI.id_profiles = []
 }
   where

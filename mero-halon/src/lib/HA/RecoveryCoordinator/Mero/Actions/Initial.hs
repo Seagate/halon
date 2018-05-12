@@ -47,33 +47,31 @@ import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
---   This does the following:
---   * Create a single profile, filesystem
---   * Create Mero rack and enclosure entities reflecting existing
---     entities in the graph.
-initialiseConfInRG :: PhaseM RC l ()
-initialiseConfInRG = do
-    root_fid <- genRootFid -- the first newFidRC call is made here
-    -- XXX-MULTIPOOLS: create as many profiles as there are in the facts file
-    profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
-    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-    mdpool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-    -- Note that `createIMeta` may replace this FID with m0_fid0.
+initialiseConfInRG :: [CI.M0Pool] -> [CI.M0Profile] -> PhaseM RC l ()
+initialiseConfInRG pools profiles = do
+    root_fid <- mkRootFid -- the first newFidRC call is made here
+    mdpool_fid <- newFidRC (Proxy :: Proxy M0.Pool)
+    -- Note that `createIMeta` may replace `imeta_pver` fid with m0_fid0.
     imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
-    let root = M0.Root root_fid (M0.fid mdpool) imeta_pver
+    let root = M0.Root root_fid mdpool_fid imeta_pver
     modifyGraph
         $ G.connect Cluster Has root
       >>> G.connect Cluster Has M0.OFFLINE
       >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
       >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
-      >>> G.connect root M0.IsParentOf profile
-      >>> G.connect root M0.IsParentOf pool
-      >>> G.connect root M0.IsParentOf mdpool
-
+    for_ pools $ \p -> do
+        pool_fid <- if CI.isMDPool p -- 'CI.validateInitialData' guarantees
+                                     -- that there is exactly one MD pool.
+                    then pure mdpool_fid
+                    else newFidRC (Proxy :: Proxy M0.Pool)
+        modifyGraph $ G.connect root M0.IsParentOf (M0.Pool pool_fid)
+    for_ profiles $ \_ -> do
+        profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+        modifyGraph $ G.connect root M0.IsParentOf profile
     rg <- getGraph
     mapM_ mirrorSite (G.connectedTo Cluster Has rg)
   where
-    genRootFid = do
+    mkRootFid = do
         let p = Proxy :: Proxy M0.Root
             root_0 = M0.fidInit p 1 0
         -- Root fid must be equal to M0_CONF_ROOT_FID=<7400000000000001:0>
@@ -82,7 +80,7 @@ initialiseConfInRG = do
         -- That's why fid of the root object must be generated first.
         fid <- newFidRC p
         when (fid /= root_0) $
-            error ("initialiseConfInRG.genRootFid: Expected " ++ show root_0
+            error ("initialiseConfInRG.mkRootFid: Expected " ++ show root_0
                    ++ ", got " ++ show fid)
         pure fid
 

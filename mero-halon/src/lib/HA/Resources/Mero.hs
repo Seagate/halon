@@ -160,7 +160,7 @@ storageIndex ''At "faa2ba1b-b989-468b-98f2-d38859a6b566"
 deriveSafeCopy 0 'base ''At
 
 -- | Relationship between parent and child entities in confd
---   Directed from parent to child (e.g. profile IsParentOf filesystem)
+--   Directed from parent to child (e.g. pool IsParentOf pver)
 data IsParentOf = IsParentOf
   deriving (Eq, Show, Generic, Typeable)
 
