@@ -89,7 +89,7 @@ utTests transport pg =
 dmRequest :: Text -> Text -> Text -> Int -> Text -> SensorResponseMessageSensor_response_typeDisk_status_drivemanager
 dmRequest status reason serial num path = mkResponseDriveManager "enclosure_15" serial (fromIntegral num) status reason path
 
-mkHpiTest ::(Typeable g, RGroup g)
+mkHpiTest :: (Typeable g, RGroup g)
           => (ProcessId -> Definitions RC b)
           -> (ProcessId -> Process ())
           -> Transport
@@ -100,13 +100,14 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     self <- getSelfPid
     sayTest "load data"
     ls <- emptyLoopState pid self
-    iData <- liftIO defaultInitialData
+    iData@CI.InitialData{..} <- liftIO defaultInitialData
     sayTest $ show iData
     (ls',_)  <- run ls $ do
-            mapM_ goSite (CI.id_sites iData)
-            _filesystem <- initialiseConfInRG
-            loadMeroGlobals (CI.id_m0_globals iData)
-            loadMeroServers (CI.id_m0_servers iData)
+            mapM_ goSite id_sites
+            initialiseConfInRG
+            loadMeroGlobals id_m0_globals
+            loadMeroServers id_m0_servers
+            loadMeroPools id_pools >>= loadMeroProfiles id_profiles
     let testRule = mkTestRule self
     sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do
@@ -250,7 +251,6 @@ genericHpiTest HTI{..} = mkHpiTest rules test
       let request = mkHpiMessage (pack hostname) enc (pack serial') idx devid wwn hpiIsInstalled hpiIsPowered
       usend rc . HAEvent uuid $ DiskHpi me request
       hpiUserCallback uuid
-
 
 testDMRequest :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testDMRequest = mkHpiTest rules test

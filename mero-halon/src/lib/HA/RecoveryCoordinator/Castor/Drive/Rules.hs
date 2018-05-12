@@ -221,7 +221,7 @@ mkCheckAndHandleDriveReady smartLens next = do
       AbortSNSOperationFailure _ err -> do
         Log.rcLog' Log.WARN $ "Failed to abort SNS operation, doing nothing: " ++ err
       AbortSNSOperationSkip pool -> promulgateRC $ PoolRebalanceRequest pool
-    mm0sdev <- getter  <$> get Local >>= fmap join . traverse lookupStorageDeviceSDev
+    mm0sdev <- getter <$> get Local >>= fmap join . traverse lookupStorageDeviceSDev
     for_ mm0sdev next
 
   return $ \node disk onFailure -> do

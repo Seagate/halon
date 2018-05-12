@@ -10,7 +10,7 @@
 -- License   : All rights reserved.
 --
 -- Mero identifier type. Mero uses FIDs to uniquely identity most objects
--- it deals withm including items in the configuration database and files
+-- it deals with including items in the configuration database and files
 -- stored in the filesystem.
 --
 module Mero.Conf.Fid

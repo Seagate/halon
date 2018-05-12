@@ -45,7 +45,6 @@ type FldListenerId = '("listenerId", Maybe ListenerId)
 fldListenerId :: Proxy FldListenerId
 fldListenerId = Proxy
 
-
 -- | Datatype that keeps all helper methods that are needed
 -- for implementing rule.
 data JobHandle s input = JobHandle
@@ -133,7 +132,6 @@ mkJobRule (Job name)
                                         ] Nothing
                   insertWithStorageMapRC (mappend) input (JobDescription [eid] listeners)
                   switch next
-
 
     setPhase request $ \(HAEvent eid input) -> processRequest eid input []
     setPhase indexed_request $ \(HAEvent eid (JobStartRequest uuid input)) ->

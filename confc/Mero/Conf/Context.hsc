@@ -1,4 +1,5 @@
 {-# LANGUAGE CApiFFI                    #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE ForeignFunctionInterface   #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -27,6 +28,7 @@ import Control.Monad (when)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Bits (setBit, shiftR, zeroBits)
+import Data.Data (Data)
 import Data.Hashable (Hashable)
 import Data.List (splitAt, foldl')
 import Data.SafeCopy
@@ -101,8 +103,9 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
-  deriving (Eq, Ord, Generic, Show)
+  deriving (Eq, Ord, Data, Generic, Show)
 
+instance FromJSON Word128
 instance ToJSON Word128
 instance Binary Word128
 instance Serialize Word128
@@ -137,10 +140,10 @@ instance Storable Cookie where
 
 -- | @pdclust.h m0_pdclust_attr@
 data PDClustAttr = PDClustAttr
-  { _pa_N :: Word32
-  , _pa_K :: Word32
-  , _pa_P :: Word32
-  , _pa_unit_size :: Word64
+  { _pa_N :: Word32          -- ^ number of data units in a parity group
+  , _pa_K :: Word32          -- ^ number of parity units
+  , _pa_P :: Word32          -- ^ pool width
+  , _pa_unit_size :: Word64  -- ^ stripe unit size, bytes
   , _pa_seed :: Word128
 } deriving (Eq, Generic, Show)
 

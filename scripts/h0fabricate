@@ -260,6 +260,14 @@ class Pool(ToYaml):
     def to_yaml(self, depth):
         lines = []
         lines.append(indent(depth) + '- pool_id: ' + quote(self.id))
+        lines.append(indent(depth+1) + 'pool_pdclust_attrs:')
+        lines.append(indent(depth+2) + 'data_units: 2')
+        lines.append(indent(depth+2) + 'parity_units: 1')
+        lines.append(indent(depth+2) + 'unit_size: 4096')
+        lines.append(indent(depth+2) + 'seed: [101, 102]')
+        lines.append(indent(depth+1) + 'pool_allowed_failures:')
+        lines.append(indent(depth+2) +
+                     '- {site: 0, rack: 0, encl: 0, ctrl: 0, disk: 1}')
         lines.append(indent(depth+1) + 'pool_device_refs:')
         for x in self.drive_refs:
             lines.extend(x.to_yaml(depth+2))
@@ -323,16 +331,9 @@ class Facts(ToYaml):
                   'm0_be_txgr_reg_nr_max: 2097152',
                   'm0_be_txgr_reg_size_max: 536870912',
                   'm0_be_txgr_tx_nr_max: 82',
-                  'm0_block_size: 4096',
                   'm0_md_redundancy: 1',
-                  'm0_min_rpc_recvq_len: 2048',
-                  'm0_data_units: 2',
-                  'm0_parity_units: 1'):
+                  'm0_min_rpc_recvq_len: 2048'):
             lines.append(indent(depth+1) + s)
-        lines.append(indent(depth+1) + 'm0_failure_set_gen:')
-        lines.append(indent(depth+2) + 'tag: Formulaic')
-        lines.append(indent(depth+2) + 'contents:')
-        lines.append(indent(depth+3) + '- [0,0,0,0,1]')
 
         lines.append(indent(depth) + 'id_pools:')
         for x in self.pools:
@@ -453,14 +454,14 @@ def sample_facts():
         encls=[encl_ssu11, encl_ssu13, encl_ssu14, encl_ssu16, encl_ssu17,
                encl_c191, encl_c192, encl_c193, encl_c194])
 
-    pools = [Pool(id='tier1.IO', drive_refs=map(DriveRef, encl_ssu11.drives)),
-             Pool(id='tier2.IO', drive_refs=map(DriveRef, encl_ssu13.drives)),
-             Pool(id='tier3.IO', drive_refs=map(DriveRef,
-                                                encl_ssu14.drives +
-                                                encl_ssu16.drives +
-                                                encl_ssu17.drives)),
+    pools = [Pool(id='tier1', drive_refs=map(DriveRef, encl_ssu11.drives)),
+             Pool(id='tier2', drive_refs=map(DriveRef, encl_ssu13.drives)),
+             Pool(id='tier3', drive_refs=map(DriveRef,
+                                             encl_ssu14.drives +
+                                             encl_ssu16.drives +
+                                             encl_ssu17.drives)),
              # Drives of encl_ssu17 are shared between two pools.
-             Pool(id='tier4.IO', drive_refs=map(DriveRef, encl_ssu17.drives))]
+             Pool(id='tier4', drive_refs=map(DriveRef, encl_ssu17.drives))]
 
     profiles = [Profile(id='prof-0', pools=pools[:1]),
                 Profile(id='prof-1', pools=pools[1:3]),

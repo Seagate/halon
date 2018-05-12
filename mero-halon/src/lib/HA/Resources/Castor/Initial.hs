@@ -34,7 +34,7 @@ import           HA.Aeson (FromJSON, ToJSON, (.:), (.=))
 import qualified HA.Aeson as A
 import           HA.Resources.TH
 import           HA.SafeCopy
-import           Mero.ConfC (ServiceType)
+import           Mero.ConfC (ServiceType, Word128)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
@@ -127,18 +127,6 @@ instance Hashable Site
 instance FromJSON Site
 instance ToJSON Site
 
--- | Failure set schemes. Define how failure sets are determined.
---
--- TODO: Link to some doc here.
-data FailureSetScheme =
-    Preloaded Word32 Word32 Word32
-  | Formulaic [[Word32]]
-  deriving (Eq, Data, Generic, Show, Typeable)
-
-instance Hashable FailureSetScheme
-instance FromJSON FailureSetScheme
-instance ToJSON FailureSetScheme
-
 -- | Halon config for a host
 data HalonRole = HalonRole
   { _hc_name :: RoleName
@@ -169,10 +157,7 @@ instance ToJSON HalonRole where
 
 -- | Facts about the cluster.
 data M0Globals = M0Globals
-  { m0_data_units :: Word32 -- ^ As in genders
-  , m0_parity_units :: Word32  -- ^ As in genders
-  , m0_md_redundancy :: Word32 -- ^ Metadata redundancy count
-  , m0_failure_set_gen :: FailureSetScheme
+  { m0_md_redundancy :: Word32
   , m0_be_ios_seg_size :: Maybe Word64
   , m0_be_log_size :: Maybe Word64
   , m0_be_seg_size :: Maybe Word64
@@ -185,7 +170,6 @@ data M0Globals = M0Globals
   , m0_be_txgr_reg_nr_max :: Maybe Word64
   , m0_be_txgr_reg_size_max :: Maybe Word64
   , m0_be_txgr_tx_nr_max :: Maybe Word32
-  , m0_block_size :: Maybe Word32
   , m0_min_rpc_recvq_len :: Maybe Word32
   } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -295,9 +279,77 @@ instance Hashable M0Service
 instance FromJSON M0Service
 instance ToJSON M0Service
 
+-- | Initial specification of Mero parity de-clustering layout attributes.
+--
+-- See also 'PDClustAttr', 'm0_pdclust_attr'.
+data PDClustAttrs0 = PDClustAttrs0
+  { pa0_data_units :: Word32    -- ^ N
+  , pa0_parity_units :: Word32  -- ^ K
+  , pa0_unit_size :: Word64
+  , pa0_seed :: Word128
+  } deriving (Eq, Data, Generic, Show)
+
+-- | Options for 'PDClustAttrs0' JSON parser.
+pdclustJSONOptions :: A.Options
+pdclustJSONOptions = A.defaultOptions
+  { A.fieldLabelModifier = drop (length ("pa0_" :: String))
+  }
+
+instance FromJSON PDClustAttrs0 where
+  parseJSON = A.genericParseJSON pdclustJSONOptions
+
+instance ToJSON PDClustAttrs0 where
+  toJSON = A.genericToJSON pdclustJSONOptions
+
+instance Hashable PDClustAttrs0
+
+-- | Failure tolerance vector.
+--
+-- For a given pool version, the failure tolerance vector reflects how
+-- many devices in each level can be expected to fail whilst still
+-- allowing the remaining disks in that pool version to be read.
+--
+-- For disks, then, note that this will equal the parameter K, where
+-- (N,K,P) is the triple of data units, parity units, pool width for
+-- the pool version.
+--
+-- For controllers, this should indicate the maximum number such that
+-- no failure of that number of controllers can take out more than K
+-- units.  We can put an upper bound on this by considering
+-- floor((nr_encls)/(N+K)), though distributional issues may result
+-- in a lower value.
+data Failures = Failures
+  { f_site :: !Word32
+  , f_rack :: !Word32
+  , f_encl :: !Word32
+  , f_ctrl :: !Word32
+  , f_disk :: !Word32
+  } deriving (Eq, Ord, Data, Generic, Show)
+
+optsFailures :: A.Options
+optsFailures = A.defaultOptions
+  { A.fieldLabelModifier = let prefix = "f_" :: String
+                           in drop (length prefix)
+  }
+
+instance FromJSON Failures where
+    parseJSON = A.genericParseJSON optsFailures
+
+instance ToJSON Failures where
+    toJSON = A.genericToJSON optsFailures
+
+instance Hashable Failures
+
+-- | Convert failure tolerance vector to a straight list of Words for
+--   passing to Mero.
+failuresToList :: Failures -> [Word32]
+failuresToList f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+
 data M0Pool = M0Pool
   { pool_id :: T.Text
-  , pool_device_refs :: [M0DeviceRef]
+  , pool_pdclust_attrs :: PDClustAttrs0
+  , pool_allowed_failures :: [Failures]
+  , pool_device_refs :: [M0DeviceRef]  -- XXX consider using Data.List.NonEmpty
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Pool
@@ -505,7 +557,7 @@ resolveMeroRoles InitialWithRoles{..} template =
     mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host
     mkHost env uhost =
         let eprocs :: [Either String [M0Process]]
-            eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
+            eprocs = roleToProcesses env <$> _uhost_m0h_roles uhost
         in case partitionEithers eprocs of
             ([], procs) ->
                 Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
@@ -577,14 +629,23 @@ parseInitialData facts meroRoles halonRoles = runExceptT $ do
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData InitialData{..} = do
-    check "Sites with non-unique rack_idx exist"
-        (unique . map site_idx $ id_sites)
-    check "Racks with non-unique rack_idx exist inside a site" $
-        all (unique . map rack_idx) racksPerSite
-    check "Enclosures with non-unique enc_idx exist inside a rack" $
-        all (unique . map enc_idx) enclsPerRack
-    check "Enclosure without enc_id specified" $ all (not . null) enclIds
-    check "Enclosures with non-unique enc_id exist" (unique enclIds)
+    check "Site with non-unique rack_idx" $ unique $ map site_idx id_sites
+    check "Rack with non-unique rack_idx inside a site"
+      $ all (unique . map rack_idx) racksPerSite
+    check "Enclosure with non-unique enc_idx inside a rack"
+      $ all (unique . map enc_idx) enclsPerRack
+    check "Enclosure without enc_id" $ all (not . null) enclIds
+    check "Enclosure with non-unique enc_id" $ unique enclIds
+    check "Pool with non-unique pool_id" $ unique $ map pool_id id_pools
+    check "Pool without device_refs"
+      $ all (not . null . pool_device_refs) id_pools
+    check "Void device_ref"
+      $ all (all isValidDeviceRef . pool_device_refs) id_pools
+    -- Note that we do not check if device_refs within a pool are unique.
+    -- This would be pointless, because different device_refs may still
+    -- point at the same drive.
+    check "Profile with non-unique profile_id"
+      $ unique $ map prof_id id_profiles
   where
     check msg cond = if cond
                      then Right ()
@@ -603,19 +664,22 @@ validateInitialData InitialData{..} = do
                    ]
     enclIds = enc_id <$> concat enclsPerRack
 
+    isValidDeviceRef (M0DeviceRef Nothing Nothing Nothing) = False
+    isValidDeviceRef _ = True
+
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
 -- value for the 'Left' should the value be 'Nothing'.
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither _ (Just a) = Right a
 maybeToEither e Nothing = Left e
 
-deriveSafeCopy 0 'base ''FailureSetScheme
-storageIndex           ''FailureSetScheme "3ad171f9-2691-4554-bef7-e6997d2698f1"
 deriveSafeCopy 0 'base ''M0Device
 storageIndex           ''M0Device "cf6ea1f5-1d1c-4807-915e-5df1396fc764"
 deriveSafeCopy 0 'base ''M0Globals
 storageIndex           ''M0Globals "4978783e-e7ff-48fe-ab83-85759d822622"
 deriveSafeCopy 0 'base ''M0Pool
+deriveSafeCopy 0 'base ''PDClustAttrs0
+deriveSafeCopy 0 'base ''Failures
 deriveSafeCopy 0 'base ''M0DeviceRef
 deriveSafeCopy 0 'base ''M0Profile
 deriveSafeCopy 0 'base ''M0Host

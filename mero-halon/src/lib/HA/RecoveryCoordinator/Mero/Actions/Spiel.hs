@@ -102,7 +102,6 @@ import           Data.Vinyl
 
 import           Network.CEP
 import           System.IO
-import           Text.Printf (printf)
 
 import           GHC.Generics
 import           GHC.TypeLits
@@ -711,18 +710,8 @@ txPopulate :: LiftRC -> TxConfData -> SpielTransaction -> PhaseM RC l SpielTrans
 txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid)) t = do
   rg <- getGraph
   let root@M0.Root{..} = M0.getM0Root rg
-      -- XXX-MULTIPOOLS: This code is wrong --- it assumes that there is only
-      -- one pool.
-      m0_pool_width = length [ disk
-                             | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
-                             , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
-                             , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-                             , cntr :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-                             , disk :: M0.Disk <- G.connectedTo cntr M0.IsParentOf rg
-                             ]
-      rootParams = [printf "%d %d %d" m0_pool_width m0_data_units m0_parity_units]
   m0synchronously lift $ do
-    Spiel.addRoot t rt_fid rt_mdpool rt_imeta_pver m0_md_redundancy rootParams
+    Spiel.addRoot t rt_fid rt_mdpool rt_imeta_pver m0_md_redundancy []
     Spiel.addProfile t pfid -- XXX-MULTIPOOLS: multiple profiles
   Log.rcLog' Log.DEBUG "Added root and profile"
   -- Sites, racks, encls, controllers, disks

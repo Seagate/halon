@@ -304,7 +304,6 @@ mkSDevFailedMsg sdev = HAMsg stob_ioq_error msg_meta
       , _hm_epoch = 0
       }
 
-
 -- | Fail a drive (via Mero notification)
 failDrive :: TestSetup -> ThatWhichWeCallADisk -> Process ()
 failDrive _ (ADisk _ Nothing _ _) = error "Cannot fail a non-Mero disk."

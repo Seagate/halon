@@ -20,10 +20,10 @@ module Helper.InitialData
 import           Data.List.Split (splitOn)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import           GHC.Word (Word8)
+import           Data.Word (Word8, Word32)
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
-import           Mero.ConfC (ServiceType(..))
+import           Mero.ConfC (ServiceType(..), Word128(..))
 import           Mero.Lnet
 import           Network.BSD (getHostName)
 import           Text.Printf
@@ -50,16 +50,19 @@ data InitialDataSettings = InitialDataSettings
   , _id_globals :: !CI.M0Globals
   -- ^ Various global settings usually provided by the provisioner.
   -- See 'defaultGlobals'.
+  , _id_data_units :: !Word32
+  -- ^ Number of data units in a parity group -- N.
+  , _id_parity_units :: !Word32
+  -- ^ Number of parity units in a parity group -- K.
+  , _id_allowed_failures :: [CI.Failures]
+  -- ^ Value of 'pool_allowed_failures'.
   } deriving (Show, Eq)
 
 -- | Defaults taken from
 -- <http://es-gerrit.xyus.xyratex.com:8080/#/c/10913/1/modules/stx_halon/manifests/facts.pp>
 defaultGlobals :: CI.M0Globals
-defaultGlobals = CI.M0Globals {
-    CI.m0_data_units = 8
-  , CI.m0_parity_units = 2
-  , CI.m0_md_redundancy = 1
-  , CI.m0_failure_set_gen = CI.Preloaded 0 0 1
+defaultGlobals = CI.M0Globals
+  { CI.m0_md_redundancy = 1
   , CI.m0_be_ios_seg_size = Nothing
   , CI.m0_be_log_size = Nothing
   , CI.m0_be_seg_size = Nothing
@@ -72,9 +75,8 @@ defaultGlobals = CI.M0Globals {
   , CI.m0_be_txgr_reg_nr_max = Nothing
   , CI.m0_be_txgr_reg_size_max = Nothing
   , CI.m0_be_txgr_tx_nr_max = Nothing
-  , CI.m0_block_size = Nothing
   , CI.m0_min_rpc_recvq_len = Nothing
-}
+  }
 
 -- | Helper for IP addresses formatted as a quadruple of 'Word8's.
 showIP :: (Word8, Word8, Word8, Word8) -> String
@@ -102,15 +104,14 @@ mkSvc endpoint stype = CI.M0Service
 
 initialData :: InitialDataSettings -> IO CI.InitialData
 initialData InitialDataSettings{..}
-  | (fromIntegral _id_servers * _id_drives) < fromIntegral (d + 2 * p) =
+  | (fromIntegral _id_servers * _id_drives) < fromIntegral pgWidth =
      fail $ "initialData: the given number of devices ("
          ++ show (fromIntegral _id_servers * _id_drives)
-         ++ ") is smaller than 2 * parity_units + data_units (= "
-         ++ show (d + 2 * p)
+         ++ ") is smaller than data_units + 2 * parity_units ("
+         ++ show pgWidth
          ++ ")."
   where
-    d = CI.m0_data_units _id_globals
-    p = CI.m0_parity_units _id_globals
+    pgWidth = _id_data_units + 2 * _id_parity_units
 initialData InitialDataSettings{..} = return $ CI.InitialData {
     CI.id_m0_globals = _id_globals
   , CI.id_sites = [
@@ -144,33 +145,50 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
         ]
       }
     ]
-  , CI.id_m0_servers = fmap
-      (\ifaddr@(_,_,_,w) ->
-         let host = if _id_servers > 1
-                    then _id_hostname <> "_" <> T.pack (show w)
-                    else _id_hostname
-        in CI.M0Host {
-            CI.m0h_fqdn = host
-          , CI.m0h_processes = map ($ ifaddr)
-              [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
-          , CI.m0h_devices = fmap
-              (\j -> CI.M0Device
-                      ("wwn" ++ show w ++ "_" ++ show j)
-                      ("serial" ++ show w ++ "_" ++ show j)
-                      4 64000
-                      ("/dev/loop" ++ show w ++ "_" ++ show j)
-                      j)
-              [(1 :: Int) .. _id_drives]
-          })
-      serverAddrs
-  , CI.id_pools = []
-  , CI.id_profiles = []
+  , CI.id_m0_servers = hosts
+  , CI.id_pools = [pool_0]
+  , CI.id_profiles = [CI.M0Profile "prof-0" ["pool-0"]]
 }
   where
     serverAddrs :: [(Word8, Word8, Word8, Word8)]
     serverAddrs = take (fromIntegral _id_servers)
                   -- Assign next IP to consecutive servers
                   $ iterate (\(x,y,z,w) -> (x,y,z,w + 1)) _id_host_ip
+
+    hosts :: [CI.M0Host]
+    hosts = fmap
+      (\ifaddr@(_,_,_,w) ->
+        let host = if _id_servers > 1
+                   then _id_hostname <> "_" <> T.pack (show w)
+                   else _id_hostname
+        in CI.M0Host {
+            CI.m0h_fqdn = host
+          , CI.m0h_processes = map ($ ifaddr)
+              [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
+          , CI.m0h_devices = fmap
+              (\j -> CI.M0Device
+                       { CI.m0d_wwn = "wwn" ++ show w ++ "_" ++ show j
+                       , CI.m0d_serial = "serial" ++ show w ++ "_" ++ show j
+                       , CI.m0d_bsize = 4
+                       , CI.m0d_size = 64000
+                       , CI.m0d_path = "/dev/loop" ++ show w ++ "_" ++ show j
+                       , CI.m0d_slot = j
+                       })
+              [(1 :: Int) .. _id_drives]
+          })
+      serverAddrs
+
+    deviceRefs = map (\CI.M0Device{..} -> CI.M0DeviceRef
+            { CI.dr_wwn    = Just (T.pack m0d_wwn)
+            , CI.dr_serial = Just (T.pack m0d_serial)
+            , CI.dr_path   = Just (T.pack m0d_path)
+            }) (concatMap CI.m0h_devices hosts)
+    pool_0 = CI.M0Pool "pool-0" attrs _id_allowed_failures deviceRefs
+    attrs = CI.PDClustAttrs0 { CI.pa0_data_units   = _id_data_units
+                             , CI.pa0_parity_units = _id_parity_units
+                             , CI.pa0_unit_size    = 4096
+                             , CI.pa0_seed         = Word128 100 500
+                             }
 
 -- | Pre-populated 'InitialDataSettings'.
 defaultInitialDataSettings :: IO InitialDataSettings
@@ -183,6 +201,9 @@ defaultInitialDataSettings = do
       , _id_servers = 1
       , _id_drives = 12
       , _id_globals = defaultGlobals
+      , _id_data_units = 2
+      , _id_parity_units = 1
+      , _id_allowed_failures = [CI.Failures 0 0 0 0 1]
       }
     r -> fail $ "Could not obtain host IP for initial data: " ++ show r
 

@@ -18,8 +18,7 @@ module HA.RecoveryCoordinator.Castor.Rules
  , goSite
  ) where
 
-import           Control.Monad.Catch
-import           Data.Foldable (for_)
+import           Control.Monad.Catch (SomeException, catch)
 import qualified Data.Text as T
 
 import           HA.RecoveryCoordinator.Actions.Hardware
@@ -31,7 +30,6 @@ import qualified HA.RecoveryCoordinator.Castor.FilesystemStats as FStats
 import qualified HA.RecoveryCoordinator.Castor.Node.Rules as Node
 import qualified HA.RecoveryCoordinator.Castor.Process.Rules as Process
 import qualified HA.RecoveryCoordinator.Castor.Service as Service
-import           HA.RecoveryCoordinator.Mero.Actions.Failure
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Events.Cluster
@@ -81,30 +79,7 @@ ruleInitialDataLoad =
           initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
-          graph <- getGraph
-          Just updateType <- getCurrentGraphUpdateType
-          case updateType of
-            Iterative update -> do
-              Log.rcLog' Log.WARN "iterative graph population - can't test sanity prior to update."
-              for_ (update graph) $ \updateGraph -> do
-                graph' <- updateGraph $ \rg' -> do
-                  putGraph rg'
-                  syncGraphBlocking
-                  getGraph
-                putGraph graph'
-                syncGraphBlocking
-            Monolithic update -> modifyGraphM update
-          -- Note that we call these after doing the 'update', which creates
-          -- pool versions for the IO pools. The reason for this is that
-          -- 'createIMeta', at least, generates additional disks for use in the
-          -- imeta pool. Currently there is no marker on disks to distinguish
-          -- which pool they should be in, however, so if these are created
-          -- before the update then they get added to the IO pool. The correct
-          -- solution will involve proper support for multiple pools and
-          -- multiple types of pools. In the meantime, creating these fake
-          -- devices later works.
-          createMDPoolPVer
-          createIMeta
+          loadMeroPools id_pools >>= loadMeroProfiles id_profiles
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Site])

@@ -160,7 +160,7 @@ storageIndex ''At "faa2ba1b-b989-468b-98f2-d38859a6b566"
 deriveSafeCopy 0 'base ''At
 
 -- | Relationship between parent and child entities in confd
---   Directed from parent to child (e.g. profile IsParentOf filesystem)
+--   Directed from parent to child (e.g. pool IsParentOf pver)
 data IsParentOf = IsParentOf
   deriving (Eq, Show, Generic, Typeable)
 
@@ -195,7 +195,7 @@ deriveSafeCopy 0 'base ''IsOnHardware
 
 data Root = Root
   { rt_fid :: Fid
-  , rt_mdpool :: Fid -- ^ Meta-data pool.
+  , rt_mdpool :: Fid -- ^ Meta-data pool.  XXX-MULTIPOOLS: DELETEME
   , rt_imeta_pver :: Fid -- ^ Distributed index meta-data pool version.
   } deriving (Eq, Show, Generic, Typeable)
 
@@ -506,6 +506,9 @@ deriveSafeCopy 0 'base ''Pool
 data PVerActual = PVerActual
   { va_attrs :: PDClustAttr
   , va_tolerance :: [Word32]
+    -- ^ XXX A list type is not rigid enough.  Consider making it
+    -- a vector of exactly M0_CONF_PVER_HEIGHT elements.
+    -- See `fixed-length` package.
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable PVerActual
@@ -518,6 +521,7 @@ data PVerFormulaic = PVerFormulaic
   { vf_id :: Word32
   , vf_base :: Fid
   , vf_allowance :: [Word32]
+    -- ^ XXX Make it a vector of exactly M0_CONF_PVER_HEIGHT elements.
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable PVerFormulaic
@@ -546,6 +550,16 @@ newtype PVerCounter = PVerCounter Word32
 
 storageIndex ''PVerCounter "e6cce9f1-9bad-4de4-9b0c-b88cadf91200"
 deriveSafeCopy 0 'base ''PVerCounter
+
+-- | Marker for a meta-data pool version.
+data MetadataPVer = MetadataPVer
+  deriving (Eq, Show, Generic, Typeable)
+
+instance Hashable MetadataPVer
+instance ToJSON MetadataPVer
+
+storageIndex ''MetadataPVer "e38673d3-9c38-44d6-b1f2-1e52aee84a6f"
+deriveSafeCopy 0 'base ''MetadataPVer
 
 newtype SiteV = SiteV Fid
   deriving (Eq, Show, Generic, Hashable, Typeable, ToJSON)
@@ -943,8 +957,8 @@ $(mkDicts
   [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
+  , ''LNid, ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -990,7 +1004,7 @@ $(mkDicts
   , (''SDev, ''IsOnHardware, ''Disk)
   , (''SDev, ''At, ''Cas.Slot)
   , (''Node, ''IsOnHardware, ''Controller)
-  , (''Profile, ''R.Has, ''Pool) -- XXX USEME
+  , (''Profile, ''R.Has, ''Pool)
     -- Other things!
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
@@ -998,6 +1012,7 @@ $(mkDicts
   , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
+  , (''PVer, ''Cas.Is, ''MetadataPVer)
   , (''Cas.Host, ''R.Has, ''LNid)
   , (''Cas.Host, ''R.Runs, ''Node)
   , (''Process, ''R.Has, ''CI.ProcessType)
@@ -1019,8 +1034,8 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''LNid
-  , ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
+  , ''LNid, ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
   , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
   , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
@@ -1066,7 +1081,7 @@ $(mkResRel
     -- Conceptual/hardware relationships between conf entities
   , (''SDev, AtMostOne, ''IsOnHardware, AtMostOne, ''Disk)
   , (''Node, AtMostOne, ''IsOnHardware, AtMostOne, ''Controller)
-  , (''Profile, AtMostOne, ''R.Has, Unbounded, ''Pool) -- XXX USEME
+  , (''Profile, AtMostOne, ''R.Has, Unbounded, ''Pool)
     -- Other things!
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''FidSeq)
   , (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''CI.M0Globals)
@@ -1074,6 +1089,7 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''DiskFailureVector)
+  , (''PVer, AtMostOne, ''Cas.Is, AtMostOne, ''MetadataPVer)
   , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''CI.ProcessType)

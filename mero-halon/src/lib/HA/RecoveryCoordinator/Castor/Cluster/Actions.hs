@@ -9,7 +9,7 @@
 module HA.RecoveryCoordinator.Castor.Cluster.Actions
   ( -- * Guards
     barrierPass
-    -- *Actions
+    -- * Actions
   , notifyOnClusterTransition
   , calculateClusterLiveness
   ) where
@@ -23,16 +23,16 @@ import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Actions.Mero
 import qualified HA.RecoveryCoordinator.Castor.Cluster.Events as Event
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
-import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor (Is(..))
+import           HA.Resources.Castor.Initial (Failures(..), failuresToList)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           Mero.Notification (getSpielAddress)
-import           Network.CEP
+import           Network.CEP (PhaseM)
 
 -- | Message guard: Check if the barrier being passed is for the
 -- correct level. This is used during 'ruleNewMeroServer' with the
@@ -99,7 +99,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
                                  , let result = case M0.v_data pver of
                                          Right _  -> checkActual pver
                                          Left pvf ->
-                                            any ((M0.vf_allowance pvf ==) . failuresToArray) ss
+                                            any ((M0.vf_allowance pvf ==) . failuresToList) ss
                                  ]
     return $ Event.ClusterLiveness havePVers haveOngoingSNS haveQuorum havePrincipalRM
   where
