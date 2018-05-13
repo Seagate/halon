@@ -586,17 +586,23 @@ parseInitialData facts meroRoles halonRoles = runExceptT $ do
 
 validateInitialData :: InitialData -> Either Y.ParseException ()
 validateInitialData InitialData{..} = do
-    check "Sites with non-unique rack_idx exist"
-        (unique $ map site_idx id_sites)
-    check "Racks with non-unique rack_idx exist inside a site" $
-        all (unique . map rack_idx) racksPerSite
-    check "Enclosures with non-unique enc_idx exist inside a rack" $
-        all (unique . map enc_idx) enclsPerRack
-    check "Enclosure without enc_id specified" $ all (not . null) enclIds
-    check "Enclosures with non-unique enc_id exist" (unique enclIds)
-    check "Pools with non-unique pool_id exist" (unique $ map pool_id id_pools)
-    check "Profiles with non-unique profile_id exist"
-        (unique $ map prof_id id_profiles)
+    check "Site with non-unique rack_idx" $ unique $ map site_idx id_sites
+    check "Rack with non-unique rack_idx inside a site"
+      $ all (unique . map rack_idx) racksPerSite
+    check "Enclosure with non-unique enc_idx inside a rack"
+      $ all (unique . map enc_idx) enclsPerRack
+    check "Enclosure without enc_id" $ all (not . null) enclIds
+    check "Enclosure with non-unique enc_id" $ unique enclIds
+    check "Pool with non-unique pool_id" $ unique $ map pool_id id_pools
+    check "Pool without device_refs"
+      $ all (not . null . pool_device_refs) id_pools
+    check "Void device_ref"
+      $ all (all isValidDeviceRef . pool_device_refs) id_pools
+    -- Note that we do not check if device_refs within a pool are unique.
+    -- This would be pointless, because different device_refs may still
+    -- point at the same drive.
+    check "Profile with non-unique profile_id"
+      $ unique $ map prof_id id_profiles
 
     let nr_mdpools = length (filter isMDPool id_pools)
         err_fmt = concat [ "1 metadata pool expected, %u provided\n"
@@ -620,6 +626,9 @@ validateInitialData InitialData{..} = do
                    , rack <- site_racks site
                    ]
     enclIds = enc_id <$> concat enclsPerRack
+
+    isValidDeviceRef (M0DeviceRef Nothing Nothing Nothing) = False
+    isValidDeviceRef _ = True
 
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
 -- value for the 'Left' should the value be 'Nothing'.

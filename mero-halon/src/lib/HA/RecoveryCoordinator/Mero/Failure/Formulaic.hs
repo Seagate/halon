@@ -35,6 +35,8 @@ formulaicUpdate :: Monad m => [[Word32]] -> UpdateType m
 formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
   globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
   let root = M0.getM0Root rg
+      -- XXX-MULTIPOOLS: Global PDClustAttr makes no sense, there should be
+      -- one PDClustAttr per pool.
       attrs = PDClustAttr
                 { _pa_N = CI.m0_data_units globs
                 , _pa_K = CI.m0_parity_units globs
@@ -46,6 +48,9 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
       imeta_pver = M0.rt_imeta_pver root
       n = CI.m0_data_units globs
       k = CI.m0_parity_units globs
+      -- XXX-MULTIPOOLS: This calculation is wrong --- it assumes that
+      -- there is only one pool, while in fact there may be several
+      -- specified in the _facts_ file.
       noCtrls = length
         [ ctrl
         | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
