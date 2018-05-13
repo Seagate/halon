@@ -41,7 +41,7 @@ module HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
   ) where
 
 import           Control.Arrow ((>>>))
-import           Data.Bool
+import           Data.Bool (bool)
 import           Data.Proxy
 import           Data.List (foldl')
 import           Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
@@ -49,7 +49,7 @@ import           Data.Foldable (for_)
 import           HA.RecoveryCoordinator.RC.Application
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
-import qualified HA.Resources as R
+import           HA.Resources (Cluster(..), Has(..))
 import           HA.Resources.Castor
 import qualified HA.ResourceGraph as G
 import           Network.CEP
@@ -59,33 +59,33 @@ import           Network.CEP
 exists :: String   -- ^ Serial number.
        -> PhaseM RC l (Maybe StorageDevice)
 exists sn =  bool Nothing (Just sdev)
-          .  G.isConnected R.Cluster R.Has sdev
+          .  G.isConnected Cluster Has sdev
          <$> getGraph
   where sdev = StorageDevice sn
 
 -- | Check if 'StorageDevice' is locted in given enclosure.
 isAt :: StorageDevice -> Slot -> PhaseM RC l Bool
-isAt sdev loc = G.isConnected sdev R.Has loc <$> getGraph
+isAt sdev loc = G.isConnected sdev Has loc <$> getGraph
 
 -- | Get device that is in slot currently.
 atSlot :: Slot -> PhaseM RC l (Maybe StorageDevice)
-atSlot loc = G.connectedFrom R.Has loc <$> getGraph
+atSlot loc = G.connectedFrom Has loc <$> getGraph
 
 -- | Get location of current device.
 location :: StorageDevice -> PhaseM RC l (Maybe Slot)
-location sdev = G.connectedTo sdev R.Has <$> getGraph
+location sdev = G.connectedTo sdev Has <$> getGraph
 
 -- | Get device enclosure, if there is no connection to location,
 -- then this call tries to find direct connection.
 enclosure :: StorageDevice -> PhaseM RC l (Maybe Enclosure)
 enclosure sdev = do
  rg <- getGraph
- return $ slotEnclosure <$> G.connectedTo sdev R.Has rg
+ return $ slotEnclosure <$> G.connectedTo sdev Has rg
 
 -- | Register device location in graph.
 mkLocation :: Enclosure -> Int -> PhaseM RC l Slot
 mkLocation enc num = do
-  modifyGraph $ G.connect enc R.Has loc
+  modifyGraph $ G.connect enc Has loc
   return loc
   where loc = Slot enc num
 
@@ -108,23 +108,23 @@ insertTo :: StorageDevice
          -> PhaseM RC l (Either InsertionError ())
 insertTo sdev sdev_loc = do
   rg <- getGraph
-  case G.connectedFrom R.Has sdev_loc rg of
+  case G.connectedFrom Has sdev_loc rg of
     -- No storage device is associated with current location, we
     -- are free to just associate drive with that.
-    Nothing -> case G.connectedTo sdev R.Has rg of
+    Nothing -> case G.connectedTo sdev Has rg of
       -- This StorageDevice is already associated with another slot
       Just loc' -> return $ Left $ InAnotherSlot loc'
       -- The slot is empty and StorageDevice doesn't belong anywhere,
       -- put it in the slot
       Nothing  -> do
         Log.rcLog' Log.DEBUG ("Device inserted in the slot"::String)
-        modifyGraph $ G.connect sdev R.Has sdev_loc
+        modifyGraph $ G.connect sdev Has sdev_loc
                   -- We don't know how many slots there are in the
                   -- enclosure ahead of time: if we're getting
                   -- information about a whole new drive (MD/RAID) in
                   -- some previously unseen slot, we need to connect
                   -- the slot up to the enclosure too.
-                  >>> G.connect (slotEnclosure sdev_loc) R.Has sdev_loc
+                  >>> G.connect (slotEnclosure sdev_loc) Has sdev_loc
         return $ Right ()
     -- The slot is already filled by the StorageDevice
     Just sdev' | sdev' == sdev -> do
@@ -142,8 +142,8 @@ insertTo sdev sdev_loc = do
 ejectFrom :: StorageDevice -> Slot -> PhaseM RC l ()
 ejectFrom sdev sdev_loc = do
   Log.rcLog' Log.DEBUG ("Ejecting " ++ show sdev ++ " from " ++ show sdev_loc :: String)
-  modifyGraph $ G.disconnect sdev R.Has sdev_loc
-            >>> G.disconnectAllFrom sdev R.Has (Proxy :: Proxy StorageDeviceAttr)
+  modifyGraph $ G.disconnect sdev Has sdev_loc
+            >>> G.disconnectAllFrom sdev Has (Proxy :: Proxy StorageDeviceAttr)
             >>> (\rg -> case G.connectedTo sdev Is rg of
                           Just (StorageDeviceStatus "HALON-FAILED" _) -> rg
                           Just (StorageDeviceStatus "FAILED" _) -> rg
@@ -193,12 +193,10 @@ setStatus dev st reason = do
   modifyGraph $ G.connect dev Is statusNode
 
 -- | Add an additional identifier to a logical storage device.
-identify :: StorageDevice
-         -> [DeviceIdentifier]
-         -> PhaseM RC l ()
+identify :: StorageDevice -> [DeviceIdentifier] -> PhaseM RC l ()
 identify ld dis = do
  Log.rcLog' Log.DEBUG $ "Adding identifiers " ++ show dis ++ " to device " ++ show ld
- modifyGraph $ \rg -> foldl' (\g i -> G.connect ld R.Has i g) rg dis
+ modifyGraph $ \rg -> foldl' (\g i -> G.connect ld Has i g) rg dis
 
 -- Internal
 
@@ -206,14 +204,14 @@ identify ld dis = do
 setAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 setAttr sd attr  = do
     Log.rcLog' Log.TRACE $ "Setting disk attribute " ++ show attr ++ " on " ++ show sd
-    modifyGraph $ G.connect sd R.Has attr
+    modifyGraph $ G.connect sd Has attr
 
 -- | Unset an attribute on a storage device.
 unsetAttr :: StorageDevice -> StorageDeviceAttr -> PhaseM RC l ()
 unsetAttr sd attr = do
     Log.rcLog' Log.TRACE $ "Unsetting disk attribute "
                   ++ show attr ++ " on " ++ show sd
-    modifyGraph (G.disconnect sd R.Has attr)
+    modifyGraph (G.disconnect sd Has attr)
 
 -- | Find attributes matching the given filter on a storage device.
 findAttrs :: (StorageDeviceAttr -> Bool)
@@ -221,7 +219,7 @@ findAttrs :: (StorageDeviceAttr -> Bool)
                        -> PhaseM RC l [StorageDeviceAttr]
 findAttrs k sdev = do
     rg <- getGraph
-    return [ attr | attr <- G.connectedTo sdev R.Has rg :: [StorageDeviceAttr]
+    return [ attr | attr <- G.connectedTo sdev Has rg :: [StorageDeviceAttr]
                   , k attr
                   ]
 
@@ -238,8 +236,8 @@ path sd =
 setPath :: StorageDevice -> String -> PhaseM RC l ()
 setPath sd path' = do
    old <- mapMaybe extractPath <$> getIdentifiers sd
-   for_ old $ \o -> modifyGraph $ G.disconnect sd R.Has o
-   modifyGraph $ G.connect sd R.Has (DIPath path')
+   for_ old $ \o -> modifyGraph $ G.disconnect sd Has o
+   modifyGraph $ G.connect sd Has (DIPath path')
   where
     extractPath x@DIPath{} = Just x
     extractPath _ = Nothing
@@ -247,7 +245,7 @@ setPath sd path' = do
 -- | Get all 'DeviceIdentifier's for the 'StorageDevice'.
 getIdentifiers :: StorageDevice
                -> PhaseM RC l [DeviceIdentifier]
-getIdentifiers sd = G.connectedTo sd R.Has <$> getGraph
+getIdentifiers sd = G.connectedTo sd Has <$> getGraph
 
 -- | Test if a drive have a given identifier
 hasIdentifier :: StorageDevice
