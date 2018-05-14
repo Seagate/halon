@@ -115,15 +115,15 @@ initialiseConfInRG pools profiles = do
 
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.
---   For each 'M0Host', we add the following:
---     - A Host (Halon representation)
---     - A controller (physical host)
---     - A node (logical host)
---     - A process (Mero process)
+--   For each 'CI.M0Host', we add the following:
+--     - 'Host' (Halon representation)
+--     - 'M0.Controller' (physical host)
+--     - 'M0.Node' (logical host)
+--     - 'M0.Process' (Mero process)
 --   Then we add all drives (storage devices) into the system, involving:
---     - A @StorageDevice@ (Halon representation)
---     - A disk (physical device)
---     - An SDev (logical device)
+--     - 'StorageDevice' (Halon representation)
+--     - 'M0.Disk' (physical device)
+--     - 'M0.SDev' (logical device)
 --   We then add any relevant services running on this process. If one is
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: [CI.M0Host] -> PhaseM RC l ()
@@ -131,62 +131,53 @@ loadMeroServers = mapM_ goHost . offsetHosts where
   offsetHosts hosts = zip hosts
     (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
 
-  goHost (CI.M0Host{..}, hostIdx) = let
-      host = Host $! T.unpack m0h_fqdn
-    in do
-      Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
-      node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
+  goHost :: (CI.M0Host, Int) -> PhaseM RC l ()
+  goHost (CI.M0Host{..}, hostIdx) = do
+    let host = Host $! T.unpack m0h_fqdn
+    Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
+    node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
+    Just root <- getRoot
+    modifyGraph $ G.connect Cluster Has host
+              >>> G.connect host Has HA_M0SERVER
+              >>> G.connect root M0.IsParentOf node
+              >>> G.connect host Runs node
+    if null m0h_devices
+    then
+      mapM_ (addProcess node []) m0h_processes
+    else do
+      ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
+      rg <- getGraph
+      let (m0enc, enc) = fromMaybe (error "loadMeroServers: Cannot find enclosure") $ do
+            e <- G.connectedFrom Has host rg :: Maybe Enclosure
+            m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
+            return (m0e, e)
+      devs <- mapM (goDev enc ctrl) (zip m0h_devices [hostIdx..])
+      mapM_ (addProcess node devs) m0h_processes
+      modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
+                >>> G.connect ctrl M0.At host
+                >>> G.connect node M0.IsOnHardware ctrl
 
-      Just root <- getRoot
-      modifyGraph $ G.connect Cluster Has host
-                >>> G.connect host Has HA_M0SERVER
-                >>> G.connect root M0.IsParentOf node
-                >>> G.connect host Runs node
-
-      if null m0h_devices
-      then
-        mapM_ (addProcess node []) m0h_processes
-      else do
-        ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
-        rg <- getGraph
-        let (m0enc, enc) = fromMaybe (error "loadMeroServers: can't find enclosure") $ do
-              e <- G.connectedFrom Has host rg :: Maybe Enclosure
-              m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
-              return (m0e, e)
-
-        devs <- mapM (goDev enc ctrl)
-                     (zip m0h_devices [hostIdx..length m0h_devices + hostIdx])
-        mapM_ (addProcess node devs) m0h_processes
-
-        modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
-                  >>> G.connect ctrl M0.At host
-                  >>> G.connect node M0.IsOnHardware ctrl
-
-  goDev enc ctrl (CI.M0Device{..}, idx) = let
-      mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
-      devIds = [ DIWWN m0d_wwn
-               , DIPath m0d_path
-               ]
-    in do
-      let sdev = StorageDevice m0d_serial
-          slot = Slot enc m0d_slot
-      StorageDevice.identify sdev devIds
-      m0sdev <- lookupStorageDeviceSDev sdev >>= \case
-        Just m0sdev -> return m0sdev
-        Nothing -> mkSDev <$> newFidRC (Proxy :: Proxy M0.SDev)
-      m0disk <- lookupSDevDisk m0sdev >>= \case
-        Just m0disk -> return m0disk
-        Nothing -> M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
-      StorageDevice.poweron sdev
-      modifyGraph
-          $ G.connect ctrl M0.IsParentOf m0disk
-        >>> G.connect m0sdev M0.IsOnHardware m0disk
-        >>> G.connect m0disk M0.At sdev
-        >>> G.connect m0sdev M0.At slot
-        >>> G.connect sdev Has slot
-        >>> G.connect enc Has slot
-        >>> G.connect Cluster Has sdev
-      return m0sdev
+  goDev :: Enclosure -> M0.Controller -> (CI.M0Device, Int)
+        -> PhaseM RC l M0.SDev
+  goDev encl ctrl (CI.M0Device{..}, idx) = do
+    let mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
+        sdev = StorageDevice m0d_serial
+        slot = Slot encl m0d_slot
+    StorageDevice.identify sdev [DIWWN m0d_wwn, DIPath m0d_path]
+    m0sdev <- lookupStorageDeviceSDev sdev >>=
+        maybe (mkSDev <$> newFidRC (Proxy :: Proxy M0.SDev)) return
+    m0disk <- lookupSDevDisk m0sdev >>=
+        maybe (M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)) return
+    StorageDevice.poweron sdev
+    modifyGraph
+        $ G.connect ctrl M0.IsParentOf m0disk
+      >>> G.connect m0sdev M0.IsOnHardware m0disk
+      >>> G.connect m0disk M0.At sdev
+      >>> G.connect m0sdev M0.At slot
+      >>> G.connect sdev Has slot
+      >>> G.connect encl Has slot
+      >>> G.connect Cluster Has sdev
+    return m0sdev
 
 -- | Add a process into the resource graph.
 --   Where multiplicity is greater than 1, this will add multiple processes
@@ -196,23 +187,19 @@ addProcess :: M0.Node -- ^ Node hosting the Process.
            -> CI.M0Process -- ^ Initial process configuration.
            -> PhaseM RC l ()
 addProcess node devs CI.M0Process{..} = let
-    cores = bitmapFromArray
-      . fmap (> 0)
-      $ m0p_cores
-    mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss
-                            m0p_mem_stack m0p_mem_memlock
-                            cores ep
+    cores = bitmapFromArray $ map (> 0) m0p_cores
+    mkProc fid ep = M0.Process fid m0p_mem_as m0p_mem_rss m0p_mem_stack
+                               m0p_mem_memlock cores ep
     mkEndpoint = do
-        exProcEps <- fmap M0.r_endpoint . Process.getAll <$> getGraph
+        exProcEps <- map M0.r_endpoint . Process.getAll <$> getGraph
         return $ findEP m0p_endpoint exProcEps
       where
-        findEP ep eps =
-          if ep `notElem` eps
-          then ep
-          else findEP (increment ep) eps
-        increment ep = ep
-          { transfer_machine_id = transfer_machine_id ep + 1 }
+        findEP ep eps | ep `notElem` eps = ep
+                      | otherwise        = findEP (increment ep) eps
+        increment ep = ep { transfer_machine_id = transfer_machine_id ep + 1 }
+
     procEnv rg = mkProcEnv rg <$> fromMaybe [] m0p_environment
+
     mkProcEnv _ (key, CI.M0PEnvValue val) = M0.ProcessEnvValue key val
     mkProcEnv rg (key, CI.M0PEnvRange from to) = let
         used = [ i | proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
@@ -223,28 +210,28 @@ addProcess node devs CI.M0Process{..} = let
           (x:_) -> x
           [] -> error $ "Specified range for " ++ show key ++ " is insufficient."
       in M0.ProcessEnvInRange key fstUnused
-    goSrv proc ep CI.M0Service{..} = let
+
+    goSvc proc ep CI.M0Service{..} = let
         filteredDevs = maybe
           devs
           (\x -> filter (\y -> M0.d_path y =~ x) devs)
           m0s_pathfilter
         mkSrv fid = M0.Service fid m0s_type [ep]
-        linkDrives svc = case m0s_type of
+        linkDevs svc = case m0s_type of
           CST_IOS -> foldl' (.) id
                       $ fmap (G.connect svc M0.IsParentOf) filteredDevs
           _ -> id
       in do
         svc <- mkSrv <$> newFidRC (Proxy :: Proxy M0.Service)
-        modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDrives svc
+        modifyGraph $ G.connect proc M0.IsParentOf svc >>> linkDevs svc
+
   in replicateM_ (fromMaybe 1 m0p_multiplicity) $ do
     ep <- mkEndpoint
     proc <- mkProc <$> newFidRC (Proxy :: Proxy M0.Process)
                    <*> return ep
-    mapM_ (goSrv proc ep) m0p_services
-
+    mapM_ (goSvc proc ep) m0p_services
     modifyGraph $ G.connect node M0.IsParentOf proc
               >>> G.connect proc Has m0p_boot_level
-
     rg <- getGraph
     for_ (procEnv rg) $ \pe ->
       modifyGraph (G.connect proc Has pe)
