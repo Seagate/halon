@@ -1,0 +1,5 @@
+ARG  CENTOS_RELEASE=latest
+FROM seagate/halon-base:${CENTOS_RELEASE}
+
+COPY stack .stack
+COPY stack-work .stack-work

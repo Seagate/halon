@@ -43,10 +43,7 @@ Cluster monitoring and recovery for high-availability.
 %{stack} setup
 
 %build
-# If snapshot deps already cached in global location use that instead
-# of default stack root.
-[ -d /stack ] && STACK_ROOT="--stack-root /stack"
-%{stack} build $STACK_ROOT --extra-include-dirs=/usr/include/mero
+%{stack} build --extra-include-dirs=/usr/include/mero
 
 %install
 rm -rf %{buildroot}

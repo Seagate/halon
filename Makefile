@@ -39,6 +39,10 @@ tests:
 setup:
 	stack setup
 
+#
+# RPMs -------------------------------------------------------------------- {{{1
+#
+
 .PHONY: dist
 dist:
 	echo "module Version where \
@@ -113,6 +117,87 @@ srpm:
 	$(MAKE) __rpm_pre
 	$(MAKE) __rpm_srpm
 
+#
+# Docker ------------------------------------------------------------------ {{{1
+#
+
+CENTOS_RELEASE  := latest
+NAMESPACE       := seagate
+DOCKER          := docker
+
+INAME = $(@:%-image=%)
+CNAME = $(@:%-container=%)
+
+.PHONY: docker-images
+docker-images: halon-devel-image
+
+# .PHONY: docker-images
+# docker-images: halon-src-container \
+#                halon-base-image \
+#                halon-deps-cache \
+#                halon-devel-image
+
+docker-images-7.4: CENTOS_RELEASE := 7.4.1708
+docker-images-7.4: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-7.4: docker-images
+
+docker-images-7.3: CENTOS_RELEASE := 7.3.1611
+docker-images-7.3: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-7.3: docker-images
+
+
+.PHONY: halon-src-container
+halon-src-container:
+	if ! $(DOCKER) container inspect -f '{{.Id}}' $(CNAME) >/dev/null 2>&1 ; then \
+		$(DOCKER) create --name $(CNAME) -v $(PWD):/root/halon centos ; \
+	fi
+
+.PHONY: halon-base-image
+halon-base-image:
+	cd docker \
+	&& $(DOCKER) build . \
+			-f Dockerfile.$(INAME) \
+			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
+			$(DOCKER_OPTS)
+
+.PHONY: halon-deps-cache
+halon-deps-cache: halon-src-container halon-base-image
+	$(DOCKER) run --rm --volumes-from halon-src \
+		$(NAMESPACE)/halon-base:$(CENTOS_RELEASE) \
+		/root/halon/docker/build-halon-deps.sh
+
+.PHONY: halon-devel-image
+halon-devel-image: halon-deps-cache
+	cd docker \
+	&& $(DOCKER) build . \
+			-f Dockerfile.$(INAME) \
+			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
+			$(DOCKER_OPTS)
+	rm -rf docker/{stack,stack-work}
+	$(DOCKER) rmi $(NAMESPACE)/halon-base:$(CENTOS_RELEASE)
+
+name := halon*
+tag  := *
+docker-push:
+	@for img in $$(docker images --filter=reference='$(NAMESPACE)/$(name):$(tag)' \
+				    --format '{{.Repository}}:{{.Tag}}') ; \
+	do \
+		echo "---> $$img" ; \
+		$(DOCKER) push $$img ; \
+	done
+
+docker-clean:
+	@for img in $$(docker images --filter=reference='$(NAMESPACE)/$(name):$(tag)' \
+				    --format '{{.Repository}}:{{.Tag}}') ; \
+	do \
+		echo "---> $$img" ; \
+		$(DOCKER) rmi $$img ; \
+	done
+
+#
+# Help -------------------------------------------------------------------- {{{1
+#
+
 .PHONY: help
 help:
 	@echo 'Setup targets:'
@@ -128,3 +213,11 @@ help:
 	@echo '  rpms            - build Halon rpm and srpm packages'
 	@echo '  rpms-mock       - build Halon rpm and srpm packages using'
 	@echo '                    "mock" environment (ensures clean rpm deps)'
+	@echo ''
+	@echo 'Infrastructure targets:'
+	@echo '  docker-images   - create docker images for CI environment'
+	@echo "  docker-push     - upload local $(NAMESPACE)/* images to docker hub repository"
+	@echo "  docker-clean    - remove local $(NAMESPACE)/* images"
+
+
+# vim: textwidth=80 nowrap foldmethod=marker

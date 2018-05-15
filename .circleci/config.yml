@@ -37,6 +37,10 @@ jobs:
               make -j8
 
       - run:
+          name: Linking cached Stack work
+          command: ln -s ~/.stack-work .
+
+      - run:
           name: Building Halon
           no_output_timeout: 45m
           # the second `make` invocation is needed as a workaround for the

@@ -1,0 +1,13 @@
+ARG  CENTOS_RELEASE=latest
+FROM seagate/mero-devel:${CENTOS_RELEASE}
+
+COPY stack.repo /etc/yum.repos.d/
+
+RUN yum -y install \
+            binutils-devel \
+            libgenders-devel \
+            gmp-devel \
+            leveldb-devel \
+            libyaml-devel \
+            pcre-devel \
+            stack
