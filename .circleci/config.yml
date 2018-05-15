@@ -4,17 +4,12 @@ jobs:
   build:
     working_directory: ~/halon
     docker:
-      - image: centos:centos7
+      - image: seagate/halon-devel:7.4
+        auth:
+          username: seagateci
+          password: $SSG_DOCKERHUB_PASSWD
       - image: rabbitmq:3
     steps:
-      - run:
-          name: Environment info
-          command: printenv
-
-      - run:
-          name: Installing git
-          command: yum --assumeyes install git
-
       - checkout
 
       - run:
@@ -34,36 +29,12 @@ jobs:
               git --no-pager log -1
 
       - run:
-          name: Installing ansible
-          command: yum --assumeyes install ansible which
-
-      - run:
-          name: Installing kernel
-          # this is needed for the setup-node command (following next) to pick
-          # up a correct kernel version for lustre-client-devel rpm build
-          command: yum --assumeyes install kernel
-
-      - run:
-          name: Setting up build environment
-          working_directory: ~/mero
-          command: |
-              lustre_kver=$(ls -1r /lib/modules | head -n1) \
-              ./scripts/setup-node localhost \
-                        --verbose \
-                        --local \
-                        --skip-tags reboot,upgrade,start-services,debug,never
-
-      - run:
           name: Building Mero master
           working_directory: ~/mero
           command: |
               ./autogen.sh
               ./configure --with-linux=/lib/modules/$(yum list installed kernel | tail -n1 | awk '{ print $2 }').x86_64/build
               make -j8
-
-      - run:
-          name: Running `stack setup`
-          command: ./scripts/h0 setup
 
       - run:
           name: Building Halon
@@ -82,3 +53,10 @@ jobs:
       - run:
           name: Running Halon unit tests
           command: ./scripts/h0 test
+
+workflows:
+  version: 2
+  precommit:
+    jobs:
+      - build:
+          context: ssg-auth
