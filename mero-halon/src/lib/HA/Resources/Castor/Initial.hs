@@ -134,6 +134,9 @@ instance ToJSON Site
 data FailureSetScheme =
     Preloaded Word32 Word32 Word32
   | Formulaic [[Word32]]
+    -- ^ XXX A list type is not strong enough.
+    --   Make it a vector of exactly M0_CONF_PVER_HEIGHT elements.
+    --   See `fixed-length` package.
   deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable FailureSetScheme

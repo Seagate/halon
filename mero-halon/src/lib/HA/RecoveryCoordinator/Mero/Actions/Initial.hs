@@ -7,16 +7,26 @@
 module HA.RecoveryCoordinator.Mero.Actions.Initial
   ( -- * Initialization
     initialiseConfInRG
+  , loadMeroPools
   , loadMeroServers
   , createMDPoolPVer
   , createIMeta
   ) where
 
 import           Control.Category ((>>>))
+import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
+import           Control.Monad.Catch (Exception, throwM)
+import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import qualified Control.Monad.Trans.State.Lazy as S
+import           Data.Bifunctor (first)
 import           Data.Foldable (foldl', for_)
+import           Data.Functor.Identity (Identity(runIdentity))
 import           Data.List (notElem, scanl')
-import           Data.Maybe (fromMaybe)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -36,7 +46,8 @@ import           HA.Resources.Castor
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC
-  ( PDClustAttr(..)
+  ( Fid
+  , PDClustAttr(..)
   , ServiceType(CST_CAS,CST_IOS)
   , Word128(..)
   , bitmapFromArray
@@ -47,8 +58,8 @@ import           Network.CEP
 import           Text.Regex.TDFA ((=~))
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
-initialiseConfInRG :: [CI.M0Pool] -> [CI.M0Profile] -> PhaseM RC l ()
-initialiseConfInRG pools profiles = do
+initialiseConfInRG :: PhaseM RC l ()
+initialiseConfInRG = do
     root_fid <- mkRootFid -- the first newFidRC call is made here
     mdpool_fid <- newFidRC (Proxy :: Proxy M0.Pool)
     -- Note that `createIMeta` may replace `imeta_pver` fid with m0_fid0.
@@ -59,15 +70,6 @@ initialiseConfInRG pools profiles = do
       >>> G.connect Cluster Has M0.OFFLINE
       >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
       >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
-    for_ pools $ \p -> do
-        pool_fid <- if CI.isMDPool p -- 'CI.validateInitialData' guarantees
-                                     -- that there is exactly one MD pool.
-                    then pure mdpool_fid
-                    else newFidRC (Proxy :: Proxy M0.Pool)
-        modifyGraph $ G.connect root M0.IsParentOf (M0.Pool pool_fid)
-    for_ profiles $ \_ -> do
-        profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
-        modifyGraph $ G.connect root M0.IsParentOf profile
     rg <- getGraph
     mapM_ mirrorSite (G.connectedTo Cluster Has rg)
   where
@@ -235,6 +237,153 @@ addProcess node devs CI.M0Process{..} = let
     rg <- getGraph
     for_ (procEnv rg) $ \pe ->
       modifyGraph (G.connect proc Has pe)
+
+type StateExceptT s e m a = S.StateT s (ExceptT e m) a
+
+runStateExceptT :: Monad m => StateExceptT s e m a -> s -> m (Either e (a, s))
+runStateExceptT m = runExceptT . S.runStateT m
+
+type StateExcept s e a = StateExceptT s e Identity a
+
+runStateExcept :: StateExcept s e a -> s -> Either e (a, s)
+runStateExcept m = runIdentity . runStateExceptT m
+
+-- | State updated during pool version tree construction.
+type PVerState
+  = ( G.Graph      -- ^ Resource graph.
+    , Map Fid Fid  -- ^ Pool version devices.  Maps fid of real object
+                   --   to the fid of corresponding virtual object.
+    )
+
+type PVerGen a = StateExcept PVerState String a
+
+-- | Try to find 'StorageDevice' which 'CI.M0DeviceRef' points at.
+dereference :: CI.M0DeviceRef -> G.Graph -> Either String StorageDevice
+dereference ref@CI.M0DeviceRef{..} rg = do
+    let ds = [ d
+             | d@(StorageDevice serial) <- G.connectedTo Cluster Has rg
+             , let ids = G.connectedTo d Has rg :: [DeviceIdentifier]
+             , maybe True (T.pack serial ==) dr_serial
+             , maybe True ((flip elem) ids . DIWWN . T.unpack) dr_wwn
+             , maybe True ((flip elem) ids . DIPath . T.unpack) dr_path
+             ]
+    case ds of
+        [d] -> Right d
+        []  -> Left $ "No target: " ++ show ref
+        _   -> Left $ "Multiple targets: " ++ show ref
+
+-- | Generate new 'Fid' for the given 'M0.ConfObj' type.
+newFidPVerGen :: M0.ConfObj a => Proxy a -> Fid -> PVerGen Fid
+newFidPVerGen p real = do
+    (rg, devs) <- S.get
+    assert (Map.notMember real devs) (pure ())
+    let (virt, rg') = newFid p rg
+        devs' = Map.insert real virt devs
+    S.put (rg', devs')
+    pure virt
+
+newtype PVerGenError = PVerGenError String
+  deriving Show
+instance Exception PVerGenError
+
+-- | Build pool version tree.
+buildPVer :: M0.PVer -> [CI.M0DeviceRef] -> PVerGen ()
+buildPVer pver refs = for_ refs $ \ref -> do
+    let throw' = lift . throwE
+        modifyG = S.modify' . first
+
+    -- Find disk
+    disk :: M0.Disk <- do
+        (rg, devs) <- S.get
+        sdev <- either throw' pure (dereference ref rg)
+        let Just disk = G.connectedFrom M0.At sdev rg
+        when (Map.member (M0.fid disk) devs) $
+            throw' $ "Multiple M0DeviceRefs point at " ++ show sdev
+        pure disk
+
+    -- Disk level
+    diskv <- M0.DiskV <$> newFidPVerGen (Proxy :: Proxy M0.DiskV) (M0.fid disk)
+    modifyG $ G.connect disk M0.IsRealOf diskv
+
+    -- Controller level
+    (ctrl :: M0.Controller, mctrlv_fid) <- S.gets $ \(rg, devs) ->
+        let Just ctrl = G.connectedFrom M0.IsParentOf disk rg
+        in (ctrl, Map.lookup (M0.fid ctrl) devs)
+    ctrlv <- M0.ControllerV <$>
+        maybe (newFidPVerGen (Proxy :: Proxy M0.ControllerV) (M0.fid ctrl))
+              pure
+              mctrlv_fid
+    when (isNothing mctrlv_fid) $
+        modifyG $ G.connect ctrl M0.IsRealOf ctrlv
+    modifyG $ G.connect ctrlv M0.IsParentOf diskv
+
+    -- Enclosure level
+    (encl :: M0.Enclosure, menclv_fid) <- S.gets $ \(rg, devs) ->
+        let Just encl = G.connectedFrom M0.IsParentOf ctrl rg
+        in (encl, Map.lookup (M0.fid encl) devs)
+    enclv <- M0.EnclosureV <$>
+        maybe (newFidPVerGen (Proxy :: Proxy M0.EnclosureV) (M0.fid encl))
+              pure
+              menclv_fid
+    when (isNothing menclv_fid) $
+        modifyG $ G.connect encl M0.IsRealOf enclv
+    modifyG $ G.connect enclv M0.IsParentOf ctrlv
+
+    -- Rack level
+    (rack :: M0.Rack, mrackv_fid) <- S.gets $ \(rg, devs) ->
+        let Just rack = G.connectedFrom M0.IsParentOf encl rg
+        in (rack, Map.lookup (M0.fid rack) devs)
+    rackv <- M0.RackV <$>
+        maybe (newFidPVerGen (Proxy :: Proxy M0.RackV) (M0.fid rack))
+              pure
+              mrackv_fid
+    when (isNothing mrackv_fid) $
+        modifyG $ G.connect rack M0.IsRealOf rackv
+    modifyG $ G.connect rackv M0.IsParentOf enclv
+
+    -- Site level
+    (site :: M0.Site, msitev_fid) <- S.gets $ \(rg, devs) ->
+        let Just site = G.connectedFrom M0.IsParentOf rack rg
+        in (site, Map.lookup (M0.fid site) devs)
+    sitev <- M0.SiteV <$>
+        maybe (newFidPVerGen (Proxy :: Proxy M0.SiteV) (M0.fid site))
+              pure
+              msitev_fid
+    when (isNothing msitev_fid) $
+        modifyG $ G.connect site M0.IsRealOf sitev
+    modifyG $ G.connect sitev M0.IsParentOf rackv
+          >>> G.connect pver M0.IsParentOf sitev
+
+loadMeroPools :: [CI.M0Pool] -> [CI.M0Profile] -> PhaseM RC l ()
+loadMeroPools pools profiles = do
+    Just root <- getRoot
+    for_ pools $ \ipool -> do
+        pool <- M0.Pool <$> if CI.isMDPool ipool  -- 'CI.validateInitialData'
+                                                  -- guarantees that there is
+                                                  -- exactly one MD pool.
+                            then pure $ M0.rt_mdpool root
+                            else newFidRC (Proxy :: Proxy M0.Pool)
+        let attrs = PDClustAttr { _pa_N = undefined  -- CI.m0_data_units globs
+                                , _pa_K = undefined  -- CI.m0_parity_units globs
+                                , _pa_P = undefined  -- 0  -- XXX
+                                , _pa_unit_size = 4096
+                                , _pa_seed = Word128 101 102
+                                }
+            tolerance = error "XXX IMPLEMENTME"
+        pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
+                        <*> (pure . Right $ M0.PVerActual attrs tolerance)
+        modifyGraph $ G.connect root M0.IsParentOf pool
+                  >>> G.connect pool M0.IsParentOf pver
+        modifyGraphM $ \rg ->
+            let buildPool = runStateExcept
+                                (buildPVer pver $ CI.pool_device_refs ipool)
+                                (rg, Map.empty)
+            in either (throwM . PVerGenError) (pure . fst . snd) buildPool
+
+    for_ profiles $ \_ -> do
+        profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
+        modifyGraph $ G.connect root M0.IsParentOf profile
+        error "XXX IMPLEMENTME: Link profile with its pools"
 
 -- | Create a pool version for the MDPool. This should have one device in
 --   each controller.

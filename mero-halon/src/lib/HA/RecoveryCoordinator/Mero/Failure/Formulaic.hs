@@ -83,5 +83,7 @@ formulaicUpdate formulas = Monolithic $ \rg -> maybe (return rg) return $ do
                                                              <*> pure (M0.fid pver)
                                                              <*> pure formula))
               modify $ G.connect pool M0.IsParentOf pvf
+
       pv = PoolVersion Nothing Set.empty (Failures 0 0 0 ctrlFailures k) attrs
+
   Just . addFormulas $ createPoolVersions [pv] DevicesFailed rg

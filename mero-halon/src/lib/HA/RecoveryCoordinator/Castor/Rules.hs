@@ -18,7 +18,7 @@ module HA.RecoveryCoordinator.Castor.Rules
  , goSite
  ) where
 
-import           Control.Monad.Catch
+import           Control.Monad.Catch (SomeException, catch)
 import           Data.Foldable (for_)
 import qualified Data.Text as T
 
@@ -78,9 +78,11 @@ ruleInitialDataLoad =
 
         load = do
           mapM_ goSite id_sites
-          initialiseConfInRG id_pools id_profiles
+          initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
+          loadMeroPools id_pools id_profiles
+
           graph <- getGraph
           Just updateType <- getCurrentGraphUpdateType
           case updateType of
@@ -105,6 +107,7 @@ ruleInitialDataLoad =
           -- devices later works.
           createMDPoolPVer
           createIMeta
+
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Site])

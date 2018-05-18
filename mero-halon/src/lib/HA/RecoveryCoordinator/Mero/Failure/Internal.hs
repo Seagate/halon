@@ -129,9 +129,9 @@ createPoolVersion pool cond (PoolVersion mfid fids failures attrs) = do
     runPVer pver = do
         rg <- S.get
         S.modify' $ G.connect pool M0.IsParentOf pver
+        let root = M0.getM0Root rg
         -- An element of list `vs` is True iff diskv objects were added to
         -- the corresponding subtree.
-        let root = M0.getM0Root rg
         vs <- for (filterByFids
                    $ G.connectedTo root M0.IsParentOf rg :: [M0.Site])
                   (runSite pver)

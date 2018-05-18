@@ -506,6 +506,9 @@ deriveSafeCopy 0 'base ''Pool
 data PVerActual = PVerActual
   { va_attrs :: PDClustAttr
   , va_tolerance :: [Word32]
+    -- ^ XXX A list type is not strong enough.
+    --   Make it a vector of exactly M0_CONF_PVER_HEIGHT elements.
+    --   See `fixed-length` package.
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable PVerActual
@@ -518,6 +521,7 @@ data PVerFormulaic = PVerFormulaic
   { vf_id :: Word32
   , vf_base :: Fid
   , vf_allowance :: [Word32]
+    -- ^ XXX Make it a vector of exactly M0_CONF_PVER_HEIGHT elements.
   } deriving (Eq, Show, Generic, Typeable)
 
 instance Hashable PVerFormulaic
