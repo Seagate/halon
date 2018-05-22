@@ -81,9 +81,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
 
       startOrStop msg@(HAEvent _ v) ls _ = return $
         if servicePidMatches v ls
-        then case isServiceOnline msg ls of
-               Nothing -> isServiceStopped msg ls
-               Just x -> Just x
+        then maybe (isServiceStopped msg ls) Just (isServiceOnline msg ls)
         else Nothing
 
   setPhaseIfConsume start_rule startOrStop $ \(eid, service, st, typ) -> do
