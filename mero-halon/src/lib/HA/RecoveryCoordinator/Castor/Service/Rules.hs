@@ -27,7 +27,6 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
-import qualified HA.Resources.Castor.Initial as CI
 import           Mero.ConfC (ServiceType(..))
 import           Mero.Notification.HAState
   ( HAMsg(..)
@@ -64,14 +63,10 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
         in fromMaybe False $ do
             svc :: M0.Service <- M0.lookupConfObjByFid (_hm_fid m) rg
             proc :: M0.Process <- G.connectedFrom M0.IsParentOf svc rg
-            case (spid, G.connectedTo proc Has rg) of
-              (_, Just (CI.PLClovis _ CI.Independent)) ->
-                  return False  -- Ignore notifications from unmanaged Clovis
-                                -- processes.
-              (-1, _) ->
-                  return True   -- Accept notifications with spid == -1.
-                                -- XXX `spid` is the value returned by
-                                -- getpid(). How can it ever be -1?
+            case spid of
+              -1 -> return True  -- Accept notifications with spid == -1.
+                                 -- XXX `spid` is the value returned by
+                                 -- getpid(). How can it ever be -1?
               _ -> do
                   M0.PID pid <- G.connectedTo proc Has rg
                   return (spid == fromIntegral pid)

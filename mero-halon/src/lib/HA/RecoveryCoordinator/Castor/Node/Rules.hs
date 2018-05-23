@@ -812,7 +812,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     m0t1fsProcess CI.PLM0t1fs = True
     m0t1fsProcess _ = False
 
-    clovisProcess (CI.PLClovis _ _) = True
+    clovisProcess (CI.PLClovis _ CI.Managed) = True
     clovisProcess _ = False
 
     dixInitSuccess DixInitSuccess _ _ = return $ Just ()
