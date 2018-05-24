@@ -58,18 +58,15 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
             Just (s :: M0.Service) | p se && isStateChanged s -> Just (eid, s, typ, st)
             _ -> Nothing
 
-      servicePidMatches (HAMsg (ServiceEvent _ _ spid) m) ls =
-        let rg = lsGraph ls
-        in fromMaybe False $ do
+      servicePidMatches (HAMsg (ServiceEvent _ _ spid) m) ls
+        | spid == -1 = True  -- XXX The value comes from getpid().
+                             -- How can it ever be -1?
+        | otherwise  = fromMaybe False $ do
+            let rg = lsGraph ls
             svc :: M0.Service <- M0.lookupConfObjByFid (_hm_fid m) rg
             proc :: M0.Process <- G.connectedFrom M0.IsParentOf svc rg
-            case spid of
-              -1 -> return True  -- Accept notifications with spid == -1.
-                                 -- XXX `spid` is the value returned by
-                                 -- getpid(). How can it ever be -1?
-              _ -> do
-                  M0.PID pid <- G.connectedTo proc Has rg
-                  return (spid == fromIntegral pid)
+            M0.PID pid <- G.connectedTo proc Has rg
+            return (spid == fromIntegral pid)
 
       isServiceOnline = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STARTED) M0.SSOnline
       isServiceStopped = serviceTagged (== TAG_M0_CONF_HA_SERVICE_STOPPED) M0.SSOffline
