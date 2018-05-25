@@ -9,7 +9,7 @@ build-type:          Simple
 -- extra-source-files:
 cabal-version:       >=1.10
 
--- ghc-heap-view cannot be built with profiling, does we need to drop
+-- ghc-heap-view cannot be built with profiling, so we need to drop
 -- ghc-datasize which depends on it.
 Flag profiling
   Description: Drop dependencies which can't be built with profiling enabled.
