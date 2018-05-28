@@ -24,15 +24,17 @@ import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import qualified HA.RecoveryCoordinator.Castor.Process.Actions as Process
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
-import           HA.RecoveryCoordinator.Mero.Actions.Conf (lookupM0Enclosure)
+import           HA.RecoveryCoordinator.Mero.Actions.Conf
+  ( getRoot
+  , lookupM0Enclosure
+  )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
-import           HA.RecoveryCoordinator.Mero.Actions.Conf (getRoot)
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import           HA.Resources.Castor
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC
@@ -86,7 +88,7 @@ initialiseConfInRG = do
                    ++ ", got " ++ show fid)
         pure fid
 
-    mirrorSite :: Site -> PhaseM RC l ()
+    mirrorSite :: Cas.Site -> PhaseM RC l ()
     mirrorSite site = do
       m0site <- M0.Site <$> newFidRC (Proxy :: Proxy M0.Site)
       rg <- getGraph
@@ -96,7 +98,7 @@ initialiseConfInRG = do
           $ G.connect m0site M0.At site
         >>> G.connect root M0.IsParentOf m0site
 
-    mirrorRack :: M0.Site -> Rack -> PhaseM RC l ()
+    mirrorRack :: M0.Site -> Cas.Rack -> PhaseM RC l ()
     mirrorRack m0site rack = do
       m0rack <- M0.Rack <$> newFidRC (Proxy :: Proxy M0.Rack)
       rg <- getGraph
@@ -105,7 +107,7 @@ initialiseConfInRG = do
           $ G.connect m0rack M0.At rack
         >>> G.connect m0site M0.IsParentOf m0rack
 
-    mirrorEncl :: M0.Rack -> Enclosure -> PhaseM RC l M0.Enclosure
+    mirrorEncl :: M0.Rack -> Cas.Enclosure -> PhaseM RC l M0.Enclosure
     mirrorEncl m0rack encl = lookupM0Enclosure encl >>= \case
       Just m0encl -> return m0encl
       Nothing -> do
@@ -118,12 +120,12 @@ initialiseConfInRG = do
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.
 --   For each 'CI.M0Host', we add the following:
---     - 'Host' (Halon representation)
+--     - 'Cas.Host' (Halon representation)
 --     - 'M0.Controller' (physical host)
 --     - 'M0.Node' (logical host)
 --     - 'M0.Process' (Mero process)
 --   Then we add all drives (storage devices) into the system, involving:
---     - 'StorageDevice' (Halon representation)
+--     - 'Cas.StorageDevice' (Halon representation)
 --     - 'M0.Disk' (physical device)
 --     - 'M0.SDev' (logical device)
 --   We then add any relevant services running on this process. If one is
@@ -135,12 +137,12 @@ loadMeroServers = mapM_ goHost . offsetHosts where
 
   goHost :: (CI.M0Host, Int) -> PhaseM RC l ()
   goHost (CI.M0Host{..}, hostIdx) = do
-    let host = Host $! T.unpack m0h_fqdn
+    let host = Cas.Host $! T.unpack m0h_fqdn
     Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
     node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
     Just root <- getRoot
     modifyGraph $ G.connect Cluster Has host
-              >>> G.connect host Has HA_M0SERVER
+              >>> G.connect host Has Cas.HA_M0SERVER
               >>> G.connect root M0.IsParentOf node
               >>> G.connect host Runs node
     if null m0h_devices
@@ -150,7 +152,7 @@ loadMeroServers = mapM_ goHost . offsetHosts where
       ctrl <- M0.Controller <$> newFidRC (Proxy :: Proxy M0.Controller)
       rg <- getGraph
       let (m0enc, enc) = fromMaybe (error "loadMeroServers: Cannot find enclosure") $ do
-            e <- G.connectedFrom Has host rg :: Maybe Enclosure
+            e <- G.connectedFrom Has host rg :: Maybe Cas.Enclosure
             m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
             return (m0e, e)
       devs <- mapM (goDev enc ctrl) (zip m0h_devices [hostIdx..])
@@ -159,13 +161,13 @@ loadMeroServers = mapM_ goHost . offsetHosts where
                 >>> G.connect ctrl M0.At host
                 >>> G.connect node M0.IsOnHardware ctrl
 
-  goDev :: Enclosure -> M0.Controller -> (CI.M0Device, Int)
+  goDev :: Cas.Enclosure -> M0.Controller -> (CI.M0Device, Int)
         -> PhaseM RC l M0.SDev
   goDev encl ctrl (CI.M0Device{..}, idx) = do
     let mkSDev fid = M0.SDev fid (fromIntegral idx) m0d_size m0d_bsize m0d_path
-        sdev = StorageDevice m0d_serial
-        slot = Slot encl m0d_slot
-    StorageDevice.identify sdev [DIWWN m0d_wwn, DIPath m0d_path]
+        sdev = Cas.StorageDevice m0d_serial
+        slot = Cas.Slot encl m0d_slot
+    StorageDevice.identify sdev [Cas.DIWWN m0d_wwn, Cas.DIPath m0d_path]
     m0sdev <- lookupStorageDeviceSDev sdev >>=
         maybe (mkSDev <$> newFidRC (Proxy :: Proxy M0.SDev)) return
     m0disk <- lookupSDevDisk m0sdev >>=
@@ -284,7 +286,7 @@ createMDPoolPVer = do
 --   - A single top-level pool for the imeta service.
 --   - A single (actual) pool version in this pool containing all above disks.
 --   Since the disks created here are fake, they will not have an associated
---   'StorageDevice'.
+--   'Cas.StorageDevice'.
 --
 --   If there are no CAS services in the graph, then we have a slight
 --   problem, since it is invalid to have a zero-width pver (e.g. a pver with
