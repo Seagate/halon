@@ -84,7 +84,7 @@ cmd_start() {
     cmd_install
     $SUDO systemctl start halon-cleanup
     $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts
+    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --clovis-apps
     $SUDO systemctl start halond
     halonctl mero bootstrap --verbose
 
