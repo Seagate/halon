@@ -34,13 +34,17 @@ cmd_setup() {
     stack setup
 }
 
-cmd_make() {
+_stack_build() {
     PKG_CONFIG_PATH=$M0_SRC_DIR \
     MERO_ROOT=$M0_SRC_DIR \
     stack build --ghc-options="${GHC_OPTS:--g -j4}" \
         --extra-include-dirs="$M0_SRC_DIR" \
         --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
-        --test --no-run-tests "$@"
+        "$@"
+}
+
+cmd_make() {
+    _stack_build --test --no-run-tests "$@"
 }
 
 cmd_rebuild() {
@@ -52,8 +56,14 @@ cmd_rebuild() {
 }
 
 cmd_test() {
-    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+    if [[ -n ${BRAVE_NEW_WORLD:-} ]]; then
+        # Ideally we would use this command and run *all* unit tests.
+        # Unfortunately, some of the tests fail.  XXX FIXME.
+        _stack_build --test "$@"
+    else
+        LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         $H0_SRC_DIR/mero-halon/$(stack path --dist-dir)/build/tests/tests "$@"
+    fi
 }
 
 local_install_root() {
