@@ -53,6 +53,8 @@ data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     | CST_FIS     -- ^ Fault injection service
     | CST_FDMI    -- ^ FDMI service
     | CST_BE      -- ^ BE service
+    | CST_M0T1FS  -- ^ m0t1fs service
+    | CST_CLOVIS  -- ^ Clovis service
     | CST_UNKNOWN Int
   deriving (Data, Eq, Generic, Ord, Read, Show)
 
@@ -80,6 +82,8 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_FIS}     = CST_FIS
   toEnum #{const M0_CST_FDMI}    = CST_FDMI
   toEnum #{const M0_CST_BE}      = CST_BE
+  toEnum #{const M0_CST_M0T1FS}  = CST_M0T1FS
+  toEnum #{const M0_CST_CLOVIS}  = CST_CLOVIS
   toEnum i                       = CST_UNKNOWN i
 
   fromEnum CST_MDS         = #{const M0_CST_MDS}
@@ -100,6 +104,8 @@ instance Enum ServiceType where
   fromEnum CST_FIS         = #{const M0_CST_FIS}
   fromEnum CST_FDMI        = #{const M0_CST_FDMI}
   fromEnum CST_BE          = #{const M0_CST_BE}
+  fromEnum CST_M0T1FS      = #{const M0_CST_M0T1FS}
+  fromEnum CST_CLOVIS      = #{const M0_CST_CLOVIS}
   fromEnum (CST_UNKNOWN i) = i
 
 deriveSafeCopy 0 'base ''ServiceType
