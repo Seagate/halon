@@ -39,7 +39,7 @@ data {-# CTYPE "conf/schema.h" "struct m0_conf_service_type" #-} ServiceType
     | CST_IOS     -- ^ IO service
     | CST_CONFD   -- ^ Confd service
     | CST_RMS     -- ^ Resource management
-    | CST_STS     -- ^ Stats service
+    | CST_STATS   -- ^ Stats service
     | CST_HA      -- ^ HA service
     | CST_SSS     -- ^ Start/stop service
     | CST_SNS_REP -- ^ SNS repair
@@ -68,7 +68,7 @@ instance Enum ServiceType where
   toEnum #{const M0_CST_IOS}     = CST_IOS
   toEnum #{const M0_CST_CONFD}   = CST_CONFD
   toEnum #{const M0_CST_RMS}     = CST_RMS
-  toEnum #{const M0_CST_STS}     = CST_STS
+  toEnum #{const M0_CST_STATS}   = CST_STATS
   toEnum #{const M0_CST_HA}      = CST_HA
   toEnum #{const M0_CST_SSS}     = CST_SSS
   toEnum #{const M0_CST_SNS_REP} = CST_SNS_REP
@@ -90,7 +90,7 @@ instance Enum ServiceType where
   fromEnum CST_IOS         = #{const M0_CST_IOS}
   fromEnum CST_CONFD       = #{const M0_CST_CONFD}
   fromEnum CST_RMS         = #{const M0_CST_RMS}
-  fromEnum CST_STS         = #{const M0_CST_STS}
+  fromEnum CST_STATS       = #{const M0_CST_STATS}
   fromEnum CST_HA          = #{const M0_CST_HA}
   fromEnum CST_SSS         = #{const M0_CST_SSS}
   fromEnum CST_SNS_REP     = #{const M0_CST_SNS_REP}
