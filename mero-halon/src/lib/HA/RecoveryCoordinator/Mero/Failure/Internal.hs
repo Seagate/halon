@@ -5,7 +5,6 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Failure.Internal
   ( ConditionOfDevices(..)
-  , Failures(..)
   , PoolVersion(..)
   , UpdateType(..)
   , failuresToArray
@@ -23,37 +22,10 @@ import           Data.Traversable (for)
 import           Data.Typeable
 import           Data.Word
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.Resources.Castor.Initial as CI
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..))
-
--- | Failure tolerance vector.
---
--- For a given pool version, the failure tolerance vector reflects how
--- many objects in each level can be expected to fail whilst still
--- allowing objects in that pool version to be read.
---
--- For disks, then, note that this will equal the parameter K, where
--- (N,K,P) is the triple of data units, parity units, pool width for
--- the pool version.
---
--- For controllers, this should indicate the maximum number such that
--- no failure of that number of controllers can take out more than K
--- units.  We can put an upper bound on this by considering
--- floor((nr_encls)/(N+K)), though distributional issues may result
--- in a lower value.
-data Failures = Failures {
-    f_site :: !Word32
-  , f_rack :: !Word32
-  , f_encl :: !Word32
-  , f_ctrl :: !Word32
-  , f_disk :: !Word32
-} deriving (Eq, Ord, Show)
-
--- | Convert failure tolerance vector to a straight array of Words for
---   passing to Mero.
-failuresToArray :: Failures -> [Word32]
-failuresToArray f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 
 -- |  Minimal representation of a pool version for generation.
 --
@@ -76,6 +48,8 @@ data UpdateType m
     -- a graph synchronization function. If caller should provide a graph
     -- Returns all updates in chunks so caller can synchronize and stream
     -- graph updates in chunks of reasonable size.
+    --
+    -- XXX DELETEME ?
 
 data ConditionOfDevices = DevicesWorking | DevicesFailed
   deriving (Eq, Show)
@@ -88,6 +62,9 @@ createPoolVersionsInPool :: M0.Pool
                          -> G.Graph
 createPoolVersionsInPool pool pvers cond =
     S.execState $ mapM_ (createPoolVersion pool cond) pvers
+
+failuresToArray :: Failures -> [Word32]
+failuresToArray = error "XXX DELETEME"
 
 createPoolVersion :: M0.Pool
                   -> ConditionOfDevices

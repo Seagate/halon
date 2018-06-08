@@ -2,9 +2,15 @@
 -- Copyright : (C) 2015 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-module HA.RecoveryCoordinator.Mero.Failure.Simple where
+module HA.RecoveryCoordinator.Mero.Failure.Simple where  -- XXX DELETEME
 
+#if 0  /* XXX */
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
+  ( ConditionOfDevices(DevicesFailed)
+  , PoolVersion(..)
+  , UpdateType(Iterative)
+  , createPoolVersions
+  )
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas (Host(..))
@@ -19,7 +25,13 @@ import           Data.List ((\\), sort, unfoldr)
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Word
+import           Data.Word (Word32)
+
+data_units :: Word32
+data_units = error "XXX IMPLEMENTME"
+
+parity_units :: Word32
+parity_units = error "XXX IMPLEMENTME"
 
 -- | Simple failure set generation strategy. In this case, we pre-generate
 --   failure sets for the given number of failures.
@@ -30,11 +42,10 @@ simpleUpdate :: Monad m
              -> UpdateType m
 simpleUpdate df cf cfe = Iterative $ \rg ->
   let mchunks = do
-        globs <- G.connectedTo Cluster Has rg :: Maybe M0.M0Globals
-        let fsets = generateFailureSets df cf cfe rg globs
+        let fsets = generateFailureSets df cf cfe rg
             attrs = PDClustAttr {
-                      _pa_N = CI.m0_data_units globs
-                    , _pa_K = CI.m0_parity_units globs
+                      _pa_N = data_units
+                    , _pa_K = parity_units
                     , _pa_P = 0
                     , _pa_unit_size = 4096
                     , _pa_seed = Word128 101 102
@@ -60,24 +71,24 @@ generateFailureSets :: Word32 -- ^ No. of disk failures to tolerate
                     -> Word32 -- ^ No. of controller failures to tolerate
                     -> Word32 -- ^ No. of disk failures equivalent to ctrl failure
                     -> G.Graph
-                    -> CI.M0Globals
-                    -> [(Failures, Set Fid)]
-generateFailureSets df cf cfe rg globs = let
-    n = CI.m0_data_units globs
-    k = CI.m0_parity_units globs
+                    -> [(CI.Failures, Set Fid)]
+generateFailureSets df cf cfe rg = let
+    n = data_units
+    k = parity_units
     allCtrls =
       [ ctrl
       | host :: Cas.Host <- G.connectedTo Cluster Has rg
       , Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.At host rg]
       ]
     -- Look up all disks and the controller they are attached to
+    allDisks :: HashMap Fid (Set Fid)
     allDisks = Map.fromListWith Set.union . fmap (fmap Set.singleton) $
         [ (M0.fid ctrl, M0.fid disk)
         | ctrl <- allCtrls
         , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
         ]
 
-    buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (Failures, Set Fid)
+    buildCtrlFailureSet :: Word32 -> HashMap Fid (Set Fid) -> Set (CI.Failures, Set Fid)
     buildCtrlFailureSet i fids = let
         df' = if df > i * cfe then df - (i*cfe) else 0 -- E.g. failures to support on top of ctrl failure
         -- Following change is temporary, and would work as long as failures
@@ -90,9 +101,9 @@ generateFailureSets df cf cfe rg globs = let
             | kc > k = k `quot` (quotient + 1)
             | kc < k = floor $ (k - remainder) % quotient
             | otherwise = remainder
-        failures = Failures 0 0 0 ctrlFailures k
+        failures = CI.Failures 0 0 0 ctrlFailures k
         keys = sort $ Map.keys fids
-        go :: [Fid] -> Set (Failures, Set Fid)  -- FailureSet
+        go :: [Fid] -> Set (CI.Failures, Set Fid)  -- FailureSet
         go failedCtrls = let
             okCtrls = keys \\ failedCtrls
             failedCtrlSet :: Set Fid
@@ -111,15 +122,15 @@ generateFailureSets df cf cfe rg globs = let
 
     buildDiskFailureSets :: Word32 -- Max no. failed disks
                          -> Set Fid
-                         -> Failures
-                         -> Set (Failures, Set Fid)
+                         -> CI.Failures
+                         -> Set (CI.Failures, Set Fid)
     buildDiskFailureSets i fids failures =
       Set.unions $ fmap (\j -> buildDiskFailureSet j fids failures) [0 .. i]
 
     buildDiskFailureSet :: Word32 -- ^ No. failed disks
                         -> Set Fid -- ^ Set of disks
-                        -> Failures -- ^ Existing allowed failure map
-                        -> Set (Failures, Set Fid)
+                        -> CI.Failures -- ^ Existing allowed failure map
+                        -> Set (CI.Failures, Set Fid)
     buildDiskFailureSet i fids failures =
         Set.fromList $ go <$> (choose i (Set.toList fids))
       where
@@ -132,3 +143,4 @@ generateFailureSets df cf cfe rg globs = let
 
   in join $
     fmap (\j -> Set.toList $ buildCtrlFailureSet j allDisks) [0 .. cf]
+#endif

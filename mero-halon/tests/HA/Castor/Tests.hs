@@ -16,8 +16,8 @@ import           Control.Distributed.Process.Internal.Types (nullProcessId)
 import           Control.Distributed.Process.Node
 import           Control.Monad (forM_, join, unless, void)
 import           Data.Bifunctor (first)
-import           Data.Foldable (for_)
 import           Data.Either (isRight, lefts)
+import           Data.Foldable (for_)
 import           Data.List (nub)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Proxy
@@ -28,7 +28,7 @@ import           System.Environment (getExecutablePath)
 import           System.FilePath ((</>), joinPath, splitDirectories)
 import           System.Process (callProcess)
 
-import           HA.Multimap
+import           HA.Multimap (MetaInfo, StoreChan, defaultMetaInfo)
 import           HA.Multimap.Implementation (Multimap, fromList)
 import           HA.Multimap.Process (startMultimap)
 import           HA.RecoveryCoordinator.Actions.Mero
@@ -37,8 +37,6 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
 import           HA.RecoveryCoordinator.Mero
-import           HA.RecoveryCoordinator.Mero.Actions.Failure
-import           HA.RecoveryCoordinator.Mero.Failure.Simple
 import           HA.RecoveryCoordinator.Mero.State (applyStateChanges, stateSet)
 import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import qualified HA.RecoveryCoordinator.RC.Rules as RC
@@ -87,8 +85,6 @@ rGroupTest transport _ p = withTmpDirectory $ do
 tests :: (Typeable g, RGroup g) => Transport -> Proxy g -> [TestTree]
 tests transport pg = map (localOption (mkTimeout $ 10*60*1000000))
   [ testSuccess "failure-sets" $ testFailureSets transport pg
-  , testSuccess "failure-sets-2" $ testFailureSets2 transport pg
-  , testSuccess "failure-sets-formulaic" $ testFailureSetsFormulaic transport pg
   , testSuccess "apply-state-changes" $ testApplyStateChanges transport pg
   , testSuccess "controller-failure" $ testControllerFailureDomain transport pg
   , testClusterLiveness transport pg
@@ -119,84 +115,14 @@ testParseInitialData = do
                        , host <- CI.enc_hosts encl
                        , Just h0params <- [CI.h_halon host] ]
 
-fsSize :: (a, Set.Set b) -> Int
-fsSize (_, a) = Set.size a
-
 testFailureSets :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testFailureSets transport pg = rGroupTest transport pg $ \pid -> do
     me <- getSelfNode
     ls <- emptyLoopState pid (nullProcessId me)
     settings <- liftIO defaultInitialDataSettings
-    iData <- liftIO . initialData $ settings
-               { _id_drives = 8
-               , _id_globals = defaultGlobals { CI.m0_data_units = 4 } }
-    (ls', _) <- run ls $ initialDataLoad iData
-    -- 8 disks, tolerating one disk failure at a time
-    let rg = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (100)" $ length failureSets == 9
-    assertMsg "Smallest failure set is empty (100)"
-      $ fsSize (head failureSets) == 0
-
-    -- 8 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (200)" $ length failureSets2 == 37
-    assertMsg "Smallest failure set is empty (200)"
-      $ fsSize (head failureSets2) == 0
-    assertMsg "Next smallest failure set has one disk (200)"
-      $ fsSize (failureSets2 !! 1) == 1
-
-testFailureSets2 :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testFailureSets2 transport pg = rGroupTest transport pg $ \pid -> do
-    me <- getSelfNode
-    ls <- emptyLoopState pid (nullProcessId me)
-    settings <- liftIO defaultInitialDataSettings
-    iData <- liftIO . initialData $ settings
-               { _id_servers = 4, _id_drives = 4 }
-    (ls', _) <- run ls $ initialDataLoad iData
-    -- 16 disks, tolerating one disk failure at a time
-    let rg = lsGraph ls'
-        failureSets = generateFailureSets 1 0 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (100)" $ length failureSets == 17
-    assertMsg "Smallest failure set is empty (100)"
-      $ fsSize (head failureSets) == 0
-
-    -- 16 disks, two failures at a time
-    let failureSets2 = generateFailureSets 2 0 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (200)" $ length failureSets2 == 137
-    assertMsg "Smallest failure set is empty (200)"
-      $ fsSize (head failureSets2) == 0
-    assertMsg "Next smallest failure set has one disk (200)"
-      $ fsSize (failureSets2 !! 1) == 1
-
-    let failureSets010 = generateFailureSets 0 1 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (010)" $ length failureSets010 == 5
-    assertMsg "Smallest failure set is empty (010)"
-      $ fsSize (head failureSets010) == 0
-    assertMsg "Next smallest failure set has 4 disks and one controller (010)"
-      $ fsSize (failureSets010 !! 1) == 5
-
-    let failureSets110 = generateFailureSets 1 1 0 rg (CI.id_m0_globals iData)
-    assertMsg "Number of failure sets (110)" $ length failureSets110 == 69
-    assertMsg "Smallest failure set is empty (110)"
-      $ fsSize (head failureSets110) == 0
-    assertMsg "Next smallest failure set has 1 disk and zero controllers (110)"
-      $ fsSize (failureSets110 !! 1) == 1
-
-testFailureSetsFormulaic :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
-testFailureSetsFormulaic transport pg = rGroupTest transport pg $ \pid -> do
-    me <- getSelfNode
-    ls <- emptyLoopState pid (nullProcessId me)
-    settings <- liftIO defaultInitialDataSettings
-    iData <- liftIO . initialData $ settings
-               { _id_servers = 4
-               , _id_drives = 4
-               , _id_globals = defaultGlobals {CI.m0_failure_set_gen = CI.Formulaic sets}
-               }
-    (ls', _) <- run ls $ do
-      initialDataLoad iData
-      Just (Monolithic update) <- getCurrentGraphUpdateType
-      modifyGraphM update
+    iData <- liftIO . initialData $ settings {_id_servers = 4, _id_drives = 4}
+    _ <- error "XXX IMPLEMENTME Failures(sets)"
+    (ls', _) <- run ls (initialDataLoad iData)
 
     let rg = lsGraph ls'
         ppvers = [ (pool, pvers)
@@ -227,11 +153,14 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     iData <- liftIO . initialData $ settings { _id_servers = 4, _id_drives = 4 }
     (ls', _) <- run ls $ do
       initialDataLoad iData
+      error "XXX IMPLEMENTME: simpleUpdate 0 1 0"
+      {-XXX DELETEME
       rg <- getGraph
       let Iterative update = simpleUpdate 0 1 0
           Just updateGraph = update rg
       rg' <- updateGraph return
       putGraph rg'
+      -}
     -- Verify that everything is set up correctly
     Just root <- runGet ls' getRoot
     let mdpool = M0.Pool (M0.rt_mdpool root)
@@ -273,9 +202,12 @@ testControllerFailureDomain transport pg = rGroupTest transport pg $ \pid -> do
     forM_ (G.getResourcesOfType rg :: [M0.PVer]) $ \pver -> do
       let Right pva = M0.v_data pver
           attrs = M0.va_attrs pva
-          globs = CI.id_m0_globals iData
+      _ <- error "XXX IMPLEMENTME: check data_units & parity_units"
+      {-XXX DELETEME
+      let globs = CI.id_m0_globals iData
       assertMsg "N in PVer" $ CI.m0_data_units globs == _pa_N attrs
       assertMsg "K in PVer" $ CI.m0_parity_units globs == _pa_K attrs
+      -}
       let nr_diskvs = length
             [ diskv
             | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
@@ -384,14 +316,17 @@ testClusterLiveness transport pg = testGroup "cluster-liveness"
       me <- getSelfNode
       ls0 <- emptyLoopState pid (nullProcessId me)
       settings <- liftIO defaultInitialDataSettings
-      iData' <- liftIO . initialData $ settings { _id_servers = 3, _id_drives = 4 }
-      let iData = iData'{CI.id_m0_globals = (CI.id_m0_globals iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
+      iData' <- liftIO . initialData $ settings { _id_servers = 3
+                                                , _id_drives = 4 }
+      let iData = iData'
+      _ <- error "XXX IMPLEMENTME: formulas"
+      {-XXX DELETEME
+      {CI.id_m0_globals = (CI.id_m0_globals iData'){CI.m0_failure_set_gen=CI.Formulaic [[0,0,0,1,0]
                                                                                                          ,[0,0,0,0,1]
                                                                                                          ,[0,0,0,0,2]]}}
+      -}
       (ls1, _) <- run ls0 $ do
          initialDataLoad iData
-         Just (Monolithic update) <- getCurrentGraphUpdateType
-         modifyGraphM update
          RC.initialRule (IgnitionArguments [])
       let procs = G.getResourcesOfType (lsGraph ls1) :: [M0.Process]
       (ls2, _) <- run ls1 $ do

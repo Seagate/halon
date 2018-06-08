@@ -116,9 +116,7 @@ Library
                    HA.RecoveryCoordinator.Mero.Actions.Core
                    HA.RecoveryCoordinator.Mero.Actions.Conf
                    HA.RecoveryCoordinator.Mero.Actions.Initial
-                   HA.RecoveryCoordinator.Mero.Actions.Failure
                    HA.RecoveryCoordinator.Mero.Events
-                   HA.RecoveryCoordinator.Mero.Failure.Simple
                    HA.RecoveryCoordinator.Mero.Failure.Formulaic
                    HA.RecoveryCoordinator.Mero.Failure.Internal
                    HA.RecoveryCoordinator.Mero.Notifications

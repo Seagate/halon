@@ -1,4 +1,5 @@
 {-# LANGUAGE CApiFFI                    #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE ForeignFunctionInterface   #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -27,6 +28,7 @@ import Control.Monad (when)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary)
 import Data.Bits (setBit, shiftR, zeroBits)
+import Data.Data (Data)
 import Data.Hashable (Hashable)
 import Data.List (splitAt, foldl')
 import Data.SafeCopy
@@ -101,8 +103,9 @@ bitmapFromArray bs = Bitmap n $ go [] bs where
 
 -- @types.h m0_unit128@
 data Word128 = Word128 {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
-  deriving (Eq, Ord, Generic, Show)
+  deriving (Eq, Ord, Data, Generic, Show)
 
+instance FromJSON Word128
 instance ToJSON Word128
 instance Binary Word128
 instance Serialize Word128

@@ -289,8 +289,8 @@ newtype PVerGenError = PVerGenError String
 instance Exception PVerGenError
 
 -- | Build pool version tree.
-buildPVer :: M0.PVer -> [CI.M0DeviceRef] -> PVerGen ()
-buildPVer pver refs = for_ refs $ \ref -> do
+buildPVerTree :: M0.PVer -> [CI.M0DeviceRef] -> PVerGen ()
+buildPVerTree pver refs = for_ refs $ \ref -> do
     let throw' = lift . throwE
         modifyG = S.modify' . first
 
@@ -365,11 +365,11 @@ loadMeroPools pools profiles = do
                                                   -- exactly one MD pool.
                             then pure $ M0.rt_mdpool root
                             else newFidRC (Proxy :: Proxy M0.Pool)
-        let attrs = PDClustAttr { _pa_N = undefined  -- CI.m0_data_units globs
-                                , _pa_K = undefined  -- CI.m0_parity_units globs
-                                , _pa_P = undefined  -- 0  -- XXX
+        let attrs = PDClustAttr { _pa_N = error "XXX IMPLEMENTME data_units"
+                                , _pa_K = error "XXX IMPLEMENTME parity_units"
+                                , _pa_P = error "XXX IMPLEMENTME 0 ?"
                                 , _pa_unit_size = 4096
-                                , _pa_seed = Word128 101 102
+                                , _pa_seed = error "XXX IMPLEMENTME (Word128 101 102)"
                                 }
             tolerance = error "XXX IMPLEMENTME"
         pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
@@ -377,10 +377,11 @@ loadMeroPools pools profiles = do
         modifyGraph $ G.connect root M0.IsParentOf pool
                   >>> G.connect pool M0.IsParentOf pver
         modifyGraphM $ \rg ->
-            let buildPool = runStateExcept
-                                (buildPVer pver $ CI.pool_device_refs ipool)
+            let buildBasePVer = runStateExcept
+                                (buildPVerTree pver $ CI.pool_device_refs ipool)
                                 (rg, Map.empty)
-            in either (throwM . PVerGenError) (pure . fst . snd) buildPool
+            in either (throwM . PVerGenError) (pure . fst . snd) buildBasePVer
+        error "XXX IMPLEMENTME: Generate formulaic pvers; see `formulaicUpdate`"
 
     for_ profiles $ \_ -> do
         profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
@@ -414,7 +415,7 @@ createMDPoolPVer = do
                 , M0.fid <$> ctrls
                 , M0.fid <$> disks
                 ]
-        failures = Failures 0 0 0 1 0
+        failures = CI.Failures 0 0 0 1 0
         -- XXX FIXME: Get this info from facts file.
         attrs = PDClustAttr
                 { _pa_N = fromIntegral $ length disks
@@ -465,7 +466,7 @@ createIMeta = do
               , _pa_unit_size = 4096
               , _pa_seed = Word128 101 102
               }
-      failures = Failures 0 0 0 1 0
+      failures = CI.Failures 0 0 0 1 0
       maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]
   fids <- for (zip cas [1..]) $ \((site, rack, encl, ctrl, svc), idx :: Int) -> do
     sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)

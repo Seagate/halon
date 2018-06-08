@@ -20,10 +20,10 @@ module Helper.InitialData
 import           Data.List.Split (splitOn)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import           GHC.Word (Word8)
+import           Data.Word (Word8, Word32)
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
-import           Mero.ConfC (ServiceType(..))
+import           Mero.ConfC (ServiceType(..), Word128(..))
 import           Mero.Lnet
 import           Network.BSD (getHostName)
 import           Text.Printf
@@ -55,11 +55,8 @@ data InitialDataSettings = InitialDataSettings
 -- | Defaults taken from
 -- <http://es-gerrit.xyus.xyratex.com:8080/#/c/10913/1/modules/stx_halon/manifests/facts.pp>
 defaultGlobals :: CI.M0Globals
-defaultGlobals = CI.M0Globals {
-    CI.m0_data_units = 8
-  , CI.m0_parity_units = 2
-  , CI.m0_md_redundancy = 1
-  , CI.m0_failure_set_gen = CI.Preloaded 0 0 1
+defaultGlobals = CI.M0Globals
+  { CI.m0_md_redundancy = 1
   , CI.m0_be_ios_seg_size = Nothing
   , CI.m0_be_log_size = Nothing
   , CI.m0_be_seg_size = Nothing
@@ -72,9 +69,8 @@ defaultGlobals = CI.M0Globals {
   , CI.m0_be_txgr_reg_nr_max = Nothing
   , CI.m0_be_txgr_reg_size_max = Nothing
   , CI.m0_be_txgr_tx_nr_max = Nothing
-  , CI.m0_block_size = Nothing
   , CI.m0_min_rpc_recvq_len = Nothing
-}
+  }
 
 -- | Helper for IP addresses formatted as a quadruple of 'Word8's.
 showIP :: (Word8, Word8, Word8, Word8) -> String
@@ -109,8 +105,8 @@ initialData InitialDataSettings{..}
          ++ show (d + 2 * p)
          ++ ")."
   where
-    d = CI.m0_data_units _id_globals
-    p = CI.m0_parity_units _id_globals
+    d = error "XXX DELETEME? data_units"   :: Word32
+    p = error "XXX DELETEME? parity_units" :: Word32
 initialData InitialDataSettings{..} = return $ CI.InitialData {
     CI.id_m0_globals = _id_globals
   , CI.id_sites = [
@@ -163,7 +159,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
               [(1 :: Int) .. _id_drives]
           })
       serverAddrs
-  , CI.id_pools = [CI.M0Pool "MD." []]
+  , CI.id_pools = [pool]
   , CI.id_profiles = []
 }
   where
@@ -171,6 +167,10 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
     serverAddrs = take (fromIntegral _id_servers)
                   -- Assign next IP to consecutive servers
                   $ iterate (\(x,y,z,w) -> (x,y,z,w + 1)) _id_host_ip
+
+    -- XXX Will such pool parameters be OK for testing?
+    pool = CI.M0Pool "MD." (CI.PDClustAttrs0 8 2 0 (Word128 100 500))
+           [CI.Failures 0 0 0 0 1] []
 
 -- | Pre-populated 'InitialDataSettings'.
 defaultInitialDataSettings :: IO InitialDataSettings
