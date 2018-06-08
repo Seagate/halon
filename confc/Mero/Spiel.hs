@@ -71,7 +71,7 @@ import Data.Word (Word32, Word64)
 
 import Foreign.C.Error (Errno(..), eOK, eBUSY, eNOENT)
 import Foreign.C.String (newCString, withCString, peekCString)
-import Foreign.C.Types (CInt, CUInt(..), CSize)
+import Foreign.C.Types (CInt, CSize)
 import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Alloc (alloca, free)
 import Foreign.Marshal.Array (peekArray, withArray0, withArrayLen)
@@ -195,7 +195,7 @@ addRoot (SpielTransaction ftx) rootfid mdpool imeta mdRedundancy params =
                                          rootfid_ptr
                                          mdpool_ptr
                                          imeta_ptr
-                                         (CUInt mdRedundancy)
+                                         mdRedundancy
                                          cstr_ptr
                 )
 

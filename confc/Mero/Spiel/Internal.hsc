@@ -74,7 +74,7 @@ import Mero.Spiel.Context (FSStats, ServiceInfo, SnsStatus)
 import Data.Word (Word32, Word64)
 
 import Foreign.C.String (CString)
-import Foreign.C.Types (CChar, CInt(..), CUInt(..), CSize(..))
+import Foreign.C.Types (CChar, CInt(..), CSize(..))
 import Foreign.Ptr (Ptr)
 
 #include "confc_helpers.h"
@@ -155,7 +155,7 @@ foreign import ccall "spiel/spiel.h m0_spiel_root_add"
                    -> Ptr Fid         -- ^ rootfid
                    -> Ptr Fid         -- ^ mdpool
                    -> Ptr Fid         -- ^ imeta_pver
-                   -> CUInt           -- ^ mdredundancy
+                   -> Word32          -- ^ mdredundancy
                    -> Ptr (Ptr CChar) -- ^ params (NULL-terminated array)
                    -> IO CInt
 
