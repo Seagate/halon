@@ -64,7 +64,7 @@ Test-Suite unit-tests
                        Tests
                        Regression
 
-  Ghc-Options: -threaded -Wall -eventlog -Werror
+  Ghc-Options: -threaded -Wall -Werror
 
   Build-Depends: base,
                  mtl,
@@ -92,7 +92,7 @@ Test-Suite unit-tests-scheduler
                        Tests
                        Regression
 
-  Ghc-Options: -threaded -Wall -Werror -eventlog
+  Ghc-Options: -threaded -Wall -Werror
 
   Build-Depends: base,
                  mtl,
