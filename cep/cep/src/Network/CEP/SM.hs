@@ -15,22 +15,20 @@ module Network.CEP.SM
   , SMState(..)
   ) where
 
-import Data.Typeable
-
-import           Control.Monad.Trans (lift)
-import qualified Control.Monad.Trans.State.Strict as State
 import           Control.Distributed.Process
 import           Control.Lens
-import qualified Data.Map.Strict as M
+import           Control.Monad.Trans (lift)
+import qualified Control.Monad.Trans.State.Strict as State
+import           Data.Foldable (for_)
+import           Data.Map.Strict (Map, (!))
+import           Data.Typeable
+import           Debug.Trace (traceMarkerIO)
 
 import           Network.CEP.Buffer
 import           Network.CEP.Execution
+import qualified Network.CEP.Log as Log
 import           Network.CEP.Phase
 import           Network.CEP.Types
-import qualified Network.CEP.Log as Log
-
-import           Data.Foldable (for_)
-import           Debug.Trace
 
 newtype SM app = SM { runSM :: forall a. SMIn app a -> a }
 
@@ -53,12 +51,12 @@ data SMIn app a where
 -- | Create CEP state machine
 newSM :: forall app l. Application app
       => RuleKey
-      -> Jump (Phase app l)                -- ^ Initial phase.
+      -> Jump (Phase app l)              -- ^ Initial phase.
       -> String                          -- ^ Rule name.
-      -> M.Map String (Jump (Phase app l)) -- ^ Set of possible phases.
+      -> Map String (Jump (Phase app l)) -- ^ Set of possible phases.
       -> Buffer                          -- ^ Initial buffer.
       -> l                               -- ^ Initial local state.
-      -> Maybe (SMLogger app l)          -- ^ Logger
+      -> Maybe (SMLogger app l)          -- ^ Logger.
       -> SM app
 newSM key startPhase rn ps initialBuffer initialL logger =
     SM $ bootstrap initialBuffer
@@ -78,11 +76,11 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                    -> [Jump (Phase app l)]
                    -> SMIn app a
                    -> a
-    interpretInput smId' l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
+    interpretInput smid l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
       let Just (a :: e) = runIdentity $ unwrapMessage msg in
-      SM (interpretInput smId' l (bufferInsert a b) phs)
-    interpretInput smId' l b phs (SMExecute subs) =
-      executeStack logger subs smId' l b id id phs
+      SM (interpretInput smid l (bufferInsert a b) phs)
+    interpretInput smid l b phs (SMExecute subs) =
+      executeStack logger subs smid l b id id phs
 
     -- We use '[Phase app l] -> [Phase app l]' in order to recreate stack in
     -- case if no branch have fired, this is needed only in presence of
@@ -97,18 +95,18 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                  -> ([ExecutionInfo] -> [ExecutionInfo]) -- ^ Gather execution info.
                  -> [Jump (Phase app l)]
                  -> State.StateT (EngineState (GlobalState app)) Process [(SMResult, SM app)]
-    executeStack _ _ smId' l b f info [] = case f [] of
-      [] -> return [stoppedSM info smId']
-      ph -> return [(SMResult smId' SMSuspended (info [])
-                    , SM $ interpretInput smId' l b ph)]
-    executeStack logs subs smId' l b f info (jmp:phs) = do
+    executeStack _ _ smid l b f info [] = case f [] of
+      [] -> return [stoppedSM info smid]
+      ph -> return [(SMResult smid SMSuspended (info [])
+                    , SM $ interpretInput smid l b ph)]
+    executeStack logs subs smid l b f info (jmp:phs) = do
         res <- jumpApplyTime key jmp
         case res of
           Left nxt_jmp ->
             let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs smId' l b (f . (nxt_jmp:)) (info . (i:)) phs
+            executeStack logs subs smid l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
-            m <- runPhase rn subs logs smId' l b ph
+            m <- runPhase rn subs logs smid l b ph
             concat <$> traverse (next ph) m
       where
         -- Interpret results of the state machine execution. We have phase that was executed
@@ -146,13 +144,13 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                 return [(result, SM $ interpretInput idm l' buffer fin_phs)]
               -- Rule is suspended. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Suspend -> executeStack logs subs smId' l b
+              SM_Suspend -> executeStack logs subs smid l b
                                 (f.(normalJump ph:))
                                 (info . ((FailExe pname SuspendExe b):))
                                 phs
               -- Rule is stopped. We continue execution in order to find next phase that will
               -- terminate.
-              SM_Stop -> executeStack logs subs smId' l b
+              SM_Stop -> executeStack logs subs smid l b
                              f
                              (info . ((FailExe pname StopExe b):))
                              phs
@@ -160,8 +158,8 @@ newSM key startPhase rn ps initialBuffer initialL logger =
             pname = _phName ph
 
     mkPhase :: Jump PhaseHandle -> Jump (Phase app l)
-    mkPhase jmp = jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
+    mkPhase jmp = jumpBaseOn jmp (ps ! jumpPhaseHandle jmp)
 
-    stoppedSM mkInfo smId'
-      = ( SMResult smId' SMStopped (mkInfo [])
+    stoppedSM mkInfo smid
+      = ( SMResult smid SMStopped (mkInfo [])
         , SM $ error "trying to run stack that was stopped")
