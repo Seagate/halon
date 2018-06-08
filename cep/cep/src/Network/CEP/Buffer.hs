@@ -1,6 +1,6 @@
-{-# LANGUAGE CPP        #-}
-{-# LANGUAGE GADTs      #-}
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
 --
@@ -22,11 +22,10 @@ module Network.CEP.Buffer
     , merelyEqual
     ) where
 
-import Prelude hiding (length)
-import Data.Dynamic
-import Data.Foldable (toList)
-import Data.Sequence
-import Debug.Trace (trace)
+import           Data.Dynamic
+import           Data.Foldable (toList)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 data Input a where
     Insert  :: Typeable e => e -> Input Buffer
@@ -52,55 +51,28 @@ initIndex :: Index
 initIndex = (-1)
 
 fifoBuffer :: FIFOType -> Buffer
-fifoBuffer tpe = Buffer $ go empty 0
+fifoBuffer tpe = Buffer $ go Map.empty 0
   where
-    go :: forall a. Seq (Index, Dynamic) -> Int -> Input a -> a
-    go xs idx (Insert e) =
-        case tpe of
-          Bounded limit
-            | length xs == limit ->
-              let elm :< rest = viewl xs  -- `elm' gets lost!
-                  nxt_xs    = rest |> (idx, toDyn e)
-                  nxt_idx   = succ idx in
-              -- XXX Until we have a proper solution, let's at least report
-              -- the problem to stderr.
-              --
-              -- See also the "XXX" comment in `rcRules'.
-              trace ("[fifoBuffer.go.Insert:" ++ show (__LINE__ :: Int)
-                     ++ "] *WARNING* Insertion into full 'Bounded "
-                     ++ show limit ++ "' buffer. The oldest element is LOST: "
-                     ++ show elm) $
-                Buffer $ go nxt_xs nxt_idx
-            | otherwise ->
-              let nxt_xs  = xs |> (idx, toDyn e)
-                  nxt_idx = succ idx in
-              Buffer $ go nxt_xs nxt_idx
-          Unbounded ->
-            let nxt_xs  = xs |> (idx, toDyn e)
-                nxt_idx = succ idx in
-            Buffer $ go nxt_xs nxt_idx
-    go xs idx (Get i) =
-        let loop acc cur =
-              case viewl cur of
-                EmptyL -> Nothing
-                elm@(ei, e) :< rest
-                  | i < ei
-                  , Just a <- fromDynamic e ->
-                    let nxt_xs =  acc >< rest in
-                    Just (ei, a, Buffer $ go nxt_xs idx)
-                  | otherwise -> loop (acc |> elm) rest in
-        loop empty xs
-    go xs _ Length = length xs
-    go xs _ Display = show $ toList xs
-    go xs _ Indexes = toList $ fmap fst xs
-    go xs idx (Drop i) =
-        let loop cur =
-              case viewl cur of
-                EmptyL -> Buffer $ go empty idx
-                elm@(ei, _) :< rest
-                  | ei < i -> loop rest
-                  | otherwise -> Buffer $ go (elm <| rest) idx in
-        loop xs
+    go :: forall a. Map (TypeRep, Index) Dynamic -> Index -> Input a -> a
+    go mm idx (Insert e) =
+        let mm'  = Map.insert (typeOf e, idx) (toDyn e) mm
+            idx' = succ idx
+        in case tpe of
+          Bounded limit | Map.size mm >= limit
+            -> go mm' idx' $ Drop (idx' - limit)
+          _ -> Buffer $ go mm' idx'
+    go mm idx (Get i) = do
+        let Just (_, x, _) = undefined :: a
+        (k@(_, ei), d) <- Map.lookupGT (typeOf x, i) mm
+        e <- fromDynamic d
+        let mm' = Map.delete k mm
+        return (ei, e, Buffer $ go mm' idx)
+    go mm _ Length = Map.size mm
+    go mm _ Display = show $ toList mm
+    go mm _ Indexes = snd <$> Map.keys mm
+    go mm idx (Drop i) =
+        let mm' = Map.filterWithKey (\(_, ei) _ -> ei >= i) mm
+        in Buffer $ go mm' idx
 
 instance Show Buffer where
     show (Buffer k) = k Display
