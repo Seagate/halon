@@ -130,8 +130,8 @@ fillMachineTypeMap st@Machine{..} =
        }
   where
     go key rd m =
-        let insertF i@(TypeInfo fprt _) = MM.insert fprt (key, i) in
-        foldr insertF m $ _ruleTypes rd
+        let insertF i@(TypeInfo fprt _) = MM.insert fprt (key, i)
+        in foldr insertF m $ _ruleTypes rd
     gos _key rd m =
         let insertF (TypeInfo fprt r) =
               M.insert (stableprintTypeRep $ typeRep r) fprt
@@ -159,30 +159,30 @@ buildMachine s defs = go (emptyMachine s) $ view defs
             mp  = M.insert key dat $ _machRuleData st
             st' = st { _machRuleData  = mp
                      , _machRuleCount = idx + 1
-                     } in
-        go st' $ view $ k ()
+                     }
+        in go st' $ view $ k ()
     go st (Init m :>>= k) =
         let buf  = _machPhaseBuf st
             dat  = buildRuleData "init" (newSM initRuleKey) m buf (_machLogger st)
             typs = initRuleTypeMap dat
             ir   = InitRule dat typs
-            st'  = st { _machInitRule = Just ir } in
-        go st' $ view $ k ()
+            st'  = st { _machInitRule = Just ir }
+        in go st' $ view $ k ()
     go st (SetSetting Logger  action :>>= k) =
-        let st' = st { _machLogger = Just action } in
-        go st' $ view $ k ()
+        let st' = st { _machLogger = Just action }
+        in go st' $ view $ k ()
     go st (SetSetting RuleFinalizer action :>>= k) =
-        let st' = st { _machRuleFin = Just action } in
-        go st' $ view $ k ()
+        let st' = st { _machRuleFin = Just action }
+        in go st' $ view $ k ()
     go st (SetSetting PhaseBuffer buf :>>= k ) =
-        let st' = st { _machPhaseBuf = buf } in
-        go st' $ view $ k ()
+        let st' = st { _machPhaseBuf = buf }
+        in go st' $ view $ k ()
     go st (SetSetting DebugMode b :>>= k) =
-        let st' = st { _machDebugMode = b } in
-        go st' $ view $ k ()
+        let st' = st { _machDebugMode = b }
+        in go st' $ view $ k ()
     go st (SetSetting DefaultHandler f :>>= k) =
-        let st' = st { _machDefaultHandler = Just f } in
-        go st' $ view $ k ()
+        let st' = st { _machDefaultHandler = Just f }
+        in go st' $ view $ k ()
 
 -- | Main CEP state-machine
 --   ====================
@@ -279,8 +279,8 @@ runItForever start_eng = do
                 putStrLn "<~~~~~~~~~~ INIT RULE FINISHED ~~~~~~~~~~>"
               if init_done
                 then
-                  let lefts = reverse (m:ms) in
-                  forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
+                  let lefts = reverse (m:ms)
+                  in forwardLeftOvers debug_mode (succ loop) nxt_eng lefts
                 else bootstrap debug_mode (m:ms) (succ loop) nxt_eng
     forwardLeftOvers debug_mode loop eng [] = do
       p <- liftIO $ getTime Monotonic
@@ -441,8 +441,8 @@ feedEngine msgs = go msgs []
 buildSeqList :: Seq -> Set.Set TypeInfo
 buildSeqList Nil = Set.empty
 buildSeqList (Cons (prx :: Proxy a) rest) =
-    let i = TypeInfo (fingerprint (undefined :: a)) prx in
-    Set.insert i $ buildSeqList rest
+    let i = TypeInfo (fingerprint (undefined :: a)) prx
+    in Set.insert i $ buildSeqList rest
 
 --  | Builds a list of 'TypeInfo' out types need by 'Phase's.
 buildTypeList :: Foldable f => f (Jump (Phase g l)) -> Set.Set TypeInfo
@@ -453,8 +453,8 @@ buildTypeList = foldr (go . jumpPhaseCall) Set.empty
           PhaseSeq sq _ -> Set.union (buildSeqList sq) is
           _ ->
             let i = TypeInfo (fingerprint (undefined :: a))
-                             (Proxy :: Proxy a) in
-            Set.insert i is
+                             (Proxy :: Proxy a)
+            in Set.insert i is
     go _ is = is
 
 -- | Executes a rule state machine in order to produce a rule state data
@@ -483,22 +483,22 @@ buildRuleData name mk rls buf logFn = go M.empty Set.empty initLogger $ view rls
         }
     go ps tpes logger (Start ph l :>>= k) =
         let old = ps M.! jumpPhaseHandle ph
-            jmp = jumpBaseOn ph old in
-        go ps tpes logger $ view $ k (StartingPhase l jmp)
+            jmp = jumpBaseOn ph old
+        in go ps tpes logger $ view $ k (StartingPhase l jmp)
     go ps tpes logger (NewHandle n :>>= k) =
         let jmp    = normalJump $ Phase n (DirectCall $ return ())
             handle = PhaseHandle n
-            ps'    = M.insert n jmp ps in
-        go ps' tpes logger $ view $ k $ normalJump handle
+            ps'    = M.insert n jmp ps
+        in go ps' tpes logger $ view $ k $ normalJump handle
     go ps tpes logger (SetPhase jmp call :>>= k) =
         let _F p    = p { _phCall = call }
             nxt_jmp = fmap _F $ jumpBaseOn jmp (ps M.! jumpPhaseHandle jmp)
-            ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps in
-        go ps' tpes logger $ view $ k ()
+            ps'     = M.insert (jumpPhaseHandle jmp) nxt_jmp ps
+        in go ps' tpes logger $ view $ k ()
     go ps tpes logger (Wants (prx :: Proxy a) :>>= k) =
         let tok = Token :: Token a
-            tpe = TypeInfo (fingerprint (undefined :: a)) prx in
-        go ps (Set.insert tpe tpes) logger $ view $ k tok
+            tpe = TypeInfo (fingerprint (undefined :: a)) prx
+        in go ps (Set.insert tpe tpes) logger $ view $ k tok
     go ps tpes logger (SetRuleSetting rs :>>= k) = case rs of
       LocalStateLogger l ->
         go ps tpes ((\sml -> sml{sml_state_logger = Just l}) <$> logger) $ view $ k ()

@@ -376,8 +376,8 @@ cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
       Tick -> go NoMessage _machTotalProcMsgs
       Incoming m@((`M.lookup` typs) . messageFingerprint -> Just tpe) ->
           let msg       = GotMessage tpe m
-              msg_count = _machTotalProcMsgs + 1 in
-          go msg msg_count
+              msg_count = _machTotalProcMsgs + 1
+          in go msg msg_count
       Incoming _ -> defaultHandler st (cepInitRule ir) req
       _ -> defaultHandler st (cepInitRule ir) req
   where
@@ -437,15 +437,15 @@ cepCruise !st req@(Run t) =
               (\u (SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m) in
-                    (u+1, (SMData idx key rd{_ruleStack=stack'}))
+                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    in (u+1, (SMData idx key rd{_ruleStack=stack'}))
                   Nothing   -> (u,SMData idx key rd)) 0 (_machRunningSM st)
             splitted = foreach (_machSuspendedSM st) $
               \(SMData idx key rd) ->
                 case key `lookup` keyInfos of
                   Just info ->
-                    let stack' = runSM (_ruleStack rd) (SMMessage info m) in
-                    Right (SMData idx key rd{_ruleStack=stack'})
+                    let stack' = runSM (_ruleStack rd) (SMMessage info m)
+                    in Right (SMData idx key rd{_ruleStack=stack'})
                   Nothing   -> Left (SMData idx key rd)
             (susp,running) = partitionEithers splitted
             rinfo = RunInfo (upd+length running)

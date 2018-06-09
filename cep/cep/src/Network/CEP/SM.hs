@@ -63,8 +63,8 @@ newSM key startPhase rn ps initialBuffer initialL logger =
   where
     bootstrap :: Buffer -> SMIn app a -> a
     bootstrap b (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
-      let Just (a :: e) = runIdentity $ unwrapMessage msg in
-      SM (bootstrap (bufferInsert a b))
+      let Just (a :: e) = runIdentity $ unwrapMessage msg
+      in SM (bootstrap (bufferInsert a b))
     bootstrap b i@(SMExecute _) = do
         ph <- jumpEmitTimeout key startPhase
         sm <- nextSmId
@@ -76,9 +76,9 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                    -> [Jump (Phase app l)]
                    -> SMIn app a
                    -> a
-    interpretInput smid l b phs (SMMessage (TypeInfo _ (_::Proxy e)) msg) =
-      let Just (a :: e) = runIdentity $ unwrapMessage msg in
-      SM (interpretInput smid l (bufferInsert a b) phs)
+    interpretInput smid l b phs (SMMessage (TypeInfo _ (_ :: Proxy e)) msg) =
+      let Just (a :: e) = runIdentity $ unwrapMessage msg
+      in SM (interpretInput smid l (bufferInsert a b) phs)
     interpretInput smid l b phs (SMExecute subs) =
       executeStack logger subs smid l b id id phs
 
@@ -103,8 +103,8 @@ newSM key startPhase rn ps initialBuffer initialL logger =
         res <- jumpApplyTime key jmp
         case res of
           Left nxt_jmp ->
-            let i   = FailExe (jumpPhaseName jmp) SuspendExe b in
-            executeStack logs subs smid l b (f . (nxt_jmp:)) (info . (i:)) phs
+            let i = FailExe (jumpPhaseName jmp) SuspendExe b
+            in executeStack logs subs smid l b (f . (nxt_jmp:)) (info . (i:)) phs
           Right ph -> do
             m <- runPhase rn subs logs smid l b ph
             concat <$> traverse (next ph) m

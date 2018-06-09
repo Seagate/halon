@@ -102,8 +102,8 @@ extractMatchMsg p l buf = go (-1)
                           { _extractBuf = newBuf
                           , _extractMsg = b
                           , _extractIndex = newIdx
-                          } in
-                return $ Just ext
+                          }
+                in return $ Just ext
           _ -> return Nothing
     trySome :: Process a -> Process (Either Catch.SomeException a)
     trySome = Catch.try
@@ -120,8 +120,8 @@ extractNormalMsg _ buf =
                   { _extractBuf = buf'
                   , _extractMsg = a
                   , _extractIndex = newIdx
-                  } in
-        Just ext
+                  }
+        in Just ext
       _ -> Nothing
 
 -- | Extracts a message based on messages coming sequentially.
@@ -137,8 +137,8 @@ extractSeqMsg s sbuf = go (-1) sbuf s
                   { _extractBuf = buf
                   , _extractMsg = b
                   , _extractIndex = lastIdx
-                  } in
-        Just ext
+                  }
+        in Just ext
     go _ _ _ = Nothing
 
 -- | Execute a single 'Phase'
