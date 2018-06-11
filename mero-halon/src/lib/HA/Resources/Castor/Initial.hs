@@ -349,7 +349,7 @@ failuresToList f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
 data M0Pool = M0Pool
   { pool_id :: T.Text
   , pool_pdclust_attrs :: PDClustAttrs0
-  , pool_tolerated_failures :: [Failures]
+  , pool_allowed_failures :: [Failures]
   , pool_device_refs :: [M0DeviceRef]
   } deriving (Eq, Data, Generic, Show, Typeable)
 

@@ -265,7 +265,7 @@ class Pool(ToYaml):
         lines.append(indent(depth+2) + 'parity_units: 1')
         lines.append(indent(depth+2) + 'unit_size: 4096')
         lines.append(indent(depth+2) + 'seed: [101, 102]')
-        lines.append(indent(depth+1) + 'pool_tolerated_failures:')
+        lines.append(indent(depth+1) + 'pool_allowed_failures:')
         lines.append(indent(depth+2) +
                      '- {site: 0, rack: 0, encl: 0, ctrl: 0, disk: 1}')
         lines.append(indent(depth+1) + 'pool_device_refs:')

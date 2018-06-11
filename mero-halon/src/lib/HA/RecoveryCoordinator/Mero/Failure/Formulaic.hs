@@ -3,16 +3,22 @@
 -- License   : All rights reserved.
 --
 module HA.RecoveryCoordinator.Mero.Failure.Formulaic
-  ( formulaicUpdate
+  ( addPVerFormulaic
+  , formulaicUpdate
   ) where
 
-import           Control.Monad.Trans.State (execState, modify, state)
+import           Control.Exception (assert)
+import           Control.Monad.Trans.State (execState, modify, modify', state)
 import           Data.Bifunctor (first)
 import           Data.Bits (setBit, testBit)
+import           Data.Either (isRight)
 import           Data.Foldable (for_)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Set as Set
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+  ( newFid
+  , uniquePVerCounter
+  )
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
   ( ConditionOfDevices(DevicesFailed)
   , UpdateType(Monolithic)
@@ -24,6 +30,28 @@ import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC (Fid(..), PDClustAttr(..), Word128(..))
+
+-- | Generate formulaic pool version and link it to the @pool@.
+addPVerFormulaic :: M0.Pool -> M0.PVer -> CI.Failures -> G.Graph -> G.Graph
+addPVerFormulaic pool base allowance rg = flip execState rg $ do
+    assert (isRight $ M0.v_data base) (pure ())
+    fid <- state (first toFormulaic . newFid (Proxy :: Proxy M0.PVer))
+    idx <- state uniquePVerCounter
+    let pvf = M0.PVerFormulaic idx (M0.fid base) (CI.failuresToList allowance)
+        pver = M0.PVer fid (Left pvf)
+    modify' $ G.connect pool M0.IsParentOf pver
+
+-- | Set "kind" bit of a pver fid, making it a formulaic pver.
+--
+-- See https://github.com/seagate-ssg/mero/blob/master/doc/formulaic-pvers.org#fid-formats
+toFormulaic :: Fid -> Fid
+toFormulaic fid@(Fid container key)
+  | not $ M0.fidIsType (Proxy :: Proxy M0.PVer) fid = error "Invalid fid type"
+  | container `testBit` 55                          = error "Invalid container"
+  | otherwise = Fid (container `setBit` 54) key
+
+----------------------------------------------------------------------
+-- XXX-MULTIPOOLS: DELETEME
 
 -- | Sets "kind" bit of a pver fid, making it a formulaic pver.
 --

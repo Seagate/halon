@@ -39,7 +39,14 @@ import           HA.RecoveryCoordinator.Mero.Actions.Conf
   , lookupM0Enclosure
   )
 import           HA.RecoveryCoordinator.Mero.Actions.Core
+import           HA.RecoveryCoordinator.Mero.Failure.Formulaic
+  ( addPVerFormulaic
+  )
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
+  ( ConditionOfDevices(DevicesWorking)
+  , PoolVersion(..)
+  , createPoolVersionsInPool
+  )
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
@@ -361,8 +368,8 @@ setTolerance :: M0.PVer -> G.Graph -> G.Graph
 setTolerance pver rg =
     let Right pva = M0.v_data pver  -- expecting M0.PVerActual
         attrs = M0.va_attrs pva
-        n = _pa_N attrs  -- data units
-        k = _pa_K attrs  -- parity units
+        n = _pa_N attrs
+        k = _pa_K attrs
         nrCtrls = fromIntegral $ length
           [ ctrlv
           | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
@@ -384,14 +391,17 @@ setTolerance pver rg =
 
 -- | Add pools to the resource graph.
 loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
-loadMeroPools pools = do
+loadMeroPools ipools = do
     Just root <- getRoot
-    for_ pools $ \ipool -> do
+    for_ ipools $ \ipool -> do
         pool <- M0.Pool <$> if CI.isMDPool ipool  -- 'CI.validateInitialData'
                                                   -- guarantees that there is
                                                   -- exactly one MD pool.
                             then pure $ M0.rt_mdpool root
                             else newFidRC (Proxy :: Proxy M0.Pool)
+        modifyGraph $ G.connect root M0.IsParentOf pool
+
+        -- Add actual ("base") pool version.
         let devRefs = CI.pool_device_refs ipool
             CI.PDClustAttrs0{..} = CI.pool_pdclust_attrs ipool
             attrs = PDClustAttr { _pa_N = pa0_data_units
@@ -401,17 +411,18 @@ loadMeroPools pools = do
                                 , _pa_seed = pa0_seed
                                 }
             dummyTolerance = []  -- will be recalculated by setTolerance
-        pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
+        base <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
                         <*> (pure . Right $ M0.PVerActual attrs dummyTolerance)
-        modifyGraph $ G.connect root M0.IsParentOf pool
-                  >>> G.connect pool M0.IsParentOf pver
         modifyGraphM $ \rg ->
             let buildBasePVer =
-                    runStateExcept (buildPVerTree pver devRefs) (rg, Map.empty)
+                    runStateExcept (buildPVerTree base devRefs) (rg, Map.empty)
             in either (throwM . PVerGenError) (pure . fst . snd) buildBasePVer
-        modifyGraph $ setTolerance pver
+        modifyGraph $ setTolerance base
+                  >>> G.connect pool M0.IsParentOf base
 
-        error "XXX IMPLEMENTME: Generate formulaic pvers; see `formulaicUpdate`"
+        -- Add formulaic pool versions.
+        mapM_ (modifyGraph . addPVerFormulaic pool base)
+            (CI.pool_allowed_failures ipool)
 
 -- | Add profiles to the resource graph.
 loadMeroProfiles :: [CI.M0Profile] -> PhaseM RC l ()

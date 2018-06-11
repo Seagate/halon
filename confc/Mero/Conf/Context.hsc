@@ -140,10 +140,10 @@ instance Storable Cookie where
 
 -- | @pdclust.h m0_pdclust_attr@
 data PDClustAttr = PDClustAttr
-  { _pa_N :: Word32
-  , _pa_K :: Word32
-  , _pa_P :: Word32
-  , _pa_unit_size :: Word64
+  { _pa_N :: Word32          -- ^ number of data units in a parity group
+  , _pa_K :: Word32          -- ^ number of parity units
+  , _pa_P :: Word32          -- ^ pool width
+  , _pa_unit_size :: Word64  -- ^ stripe unit size, bytes
   , _pa_seed :: Word128
 } deriving (Eq, Generic, Show)
 
