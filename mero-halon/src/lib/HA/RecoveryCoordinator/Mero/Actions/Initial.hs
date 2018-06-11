@@ -5,12 +5,12 @@
 -- Copyright : (C) 2017 Seagate Technology Limited.
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Initial
-  ( -- * Initialization
-    initialiseConfInRG
-  , loadMeroPools
-  , loadMeroServers
-  , createMDPoolPVer
+  ( initialiseConfInRG
   , createIMeta
+  , createMDPoolPVer
+  , loadMeroPools
+  , loadMeroProfiles
+  , loadMeroServers
   ) where
 
 import           Control.Category ((>>>))
@@ -356,8 +356,35 @@ buildPVerTree pver refs = for_ refs $ \ref -> do
     modifyG $ G.connect sitev M0.IsParentOf rackv
           >>> G.connect pver M0.IsParentOf sitev
 
-loadMeroPools :: [CI.M0Pool] -> [CI.M0Profile] -> PhaseM RC l ()
-loadMeroPools pools profiles = do
+-- | Calculate and update 'M0.va_tolerance' field of the actual pool version.
+setTolerance :: M0.PVer -> G.Graph -> G.Graph
+setTolerance pver rg =
+    let Right pva = M0.v_data pver  -- expecting M0.PVerActual
+        attrs = M0.va_attrs pva
+        n = _pa_N attrs  -- data units
+        k = _pa_K attrs  -- parity units
+        nrCtrls = fromIntegral $ length
+          [ ctrlv
+          | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
+          , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
+          , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+          , ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+          ]
+        -- XXX Failures above controllers are not currently supported
+        -- (ref. HALON-406).
+        (q, r) = (n + 2*k) `quotRem` nrCtrls
+        kc = r * (q + 1)  -- XXX What's this?
+        ctrlFailures  -- XXX TODO: explain this formula
+          | kc > k    = k `quot` (q + 1)
+          | kc < k    = (k - r) `quot` q
+          | otherwise = r
+        toleratedFailures = CI.Failures 0 0 0 ctrlFailures k
+        pva' = pva { M0.va_tolerance = CI.failuresToList toleratedFailures }
+    in G.mergeResources head [pver { M0.v_data = Right pva' }, pver] rg
+
+-- | Add pools to the resource graph.
+loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
+loadMeroPools pools = do
     Just root <- getRoot
     for_ pools $ \ipool -> do
         pool <- M0.Pool <$> if CI.isMDPool ipool  -- 'CI.validateInitialData'
@@ -365,24 +392,31 @@ loadMeroPools pools profiles = do
                                                   -- exactly one MD pool.
                             then pure $ M0.rt_mdpool root
                             else newFidRC (Proxy :: Proxy M0.Pool)
-        let attrs = PDClustAttr { _pa_N = error "XXX IMPLEMENTME data_units"
-                                , _pa_K = error "XXX IMPLEMENTME parity_units"
-                                , _pa_P = error "XXX IMPLEMENTME 0 ?"
-                                , _pa_unit_size = 4096
-                                , _pa_seed = error "XXX IMPLEMENTME (Word128 101 102)"
+        let devRefs = CI.pool_device_refs ipool
+            CI.PDClustAttrs0{..} = CI.pool_pdclust_attrs ipool
+            attrs = PDClustAttr { _pa_N = pa0_data_units
+                                , _pa_K = pa0_parity_units
+                                , _pa_P = fromIntegral (length devRefs)
+                                , _pa_unit_size = pa0_unit_size
+                                , _pa_seed = pa0_seed
                                 }
-            tolerance = error "XXX IMPLEMENTME"
+            dummyTolerance = []  -- will be recalculated by setTolerance
         pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
-                        <*> (pure . Right $ M0.PVerActual attrs tolerance)
+                        <*> (pure . Right $ M0.PVerActual attrs dummyTolerance)
         modifyGraph $ G.connect root M0.IsParentOf pool
                   >>> G.connect pool M0.IsParentOf pver
         modifyGraphM $ \rg ->
-            let buildBasePVer = runStateExcept
-                                (buildPVerTree pver $ CI.pool_device_refs ipool)
-                                (rg, Map.empty)
+            let buildBasePVer =
+                    runStateExcept (buildPVerTree pver devRefs) (rg, Map.empty)
             in either (throwM . PVerGenError) (pure . fst . snd) buildBasePVer
+        modifyGraph $ setTolerance pver
+
         error "XXX IMPLEMENTME: Generate formulaic pvers; see `formulaicUpdate`"
 
+-- | Add profiles to the resource graph.
+loadMeroProfiles :: [CI.M0Profile] -> PhaseM RC l ()
+loadMeroProfiles profiles = do
+    Just root <- getRoot
     for_ profiles $ \_ -> do
         profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
         modifyGraph $ G.connect root M0.IsParentOf profile

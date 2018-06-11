@@ -79,7 +79,8 @@ ruleInitialDataLoad =
           initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
-          loadMeroPools id_pools id_profiles
+          loadMeroPools id_pools
+          loadMeroProfiles id_profiles
 
           -- Note that we call these after 'loadMeroPools', which creates
           -- pool versions for the IO pools. The reason for this is that
