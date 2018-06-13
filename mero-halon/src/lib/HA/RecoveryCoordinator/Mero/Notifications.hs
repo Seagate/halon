@@ -108,6 +108,7 @@ mkNotifier' toPred dispatcher act = do
   check_notifications <- phaseHandle "check_notifications"
   notifier <- phaseHandle "notifier"
   let fldN = Proxy :: Proxy (FldNotifications a)
+
   -- It could happen that the caller invoked the notifier without any
   -- notifications. In that case the caller has to wait for
   -- 'InternalObjectStateChangeMsg' to fly by to notice this: this is
@@ -132,13 +133,16 @@ mkNotifier' toPred dispatcher act = do
         continue dispatcher
 
   setPhase notifier $ \(HAEvent eid (msg :: InternalObjectStateChangeMsg)) -> do
+    let notifierDone = do
+          waitDone notifier
+          done eid
+          act
+          -- There may well be other phases the dispatcher is waiting
+          -- for, we have to keep going.
+          continue dispatcher
     todo eid
     gets Local (^. rlens fldN . rfield) >>= \case
-      [] -> do
-         waitDone notifier
-         done eid
-         act
-         continue dispatcher
+      [] -> notifierDone
       notificationSet -> do
         InternalObjectStateChange iosc <- liftProcess $ decodeP msg
         -- O(n*(max(n, m))) i.e. at least O(n²) but possibly worse
@@ -147,14 +151,9 @@ mkNotifier' toPred dispatcher act = do
         let next = foldl' (\sts asc -> filter (\s -> not $ toPred s asc) sts)
                           notificationSet iosc
         modify Local $ rlens fldN . rfield .~ next
-
         case next of
-          -- We're not waiting for any more notifications, notifier
-          -- has done its job.
-          [] -> do
-            waitDone notifier
-            done eid
-            act
+          -- We're not waiting for any more notifications.
+          [] -> notifierDone
           -- It may happen that the notifications can come in separate
           -- state diffs. For example consider wanting to wait for all
           -- notifications for some objects but the rule pertaining to
@@ -166,9 +165,8 @@ mkNotifier' toPred dispatcher act = do
           -- happens.
           _ -> do
             Log.rcLog' Log.DEBUG "Still waiting for notifications."
-        -- There may well be other phases this dispatcher is waiting
-        -- for, we have to keep going.
-        continue dispatcher
+            done eid
+            continue dispatcher
 
   return check_notifications
 
