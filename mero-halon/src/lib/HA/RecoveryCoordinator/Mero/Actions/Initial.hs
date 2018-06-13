@@ -17,12 +17,10 @@ import           Control.Category ((>>>))
 import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
 import           Control.Monad.Catch (Exception, throwM)
-import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import           Data.Bifunctor (first)
 import           Data.Either (partitionEithers)
 import           Data.Foldable (foldl', for_)
-import           Data.Functor.Identity (Identity(runIdentity))
 import           Data.List (intercalate, notElem, scanl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -250,25 +248,6 @@ addProcess node devs CI.M0Process{..} = let
     for_ (procEnv rg) $ \pe ->
       modifyGraph (G.connect proc Has pe)
 
-type StateExceptT s e m a = S.StateT s (ExceptT e m) a
-
-runStateExceptT :: Monad m => StateExceptT s e m a -> s -> m (Either e (a, s))
-runStateExceptT m = runExceptT . S.runStateT m
-
-type StateExcept s e a = StateExceptT s e Identity a
-
-runStateExcept :: StateExcept s e a -> s -> Either e (a, s)
-runStateExcept m = runIdentity . runStateExceptT m
-
--- | State updated during pool version tree construction.
-type PVerState
-  = ( G.Graph      -- ^ Resource graph.
-    , Map Fid Fid  -- ^ Pool version devices.  Maps fid of real object
-                   --   to the fid of corresponding virtual object.
-    )
-
-type PVerGen a = StateExcept PVerState String a
-
 -- | Try to find 'Cas.StorageDevice' which 'CI.M0DeviceRef' points at.
 dereference :: G.Graph -> CI.M0DeviceRef -> Either String Cas.StorageDevice
 dereference rg ref@CI.M0DeviceRef{..} = do
@@ -305,8 +284,15 @@ dereferenceMany rg refs = case partitionEithers (dereference rg <$> refs) of
             else Left $ intercalate "\n" (mkErr <$> overReferenced)
     (errs, _) -> Left $ intercalate "\n" errs
 
+-- | State updated during pool version tree construction.
+type PVerSt
+  = ( G.Graph      -- ^ Resource graph.
+    , Map Fid Fid  -- ^ Pool version devices.  Maps fid of real object
+                   --   to the fid of corresponding virtual object.
+    )
+
 -- | Generate new 'Fid' for the given 'M0.ConfObj' type.
-newFidPVerGen :: M0.ConfObj a => Proxy a -> Fid -> PVerGen Fid
+newFidPVerGen :: M0.ConfObj a => Proxy a -> Fid -> S.State PVerSt Fid
 newFidPVerGen p real = do
     (rg, devs) <- S.get
     assert (Map.notMember real devs) (pure ())
@@ -316,7 +302,7 @@ newFidPVerGen p real = do
     pure virt
 
 -- | Build pool version tree.
-buildPVerTree :: M0.PVer -> [Cas.StorageDevice] -> PVerGen ()
+buildPVerTree :: M0.PVer -> [Cas.StorageDevice] -> S.State PVerSt ()
 buildPVerTree pver sdevs = for_ sdevs $ \sdev -> do
     let modifyG = S.modify' . first
 
@@ -432,10 +418,8 @@ loadMeroPools ipools = do
         -- Add actual ("base") pool version.
         base <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
                         <*> (pure . Right $ M0.PVerActual attrs tolerance)
-        modifyGraphM $ \rg ->
-            let run :: Either String ((), PVerState)
-                run = runStateExcept (buildPVerTree base sdevs) (rg, Map.empty)
-            in either throw' (pure . fst . snd) run
+        modifyGraph $ \rg ->
+            fst $ S.execState (buildPVerTree base sdevs) (rg, Map.empty)
         modifyGraph $ G.connect pool M0.IsParentOf base
 
         -- Add formulaic pool versions.
