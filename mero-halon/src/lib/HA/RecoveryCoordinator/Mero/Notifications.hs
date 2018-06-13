@@ -166,7 +166,7 @@ mkNotifier' toPred dispatcher act = do
           _ -> do
             Log.rcLog' Log.DEBUG "Still waiting for notifications."
             done eid
-            continue dispatcher
+            continue notifier
 
   return check_notifications
 
