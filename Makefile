@@ -173,6 +173,7 @@ halon-devel-image: halon-deps-cache
 	&& $(DOCKER) build . \
 			-f Dockerfile.$(INAME) \
 			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
+			-t $(NAMESPACE)/$(INAME):$(basename $(CENTOS_RELEASE)) \
 			$(DOCKER_OPTS)
 	rm -rf docker/{stack,stack-work}
 	$(DOCKER) rmi $(NAMESPACE)/halon-base:$(CENTOS_RELEASE)
