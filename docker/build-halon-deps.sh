@@ -22,5 +22,8 @@ if [[ -e docker/stack-work ]] ; then
     rm -rf docker/stack-work
 fi
 
+# fix read permissions for some files that created with user-only access
+find ~/.stack .stack-work \! -perm -o=r -exec chmod a+r '{}' \; -print
+
 mv ~/.stack docker/stack
 mv .stack-work docker/stack-work

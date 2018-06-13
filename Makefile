@@ -148,9 +148,10 @@ docker-images-7.3: docker-images
 
 .PHONY: halon-src-container
 halon-src-container:
-	if ! $(DOCKER) container inspect -f '{{.Id}}' $(CNAME) >/dev/null 2>&1 ; then \
-		$(DOCKER) create --name $(CNAME) -v $(PWD):/root/halon centos ; \
+	if $(DOCKER) container inspect -f '{{.Id}}' $(CNAME) >/dev/null 2>&1 ; then \
+		$(DOCKER) rm $(CNAME) ; \
 	fi
+	$(DOCKER) create --name $(CNAME) -v $(PWD):/root/halon centos
 
 .PHONY: halon-base-image
 halon-base-image:
