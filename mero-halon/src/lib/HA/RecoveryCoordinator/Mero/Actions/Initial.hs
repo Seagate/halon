@@ -17,16 +17,18 @@ import           Control.Category ((>>>))
 import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
 import           Control.Monad.Catch (Exception, throwM)
-import           Control.Monad.Trans.Class (lift)
-import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import           Data.Bifunctor (first)
+import           Data.Either (partitionEithers)
 import           Data.Foldable (foldl', for_)
 import           Data.Functor.Identity (Identity(runIdentity))
-import           Data.List (notElem, scanl')
+import           Data.List (intercalate, notElem, scanl')
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isNothing)
+import           Data.Maybe (fromJust, fromMaybe, isNothing)
+import           Data.MultiMap (MultiMap)
+import qualified Data.MultiMap as MMap
 import           Data.Proxy
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -64,6 +66,7 @@ import           Mero.ConfC
   )
 import           Mero.Lnet
 import           Network.CEP
+import           Text.Printf (printf)
 import           Text.Regex.TDFA ((=~))
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
@@ -267,8 +270,8 @@ type PVerState
 type PVerGen a = StateExcept PVerState String a
 
 -- | Try to find 'Cas.StorageDevice' which 'CI.M0DeviceRef' points at.
-dereference :: CI.M0DeviceRef -> G.Graph -> Either String Cas.StorageDevice
-dereference ref@CI.M0DeviceRef{..} rg = do
+dereference :: G.Graph -> CI.M0DeviceRef -> Either String Cas.StorageDevice
+dereference rg ref@CI.M0DeviceRef{..} = do
     let ds = [ d
              | d@(Cas.StorageDevice serial) <- G.connectedTo Cluster Has rg
              , let ids = G.connectedTo d Has rg :: [Cas.DeviceIdentifier]
@@ -281,6 +284,27 @@ dereference ref@CI.M0DeviceRef{..} rg = do
         []  -> Left $ "No target: " ++ show ref
         _   -> Left $ "Multiple targets: " ++ show ref
 
+dereferenceMany :: G.Graph -> [CI.M0DeviceRef]
+                -> Either String [Cas.StorageDevice]
+dereferenceMany rg refs = case partitionEithers (dereference rg <$> refs) of
+    ([], sdevs) ->
+        let mm :: MultiMap Cas.StorageDevice CI.M0DeviceRef
+            mm = MMap.fromList (zip sdevs refs)
+
+            manyElems = not . null . drop 1
+
+            overReferenced :: [Cas.StorageDevice]
+            overReferenced = Map.keys $ Map.filter manyElems (MMap.toMap mm)
+
+            mkErr :: Cas.StorageDevice -> String
+            mkErr sdev = printf "%s is referred to by several M0DeviceRefs: %s"
+                (show sdev) (intercalate ", " $ show <$> mm MMap.! sdev)
+        in
+            if null overReferenced
+            then Right sdevs
+            else Left $ intercalate "\n" (mkErr <$> overReferenced)
+    (errs, _) -> Left $ intercalate "\n" errs
+
 -- | Generate new 'Fid' for the given 'M0.ConfObj' type.
 newFidPVerGen :: M0.ConfObj a => Proxy a -> Fid -> PVerGen Fid
 newFidPVerGen p real = do
@@ -291,27 +315,16 @@ newFidPVerGen p real = do
     S.put (rg', devs')
     pure virt
 
-newtype PVerGenError = PVerGenError String
-  deriving Show
-instance Exception PVerGenError
-
 -- | Build pool version tree.
-buildPVerTree :: M0.PVer -> [CI.M0DeviceRef] -> PVerGen ()
-buildPVerTree pver refs = for_ refs $ \ref -> do
-    let throw' = lift . throwE
-        modifyG = S.modify' . first
-
-    -- Find disk
-    disk :: M0.Disk <- do
-        (rg, devs) <- S.get
-        sdev <- either throw' pure (dereference ref rg)
-        let Just disk = G.connectedFrom M0.At sdev rg
-        when (Map.member (M0.fid disk) devs) $
-            throw' $ "Multiple M0DeviceRefs point at " ++ show sdev
-        pure disk
+buildPVerTree :: M0.PVer -> [Cas.StorageDevice] -> PVerGen ()
+buildPVerTree pver sdevs = for_ sdevs $ \sdev -> do
+    let modifyG = S.modify' . first
 
     -- Disk level
-    diskv <- M0.DiskV <$> newFidPVerGen (Proxy :: Proxy M0.DiskV) (M0.fid disk)
+    disk :: M0.Disk <- S.gets $ \(rg, _) ->
+        fromJust (G.connectedFrom M0.At sdev rg)
+    diskv <- M0.DiskV <$>
+        newFidPVerGen (Proxy :: Proxy M0.DiskV) (M0.fid disk)
     modifyG $ G.connect disk M0.IsRealOf diskv
 
     -- Controller level
@@ -363,19 +376,17 @@ buildPVerTree pver refs = for_ refs $ \ref -> do
     modifyG $ G.connect sitev M0.IsParentOf rackv
           >>> G.connect pver M0.IsParentOf sitev
 
--- | Calculate and update 'M0.va_tolerance' field of the actual pool version.
-setTolerance :: M0.PVer -> G.Graph -> G.Graph
-setTolerance pver rg =
-    let Right pva = M0.v_data pver  -- expecting M0.PVerActual
-        attrs = M0.va_attrs pva
-        n = _pa_N attrs
+toleratedFailures :: PDClustAttr -> [Cas.StorageDevice] -> G.Graph
+                  -> CI.Failures
+toleratedFailures attrs sdevs rg =
+    let n = _pa_N attrs
         k = _pa_K attrs
         nrCtrls = fromIntegral $ length
-          [ ctrlv
-          | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
-          , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
-          , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
-          , ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+          [ ctrl
+          | sdev <- sdevs
+          , let Just (disk :: M0.Disk) = G.connectedFrom M0.At sdev rg
+                Just (ctrl :: M0.Controller) =
+                    G.connectedFrom M0.IsParentOf disk rg
           ]
         -- XXX Failures above controllers are not currently supported
         -- (ref. HALON-406).
@@ -385,15 +396,20 @@ setTolerance pver rg =
           | kc > k    = k `quot` (q + 1)
           | kc < k    = (k - r) `quot` q
           | otherwise = r
-        toleratedFailures = CI.Failures 0 0 0 ctrlFailures k
-        pva' = pva { M0.va_tolerance = CI.failuresToList toleratedFailures }
-    in G.mergeResources head [pver { M0.v_data = Right pva' }, pver] rg
+    in CI.Failures 0 0 0 ctrlFailures k
+
+data PoolCreationError = PoolCreationError T.Text String
+  deriving Show
+instance Exception PoolCreationError
 
 -- | Add pools to the resource graph.
 loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
 loadMeroPools ipools = do
     Just root <- getRoot
     for_ ipools $ \ipool -> do
+        let throw' :: String -> PhaseM RC l a
+            throw' = throwM . PoolCreationError (CI.pool_id ipool)
+
         pool <- M0.Pool <$> if CI.isMDPool ipool  -- 'CI.validateInitialData'
                                                   -- guarantees that there is
                                                   -- exactly one MD pool.
@@ -401,24 +417,26 @@ loadMeroPools ipools = do
                             else newFidRC (Proxy :: Proxy M0.Pool)
         modifyGraph $ G.connect root M0.IsParentOf pool
 
-        -- Add actual ("base") pool version.
-        let devRefs = CI.pool_device_refs ipool
-            CI.PDClustAttrs0{..} = CI.pool_pdclust_attrs ipool
+        sdevs <- getGraph >>= \rg ->
+            either throw' pure $ dereferenceMany rg (CI.pool_device_refs ipool)
+        let CI.PDClustAttrs0{..} = CI.pool_pdclust_attrs ipool
             attrs = PDClustAttr { _pa_N = pa0_data_units
                                 , _pa_K = pa0_parity_units
-                                , _pa_P = fromIntegral (length devRefs)
+                                , _pa_P = fromIntegral (length sdevs)
                                 , _pa_unit_size = pa0_unit_size
                                 , _pa_seed = pa0_seed
                                 }
-            dummyTolerance = []  -- will be recalculated by setTolerance
+        tolerance <- getGraph >>=
+            pure . CI.failuresToList . toleratedFailures attrs sdevs
+
+        -- Add actual ("base") pool version.
         base <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
-                        <*> (pure . Right $ M0.PVerActual attrs dummyTolerance)
+                        <*> (pure . Right $ M0.PVerActual attrs tolerance)
         modifyGraphM $ \rg ->
-            let buildBasePVer =
-                    runStateExcept (buildPVerTree base devRefs) (rg, Map.empty)
-            in either (throwM . PVerGenError) (pure . fst . snd) buildBasePVer
-        modifyGraph $ setTolerance base
-                  >>> G.connect pool M0.IsParentOf base
+            let run :: Either String ((), PVerState)
+                run = runStateExcept (buildPVerTree base sdevs) (rg, Map.empty)
+            in either throw' (pure . fst . snd) run
+        modifyGraph $ G.connect pool M0.IsParentOf base
 
         -- Add formulaic pool versions.
         mapM_ (modifyGraph . addPVerFormulaic pool base)
