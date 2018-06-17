@@ -282,31 +282,83 @@ disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
             else Left $ intercalate "\n" (mkErr <$> overReferenced)
     (errs, _) -> Left $ intercalate "\n" errs
 
+-- | Add pools to the resource graph.
+loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
+loadMeroPools ipools = do
+    createDIXPool
+    mapM_ createIOPool ipools
+
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
 instance Exception PoolCreationError
 
--- | Add pools to the resource graph.
-loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
-loadMeroPools ipools = do
+createIOPool :: CI.M0Pool -> PhaseM RC l ()
+createIOPool ipool@CI.M0Pool{..} = do
+    Log.actLog "createIOPool" [("pool_id", T.unpack pool_id)]
+
+    let throw' :: String -> PhaseM RC l a
+        throw' = throwM . PoolCreationError pool_id
+
     Just root <- getRoot
-    for_ ipools $ \ipool@CI.M0Pool{..} -> do
-        let throw' :: String -> PhaseM RC l a
-            throw' = throwM . PoolCreationError pool_id
+    pool <- M0.Pool <$> if CI.isMDPool ipool  -- XXX DELETEME
+                                              -- 'CI.validateInitialData'
+                                              -- guarantees that there is
+                                              -- exactly one MD pool.
+                        then pure $ M0.rt_mdpool root
+                        else newFidRC (Proxy :: Proxy M0.Pool)
+    modifyGraph $ G.connect root M0.IsParentOf pool
 
-        pool <- M0.Pool <$> if CI.isMDPool ipool  -- XXX DELETEME
-                                                  -- 'CI.validateInitialData'
-                                                  -- guarantees that there is
-                                                  -- exactly one MD pool.
-                            then pure $ M0.rt_mdpool root
-                            else newFidRC (Proxy :: Proxy M0.Pool)
+    disks <- getGraph >>=
+        either throw' pure . disksFromRefs pool_device_refs
+    base <- newPVerRC Nothing pool_pdclust_attrs Nothing disks
+    modifyGraph $ G.connect pool M0.IsParentOf base
+    mapM_ (modifyGraph . addPVerFormulaic pool base) pool_allowed_failures
+
+createDIXPool :: PhaseM RC l ()
+createDIXPool = do
+    Log.actLog "createDIXPool" []
+    let attrs = CI.PDClustAttrs0
+          { CI.pa0_data_units = 1
+            -- For CAS service N must always be equal to 1 as CAS records are
+            -- indivisible pieces of data: the whole CAS record is always
+            -- stored on one node.
+          , CI.pa0_parity_units = 0
+          , CI.pa0_unit_size = 4096
+          , CI.pa0_seed = Word128 101 102
+          }
+        failures = CI.Failures 0 0 0 1 0
+    Just root <- getRoot
+    rg <- getGraph
+    let cas = [ (svc, ctrl)
+              | node <- M0.getM0Nodes rg
+              , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+              , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
+              , M0.s_type svc == CST_CAS
+              , let Just (ctrl :: M0.Controller) =
+                        G.connectedTo node M0.IsOnHardware rg
+              ]
+    if null cas
+    then modifyGraph $ G.mergeResources head [ root {M0.rt_imeta_pver = m0_fid0}
+                                             , root
+                                             ]
+    else do
+        pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
         modifyGraph $ G.connect root M0.IsParentOf pool
-
-        disks <- getGraph >>=
-            either throw' pure . disksFromRefs pool_device_refs
-        base <- newPVerRC pool_pdclust_attrs Nothing disks
-        modifyGraph $ G.connect pool M0.IsParentOf base
-        mapM_ (modifyGraph . addPVerFormulaic pool base) pool_allowed_failures
+        let maxDevIdx = maximum [M0.d_idx sdev | sdev <- Drive.getAllSDev rg]
+        disks <- for (zip cas [1..]) $ \((svc, ctrl), idx :: Int) -> do
+            sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
+                            <*> pure (fromIntegral idx + maxDevIdx)
+                            <*> pure 1024
+                            <*> pure 1
+                            <*> pure "/dev/null"
+            disk <- M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
+            modifyGraph $ G.connect svc M0.IsParentOf sdev
+                      >>> G.connect sdev M0.IsOnHardware disk
+                      >>> G.connect ctrl M0.IsParentOf disk
+            pure disk
+        pver <- newPVerRC (Just $ M0.rt_imeta_pver root) attrs (Just failures)
+            disks
+        modifyGraph $ G.connect pool M0.IsParentOf pver
 
 -- | Add profiles to the resource graph.
 loadMeroProfiles :: [CI.M0Profile] -> PhaseM RC l ()

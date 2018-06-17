@@ -117,9 +117,11 @@ buildPVerTree pver disks = for_ disks $ \disk -> do
           >>> G.connect pver M0.IsParentOf sitev
 
 -- | Create actual ("base") pool version.
-newPVerRC :: CI.PDClustAttrs0 -> Maybe CI.Failures -> [M0.Disk]
+newPVerRC :: Maybe Fid -> CI.PDClustAttrs0 -> Maybe CI.Failures -> [M0.Disk]
           -> PhaseM RC l M0.PVer
-newPVerRC CI.PDClustAttrs0{..} mtolerated disks = do
+newPVerRC mfid CI.PDClustAttrs0{..} mtolerated disks = do
+    assert (fromMaybe True $ M0.fidIsType (Proxy :: Proxy M0.PVer) <$> mfid)
+        (pure ())
     let attrs = PDClustAttr { _pa_N = pa0_data_units
                             , _pa_K = pa0_parity_units
                             , _pa_P = fromIntegral (length disks)
@@ -128,7 +130,7 @@ newPVerRC CI.PDClustAttrs0{..} mtolerated disks = do
                             }
         tolerance rg = CI.failuresToList $
             fromMaybe (toleratedFailures rg) mtolerated
-    pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
+    pver <- M0.PVer <$> maybe (newFidRC (Proxy :: Proxy M0.PVer)) pure mfid
                     <*> (pure . Right . M0.PVerActual attrs . tolerance
                          =<< getGraph)
     modifyGraph $ \rg ->
