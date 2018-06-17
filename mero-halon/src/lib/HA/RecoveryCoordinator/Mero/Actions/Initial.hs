@@ -14,17 +14,13 @@ module HA.RecoveryCoordinator.Mero.Actions.Initial
   ) where
 
 import           Control.Category ((>>>))
-import           Control.Exception (assert)
 import           Control.Monad (replicateM_, when)
 import           Control.Monad.Catch (Exception, throwM)
-import qualified Control.Monad.Trans.State.Lazy as S
-import           Data.Bifunctor (first)
 import           Data.Either (partitionEithers)
 import           Data.Foldable (foldl', for_)
 import           Data.List (intercalate, notElem, scanl')
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, fromMaybe, isNothing)
+import           Data.Maybe (fromJust, fromMaybe)
 import           Data.MultiMap (MultiMap)
 import qualified Data.MultiMap as MMap
 import           Data.Proxy
@@ -41,6 +37,7 @@ import           HA.RecoveryCoordinator.Mero.Actions.Conf
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Failure.Formulaic
   ( addPVerFormulaic
+  , newPVerRC
   )
 import           HA.RecoveryCoordinator.Mero.Failure.Internal
   ( ConditionOfDevices(DevicesWorking)
@@ -55,8 +52,7 @@ import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC
-  ( Fid
-  , PDClustAttr(..)
+  ( PDClustAttr(..)
   , ServiceType(CST_CAS,CST_IOS)
   , Word128(..)
   , bitmapFromArray
@@ -286,120 +282,6 @@ disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
             else Left $ intercalate "\n" (mkErr <$> overReferenced)
     (errs, _) -> Left $ intercalate "\n" errs
 
--- | State updated during pool version tree construction.
-type PVerSt
-  = ( G.Graph      -- ^ Resource graph.
-    , Map Fid Fid  -- ^ Pool version devices.  Maps fid of real object
-                   --   to the fid of corresponding virtual object.
-    )
-
--- | Generate new 'Fid' for the given 'M0.ConfObj' type.
-newFidPVerGen :: M0.ConfObj a => Proxy a -> Fid -> S.State PVerSt Fid
-newFidPVerGen p real = do
-    (rg, devs) <- S.get
-    assert (Map.notMember real devs) (pure ())
-    let (virt, rg') = newFid p rg
-        devs' = Map.insert real virt devs
-    S.put (rg', devs')
-    pure virt
-
--- | Build pool version tree.
-buildPVerTree :: M0.PVer -> [M0.Disk] -> S.State PVerSt ()
-buildPVerTree pver disks = for_ disks $ \disk -> do
-    let modifyG = S.modify' . first
-
-    -- Disk level
-    diskv <- M0.DiskV <$>
-        newFidPVerGen (Proxy :: Proxy M0.DiskV) (M0.fid disk)
-    modifyG $ G.connect disk M0.IsRealOf diskv
-
-    -- Controller level
-    (ctrl :: M0.Controller, mctrlv_fid) <- S.gets $ \(rg, devs) ->
-        let Just ctrl = G.connectedFrom M0.IsParentOf disk rg
-        in (ctrl, Map.lookup (M0.fid ctrl) devs)
-    ctrlv <- M0.ControllerV <$>
-        maybe (newFidPVerGen (Proxy :: Proxy M0.ControllerV) (M0.fid ctrl))
-              pure
-              mctrlv_fid
-    when (isNothing mctrlv_fid) $
-        modifyG $ G.connect ctrl M0.IsRealOf ctrlv
-    modifyG $ G.connect ctrlv M0.IsParentOf diskv
-
-    -- Enclosure level
-    (encl :: M0.Enclosure, menclv_fid) <- S.gets $ \(rg, devs) ->
-        let Just encl = G.connectedFrom M0.IsParentOf ctrl rg
-        in (encl, Map.lookup (M0.fid encl) devs)
-    enclv <- M0.EnclosureV <$>
-        maybe (newFidPVerGen (Proxy :: Proxy M0.EnclosureV) (M0.fid encl))
-              pure
-              menclv_fid
-    when (isNothing menclv_fid) $
-        modifyG $ G.connect encl M0.IsRealOf enclv
-    modifyG $ G.connect enclv M0.IsParentOf ctrlv
-
-    -- Rack level
-    (rack :: M0.Rack, mrackv_fid) <- S.gets $ \(rg, devs) ->
-        let Just rack = G.connectedFrom M0.IsParentOf encl rg
-        in (rack, Map.lookup (M0.fid rack) devs)
-    rackv <- M0.RackV <$>
-        maybe (newFidPVerGen (Proxy :: Proxy M0.RackV) (M0.fid rack))
-              pure
-              mrackv_fid
-    when (isNothing mrackv_fid) $
-        modifyG $ G.connect rack M0.IsRealOf rackv
-    modifyG $ G.connect rackv M0.IsParentOf enclv
-
-    -- Site level
-    (site :: M0.Site, msitev_fid) <- S.gets $ \(rg, devs) ->
-        let Just site = G.connectedFrom M0.IsParentOf rack rg
-        in (site, Map.lookup (M0.fid site) devs)
-    sitev <- M0.SiteV <$>
-        maybe (newFidPVerGen (Proxy :: Proxy M0.SiteV) (M0.fid site))
-              pure
-              msitev_fid
-    when (isNothing msitev_fid) $
-        modifyG $ G.connect site M0.IsRealOf sitev
-    modifyG $ G.connect sitev M0.IsParentOf rackv
-          >>> G.connect pver M0.IsParentOf sitev
-
-addPVerActual :: CI.PDClustAttrs0 -> Maybe CI.Failures -> [M0.Disk]
-              -> PhaseM RC l M0.PVer
-addPVerActual CI.PDClustAttrs0{..} mtolerated disks = do
-    let attrs = PDClustAttr { _pa_N = pa0_data_units
-                            , _pa_K = pa0_parity_units
-                            , _pa_P = fromIntegral (length disks)
-                            , _pa_unit_size = pa0_unit_size
-                            , _pa_seed = pa0_seed
-                            }
-        tolerance rg = CI.failuresToList $
-            fromMaybe (toleratedFailures rg) mtolerated
-    pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
-                    <*> (pure . Right . M0.PVerActual attrs . tolerance
-                         =<< getGraph)
-    modifyGraph $ \rg ->
-        fst $ S.execState (buildPVerTree pver disks) (rg, Map.empty)
-    pure pver
-  where
-    toleratedFailures :: G.Graph -> CI.Failures
-    toleratedFailures rg =
-        let n = pa0_data_units
-            k = pa0_parity_units
-            nrCtrls = fromIntegral $ Set.size $ Set.fromList
-              [ M0.fid ctrl
-              | disk <- disks
-              , let Just (ctrl :: M0.Controller) =
-                        G.connectedFrom M0.IsParentOf disk rg
-              ]
-            -- XXX Failures above controllers are not currently supported
-            -- (ref. HALON-406).
-            (q, r) = (n + 2*k) `quotRem` nrCtrls
-            kc = r * (q + 1)  -- XXX What's this?
-            ctrlFailures  -- XXX TODO: explain this formula
-              | kc > k    = k `quot` (q + 1)
-              | kc < k    = (k - r) `quot` q
-              | otherwise = r
-        in CI.Failures 0 0 0 ctrlFailures k
-
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
 instance Exception PoolCreationError
@@ -422,7 +304,7 @@ loadMeroPools ipools = do
 
         disks <- getGraph >>=
             either throw' pure . disksFromRefs pool_device_refs
-        base <- addPVerActual pool_pdclust_attrs Nothing disks
+        base <- newPVerRC pool_pdclust_attrs Nothing disks
         modifyGraph $ G.connect pool M0.IsParentOf base
         mapM_ (modifyGraph . addPVerFormulaic pool base) pool_allowed_failures
 
