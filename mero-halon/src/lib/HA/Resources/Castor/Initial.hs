@@ -566,7 +566,7 @@ resolveMeroRoles InitialWithRoles{..} template =
     mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host
     mkHost env uhost =
         let eprocs :: [Either String [M0Process]]
-            eprocs = roleToProcesses env `map` _uhost_m0h_roles uhost
+            eprocs = roleToProcesses env <$> _uhost_m0h_roles uhost
         in case partitionEithers eprocs of
             ([], procs) ->
                 Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost

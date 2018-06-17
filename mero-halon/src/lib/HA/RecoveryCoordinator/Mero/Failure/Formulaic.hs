@@ -2,7 +2,7 @@
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
-module HA.RecoveryCoordinator.Mero.Failure.Formulaic
+module HA.RecoveryCoordinator.Mero.Failure.Formulaic  -- XXX RENAMEME
   ( addPVerFormulaic
   , formulaicUpdate
   ) where

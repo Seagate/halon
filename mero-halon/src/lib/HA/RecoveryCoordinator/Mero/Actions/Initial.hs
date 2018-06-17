@@ -263,9 +263,8 @@ dereference rg ref@CI.M0DeviceRef{..} = do
         []  -> Left $ "No target: " ++ show ref
         _   -> Left $ "Multiple targets: " ++ show ref
 
-dereferenceMany :: G.Graph -> [CI.M0DeviceRef]
-                -> Either String [Cas.StorageDevice]
-dereferenceMany rg refs = case partitionEithers (dereference rg <$> refs) of
+disksFromRefs :: [CI.M0DeviceRef] -> G.Graph -> Either String [M0.Disk]
+disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
     ([], sdevs) ->
         let mm :: MultiMap Cas.StorageDevice CI.M0DeviceRef
             mm = MMap.fromList (zip sdevs refs)
@@ -278,9 +277,12 @@ dereferenceMany rg refs = case partitionEithers (dereference rg <$> refs) of
             mkErr :: Cas.StorageDevice -> String
             mkErr sdev = printf "%s is referred to by several M0DeviceRefs: %s"
                 (show sdev) (intercalate ", " $ show <$> mm MMap.! sdev)
+
+            linkedDisk :: Cas.StorageDevice -> M0.Disk
+            linkedDisk sdev = fromJust (G.connectedFrom M0.At sdev rg)
         in
             if null overReferenced
-            then Right sdevs
+            then Right $ map linkedDisk sdevs
             else Left $ intercalate "\n" (mkErr <$> overReferenced)
     (errs, _) -> Left $ intercalate "\n" errs
 
@@ -302,13 +304,11 @@ newFidPVerGen p real = do
     pure virt
 
 -- | Build pool version tree.
-buildPVerTree :: M0.PVer -> [Cas.StorageDevice] -> S.State PVerSt ()
-buildPVerTree pver sdevs = for_ sdevs $ \sdev -> do
+buildPVerTree :: M0.PVer -> [M0.Disk] -> S.State PVerSt ()
+buildPVerTree pver disks = for_ disks $ \disk -> do
     let modifyG = S.modify' . first
 
     -- Disk level
-    disk :: M0.Disk <- S.gets $ \(rg, _) ->
-        fromJust (G.connectedFrom M0.At sdev rg)
     diskv <- M0.DiskV <$>
         newFidPVerGen (Proxy :: Proxy M0.DiskV) (M0.fid disk)
     modifyG $ G.connect disk M0.IsRealOf diskv
@@ -362,27 +362,43 @@ buildPVerTree pver sdevs = for_ sdevs $ \sdev -> do
     modifyG $ G.connect sitev M0.IsParentOf rackv
           >>> G.connect pver M0.IsParentOf sitev
 
-toleratedFailures :: PDClustAttr -> [Cas.StorageDevice] -> G.Graph
-                  -> CI.Failures
-toleratedFailures attrs sdevs rg =
-    let n = _pa_N attrs
-        k = _pa_K attrs
-        nrCtrls = fromIntegral $ Set.size $ Set.fromList
-          [ M0.fid ctrl
-          | sdev <- sdevs
-          , let Just (disk :: M0.Disk) = G.connectedFrom M0.At sdev rg
-                Just (ctrl :: M0.Controller) =
-                    G.connectedFrom M0.IsParentOf disk rg
-          ]
-        -- XXX Failures above controllers are not currently supported
-        -- (ref. HALON-406).
-        (q, r) = (n + 2*k) `quotRem` nrCtrls
-        kc = r * (q + 1)  -- XXX What's this?
-        ctrlFailures  -- XXX TODO: explain this formula
-          | kc > k    = k `quot` (q + 1)
-          | kc < k    = (k - r) `quot` q
-          | otherwise = r
-    in CI.Failures 0 0 0 ctrlFailures k
+addPVerActual :: CI.PDClustAttrs0 -> Maybe CI.Failures -> [M0.Disk]
+              -> PhaseM RC l M0.PVer
+addPVerActual CI.PDClustAttrs0{..} mtolerated disks = do
+    let attrs = PDClustAttr { _pa_N = pa0_data_units
+                            , _pa_K = pa0_parity_units
+                            , _pa_P = fromIntegral (length disks)
+                            , _pa_unit_size = pa0_unit_size
+                            , _pa_seed = pa0_seed
+                            }
+        tolerance rg = CI.failuresToList $
+            fromMaybe (toleratedFailures rg) mtolerated
+    pver <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
+                    <*> (pure . Right . M0.PVerActual attrs . tolerance
+                         =<< getGraph)
+    modifyGraph $ \rg ->
+        fst $ S.execState (buildPVerTree pver disks) (rg, Map.empty)
+    pure pver
+  where
+    toleratedFailures :: G.Graph -> CI.Failures
+    toleratedFailures rg =
+        let n = pa0_data_units
+            k = pa0_parity_units
+            nrCtrls = fromIntegral $ Set.size $ Set.fromList
+              [ M0.fid ctrl
+              | disk <- disks
+              , let Just (ctrl :: M0.Controller) =
+                        G.connectedFrom M0.IsParentOf disk rg
+              ]
+            -- XXX Failures above controllers are not currently supported
+            -- (ref. HALON-406).
+            (q, r) = (n + 2*k) `quotRem` nrCtrls
+            kc = r * (q + 1)  -- XXX What's this?
+            ctrlFailures  -- XXX TODO: explain this formula
+              | kc > k    = k `quot` (q + 1)
+              | kc < k    = (k - r) `quot` q
+              | otherwise = r
+        in CI.Failures 0 0 0 ctrlFailures k
 
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
@@ -392,39 +408,23 @@ instance Exception PoolCreationError
 loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
 loadMeroPools ipools = do
     Just root <- getRoot
-    for_ ipools $ \ipool -> do
+    for_ ipools $ \ipool@CI.M0Pool{..} -> do
         let throw' :: String -> PhaseM RC l a
-            throw' = throwM . PoolCreationError (CI.pool_id ipool)
+            throw' = throwM . PoolCreationError pool_id
 
-        pool <- M0.Pool <$> if CI.isMDPool ipool  -- 'CI.validateInitialData'
+        pool <- M0.Pool <$> if CI.isMDPool ipool  -- XXX DELETEME
+                                                  -- 'CI.validateInitialData'
                                                   -- guarantees that there is
                                                   -- exactly one MD pool.
                             then pure $ M0.rt_mdpool root
                             else newFidRC (Proxy :: Proxy M0.Pool)
         modifyGraph $ G.connect root M0.IsParentOf pool
 
-        sdevs <- getGraph >>= \rg ->
-            either throw' pure $ dereferenceMany rg (CI.pool_device_refs ipool)
-        let CI.PDClustAttrs0{..} = CI.pool_pdclust_attrs ipool
-            attrs = PDClustAttr { _pa_N = pa0_data_units
-                                , _pa_K = pa0_parity_units
-                                , _pa_P = fromIntegral (length sdevs)
-                                , _pa_unit_size = pa0_unit_size
-                                , _pa_seed = pa0_seed
-                                }
-        tolerance <- getGraph >>=
-            pure . CI.failuresToList . toleratedFailures attrs sdevs
-
-        -- Add actual ("base") pool version.
-        base <- M0.PVer <$> newFidRC (Proxy :: Proxy M0.PVer)
-                        <*> (pure . Right $ M0.PVerActual attrs tolerance)
-        modifyGraph $ \rg ->
-            fst $ S.execState (buildPVerTree base sdevs) (rg, Map.empty)
+        disks <- getGraph >>=
+            either throw' pure . disksFromRefs pool_device_refs
+        base <- addPVerActual pool_pdclust_attrs Nothing disks
         modifyGraph $ G.connect pool M0.IsParentOf base
-
-        -- Add formulaic pool versions.
-        mapM_ (modifyGraph . addPVerFormulaic pool base)
-            (CI.pool_allowed_failures ipool)
+        mapM_ (modifyGraph . addPVerFormulaic pool base) pool_allowed_failures
 
 -- | Add profiles to the resource graph.
 loadMeroProfiles :: [CI.M0Profile] -> PhaseM RC l ()
