@@ -367,8 +367,8 @@ toleratedFailures :: PDClustAttr -> [Cas.StorageDevice] -> G.Graph
 toleratedFailures attrs sdevs rg =
     let n = _pa_N attrs
         k = _pa_K attrs
-        nrCtrls = fromIntegral $ length
-          [ ctrl
+        nrCtrls = fromIntegral $ Set.size $ Set.fromList
+          [ M0.fid ctrl
           | sdev <- sdevs
           , let Just (disk :: M0.Disk) = G.connectedFrom M0.At sdev rg
                 Just (ctrl :: M0.Controller) =
