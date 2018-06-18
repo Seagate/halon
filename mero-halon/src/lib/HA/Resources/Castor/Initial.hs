@@ -38,7 +38,6 @@ import           Mero.ConfC (ServiceType, Word128)
 import           Mero.Lnet
 import           SSPL.Bindings.Instances () -- HashMap
 import qualified Text.EDE as EDE
-import           Text.Printf (printf)
 
 -- | Halon-specific settings for the 'Host'.
 data HalonSettings = HalonSettings
@@ -357,14 +356,6 @@ instance Hashable M0Pool
 instance FromJSON M0Pool
 instance ToJSON M0Pool
 
--- | 'pool_id' of the metadata pool has this prefix.
-mdpoolPrefix :: String
-mdpoolPrefix = "MD."
-
--- | Is this the metadata pool?
-isMDPool :: M0Pool -> Bool
-isMDPool = T.isPrefixOf (T.pack mdpoolPrefix) . pool_id
-
 -- | Reference to M0Device: a combination of any number of device
 -- attributes (from given subset), which uniquely identifies a device.
 --
@@ -655,12 +646,6 @@ validateInitialData InitialData{..} = do
     -- point at the same drive.
     check "Profile with non-unique profile_id"
       $ unique $ map prof_id id_profiles
-
-    let nr_mdpools = length (filter isMDPool id_pools)
-        err_fmt = concat [ "1 metadata pool expected, %u provided\n"
-                         , "Format of metadata pool_id: \"%s<id>\""]
-    check (printf err_fmt nr_mdpools mdpoolPrefix) (nr_mdpools == 1)
-
   where
     check msg cond = if cond
                      then Right ()

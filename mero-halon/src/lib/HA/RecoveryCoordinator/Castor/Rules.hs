@@ -81,21 +81,6 @@ ruleInitialDataLoad =
           loadMeroServers id_m0_servers
           loadMeroPools id_pools
           loadMeroProfiles id_profiles
-
-          -- Note that we call these after 'loadMeroPools', which creates
-          -- pool versions for the IO pools. The reason for this is that
-          -- 'createIMeta', at least, generates additional disks for use in the
-          -- imeta pool. Currently there is no marker on disks to distinguish
-          -- which pool they should be in, however, so if these are created
-          -- before the update then they get added to the IO pool. The correct
-          -- solution will involve proper support for multiple pools and
-          -- multiple types of pools. In the meantime, creating these fake
-          -- devices later works.
-          --
-          -- XXX-MULTIPOOLS: Is this comment still relevant?
-          createMDPoolPVer
-          createIMeta
-
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Site])

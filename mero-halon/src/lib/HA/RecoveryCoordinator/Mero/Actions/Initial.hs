@@ -6,8 +6,6 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Mero.Actions.Initial
   ( initialiseConfInRG
-  , createIMeta
-  , createMDPoolPVer
   , loadMeroPools
   , loadMeroProfiles
   , loadMeroServers
@@ -24,7 +22,6 @@ import           Data.Maybe (fromJust, fromMaybe)
 import           Data.MultiMap (MultiMap)
 import qualified Data.MultiMap as MMap
 import           Data.Proxy
-import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
@@ -39,11 +36,6 @@ import           HA.RecoveryCoordinator.Mero.Failure.Formulaic
   ( addPVerFormulaic
   , newPVerRC
   )
-import           HA.RecoveryCoordinator.Mero.Failure.Internal
-  ( ConditionOfDevices(DevicesWorking)
-  , PoolVersion(..)
-  , createPoolVersionsInPool
-  )
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
@@ -52,8 +44,7 @@ import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import           Mero.ConfC
-  ( PDClustAttr(..)
-  , ServiceType(CST_CAS,CST_IOS)
+  ( ServiceType(CST_CAS,CST_IOS)
   , Word128(..)
   , bitmapFromArray
   , m0_fid0
@@ -67,15 +58,16 @@ import           Text.Regex.TDFA ((=~))
 initialiseConfInRG :: PhaseM RC l ()
 initialiseConfInRG = do
     root_fid <- mkRootFid -- the first newFidRC call is made here
-    mdpool_fid <- newFidRC (Proxy :: Proxy M0.Pool)
-    -- Note that `createIMeta` may replace `imeta_pver` fid with m0_fid0.
+    -- Note that createDIXPool may replace `imeta_pver` fid with m0_fid0.
+    --
+    -- XXX We might have checked CI.InitialData here and use m0_fid0 if there
+    -- are no CST_CAS services in the InitialData.
     imeta_pver <- newFidRC (Proxy :: Proxy M0.PVer)
-    let root = M0.Root root_fid mdpool_fid imeta_pver
-    modifyGraph
-        $ G.connect Cluster Has root
-      >>> G.connect Cluster Has M0.OFFLINE
-      >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
-      >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
+    let root = M0.Root root_fid m0_fid0{-XXX-MULTIPOOLS: DELETEME-} imeta_pver
+    modifyGraph $ G.connect Cluster Has root
+              >>> G.connect Cluster Has M0.OFFLINE
+              >>> G.connect Cluster M0.RunLevel (M0.BootLevel 0)
+              >>> G.connect Cluster M0.StopLevel (M0.BootLevel 0)
     rg <- getGraph
     mapM_ mirrorSite (G.connectedTo Cluster Has rg)
   where
@@ -292,20 +284,19 @@ data PoolCreationError = PoolCreationError T.Text String
   deriving Show
 instance Exception PoolCreationError
 
+-- | Add an IO pool to the resource graph.
+--
+--   This function creates:
+--   - an actual ("base") pool version;
+--   - formulaic pool versions;
+--   - a meta-data pool version.
 createIOPool :: CI.M0Pool -> PhaseM RC l ()
-createIOPool ipool@CI.M0Pool{..} = do
-    Log.actLog "createIOPool" [("pool_id", T.unpack pool_id)]
-
+createIOPool CI.M0Pool{..} = do
     let throw' :: String -> PhaseM RC l a
         throw' = throwM . PoolCreationError pool_id
 
     Just root <- getRoot
-    pool <- M0.Pool <$> if CI.isMDPool ipool  -- XXX DELETEME
-                                              -- 'CI.validateInitialData'
-                                              -- guarantees that there is
-                                              -- exactly one MD pool.
-                        then pure $ M0.rt_mdpool root
-                        else newFidRC (Proxy :: Proxy M0.Pool)
+    pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
     modifyGraph $ G.connect root M0.IsParentOf pool
 
     disks <- getGraph >>=
@@ -314,9 +305,43 @@ createIOPool ipool@CI.M0Pool{..} = do
     modifyGraph $ G.connect pool M0.IsParentOf base
     mapM_ (modifyGraph . addPVerFormulaic pool base) pool_allowed_failures
 
+    -- Meta-data pool version.
+    rg <- getGraph
+    let disks1 = [ d1
+                 | disk <- disks
+                 , let Just (ctrl :: M0.Controller) =
+                        G.connectedFrom M0.IsParentOf disk rg
+                 , d1 :: M0.Disk <- take 1 $ G.connectedTo ctrl M0.IsParentOf rg
+                 ]
+        attrs = CI.PDClustAttrs0
+          { pa0_data_units = fromIntegral (length disks1)
+          , pa0_parity_units = 0
+          , pa0_unit_size = 4096
+          , pa0_seed = Word128 101 101
+          }
+        tolerance = CI.Failures 0 0 0 1 0
+    md <- newPVerRC Nothing attrs (Just tolerance) disks1
+    modifyGraph $ G.connect md Cas.Is M0.MetadataPVer
+              >>> G.connect pool M0.IsParentOf md
+
+-- | Create a pool containing imeta_pver.
+--
+--   If there are 'CST_CAS' services, this will create:
+--   - a fake 'M0.SDev' for each CAS service in the graph;
+--   - a fake 'M0.Disk' for each CAS service in the graph;
+--   - a single pool for the imeta service;
+--   - a single (actual) pool version in this pool containing all above disks.
+--
+--   Since the disks created here are fake, they will not have an associated
+--   'Cas.StorageDevice'.
+--
+--   If there are no CAS services in the graph, then we have a slight
+--   problem, since it is invalid to have a zero-width pver (e.g. a pver with
+--   no associated devices). In this case, we use the special FID 'M0_FID0'
+--   in the 'rt_imeta_pver' field. This should validate correctly in Mero
+--   iff there are no CAS services.
 createDIXPool :: PhaseM RC l ()
 createDIXPool = do
-    Log.actLog "createDIXPool" []
     let attrs = CI.PDClustAttrs0
           { CI.pa0_data_units = 1
             -- For CAS service N must always be equal to 1 as CAS records are
@@ -325,8 +350,9 @@ createDIXPool = do
           , CI.pa0_parity_units = 0
           , CI.pa0_unit_size = 4096
           , CI.pa0_seed = Word128 101 102
+            -- XXX Should this seed value be equal to those of IO pools?
           }
-        failures = CI.Failures 0 0 0 1 0
+        tolerance = CI.Failures 0 0 0 1 0
     Just root <- getRoot
     rg <- getGraph
     let cas = [ (svc, ctrl)
@@ -347,7 +373,7 @@ createDIXPool = do
         let maxDevIdx = maximum [M0.d_idx sdev | sdev <- Drive.getAllSDev rg]
         disks <- for (zip cas [1..]) $ \((svc, ctrl), idx :: Int) -> do
             sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
-                            <*> pure (fromIntegral idx + maxDevIdx)
+                            <*> pure (maxDevIdx + fromIntegral idx)
                             <*> pure 1024
                             <*> pure 1
                             <*> pure "/dev/null"
@@ -356,7 +382,7 @@ createDIXPool = do
                       >>> G.connect sdev M0.IsOnHardware disk
                       >>> G.connect ctrl M0.IsParentOf disk
             pure disk
-        pver <- newPVerRC (Just $ M0.rt_imeta_pver root) attrs (Just failures)
+        pver <- newPVerRC (Just $ M0.rt_imeta_pver root) attrs (Just tolerance)
             disks
         modifyGraph $ G.connect pool M0.IsParentOf pver
 
@@ -368,109 +394,3 @@ loadMeroProfiles profiles = do
         profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
         modifyGraph $ G.connect root M0.IsParentOf profile
         error "XXX IMPLEMENTME: Link profile with its pools"
-
--- | Create a pool version for the MDPool. This should have one device in
---   each controller.
-createMDPoolPVer :: PhaseM RC l ()
-createMDPoolPVer = do
-    Log.actLog "createMDPoolPVer" []
-    rg <- getGraph
-    let root = M0.getM0Root rg
-        mdpool = M0.Pool (M0.rt_mdpool root)
-        sites = G.connectedTo root M0.IsParentOf rg :: [M0.Site]
-        racks = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Rack])
-                =<< sites
-        encls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Enclosure])
-                =<< racks
-        ctrls = (\x -> G.connectedTo x M0.IsParentOf rg :: [M0.Controller])
-                =<< encls
-        -- XXX-MULTIPOOLS: Halon should not invent which disks belong to the
-        -- meta-data pool --- it should use the information provided via
-        -- `id_pools` section of the facts file.
-        disks = (\x -> take 1 $ G.connectedTo x M0.IsParentOf rg :: [M0.Disk])
-                =<< ctrls
-        fids = Set.unions . fmap Set.fromList $
-                [ M0.fid <$> sites
-                , M0.fid <$> racks
-                , M0.fid <$> encls
-                , M0.fid <$> ctrls
-                , M0.fid <$> disks
-                ]
-        failures = CI.Failures 0 0 0 1 0
-        -- XXX FIXME: Get this info from facts file.
-        attrs = PDClustAttr
-                { _pa_N = fromIntegral $ length disks
-                , _pa_K = 0
-                , _pa_P = 0 -- Will be overridden
-                , _pa_unit_size = 4096
-                , _pa_seed = Word128 101 101
-                }
-        pver = PoolVersion Nothing fids failures attrs
-    Log.rcLog' Log.DEBUG $ "Creating PVer in metadata pool: " ++ show pver
-    modifyGraph $ createPoolVersionsInPool mdpool [pver] DevicesWorking
-
--- | Create an imeta_pver along with all associated structures. This should
---   create:
---   - A (fake) disk entity for each CAS service in the graph.
---   - A single top-level pool for the imeta service.
---   - A single (actual) pool version in this pool containing all above disks.
---   Since the disks created here are fake, they will not have an associated
---   'Cas.StorageDevice'.
---
---   If there are no CAS services in the graph, then we have a slight
---   problem, since it is invalid to have a zero-width pver (e.g. a pver with
---   no associated devices). In this case, we use the special FID 'M0_FID0'
---   in the 'rt_imeta' field. This should validate correctly in Mero iff
---   there are no CAS services.
-createIMeta :: PhaseM RC l ()
-createIMeta = do
-  Log.actLog "createIMeta" []
-  pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-  rg <- getGraph
-  let root = M0.getM0Root rg
-      cas = [ (site, rack, encl, ctrl, svc)
-            | node <- M0.getM0Nodes rg
-            , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
-            , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
-            , M0.s_type svc == CST_CAS
-            , Just (ctrl :: M0.Controller) <- [G.connectedTo node M0.IsOnHardware rg]
-            , Just (encl :: M0.Enclosure) <- [G.connectedFrom M0.IsParentOf ctrl rg]
-            , Just (rack :: M0.Rack) <- [G.connectedFrom M0.IsParentOf encl rg]
-            , Just (site :: M0.Site) <- [G.connectedFrom M0.IsParentOf rack rg]
-            ]
-      attrs = PDClustAttr {
-                _pa_N = 1 -- For CAS service `N` must always be equal to `1` as
-                          -- CAS records are indivisible pieces of data:  the
-                          -- whole CAS record is always stored on one node.
-              , _pa_K = 0
-              , _pa_P = 0 -- Will be overridden
-              , _pa_unit_size = 4096
-              , _pa_seed = Word128 101 102
-              }
-      failures = CI.Failures 0 0 0 1 0
-      maxDiskIdx = maximum [ M0.d_idx disk | disk <- Drive.getAllSDev rg ]
-  fids <- for (zip cas [1..]) $ \((site, rack, encl, ctrl, svc), idx :: Int) -> do
-    sdev <- M0.SDev <$> newFidRC (Proxy :: Proxy M0.SDev)
-                    <*> return (fromIntegral idx + maxDiskIdx)
-                    <*> return 1024
-                    <*> return 1
-                    <*> return "/dev/null"
-    disk <- M0.Disk <$> newFidRC (Proxy :: Proxy M0.Disk)
-    modifyGraph
-        $ G.connect ctrl M0.IsParentOf disk
-      >>> G.connect sdev M0.IsOnHardware disk
-      >>> G.connect svc M0.IsParentOf sdev
-    return [M0.fid site, M0.fid rack, M0.fid encl, M0.fid ctrl, M0.fid disk]
-
-  let pver = PoolVersion (Just $ M0.rt_imeta_pver root)
-                          (Set.unions $ Set.fromList <$> fids) failures attrs
-      -- If there are no CAS services then we need to replace the M0.Root
-      -- entity with one containing the special M0_FID0 value. We can't do this
-      -- before since we create the root before we create services in the
-      -- graph.
-      updateGraph = if null cas
-        then G.mergeResources head [root {M0.rt_imeta_pver = m0_fid0}, root]
-        else G.connect root M0.IsParentOf pool
-          >>> createPoolVersionsInPool pool [pver] DevicesWorking
-
-  modifyGraph updateGraph
