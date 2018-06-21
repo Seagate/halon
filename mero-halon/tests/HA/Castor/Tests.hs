@@ -346,8 +346,7 @@ initialDataLoad CI.InitialData{..} = do
     initialiseConfInRG
     loadMeroGlobals id_m0_globals
     loadMeroServers id_m0_servers
-    loadMeroPools id_pools
-    loadMeroProfiles id_profiles
+    loadMeroPools id_pools >>= loadMeroProfiles id_profiles
 
 run :: forall app g. (Application app, g ~ GlobalState app)
     => g

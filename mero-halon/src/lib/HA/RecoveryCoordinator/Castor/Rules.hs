@@ -79,8 +79,7 @@ ruleInitialDataLoad =
           initialiseConfInRG
           loadMeroGlobals id_m0_globals
           loadMeroServers id_m0_servers
-          loadMeroPools id_pools
-          loadMeroProfiles id_profiles
+          loadMeroPools id_pools >>= loadMeroProfiles id_profiles
           validateConf
 
     if null (G.connectedTo Cluster Has rg :: [Site])

@@ -17,6 +17,7 @@ import           Control.Monad.Catch (Exception, throwM)
 import           Data.Either (partitionEithers)
 import           Data.Foldable (foldl', for_)
 import           Data.List (intercalate, notElem, scanl')
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, fromMaybe)
 import           Data.MultiMap (MultiMap)
@@ -274,11 +275,10 @@ disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
             else Left $ intercalate "\n" (mkErr <$> overReferenced)
     (errs, _) -> Left $ intercalate "\n" errs
 
--- | Add pools to the resource graph.
-loadMeroPools :: [CI.M0Pool] -> PhaseM RC l ()
-loadMeroPools ipools = do
-    createDIXPool
-    mapM_ createIOPool ipools
+-- | Add pools and profiles to the resource graph.
+loadMeroPools :: [CI.M0Pool] -> PhaseM RC l (Map T.Text M0.Pool)
+loadMeroPools ipools =
+    createDIXPool >> mapM createIOPool ipools >>= pure . Map.fromList
 
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
@@ -290,7 +290,7 @@ instance Exception PoolCreationError
 --   - an actual ("base") pool version;
 --   - formulaic pool versions;
 --   - a meta-data pool version.
-createIOPool :: CI.M0Pool -> PhaseM RC l ()
+createIOPool :: CI.M0Pool -> PhaseM RC l (T.Text, M0.Pool)
 createIOPool CI.M0Pool{..} = do
     let throw' :: String -> PhaseM RC l a
         throw' = throwM . PoolCreationError pool_id
@@ -323,6 +323,7 @@ createIOPool CI.M0Pool{..} = do
     md <- newPVerRC Nothing attrs (Just tolerance) disks1
     modifyGraph $ G.connect md Cas.Is M0.MetadataPVer
               >>> G.connect pool M0.IsParentOf md
+    pure (pool_id, pool)
 
 -- | Create a pool containing imeta_pver.
 --
@@ -386,11 +387,20 @@ createDIXPool = do
             disks
         modifyGraph $ G.connect pool M0.IsParentOf pver
 
+data ProfileCreationError = ProfileCreationError String
+  deriving Show
+instance Exception ProfileCreationError
+
 -- | Add profiles to the resource graph.
-loadMeroProfiles :: [CI.M0Profile] -> PhaseM RC l ()
-loadMeroProfiles profiles = do
+loadMeroProfiles :: [CI.M0Profile] -> Map T.Text M0.Pool -> PhaseM RC l ()
+loadMeroProfiles profiles pools = do
     Just root <- getRoot
-    for_ profiles $ \_ -> do
+    for_ profiles $ \CI.M0Profile{..} -> do
         profile <- M0.Profile <$> newFidRC (Proxy :: Proxy M0.Profile)
         modifyGraph $ G.connect root M0.IsParentOf profile
-        error "XXX IMPLEMENTME: Link profile with its pools"
+        for_ prof_pools $ \pool_id ->
+            case Map.lookup pool_id pools of
+                Nothing -> throwM . ProfileCreationError
+                  $ printf "Profile '%s' points at non-existent pool '%s'"
+                    (T.unpack prof_id) (T.unpack pool_id)
+                Just pool -> modifyGraph $ G.connect profile Has pool

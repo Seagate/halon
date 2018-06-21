@@ -100,15 +100,14 @@ mkHpiTest mkTestRule test transport pg = rGroupTest transport pg $ \pid -> do
     self <- getSelfPid
     sayTest "load data"
     ls <- emptyLoopState pid self
-    iData <- liftIO defaultInitialData
+    iData@CI.InitialData{..} <- liftIO defaultInitialData
     sayTest $ show iData
     (ls',_)  <- run ls $ do
-            mapM_ goSite (CI.id_sites iData)
+            mapM_ goSite id_sites
             initialiseConfInRG
-            loadMeroGlobals (CI.id_m0_globals iData)
-            loadMeroServers (CI.id_m0_servers iData)
-            loadMeroPools (CI.id_pools iData)
-            loadMeroProfiles (CI.id_profiles iData)
+            loadMeroGlobals id_m0_globals
+            loadMeroServers id_m0_servers
+            loadMeroPools id_pools >>= loadMeroProfiles id_profiles
     let testRule = mkTestRule self
     sayTest "run RC"
     rc <- spawnLocal $ execute ls' $ do
