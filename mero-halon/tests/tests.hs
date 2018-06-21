@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
@@ -67,9 +68,9 @@ main = do
   let addr0 = host0 ++ ":" ++ show p0
 
   let TCP.SockAddrInet port hostaddr = TCP.decodeSocketAddress addr0
-  hostname <- TCP.inet_ntoa hostaddr
+  host <- TCP.inet_ntoa hostaddr
   (transport, internals) <- either (error . show) id <$>
-               TCP.createTransportExposeInternals hostname (show port)
+               TCP.createTransportExposeInternals host (show port) (host,)
                  TCP.defaultTCPParameters
                    { TCP.tcpNoDelay = True
                    , TCP.tcpUserTimeout = Just 2000

@@ -7,11 +7,9 @@ module Lookup
   , findEQFromNodes
   ) where
 
-import qualified HA.EQTracker          as EQT
-
-import Control.Distributed.Process
-
-import qualified Network.Transport.TCP as TCP
+import           Control.Distributed.Process
+import qualified Network.Transport.TCP.Internal as TCP
+import qualified HA.EQTracker                   as EQT
 
 conjureRemoteNodeId :: String -> NodeId
 conjureRemoteNodeId addr =

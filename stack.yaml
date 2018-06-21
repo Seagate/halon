@@ -35,6 +35,8 @@ packages:
   extra-dep: true
 
 extra-deps:
+- network-transport-0.5.2
+- network-transport-tcp-0.6.0
 - distributed-static-0.3.8
 - distributed-process-0.7.4
 - distributed-process-tests-0.4.3.2

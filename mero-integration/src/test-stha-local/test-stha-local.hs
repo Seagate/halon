@@ -7,6 +7,7 @@
 --
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 import Control.Distributed.Commands.Process
   ( systemLocal
@@ -75,7 +76,7 @@ main =
     putStrLn $ "Changed directory to: " ++ testDir
 
     let m0 = "0.0.0.0"
-    Right nt <- createTransport m0 "4000" defaultTCPParameters
+    Right nt <- createTransport m0 "4000" (m0,) defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
     let killHalond = E.catch (readProcess "pkill" [ "halond" ] "" >> return ())
                              (\e -> const (return ()) (e :: E.SomeException))

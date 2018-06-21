@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, TupleSections #-}
 module Test (tests) where
 
 import Prelude hiding ((<$>))
@@ -77,8 +77,8 @@ proposeWrapper αs d x = (x ==) <$>
 
 tests :: IO TestTree
 tests = do
-    Right transport <- createTransport "127.0.0.1" "0" defaultTCPParameters
-
+    let h = "127.0.0.1"
+    Right transport <- createTransport h "0" (h,) defaultTCPParameters
     return $ testGroup "consensus-paxos"
       [ testSuccess "single-decree" $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
