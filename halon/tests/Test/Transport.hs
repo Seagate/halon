@@ -1,7 +1,9 @@
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TupleSections #-}
 -- |
 -- Copyright: (C) 2015 Seagate Technology Limited.
 --
-{-# LANGUAGE CPP #-}
+
 module Test.Transport
   ( AbstractTransport(..)
   , mkTCPTransport
@@ -45,7 +47,9 @@ mkControlledTransport transport = Controlled.createTransport (getTransport trans
 
 mkTCPTransport :: IO AbstractTransport
 mkTCPTransport = do
-    Right (transport, internals) <- TCP.createTransportExposeInternals "127.0.0.1" "0" TCP.defaultTCPParameters
+    let h = "127.0.0.1"
+    Right (transport, internals) <- TCP.createTransportExposeInternals h "0" (h,)
+                                                       TCP.defaultTCPParameters
     let -- XXX: Could use enclosed-exceptions here. Note that the worker
         -- is not killed in case of an exception.
         ignoreSyncExceptions action = do

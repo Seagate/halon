@@ -117,7 +117,7 @@ run :: Options -> IO ()
 run Options{..} =
   let (hostname, port) = breakAt ':' optOurAddress in
   bracket (either (error . show) id <$>
-               createTransport hostname port
+               createTransport hostname port (hostname,)
                defaultTCPParameters { tcpUserTimeout = Just 2000
                                     , tcpNoDelay = True
                                     , transportConnectTimeout = Just 2000000

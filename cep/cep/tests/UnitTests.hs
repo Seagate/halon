@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 module Main where
 
 import Control.Exception
@@ -17,8 +19,9 @@ import System.Timeout
 
 ut :: IO TestTree
 ut = do
-    t <- either throwIO return =<<
-         createTransport "127.0.0.1" "4000" defaultTCPParameters
+    t <- either throwIO return =<< do
+         let h = "127.0.0.1"
+         createTransport h "4000" (h,) defaultTCPParameters
 
     let launch action =
           (>>= maybe (error "Timeout") return) $ timeout 10000000 $
