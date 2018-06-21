@@ -18,10 +18,6 @@ packages:
 - sspl
 # vendor packages
 - location:
-    git: https://github.com/tweag/distributed-process.git
-    commit: e53c8357e0dbf932ed3f8dd983a2cda66a509251
-  extra-dep: true
-- location:
     git: https://github.com/seagate-ssg/options-schema.git
     commit: 9eaf45b3105358ef3c0b2a6169b68225f8f481d6
   extra-dep: true
@@ -40,6 +36,7 @@ packages:
 
 extra-deps:
 - distributed-static-0.3.8
+- distributed-process-0.7.4
 - distributed-process-tests-0.4.3.2
 - genders-0.1.0.1
 - rematch-0.2.0.0
@@ -48,6 +45,11 @@ extra-deps:
 - QuickCheck-2.8.2
 - aeson-0.11.3.0
 - shelly-1.6.8.3
+
+ghc-options:
+  # CEP.regression.fork-remove-messages UT won't pass without this;
+  # see https://github.com/seagate-ssg/halon/pull/1425#issuecomment-399595953
+  distributed-process: -O0
 
 docker:
   enable: false
