@@ -38,8 +38,6 @@ module Mero.Notification
     , getM0Worker
     ) where
 
-import           Network.CEP (liftProcess, MonadProcess)
-
 import           Mero.ConfC
   ( Cookie(..)
   , Fid
@@ -55,19 +53,23 @@ import           Mero.M0Worker
 
 import           HA.EventQueue (promulgateWait)
 import           HA.Logger (mkHalonTracerIO)
-import           HA.ResourceGraph (Graph)
-import qualified HA.ResourceGraph as G
-import qualified HA.Resources.Castor as R
-import           HA.Resources.Mero (Service(..), SpielAddress(..))
-import qualified HA.Resources.Mero as M0
-import           HA.Resources.Mero.Note (lookupConfObjectStates)
-import qualified HA.Resources.Mero.Note as M0
-import           Network.RPC.RPCLite (RPCAddress, RPCMachine)
 import           HA.RecoveryCoordinator.Mero.Events
   ( GetSpielAddress(..)
   , GetFailureVector(..)
   )
+import           HA.ResourceGraph (Graph)
+import qualified HA.ResourceGraph as G
+import           HA.Resources.Castor (Is(..))
+import           HA.Resources.Mero (Service(..), SpielAddress(..))
+import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note
+  ( PrincipalRM(..)
+  , getState
+  , lookupConfObjectStates
+  )
 import           HA.SafeCopy
+import           Network.CEP (liftProcess, MonadProcess)
+import           Network.RPC.RPCLite (RPCAddress, RPCMachine)
 
 import           Control.Arrow ((***))
 import           Control.Concurrent.MVar
@@ -90,7 +92,7 @@ import           Data.Foldable (for_, traverse_)
 import           Data.Hashable (Hashable)
 import           Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
 import           Data.List (nub)
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, fromMaybe)
 import           Data.Monoid ((<>))
@@ -663,10 +665,10 @@ getSpielAddress b g =
               else length confdsFid
       (confdsFid,confdsEps) = nub *** nub . concat $ unzip
         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_CONFD, s_endpoints = eps }) <- svs
-                    , b || M0.getState svc g == M0.SSOnline ]
+                    , b || getState svc g == M0.SSOnline ]
       (rmFids, rmEps) = unzip
         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
-                    , G.isConnected svc R.Is M0.PrincipalRM g]
+                    , G.isConnected svc Is PrincipalRM g]
       mrmFid = listToMaybe $ nub rmFids
       mrmEp  = fmap ep2s . listToMaybe . nub $ concat rmEps
       quorum = ceiling $ fromIntegral qsize / (2::Double)
