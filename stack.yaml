@@ -26,10 +26,6 @@ packages:
     commit: e53c8357e0dbf932ed3f8dd983a2cda66a509251
   extra-dep: true
 - location:
-    git: https://github.com/haskell-distributed/network-transport-inmemory.git
-    commit: f70722138c7de0ceef0872eefca34a6e4437d552
-  extra-dep: true
-- location:
     git: https://github.com/tweag/network-transport-tcp.git
     commit: dd1369e8ed3af660e46fdaad913e04f8dd34d2cc
   extra-dep: true
