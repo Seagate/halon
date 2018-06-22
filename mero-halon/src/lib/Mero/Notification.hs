@@ -42,9 +42,8 @@ import           Network.CEP (liftProcess, MonadProcess)
 
 import           Mero
 import           Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
-import           Mero.Notification.HAState hiding (getRPCMachine)
 import           Mero.Concurrent
-import qualified Mero.Notification.HAState as HAState
+import qualified Mero.Notification.HAState as HA
 import           Mero.Engine
 import           Mero.Lnet
 import           Mero.M0Worker
@@ -107,10 +106,10 @@ log = mkHalonTracerIO "m0:notification"
 -- This message may be also sent by te RC when the state of an object changes
 -- and the change has to be communicated to Mero.
 --
-newtype Set_v0 = Set_v0 NVec
+newtype Set_v0 = Set_v0 HA.NVec
   deriving (Generic, Typeable, Hashable, Show, Eq)
 
-data Set = Set NVec (Maybe HAMsgMeta)
+data Set = Set HA.NVec (Maybe HA.HAMsgMeta)
   deriving (Generic, Typeable, Show, Eq)
 instance Hashable Set
 
@@ -128,7 +127,7 @@ data Get = Get ProcessId [Fid]
 deriveSafeCopy 0 'base ''Get
 
 -- | This message is sent by the RC in reply to a 'Get' message.
-newtype GetReply = GetReply NVec
+newtype GetReply = GetReply HA.NVec
         deriving (Generic, Typeable, Binary)
 
 -- | A reference to a 'ServerEndpoint' along with metadata about
@@ -268,8 +267,8 @@ initializeInternal addr processFid haFid rmFid = liftIO (takeMVar globalEndpoint
         liftIO $ putMVar globalEndpointRef ref )
 
 -- | Get information about Fid states from local graph.
-getNVec :: [Fid] -> Graph -> [Note]
-getNVec fids = fmap (uncurry Note) . lookupConfObjectStates fids
+getNVec :: [Fid] -> Graph -> [HA.Note]
+getNVec fids = fmap (uncurry HA.Note) . lookupConfObjectStates fids
 
 -- | Callback to be executed when notification was delivered or not.
 data Callback = Callback
@@ -282,32 +281,32 @@ instance Monoid Callback where
   Callback a b `mappend` Callback c d = Callback (a>>c) (b>>d)
 
 -- | Notification interface reference; contains references to
--- necessary information about 'HALink' and process 'Fid'
+-- necessary information about 'HA.HALink' and process 'Fid'
 -- associations.
 data NIRef = NIRef
-  { _ni_links     :: MVar (Map HALink (Map Word64 Callback))
+  { _ni_links     :: MVar (Map HA.HALink (Map Word64 Callback))
   -- ^ Stores callbacks that should be ran when a notification to the
-  -- given 'HALink' either fails or succeeds.
+  -- given 'HA.HALink' either fails or succeeds.
   --
   -- 'MVar' is needed for synchronisation.
-  , _ni_requests  :: IORef (Map ReqId  Fid)
-  -- ^ Stores mapping of 'ReqId's to process 'Fid's.
-  , _ni_info      :: IORef (Map HALink Fid)
-  -- ^ Stores mapping of 'HALink's to process 'Fid's. Combine with
-  -- '_ni_requests' we can retrieve association between 'ReqId' and
-  -- 'HALink'.
-  , _ni_last_seen :: IORef (Map HALink TimeSpec)
-  -- ^ Last time given 'HALink' has replied to a keepalive request.
+  , _ni_requests  :: IORef (Map HA.ReqId  Fid)
+  -- ^ Stores mapping of 'HA.ReqId's to process 'Fid's.
+  , _ni_info      :: IORef (Map HA.HALink Fid)
+  -- ^ Stores mapping of 'HA.HALink's to process 'Fid's. Combine with
+  -- '_ni_requests' we can retrieve association between 'HA.ReqId' and
+  -- 'HA.HALink'.
+  , _ni_last_seen :: IORef (Map HA.HALink TimeSpec)
+  -- ^ Last time given 'HA.HALink' has replied to a keepalive request.
   , _ni_worker    :: TChan (IO ())
   -- ^ Channel of tasks executed by mero worker.
   }
 
 -- | Notify mero using notification interface thread.
 -- Action is executed asynchronously.
-notifyNi :: NIRef -> HALink -> Word64 -> NVec -> Fid -> Fid -> Process ()
+notifyNi :: NIRef -> HA.HALink -> Word64 -> HA.NVec -> Fid -> Fid -> Process ()
 notifyNi ref hl w v ha_pfid ha_sfid =
     liftIO . atomically . writeTChan (_ni_worker ref) . void $
-    notify hl w v ha_pfid ha_sfid dummy_epoch
+    HA.notify hl w v ha_pfid ha_sfid dummy_epoch
   where
     dummy_epoch = 0
 
@@ -336,20 +335,20 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
                    <*> newIORef Map.empty
                    <*> newIORef Map.empty
                    <*> pure taskPool
-    let hsc = HSC
-         { hscStateGet      = ha_state_get niRef
-         , hscProcessEvent  = ha_process_event_set niRef
-         , hscStobIoqError  = ha_stob_ioq_error niRef
-         , hscServiceEvent  = ha_service_event_set niRef
-         , hscBeError       = ha_be_error niRef
-         , hscStateSet      = ha_state_set niRef
-         , hscFailureVector = ha_request_failure_vector niRef
-         , hscKeepalive     = ha_keepalive_reply niRef
-         , hscRPCEvent      = ha_rpc_event niRef
+    let hsc = HA.HSC
+         { HA.hscStateGet      = ha_state_get niRef
+         , HA.hscProcessEvent  = ha_process_event_set niRef
+         , HA.hscStobIoqError  = ha_stob_ioq_error niRef
+         , HA.hscServiceEvent  = ha_service_event_set niRef
+         , HA.hscBeError       = ha_be_error niRef
+         , HA.hscStateSet      = ha_state_set niRef
+         , HA.hscFailureVector = ha_request_failure_vector niRef
+         , HA.hscKeepalive     = ha_keepalive_reply niRef
+         , HA.hscRPCEvent      = ha_rpc_event niRef
          }
     barrier <- newEmptyMVar
     _ <- forkM0OS $ do -- Thread will be joined just before mero will be finalized
-             er <- Catch.try $ initHAState addr processFid haFid rmFid
+             er <- Catch.try $ HA.initHAState addr processFid haFid rmFid
                             hsc
                             (ha_entrypoint niRef)
                             (ha_connected niRef)
@@ -377,33 +376,33 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
                                   `orElse` (Just <$> readTChan taskPool)
                           for_ et $ \t -> t >> loop
                  terminateM0Worker worker
-                 finiHAState
+                 HA.finiHAState
                  atomically $ writeTVar d True
                  joinM0OS tid
                  putMVar fdone ()
                Left e -> putMVar barrier (Left e)
     return (barrier, niRef)
   where
-    ha_state_get :: NIRef -> HAMsgPtr -> HALink -> Word64 -> NVec -> IO ()
+    ha_state_get :: NIRef -> HA.HAMsgPtr -> HA.HALink -> Word64 -> HA.NVec -> IO ()
     ha_state_get ni p hl idx nvec = void $ CH.forkProcess lnode $ do
       self <- getSelfPid
-      let fids = map no_id nvec
+      let fids = map HA.no_id nvec
       liftIO (fmap (getNVec fids) <$> readIORef globalResourceGraphCache)
          >>= \case
                Just nvec' -> do
-                 liftIO $ actionOnNi ni $ delivered hl p
+                 liftIO $ actionOnNi ni $ HA.delivered hl p
                  notifyNi ni hl idx nvec' processFid haFid
                Nothing   -> do
                  _ <- promulgateWait (Get self fids)
-                 liftIO $ actionOnNi ni $ delivered hl p
+                 liftIO $ actionOnNi ni $ HA.delivered hl p
                  GetReply nvec' <- expect
                  notifyNi ni hl idx nvec' processFid haFid
 
-    ha_process_event_set :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> ProcessEvent -> IO ()
+    ha_process_event_set :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.HAMsgMeta -> HA.ProcessEvent -> IO ()
     ha_process_event_set ni p hlink meta pe = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
-      when  (_chp_event pe == TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
+      when  (HA._chp_event pe == HA.TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
         mv <- modifyMVar (_ni_links ni) $ \links -> do
           _ <- atomicModifyIORef' (_ni_info ni) $
             swap . Map.updateLookupWithKey (const $ const Nothing) hlink
@@ -412,30 +411,30 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
           return $ swap $ Map.updateLookupWithKey (const $ const Nothing) hlink links
         for_ mv $ traverse_ onDelivered . Map.elems
       void . CH.forkProcess lnode $ do
-        promulgateWait $ HAMsg pe meta
-        liftIO $ actionOnNi ni $ delivered hlink p
+        promulgateWait $ HA.HAMsg pe meta
+        liftIO $ actionOnNi ni $ HA.delivered hlink p
 
-    ha_stob_ioq_error :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> StobIoqError -> IO ()
+    ha_stob_ioq_error :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.HAMsgMeta -> HA.StobIoqError -> IO ()
     ha_stob_ioq_error ni p hlink m sie = void . CH.forkProcess lnode $ do
-      promulgateWait $ HAMsg sie m
-      liftIO $ actionOnNi ni $ delivered hlink p
+      promulgateWait $ HA.HAMsg sie m
+      liftIO $ actionOnNi ni $ HA.delivered hlink p
 
-    ha_service_event_set :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> ServiceEvent -> IO ()
+    ha_service_event_set :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.HAMsgMeta -> HA.ServiceEvent -> IO ()
     ha_service_event_set ni p hlink m e = void . CH.forkProcess lnode $ do
-      promulgateWait $ HAMsg e m
-      liftIO $ actionOnNi ni $ delivered hlink p
+      promulgateWait $ HA.HAMsg e m
+      liftIO $ actionOnNi ni $ HA.delivered hlink p
 
-    ha_be_error :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> BEIoErr -> IO ()
+    ha_be_error :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.HAMsgMeta -> HA.BEIoErr -> IO ()
     ha_be_error ni p hlink m e = void . CH.forkProcess lnode $ do
-      promulgateWait $ HAMsg e m
-      liftIO $ actionOnNi ni $ delivered hlink p
+      promulgateWait $ HA.HAMsg e m
+      liftIO $ actionOnNi ni $ HA.delivered hlink p
 
-    ha_state_set :: NIRef -> HAMsgPtr -> HALink -> NVec -> HAMsgMeta -> IO ()
+    ha_state_set :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.NVec -> HA.HAMsgMeta -> IO ()
     ha_state_set ni p hlink nvec meta = void . CH.forkProcess lnode $ do
       promulgateWait $ Set nvec (Just meta)
-      liftIO $ actionOnNi ni $ delivered hlink p
+      liftIO $ actionOnNi ni $ HA.delivered hlink p
 
-    ha_entrypoint :: NIRef -> ReqId -> Fid -> Fid -> IO ()
+    ha_entrypoint :: NIRef -> HA.ReqId -> Fid -> Fid -> IO ()
     ha_entrypoint ni reqId procFid profFid = void $ CH.forkProcess lnode $ do
       liftIO $ traceEventIO "START ha_entrypoint"
       liftIO $ atomicModifyIORef' (_ni_requests ni) $ \x -> (Map.insert reqId procFid x, ())
@@ -455,17 +454,17 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
                  Just ep -> do
                    say $ "ha_entrypoint: succeeded: " ++ show ep
                    liftGlobalM0 $
-                     entrypointReply reqId (sa_confds_fid ep)
-                                           (sa_confds_ep  ep)
-                                           (sa_quorum     ep)
-                                           (sa_rm_fid     ep)
-                                           (sa_rm_ep      ep)
+                     HA.entrypointReply reqId (sa_confds_fid ep)
+                                              (sa_confds_ep  ep)
+                                              (sa_quorum     ep)
+                                              (sa_rm_fid     ep)
+                                              (sa_rm_ep      ep)
                  Nothing -> do
                    say "ha_entrypoint: failed."
-                   liftGlobalM0 $ entrypointNoReply reqId
+                   liftGlobalM0 $ HA.entrypointNoReply reqId
       liftIO $ traceEventIO "STOP ha_entrypoint"
 
-    ha_connected :: NIRef -> ReqId -> HALink -> IO ()
+    ha_connected :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
     ha_connected ni req hl = do
       mfid <- atomicModifyIORef' (_ni_requests ni) $ \x -> (Map.delete req x, Map.lookup req x)
       for_ mfid $ \fid -> do
@@ -475,7 +474,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
           atomicModifyIORef' (_ni_info ni) $ \x -> (Map.insert hl fid x, ())
           return $ Map.insert hl Map.empty links
 
-    ha_reused :: NIRef -> ReqId -> HALink -> IO ()
+    ha_reused :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
     ha_reused ni ri hl = do
        mfid <- atomicModifyIORef' (_ni_requests  ni) $
          swap . Map.updateLookupWithKey (const $ const $ Nothing) ri
@@ -483,7 +482,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
          currentTime <- getTime Monotonic
          atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
 
-    ha_request_failure_vector :: NIRef -> HAMsgPtr -> HALink -> Cookie -> Fid -> IO ()
+    ha_request_failure_vector :: NIRef -> HA.HAMsgPtr -> HA.HALink -> Cookie -> Fid -> IO ()
     ha_request_failure_vector ni p hl cookie pool = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
@@ -491,26 +490,26 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
         liftIO $ traceEventIO "START ha_request_failure_vector"
         (send, recv) <- newChan
         promulgateWait (GetFailureVector pool send)
-        liftIO $ actionOnNi ni $ delivered hl p
+        liftIO $ actionOnNi ni $ HA.delivered hl p
         mr <- receiveChan recv
-        liftIO $ actionOnNi ni $ failureVectorReply hl cookie pool processFid haFid $ fromMaybe [] mr
+        liftIO $ actionOnNi ni $ HA.failureVectorReply hl cookie pool processFid haFid $ fromMaybe [] mr
         liftIO $ traceEventIO "STOP ha_request_failure_vector"
 
-    ha_disconnecting :: NIRef -> HALink -> IO ()
+    ha_disconnecting :: NIRef -> HA.HALink -> IO ()
     ha_disconnecting ni hl = do
       modifyMVar_ (_ni_links ni) $ \links -> do
         atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
-        disconnect hl
+        HA.disconnect hl
         return $ Map.delete hl links
 
-    ha_disconnected :: NIRef -> HALink -> IO ()
+    ha_disconnected :: NIRef -> HA.HALink -> IO ()
     ha_disconnected ni hl = do
       modifyMVar_ (_ni_links ni) $ \links -> do
         atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.delete hl x, ())
         atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
         return $ Map.delete hl links
 
-    ha_delivered :: NIRef -> HALink -> Word64 -> IO ()
+    ha_delivered :: NIRef -> HA.HALink -> Word64 -> IO ()
     ha_delivered ni hlink tag = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
@@ -518,14 +517,14 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
         return $ swap $ links & at hlink . _Just . at tag <<.~ Nothing
       for_ mv onDelivered
 
-    ha_cancelled :: NIRef -> HALink -> Word64 -> IO ()
+    ha_cancelled :: NIRef -> HA.HALink -> Word64 -> IO ()
     ha_cancelled ni hlink tag = do
       mv <- modifyMVar (_ni_links ni) $ \mp ->
               return $ swap $ mp & at hlink . _Just . at tag <<.~ Nothing
       for_ mv onCancelled
 
     -- Update the last seen time for the link the keepalive reply is coming on
-    ha_keepalive_reply :: NIRef -> HALink
+    ha_keepalive_reply :: NIRef -> HA.HALink
                        -> Word128 -- ^ kap_id (matching the request)
                        -> Word64 -- ^ kap_counter (should increment)
                        -> IO ()
@@ -535,10 +534,10 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
 
-    ha_rpc_event :: NIRef -> HAMsgPtr -> HALink -> HAMsgMeta -> RpcEvent -> IO ()
+    ha_rpc_event :: NIRef -> HA.HAMsgPtr -> HA.HALink -> HA.HAMsgMeta -> HA.RpcEvent -> IO ()
     ha_rpc_event ni p hl m e = void . CH.forkProcess lnode $ do
-      promulgateWait $ HAMsg e m
-      liftIO $ actionOnNi ni $ delivered hl p
+      promulgateWait $ HA.HAMsg e m
+      liftIO $ actionOnNi ni $ HA.delivered hl p
 
 -- | Find processes with "dead" links and fail them. Do not disconnect
 -- the links manually: mero will invoke a callback we set in
@@ -575,7 +574,7 @@ pruneLinks ni expireSecs = do
 
 -- | Yields the 'RPCMachine' created with 'initializeHAStateCallbacks'.
 getRPCMachine :: IO (Maybe RPCMachine)
-getRPCMachine = HAState.getRPCMachine
+getRPCMachine = HA.getRPCMachine
 
 -- | Internal initialization routine, should not be called by external
 -- users. Only to be called when the lock on the lock is already held.
@@ -623,7 +622,7 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
                              ++ show l ++ " for " ++ show fid
                          onFail fid
       tags <- ifor links $ \l _ ->
-        Map.singleton <$> notify l 0 nvec ha_pfid ha_sfid epoch
+        Map.singleton <$> HA.notify l 0 nvec ha_pfid ha_sfid epoch
                       <*> pure (mkCallback l)
       -- send failed notification for all processes that have no connection
       -- to the interface.
@@ -634,15 +633,15 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
     log $ "Notification failed due to no link for " ++ show fid
     onFail fid
 
--- | Send a ping on every known 'HALink': we should have at least one
--- known 'HALink' per process.
+-- | Send a ping on every known 'HA.HALink': we should have at least one
+-- known 'HA.HALink' per process.
 runPing :: NIRef -> Fid -> Fid -> IO ()
 runPing ni ha_pfid ha_sfid  = actionOnNi ni $ do
     links <- Map.keys <$> readMVar (_ni_links ni)
     info <- readIORef (_ni_info ni)
     for_ links $ \l -> do
       let !fid' = fromMaybe m0_fid0 $! Map.lookup l info
-      pingProcess (Word128 4 2) l fid' ha_pfid ha_sfid
+      HA.pingProcess (Word128 4 2) l fid' ha_pfid ha_sfid
 
 -- | Load an entry point for spiel transaction.
 getSpielAddress :: Bool -- Allow returning dead services
