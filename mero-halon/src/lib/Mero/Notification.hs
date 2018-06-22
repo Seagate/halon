@@ -40,8 +40,13 @@ module Mero.Notification
 
 import           Network.CEP (liftProcess, MonadProcess)
 
-import           Mero
-import           Mero.ConfC (Fid, Cookie(..), ServiceType(..), Word128(..), m0_fid0)
+import           Mero.ConfC
+  ( Cookie(..)
+  , Fid
+  , ServiceType(..)
+  , Word128(..)
+  , m0_fid0
+  )
 import           Mero.Concurrent
 import qualified Mero.Notification.HAState as HA
 import           Mero.Engine
@@ -68,8 +73,11 @@ import           Control.Arrow ((***))
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Internal.Types ( LocalNode, processNode )
-import qualified Control.Distributed.Process.Node as CH ( forkProcess )
+import           Control.Distributed.Process.Internal.Types
+  ( LocalNode
+  , processNode
+  )
+import qualified Control.Distributed.Process.Node as CH (forkProcess)
 import           Control.Lens
 import           Control.Monad (void, when)
 import           Control.Monad.Catch (MonadCatch, SomeException)
@@ -90,7 +98,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Tuple (swap)
 import           Data.Typeable (Typeable)
-import           Data.Word
+import           Data.Word (Word64)
 import           Debug.Trace (traceEventIO)
 import           GHC.Generics (Generic)
 import           System.Clock
