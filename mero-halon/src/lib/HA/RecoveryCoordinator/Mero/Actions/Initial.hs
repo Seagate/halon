@@ -23,6 +23,7 @@ import           Data.Maybe (fromJust, fromMaybe)
 import           Data.MultiMap (MultiMap)
 import qualified Data.MultiMap as MMap
 import           Data.Proxy
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
@@ -307,7 +308,8 @@ createIOPool CI.M0Pool{..} = do
 
     -- Meta-data pool version.
     rg <- getGraph
-    let disks1 = [ d1
+    let disks1 = Set.toList . Set.fromList $
+                 [ d1
                  | disk <- disks
                  , let Just (ctrl :: M0.Controller) =
                         G.connectedFrom M0.IsParentOf disk rg

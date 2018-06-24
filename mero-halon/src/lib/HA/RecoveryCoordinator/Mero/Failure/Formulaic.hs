@@ -122,6 +122,7 @@ newPVerRC :: Maybe Fid -> CI.PDClustAttrs0 -> Maybe CI.Failures -> [M0.Disk]
 newPVerRC mfid CI.PDClustAttrs0{..} mtolerated disks = do
     assert (fromMaybe True $ M0.fidIsType (Proxy :: Proxy M0.PVer) <$> mfid)
         (pure ())
+    assert (Set.size (Set.fromList disks) == length disks) (pure ())
     let attrs = PDClustAttr { _pa_N = pa0_data_units
                             , _pa_K = pa0_parity_units
                             , _pa_P = fromIntegral (length disks)
