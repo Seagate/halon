@@ -30,7 +30,7 @@ packages:
     commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
   extra-dep: true
 - location:
-    git: https://github.com/Fuuzetsu/aeson-schema.git
+    git: https://github.com/seagate-ssg/aeson-schema.git
     commit: 04de4b1f3876e5d8010d32a3bde4be7a7ae9d36a
   extra-dep: true
 
