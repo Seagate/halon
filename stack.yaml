@@ -1,4 +1,4 @@
-resolver: lts-8.24
+resolver: lts-9.21
 packages:
 - cep/cep
 - confc
@@ -31,7 +31,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/aeson-schema.git
-    commit: 04de4b1f3876e5d8010d32a3bde4be7a7ae9d36a
+    commit: 93eb73f6584b17ab8f0e7745c447eb7664e34067
   extra-dep: true
 
 extra-deps:
