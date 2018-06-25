@@ -59,7 +59,7 @@ cmd_test() {
     if [[ -n ${BRAVE_NEW_WORLD:-} ]]; then
         # Ideally we would use this command and run *all* unit tests.
         # Unfortunately, some of the tests fail.  XXX FIXME.
-        _stack_build --test "$@"
+        LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs _stack_build --test "$@"
     else
         LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         $H0_SRC_DIR/mero-halon/$(stack path --dist-dir)/build/tests/tests "$@"
