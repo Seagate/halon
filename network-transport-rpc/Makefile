@@ -6,21 +6,21 @@
 
 CABAL = cabal $(CABAL_SANDBOX)
 
-ifndef MERO_ROOT
-$(error The variable MERO_ROOT is undefined. Please, make it point to the mero build tree.)
+ifndef M0_SRC_DIR
+$(error The variable M0_SRC_DIR is undefined. Please, make it point to the mero build tree.)
 endif
 
-FF2C=$(MERO_ROOT)/xcode/ff2c/ff2c
+FF2C=$(M0_SRC_DIR)/xcode/ff2c/ff2c
 
-#libdirs=$(MERO_ROOT)/xcode/ff2c/.libs\
-#		$(MERO_ROOT)/net/test/.libs\
-#		$(MERO_ROOT)/extra-libs/galois/src/.libs\
-#		$(MERO_ROOT)/mero/.libs\
-#		$(MERO_ROOT)/extra-libs/db4/build_unix\
-#		$(MERO_ROOT)/extra-libs/cunit/CUnit/Sources/.libs\
-#		$(MERO_ROOT)/ut/.libs
+#libdirs=$(M0_SRC_DIR)/xcode/ff2c/.libs\
+#		$(M0_SRC_DIR)/net/test/.libs\
+#		$(M0_SRC_DIR)/extra-libs/galois/src/.libs\
+#		$(M0_SRC_DIR)/mero/.libs\
+#		$(M0_SRC_DIR)/extra-libs/db4/build_unix\
+#		$(M0_SRC_DIR)/extra-libs/cunit/CUnit/Sources/.libs\
+#		$(M0_SRC_DIR)/ut/.libs
 
-libdirs=$(MERO_ROOT)/mero/.libs
+libdirs=$(M0_SRC_DIR)/mero/.libs
 
 empty=
 sp=$(empty) $(empty)
@@ -29,7 +29,7 @@ ENV=LD_LIBRARY_PATH=$(subst $(sp),:,$(libdirs)) NTR_DB_DIR=$(NTR_DB_DIR)
 
 LD_SEARCH_PATH=$(foreach dir,$(libdirs),-L$(dir))
 HLD_SEARCH_PATH=$(foreach dir,$(libdirs),--extra-lib-dirs=$(dir))
-EXTRAINCLUDE=--extra-include-dirs=$(MERO_ROOT)
+EXTRAINCLUDE=--extra-include-dirs=$(M0_SRC_DIR)
 
 #PROF_FLAGS=--enable-library-profiling --enable-executable-profiling
 PROF_FLAGS=
@@ -66,10 +66,10 @@ test: testnt testch testtransport
 
 loadmero:
 	sudo sysctl -w kernel.randomize_va_space=0
-	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(MERO_ROOT) ./rpclite/st insmod
+	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(M0_SRC_DIR) ./rpclite/st insmod
 
 unloadmero:
-	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(MERO_ROOT) ./rpclite/st rmmod
+	sudo GENDERS=$(GENDERS) M0_CORE_DIR=$(M0_SRC_DIR) ./rpclite/st rmmod
 
 testrpcliteclient:
 	sudo $(ENV) dist/build/testrpclite/testrpclite

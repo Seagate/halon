@@ -84,7 +84,7 @@ main =
     putStrLn $ "Calling test with sudo ..."
     mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
     mtl <- fmap ("DC_HOST_IP=" ++) <$> lookupEnv "DC_HOST_IP"
-    mmr <- fmap ("MERO_ROOT=" ++) <$> lookupEnv "MERO_ROOT"
+    mmr <- fmap ("M0_SRC_DIR=" ++) <$> lookupEnv "M0_SRC_DIR"
     tracing <- fmap ("HALON_TRACING=" ++) <$> lookupEnv "HALON_TRACING"
     units <- fmap (\s -> "SYSTEMD_UNIT_PATHS=" ++ s ++ ":") <$> lookupEnv "SYSTEMD_UNIT_PATHS"
     callProcess "sudo" $ catMaybes [mld, mtl, mmr, units, tracing] ++ prog : argv

@@ -45,7 +45,7 @@ pingStartedLine = "[Service:ping] starting at "
 -- | Copy mero system library and its dependencies to the given hosts
 copyMeroLibs :: MonadIO m => HostName -> [HostName] -> m ()
 copyMeroLibs lh ms = liftIO $ do
-  meroPath <- fromMaybe "/mero" <$> lookupEnv "MERO_ROOT"
+  meroPath <- fromMaybe "/mero" <$> lookupEnv "M0_SRC_DIR"
   copyFilesMove lh ms
     [ (meroPath </> "mero/.libs/libmero.so.1", "/usr/lib64/libmero.so.1", "libmero.so.1")
     , ("/lib64/libaio.so.1", "/usr/lib64/libaio.so.1", "libaio.so.1")

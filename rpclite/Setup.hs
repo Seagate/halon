@@ -17,7 +17,7 @@ rpclite_build :: PackageDescription
               -> BuildFlags
               -> IO ()
 rpclite_build pd lbi uh bf@(BuildFlags { buildVerbosity = vf }) = do
-  mero_root <- lookupEnv "MERO_ROOT"
+  mero_root <- lookupEnv "M0_SRC_DIR"
   let v = fromFlagOrDefault normal vf
       ff2c = fmap (++ "/xcode/ff2c/m0ff2c") mero_root
       progdb = userMaybeSpecifyPath "m0ff2c" ff2c $ withPrograms lbi

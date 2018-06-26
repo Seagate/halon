@@ -1,8 +1,8 @@
 #!/bin/bash
 
-if [ ! -d $MERO_ROOT ] ; then
-	echo "MERO_ROOT environment variable should be set."
-	exit 1;
+if [ ! -d $M0_SRC_DIR ] ; then
+	echo "M0_SRC_DIR environment variable should be set."
+	exit 1
 fi
 
 if [[ `id -u` != 0  ]] ; then

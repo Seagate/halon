@@ -67,7 +67,7 @@ main =
       putStrLn $ "Calling test with sudo ..."
       mld <- fmap ("LD_LIBRARY_PATH=" ++) <$> lookupEnv "LD_LIBRARY_PATH"
       mtl <- fmap ("DC_HOST_IP=" ++) <$> lookupEnv "DC_HOST_IP"
-      mmr <- fmap ("MERO_ROOT=" ++) <$> lookupEnv "MERO_ROOT"
+      mmr <- fmap ("M0_SRC_DIR=" ++) <$> lookupEnv "M0_SRC_DIR"
       callProcess "sudo" $ catMaybes [mld, mtl, mmr] ++ prog : argv
       exitSuccess
 
@@ -91,7 +91,7 @@ main =
 
       let halonctl = "cd " ++ tmp0 ++ "; " ++ buildPath </> "halonctl/halonctl"
           halond = "cd " ++ tmp1 ++ "; " ++ buildPath </> "halond/halond"
-          m0note = "cd " ++ tmp2 ++ "; $MERO_ROOT/ha/st/m0note"
+          m0note = "cd " ++ tmp2 ++ "; $M0_SRC_DIR/ha/st/m0note"
 
       getSelfPid >>= copyLog (const True)
 

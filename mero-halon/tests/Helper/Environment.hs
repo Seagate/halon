@@ -20,8 +20,8 @@ import Text.Read (readMaybe)
 import Data.Foldable (for_)
 
 withMeroRoot :: (String -> IO a) -> IO a
-withMeroRoot f = lookupEnv "MERO_ROOT" >>= \case
-  Nothing -> error "Please specify MERO_ROOT environment variable in order to run test."
+withMeroRoot f = lookupEnv "M0_SRC_DIR" >>= \case
+  Nothing -> error "Please specify M0_SRC_DIR environment variable in order to run test."
   Just x  -> f x
 
 -- | Return the value of the @TEST_LISTEN@ environment variable split

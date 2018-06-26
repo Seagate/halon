@@ -21,7 +21,7 @@ For details about the C implementation of rpclite see rpclite/README.
 
 == Building ==
 
-See Makefile. It contains a variable MERO_ROOT which should be set to
+See Makefile. It contains a variable M0_SRC_DIR which should be set to
 the root of the mero build tree.
 
 Then typing
