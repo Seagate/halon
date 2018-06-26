@@ -35,21 +35,10 @@ import qualified Data.ByteString.Char8 as B8
 import           Data.Data (Data, Typeable)
 import           Data.Hashable (Hashable)
 import           Data.String (IsString(..))
-import qualified Data.Text as Text
 import           Data.Text.Encoding (decodeLatin1, encodeUtf8)
-import           Data.UUID as UUID
 import           GHC.Generics (Generic)
 import           Network.Transport (EndPointAddress(..))
 import           HA.SafeCopy
-
-instance ToJSON UUID where
-  toJSON uuid = Data.Aeson.String (UUID.toText uuid)
-
-instance FromJSON UUID where
-  parseJSON (String s) = do
-    maybe (fail $ "UUID have incorrect format:  " ++ Text.unpack s)
-          return $ UUID.fromText s
-  parseJSON _ = fail "not a string"
 
 instance ToJSON NodeId
 instance FromJSON NodeId

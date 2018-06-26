@@ -37,14 +37,7 @@ packages:
 extra-deps:
 - distributed-static-0.3.8
 - distributed-process-0.7.4
-- distributed-process-tests-0.4.3.2
-- genders-0.1.0.1
-- rematch-0.2.0.0
 - ghc-datasize-0.1.2
-- validation-0.5.4
-- QuickCheck-2.8.2
-- aeson-0.11.3.0
-- shelly-1.6.8.3
 
 ghc-options:
   # XXX `CEP.regression.fork-remove-messages` UT will fail unless
