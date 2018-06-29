@@ -34,12 +34,31 @@ cmd_setup() {
     stack setup
 }
 
+## We could have exported `h0 build` command, but don't do so
+## for the following reasons:
+##   1. The difference between `h0 make` and `h0 build` would be hard to
+##      explain. The users would be confused if both commands were present
+##      in the CLI.
+##   2. `h0 make` is used by CircleCI and Jenkins CI.
+##   3. `h0 make` is symmetrical to `m0 make`.
+##
+## Still, if we ever need this function to be exported, we better export
+## `h0 stack` instead.
 _stack_build() {
     PKG_CONFIG_PATH=$M0_SRC_DIR \
-    stack build --ghc-options="${GHC_OPTS:--g -j2}" \
-        --extra-include-dirs="$M0_SRC_DIR" \
-        --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
-        "$@"
+        stack \
+            --extra-include-dirs="$M0_SRC_DIR" \
+            --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
+            build \
+                --ghc-options="${GHC_OPTS:--g -j2}" \
+                "$@"
+}
+
+cmd_test() {
+    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+        _stack_build --test "$@"
+    # Here we are using the fact that `stack test` is a shortcut for
+    # `stack build --test`.
 }
 
 cmd_make() {
@@ -54,19 +73,8 @@ cmd_rebuild() {
     cmd_make "$@"
 }
 
-cmd_test() {
-    if [[ -n ${BRAVE_NEW_WORLD:-} ]]; then
-        # Ideally we would use this command and run *all* unit tests.
-        # Unfortunately, some of the tests fail.  XXX FIXME.
-        LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs _stack_build --test "$@"
-    else
-        LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        $H0_SRC_DIR/mero-halon/$(stack path --dist-dir)/build/tests/tests "$@"
-    fi
-}
-
-local_install_root() {
-    stack path --local-install-root
+cmd_clean() {
+    stack clean "$@"
 }
 
 cmd_install() {
@@ -126,26 +134,11 @@ cmd_stop() {
     esac
 }
 
-check_stack_dir() {
+cmd_path() {
     [ -d ~/.stack ] ||
         die "Stack environment is not configured. Run \`$PROG setup' first."
-}
-
-cmd_path() {
-    check_stack_dir
-    echo "halon-bin: $(local_install_root)/bin"
+    echo "halon-bin: $(stack path --local-install-root)/bin"
     echo "mero-libs: $M0_SRC_DIR/mero/.libs"
-}
-
-cmd_env() {
-    check_stack_dir
-    echo "export PATH=\"$(local_install_root)/bin:\$PATH\""
-    echo -n "export LD_LIBRARY_PATH=\"$M0_SRC_DIR/mero/.libs"
-    echo "\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
-}
-
-cmd_clean() {
-    stack clean "$@"
 }
 
 cmd_help() {
@@ -156,7 +149,7 @@ cmd_help() {
 }
 
 _exec() {
-    [[ $1 =~ ^cmd_(path|env|help)$ ]] || echo "----- ${@#cmd_} -----" >&2
+    [[ $1 =~ ^cmd_(path|help)$ ]] || echo "----- ${@#cmd_} -----" >&2
     "$@"
 }
 
@@ -170,8 +163,8 @@ Commands:
     make [OPTION]...     Build Halon.
                          (Use \`$PROG rebuild' if Mero was updated.)
     rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
+    test [OPTION]...     Run unit tests.  See 'Examples' below.
     clean [OPTION]...    Clean local packages.
-    test [OPTION]...     Run unit tests.
     start                Start cluster.
     stop [-u]            Stop cluster. \`stop -u' is equivalent to
                          \`stop uninstall -c'.
@@ -181,17 +174,23 @@ Commands:
                          metadata and configuration files before
                          uninstalling services.
     path                 Print out handy path information.
-    env                  Print shell commands that, if evaluated, simplify
-                         execution of Halon binaries located in the sources
-                         directory.
     help                 Show this help and exit.
 
 Options:
-    'make', 'test', 'clean', and 'stack' commands support options of the
-    Haskell Tool Stack. Type \`stack <command> --help' for the documentation.
+    'make', 'test', and 'clean' commands support options of the Haskell Tool
+    Stack.  Type \`stack <command> --help' for documentation.
 
 Environment variables:
     M0_SRC_DIR    Path to Mero sources directory; defaults to '$M0_SRC_DIR'.
+
+Examples:
+
+    # Run 'RC*' tests of 'mero-halon' package.
+    $PROG test mero-halon --ta '-p RC'
+
+    $PROG make --no-test --dry-run
+
+    $PROG test --help
 EOF
 }
 
@@ -201,7 +200,7 @@ CMD=
 OPTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|path|env|clean|help) ;& # fall through
+        setup|make|rebuild|test|path|clean|help) ;& # fall through
         install|uninstall|start|stop)
             [[ -z $CMD ]] || {
                 if [[ ${#OPTS[@]} == 0 ]]; then
