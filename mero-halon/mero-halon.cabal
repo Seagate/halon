@@ -719,26 +719,6 @@ Benchmark initial-data-gc
                     unix,
                     unordered-containers
 
-Test-Suite test-bootstrap
-  Type:             exitcode-stdio-1.0
-  Default-Language: Haskell2010
-  Hs-Source-Dirs:   tests
-  Main-Is:          test-bootstrap.hs
-  Other-Modules:    Helper.Environment
-  Build-Depends:  base >= 4.5,
-                  bytestring,
-                  confc,
-                  halon-instances,
-                  directory,
-                  filepath,
-                  mero-halon,
-                  network,
-                  process,
-                  process-extras,
-                  template-haskell,
-                  unix,
-                  split
-
 Test-Suite test-server-bootstrap-local
   Type:             exitcode-stdio-1.0
   default-language: Haskell2010
