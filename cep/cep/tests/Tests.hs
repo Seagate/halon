@@ -13,7 +13,7 @@ import Control.Monad.Catch (SomeException(..), catch, try, throwM)
 import Control.Exception (Exception, fromException)
 import Data.Binary (Binary)
 import Data.Typeable
-import Data.List (sort)
+import Data.List (isPrefixOf, sort)
 import Data.IORef
 import Data.PersistMessage
 import HA.SafeCopy
@@ -1203,7 +1203,7 @@ exceptionWorks = do
     usend pid donut
 
     i <- expect
-    assertEqual "Ph2 should fire first" "foo" i
+    assertBool "Ph2 should fire first" $ "foo" `isPrefixOf` i
 
 newtype MyE = MyE String deriving (Show, Typeable, Eq, Binary)
 
