@@ -681,8 +681,6 @@ Benchmark initial-data-gc
                     RemoteTables,
                     TestRunner
 
-
-
   Ghc-Options: -threaded -Wall -Werror
 
   if flag(debug)
