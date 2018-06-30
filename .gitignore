@@ -48,6 +48,7 @@ mk/local.mk
 !README
 
 # tests
+replicated-log/scheduler-tests.eventlog
 test_output/
 tests.eventlog
 
