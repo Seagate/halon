@@ -26,7 +26,7 @@ packages:
     commit: ab35f545a7ac52168ef1d4c5babbc34942762a85
   extra-dep: true
 - location:
-    git: https://github.com/nc6/gitrev.git
+    git: https://github.com/seagate-ssg/gitrev.git
     commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
   extra-dep: true
 - location:
