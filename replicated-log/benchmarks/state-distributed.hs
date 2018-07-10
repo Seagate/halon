@@ -82,7 +82,7 @@ time_ act = do
   act
   end <- liftIO $ getTime Monotonic
   let !delta = diffTimeSpec end start
-  return $ fromIntegral (timeSpecAsNanoSecs delta) / 10^(9 :: Int)
+  return $ fromIntegral $ toNanoSecs delta `div` 10^(9::Int)
 
 -- | Convert a number of seconds to a string.  The string will consist
 -- of four decimal places, followed by a short description of the time

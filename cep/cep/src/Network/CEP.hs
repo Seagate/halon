@@ -313,8 +313,8 @@ runItForever start_eng = do
             go eng . Just =<< receiveWait all_events
           Just t  -> do
             p' <- liftIO $ getTime Monotonic
-            let tm = (\(TimeSpec s ns) -> (s*10^(9::Int) + ns) `div` 1000 ) $ p' `diffTimeSpec` t
-            liftIO $ traceMarkerIO $ "cep loop: blocked for " ++ show tm ++ "ms"
+            let tm = (toNanoSecs $ p' `diffTimeSpec` t) `div` 1000
+            liftIO . traceMarkerIO $ "cep loop: blocked for " ++ show tm ++ "us"
             mmsg <- receiveTimeout (fromIntegral tm) all_events
             case mmsg of
               Nothing -> do eng'' <- snd <$> stepForward (timeoutMsg p') eng
