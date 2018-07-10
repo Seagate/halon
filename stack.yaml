@@ -41,11 +41,11 @@ extra-deps:
 
 ghc-options:
   # XXX `CEP.regression.fork-remove-messages` UT will fail unless
-  # `distributed-process` package is built with `-g` or `-O0` option;
+  # `distributed-process` package is built with `-O0` option;
   # see https://github.com/seagate-ssg/halon/pull/1425#issuecomment-399595953
   #
   # TODO: Find the root cause of the problem.
-  distributed-process: -g
+  distributed-process: -O0
 
 docker:
   enable: false
