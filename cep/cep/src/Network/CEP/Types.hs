@@ -59,21 +59,16 @@ toSecs :: Int -> TimeSpec
 toSecs i = TimeSpec (fromIntegral i) 0
 
 -- | That message is sent when a 'Process' asks for a subscription.
-data Subscribe =
-    Subscribe
-    { _subType :: ! ByteString
-      -- ^ Serialized event type.
-    , _subPid :: !ProcessId
-      -- ^ Subscriber 'ProcessId'
+data Subscribe = Subscribe
+    { _subType :: !ByteString -- ^ Serialized event type
+    , _subPid  :: !ProcessId  -- ^ Subscriber 'ProcessId'
     } deriving (Show, Typeable, Generic)
-
 instance Binary Subscribe
 
 -- | That message is sent when a 'Process' asks to remove a subscription.
-data Unsubscribe =
-      Unsubscribe
+data Unsubscribe = Unsubscribe
       { _unsubType :: !ByteString -- ^ Serialized event type
-      , _unsubPid  :: !ProcessId  -- ^ Subscribe 'ProcessId'
+      , _unsubPid  :: !ProcessId  -- ^ Subscriber 'ProcessId'
       } deriving (Show, Typeable, Generic)
 instance Binary Unsubscribe
 
@@ -83,8 +78,7 @@ newtype SMId = SMId { getSMId :: Int64 } deriving (Eq, Show, Ord, Num)
 --   The point is to allow the user to refer to rules by their name while
 --   being able to know which rule has been defined the first. That give us
 --   prioritization.
-data RuleKey =
-    RuleKey
+data RuleKey = RuleKey
     { _ruleKeyId   :: !Int
     , _ruleKeyName :: !String
     } deriving (Eq, Show, Generic)
@@ -120,8 +114,7 @@ newSubscribeRequest pid _ = Subscribe bytes pid
 
 -- | Emitted every time an event of type @a@ is published. A 'Process' will
 ---  receive that message only if it subscribed for that type of message.
-data Published a =
-    Published
+data Published a = Published
     { pubValue :: !a
       -- ^ Published event.
     , pubPid :: !ProcessId
@@ -154,12 +147,9 @@ data SMLogger app l where
 --   Phases within an 'Application' of type 'app' are able to handle a global
 --   state `GlobalState app` shared with all rules and a local state `l` only
 --   available at a rule level.
-data Phase app l =
-    Phase
-    { _phName :: !String
-      -- ^ 'Phase' name.
-    , _phCall :: !(PhaseCall app l)
-      -- ^ 'Phase' state machine.
+data Phase app l = Phase
+    { _phName :: !String            -- ^ 'Phase' name.
+    , _phCall :: !(PhaseCall app l) -- ^ 'Phase' state machine.
     }
 
 -- | Reference to 'Phase'. 'PhaseHandle' are safe to use for retrieving an
@@ -174,21 +164,17 @@ newtype Timeout = Timeout RuleKey deriving Binary
 --   reprensents the way we want to access a resource. It could be a 'Phase'
 --   for instance
 data Jump a
-    = NormalJump a
-      -- ^ Accesses a resource directly.
-    | OnTimeJump Time a
-      -- ^ Jump after some time happened.
+    = NormalJump a      -- ^ Accesses a resource directly.
+    | OnTimeJump Time a -- ^ Jump after some time happened.
     deriving Show
 
 instance Eq a => Eq (Jump a) where
   (NormalJump x) == (NormalJump y) = x == y
-  -- (ReactiveJump _ _ x) == (ReactiveJump _ _ y) = x == y
   _ == _ = False
 
 instance Functor Jump where
     fmap f (NormalJump a)       = NormalJump $ f a
     fmap f (OnTimeJump t a)     = OnTimeJump t $ f a
-    -- fmap f (ReactiveJump c w a) = ReactiveJump c w $ f a
 
 -- | Just like 'MonadIO', 'MonadProcess' should satisfy the following
 -- laws:
@@ -294,9 +280,7 @@ type Definitions s a = Specification s a
 data Started app l = StartingPhase l (Jump (Phase app l))
 
 -- | Holds type information used for later type message deserialization.
-data TypeInfo =
-    forall a. Serializable a =>
-    TypeInfo
+data TypeInfo = forall a. Serializable a => TypeInfo
     { _typFingerprint :: !Fingerprint
     , _typeProxy      :: !(Proxy a)
     }
