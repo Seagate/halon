@@ -36,7 +36,7 @@ import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import           System.Clock
 import           Control.Lens hiding (Index, Setting)
 
-import Network.CEP.Buffer
+import           Network.CEP.Buffer
 import qualified Network.CEP.Log as Log
 
 -- | Application type over which the CEP engine is parametrised.

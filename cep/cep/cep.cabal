@@ -39,7 +39,7 @@ library
                        bytestring,
                        mtl,
                        multimap==1.2.*,
-                       containers==0.5.*,
+                       containers >= 0.5.10,
                        operational,
                        text,
                        transformers,

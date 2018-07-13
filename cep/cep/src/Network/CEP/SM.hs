@@ -96,9 +96,9 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                  -> [Jump (Phase app l)]
                  -> State.StateT (EngineState (GlobalState app)) Process [(SMResult, SM app)]
     executeStack _ _ smid l b f info [] = case f [] of
-      [] -> return [stoppedSM info smid]
-      ph -> return [(SMResult smid SMSuspended (info [])
-                    , SM $ interpretInput smid l b ph)]
+      []  -> return [stoppedSM info smid]
+      phs -> return [(SMResult smid SMSuspended (info [])
+                    , SM $ interpretInput smid l b phs)]
     executeStack logs subs smid l b f info (jmp:phs) = do
         res <- jumpApplyTime key jmp
         case res of
@@ -137,10 +137,10 @@ newSM key startPhase rn ps initialBuffer initialL logger =
                 return [(result, SM $ interpretInput idm initialL buffer [fin_phs])]
               -- Rule completed sucessfully and there are next steps to run. In this case
               -- we continue.
-              SM_Complete l' ph' -> do
+              SM_Complete l' phs' -> do
                 liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
                 let result = SMResult idm SMRunning (info [SuccessExe pname b buffer])
-                fin_phs <- traverse (jumpEmitTimeout key) $ fmap mkPhase ph'
+                fin_phs <- traverse (jumpEmitTimeout key) $ fmap mkPhase phs'
                 return [(result, SM $ interpretInput idm l' buffer fin_phs)]
               -- Rule is suspended. We continue execution in order to find next phase that will
               -- terminate.

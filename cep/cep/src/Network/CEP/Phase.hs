@@ -17,19 +17,20 @@ import Data.Typeable
 
 import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Serializable
-import           Control.Monad.Operational
+import           Control.Monad.Operational (viewT, ProgramViewT((:>>=), Return))
 import           Control.Exception (fromException, throwIO)
 import qualified Control.Monad.Catch as Catch
 import           Control.Monad (unless)
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.State.Strict as State
+import           Data.Sequence (Seq((:<|)), (<|), (><), empty)
 import qualified Data.Map as M
-import           Data.Foldable (traverse_)
-import           Control.Lens hiding (Index)
+import           Data.Foldable (traverse_, toList)
+import           Control.Lens ((^.), (.=), zoom, use, assign, _1, _2)
 
-import Network.CEP.Buffer
+import           Network.CEP.Buffer
 import qualified Network.CEP.Log as Log
-import Network.CEP.Types
+import           Network.CEP.Types hiding (Seq)
 
 -- | 'SM_Complete': The phase has finished processing, yielding a new
 -- set of SMs to run.
@@ -157,7 +158,7 @@ runPhase :: (Application app, g ~ GlobalState app)
          -> l             -- ^ Local state.
          -> Buffer        -- ^ Current buffer.
          -> Phase app l     -- ^ Phase handle to interpret.
-         -> State.StateT (EngineState g) Process [(SMId, (Buffer,PhaseOut l))]
+         -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
 runPhase rn subs logs idm l buf ph =
     case _phCall ph of
       DirectCall action -> runPhaseM rn pname subs logs idm l Nothing buf action
@@ -190,17 +191,19 @@ runPhaseM :: forall app g l. (Application app, g ~ GlobalState app)
           -> Buffer              -- ^ Buffer
           -> PhaseM app l ()
           -> State.StateT (EngineState g) Process [(SMId, (Buffer, PhaseOut l))]
-runPhaseM rname pname subs logger idx pl mindex pb action = do
+runPhaseM rname pname subs logger idx pl mindex pb ph0 = do
     g <- use engineStateGlobal
     for_ logger $ \lf -> lift $ (sml_logger lf)
                                 (Log.Event (Log.Location rname (getSMId idx) pname) Log.PhaseEntry) g
-    consume [(idx,pb,pl,action)]
+    consume $ (idx, pb, pl, ph0) <| empty
   where
-    consume []     = return []
-    consume ((idm,b,l,p):ps) = do
-      (t,phases,_) <- reverseOn (\x -> case x ^. _1 . _2 of SM_Complete{} -> True ; _ -> False)
-                                (go idm l b p)
-      ((idm,t):) <$> consume (ps ++ phases)
+    consume ((idm, b, l, ph) :<| phs) = do
+      (out, phs', _) <- reverseOn (\x -> case x^._1._2 of
+                                           SM_Complete{} -> True
+                                           _             -> False)
+                                  (go idm l b ph)
+      ((idm, out) :) <$> consume (phs >< phs')
+    consume _ = return []
 
     logJump :: Jump PhaseHandle -> Log.Jump
     logJump (NormalJump a) = Log.NormalJump $ _phHandle a
@@ -214,7 +217,9 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
     logForkType CopyBuffer = Log.CopyBuffer
     logForkType CopyNewerBuffer = Log.CopyNewerBuffer
 
-    reverseOn :: (a -> Bool) -> State.StateT (EngineState g) Process a -> State.StateT (EngineState g) Process a
+    reverseOn :: (a -> Bool)
+              -> State.StateT (EngineState g) Process a
+              -> State.StateT (EngineState g) Process a
     reverseOn p f = do
       old <- use engineStateGlobal
       x <- f
@@ -223,7 +228,7 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
 
     go :: SMId -> l -> Buffer -> PhaseM app l a
        -> State.StateT (EngineState g) Process
-                       ((Buffer, PhaseOut l), [(SMId, Buffer, l, PhaseM app l ())], Maybe a)
+          ((Buffer, PhaseOut l), Seq (SMId, Buffer, l, PhaseM app l ()), Maybe a)
     go ids l buf a = lift (viewT a) >>= inner where
       loc :: Log.Location
       loc = Log.Location rname (getSMId ids) pname
@@ -233,33 +238,34 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
         for_ logger $ \lf -> lift $ (sml_logger lf) (Log.Event loc evt) g
 
       inner :: ProgramViewT (PhaseInstr app l) Process a
-            -> State.StateT (EngineState g) Process ((Buffer, PhaseOut l), [(SMId, Buffer, l, PhaseM app l ())], Maybe a)
-      inner (Return t) = return ((buf, SM_Complete l []), [], Just t)
+            -> State.StateT (EngineState g) Process
+               ((Buffer, PhaseOut l), Seq (SMId, Buffer, l, PhaseM app l ()), Maybe a)
+      inner (Return t) = return ((buf, SM_Complete l []), empty, Just t)
       inner (Catch f h :>>= next) = do
         ef <- Catch.try $ go ids l buf f
         case ef of
-          Right ((buf', out), sm, mr) -> case (out,mr) of
+          Right ((buf', out), phs, mr) -> case (out, mr) of
             -- XXX: pass sm in continuation passing style
             (SM_Complete l' [], Just r) -> do
-                (z, sm',t) <- go ids l' buf' $ next r
-                return (z, sm++sm',t)
-            _ -> return ((buf, out), sm, Nothing)
+                (z, phs', t) <- go ids l' buf' $ next r
+                return (z, phs >< phs', t)
+            _ -> return ((buf, out), phs, Nothing)
           Left se -> case fromException se of
             -- Rethrow exception if type does not match
             Nothing -> liftIO $ throwIO se
             Just e  -> do
               -- Run exception handler
-              ((buf', out), sm, mr) <- go ids l buf (h e)
+              ((buf', out), phs, mr) <- go ids l buf (h e)
               case (out, mr) of
                 -- If handler completes and have result, then continue
                 (SM_Complete l' _, Just r) -> do
-                   (z, sm', s) <- go ids l' buf' (next r)
-                   return (z, sm++sm',s)
+                   (z, phs', s) <- go ids l' buf' (next r)
+                   return (z, phs >< phs', s)
                 -- Otherwise return current suspention
-                _ -> return ((buf', out), sm, Nothing)
+                _ -> return ((buf', out), phs, Nothing)
       inner (Continue ph :>>= _) = do
         logIt $ Log.Continue (Log.ContinueInfo (logJump ph))
-        return ((buf, SM_Complete l [ph]), [], Nothing)
+        return ((buf, SM_Complete l [ph]), empty, Nothing)
       inner (Get Global :>>= k)   = go ids l buf . k =<< use engineStateGlobal
       inner (Get Local  :>>= k)   = go ids l buf $ k l
       inner (Put Global s :>>= k) = assign engineStateGlobal s >> (go ids l buf $ k ())
@@ -269,23 +275,23 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
         go ids s buf $ k ()
       inner (Stop :>>= _) = do
         logIt Log.Stop
-        return ((buf, SM_Stop), [], Nothing)
+        return ((buf, SM_Stop), empty, Nothing)
       inner (Fork typ naction :>>= k) =
         let buf' = case typ of
                     NoBuffer -> emptyFifoBuffer
                     CopyBuffer -> buf
                     CopyNewerBuffer -> maybe buf (`bufferDrop` buf) mindex
         in do
-          ((b', out), sm, s) <- go ids l buf (k ())
+          ((b', out), phs, s) <- go ids l buf (k ())
           smId@(SMId i) <- nextSmId
           logIt $ Log.Fork $ Log.ForkInfo (logForkType typ) i
-          return ((b', out), (smId, buf',l,naction):sm, s)
+          return ((b', out), (smId, buf', l, naction) <| phs, s)
       inner (Lift m :>>= k) = do
         a' <- lift m
         go ids l buf (k a')
       inner (Suspend :>>= _) = do
         logIt Log.Suspend
-        return ((buf, SM_Suspend),[], Nothing)
+        return ((buf, SM_Suspend), empty, Nothing)
       inner (Publish e :>>= k) = do
         lift $ notifySubscribers subs e
         go ids l buf (k ())
@@ -293,13 +299,13 @@ runPhaseM rname pname subs logger idx pl mindex pb action = do
         logIt $ Log.ApplicationLog $ Log.ApplicationLogInfo evt
         go ids l buf $ k ()
       inner (Switch xs :>>= _) = do
-        logIt $ Log.Switch $ Log.SwitchInfo (logJump <$> xs)
-        return ((buf, SM_Complete l xs), [], Nothing)
+        logIt $ Log.Switch $ Log.SwitchInfo . toList $ (logJump <$> xs)
+        return ((buf, SM_Complete l xs), empty, Nothing)
       inner (Peek idd :>>= k) = do
         case bufferPeek idd buf of
-          Nothing -> return ((buf, SM_Suspend), [], Nothing)
+          Nothing -> return ((buf, SM_Suspend), empty, Nothing)
           Just r  -> go ids l buf $ k r
       inner (Shift idd :>>= k) =
           case bufferGetWithIndex idd buf of
-            Nothing   -> return ((buf, SM_Suspend),[], Nothing)
+            Nothing   -> return ((buf, SM_Suspend), empty, Nothing)
             Just (r, z, buf') -> go ids l buf' $ k (r,z)

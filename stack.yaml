@@ -38,6 +38,7 @@ extra-deps:
 - distributed-static-0.3.8
 - distributed-process-0.7.4
 - ghc-datasize-0.1.2
+- containers-0.5.10.2
 
 ghc-options:
   # XXX `CEP.regression.fork-remove-messages` UT will fail unless
