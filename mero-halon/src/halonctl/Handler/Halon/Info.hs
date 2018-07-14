@@ -21,14 +21,20 @@ import           Control.Monad (void, when)
 import           Control.Monad.Fix (fix)
 import qualified Data.ByteString as B
 import           Data.Foldable (for_)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))
+import           Data.Set (Set)
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Events.Info
 import           HA.Resources (Node(..))
 import           Lookup
-import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
+import           Network.CEP
+  ( MemoryInfo(..)
+  , RuleKey(..)
+  , RuntimeInfoRequest(..)
+  , RuntimeInfo(..)
+  )
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
 import           System.Exit (exitFailure)
@@ -192,7 +198,9 @@ displayCepReply (RuntimeInfo{..}) = liftIO $ do
                       )
                       minfoTotalSize minfoSMSize minfoStateSize
   displayRunningSMs infoSMs
+  displayRulePhases infoRulesPhases
   where
+    displayRunningSMs :: M.Map String Int -> IO ()
     displayRunningSMs sms = let
         heading = ("Rule name", "Running SMs")
         maxRuleNameLength :: Int
@@ -218,6 +226,12 @@ displayCepReply (RuntimeInfo{..}) = liftIO $ do
                   ++ (space padding)
                   ++ (show c)
 
+    displayRulePhases :: M.Map RuleKey (Set String) -> IO ()
+    displayRulePhases rules =
+      for_ (M.toAscList rules) $ \(RuleKey idx name, phases) -> do
+        putStrLn $ printf "% 3u. %s" idx name
+        for_ phases $ \ph ->
+          putStrLn $ "     " ++ ph
 
 parseCEPStatsOptions :: O.Parser CEPStatsOptions
 parseCEPStatsOptions = CEPStatsOptions

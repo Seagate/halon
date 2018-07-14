@@ -71,6 +71,10 @@ module Network.CEP
     , emptyFifoBuffer
     -- * Engine
     , Engine
+    , MemoryInfo(..)
+    , RuleKey(..)
+    , RuntimeInfoRequest(..)
+    , RuntimeInfo(..)
     , cepEngine
     , execute
     , runItForever
@@ -78,9 +82,6 @@ module Network.CEP
     , feedEngine
     , incoming
     , tick
-    , RuntimeInfoRequest(..)
-    , RuntimeInfo(..)
-    , MemoryInfo(..)
     -- * Subscription
     , Published(..)
     , subscribeRequest
@@ -480,6 +481,7 @@ buildRuleData name mk rls buf logFn = go M.empty Set.empty initLogger $ view rls
         { _ruleDataName = name
         , _ruleStack    = mk p name ps buf l logger
         , _ruleTypes    = Set.union tpes $ buildTypeList ps
+        , _rulePhases   = M.keysSet ps
         }
     go ps tpes logger (Start ph l :>>= k) =
         let old = ps M.! jumpPhaseHandle ph

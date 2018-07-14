@@ -67,6 +67,8 @@ data RuleData app = RuleData
       -- ^ All the 'TypeInfo' gathered while running rule state machine. It's
       --   only used at the CEP engine initialization phase, when calling
       --   'buildMachine'.
+    , _rulePhases :: !(Set.Set String)
+      -- ^ Set of possible phases.
     }
 
 data Mode = Read | Write | Execute
@@ -122,6 +124,7 @@ data RuntimeInfo = RuntimeInfo
       , infoSuspendedSM :: Int
       , infoMemory :: Maybe MemoryInfo
       , infoSMs :: M.Map String Int
+      , infoRulesPhases :: M.Map RuleKey (Set.Set String)
       }
   deriving (Show, Generic, Typeable)
 
@@ -362,13 +365,14 @@ defaultHandler st _ (Query (GetRuntimeInfo _mem RuntimeInfoTotal)) =
         , infoRunningSM  = nRunning
         , infoSuspendedSM = nSuspended
         , infoSMs = M.unionWith (+) mRunning mSuspended
+        , infoRulesPhases = M.map _rulePhases (_machRuleData st)
         }
 
 interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool
 interestingMsg k msg = k $ messageFingerprint msg
 
 foreach :: Functor f => f a -> (a -> b) -> f b
-foreach xs f = fmap f xs
+foreach = flip fmap
 
 cepInitRule :: Application app => InitRule app -> Machine app -> Request m a -> a
 cepInitRule ir@(InitRule rd typs) st@Machine{..} req@(Run i) = do
