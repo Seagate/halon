@@ -85,7 +85,7 @@ eqStats nids (EQStatsOptions t c _) = do
         runtimeInfoRequest eq
         expect >>= displayCepReply
   where
-    display (EQStatResp{..}) = do
+    display EQStatResp{..} = do
       putStrLn $ printf "EQ size: %d" eqs_queue_size
       putStrLn $ printf "Worker pool max threads: %d" $ poolProcessBound eqs_pool_stats
       putStrLn $ printf "Worker pool current threads: %d" $ poolProcessCount eqs_pool_stats
@@ -129,7 +129,7 @@ rcStats nids (RCStatsOptions t) = do
     _ <- promulgateEQ eqs $ DebugRequest sp
     receiveChan rp >>= liftIO . display
   where
-    display (DebugResponse{..}) = do
+    display DebugResponse{..} = do
       putStrLn $ printf "EQ nodes: %s" (show dr_eq_nodes)
       putStrLn $ printf (unlines
                           [ "Resource Graph:"
@@ -181,14 +181,14 @@ cepStats nids (CEPStatsOptions t m) = do
     labelRecoveryCoordinator = "mero-halon.RC"
 
 displayCepReply :: RuntimeInfo -> Process ()
-displayCepReply (RuntimeInfo{..}) = liftIO $ do
+displayCepReply RuntimeInfo{..} = liftIO $ do
   putStrLn $ printf (unlines
                       [ "Total SMs: %d"
                       , "Running SMs: %d"
                       , "Suspended SMs : %d"
                       ]
-                     )
-                     infoTotalSM infoRunningSM infoSuspendedSM
+                    )
+                    infoTotalSM infoRunningSM infoSuspendedSM
   for_ infoMemory $ \MemoryInfo{..} ->
     putStrLn $ printf (unlines
                         [ "Total Memory: %dB"
@@ -209,10 +209,10 @@ displayCepReply (RuntimeInfo{..}) = liftIO $ do
         space n = replicate n ' '
       in do
         putStrLn (fst heading
-                ++ (space (maxRuleNameLength - length (fst heading) + padding))
+                ++ space (maxRuleNameLength - length (fst heading) + padding)
                 ++ "|"
                 ++ space padding
-                ++ (snd heading)
+                ++ snd heading
                  )
         putStrLn $ replicate ( maxRuleNameLength
                              + 3*padding
@@ -221,10 +221,10 @@ displayCepReply (RuntimeInfo{..}) = liftIO $ do
                              '-'
         for_ (M.toAscList sms) $ \(n, c) ->
           putStrLn $ n
-                  ++ (space (maxRuleNameLength - length n + padding))
+                  ++ space (maxRuleNameLength - length n + padding)
                   ++ "|"
-                  ++ (space padding)
-                  ++ (show c)
+                  ++ space padding
+                  ++ show c
 
     displayRulePhases :: M.Map RuleKey (Set String) -> IO ()
     displayRulePhases rules =
@@ -239,7 +239,7 @@ parseCEPStatsOptions = CEPStatsOptions
         O.metavar "TIMEOUT (μs)"
         <> O.long "rc-timeout"
         <> O.value 1000000
-        <> O.help ("Time to wait for the location of an RC on the given nodes.")
+        <> O.help "Time to wait for the location of an RC on the given nodes."
       )
   <*> O.switch
         ( O.long "memory"
