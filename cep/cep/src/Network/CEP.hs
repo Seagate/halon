@@ -75,6 +75,7 @@ module Network.CEP
     , RuleKey(..)
     , RuntimeInfoRequest(..)
     , RuntimeInfo(..)
+    , RuntimeRuleInfo(..)
     , cepEngine
     , execute
     , runItForever

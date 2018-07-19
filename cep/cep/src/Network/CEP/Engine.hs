@@ -118,14 +118,22 @@ data MemoryInfo = MemoryInfo
 
 instance Binary MemoryInfo
 
+data RuntimeRuleInfo = RuntimeRuleInfo
+    { rri_types :: Set.Set Fingerprint
+    , rri_phases :: Set.Set String
+    }
+  deriving (Show, Generic, Typeable)
+
+instance Binary RuntimeRuleInfo
+
 data RuntimeInfo = RuntimeInfo
-      { infoTotalSM :: Int
-      , infoRunningSM :: Int
-      , infoSuspendedSM :: Int
-      , infoMemory :: Maybe MemoryInfo
-      , infoSMs :: M.Map String Int
-      , infoRulesPhases :: M.Map RuleKey (Set.Set String)
-      }
+    { infoTotalSM :: Int
+    , infoRunningSM :: Int
+    , infoSuspendedSM :: Int
+    , infoMemory :: Maybe MemoryInfo
+    , infoSMs :: M.Map String Int
+    , infoRules :: M.Map RuleKey RuntimeRuleInfo
+    }
   deriving (Show, Generic, Typeable)
 
 instance Binary RuntimeInfo
@@ -365,7 +373,10 @@ defaultHandler st _ (Query (GetRuntimeInfo _mem RuntimeInfoTotal)) =
         , infoRunningSM  = nRunning
         , infoSuspendedSM = nSuspended
         , infoSMs = M.unionWith (+) mRunning mSuspended
-        , infoRulesPhases = M.map _rulePhases (_machRuleData st)
+        , infoRules = M.map (\RuleData{..} -> RuntimeRuleInfo
+                                (Set.map _typFingerprint _ruleTypes)
+                                _rulePhases)
+                            (_machRuleData st)
         }
 
 interestingMsg :: (Fingerprint -> Bool) -> Message -> Bool

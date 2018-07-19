@@ -24,7 +24,6 @@ import           Data.Foldable (for_)
 import qualified Data.Map.Strict as M
 import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))
-import           Data.Set (Set)
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Events.Info
 import           HA.Resources (Node(..))
@@ -34,6 +33,7 @@ import           Network.CEP
   , RuleKey(..)
   , RuntimeInfoRequest(..)
   , RuntimeInfo(..)
+  , RuntimeRuleInfo(..)
   )
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
@@ -198,7 +198,8 @@ displayCepReply RuntimeInfo{..} = liftIO $ do
                       )
                       minfoTotalSize minfoSMSize minfoStateSize
   displayRunningSMs infoSMs
-  displayRulePhases infoRulesPhases
+  putStrLn ""
+  displayRules infoRules
   where
     displayRunningSMs :: M.Map String Int -> IO ()
     displayRunningSMs sms = let
@@ -226,11 +227,15 @@ displayCepReply RuntimeInfo{..} = liftIO $ do
                   ++ space padding
                   ++ show c
 
-    displayRulePhases :: M.Map RuleKey (Set String) -> IO ()
-    displayRulePhases rules =
-      for_ (M.toAscList rules) $ \(RuleKey idx name, phases) -> do
+    displayRules :: M.Map RuleKey RuntimeRuleInfo -> IO ()
+    displayRules rules =
+      for_ (M.toAscList rules) $ \(RuleKey idx name, RuntimeRuleInfo{..}) -> do
         putStrLn $ printf "% 3u. %s" idx name
-        for_ phases $ \ph ->
+        putStrLn "   # types:"
+        for_ rri_types $ \fp ->
+          putStrLn $ "     " ++ show fp
+        putStrLn "   # phases:"
+        for_ rri_phases $ \ph ->
           putStrLn $ "     " ++ ph
 
 parseCEPStatsOptions :: O.Parser CEPStatsOptions
