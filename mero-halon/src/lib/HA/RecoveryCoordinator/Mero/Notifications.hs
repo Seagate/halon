@@ -238,16 +238,13 @@ setPhaseInternalNotification :: forall app b l g.
                              -> (M0.StateCarrier b -> M0.StateCarrier b -> Bool)
                              -> ((UUID, [(b, M0.StateCarrier b)]) -> PhaseM app l ())
                              -> RuleM app l ()
-setPhaseInternalNotification handle p act = setPhaseIf handle changeGuard act
+setPhaseInternalNotification handle p act =
+  setPhase handle $ \(HAEvent eid (msg :: InternalObjectStateChangeMsg)) -> do
+    InternalObjectStateChange iosc <- liftProcess $ decodeP msg
+    case mapMaybe getObjP iosc of
+      []   -> continue handle
+      objs -> act (eid, objs)
   where
-    changeGuard :: HAEvent InternalObjectStateChangeMsg
-                -> g -> l -> Process (Maybe (UUID, [(b, M0.StateCarrier b)]))
-    changeGuard (HAEvent eid msg) _ _ =
-      (liftProcess . decodeP $ msg) >>= \(InternalObjectStateChange iosc) ->
-        case mapMaybe getObjP iosc of
-          [] -> return Nothing
-          objs -> return $ Just (eid, objs)
-
     getObjP x = case x of
       AnyStateChange (a::z) o n _ -> case eqT :: Maybe (z :~: b) of
         Just Refl | p o n -> Just (a,n)
