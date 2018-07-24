@@ -39,7 +39,10 @@ library
                        bytestring,
                        mtl,
                        multimap==1.2.*,
-                       containers >= 0.5.10,
+                       -- lts-9.21 provides containers-0.5.7.1.
+                       -- We use `Data.Sequence ((:<|))` pattern synonym,
+                       -- which appeared in containers-0.5.8.
+                       containers >= 0.5.8,
                        operational,
                        text,
                        transformers,
