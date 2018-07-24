@@ -279,9 +279,11 @@ disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
 
 -- | Add pools and profiles to the resource graph.
 loadMeroPools :: [CI.M0Pool] -> PhaseM RC l (Map T.Text M0.Pool)
-loadMeroPools ipools =
+loadMeroPools ipools = do
     let args_XXX = zip ipools (True:repeat False)  -- XXX-MULTIPOOLS QnD
-    in createDIXPool >> mapM createIOPool args_XXX >>= pure . Map.fromList
+    ioPools <- mapM createIOPool args_XXX
+    createDIXPool
+    pure (Map.fromList ioPools)
 
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
@@ -348,6 +350,10 @@ createIOPool (CI.M0Pool{..}, metadata_p_XXX) = do
 --   no associated devices). In this case, we use the special FID 'M0_FID0'
 --   in the 'rt_imeta_pver' field. This should validate correctly in Mero
 --   iff there are no CAS services.
+--
+-- NOTE: 'createDIXPool' must not be called before 'createIOPool'.
+--       Otherwise fake 'M0.Disk's, created by 'createDIXPool', will be
+--       added to IO pool, and we don't want that.
 createDIXPool :: PhaseM RC l ()
 createDIXPool = do
     let attrs = CI.PDClustAttrs0
