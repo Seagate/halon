@@ -33,7 +33,7 @@ tests launch = testGroup "regression"
 testFork :: Process ()
 testFork = do
     self <- getSelfPid
-    pid  <- spawnLocal $ execute () (rules self)
+    pid  <- spawnLocal $ execute () (rule self)
     usend pid (0::Int)
     usend pid ()
     usend pid (1::Int)
@@ -54,9 +54,9 @@ testFork = do
       ] =<< replicateM 6 expect
   where
 
-    rules :: ProcessId -> Specification TestApp ()
-    rules sup = do
-      define "insert" $ do
+    rule :: ProcessId -> Specification TestApp ()
+    rule sup = do
+      define "fork-remove-msgs" $ do
         handler <- phaseHandle "load"
         work    <- phaseHandle "work"
         finish  <- phaseHandle "finish"
@@ -77,7 +77,7 @@ testFork = do
 testForkPrompt :: Process ()
 testForkPrompt = do
     self <- getSelfPid
-    pid  <- spawnLocal $ execute () (rules self)
+    pid  <- spawnLocal $ execute () (rule self)
     usend pid ()
     usend pid (0::Int)
     -- usend pid ()
@@ -88,9 +88,9 @@ testForkPrompt = do
       , "work0"
       ] =<< replicateM 2 expect
   where
-    rules :: ProcessId -> Specification TestApp ()
-    rules sup = do
-      define "insert" $ do
+    rule :: ProcessId -> Specification TestApp ()
+    rule sup = do
+      define "fork-prompt" $ do
         handler <- phaseHandle "load"
         work    <- phaseHandle "work"
         finish  <- phaseHandle "finish"
@@ -113,15 +113,15 @@ testForkPrompt = do
 testForkTimeout :: Process ()
 testForkTimeout = do
     self <- getSelfPid
-    pid  <- spawnLocal $ execute () (rules self)
+    pid  <- spawnLocal $ execute () (rule self)
     usend pid (4::Int)
     usend pid (2::Int)
     assertEqual "foo"
       [ "work2", "work4"] =<< replicateM 2 expect
   where
-    rules :: ProcessId -> Specification TestApp ()
-    rules sup = do
-      define "insert" $ do
+    rule :: ProcessId -> Specification TestApp ()
+    rule sup = do
+      define "fork-timeout" $ do
         handler <- phaseHandle "load"
         work    <- phaseHandle "work"
         finish  <- phaseHandle "finish"

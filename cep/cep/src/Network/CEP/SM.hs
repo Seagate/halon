@@ -125,7 +125,7 @@ newSM key startPhase rn ps initialBuffer initialL logger =
               SM_Complete _ [] -> do
                 -- This branch is required if we want to rule to be restarted
                 -- once it finishes "normally".
-                liftIO $ traceMarkerIO $ "cep: complete: " ++ pname
+                liftIO $ traceMarkerIO $ "cep: complete0: " ++ pname
                 let result = SMResult idm SMFinished (info [SuccessExe pname b buffer])
                 g <- use engineStateGlobal
                 for_ logger $ \lf ->

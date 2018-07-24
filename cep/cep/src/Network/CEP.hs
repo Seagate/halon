@@ -351,7 +351,7 @@ runItForever start_eng = do
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
           cruise debug_mode loop nxt_eng
         go inner Nothing = do
-          liftIO $ traceMarkerIO "cep loop: tick"
+          liftIO $ traceMarkerIO $ "cep loop=" ++ show loop ++ ": tick"
           (ri, nxt_eng) <- stepForward tick inner
           let act = requestAction tick
           when debug_mode . liftIO $ dumpDebuggingInfo act loop ri
