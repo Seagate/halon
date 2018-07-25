@@ -22,13 +22,19 @@ H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
 ## Configurable section
 
 export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
-[[ -d $M0_SRC_DIR ]]                || die "$M0_SRC_DIR: No such directory"
-[[ -d $M0_SRC_DIR/mero ]]           || die "$M0_SRC_DIR: No Mero sources found"
-[[ -x $M0_SRC_DIR/mero/.libs/m0d ]] || die "$M0_SRC_DIR: Mero is not built"
 ## -------------------------------------------------------------------
 
 PROG="${0##*/}"
 SUDO='sudo -E'
+
+assert_mero() {
+    [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
+    [[ -d $M0_SRC_DIR/mero ]] || die "$M0_SRC_DIR: No Mero sources found"
+    if [[ $# -gt 0 ]]; then
+        [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] ||
+            die "$M0_SRC_DIR: Mero is not built"
+    fi
+}
 
 cmd_setup() {
     stack setup
@@ -45,6 +51,7 @@ cmd_setup() {
 ## Still, if we ever need this function to be exported, we better export
 ## `h0 stack` instead.
 _stack_build() {
+    assert_mero libs
     PKG_CONFIG_PATH=$M0_SRC_DIR \
         stack \
             --extra-include-dirs="$M0_SRC_DIR" \
@@ -55,6 +62,7 @@ _stack_build() {
 }
 
 cmd_test() {
+    assert_mero libs
     LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         _stack_build --test "$@"
     # Here we are using the fact that `stack test` is a shortcut for
@@ -79,10 +87,13 @@ cmd_clean() {
 
 cmd_install() {
     $SUDO $H0_SRC_DIR/scripts/install-halon-services -l
+    assert_mero
     $SUDO $M0_SRC_DIR/scripts/install-mero-service -l
 }
 
 cmd_uninstall() {
+    assert_mero
+
     case ${1:-pass} in
         -c|--clean)
             $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
@@ -135,6 +146,8 @@ cmd_stop() {
 }
 
 cmd_path() {
+    assert_mero libs
+
     [ -d ~/.stack ] ||
         die "Stack environment is not configured. Run \`$PROG setup' first."
     echo "halon-bin: $(stack path --local-install-root)/bin"
