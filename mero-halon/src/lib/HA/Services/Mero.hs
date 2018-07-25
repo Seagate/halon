@@ -322,8 +322,8 @@ dixInit mc imeta = do
       , "-p", fidToStr (mcProfile mc)
       , "-a", "create"
       ]
-    localEP = takeWhile (/= '@') (mcHAAddress mc) ++ dixEP
-    dixEP = "@tcp:12345:34:102"
+    localEP = takeWhile (/= ':') (mcHAAddress mc) ++ dixEP
+    dixEP = ":12345:34:102"
 
 -- | Convert a process run type and 'Fid' to the corresponding systemd
 -- service string.

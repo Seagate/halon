@@ -134,7 +134,7 @@ lnidParser = choice [
     ]
   where
     parseTransportType = choice [
-        string "02ib" $> O2IB
+        string "o2ib" $> O2IB
       , string "tcp" $> TCP
       ]
 
