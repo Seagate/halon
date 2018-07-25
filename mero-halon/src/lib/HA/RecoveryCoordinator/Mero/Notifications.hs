@@ -245,9 +245,10 @@ setPhaseInternalNotification handle p act =
       []   -> continue handle
       objs -> act (eid, objs)
   where
-    getObjP x = case x of
-      AnyStateChange (a::z) o n _ -> case eqT :: Maybe (z :~: b) of
-        Just Refl | p o n -> Just (a,n)
+    getObjP :: AnyStateChange -> Maybe (b, M0.StateCarrier b)
+    getObjP (AnyStateChange (obj :: a) old new _) =
+      case eqT :: Maybe (a :~: b) of
+        Just Refl | p old new -> Just (obj, new)
         _ -> Nothing
 
 -- | @'setPhaseNotified' handle change extract act@
