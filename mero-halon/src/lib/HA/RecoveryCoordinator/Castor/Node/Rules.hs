@@ -782,8 +782,6 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
       modify Local $ rlens fldRep .~
         Field (Just $ NodeProcessesStarted m0node)
       ps <- startProcesses host clovisProcess
-      Log.rcLog' Log.DEBUG $ "Starting these clovis processes: "
-                          ++ show (M0.showFid <$> ps)
       modify Local $ rlens fldWaitingProcs . rfield %~ (ps ++)
       continue clients_result
 
