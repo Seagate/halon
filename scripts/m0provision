@@ -113,6 +113,14 @@ cmd_install()
 
     local hosts=$1
 
+    # Halon can choose to run `m0dixinit` on any node of the cluster, which can
+    # be a problem because of how libtool-based builds work - an executable gets
+    # linked on its first run, so if there is no build env on a node where we
+    # start `m0dixinit` (which is true for SSUs and Clients) it's going to fail.
+    # As a workaround, we do a dumb-start of `m0dixinit` here, just to get it
+    # properly linked.
+    $M0_SRC_DIR/utils/m0dixinit &> /dev/null || true
+
     _pdsh $hosts sudo $M0_SRC_DIR/scripts/install-mero-service -l
     _pdsh $hosts sudo $H0_SRC_DIR/scripts/install-halon-services -l
 }
