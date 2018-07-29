@@ -295,6 +295,8 @@ instance Exception PoolCreationError
 --   - an actual ("base") pool version;
 --   - formulaic pool versions;
 --   - a meta-data pool version.
+--
+-- XXX Use "SNS pool" term instead.
 createIOPool :: (CI.M0Pool, Bool) -> PhaseM RC l (T.Text, M0.Pool)
 createIOPool (CI.M0Pool{..}, metadata_p_XXX) = do
     let throw' :: String -> PhaseM RC l a

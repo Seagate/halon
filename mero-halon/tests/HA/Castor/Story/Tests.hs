@@ -394,8 +394,8 @@ testDiskFailure transport pg = run transport pg [] $ \ts -> do
 
 testHitResetLimit :: (Typeable g, RGroup g) => Transport -> Proxy g -> IO ()
 testHitResetLimit transport pg = do
-  dopts <- mkDefaultTestOptions
-  run' transport pg [] (opts dopts) $ \ts -> do
+  opts <- reduceTransientTimeout <$> mkDefaultTestOptions
+  run' transport pg [] opts $ \ts -> do
     subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy (HAEvent ResetAttempt))
     subscribeOnTo [processNodeId $ _ts_rc ts] (Proxy :: Proxy ResetAttemptResult)
     sdev <- G.getGraph (_ts_mm ts) >>= findSDev
@@ -416,7 +416,7 @@ testHitResetLimit transport pg = do
       Just M0.SDSFailed <- waitState m0sdev (_ts_mm ts) 2 10 (== M0.SDSFailed)
       return ()
   where
-    opts = \o -> o {
+    reduceTransientTimeout opts' = opts' {
       _to_modify_halon_vars = \vars -> vars {
           -- Set a low transient drive timeout to ensure we go to FAILED state
           _hv_drive_transient_timeout = 2

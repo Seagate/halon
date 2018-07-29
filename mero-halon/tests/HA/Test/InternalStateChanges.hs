@@ -76,16 +76,7 @@ stateCascade t pg = do
     rule :: Definitions RC ()
     rule = defineSimple "stateCascadeTest" $ \(H.RuleHook pid) -> do
       rg <- getGraph
-      let Just p = listToMaybe $
-              -- XXX Why don't we use 'M0.getM0Processes'?
-              [ proc
-              | site :: M0.Site <- G.connectedTo (M0.getM0Root rg) M0.IsParentOf rg
-              , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
-              , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-              , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-              , Just (node :: M0.Node) <- [G.connectedFrom M0.IsOnHardware ctrl rg]
-              , proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
-              ]
+      let Just p = listToMaybe (M0.getM0Processes rg)
           srvs = G.connectedTo p M0.IsParentOf rg :: [M0.Service]
       _ <- applyStateChanges [stateSet p Tr.processStarting]
       rg' <- getGraph

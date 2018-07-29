@@ -59,7 +59,7 @@ sortsInteresting = do
 -- | Sorts uninteresting things
 sortsUninteresting :: IO ()
 sortsUninteresting = do
-  assertEqual "Sorts uninteresting" (orderSet ordering $ mkN startSet) (mkN stopSet)
+  assertEqual "Sorts uninteresting" (orderSet [] $ mkN startSet) (mkN stopSet)
   where
     startSet :: [Fid]
     startSet = [ M0.fid $ M0.Enclosure (M0.fidInit (Proxy :: Proxy M0.Enclosure) 1 2)
@@ -76,6 +76,3 @@ sortsUninteresting = do
               , M0.fid $ M0.Enclosure (M0.fidInit (Proxy :: Proxy M0.Enclosure) 1 1)
               , M0.fid $ M0.Enclosure (M0.fidInit (Proxy :: Proxy M0.Enclosure) 1 2)
               ]
-
-    ordering :: [Word64]
-    ordering = []

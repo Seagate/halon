@@ -192,7 +192,7 @@ mkHpiTests tr p = testGroup "HPI"
     $ map (\info -> testSuccess (mkTestName info) $ genericHpiTest info tr p) hpiTests
   where
     mkTestName :: HpiTestInfo -> String
-    mkTestName (HTI{..}) =
+    mkTestName HTI{..} =
       intercalate ";" [bool "was_removed" "was_installed" hpiWasInstalled
                       ,bool "was_poweredoff" "was_poweredon" hpiWasPowered
                       ,bool "same" "new" hpiIsNew
