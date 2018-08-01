@@ -47,6 +47,7 @@ ghc-options:
   #
   # TODO: Find the root cause of the problem.
   distributed-process: -O0
+rebuild-ghc-options: true
 
 docker:
   enable: false
