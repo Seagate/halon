@@ -737,7 +737,7 @@ storageIndex ''PoolRepairStatus "a238bffa-4a36-457d-95e8-2947ed8f45e5"
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
 -- | Vector of failed devices. We keep the order of failures because
--- mero should always send information about that to mero in the same
+-- halon should always send information about that to mero in the same
 -- order.
 newtype DiskFailureVector = DiskFailureVector [Disk]
   deriving (Eq, Ord, Show, Generic, Typeable, Hashable, ToJSON)
