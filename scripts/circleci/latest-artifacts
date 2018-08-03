@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -e -o pipefail
+
+### helper script for getting links to the last successful artifacts on CircleCI
+
+readonly PROG_NAME="${0##*/}"
+#readonly github_token="${SSG_GITHUB_MERO_CI_API_TOKEN:?environment variable must be set}"
+#readonly circleci_token="${SSG_CIRCLECI_MERO_CI_API_TOKEN:?environment variable must be set}"
+
+(($# >= 3)) || {
+    echo >&2 "usage: $PROG_NAME <project> <branch> <os_release>"
+    echo >&2 "                        mero      master   latest"
+    echo >&2 "                        halon     teacake  74"
+    exit 2
+}
+
+project=$1
+branch=$2
+os_release=$3
+
+die()
+{
+    echo -e "$PROG_NAME: $@" >&2
+    exit 1
+}
+
+build_num=$(curl -s "https://circleci.com/api/v1.1/project/github/seagate-ssg/$project?circle-token=$circleci_token" |
+            jq -r 'map(select(.workflows.job_name == "artifacts" and .workflows.workflow_name == "'$branch'_'$os_release'").build_num)|.[0]')
+
+[[ $build_num != null ]] ||
+    die "unable to find latest successful build on CircleCI for: $project $branch $os_release"
+
+artifacts_urls=$(curl -s "https://circleci.com/api/v1.1/project/github/seagate-ssg/$project/$build_num/artifacts?circle-token=$circleci_token" |
+                 jq -r '.[].url')
+
+[[ -n $artifacts_urls ]] ||
+    die "unable to get artifacts information for build #$build_num"
+
+echo "$artifacts_urls"
