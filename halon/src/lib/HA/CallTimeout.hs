@@ -8,6 +8,7 @@
 #if __GLASGOW_HASKELL__ < 710
 {-# LANGUAGE OverlappingInstances #-}
 #endif
+{-# LANGUAGE MonoLocalBinds #-}
 
 module HA.CallTimeout
   ( callTimeout

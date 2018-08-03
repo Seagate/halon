@@ -201,19 +201,22 @@ class ( G.Resource a
     hasStateDict :: Static (Dict (HasConfObjectState a))
 
     setState :: a -> StateCarrier a -> G.Graph -> G.Graph
-    default setState :: G.Relation Is a ConfObjectState
-                     => a -> ConfObjectState -> G.Graph -> G.Graph
+    default setState :: ( G.Relation Is a ConfObjectState
+                        , StateCarrier a ~ ConfObjectState)
+                     => a -> StateCarrier a -> G.Graph -> G.Graph
     setState x st = G.connect x Is st
 
     getState :: a -> G.Graph -> StateCarrier a
     default getState :: ( G.CardinalityTo Is a ConfObjectState ~ 'AtMostOne
                         , G.Relation Is a ConfObjectState
+                        , StateCarrier a ~ ConfObjectState
                         )
-                     => a -> G.Graph -> ConfObjectState
+                     => a -> G.Graph -> StateCarrier a
     getState x rg = fromMaybe M0_NC_ONLINE $ G.connectedTo x Is rg
 
     toConfObjState :: a -> StateCarrier a -> ConfObjectState
-    default toConfObjState  :: a -> StateCarrier a -> StateCarrier a
+    default toConfObjState :: ConfObjectState ~ StateCarrier a
+                           => a -> StateCarrier a -> ConfObjectState
     toConfObjState = const id
 
 -- | Associated type used where we carry no explicit state for a type.

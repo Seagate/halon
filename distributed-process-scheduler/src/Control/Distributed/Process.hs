@@ -16,6 +16,8 @@
 -- "Control.Distributed.Process.Scheduler.Raw".
 
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE MonoLocalBinds #-}
+
 module Control.Distributed.Process
   ( Match
   , usend

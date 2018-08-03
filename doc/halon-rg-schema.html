@@ -35,6 +35,7 @@ d3.select('#graph').graphviz()
     .attributer(attributer)
     .renderDot(String.raw`
 digraph ResourceGraphSchema {
+    "R.Node" -> "SvcI.ServiceInfoMsg" [label="R.Has", arrowhead=onormal, arrowtail=oinv, dir=both]
     "R.Cluster" -> "SvcI.Service-Svcs.Ping.PingConf" [label="SvcI.Supports"]
     "R.Cluster" -> "SvcI.Service-Svcs.Noisy.NoisyConf" [label="SvcI.Supports"]
     "SvcI.Service-Svcs.Noisy.NoisyConf" -> "Svcs.Noisy.NoisyPingCount" [label="Svcs.Noisy.HasPingCount", arrowtail=oinv, dir=both]
@@ -45,6 +46,11 @@ digraph ResourceGraphSchema {
     "RC.RC" -> "Svcs.Mero.RC.Resources.StateDiff" [label="R.Has", arrowhead=onormal]
     "Svcs.Mero.RC.Resources.StateDiff" -> "M0.Process" [label="Svcs.Mero.RC.Resources.DeliveryFailedTo", arrowhead=onormal, arrowtail=oinv, dir=both]
     "Svcs.Mero.RC.Resources.StateDiff" -> "M0.Process" [label="Svcs.Mero.RC.Resources.DeliveredTo", arrowhead=onormal, arrowtail=oinv, dir=both]
+    "R.Cluster" -> "SvcI.Service-Svcs.DecisionLog.Types.DecisionLogConf" [label="SvcI.Supports"]
+    "R.Cluster" -> "SvcI.Service-Svcs.SSPL.LL.Resources.SSPLConf" [label="SvcI.Supports"]
+    "Cas.Slot" -> "Svcs.SSPL.LL.Resources.LedControlState" [label="R.Has", arrowtail=oinv, dir=both]
+    "R.Cluster" -> "SvcI.Service-Svcs.Mero.Types.MeroConf" [label="SvcI.Supports"]
+    "R.Cluster" -> "Svcs.Mero.Types.MeroServiceInstance" [label="R.Has"]
     "R.Cluster" -> "R.Update.Todo" [label="R.Has"]
     "RC.Subscriber" -> "RC.RC" [label="RC.SubscribedTo", arrowtail=oinv, dir=both]
     "R.Node" -> "SvcI.ServiceInfoMsg" [label="RC.Stopping", arrowhead=onormal, arrowtail=oinv, dir=both]
@@ -59,12 +65,6 @@ digraph ResourceGraphSchema {
     "M0.Enclosure" -> "M0.Note.ConfObjectState" [label="Cas.Is", arrowtail=oinv, dir=both]
     "M0.Controller" -> "M0.Note.ConfObjectState" [label="Cas.Is", arrowtail=oinv, dir=both]
     "R.Cluster" -> "M0.Note.PrincipalRM" [label="R.Has"]
-    "R.Cluster" -> "SvcI.Service-Svcs.Mero.Types.MeroConf" [label="SvcI.Supports"]
-    "R.Cluster" -> "Svcs.Mero.Types.MeroServiceInstance" [label="R.Has"]
-    "R.Cluster" -> "SvcI.Service-Svcs.SSPL.LL.Resources.SSPLConf" [label="SvcI.Supports"]
-    "Cas.Slot" -> "Svcs.SSPL.LL.Resources.LedControlState" [label="R.Has", arrowtail=oinv, dir=both]
-    "R.Cluster" -> "SvcI.Service-Svcs.DecisionLog.Types.DecisionLogConf" [label="SvcI.Supports"]
-    "R.Node" -> "SvcI.ServiceInfoMsg" [label="R.Has", arrowhead=onormal, arrowtail=oinv, dir=both]
     "R.Cluster" -> "R.Node" [label="R.Has", arrowhead=onormal]
     "R.Cluster" -> "R.EpochId" [label="R.Has"]
     "R.Cluster" -> "M0.BootLevel" [label="M0.StopLevel"]

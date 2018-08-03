@@ -22,5 +22,5 @@ rpclite_build pd lbi uh bf@(BuildFlags { buildVerbosity = vf }) = do
       ff2c = fmap (++ "/xcode/ff2c/m0ff2c") mero_root
       progdb = userMaybeSpecifyPath "m0ff2c" ff2c $ withPrograms lbi
   (prog, _) <- requireProgram v (simpleProgram "m0ff2c") progdb
-  rawSystemProgram v prog ["rpclite/rpclite_fop.ff"]
+  runProgram v prog ["rpclite/rpclite_fop.ff"]
   (buildHook simpleUserHooks) pd lbi uh bf

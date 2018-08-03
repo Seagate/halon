@@ -16,7 +16,7 @@ data Options = Options ()
   deriving (Show, Eq)
 
 parser :: Opt.Parser Options
-parser = pure "not implemented"
+parser = pure $ Options ()
 
 run :: [NodeId] -> Options -> Process ()
-run = error "not implemented"
+run = error "Handler.Mero.Node.Remove not implemented"

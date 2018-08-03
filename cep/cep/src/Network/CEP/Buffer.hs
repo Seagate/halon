@@ -23,6 +23,7 @@ module Network.CEP.Buffer
     ) where
 
 import           Data.Dynamic
+import           Data.Typeable (TypeRep, typeOf)
 import           Data.Foldable (toList)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map

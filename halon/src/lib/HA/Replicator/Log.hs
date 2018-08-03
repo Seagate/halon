@@ -170,7 +170,7 @@ fromPort sdictState name h port = do
 
 remotableDecl [ [d|
 
- createRLogGroup :: ByteString
+ createRLogGroup :: forall st. ByteString
                  -> SerializableDict st
                  -> Process (RLogGroup st)
  createRLogGroup bs SerializableDict = case decode bs of

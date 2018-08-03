@@ -31,7 +31,6 @@ instance (Eq k, Hashable k, Binary k, Binary v) => SafeCopy (HashMap k v) where
   getCopy = contain $ Data.Binary.decode <$> safeGet
   kind = primitive
 
-deriving instance Generic Value
 instance Binary Value
 
 deriveSafeCopy 0 'primitive ''Scientific

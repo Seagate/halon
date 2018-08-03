@@ -2,6 +2,8 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE MonoLocalBinds #-}
+
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Core
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.

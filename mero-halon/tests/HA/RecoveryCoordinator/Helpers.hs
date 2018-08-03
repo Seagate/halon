@@ -1,5 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MonoLocalBinds      #-}
+
 -- |
 -- Module    : HA.RecoveryCoordinator.Helpers
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
@@ -9,6 +11,7 @@
 -- family of tests.
 --
 -- TODO: Fold into other helpers and only have one module.
+
 module HA.RecoveryCoordinator.Helpers where
 
 import Control.Distributed.Process

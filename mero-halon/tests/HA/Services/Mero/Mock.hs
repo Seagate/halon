@@ -3,6 +3,8 @@
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
+{-# LANGUAGE MonoLocalBinds  #-}
+
 -- |
 -- Module    : HA.Services.Mero.Mock
 -- Copyright : (C) 2016 Seagate Technology Limited.

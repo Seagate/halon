@@ -2,6 +2,7 @@
 {-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE QuasiQuotes          #-}
 {-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE MonoLocalBinds       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module    : HA.SafeCopy

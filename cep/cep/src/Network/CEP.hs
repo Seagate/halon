@@ -98,7 +98,8 @@ module Network.CEP
     ) where
 
 import           Control.Monad
-import           Data.Dynamic
+import           Data.Proxy
+import           Data.Typeable
 import           Data.Foldable (for_)
 
 import           Control.Distributed.Process hiding (bracket_)

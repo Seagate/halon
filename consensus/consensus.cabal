@@ -27,6 +27,7 @@ Library
                     binary >= 0.6,
                     distributed-static >= 0.2.0,
                     either >= 3.0.0,
+                    transformers-either >= 0.0.2,
                     mtl >= 2.0.0,
                     distributed-process-scheduler,
                     syb >= 0.3

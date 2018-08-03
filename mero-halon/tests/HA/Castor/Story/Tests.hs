@@ -174,7 +174,7 @@ findSDev :: G.Graph -> Process ThatWhichWeCallADisk
 findSDev rg = case findSDevs rg of
   dv : _ -> return dv
   _ -> do
-    liftIO $ assertFailure "Can't find a M0.SDev or its serial number"
+    _ <- liftIO $ assertFailure "Can't find a M0.SDev or its serial number"
     error "Unreachable"
 
 -- | Find 'Enclosure' that 'StorageDevice' ('aDiskSD') belongs to.
@@ -192,8 +192,9 @@ find2SDev rg =
             ]
   in case dvs of
     _:dv:_ -> return dv
-    _    -> do liftIO $ assertFailure "Can't find a second M0.SDev or its serial number"
-               error "Unreachable"
+    _    -> do
+      _ <- liftIO $ assertFailure "Can't find a second M0.SDev or its serial number"
+      error "Unreachable"
 
 -- | Check if specified device have RemovedAt attribute.
 checkStorageDeviceRemoved :: Cas.Enclosure -> Int -> G.Graph -> Bool

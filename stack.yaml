@@ -1,4 +1,4 @@
-resolver: lts-9.21
+resolver: lts-11.22
 
 packages:
 - cep/cep
@@ -24,7 +24,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/tasty-files.git
-    commit: ab35f545a7ac52168ef1d4c5babbc34942762a85
+    commit: bf71eb7d3717ee29dbb0632e9ace5d43aaf51ea8
   extra-dep: true
 - location:
     git: https://github.com/seagate-ssg/gitrev.git
@@ -33,13 +33,14 @@ packages:
 
 extra-deps:
 - aeson-schema-0.4.1.3
-- containers-0.5.10.2
-- distributed-process-0.7.4
 - distributed-process-extras-0.3.5
-- distributed-static-0.3.8
+- ede-0.2.9
 - ghc-datasize-0.1.2
-- network-transport-0.5.2
-- network-transport-tcp-0.6.0
+- ghc-heap-view-0.5.10
+
+flags:
+  ghc-heap-view:
+    ghc_8_0: false
 
 ghc-options:
   # XXX `CEP.regression.fork-remove-messages` UT will fail unless

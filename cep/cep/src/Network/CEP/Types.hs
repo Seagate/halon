@@ -30,6 +30,7 @@ import           Data.Set (Set)
 import           Data.Monoid ((<>))
 import           Data.UUID (UUID)
 import           Data.PersistMessage
+import           Data.Proxy
 import qualified Data.IntPSQ as PSQ
 import           Data.Hashable
 import qualified Data.ByteString.Lazy as Lazy (ByteString)

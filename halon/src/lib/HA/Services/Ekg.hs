@@ -58,7 +58,7 @@ import Control.Distributed.Process.Closure
 import Control.Distributed.Static
 import Data.ByteString.Char8 (pack)
 import Data.Map (empty)
-import GHC.Stats (getGCStatsEnabled)
+import GHC.Stats (getRTSStatsEnabled)
 import HA.Service
 import HA.Service.Interface
 import HA.Services.Ekg.Types
@@ -71,7 +71,7 @@ remotableDecl [ [d|
   ekgFunctions :: ServiceFunctions EkgConf
   ekgFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
     bootstrap (EkgConf host port) = do
-      liftIO getGCStatsEnabled >>= \case
+      liftIO getRTSStatsEnabled >>= \case
         False -> return $ Left "ekg service can't run without -T RTS option"
         True -> do
           s <- liftIO $ forkServer (pack host) port

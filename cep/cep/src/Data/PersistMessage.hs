@@ -3,6 +3,8 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MonoLocalBinds #-}
+
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
 -- stability: experimental
@@ -79,7 +81,7 @@ instance Ord PersistMessage where
 -- useful because now a user can't persist messages that aren't safe
 -- and they can't forget to have to provide an instance.
 persistMessage :: (SafeCopy a, Serializable a) => UUID -> a -> PersistMessage
-persistMessage u a = PersistMessage u (stableprint a) (encode a)
+persistMessage u x = PersistMessage u (stableprint x) (encode x)
 
 unwrapMessage :: forall a. Serializable a => PersistMessage -> Maybe a
 unwrapMessage msg =

@@ -171,10 +171,12 @@ Test-Suite random
   Ghc-Options:      -Wall -Werror -threaded
 
   Build-Depends:    base >= 4.7,
+                    binary >= 0.6,
                     consensus,
                     consensus-paxos,
                     constraints >= 0.4,
                     containers,
+                    directory >= 1.2.1,
                     distributed-process-scheduler,
                     distributed-process-test,
                     distributed-static >= 0.2.0,
@@ -185,7 +187,9 @@ Test-Suite random
                     network-transport-tcp,
                     unix,
                     random,
+                    rank1dynamic >= 0.1,
                     network,
+                    mtl >= 2.0,
                     replicated-log
 
 Benchmark state

@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MonoLocalBinds #-}
 -- |
 -- Module    : Handler.Mero.Helpers
 -- Copyright : (C) 2017 Seagate Technology Limited.

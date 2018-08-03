@@ -41,6 +41,7 @@ import qualified Handler.Halon.Station as Station
 import           Lookup (conjureRemoteNodeId)
 import           Network.CEP (pubValue)
 import qualified Options.Applicative as Opt
+import qualified Options.Applicative.Common as Opt
 import qualified Options.Applicative.Internal as Opt
 import qualified Options.Applicative.Types as Opt
 import           System.Environment (lookupEnv)
@@ -109,7 +110,7 @@ data ValidatedConfig = ValidatedConfig
 mkValidatedConfig :: [CI.Site]
                   -> ([CI.RoleSpec] -> Either String [CI.HalonRole])
                   -> String -- ^ Tracking station options.
-                  -> AccValidation [String] ValidatedConfig
+                  -> Validation [String] ValidatedConfig
 mkValidatedConfig sites mkRoles stationOpts =
     ValidatedConfig
         <$> (firstErr "tracking station" validateTStationOpts ^. from _Either)
@@ -135,10 +136,10 @@ mkValidatedConfig sites mkRoles stationOpts =
                                , host <- CI.enc_hosts encl
                                , Just h0params <- [CI.h_halon host] ]
 
-    ehosts :: AccValidation [String] [Host]
+    ehosts :: Validation [String] [Host]
     ehosts = filter (not . null . hRoles) <$> traverse expandHost hosts
 
-    expandHost :: (CI.Host, CI.HalonSettings) -> AccValidation [String] Host
+    expandHost :: (CI.Host, CI.HalonSettings) -> Validation [String] Host
     expandHost (host, h0params) = case mkRoles (CI._hs_roles h0params) of
         Left err -> _Failure # ["Halon role failure for "
                                 ++ T.unpack (CI.h_fqdn host) ++ ": " ++ err]
@@ -150,10 +151,10 @@ mkValidatedConfig sites mkRoles stationOpts =
                         ) <$> parseSvcs roles
 
     parseSvcs :: [CI.HalonRole]
-              -> AccValidation [String] [(String, Service.Options)]
+              -> Validation [String] [(String, Service.Options)]
     parseSvcs = sequenceA . map parseSvc . concatMap CI._hc_h_services
 
-    parseSvc :: String -> AccValidation [String] (String, Service.Options)
+    parseSvc :: String -> Validation [String] (String, Service.Options)
     parseSvc str = case parseHelper Service.parser str of
         Left err -> _Failure # ["Failure to parse service \"" ++ str ++ "\": "
                               ++ showParseError err]
@@ -173,8 +174,8 @@ run opts@Options{..} = do
                                              (CI.mkHalonRoles halonRolesObj)
                                              stationOpts
             case evConfig of
-                AccFailure errs -> perrors ("Failed to validate settings:":errs)
-                AccSuccess vconf -> bootstrap initialData vconf opts
+                Failure errs -> perrors ("Failed to validate settings:":errs)
+                Success vconf -> bootstrap initialData vconf opts
   where
     perrors :: [String] -> Process ()
     perrors = traverse_ out2
@@ -310,7 +311,7 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
 -- | Parse options.
 parseHelper :: Opt.Parser a -> String -> Either Opt.ParseError a
 parseHelper schm text = fst $
-    Opt.runP (Opt.runParserFully Opt.SkipOpts schm t) Opt.defaultPrefs
+    Opt.runP (Opt.runParserFully Opt.Intersperse schm t) Opt.defaultPrefs
   where t = words text
 
 showParseError :: Opt.ParseError -> String
@@ -319,6 +320,8 @@ showParseError (Opt.InfoMsg x) = "error: " ++ x
 showParseError Opt.ShowHelpText = "Invalid usage"
 showParseError Opt.UnknownError = "Unknown error"
 showParseError (Opt.MissingError _ _) = "Missing error"
+showParseError (Opt.ExpectsArgError x) = "Expected arg error: " ++ x
+showParseError (Opt.UnexpectedError x _) = "Unexpected error: " ++ x
 
 out2 :: String -> Process ()
 out2 = liftIO . hPutStrLn stderr

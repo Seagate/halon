@@ -4,6 +4,9 @@
 --
 -- An implementation of a batcher
 --
+
+{-# LANGUAGE MonoLocalBinds #-}
+
 module Control.Distributed.Process.Batcher (batcher) where
 
 import Control.Distributed.Process

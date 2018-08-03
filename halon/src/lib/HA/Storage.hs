@@ -11,6 +11,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE MonoLocalBinds #-}
+
 module HA.Storage
   ( -- * Highlevel API
     -- ** Initialization

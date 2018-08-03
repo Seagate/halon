@@ -606,8 +606,8 @@ mkRole :: FromJSON a
 mkRole template env role pp = do
     let env' = maybe env (`M.union` env) (_rolespec_overrides role)
     roleText <- T.toStrict <$> EDE.eitherResult (EDE.render template env')
-    role' <- first (++ "\n" ++ T.unpack roleText)
-        (Y.decodeEither $ T.encodeUtf8 roleText)
+    role' <- first (\e -> show e ++ "\n" ++ T.unpack roleText)
+        (Y.decodeEither' $ T.encodeUtf8 roleText)
     pp role'
 
 -- | Entry point into 'InitialData' parsing.

@@ -69,7 +69,7 @@ globalRLocalGroups = unsafePerformIO $ newIORef (0, Map.empty)
 
 remotableDecl [ [d|
 
-  createRLocalGroup :: ByteString -> Process (RLocalGroup st)
+  createRLocalGroup :: forall st. ByteString -> Process (RLocalGroup st)
   createRLocalGroup bs = do
       let k = decode bs
       liftIO $ atomicModifyIORef globalRLocalGroups $ \(i, m) ->

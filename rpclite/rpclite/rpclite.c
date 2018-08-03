@@ -136,7 +136,7 @@ struct m0_rpc_machine* rpc_get_rpc_machine(rpc_endpoint_t* e) {
 }
 
 int rpc_create_endpoint(char* local_address,rpc_endpoint_t** e) {
-	static struct m0_fid process_fid = M0_FID_TINIT('r', 0, 1);
+	struct m0_fid process_fid = M0_FID_TINIT('r', 0, 1);
 	M0_ASSERT(e);
 	*e = (rpc_endpoint_t*)malloc(sizeof(rpc_endpoint_t));
 	int rc;
@@ -307,7 +307,10 @@ int rpc_listen(char* address,rpc_listen_callbacks_t* cbs,rpc_endpoint_t** e) {
     return rpc_create_endpoint(address,e);
 }
 
-inline void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,struct iovec* segments,int segment_count) {
+static void fill_rpclite_fop(struct rpclite_fop* rpclite_fop,
+			     struct iovec* segments,
+			     int segment_count)
+{
     int i;
 	//struct rpclite_fop_fragment* fr;
     int sum=0;

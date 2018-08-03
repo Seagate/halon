@@ -2,6 +2,8 @@
 -- Copyright : (C) 2013 Xyratex Technology Limited.
 -- License   : All rights reserved.
 
+{-# LANGUAGE MonoLocalBinds #-}
+
 module Control.Distributed.Process.Trans where
 
 import Prelude hiding (Applicative, (<$>))

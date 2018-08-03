@@ -19,7 +19,7 @@ library
   exposed-modules:     Network.Transport.Controlled
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.8 && <4.10,
+  build-depends:       base >=4.8 && <4.11,
                        containers,
                        network-transport
   hs-source-dirs:      src

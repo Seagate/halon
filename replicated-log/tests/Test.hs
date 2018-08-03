@@ -4,6 +4,8 @@
 
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Test (tests) where
 
 import Test.Framework
@@ -16,7 +18,7 @@ import Control.Distributed.Log.Snapshot
 import Control.Distributed.Log.Persistence.Paxos (acceptorStore)
 import qualified Control.Distributed.Log.Persistence as P
 import Control.Distributed.Log.Persistence.LevelDB
-import Control.Distributed.Log ( updateHandle )
+import Control.Distributed.Log
 import qualified Control.Distributed.State as State
 import Control.Distributed.State
     ( Command
