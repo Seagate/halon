@@ -148,7 +148,7 @@
             tag: CST_RMS
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:302"]
-      m0p_multiplicity: 3
+      m0p_multiplicity: 4
 - name: "s3server"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:303"
@@ -171,4 +171,5 @@
       m0p_environment:
         - - "MERO_S3SERVER_PORT"
           - tag: M0PEnvRange
-            contents: [8081, 8092]
+            contents: [8081, 8099]
+      m0p_multiplicity: 4
