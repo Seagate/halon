@@ -1,35 +1,39 @@
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
+-- Copyright : (C) 2018 Seagate Technology Limited.
 -- License   : All rights reserved.
 module Main (main) where
 
+import           Control.Applicative ((<|>), some)
 import           Control.Distributed.Process hiding (bracket)
-import           Control.Distributed.Process.Closure
+import           Control.Distributed.Process.Closure (sdictUnit, returnCP)
 import           Control.Distributed.Process.Node
   ( initRemoteTable
   , newLocalNode
   , closeLocalNode
   , runProcess
   )
-import           Control.Monad.Catch
-import           Data.Char
-import           Data.List
+import           Control.Monad.Catch (bracket)
+import           Data.Char (isAlphaNum, isPunctuation)
+import           Data.List (isPrefixOf)
 import           Data.Maybe (fromMaybe)
-import           Data.Monoid
-import           Data.Traversable
+import           Data.Monoid (Last(..), (<>))
+import           Data.Traversable (forM)
 import           HA.Network.RemoteTables (haRemoteTable)
 import qualified Handler.Halon as Halon
 import qualified Handler.Mero as Mero
-import           Lookup
+import           Lookup (conjureRemoteNodeId)
 import           Mero.RemoteTables (meroRemoteTable)
 import           Network.Transport (closeTransport)
-import           Network.Transport.TCP as TCP
-import           Options.Applicative
+import           Network.Transport.TCP
+  ( TCPParameters(..)
+  , createTransport
+  , defaultTCPParameters
+  )
 import qualified Options.Applicative as O
-import qualified Options.Applicative.Extras as O
-import           System.Directory
+import           Options.Applicative.Extras (withDesc, withFullDesc)
+import           System.Directory (doesFileExist)
 import           System.Environment (getProgName)
 import           System.IO
   ( BufferMode(LineBuffering)
@@ -38,90 +42,83 @@ import           System.IO
   , stdout
   )
 import           System.Process (readProcess)
-import           Version.Read
-
-printHeader :: IO ()
-printHeader = putStrLn "This is halonctl/TCP"
+import           Version.Read (versionString)
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 main :: IO ()
-main = getOptions >>= maybe version run
-  where
-    version = do
-      printHeader
-      versionString >>= putStrLn
+main = getOpts >>= \case
+    Version  -> putStrLn "This is halonctl/TCP" >> versionString >>= putStrLn
+    Run opts -> run opts
+
+data Opts = Version | Run Options
 
 data Options = Options
-    { optTheirAddress :: ![String] -- ^ Addresses of halond nodes to control.
-    , optOurAddress   :: !String
-    , optCommand      :: !Command
-    }
-  deriving (Show, Eq)
+  { optTheirAddress :: ![String] -- ^ Addresses of halond nodes to control.
+  , optOurAddress   :: !String
+  , optCommand      :: !Command
+  }
 
-data Command =
-      Mero Mero.Options
-    | Halon Halon.Options
-  deriving (Show, Eq)
+data Command = Mero Mero.Options | Halon Halon.Options
 
-newtype SystemOptions = SystemOptions (Last (String, String))
+type SystemOptions = Last (String, String)
 
-instance Monoid SystemOptions where
-  mempty = SystemOptions mempty
-  SystemOptions a1 `mappend` SystemOptions a2 = SystemOptions (a1 <> a2)
-
-getOptions :: IO (Maybe Options)
-getOptions = do
-    self <- getProgName
+getOpts :: IO Opts
+getOpts = do
+    prog <- getProgName
     hostname <- readProcess "hostname" [] ""
-    defaults <- doesFileExist sysconfig >>= \case
-      True -> mconcat . fmap toSystemOptions . lines <$> readFile sysconfig
-      False -> return mempty
-    O.execParser $
-      O.withFullDesc self (parseOptions hostname defaults)
-        "Control nodes (halond instances)."
+    defaults <- let sysconfig = "/etc/sysconfig/halond"
+                in doesFileExist sysconfig >>= \case
+        True  -> mconcat . fmap toSystemOptions . lines <$> readFile sysconfig
+        False -> return mempty
+    let parser = parseVersion <|> (Run <$> parseOptions hostname defaults)
+    O.execParser $ withFullDesc prog parser "Control nodes (halond instances)."
   where
-    parseOptions :: String -> SystemOptions -> O.Parser (Maybe Options)
-    parseOptions h o = O.flag' Nothing (O.long "version" <> O.hidden) O.<|> (Just <$> normalOptions h o)
-    normalOptions hostname (SystemOptions la) = Options
-        <$> (maybe O.some  (\(h,p) -> \x -> O.some x <|> pure [h++":"++p]) (getLast la) $
-               O.strOption $ O.metavar "ADDRESSES" <>
-                 O.long "address" <>
-                 O.short 'a' <>
-                 O.help "Addresses of nodes to control.")
-        <*> (O.strOption $ O.metavar "ADDRESS" <>
-               O.long "listen" <>
-               O.short 'l' <>
-               O.value (maybe (listenAddr hostname)
-                              (listenAddr . fst) $ getLast la) <>
-               O.help "Address halonctl binds to.")
-        <*> (O.subparser $
-                (O.command "halon" $ Halon <$> O.withDesc Halon.parser "Halon commands.")
-             <> (O.command "mero" $ Mero <$> O.withDesc Mero.parser "Mero commands."))
-    listenAddr :: String -> String
-    listenAddr h = trim $ h ++ ":0"
     toSystemOptions line
-      | "HALOND_LISTEN" `isPrefixOf` line = SystemOptions $ Last . Just $ extractIp (tail . snd $ span (/='=') line)
-      | otherwise = SystemOptions $ Last Nothing
-    extractIp = fmap tail . span (/= ':')
-    sysconfig :: String
-    sysconfig = "/etc/sysconfig/halond"
+      | "HALOND_LISTEN" `isPrefixOf` line =
+            Last . Just . breakAt ':' . snd $ breakAt '=' line
+      | otherwise = Last Nothing
 
-    trim = filter (liftA2 (||) isAlphaNum isPunctuation)
+    parseVersion :: O.Parser Opts
+    parseVersion = O.flag' Version $ O.long "version"
+                                  <> O.help "Show version information and exit."
+
+    parseOptions :: String -> SystemOptions -> O.Parser Options
+    parseOptions hostname (Last mhp) = Options
+        <$> (maybe some (\(h, p) -> \x -> some x <|> pure [h ++ ":" ++ p]) mhp $
+             O.strOption $ O.metavar "ADDRESSES"
+                        <> O.short 'a'
+                        <> O.long "address"
+                        <> O.help "Addresses of nodes to control.")
+        <*> (O.strOption $ O.metavar "ADDRESS"
+                        <> O.short 'l'
+                        <> O.long "listen"
+                        <> O.value (listenAddr $ maybe hostname fst mhp)
+                        <> O.help "Address halonctl binds to.")
+        <*> (O.subparser $ (O.command "halon" $
+                            Halon <$> withDesc Halon.parser "Halon commands.")
+                        <> (O.command "mero" $
+                            Mero <$> withDesc Mero.parser "Mero commands."))
+
+    listenAddr :: String -> String
+    listenAddr = (++ ":0") . filter (\c -> isAlphaNum c || isPunctuation c)
+
+breakAt :: Eq a => a -> [a] -> ([a], [a])
+breakAt x = fmap tail . break (== x)
 
 run :: Options -> IO ()
 run Options{..} =
-  let (hostname, _:port) = break (== ':') optOurAddress in
+  let (hostname, port) = breakAt ':' optOurAddress in
   bracket (either (error . show) id <$>
-               TCP.createTransport hostname port
+               createTransport hostname port
                defaultTCPParameters { tcpUserTimeout = Just 2000
                                     , tcpNoDelay = True
                                     , transportConnectTimeout = Just 2000000
                                     }
           ) closeTransport $ \transport ->
   bracket (newLocalNode transport myRemoteTable) closeLocalNode $ \lnid -> do
-  let rnids = fmap conjureRemoteNodeId optTheirAddress
+  let rnids = map conjureRemoteNodeId optTheirAddress
   runProcess lnid $ do
     -- Default buffering mode may result in gibberish in systemd logs.
     liftIO $ hSetBuffering stdout LineBuffering
