@@ -269,12 +269,12 @@ querySpiel = define "spiel::sns:query-status" $ do
                               ]
     put Local $ Just (uid, pool, prt, ruuid)
     case prt of
+      M0.Repair -> do
+        repairStatus pool
+        continue repair_status
       M0.Rebalance -> do
         rebalanceStatus pool
         continue rebalance_status
-      M0.Failure   -> do
-        repairStatus pool
-        continue repair_status
 
   directly dispatch_hourly $ do
     Just (_, pool, prt, ruuid) <- get Local
@@ -349,10 +349,10 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle getRequest finis
     keepRunning <- maybe False ((ruuid ==) . prsRepairUUID) <$> getPoolRepairStatus pool
     unless keepRunning $ continue finish
     case prt of
+      M0.Repair -> do repairStatus pool
+                      continue repair_status
       M0.Rebalance -> do rebalanceStatus pool
                          continue rebalance_status
-      M0.Failure   -> do repairStatus pool
-                         continue repair_status
 
   return route
   where
@@ -745,7 +745,7 @@ ruleSNSOperationContinue = mkJobRule jobContinueSNS args $ \(JobHandle _ finish)
         result <- R.allIOSOnline pool
         if keepRunning && result
         then case prt of
-          M0.Failure -> do
+          M0.Repair -> do
             repairStatus pool
             return $ Right (SNSFailed uuid pool prt "default", [repair_status])
           M0.Rebalance -> do
@@ -847,7 +847,7 @@ ruleSNSOperationAbort = mkJobRule jobSNSAbort args $ \(JobHandle _ finish) -> do
     Just (AbortSNSOperation pool _) <- getField . rget fldReq <$> get Local
     Just prt <- getField . rget fldPrt <$> get Local
     case prt of
-      M0.Failure -> do
+      M0.Repair -> do
         abortRepair pool
         continue ph_repair_abort
       M0.Rebalance -> do
@@ -946,12 +946,12 @@ ruleSNSOperationQuiesce = mkJobRule jobSNSQuiesce args $ \(JobHandle _ finish) -
     Just (QuiesceSNSOperation pool) <- getField . rget fldReq <$> get Local
     Just prt <- getField . rget fldPrt <$> get Local
     case prt of
+      M0.Repair -> do
+        quiesceRepair pool
+        continue ph_repair_quiesced
       M0.Rebalance -> do
         quiesceRebalance pool
         continue ph_rebalance_quiesced
-      M0.Failure -> do
-        quiesceRepair pool
-        continue ph_repair_quiesced
 
   return route
   where
@@ -1112,8 +1112,8 @@ completeRepair pool prt muid = do
           -- drives that are under operation but were not fixed
           non_repaired_sdevs = repairing_sdevs `Set.difference` repaired_sdevs
 
+          repairedSdevTr M0.Repair = Tr.sdevRepairComplete
           repairedSdevTr M0.Rebalance = Tr.sdevRebalanceComplete
-          repairedSdevTr M0.Failure = Tr.sdevRepairComplete
 
       unless (null repaired_sdevs) $ do
         _ <- applyStateChanges $ map (`stateSet` repairedSdevTr prt) (Set.toList repaired_sdevs)
@@ -1124,7 +1124,7 @@ completeRepair pool prt muid = do
         then do Log.rcLog' Log.DEBUG $ "Full repair on " ++ show pool
                 _ <- applyStateChanges [stateSet pool $ R.snsCompletedTransition prt]
                 unsetPoolRepairStatus pool
-                when (prt == M0.Failure) $ promulgateRC (PoolRebalanceRequest pool)
+                when (prt == M0.Repair) $ promulgateRC (PoolRebalanceRequest pool)
         else do Log.rcLog' Log.DEBUG $ "Some devices failed to repair: " ++ show (Set.toList non_repaired_sdevs)
                 -- TODO: schedule next repair.
                 unsetPoolRepairStatus pool
@@ -1290,7 +1290,7 @@ processPoolInfo pool M0_NC_REPAIRED _ = getPoolRepairStatus pool >>= \case
   Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIRED for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
-    | prt == M0.Failure -> queryStartHandling pool
+    | prt == M0.Repair -> queryStartHandling pool
   _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is rebalancing now."
 
 -- Partial repair or problem during repair on a pool, if one of IOS
@@ -1299,7 +1299,7 @@ processPoolInfo pool M0_NC_REPAIR _ = getPoolRepairStatus pool >>= \case
   Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIR for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
-    | prt == M0.Failure -> do
+    | prt == M0.Repair -> do
         Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
         promulgateRC $ DelayedAbort pool
   _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is rebalancing now."

@@ -669,8 +669,7 @@ secondsSince oldSpec = do
 --
 -- We use this as an indicator. The underlying assumption is that a
 -- repair and rebalance will never happen at the same time.
--- TODO s/Failure/Repair
-data PoolRepairType = Failure | Rebalance
+data PoolRepairType = Repair | Rebalance
   deriving (Eq, Show, Ord, Generic, Typeable)
 
 instance Hashable PoolRepairType

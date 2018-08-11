@@ -21,22 +21,22 @@ import           Network.CEP
 -- | Get a 'Tr.Transition' coresponding to a pool completing
 -- repair/rebalance.
 snsCompletedTransition :: M0.PoolRepairType -> Tr.Transition M0.Pool
+snsCompletedTransition M0.Repair = Tr.poolRepairComplete
 snsCompletedTransition M0.Rebalance = Tr.poolRebalanceComplete
-snsCompletedTransition M0.Failure = Tr.poolRepairComplete
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or
 -- repairing.
 repairedNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
+repairedNotificationMsg M0.Repair = M0.M0_NC_REBALANCE
 repairedNotificationMsg M0.Rebalance = M0.M0_NC_ONLINE
-repairedNotificationMsg M0.Failure = M0.M0_NC_REBALANCE
 
 -- | Covert 'M0.PoolRepairType' into a 'ConfObjectState' that mero
 -- expects: it's different depending on whether we are rebalancing or
 -- repairing.
 repairingNotificationMsg :: M0.PoolRepairType -> M0.ConfObjectState
+repairingNotificationMsg M0.Repair = M0.M0_NC_REPAIR
 repairingNotificationMsg M0.Rebalance = M0.M0_NC_REBALANCE
-repairingNotificationMsg M0.Failure = M0.M0_NC_REPAIR
 
 -- | Find only those services that are in a state of finished (or not
 -- started) repair.

@@ -297,7 +297,7 @@ mkStatusCheckingSNSOperation :: forall l' l n .
   -> [Spiel.SnsCmStatus]
   -> Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on failure.
   -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkStatusCheckingSNSOperation name mk action interesting dt getter onFailure onSuccess = do
@@ -367,7 +367,7 @@ mkRepairStartOperation handler = do
       (const . return . Left)
       (\() pool -> do
          uuid <- DP.liftIO nextRandom
-         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Failure uuid Nothing
+         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Repair uuid Nothing
          return (Right uuid))
 
 -- | Start the rebalance operation on the given 'M0.Pool' asynchronously.
@@ -439,7 +439,7 @@ mkRepairQuiesceOperation ::
     , l ~ FieldRec l')
   => Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on failure.
   -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairQuiesceOperation =
@@ -458,8 +458,8 @@ mkRepairAbortOperation ::
     , l ~ FieldRec l')
   => Int
   -> (l -> M0.Pool)
-  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on failure.
+  -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRepairAbortOperation =
   mkStatusCheckingSNSOperation
@@ -476,7 +476,7 @@ mkRebalanceQuiesceOperation ::
     , l ~ FieldRec l')
   => Int                        -- ^ Timeout between retries (in seconds).
   -> (l -> M0.Pool)             -- ^ Getter of the pool.
-  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure.
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on failure.
   -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceQuiesceOperation = do
@@ -494,8 +494,8 @@ mkRebalanceAbortOperation ::
     , l ~ FieldRec l')
   => Int
   -> (l -> M0.Pool)
-  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on Failure
-  -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success
+  -> (M0.Pool -> String -> PhaseM RC l ()) -- ^ Handler on failure.
+  -> (M0.Pool -> [(Fid, Spiel.SnsCmStatus)] -> PhaseM RC l ()) -- ^ Handler on success.
   -> RuleM RC l (Jump PhaseHandle, M0.Pool -> PhaseM RC l ())
 mkRebalanceAbortOperation = do
   mkStatusCheckingSNSOperation
