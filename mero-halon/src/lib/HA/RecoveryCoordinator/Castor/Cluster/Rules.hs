@@ -34,7 +34,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Actions
   ( notifyOnClusterTransition )
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
-import qualified HA.RecoveryCoordinator.Castor.Pool.Actions as Pool
+import           HA.RecoveryCoordinator.Castor.Pool.Actions (getPools)
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
@@ -159,8 +159,8 @@ requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getGraph
-      let pools = Pool.getNonMD rg
-      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) pools
+      let (sns, mdix) = getPools rg
+      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) sns
       hosts <- forM (sort $ G.connectedTo Cluster Has rg) $ \host -> do
             let nodes = sort $ G.connectedTo host Runs rg :: [M0.Node]
                 node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
@@ -186,11 +186,13 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       Just root <- getRoot
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
-        { csrStatus  = getClusterStatus rg
-        , csrSNS     = sort repairs
-        , csrProfile = mprof
-        , csrStats   = G.connectedTo root Has rg
-        , csrHosts   = hosts
+        { csrStatus   = getClusterStatus rg
+        , csrSnsPools = sns
+        , csrDixPool  = mdix
+        , csrProfile  = mprof
+        , csrSNS      = sort repairs
+        , csrStats    = G.connectedTo root Has rg
+        , csrHosts    = hosts
         }
   where
     getType (Just CI.PLM0t1fs) _ = "m0t1fs"

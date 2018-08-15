@@ -10,11 +10,14 @@
 -- License   : All rights reserved.
 module HA.RecoveryCoordinator.Castor.Pool.Actions
   ( getNonMD
+  , getPools
   , getSDevs
   , getSDevsWithState
   ) where
 
 import qualified Data.HashSet as S
+import           Data.List (partition)
+import           Data.Maybe (listToMaybe)
 
 import qualified HA.ResourceGraph as G
 import qualified HA.Resources.Mero as M0
@@ -31,6 +34,19 @@ getNonMD rg =
   , pool <- G.connectedTo root M0.IsParentOf rg
   , M0.fid pool /= M0.rt_mdpool root
   ]
+
+-- | Returns SNS pools and the DIX pool.
+getPools :: G.Graph -> ([M0.Pool], Maybe M0.Pool)
+getPools rg = let (dix, sns) = partition isDixPool (getNonMD rg)
+              in (sns, listToMaybe dix)
+  where
+    root = M0.getM0Root rg
+
+    pvers :: M0.Pool -> [M0.PVer]
+    pvers pool = G.connectedTo pool M0.IsParentOf rg
+
+    isDixPool :: M0.Pool -> Bool
+    isDixPool = elem (M0.rt_imeta_pver root) . map M0.v_fid . pvers
 
 -- | Get all 'M0.SDev's that belong to the given 'M0.Pool'.
 --

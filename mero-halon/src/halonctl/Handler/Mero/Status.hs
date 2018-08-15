@@ -1,4 +1,5 @@
-{-# LANGUAGE StrictData #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StrictData      #-}
 -- |
 -- Module    : Handler.Mero.Status
 -- Copyright : (C) 2017 Seagate Technology Limited.
@@ -62,14 +63,19 @@ jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . HA.Aeson.encode
 
 prettyReport :: Bool -> ReportClusterState -> IO ()
-prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
-  putStrLn $ "Cluster is " ++ maybe "N/A" (show . M0._mcs_disposition) status
-  case info' of
-    Nothing -> putStrLn "cluster information is not available, load initial data.."
-    Just (M0.Profile pfid) -> do
+prettyReport showDevices ReportClusterState{..} = do
+  putStrLn $ "Cluster is " ++ maybe "N/A" (show . M0._mcs_disposition) csrStatus
+  case csrProfile of
+    Nothing -> putStrLn "Cluster information is not available, load initial data first."
+    Just prof -> do
       putStrLn   "  cluster info:"
-      putStrLn $ "    profile:    " ++ fidToStr pfid
-      forM_ mstats $ \stats -> do
+      forM_ csrSnsPools $ \pool ->
+        -- XXX TODO: Also show the value of `pool_id` from the facts file.
+        putStrLn $ "    SNS pool:   " ++ fidStr pool
+      forM_ csrDixPool $ \pool ->
+        putStrLn $ "    DIX pool:   " ++ fidStr pool
+      putStrLn $ "    profile:    " ++ fidStr prof
+      forM_ csrStats $ \stats -> do
         putStrLn "    Filesystem stats:"
         let fss = M0._fs_stats stats
         let entries =
@@ -81,19 +87,19 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
         let width = maximum $ map (\(_, val) -> length val) entries
         forM_ entries $ \(label, val) -> do
           putStrLn $ label ++ printf ("%" ++ show width ++ "s") val
-      unless (null sns) $ do
+      unless (null csrSNS) $ do
          putStrLn "    SNS operations:"
-         forM_ sns $ \(M0.Pool pool_fid, s) -> do
-           putStrLn $ "      pool:" ++ fidToStr pool_fid ++ " => " ++ show (M0.prsType s)
-           putStrLn $ "      uuid:" ++ show (M0.prsRepairUUID s)
-           forM_ (M0.prsPri s) $ \i -> do
+         forM_ csrSNS $ \(pool, prs) -> do
+           putStrLn $ "      pool: " ++ fidStr pool ++ " => " ++ show (M0.prsType prs)
+           putStrLn $ "      uuid: " ++ show (M0.prsRepairUUID prs)
+           forM_ (M0.prsPri prs) $ \i -> do
              putStrLn $ "      time of start: " ++ show (M0.priTimeOfSnsStart i)
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
-      forM_ hosts $ \(Castor.Host qfdn, ReportClusterHost m0fid st ps) -> do
+      forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
-         printf node_pattern nst (showNodeFid m0fid) qfdn
+         printf node_pattern nst (showNodeFid mnode) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs) -> do
@@ -103,11 +109,9 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
                                (T.unpack . encodeEndpoint $ endpoint)
                                ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
-           for_ srvs $ \(ReportClusterService sst (M0.Service fid' t' _) sdevs) -> do
+           for_ srvs $ \(ReportClusterService sst svc sdevs) -> do
              let (serv_st,serv_extSt) = M0.displayServiceState sst
-             printf serv_pattern serv_st
-                                 (fidToStr fid')
-                                 (show t')
+             printf serv_pattern serv_st (fidStr svc) (show $ M0.s_type svc)
              for_ serv_extSt $ printf serv_pattern_ext (""::String)
              when (showDevices && (not . null) sdevs) $ do
                putStrLn "    Devices:"
@@ -120,8 +124,10 @@ prettyReport showDevices (ReportClusterState status sns info' mstats hosts) = do
                  for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
                  for_ mslot $ printf sdev_patterni (""::String) . show
    where
-     showNodeFid Nothing = ""
-     showNodeFid (Just (M0.Node fid)) = show fid
+     fidStr :: M0.ConfObj a => a -> String
+     fidStr = fidToStr . M0.fid
+
+     showNodeFid = maybe "" fidStr
 
      -- E.g. showGrouped 1234567 ==> "1,234,567"
      showGrouped = reverse . intercalate "," . chunksOf 3 . reverse . show

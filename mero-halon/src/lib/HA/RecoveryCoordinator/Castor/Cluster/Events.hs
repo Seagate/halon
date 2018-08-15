@@ -151,15 +151,15 @@ data ClusterResetRequest = ClusterResetRequest
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
       -- ^ Current 'M0.MeroClusterState'.
-      , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
-      -- ^ 'M0.Pool's and their SNS repair/rebalance status.
+      , csrSnsPools   :: [M0.Pool]
+      , csrDixPool    :: Maybe M0.Pool
       , csrProfile    :: Maybe M0.Profile
-      -- ^ 'M0.Profile' information.
+      , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]
+      -- ^ Ongoing SNS operations.
       , csrStats      :: Maybe M0.FilesystemStats
-      -- ^ 'M0.FilesystemStats' information.
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]
-      -- ^ Information about every 'Castor.Host'.
-      -- See 'ReportClusterHost' for details.
+      -- ^ Information about every 'Castor.Host';
+      -- see 'ReportClusterHost' for details.
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
