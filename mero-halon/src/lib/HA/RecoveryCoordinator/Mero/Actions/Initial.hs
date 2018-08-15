@@ -281,24 +281,22 @@ disksFromRefs refs rg = case partitionEithers (dereference rg <$> refs) of
 loadMeroPools :: [CI.M0Pool] -> PhaseM RC l (Map T.Text M0.Pool)
 loadMeroPools ipools = do
     let args_XXX = zip ipools (True:repeat False)  -- XXX-MULTIPOOLS QnD
-    ioPools <- mapM createIOPool args_XXX
+    snsPools <- mapM createSNSPool args_XXX
     createDIXPool
-    pure (Map.fromList ioPools)
+    pure (Map.fromList snsPools)
 
 data PoolCreationError = PoolCreationError T.Text String
   deriving Show
 instance Exception PoolCreationError
 
--- | Add an IO pool to the resource graph.
+-- | Add an SNS pool to the resource graph.
 --
 --   This function creates:
 --   - an actual ("base") pool version;
 --   - formulaic pool versions;
 --   - a meta-data pool version.
---
--- XXX Use "SNS pool" term instead.
-createIOPool :: (CI.M0Pool, Bool) -> PhaseM RC l (T.Text, M0.Pool)
-createIOPool (CI.M0Pool{..}, metadata_p_XXX) = do
+createSNSPool :: (CI.M0Pool, Bool) -> PhaseM RC l (T.Text, M0.Pool)
+createSNSPool (CI.M0Pool{..}, metadata_p_XXX) = do
     let throw' :: String -> PhaseM RC l a
         throw' = throwM . PoolCreationError pool_id
 
@@ -353,9 +351,9 @@ createIOPool (CI.M0Pool{..}, metadata_p_XXX) = do
 --   in the 'rt_imeta_pver' field. This should validate correctly in Mero
 --   iff there are no CAS services.
 --
--- NOTE: 'createDIXPool' must not be called before 'createIOPool'.
+-- NOTE: 'createDIXPool' must not be called before 'createSNSPool'.
 --       Otherwise fake 'M0.Disk's, created by 'createDIXPool', will be
---       added to IO pool, and we don't want that.
+--       added to SNS pool, and we don't want that.
 createDIXPool :: PhaseM RC l ()
 createDIXPool = do
     let attrs = CI.PDClustAttrs0
@@ -366,7 +364,6 @@ createDIXPool = do
           , CI.pa0_parity_units = 0
           , CI.pa0_unit_size = 4096
           , CI.pa0_seed = Word128 101 102
-            -- XXX Should this seed value be equal to those of IO pools?
           }
         tolerance = CI.Failures 0 0 0 1 0
     Just root <- getRoot
