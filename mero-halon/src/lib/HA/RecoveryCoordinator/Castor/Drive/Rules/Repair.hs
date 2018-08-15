@@ -368,7 +368,7 @@ querySpielHourly = mkJobRule jobHourlyStatus args $ \(JobHandle getRequest finis
 jobRebalanceStart :: Job PoolRebalanceRequest PoolRebalanceStarted
 jobRebalanceStart = Job "castor::sns::rebalance::start"
 
--- | Start rebalance operation triggered by 'PoolRebalanceRequest.
+-- | Start rebalance operation triggered by 'PoolRebalanceRequest'.
 -- Emits 'PoolRebalanceStarted' if successful.
 --
 -- See 'ruleRepairStart' for some caveats.

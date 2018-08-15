@@ -255,7 +255,7 @@ startProcess :: ProcessRunType -- ^ Run type of the process.
              -> IO ProcessControlStartResult
 startProcess run p = do
   let svc = unitString run p
-  do SystemD.statusService (unitString run p) >>= \case
+  do SystemD.statusService svc >>= \case
        -- Service running
        ExitSuccess -> return $! RequiresStop p
        -- All other failures should indicate some sort of

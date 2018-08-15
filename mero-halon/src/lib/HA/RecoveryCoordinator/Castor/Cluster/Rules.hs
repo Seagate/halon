@@ -186,11 +186,11 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       Just root <- getRoot
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
-        { csrStatus = getClusterStatus rg
-        , csrSNS    = sort repairs
-        , csrInfo   = mprof
-        , csrStats  = G.connectedTo root Has rg
-        , csrHosts  = hosts
+        { csrStatus  = getClusterStatus rg
+        , csrSNS     = sort repairs
+        , csrProfile = mprof
+        , csrStats   = G.connectedTo root Has rg
+        , csrHosts   = hosts
         }
   where
     getType (Just CI.PLM0t1fs) _ = "m0t1fs"
