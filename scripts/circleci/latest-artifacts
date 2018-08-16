@@ -4,8 +4,8 @@ set -e -o pipefail
 ### helper script for getting links to the last successful artifacts on CircleCI
 
 readonly PROG_NAME="${0##*/}"
-#readonly github_token="${SSG_GITHUB_MERO_CI_API_TOKEN:?environment variable must be set}"
-#readonly circleci_token="${SSG_CIRCLECI_MERO_CI_API_TOKEN:?environment variable must be set}"
+readonly github_token="${SSG_GITHUB_MERO_CI_API_TOKEN:?environment variable must be set}"
+readonly circleci_token="${SSG_CIRCLECI_MERO_CI_API_TOKEN:?environment variable must be set}"
 
 (($# >= 3)) || {
     echo >&2 "usage: $PROG_NAME <project> <branch> <os_release>"
