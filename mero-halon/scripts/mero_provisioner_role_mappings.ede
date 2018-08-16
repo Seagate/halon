@@ -106,6 +106,10 @@
             tag: CST_ADDB2
             contents: []
           m0s_endpoints: ["{{ lnid }}:12345:41:401"]
+        - m0s_type:
+            tag: CST_ISCS
+            contents: []
+          m0s_endpoints: ["{{ lnid }}:12345:41:401"]
 - name: "m0t1fs"
   content:
     - m0p_endpoint: "{{ lnid }}:12345:41:301"

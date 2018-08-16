@@ -285,6 +285,7 @@ iosProcess ifaddr = CI.M0Process
                                    , CST_IOS
                                    , CST_SNS_REP
                                    , CST_SNS_REB
+                                   , CST_ISCS
                                    , CST_ADDB2
                                    ]
   , CI.m0p_environment = Nothing
