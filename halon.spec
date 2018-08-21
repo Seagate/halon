@@ -8,6 +8,9 @@
 # mero version
 %define h_mero_version %(rpm -q --queryformat '%{VERSION}-%{RELEASE}' mero)
 
+# parallel build jobs
+%define h_build_jobs_opt  %(test -n "$build_jobs" && echo "-j$build_jobs" || echo '')
+
 Summary: halon
 Name: halon
 Version: %{h_version}
@@ -43,7 +46,7 @@ Cluster monitoring and recovery for high-availability.
 %{stack} setup
 
 %build
-%{stack} build --extra-include-dirs=/usr/include/mero
+%{stack} %{?h_build_jobs_opt} build --extra-include-dirs=/usr/include/mero --no-test
 
 %install
 rm -rf %{buildroot}
