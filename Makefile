@@ -39,6 +39,10 @@ tests:
 setup:
 	stack setup
 
+.PHONY: clean
+setup:
+	stack clean
+
 #
 # RPMs -------------------------------------------------------------------- {{{1
 #
@@ -208,6 +212,7 @@ help:
 	@echo 'Build targets:'
 	@echo '  tests           - build Halon and tests, this is default target'
 	@echo '  halon           - build only Halon without tests'
+	@echo '  clean           - clean local packages'
 	@echo ''
 	@echo 'Distribution targets:'
 	@echo '  dist            - recreate package.tar.gz from all source files'
