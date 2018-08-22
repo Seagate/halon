@@ -77,7 +77,7 @@ import Data.Typeable (Typeable)
 import Network.Transport (Transport)
 import System.Directory
   ( getCurrentDirectory
-  , removeDirectory
+  , removeDirectoryRecursive
   , setCurrentDirectory
   , getTemporaryDirectory
   )
@@ -116,7 +116,7 @@ withTmpDirectory action = do
     setCurrentDirectory tmpDir
     action `finally` do
       setCurrentDirectory cwd
-      removeDirectory tmpDir `E.catch` \(_ :: SomeException) -> return ()
+      removeDirectoryRecursive tmpDir
 
 -- | Exception indicating timeout has occured.
 data Timeout = Timeout
