@@ -714,26 +714,3 @@ Benchmark initial-data-gc
                     tasty-hunit,
                     unix,
                     unordered-containers
-
-Test-Suite test-server-bootstrap-local
-  Type:             exitcode-stdio-1.0
-  default-language: Haskell2010
-  Hs-Source-Dirs:  tests/Bootstrap
-  Main-Is:         Server.hs
-
-  Ghc-Options: -threaded -Wall -Werror
-  Build-Depends:   distributed-process,
-                   base,
-                   filepath,
-                   directory,
-                   network-transport,
-                   network-transport-tcp,
-                   distributed-commands,
-                   distributed-process-test,
-                   process,
-                   unix,
-                   halon,
-                   mero-halon,
-                   hostname
-  -- bitrotten: disabled for now
-  Buildable:     False
