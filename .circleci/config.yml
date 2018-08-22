@@ -76,7 +76,7 @@ templates:
         branches:
           ignore: '/.*/'
         tags:
-          only: '/^v\d+\.\d+.*/'
+          only: '/^\d+\.\d+.*/'
 
 #
 # CircleCI configuration
