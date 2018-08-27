@@ -340,48 +340,48 @@ instance (Typeable a, Binary a) => SafeCopy (Channel a) where
 -- Configuration                                                              --
 --------------------------------------------------------------------------------
 
--- | 'Schema' for IEM bind configuration
+-- | 'Schema' for IEM bind configuration.
 iemSchema :: Schema Rabbit.BindConf
-iemSchema = genericBindConf ("sspl_iem", "iem_exchange")
-                            ("sspl_ll",  "iem_routingKey")
-                            ("sspl_iem", "iem_queue")
+iemSchema = genericBindConf ("sspl-iem",   "iem-exchange")
+                            ("sspl-key",   "iem-routing-key")
+                            ("sspl-queue", "iem-queue")
 
--- | 'Schema' for command bind configuration
+-- | 'Schema' for command bind configuration.
 commandSchema :: Schema Rabbit.BindConf
-commandSchema = genericBindConf ("sspl_halon_command","systemd_exchange")
-                                ("sspl_ll", "systemd_routingKey")
-                                ("SSPL-LL", "systemd_queue")
+commandSchema = genericBindConf ("sspl-comand", "actuator-exchange")
+                                ("sspl-key",    "actuator-routing-key")
+                                ("sspl-queue",  "actuator-queue")
 
--- | 'Schema' for command ack bind configuration
+-- | 'Schema' for command ack bind configuration.
 commandAckSchema :: Schema Rabbit.BindConf
-commandAckSchema = genericBindConf ("sspl_command_ack", "command_ack_exchange")
-                                   ("sspl_ll",      "command_ack_routing_key")
-                                   ("sspl_command_ack", "command_ack_queue")
+commandAckSchema = genericBindConf ("sspl-command-ack", "actuator-ack-exchange")
+                                   ("sspl-key",   "actuator-ack-routing-key")
+                                   ("sspl-queue", "actuator-ack-queue")
 
--- | DCS 'Schema'. See also 'sensorSchema'.
+-- | 'Schema' for sensor bind configuration. See also 'sensorSchema'.
 dcsSchema :: Schema Rabbit.BindConf
-dcsSchema = genericBindConf ("sspl_halon", "dcs_exchange")
-                            ("sspl_ll", "dcs_routingKey")
-                            ("sspl_halon_sensor", "dcs_queue")
+dcsSchema = genericBindConf ("sspl-sensor", "sensor-exchange")
+                            ("sspl-key",    "sensor-routing-key")
+                            ("sspl-queue",  "sensor-queue")
 
 -- | Generic 'Schema' creating 'Rabbit.BindConf' on the given
 -- @genericBindConf exchange route queue@.
-genericBindConf :: (String, String) -> (String,String) -> (String,String)
+genericBindConf :: (String, String) -> (String, String) -> (String, String)
                 -> Schema Rabbit.BindConf
 {-# INLINE genericBindConf #-}
-genericBindConf (exchange,exchangeLong)
-                (routingKey,routingKeyLong)
+genericBindConf (exchange, exchangeLong)
+                (routingKey, routingKeyLong)
                 (queue, queueLong) = Rabbit.BindConf <$> en <*> rk <*> qn
   where
     en = defaultable exchange . strOption
        $ long exchangeLong
-       <> metavar "EXCHANGE_NAME"
+       <> metavar "EXCHANGE-NAME"
     rk = defaultable routingKey . strOption
        $ long routingKeyLong
-       <> metavar "ROUTING_KEY"
+       <> metavar "ROUTING-KEY"
     qn = defaultable queue . strOption
        $ long queueLong
-       <> metavar "QUEUE_NAME"
+       <> metavar "QUEUE-NAME"
 
 data ActuatorConf = ActuatorConf {
     acIEM :: Rabbit.BindConf

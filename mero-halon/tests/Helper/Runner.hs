@@ -445,6 +445,15 @@ run' transport pg extraRules to test = do
         kill (_rmq_pid rmq) "end of game"
       sayTest "All done!"
   where
+    --
+    -- NOTE: These values differ from the "actual" ones specified in
+    -- dcsSchema, iemSchema, commandSchema, and commandAckSchema.
+    --
+    -- I tried to mirror actual values here, but doing so broke unit
+    -- tests.  My guess is that the failure was caused by using the
+    -- same mock queue for several mock bindings.  This could cause
+    -- messages to arrive in order not expected by unit tests.  --vvv
+    --
     routingKey = fromString "sspl_ll"
     sensorExchange = fromString "sspl_halon_sensor"
     sensorQueue = fromString "sspl_dcsque"
