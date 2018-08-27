@@ -644,18 +644,20 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
       Just (M0.PoolRepairStatus _ uuid _) -> do
         tr <- liftGraph2 Pool.getSDevsWithState pool M0_NC_TRANSIENT
         fa <- liftGraph2 Pool.getSDevsWithState pool M0_NC_FAILED
-        when (not $ null tr) $
+        let new_transient = not (null tr)
+            new_failed = not (null fa)
+        when new_transient $
           Log.rcLog' Log.DEBUG $ "disks.transient: " ++ show tr
-        when (not $ null fa) $
+        when new_failed $
           Log.rcLog' Log.DEBUG $ "disks.failed: " ++ show fa
-        case (null tr, null fa) of
-          (True, False) -> do
+        case (new_transient, new_failed) of
+          (False, True) -> do
             Log.rcLog' Log.DEBUG "Devices failed after repair start - restarting."
             promulgateRC $ RestartSNSOperationRequest pool uuid
-          (False, True) -> do
+          (True, False) -> do
             Log.rcLog' Log.DEBUG "Devices transient after repair start - quiescing."
             promulgateRC $ QuiesceSNSOperation pool
-          (False, False) -> do
+          (True, True) -> do
             Log.rcLog' Log.DEBUG "Devices both transient and failed after repair start - aborting."
             promulgateRC $ AbortSNSOperation pool uuid
           _ -> return ()
