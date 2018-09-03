@@ -167,8 +167,9 @@ createDeferredStateChanges stateSets rg =
 
 -- | Apply a number of state changes.
 applyStateChanges :: [AnyStateSet] -> PhaseM RC l [AnyStateChange]
-applyStateChanges ass = getGraph >>= \rg -> do
-  let (warns, changes) = createDeferredStateChanges ass rg
+applyStateChanges ss = do
+  rg <- getGraph
+  let (warns, changes) = createDeferredStateChanges ss rg
   for_ warns $ Log.rcLog' Log.WARN
   applyDeferredStateChanges changes
   let DeferredStateChanges _ _ (InternalObjectStateChange i) = changes
