@@ -248,7 +248,9 @@ Library
 Executable halonctl
   Hs-Source-Dirs:     src/halonctl
   Main-Is:            Main.hs
-  Other-Modules:      Handler.Halon
+  Other-Modules:      Handler.Debug
+                      Handler.Halon
+                      Handler.Halon.Info
                       Handler.Halon.Info
                       Handler.Halon.Node
                       Handler.Halon.Node.Add

@@ -63,11 +63,11 @@ parseSlot :: Parser Castor.Slot
 parseSlot = Castor.Slot
    <$> (Castor.Enclosure <$>
          strOption (mconcat [ long "slot-enclosure"
-                            , help "index of the drive's enclosure"
+                            , help "identifier of the drive's enclosure (`enc_id' in facts.yaml)"
                             , metavar "NAME"
                             ]))
    <*> option auto (mconcat [ long "slot-index"
-                            , help "index of the drive's slot"
+                            , help "index of the drive's slot (`m0d_slot' in facts.yaml)"
                             , metavar "INT"
                             ])
 

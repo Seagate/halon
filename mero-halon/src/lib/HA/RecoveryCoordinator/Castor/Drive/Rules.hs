@@ -401,8 +401,8 @@ ruleDrivePoweredOff = define "drive-powered-off" $ do
 
   (device_detached, detachDisk) <- mkDetachDisk
     (fmap join . traverse (\(_,d,_,_) -> lookupStorageDeviceSDev d) . fst)
-    (\sdev e -> do Log.rcLog' Log.WARN e
-                   post_process sdev) post_process
+    (\sdev e -> Log.rcLog' Log.WARN e >> post_process sdev)
+    post_process
 
   setPhaseIf power_removed power_off $ \(DrivePowerChange{..}) -> do
     fork CopyNewerBuffer $ do

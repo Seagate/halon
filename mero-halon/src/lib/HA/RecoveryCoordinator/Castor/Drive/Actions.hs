@@ -121,7 +121,7 @@ mkAttachDisk getter onFailure onSuccess = do
     next <- liftProcess $ do
       rc <- getSelfPid
       return $ usend rc . SpielDeviceAttached sdev . handleSNSReply
-    mprof <- theProfile
+    mprof <- theProfile  -- XXX-MULTIPOOLS
     case mdisk of
       Just d ->
         void $ withSpielIO $

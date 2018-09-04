@@ -23,6 +23,7 @@ import           Data.Traversable (forM)
 import           HA.Network.RemoteTables (haRemoteTable)
 import qualified Handler.Halon as Halon
 import qualified Handler.Mero as Mero
+import qualified Handler.Debug as Debug
 import           Lookup (conjureRemoteNodeId)
 import           Mero.RemoteTables (meroRemoteTable)
 import           Network.Transport (closeTransport)
@@ -60,7 +61,10 @@ data Options = Options
   , optCommand      :: !Command
   }
 
-data Command = Mero Mero.Options | Halon Halon.Options
+data Command
+  = Mero Mero.Options
+  | Halon Halon.Options
+  | Debug Debug.Options
 
 type SystemOptions = Last (String, String)
 
@@ -99,7 +103,9 @@ getOpts = do
         <*> (O.hsubparser $ (command' "halon" (Halon <$> Halon.parser)
                              "Halon commands.")
                          <> (command' "mero" (Mero <$> Mero.parser)
-                             "Mero commands."))
+                             "Mero commands.")
+                         <> (command' "debug" (Debug <$> Debug.parser)
+                             "Commands for troubleshooting."))
 
     listenAddr :: String -> String
     listenAddr = (++ ":0") . filter (\c -> isAlphaNum c || isPunctuation c)
@@ -140,6 +146,7 @@ run Options{..} =
       then case optCommand of
           Mero opts -> Mero.mero rnids opts
           Halon opts -> Halon.halon rnids opts
+          Debug opts -> Debug.run rnids opts
       else do
         say "Failed to connect to controlled nodes: "
         liftIO $ mapM_ putStrLn $ concat replies
