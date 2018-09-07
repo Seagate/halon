@@ -30,11 +30,10 @@ import           Control.Lens hiding (to)
 import           Control.Monad (foldM, void, when)
 import           Data.Binary (Binary)
 import           Data.ByteString (ByteString)
-import           Data.Defaultable
+import           Data.Defaultable (Defaultable(Configured))
 import           Data.Foldable (for_)
 import           Data.Maybe (mapMaybe)
 import           Data.Proxy
-import           Data.String (fromString)
 import qualified Data.Text as T
 import           Data.Typeable
 import           Data.Vinyl
@@ -445,43 +444,39 @@ run' transport pg extraRules to test = do
         kill (_rmq_pid rmq) "end of game"
       sayTest "All done!"
   where
-    --
-    -- NOTE: These values differ from the "actual" ones specified in
-    -- dcsSchema, iemSchema, commandSchema, and commandAckSchema.
-    --
-    -- I tried to mirror actual values here, but doing so broke unit
-    -- tests.  My guess is that the failure was caused by using the
-    -- same mock queue for several mock bindings.  This could cause
-    -- messages to arrive in order not expected by unit tests.  --vvv
-    --
-    routingKey = fromString "sspl_ll"
-    sensorExchange = fromString "sspl_halon_sensor"
-    sensorQueue = fromString "sspl_dcsque"
-    iemQueue = fromString "sspl_iem"
-    iemExchange = fromString "sspl_iem"
-    commandExchange = fromString "sspl_halon_command"
-    commandQueue = fromString "sspl_halon"
-    commandAckExchange = fromString "sspl_command_ack"
-    commandAckQueue = fromString "sspl_command_ack"
-    proxyExchange = fromString "halon_test_rmq_proxy_exchange"
-    proxyQueue = fromString "halon_test_rmq_proxy_queue"
-    proxyKey = fromString "halon_test_rmq_proxy_key"
+    -- exchanges
+    iemX     = "test-x-sspl-in"
+    cmdX     = "test-x-sspl-in"
+    cmdRespX = "test-x-sspl-out"
+    sensorX  = "test-x-sspl-out"
+    proxyX   = "test-x-proxy"
+
+    -- routing keys
+    iemK     = "test-k-iem"
+    cmdK     = "test-k-cmd"
+    cmdRespK = "test-k-cmd-resp"
+    sensorK  = "test-k-sensor"
+    proxyK   = "test-k-proxy"
+
+    -- queues
+    iemQ     = "test-q-iem"
+    cmdQ     = "test-q-cmd"
+    cmdRespQ = "test-q-cmd-resp"
+    sensorQ  = "test-q-sensor"
+    proxyQ   = "test-q-proxy"
+
+    mkBindConf exchange routingKey queue =
+      BindConf (Configured exchange) (Configured routingKey) (Configured queue)
+
     rabbitConnectionConf = ConnectionConf
       (Configured "localhost") (Configured "/") ("guest") ("guest")
+
     ssplConf = SSPLConf
       rabbitConnectionConf
-      (SensorConf (BindConf (Configured sensorExchange)
-                            (Configured routingKey)
-                            (Configured sensorQueue)))
-      (ActuatorConf (BindConf (Configured iemExchange)
-                              (Configured routingKey)
-                              (Configured iemQueue))
-                    (BindConf (Configured commandExchange)
-                              (Configured routingKey)
-                              (Configured commandQueue))
-                    (BindConf (Configured commandAckExchange)
-                              (Configured routingKey)
-                              (Configured commandAckQueue))
+      (SensorConf $ mkBindConf sensorX sensorK sensorQ)
+      (ActuatorConf (mkBindConf iemX iemK iemQ)
+                    (mkBindConf cmdX cmdK cmdQ)
+                    (mkBindConf cmdRespX cmdRespK cmdRespQ)
                     (Configured 1000000))
 
     spawnMockRabbitMQ :: ProcessId -> Process RmqSetup
@@ -490,15 +485,12 @@ run' transport pg extraRules to test = do
         link self
         rabbitMQProxy rabbitConnectionConf
       sayTest "Clearing RMQ queues."
-      purgeRmqQueues pid [ sensorQueue, iemQueue
-                         , commandQueue, commandAckQueue
-                         , proxyQueue
-                         ]
+      purgeRmqQueues pid [sensorQ, iemQ, cmdQ, cmdRespQ, proxyQ]
 
       -- Bind the send queues we'll need whether halon:sspl did it
       -- first or not.
-      usend pid $ MQBind sensorExchange sensorQueue routingKey
-      usend pid $ MQBind commandAckExchange commandAckQueue routingKey
+      usend pid $ MQBind sensorX sensorQ sensorK
+      usend pid $ MQBind cmdRespX cmdRespQ cmdRespK
 
       -- We want to be able to send messages to halon:sspl but also to
       -- be able to see the things we send. As RMQ uses round-robin to
@@ -506,29 +498,28 @@ run' transport pg extraRules to test = do
       -- subscribe to the same queue as halon:sspl. Deal with this by
       -- creating an intermediate queue used by the proxy and inspect
       -- that then forward the message to halon:sspl exchange/queue.
-      usend pid $ MQBind proxyExchange proxyQueue proxyKey
-      usend pid $ MQForward proxyQueue sensorExchange sensorQueue routingKey self
+      usend pid $ MQBind proxyX proxyQ proxyK
+      usend pid $ MQForward proxyQ sensorX sensorQ sensorK self
 
       -- We want to know what messages halon:sspl sends. This is
       -- straight forward as the proxy pretends to be SSPL simply by
       -- consuming what halon:sspl sends. This will make the proxy
       -- send us MQMessage with the content.
-      usend pid $ MQBind iemExchange iemQueue routingKey
-      usend pid $ MQBind commandExchange commandQueue routingKey
-      usend pid $ MQSubscribe iemQueue self
+      usend pid $ MQBind iemX iemQ iemK
+      usend pid $ MQBind cmdX cmdQ cmdK
+      usend pid $ MQSubscribe iemQ self
 
       -- Real SSPL returns messages in full on the command ack queue
       -- when it has processed them. Tell proxy to just forward
       -- messages from the command queue to command ack queue. This
       -- also subscribes us to 'commandQueue' which is desired.
-      usend pid $ MQForward commandQueue commandAckExchange commandAckQueue
-                            routingKey self
+      usend pid $ MQForward cmdQ cmdRespX cmdRespQ cmdRespK self
 
       sayTest "RMQ queues purged."
       link pid
       return $! RmqSetup
         { _rmq_pid = pid
-        , _rmq_publishSensorMsg = usend pid . MQPublish proxyExchange proxyKey
+        , _rmq_publishSensorMsg = usend pid . MQPublish proxyX proxyK
         }
 
 deriveSafeCopy 0 'base ''PopulateMock
