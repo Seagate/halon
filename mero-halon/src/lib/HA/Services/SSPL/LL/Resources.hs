@@ -342,27 +342,27 @@ instance (Typeable a, Binary a) => SafeCopy (Channel a) where
 
 -- | 'Schema' for IEM bind configuration.
 iemSchema :: Schema Rabbit.BindConf
-iemSchema = genericBindConf ("sspl-iem",   "iem-exchange")
-                            ("sspl-key",   "iem-routing-key")
-                            ("sspl-queue", "iem-queue")
+iemSchema = genericBindConf ("sspl-in",   "iem-exchange")
+                            ("iem-key",   "iem-routing-key")
+                            ("iem-queue", "iem-queue")
 
 -- | 'Schema' for command bind configuration.
 commandSchema :: Schema Rabbit.BindConf
-commandSchema = genericBindConf ("sspl-comand", "actuator-exchange")
-                                ("sspl-key",    "actuator-routing-key")
-                                ("sspl-queue",  "actuator-queue")
+commandSchema = genericBindConf ("sspl-in",            "actuator-exchange")
+                                ("actuator-req-key",   "actuator-routing-key")
+                                ("actuator-req-queue", "actuator-queue")
 
 -- | 'Schema' for command ack bind configuration.
 commandAckSchema :: Schema Rabbit.BindConf
-commandAckSchema = genericBindConf ("sspl-command-ack", "actuator-ack-exchange")
-                                   ("sspl-key",   "actuator-ack-routing-key")
-                                   ("sspl-queue", "actuator-ack-queue")
+commandAckSchema = genericBindConf ("sspl-out",            "actuator-resp-exchange")
+                                   ("actuator-resp-key",   "actuator-resp-routing-key")
+                                   ("actuator-resp-queue", "actuator-resp-queue")
 
 -- | 'Schema' for sensor bind configuration. See also 'sensorSchema'.
 dcsSchema :: Schema Rabbit.BindConf
-dcsSchema = genericBindConf ("sspl-sensor", "sensor-exchange")
-                            ("sspl-key",    "sensor-routing-key")
-                            ("sspl-queue",  "sensor-queue")
+dcsSchema = genericBindConf ("sspl-out",     "sensor-exchange")
+                            ("sensor-key",   "sensor-routing-key")
+                            ("sensor-queue", "sensor-queue")
 
 -- | Generic 'Schema' creating 'Rabbit.BindConf' on the given
 -- @genericBindConf exchange route queue@.
