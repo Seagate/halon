@@ -40,9 +40,9 @@ data Options
 run :: [NodeId] -> Options -> Process ()
 run nids VarsGet = clusterCommand nids Nothing GetHalonVars (say . show)
 run nids VarsSet{..} = do
-  (schan, rchan) <- newChan
-  _ <- promulgateEQ nids (GetHalonVars schan) >>= flip withMonitor wait
-  mc <- receiveTimeout 10000000 [ matchChan rchan return ]
+  (sp, rp) <- newChan
+  _ <- promulgateEQ nids (GetHalonVars sp) >>= flip withMonitor wait
+  mc <- receiveTimeout 10000000 [matchChan rp return]
   case mc of
     Nothing -> liftIO $ do
       hPutStrLn stderr "Failed to contact EQ in 10s."

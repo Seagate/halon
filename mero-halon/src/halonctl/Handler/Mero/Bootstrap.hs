@@ -219,9 +219,9 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
                     ++ preintercalate " -t " stationHosts
             else do
                 let stnodes = nids stationHosts
-                (schan, rchan) <- newChan
-                promulgateEQ_ stnodes (MarkProcessesBootstrapped schan)
-                void $ receiveWait [ matchChan rchan (const $ return ()) ]
+                (sp, rp) <- newChan
+                promulgateEQ_ stnodes (MarkProcessesBootstrapped sp)
+                void $ receiveWait [matchChan rp (const $ return ())]
 
         startCluster stationHosts
         unless dry $ void $ receiveTimeout stepDelay []

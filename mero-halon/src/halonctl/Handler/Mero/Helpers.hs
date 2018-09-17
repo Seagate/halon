@@ -34,10 +34,10 @@ clusterCommand :: (SafeCopy a, Serializable a, Serializable b, Show b)
                -> (b -> Process c)
                -> Process c
 clusterCommand eqnids mt mk f = do
-  (schan, rchan) <- newChan
-  promulgateEQ eqnids (mk schan) >>= flip withMonitor wait
+  (sp, rp) <- newChan
+  promulgateEQ eqnids (mk sp) >>= flip withMonitor wait
   let t = maybe 10000000 (* 1000000) mt
-  receiveTimeout t [ matchChan rchan f ] >>= liftIO . \case
+  receiveTimeout t [matchChan rp f] >>= liftIO . \case
     Nothing -> do
       hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
       exitFailure
