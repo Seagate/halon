@@ -133,8 +133,9 @@ Library
                    HA.RecoveryCoordinator.RC.Actions.Update
                    HA.RecoveryCoordinator.RC.Application
                    HA.RecoveryCoordinator.RC.Events
-                   HA.RecoveryCoordinator.RC.Events.Info
                    HA.RecoveryCoordinator.RC.Events.Cluster
+                   HA.RecoveryCoordinator.RC.Events.Debug
+                   HA.RecoveryCoordinator.RC.Events.Info
                    HA.RecoveryCoordinator.RC.Internal.Storage
                    HA.RecoveryCoordinator.RC.Rules
                    HA.RecoveryCoordinator.RC.Rules.Info

@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Castor.Process.Events
 
 import           Control.Distributed.Process (SendPort)
 import           Data.Binary (Binary)
-import qualified Data.Text as T
+import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 import           GHC.Generics
 import           HA.RecoveryCoordinator.Job.Actions (ListenerId)
@@ -58,7 +58,7 @@ data StopProcessUserReply =
   NoSuchProcess
   -- | Cluster would enter bad state if we stopped the process with
   -- the given reason.
-  | StopWouldBreakCluster !T.Text
+  | StopWouldBreakCluster !Text
   -- | Stop process job has been started with the given 'ListenerId'.
   | StopProcessInitiated !ListenerId
   deriving (Eq, Show, Typeable, Generic)

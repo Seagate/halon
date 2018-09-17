@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 -- |
 -- Copyright : (C) 2018 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -10,13 +12,22 @@ module Handler.Debug
 
 import           Control.Applicative ((<|>))
 import           Control.Distributed.Process (NodeId, Process)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Foldable (find)
 import           Data.List (intercalate)
 import           Data.Semigroup ((<>))
 import           Data.String (IsString, fromString)
 import           Data.Text (Text)
-import           Data.Word (Word8)
 import qualified Options.Applicative as O
+import           System.Exit (die)
+
+import           HA.RecoveryCoordinator.RC.Events.Debug
+  ( DriveId(..)
+  , QueryDriveStateReq(..)
+  , QueryDriveStateResp(..)
+  , SelectDrive(..)
+  )
+import           Handler.Mero.Helpers (clusterCommand) -- XXX s/Mero\.//
 
 data Options = OQuery Query | OModify Modify deriving Show
 
@@ -29,6 +40,13 @@ data Modify
   = MDrive SelectDrive ModifyDrive
   | MPool SelectPool ModifyPool
   deriving Show
+
+run :: [NodeId] -> Options -> Process ()
+run nids (OQuery (QDrive select QDriveState)) =
+    clusterCommand nids Nothing (QueryDriveStateReq select) $ \case
+        QueryDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
+        QueryDriveStateError -> liftIO $ die "XXX QueryDriveStateError"
+run _ x = error $ "XXX IMPLEMENTME: " ++ show x
 
 command :: String -> O.Parser a -> String -> O.Mod O.CommandFields a
 command name p = O.command name . O.info p . O.progDesc
@@ -62,18 +80,6 @@ strOption = fmap fromString . O.strOption
 
 ----------------------------------------------------------------------
 -- Drive
-
-data SelectDrive = SelectDrive
-  { _sdEnclosure :: Text
-  , _sdSlot      :: Word8
-  , _sdDrive     :: DriveId
-  } deriving Show
-
--- | Drive identifier.
-data DriveId
-  = DriveSerial Text  -- ^ Serial number of the drive.
-  | DriveWwn Text     -- ^ World Wide Name of the drive.
-  deriving Show
 
 data QueryDrive = QDriveState | QDriveRelations deriving Show
 
@@ -208,6 +214,3 @@ parseModifyPool = O.hsubparser
    parseRebalance = O.argument (reader supportedRebalanceOps)
        ( O.metavar "OPERATION"
       <> O.help ("Supported values: " ++ quoted supportedRebalanceOps) )
-
-run :: [NodeId] -> Options -> Process ()
-run _ _ = error "XXX IMPLEMENTME"
