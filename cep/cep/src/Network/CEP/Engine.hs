@@ -57,46 +57,30 @@ data Input
     = NoMessage
     | GotMessage TypeInfo Message
 
--- | Rule state data structure.
-data RuleData app = RuleData
-    { _ruleDataName :: !String
-      -- ^ Rule name.
-    , _ruleStack :: !(SM app)
-      -- ^ Rule stack of execution.
-    , _ruleTypes :: !(Set.Set TypeInfo)
-      -- ^ All the 'TypeInfo' gathered while running rule state machine. It's
-      --   only used at the CEP engine initialization phase, when calling
-      --   'buildMachine'.
-    }
-
-data Mode = Read | Write | Execute
-
--- | Represents the type of request a CEP 'Engine' can handle.
---
--- 'Query': Read request that doesn't update CEP 'Engine' internal
--- state.
---
--- 'Run': Write request that might update CEP 'Engine' internal state.
---
--- 'DefaultAction': Run default handler for unprocessed message.
+-- | Represents the type of request the CEP 'Engine' can handle.
 data Request :: Mode -> * -> * where
     Query :: Select a -> Request 'Read a
+    -- ^ Read request that doesn't update engine's internal state.
     Run :: Action a -> Request 'Write (Process (a, Engine))
+    -- ^ Write request that might update engine's internal state.
 
+data Mode = Read | Write
+
+data Action a where
+    Tick           ::                   Action RunInfo
+    Incoming       :: Message ->        Action RunInfo
+    Unpersist      :: PersistMessage -> Action RunInfo
+    NewSub         :: Subscribe ->      Action ()
+    Unsub          :: Unsubscribe ->    Action ()
+    TimeoutArrived :: TimeSpec ->       Action Int
+    -- ^ Wake up all threads that reached timeout, return
+    --   the number of threads awaken.
+
+-- | Kind of Request Queries
 data Select a = GetSetting (EngineSetting a)
                 -- ^ Get CEP 'Engine' internal setting.
               | GetRuntimeInfo Bool (RuntimeInfoQuery a)
                 -- ^ Get runtime information
-
-data Action a where
-    Tick           :: Action RunInfo
-    Incoming       :: Message   -> Action RunInfo
-    Unpersist      :: PersistMessage  -> Action RunInfo
-    NewSub         :: Subscribe -> Action ()
-    Unsub          :: Unsubscribe -> Action ()
-    TimeoutArrived :: TimeSpec -> Action Int
-    -- Wake up all threads that reached timeout, return
-    -- number of threads awaken.
 
 data EngineSetting a where
     EngineDebugMode      :: EngineSetting Bool
@@ -108,22 +92,20 @@ data RuntimeInfoQuery a where
     RuntimeInfoTotal :: RuntimeInfoQuery RuntimeInfo
 
 data MemoryInfo = MemoryInfo
-    { minfoTotalSize :: Int
-    , minfoSMSize :: Int
-    , minfoStateSize :: Int
-    }
-  deriving (Show, Generic, Typeable)
+     { minfoTotalSize :: Int
+     , minfoSMSize :: Int
+     , minfoStateSize :: Int
+     } deriving (Show, Generic, Typeable)
 
 instance Binary MemoryInfo
 
 data RuntimeInfo = RuntimeInfo
-      { infoTotalSM :: Int
-      , infoRunningSM :: Int
-      , infoSuspendedSM :: Int
-      , infoMemory :: Maybe MemoryInfo
-      , infoSMs :: M.Map String Int
-      }
-  deriving (Show, Generic, Typeable)
+     { infoTotalSM :: Int
+     , infoRunningSM :: Int
+     , infoSuspendedSM :: Int
+     , infoMemory :: Maybe MemoryInfo
+     , infoSMs :: M.Map String Int
+     } deriving (Show, Generic, Typeable)
 
 instance Binary RuntimeInfo
 
@@ -169,6 +151,17 @@ newtype Engine = Engine { _unE :: forall a m. Request m a -> a }
 
 stepForward :: Request m a -> Engine -> a
 stepForward i (Engine k) = k i
+
+-- | Rule state data structure.
+data RuleData app = RuleData
+    { _ruleDataName :: !String
+    , _ruleStack :: !(SM app)
+      -- ^ Rule stack of execution.
+    , _ruleTypes :: !(Set.Set TypeInfo)
+      -- ^ All the 'TypeInfo' gathered while running rule state machine. It's
+      --   only used at the CEP engine initialization phase, when calling
+      --   'buildMachine'.
+    }
 
 -- | Holds init rule state.
 data InitRule app where
@@ -235,7 +228,7 @@ makeLensesFor [("_machMaxThreadId","machineMaxThreadId")
 engineState :: (Application app, g ~ GlobalState app)
             => Lens' (Machine app) (EngineState g)
 engineState f m =
-      (\(EngineState t' x z s') -> m{_machMaxThreadId=t',_machState=s',_machTimestamp=x, _machEvents=z})
+      (\(EngineState t x z s) -> m{_machMaxThreadId=t, _machState=s, _machTimestamp=x, _machEvents=z})
   <$> f (EngineState (_machMaxThreadId m) (_machTimestamp m) (_machEvents m) (_machState m))
 
 -- | Creates CEP engine state with default properties.
@@ -462,8 +455,8 @@ cepCruise st req = defaultHandler st cepCruise req
 -- | Execute one step of the Engine.
 executeTick :: Application app => State.StateT (Machine app) Process [RuleInfo]
 executeTick = do
-    running <- bootstrap
-    info <- traverse execute running
+    runningSMs <- bootstrap
+    info <- traverse execute runningSMs
     sti <- State.get
     g_opt <- for (_machRuleFin sti) $ \k -> lift $ k (_machState sti)
     for_ g_opt $ \g -> State.modify $ \n -> n{_machState=g}
