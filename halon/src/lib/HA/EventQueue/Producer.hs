@@ -14,22 +14,19 @@ module HA.EventQueue.Producer
   , promulgateEvent
   ) where
 
-import HA.CallTimeout
-  ( ncallRemoteSome
-  , ncallRemoteSomePrefer
-  )
-import HA.EventQueue.Types
-import HA.Logger
+import           HA.CallTimeout (ncallRemoteSome, ncallRemoteSomePrefer)
 import qualified HA.EQTracker.Internal as EQT
-import HA.SafeCopy
+import           HA.EventQueue.Types
+import           HA.Logger
+import           HA.SafeCopy
 
-import Control.Distributed.Process hiding (bracket)
-import Control.Monad (when, void)
-import Control.Monad.Catch (bracket)
+import           Control.Distributed.Process hiding (bracket)
+import           Control.Monad (when, void)
+import           Control.Monad.Catch (bracket)
 
-import Data.Maybe (maybeToList)
-import Data.List ((\\))
-import Data.Typeable
+import           Data.Maybe (maybeToList)
+import           Data.List ((\\))
+import           Data.Typeable
 
 producerTrace :: String -> Process ()
 producerTrace = mkHalonTracer "EQ.producer"
