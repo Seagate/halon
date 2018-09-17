@@ -338,12 +338,12 @@ run' transport pg extraRules to test = do
       withSubscription [rcNodeId] (Proxy :: Proxy HalonVarsUpdated) $ do
         let hvars = _to_modify_halon_vars to $
               defaultHalonVars { _hv_mero_workers_allowed = False }
-        _ <- promulgateEQ [rcNodeId] $ SetHalonVars hvars
+        promulgateEQ_ [rcNodeId] $ SetHalonVars hvars
         HalonVarsUpdated{} <- expectPublished
         return ()
 
       withSubscription [rcNodeId] (Proxy :: Proxy InitialDataLoaded) $ do
-        _ <- promulgateEQ [rcNodeId] idata
+        promulgateEQ_ [rcNodeId] idata
         expectPublished >>= \case
           InitialDataLoaded -> return ()
           InitialDataLoadFailed e -> fail e
@@ -366,7 +366,7 @@ run' transport pg extraRules to test = do
                         case mt of
                           Nothing -> return ws'
                           Just m0dPid -> do
-                            _ <- promulgateEQ [rcNodeId] $ PopulateMock m0dPid nid
+                            promulgateEQ_ [rcNodeId] $ PopulateMock m0dPid nid
                             return $! filter (/= nid) ws'
                   foldM act waits nids >>= \newWaits ->do
                     -- 200ms breather otherwise we really go to town on requests
@@ -402,7 +402,7 @@ run' transport pg extraRules to test = do
       case _to_cluster_setup to of
         Bootstrapped -> do
           withSubscription [rcNodeId] (Proxy :: Proxy ClusterStartResult) $ do
-            _ <- promulgateEQ [rcNodeId] ClusterStartRequest
+            promulgateEQ_ [rcNodeId] ClusterStartRequest
             startM0Ds
             expectPublished >>= \case
               ClusterStartOk -> sayTest "Cluster bootstrap finished."
@@ -410,7 +410,7 @@ run' transport pg extraRules to test = do
         HalonM0DOnly -> do
           rg' <- G.getGraph (ta_mm ta)
           for_ (mapMaybe (\n -> M0.nodeToM0Node (R.Node n) rg') nids) $ \m0n -> do
-            _ <- promulgateEQ [rcNodeId] $! StartHalonM0dRequest m0n
+            promulgateEQ_ [rcNodeId] $! StartHalonM0dRequest m0n
             sayTest $ "Sent StartHalonM0dRequest for " ++ show m0n
           startM0Ds
         NoSetup -> sayTest "No setup requested."

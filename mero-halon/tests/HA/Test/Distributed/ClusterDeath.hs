@@ -106,7 +106,7 @@ test = testCase "ClusterDeath" $
       -- By default halond tries to search for the failed nodes
       -- once per minute, this makes test run really slow and timeout on a slow
       -- CI. So we setup a new options that will query new node once per 10s.
-      _ <- promulgateEQ [nid0] $ SetHalonVars fastReconnectVars
+      promulgateEQ_ [nid0] $ SetHalonVars fastReconnectVars
 
       say "Starting dummy service ..."
       systemThere [m0] ("./halonctl"

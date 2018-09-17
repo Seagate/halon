@@ -12,7 +12,7 @@ module Handler.Mero.Process.Start
 
 import           Control.Distributed.Process
 import           Data.Monoid ((<>))
-import           HA.EventQueue (promulgateEQ)
+import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.RC.Events.Info
 import qualified Handler.Mero.Helpers as Helpers
@@ -40,7 +40,7 @@ parser = Options
 run :: [NodeId] -> Options -> Process ()
 run nids opts = do
   (sp, rp) <- newChan
-  _ <- promulgateEQ nids $! ProcessQueryRequest (_fid opts) sp
+  promulgateEQ_ nids $! ProcessQueryRequest (_fid opts) sp
   receiveChan rp >>= \case
     Nothing -> liftIO $ do
       hPutStrLn stderr $

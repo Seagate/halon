@@ -26,6 +26,7 @@ module HA.EventQueue
   , HA.EventQueue.Producer.promulgate
   , HA.EventQueue.Producer.promulgateWait
   , HA.EventQueue.Producer.promulgateEQ
+  , HA.EventQueue.Producer.promulgateEQ_
   , eventQueueLabel
     -- * Debug utilities.
     -- ** Queue control

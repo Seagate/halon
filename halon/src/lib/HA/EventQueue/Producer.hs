@@ -7,6 +7,7 @@
 {-# LANGUAGE LambdaCase #-}
 module HA.EventQueue.Producer
   ( promulgateEQ
+  , promulgateEQ_
   , promulgateEQPref
   , promulgate
   , promulgateWait
@@ -59,6 +60,10 @@ promulgateEQ eqnids x = spawnLocal $ do
     go evt = do
       res <- promulgateHAEvent eqnids evt
       when (res == Failure) $ receiveTimeout 1000000 [] >> go evt
+
+-- | Like 'promulgateEQ', but ignores the result.
+promulgateEQ_ :: (SafeCopy a, Typeable a) => [NodeId] -> a -> Process ()
+promulgateEQ_ nids = void . promulgateEQ nids
 
 -- | Like 'promulgateEQ', but express a preference for certain EQ nodes.
 promulgateEQPref :: (SafeCopy a, Typeable a)

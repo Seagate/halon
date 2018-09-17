@@ -71,7 +71,7 @@ testServiceRestarting transport pg = runDefaultTest transport $ do
 
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
-    _ <- promulgateEQ [nid] . encodeP $
+    promulgateEQ_ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
@@ -99,14 +99,14 @@ testServiceNotRestarting transport pg = runDefaultTest transport $ do
     nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
 
-    _ <- promulgateEQ [nid] . encodeP $
+    promulgateEQ_ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
     pid <- serviceStarted Dummy.dummy
     sayTest $ "Dummy service started successfully."
 
-    _ <- promulgateEQ [nid] $
+    promulgateEQ_ [nid] $
            ServiceFailed (Node nid)
                          (encodeP $ ServiceInfo Dummy.dummy (Dummy.DummyConf $ Configured "Test 1"))
                          (nullProcessId nid)
@@ -131,7 +131,7 @@ testEQTrimming transport pg = runDefaultTest transport $ do
     replicateM_ 10 $ promulgateEQ [nid] Step
     TrimDone{} <- expectPublished
 
-    _ <- promulgateEQ [nid] $  encodeP $
+    promulgateEQ_ [nid] $  encodeP $
       ServiceStartRequest Start (Node nid)
         Dummy.dummy (Dummy.DummyConf $ Configured "Test 1")
         []
@@ -159,7 +159,7 @@ testEQTrimUnknown transport pg = runDefaultTest transport $ do
   withTrackingStation pg emptyRules $ \(TestArgs eq _ _) -> do
     subscribe eq (Proxy :: Proxy TrimDone)
     nodeUp [nid]
-    _ <- promulgateEQ [nid] AbraCadabra
+    promulgateEQ_ [nid] AbraCadabra
     TrimDone{} <- expectPublished
     return ()
 
@@ -191,7 +191,7 @@ testServiceStopped transport pg = runDefaultTest transport $ do
   withTrackingStation pg emptyRules $ \(TestArgs _ _ rc) -> do
     nodeUp [nid]
     subscribe rc (Proxy :: Proxy (HAEvent ServiceStarted))
-    _ <- promulgateEQ [nid] . encodeP $
+    promulgateEQ_ [nid] . encodeP $
       ServiceStartRequest Start (Node nid) Dummy.dummy
         (Dummy.DummyConf $ Configured "Test 1") []
 
@@ -199,8 +199,7 @@ testServiceStopped transport pg = runDefaultTest transport $ do
     sayTest $ "dummy service started successfully."
 
     _ <- monitor pid
-    _ <- promulgateEQ [nid] . encodeP $ ServiceStopRequest (Node nid)
-                                                           Dummy.dummy
+    promulgateEQ_ [nid] . encodeP $ ServiceStopRequest (Node nid) Dummy.dummy
 
     (_ :: ProcessMonitorNotification) <- expect
     sayTest $ "dummy service stopped."

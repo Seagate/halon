@@ -120,7 +120,7 @@ rcStats :: [NodeId] -> RCStatsOptions -> Process ()
 rcStats nids (RCStatsOptions t) = do
     eqs <- findEQFromNodes t nids
     (sp, rp) <- newChan
-    _ <- promulgateEQ eqs $ DebugRequest sp
+    promulgateEQ_ eqs $ DebugRequest sp
     receiveChan rp >>= liftIO . display
   where
     display (DebugResponse{..}) = do
@@ -303,7 +303,7 @@ graphInfo nids (GraphInfoOptions format) = do
         Dot -> ReadResourceGraph sp
         KeyValues -> MultimapGetKeyValuePairs sp
   eqs <- findEQFromNodes (5 * 1000000) nids
-  _ <- promulgateEQ eqs cmd
+  promulgateEQ_ eqs cmd
   fix $ \go -> receiveWait
     [ matchChan rp $ \case
         GraphDataChunk resp -> do

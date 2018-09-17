@@ -15,7 +15,7 @@ import           Control.Monad.Catch (bracket_)
 import           Control.Monad.Fix (fix)
 import           Data.Monoid ((<>))
 import           Data.Proxy
-import           HA.EventQueue (promulgateEQ)
+import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           Mero.ConfC (strToFid)
@@ -45,11 +45,11 @@ run eqnids opts = do
       hPutStrLn stderr "Not a fid"
       exitFailure
     Just fid -> do
-      (schan, rchan) <- newChan
+      (sp, rp) <- newChan
       subscribing $ do
-         _ <- promulgateEQ eqnids $ StopNodeUserRequest
-                fid (stopNodeForce opts) schan (stopNodeReason opts)
-         r <- receiveChan rchan
+         promulgateEQ_ eqnids $ StopNodeUserRequest fid (stopNodeForce opts) sp
+             (stopNodeReason opts)
+         r <- receiveChan rp
          case r of
            NotANode{} ->liftIO $ do
              hPutStrLn stderr "Requested fid is not a node fid."

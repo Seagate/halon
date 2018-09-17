@@ -6,8 +6,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module HA.Test.Cluster where
 
-import HA.EventQueue.Producer (promulgateEQ)
-import HA.NodeUp ( nodeUp )
+import HA.EventQueue.Producer (promulgateEQ_)
+import HA.NodeUp (nodeUp)
 import HA.Resources
 import HA.RecoveryCoordinator.Definitions
 import HA.RecoveryCoordinator.Service.Events
@@ -60,12 +60,12 @@ testServiceStop transport = runTest 2 10 1000000 transport remoteTable $ \[n] ->
             _ -> return ()
 
   say "starting service"
-  _ <- promulgateEQ [localNodeId n] . encodeP $
+  promulgateEQ_ [localNodeId n] . encodeP $
          ServiceStartRequest Start (Node $ localNodeId n) DLog.decisionLog
           (DLog.processOutput self) []
   "Test 1" :: String <- expect
   say "stopping service"
-  _ <- promulgateEQ [localNodeId n] . encodeP $
+  promulgateEQ_ [localNodeId n] . encodeP $
          ServiceStopRequest (Node $ localNodeId n) DLog.decisionLog
 
   say "doing something strange"

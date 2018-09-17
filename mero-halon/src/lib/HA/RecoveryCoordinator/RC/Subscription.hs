@@ -10,11 +10,7 @@ module HA.RecoveryCoordinator.RC.Subscription
   , unsubscribeOnFrom
   ) where
 
-import HA.EventQueue
-  ( promulgate
-  , promulgateEQ
-  , promulgateWait
-  )
+import HA.EventQueue (promulgate, promulgateEQ, promulgateEQ_, promulgateWait)
 import HA.RecoveryCoordinator.RC.Events
 
 import Control.Distributed.Process
@@ -60,7 +56,7 @@ subscribeOnTo nids _ = do
   let fp = fingerprint (undefined :: a)
       fpBs = encodeFingerprint fp
   self <- getSelfPid
-  _ <- promulgateEQ nids $ SubscribeToRequest self fpBs
+  promulgateEQ_ nids $ SubscribeToRequest self fpBs
   receiveWait
     [ matchIf (\(SubscribeToReply fp') -> fp' == fpBs) (const $ return ())]
 

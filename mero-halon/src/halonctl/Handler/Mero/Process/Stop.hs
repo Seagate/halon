@@ -12,7 +12,7 @@ module Handler.Mero.Process.Stop
 
 import           Control.Distributed.Process
 import           Data.Monoid ((<>))
-import           HA.EventQueue (promulgateEQ)
+import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import qualified HA.Resources.Mero as M0
 import qualified Handler.Mero.Helpers as Helpers
@@ -48,7 +48,7 @@ run :: [NodeId] -> Options -> Process ()
 run nids opts = do
   (sp, rp) <- newChan
   waitResult <- Helpers.waitJob nids act
-  _ <- promulgateEQ nids $! StopProcessUserRequest (_fid opts) (_force opts) sp
+  promulgateEQ_ nids $! StopProcessUserRequest (_fid opts) (_force opts) sp
   receiveChan rp >>= \case
     NoSuchProcess -> liftIO $ do
       hPutStrLn stderr $

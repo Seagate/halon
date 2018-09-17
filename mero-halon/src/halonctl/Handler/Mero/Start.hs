@@ -14,7 +14,7 @@ import           Control.Distributed.Process hiding (bracket_)
 import           Data.Maybe (mapMaybe)
 import           Data.Monoid ((<>))
 import           Data.Proxy
-import           HA.EventQueue (promulgateEQ)
+import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
@@ -38,7 +38,7 @@ run :: [NodeId] -> Options -> Process ()
 run eqnids (Options False) = do
   say "Starting cluster."
   subscribeOnTo eqnids (Proxy :: Proxy ClusterStartResult)
-  _ <- promulgateEQ eqnids ClusterStartRequest
+  promulgateEQ_ eqnids ClusterStartRequest
   Published msg _ <- expect :: Process (Published ClusterStartResult)
   unsubscribeOnFrom eqnids (Proxy :: Proxy ClusterStartResult)
   liftIO $ do
@@ -48,7 +48,7 @@ run eqnids (Options False) = do
       ClusterStartTimeout{} -> exitFailure
       ClusterStartFailure{} -> exitFailure
 run eqnids (Options True) = do
-  _ <- promulgateEQ eqnids ClusterStartRequest
+  promulgateEQ_ eqnids ClusterStartRequest
   liftIO $ putStrLn "Cluster start request sent."
 
 -- | Nicely format 'ClusterStartResult' into something the user can

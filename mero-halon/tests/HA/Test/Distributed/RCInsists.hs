@@ -119,7 +119,7 @@ test = testCase "RCInsists" $
       liftIO $ isolateHostsAsUser "root" [m1] ms
       whereisRemoteAsync nid1 $ serviceLabel Dummy.dummy
       WhereIsReply _ (Just pid) <- expect
-      _ <- promulgateEQ [nid0] $ ServiceFailed (Node nid1)
+      promulgateEQ_ [nid0] $ ServiceFailed (Node nid1)
              (encodeP $ ServiceInfo Dummy.dummy $ Dummy.DummyConf (Default "Hello World!"))
              pid
       False <- expectTimeoutLog 1000000 [nid0]

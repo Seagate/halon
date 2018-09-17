@@ -312,7 +312,7 @@ failDrive ts (ADisk (Cas.StorageDevice serial) (Just sdev) _ _) = do
   sayTest "failDrive"
   preResetSt <- HA.Resources.Mero.Note.getState sdev <$> G.getGraph (_ts_mm ts)
   -- We a drive failure note to the RC.
-  _ <- promulgateEQ [processNodeId $ _ts_rc ts] (mkSDevFailedMsg sdev)
+  promulgateEQ_ [processNodeId $ _ts_rc ts] (mkSDevFailedMsg sdev)
 
   -- Mero should be notified that the drive should be transient.
   Just{} <- waitState sdev (_ts_mm ts) 2 10 $ \st ->
