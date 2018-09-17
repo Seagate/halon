@@ -44,14 +44,8 @@ testFork = do
     usend pid ()
     usend pid (5::Int)
 
-    assertEqual "foo"
-      [ "load"
-      , "work1"
-      , "load"
-      , "work3"
-      , "load"
-      , "work5"
-      ] =<< replicateM 6 expect
+    assertEqual "foo" [ "work1", "work3", "work5" ]
+      . filter (/= "load") =<< replicateM 6 expect
   where
 
     rule :: ProcessId -> Specification TestApp ()
