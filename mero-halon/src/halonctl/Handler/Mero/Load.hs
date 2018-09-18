@@ -9,7 +9,7 @@ module Handler.Mero.Load
   , run
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Control.Monad
 import           Data.Monoid ((<>))
 import           Data.Proxy
@@ -20,8 +20,7 @@ import           HA.RecoveryCoordinator.RC.Events.Cluster
 import qualified HA.Resources.Castor.Initial as CI
 import           Network.CEP
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die)
 
 data Options = Options
     FilePath -- ^ Facts file
@@ -73,9 +72,7 @@ run :: [NodeId] -- ^ EQ nodes to send data to
 run eqnids (Options cf maps halonMaps verify _t) = do
   initData <- liftIO $ CI.parseInitialData cf maps halonMaps
   case initData of
-    Left err -> liftIO $ do
-      putStrLn $ prettyPrintParseException err
-      exitFailure
+    Left err -> liftIO . die $ prettyPrintParseException err
     Right (datum, _) | verify -> liftIO $ do
       putStrLn "Initial data file parsed successfully."
       print datum
@@ -85,13 +82,10 @@ run eqnids (Options cf maps halonMaps verify _t) = do
       expectTimeout (_t * 1000000) >>= \v -> do
         unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
         case v of
-          Nothing -> liftIO $ do
-            hPutStrLn stderr "Timed out waiting for initial data to load."
-            exitFailure
+          Nothing -> liftIO $ die "Timed out waiting for initial data to load."
           Just p -> case pubValue p of
             InitialDataLoaded -> return ()
-            InitialDataLoadFailed e -> liftIO $ do
-              hPutStrLn stderr $ "Initial data load failed: " ++ e
-              exitFailure
+            InitialDataLoadFailed e -> liftIO . die $
+              "Initial data load failed: " ++ e
       where
         wait = void (expect :: Process ProcessMonitorNotification)

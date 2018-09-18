@@ -18,7 +18,7 @@ import Data.List (isInfixOf)
 import Data.Maybe (maybeToList)
 import System.Directory (setCurrentDirectory, createDirectoryIfMissing)
 import System.Environment (getExecutablePath, getArgs, lookupEnv)
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (die, exitSuccess)
 import System.FilePath ((</>), takeDirectory)
 import System.Process (readProcess, callProcess)
 
@@ -26,7 +26,7 @@ import System.Process (readProcess, callProcess)
 printTest :: String -> Bool -> IO ()
 printTest s b = do putStr (s ++ ": ")
                    if b then putStrLn "Ok"
-                        else (putStrLn "Failed" >> exitFailure)
+                        else die "Failed"
 
 tests :: RPCAddress -> IO ()
 tests addr = do

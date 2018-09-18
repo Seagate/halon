@@ -8,22 +8,22 @@ import Control.Distributed.Process.Consensus
 import Control.Distributed.Process.Consensus.Paxos
 import Control.Distributed.Process.Consensus.BasicPaxos as BasicPaxos
 
-import Control.Distributed.Process hiding (bracket, onException, catch, bracket)
+import Control.Distributed.Process hiding (bracket, catch, die, onException)
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
-    ( schedulerIsEnabled, withScheduler, __remoteTable )
+    (schedulerIsEnabled, withScheduler, __remoteTable)
 import Network.Transport (Transport(..))
 import qualified Network.Transport.InMemory as InMemory
 
-import Control.Monad ( when, forM, forM_, replicateM_ )
+import Control.Monad (when, forM, forM_, replicateM_)
 import Control.Monad.Catch
 import Data.IORef
 import qualified Data.Map as Map
-import System.Exit ( exitFailure )
-import System.Environment ( getArgs )
+import System.Exit (die)
+import System.Environment (getArgs)
 import System.IO
 import System.Posix.Env (setEnv)
-import System.Random ( randomIO, split, mkStdGen, random, randoms, randomRs )
+import System.Random (randomIO, split, mkStdGen, random, randoms, randomRs)
 
 remoteTables :: RemoteTable
 remoteTables =
@@ -38,7 +38,7 @@ main = do
  hSetBuffering stdout LineBuffering
  hSetBuffering stderr LineBuffering
  if not schedulerIsEnabled
-   then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
+   then die "The deterministic scheduler is not enabled."
    else do
      args <- getArgs
      s <- case args of

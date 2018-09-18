@@ -16,7 +16,7 @@ module Handler.Mero.Bootstrap
   , run
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Control.Lens
 import           Control.Monad (unless, when, void)
 import           Data.Bifunctor
@@ -44,7 +44,7 @@ import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Internal as Opt
 import qualified Options.Applicative.Types as Opt
 import           System.Environment (lookupEnv)
-import           System.Exit (exitFailure)
+import           System.Exit (die)
 import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
@@ -268,9 +268,8 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
         let conf' = conf { NodeAdd.configTrackers = Configured stations }
         NodeAdd.run (nids satellites) conf' >>= \case
             [] -> return ()
-            errs -> do
-                out2 $ "nodeUp failed on following nodes: " ++ show errs
-                liftIO exitFailure
+            errs -> liftIO . die $
+                "nodeUp failed on following nodes: " ++ show errs
 
     startService :: String
                  -> (String, Service.Options)
@@ -293,13 +292,11 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
         expectTimeout stepDelay >>= \v -> do
             unsubscribeOnFrom eqnids (Proxy :: Proxy InitialDataLoaded)
             case v of
-                Nothing -> do
-                    out2 "Timed out waiting for initial data to load"
-                    liftIO exitFailure
+                Nothing ->
+                    liftIO $ die "Timed out waiting for initial data to load"
                 Just p -> case pubValue p of
-                    InitialDataLoadFailed err -> do
-                        out2 $ "Initial data load failed: " ++ err
-                        liftIO exitFailure
+                    InitialDataLoadFailed err -> liftIO . die $
+                        "Initial data load failed: " ++ err
                     InitialDataLoaded -> return ()
 
     startCluster :: [String] -> Process ()

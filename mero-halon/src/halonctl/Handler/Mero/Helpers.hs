@@ -12,7 +12,7 @@ module Handler.Mero.Helpers
   , waitJob
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Control.Distributed.Process.Serializable
 import           Control.Monad
 import           Data.Typeable
@@ -24,8 +24,7 @@ import           HA.SafeCopy
 import           Mero.ConfC (Fid, strToFid)
 import           Network.CEP (Published(..))
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die)
 
 clusterCommand :: (SafeCopy a, Serializable a, Serializable b, Show b)
                => [NodeId]
@@ -38,9 +37,7 @@ clusterCommand eqnids mt mk f = do
   promulgateEQ eqnids (mk sp) >>= flip withMonitor wait
   let t = maybe 10000000 (* 1000000) mt
   receiveTimeout t [matchChan rp f] >>= liftIO . \case
-    Nothing -> do
-      hPutStrLn stderr "Timed out waiting for cluster status reply from RC."
-      exitFailure
+    Nothing -> die "Timed out waiting for cluster status reply from RC."
     Just c -> return c
   where
     wait = void (expect :: Process ProcessMonitorNotification)

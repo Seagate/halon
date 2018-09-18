@@ -10,7 +10,7 @@ module Handler.Mero.Process.Start
   , run
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Data.Monoid ((<>))
 import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
@@ -18,8 +18,7 @@ import           HA.RecoveryCoordinator.RC.Events.Info
 import qualified Handler.Mero.Helpers as Helpers
 import           Mero.ConfC (Fid)
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die)
 import           Text.Printf (printf)
 
 data Options = Options
@@ -42,17 +41,12 @@ run nids opts = do
   (sp, rp) <- newChan
   promulgateEQ_ nids $! ProcessQueryRequest (_fid opts) sp
   receiveChan rp >>= \case
-    Nothing -> liftIO $ do
-      hPutStrLn stderr $
-        printf "RC didn't find process with fid %s" (show $ _fid opts)
-      exitFailure
+    Nothing -> liftIO . die $
+      "RC didn't find process with fid " ++ show (_fid opts)
     Just p -> Helpers.runJob nids (ProcessStartRequest p) act
   where
     act = if _async opts
           then Nothing
           else Just $ liftIO . \case
       ProcessStarted{} -> putStrLn $ printf "%s started." (show $ _fid opts)
-      r -> do
-        hPutStrLn stderr $
-          printf "%s failed to start: %s" (show $ _fid opts) (show r)
-        exitFailure
+      r -> die $ printf "%s failed to start: %s" (show $ _fid opts) (show r)

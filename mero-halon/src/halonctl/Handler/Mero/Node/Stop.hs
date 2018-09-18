@@ -9,7 +9,7 @@ module Handler.Mero.Node.Stop
   , run
   ) where
 
-import           Control.Distributed.Process hiding (bracket_)
+import           Control.Distributed.Process hiding (bracket_, die)
 import           Control.Monad
 import           Control.Monad.Catch (bracket_)
 import           Control.Monad.Fix (fix)
@@ -21,7 +21,7 @@ import           HA.RecoveryCoordinator.RC (subscribeOnTo, unsubscribeOnFrom)
 import           Mero.ConfC (strToFid)
 import           Network.CEP
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure)
+import           System.Exit (die, exitFailure)
 import           System.IO (hPutStrLn, stderr)
 
 data Options = Options
@@ -41,9 +41,7 @@ parser = Options
 run :: [NodeId] -> Options -> Process ()
 run eqnids opts = do
   case strToFid (stopNodeFid opts) of
-    Nothing -> liftIO $ do
-      hPutStrLn stderr "Not a fid"
-      exitFailure
+    Nothing -> liftIO $ die "Not a fid"
     Just fid -> do
       (sp, rp) <- newChan
       subscribing $ do
@@ -51,9 +49,7 @@ run eqnids opts = do
              (stopNodeReason opts)
          r <- receiveChan rp
          case r of
-           NotANode{} ->liftIO $ do
-             hPutStrLn stderr "Requested fid is not a node fid."
-             exitFailure
+           NotANode{} -> liftIO $ die "Requested fid is not a node fid."
            CantStop _ _ results -> liftIO $ do
              hPutStrLn stderr "Can't stop node because it leads to:"
              forM_ results $ \result -> hPutStrLn stderr $ "    " ++ result

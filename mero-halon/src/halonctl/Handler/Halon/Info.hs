@@ -15,7 +15,7 @@ module Handler.Halon.Info
 
 
 import           Control.Applicative ((<|>))
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import qualified Control.Distributed.Process.Internal.Primitives as P
 import           Control.Monad (void, when)
 import           Control.Monad.Fix (fix)
@@ -31,8 +31,8 @@ import           Lookup
 import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 import qualified Options.Applicative as O
 import qualified Options.Applicative.Extras as O
-import           System.Exit (exitFailure)
-import           System.IO (hFlush, hPutStrLn, stderr, stdout)
+import           System.Exit (die)
+import           System.IO (hFlush, stdout)
 import           Text.Printf (printf)
 
 data Options =
@@ -87,9 +87,7 @@ eqStats nids (EQStatsOptions t c _) = do
       putStrLn "Message IDs in queue:"
       for_ eqs_uuids $ \uuid ->
         putStrLn $ "\t" ++ show uuid
-    display EQStatRespCannotBeFetched = do
-      hPutStrLn stderr "Cannot fetch EQ stats."
-      exitFailure
+    display EQStatRespCannotBeFetched = die "Cannot fetch EQ stats."
 
 parseEQStatsOptions :: O.Parser EQStatsOptions
 parseEQStatsOptions = EQStatsOptions
@@ -167,9 +165,7 @@ cepStats nids (CEPStatsOptions t m) = do
              else for_ mp $ \p -> do
                usend p (RuntimeInfoRequest self m)
                expect >>= displayCepReply
-        , match $ \() -> liftIO $ do
-            hPutStrLn stderr "RuntimeInfo cannot be fetched."
-            exitFailure
+        , match $ \() -> liftIO $ die "RuntimeInfo cannot be fetched."
         ]
   where
     labelRecoveryCoordinator = "mero-halon.RC"
@@ -280,11 +276,9 @@ nodeStats nids (NodeStatsOptions t) = do
                          nodeStatsLinks
                          nodeStatsProcesses
                          (formatMnsr mr nid)
-    display (Left r) mr nid = liftIO $ do
-      hPutStrLn stderr $
+    display (Left r) mr nid = liftIO . die $
         printf (unlines [ "Died: %s", "Node info: %s" ])
                (show r) (formatMnsr mr nid)
-      exitFailure
 
 parseNodeStatsOptions :: O.Parser NodeStatsOptions
 parseNodeStatsOptions = NodeStatsOptions

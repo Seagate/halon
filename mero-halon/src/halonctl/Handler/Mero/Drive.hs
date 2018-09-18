@@ -10,7 +10,7 @@ module Handler.Mero.Drive
   , run
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Data.Foldable
 import           Data.Monoid ((<>))
 import           HA.RecoveryCoordinator.Castor.Commands.Events
@@ -19,7 +19,7 @@ import           Handler.Mero.Helpers (clusterCommand)
 import           Options.Applicative
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
-import           System.Exit (exitFailure)
+import           System.Exit (die)
 
 parser :: Parser Options
 parser = asum
@@ -96,22 +96,14 @@ run nids (DriveStatus serial slot@(Castor.Slot enc _) status) =
       putStrLn $ "Unkown drive " ++ serial
     StorageDeviceStatusErrorNoSuchEnclosure -> liftIO $ do
       putStrLn $ "can't find an enclosure " ++ show enc ++ " or node associated with it"
-    StorageDeviceStatusUpdated -> liftIO $ do
-      putStrLn $ "Command executed."
+    StorageDeviceStatusUpdated -> liftIO $ putStrLn "Command executed."
 run nids (DrivePresence serial slot@(Castor.Slot enc _) isInstalled isPowered) =
   clusterCommand nids Nothing (CommandStorageDevicePresence serial slot isInstalled isPowered) $ \case
-    StorageDevicePresenceErrorNoSuchDevice -> liftIO $ do
-      putStrLn $ "Unknown drive " ++ serial
-      exitFailure
-    StorageDevicePresenceErrorNoSuchEnclosure -> liftIO $ do
-      putStrLn $ "No enclosure " ++ show enc
-      exitFailure
-    StorageDevicePresenceUpdated -> liftIO $ do
-      putStrLn $ "Command executed."
+    StorageDevicePresenceErrorNoSuchDevice -> liftIO . die $ "Unknown drive " ++ serial
+    StorageDevicePresenceErrorNoSuchEnclosure -> liftIO . die $ "No enclosure " ++ show enc
+    StorageDevicePresenceUpdated -> liftIO $ putStrLn "Command executed."
 run nids (DriveNew serial path) =
   clusterCommand nids Nothing (CommandStorageDeviceCreate serial path) $ \case
-   StorageDeviceErrorAlreadyExists -> liftIO $ do
-     putStrLn $ "Drive already exists: " ++ serial
-     exitFailure
+   StorageDeviceErrorAlreadyExists -> liftIO . die $ "Drive already exists: " ++ serial
    StorageDeviceCreated -> liftIO $ do
      putStrLn $ "Storage device created."

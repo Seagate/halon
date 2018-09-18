@@ -17,7 +17,7 @@ import Control.Distributed.Log as Log
 import Control.Distributed.Log.Snapshot
 import Control.Distributed.State as State
 
-import Control.Distributed.Process hiding (bracket, catch, onException, try)
+import Control.Distributed.Process hiding (bracket, catch, die, onException, try)
 import Control.Distributed.Process.Closure
 import Control.Distributed.Process.Node
 import Control.Distributed.Process.Scheduler
@@ -25,20 +25,20 @@ import Control.Distributed.Process.Scheduler
 import Control.Distributed.Static ( staticApply, staticClosure )
 import Network.Transport (Transport(..))
 
-import Control.Monad ( when, forM_, replicateM, foldM_, void )
+import Control.Monad (when, forM_, replicateM, foldM_, void)
 import Control.Monad.Catch
 import Data.Constraint (Dict(..))
 import qualified Data.Map as Map
 import Data.Typeable (Typeable)
 import Data.IORef
-import Data.List ( isPrefixOf )
+import Data.List (isPrefixOf)
 import Data.Ratio ((%))
-import System.Exit ( exitFailure )
-import System.Environment ( getArgs )
+import System.Exit (die)
+import System.Environment (getArgs)
 import System.FilePath ((</>))
 import System.IO
 import System.Posix.Env (setEnv)
-import System.Random ( randomIO, mkStdGen, random, randoms )
+import System.Random (randomIO, mkStdGen, random, randoms)
 
 
 type State = [Int]
@@ -166,7 +166,7 @@ main = do
       _           -> [mkInMemoryTransport]
  setEnv "DP_SCHEDULER_ENABLED" "1" True
  if not schedulerIsEnabled
-   then putStrLn "The deterministic scheduler is not enabled." >> exitFailure
+   then die "The deterministic scheduler is not enabled."
    else do
      args <- getArgs
      s <- case args of

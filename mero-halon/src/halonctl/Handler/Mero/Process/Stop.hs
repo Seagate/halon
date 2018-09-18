@@ -10,18 +10,16 @@ module Handler.Mero.Process.Stop
   , run
   ) where
 
-import           Control.Distributed.Process
+import           Control.Distributed.Process hiding (die)
 import           Data.Monoid ((<>))
 import           HA.EventQueue (promulgateEQ_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import qualified HA.Resources.Mero as M0
 import qualified Handler.Mero.Helpers as Helpers
 import           Mero.ConfC (Fid)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import qualified Data.Text as T (unpack)
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die)
 import           Text.Printf (printf)
 
 data Options = Options
@@ -50,14 +48,10 @@ run nids opts = do
   waitResult <- Helpers.waitJob nids act
   promulgateEQ_ nids $! StopProcessUserRequest (_fid opts) (_force opts) sp
   receiveChan rp >>= \case
-    NoSuchProcess -> liftIO $ do
-      hPutStrLn stderr $
-        printf "RC didn't find process with fid %s" (show $ _fid opts)
-      exitFailure
-    StopWouldBreakCluster reason -> liftIO $ do
-      T.hPutStrLn stderr $
-        T.pack "Process stop would lower cluster liveness: " <> reason
-      exitFailure
+    NoSuchProcess -> liftIO . die $
+      "RC didn't find process with fid " ++ show (_fid opts)
+    StopWouldBreakCluster reason -> liftIO . die $
+      "Process stop would lower cluster liveness: " ++ T.unpack reason
     StopProcessInitiated l -> do
       liftIO $! putStrLn "Process stop initiated."
       waitResult l
@@ -67,7 +61,4 @@ run nids opts = do
           else Just $ liftIO . \case
       StopProcessResult (_, M0.PSOffline) ->
         putStrLn $ printf "%s stopped." (show $ _fid opts)
-      r -> do
-        hPutStrLn stderr $
-          printf "%s failed to stop: %s" (show $ _fid opts) (show r)
-        exitFailure
+      r -> die $ printf "%s failed to stop: %s" (show $ _fid opts) (show r)

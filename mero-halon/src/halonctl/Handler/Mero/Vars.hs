@@ -10,7 +10,7 @@ module Handler.Mero.Vars
   , run
   ) where
 
-import           Control.Distributed.Process hiding (bracket_)
+import           Control.Distributed.Process hiding (bracket_, die)
 import           Control.Monad
 import           Data.Monoid ((<>), mconcat)
 import           HA.EventQueue (promulgateEQ)
@@ -20,8 +20,7 @@ import qualified HA.Resources.HalonVars as Castor
 import           Handler.Mero.Helpers (clusterCommand)
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Extras as Opt
-import           System.Exit (exitFailure)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die)
 
 data Options
        = VarsGet
@@ -44,9 +43,7 @@ run nids VarsSet{..} = do
   _ <- promulgateEQ nids (GetHalonVars sp) >>= flip withMonitor wait
   mc <- receiveTimeout 10000000 [matchChan rp return]
   case mc of
-    Nothing -> liftIO $ do
-      hPutStrLn stderr "Failed to contact EQ in 10s."
-      exitFailure
+    Nothing -> liftIO $ die "Failed to contact EQ in 10s."
     Just  c ->
       let hv = foldr ($) c
                  [ maybe id (\s -> \x -> x{Castor._hv_recovery_expiry_seconds = s}) recoveryExpirySeconds

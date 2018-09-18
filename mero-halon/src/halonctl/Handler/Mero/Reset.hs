@@ -9,7 +9,7 @@ module Handler.Mero.Reset
   , run
   ) where
 
-import           Control.Distributed.Process hiding (bracket_)
+import           Control.Distributed.Process hiding (bracket_, die)
 import           Control.Monad
 import           Control.Monad.Fix (fix)
 import           Data.Foldable
@@ -20,8 +20,7 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import           Lookup (findEQFromNodes)
 import qualified Options.Applicative as Opt
-import           System.Exit (exitFailure, exitSuccess)
-import           System.IO (hPutStrLn, stderr)
+import           System.Exit (die, exitSuccess)
 
 data Options = Options Bool Bool
   deriving (Eq, Show)
@@ -64,9 +63,7 @@ run eqnids (Options hard unstick) = if unstick
                liftIO $ putStrLn "Killing recovery coordinator."
                kill p "User requested `cluster reset --unstick`"
                liftIO exitSuccess
-        , match $ \() -> liftIO $ do
-            hPutStrLn stderr "Cannot determine the location of the RC."
-            exitFailure
+        , match $ \() -> liftIO $ die "Cannot determine the location of the RC."
         ]
   else do
       promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
