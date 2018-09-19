@@ -20,7 +20,7 @@ int m0_init_wrapper(void)
 		&m0init_hi,
 		M0_VERSION_GIT_REV_ID,
 		M0_VERSION_BUILD_CONFIGURE_OPTS,
-		getenv("DISABLE_MERO_COMPAT_CHECK") != NULL,
+		getenv("HALON_INTERFACE_DEBUG_OPTIONS"),
 		NULL);
 }
 

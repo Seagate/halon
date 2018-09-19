@@ -6,10 +6,23 @@
 #   https://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers
 #HALOND_LISTEN=127.0.0.1:9070
 
-# There is a check that verifies that halon runs against the same mero
-# version that it was built with. This is not often necessary. Set
-# DISABLE_MERO_COMPAT_CHECK to disable this check.
-#DISABLE_MERO_COMPAT_CHECK=1
+# This is a list of debug options for m0_halon_interface.
+#HALON_INTERFACE_DEBUG_OPTIONS="log-link,log-msg"
+# Possible options (see m0_halon_interface_init() doc for the full list):
+#
+# log-entrypoint
+#   Log entrypoint request/reply
+# log-link
+#   Log m0_ha_link state transitions
+# log-msg
+#   Log all m0_ha_msg that are sent/received by Halon along with their
+#   delivery status.
+# disable-compatibility-check
+#   This options disables the code that verifies that Halon runs against
+#   the same Mero version that it was built with.
+#   This is useful during debugging when using slightly modified, but still
+#   different version of Mero makes debugging process much faster because
+#   only Mero needs to be rebuilt. Use with caution.
 
 # Enable halon tracing of halon:m0d by default
 #HALON_TRACING="halon:m0d m0:notification"
