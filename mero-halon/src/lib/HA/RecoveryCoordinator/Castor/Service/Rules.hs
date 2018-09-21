@@ -77,7 +77,6 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
         else Nothing
 
   setPhaseIfConsume start_rule startOrStop $ \(eid, service, st, typ) -> do
-    todo eid
     Log.tagContext Log.SM service Nothing
     Log.tagContext Log.SM [
         ("transaction.id", show eid)
