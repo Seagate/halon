@@ -30,7 +30,7 @@ import           HA.Resources (Node(..))
 import           Lookup
 import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
 import qualified Options.Applicative as O
-import qualified Options.Applicative.Extras as O
+import           Options.Applicative.Extras (command')
 import           System.Exit (die)
 import           System.IO (hFlush, stdout)
 import           Text.Printf (printf)
@@ -45,16 +45,16 @@ data Options =
 
 parser :: O.Parser Options
 parser =
-      ( EQStats <$> O.subparser ( O.command "eq" (O.withDesc parseEQStatsOptions
-        "Print EQ statistics." )))
-  <|> ( RCStats <$> O.subparser ( O.command "rc" (O.withDesc parseRCStatsOptions
-        "Print RC statistics." )))
-  <|> ( CEPStats <$> O.subparser ( O.command "cep" (O.withDesc parseCEPStatsOptions
-        "Print CEP statistics." )))
-  <|> ( NodeStats <$> O.subparser ( O.command "node" (O.withDesc parseNodeStatsOptions
-        "Print Node statistics.")))
-  <|> ( GraphInfo <$> O.subparser ( O.command "graph" (O.withDesc parseGraphInfoOptions
-        "Print graph data in some format" )))
+      ( EQStats <$> O.hsubparser ( command' "eq" parseEQStatsOptions
+        "Print EQ statistics." ))
+  <|> ( RCStats <$> O.hsubparser ( command' "rc" parseRCStatsOptions
+        "Print RC statistics." ))
+  <|> ( CEPStats <$> O.hsubparser ( command' "cep" parseCEPStatsOptions
+        "Print CEP statistics." ))
+  <|> ( NodeStats <$> O.hsubparser ( command' "node" parseNodeStatsOptions
+        "Print Node statistics." ))
+  <|> ( GraphInfo <$> O.hsubparser ( command' "graph" parseGraphInfoOptions
+        "Print graph data in some format" ))
 
 info :: [NodeId] -> Options -> Process ()
 info nids dbgo = case dbgo of
@@ -318,5 +318,5 @@ parseGraphInfoOptions :: O.Parser GraphInfoOptions
 parseGraphInfoOptions = GraphInfoOptions <$>
   (mkCmd "json" Json <|> mkCmd "dot" Dot <|> mkCmd "kv" KeyValues)
   where
-    mkCmd c v = O.subparser $
-      O.command c (O.withDesc (pure v) ("Output graph as " ++ show v))
+    mkCmd c v =
+        O.hsubparser $ command' c (pure v) ("Output graph as " ++ show v)

@@ -16,7 +16,7 @@ import qualified Handler.Mero.Node.Stop as Remove
 import qualified Handler.Mero.Node.Stop as Stop
 import           Options.Applicative
 import           Data.Monoid (mconcat)
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 
 data Options =
   Remove Remove.Options
@@ -25,10 +25,10 @@ data Options =
   deriving (Show, Eq)
 
 parser :: Parser Options
-parser = subparser $ mconcat
-  [ Opt.cmd "start" (Start <$> Start.parser) "Start node"
-  , Opt.cmd "stop" (Stop <$> Stop.parser) "Stop node"
-  , Opt.cmd "remove" (Remove <$> Remove.parser) "Remove node"
+parser = hsubparser $ mconcat
+  [ command' "start" (Start <$> Start.parser) "Start node"
+  , command' "stop" (Stop <$> Stop.parser) "Stop node"
+  , command' "remove" (Remove <$> Remove.parser) "Remove node"
   ]
 
 run :: [NodeId] -> Options -> Process ()

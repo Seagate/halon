@@ -1,32 +1,22 @@
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
+-- Copyright : (C) 2018 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 
 module Options.Applicative.Extras
-    ( withDesc
-    , withFullDesc
-    , cmd
-    )
-  where
+  ( command'
+  , withFullDesc
+  ) where
 
-import Prelude hiding ((<*>))
-import Data.Monoid ((<>))
-import Options.Applicative
+import           Data.Semigroup ((<>))
+import qualified Options.Applicative as O
 
-withDesc :: Parser a -> String -> ParserInfo a
-withDesc parser desc =
-    info (helper <*> parser) $ progDesc desc
-
-withFullDesc :: String -> Parser a -> String -> ParserInfo a
+withFullDesc :: String -> O.Parser a -> String -> O.ParserInfo a
 withFullDesc name parser desc =
-    info (helper <*> parser) $
-         header name
-      <> progDesc desc
-      <> fullDesc
+    O.info (O.helper <*> parser)
+      $ O.header name
+     <> O.progDesc desc
+     <> O.fullDesc
 
-cmd :: String -- ^ Command
-    -> Parser a -- ^ Command parser
-    -> String -- ^ Command description
-    -> Mod CommandFields a
-cmd c p dsc = command c (withDesc p dsc)
+command' :: String -> O.Parser a -> String -> O.Mod O.CommandFields a
+command' name p = O.command name . O.info p . O.progDesc

@@ -18,17 +18,16 @@ import qualified HA.Resources.Castor as Castor
 import           Handler.Mero.Helpers (clusterCommand)
 import           Options.Applicative
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 import           System.Exit (die)
 
 parser :: Parser Options
 parser = asum
-     [ Opt.subparser (command "update-presence"
-        $ Opt.withDesc parseDrivePresence "Update information about drive presence")
-     , Opt.subparser (command "update-status"
-        $ Opt.withDesc parseDriveStatus "Update drive status")
-     , Opt.subparser (command "new-drive"
-        $ Opt.withDesc parseDriveNew "create new drive")
+     [ Opt.hsubparser (command' "update-presence" parseDrivePresence
+                       "Update information about drive presence")
+     , Opt.hsubparser (command' "update-status" parseDriveStatus
+                       "Update drive status")
+     , Opt.hsubparser (command' "new-drive" parseDriveNew "create new drive")
      ]
    where
      parseDriveNew :: Parser Options

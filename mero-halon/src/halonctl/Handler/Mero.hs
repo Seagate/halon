@@ -31,7 +31,7 @@ import qualified Handler.Mero.Update as Update
 import qualified Handler.Mero.Vars as Vars
 import           Lookup (findEQFromNodes)
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 
 data Options =
     Bootstrap Bootstrap.Options
@@ -52,22 +52,22 @@ data Options =
   deriving (Eq, Show)
 
 parser :: Opt.Parser Options
-parser = Opt.subparser $ mconcat
-  [ Opt.cmd "bootstrap" (Bootstrap <$> Bootstrap.parser) "Bootstrap cluster."
-  , Opt.cmd "drive" (Drive <$> Drive.parser) "Commands to drive"
-  , Opt.cmd "dump" (Dump <$> Dump.parser) "Dump embedded confd database to file."
-  , Opt.cmd "load" (Load <$> Load.parser) "Load initial data into the system."
-  , Opt.cmd "mkfs-done" (MkfsDone <$> MkfsDone.parser) "Mark all processes as finished mkfs."
-  , Opt.cmd "node" (Node <$> Node.parser) "Node actions"
-  , Opt.cmd "pool" (Pool <$> Pool.parser) "Pool commands"
-  , Opt.cmd "process" (Process <$> Process.parser) "Process not implemented."
-  , Opt.cmd "reset" (Reset <$> Reset.parser) "Reset Halon's cluster knowledge to ground state."
-  , Opt.cmd "start" (Start <$> Start.parser) "Start mero cluster"
-  , Opt.cmd "status" (Status <$> Status.parser) "Query mero-cluster status"
-  , Opt.cmd "stop" (Stop <$> Stop.parser) "Stop mero cluster"
-  , Opt.cmd "sync" (Sync <$> Sync.parser) "Force synchronisation of RG to confd servers."
-  , Opt.cmd "update" (Update <$> Update.parser) "Force update state of the mero objects"
-  , Opt.cmd "vars" (Vars <$> Vars.parser) "Control variable parameters of the halon."
+parser = Opt.hsubparser $ mconcat
+  [ command' "bootstrap" (Bootstrap <$> Bootstrap.parser) "Bootstrap cluster."
+  , command' "drive" (Drive <$> Drive.parser) "Commands to drive"
+  , command' "dump" (Dump <$> Dump.parser) "Dump embedded confd database to file."
+  , command' "load" (Load <$> Load.parser) "Load initial data into the system."
+  , command' "mkfs-done" (MkfsDone <$> MkfsDone.parser) "Mark all processes as finished mkfs."
+  , command' "node" (Node <$> Node.parser) "Node actions"
+  , command' "pool" (Pool <$> Pool.parser) "Pool commands"
+  , command' "process" (Process <$> Process.parser) "Process not implemented."
+  , command' "reset" (Reset <$> Reset.parser) "Reset Halon's cluster knowledge to ground state."
+  , command' "start" (Start <$> Start.parser) "Start mero cluster"
+  , command' "status" (Status <$> Status.parser) "Query mero-cluster status"
+  , command' "stop" (Stop <$> Stop.parser) "Stop mero cluster"
+  , command' "sync" (Sync <$> Sync.parser) "Force synchronisation of RG to confd servers."
+  , command' "update" (Update <$> Update.parser) "Force update state of the mero objects"
+  , command' "vars" (Vars <$> Vars.parser) "Control variable parameters of the halon."
   ]
 
 -- | Run the specified cluster command over the given nodes. The nodes

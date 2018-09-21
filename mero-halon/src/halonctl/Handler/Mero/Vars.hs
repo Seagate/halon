@@ -19,7 +19,7 @@ import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.HalonVars as Castor
 import           Handler.Mero.Helpers (clusterCommand)
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 import           System.Exit (die)
 
 data Options
@@ -59,9 +59,9 @@ run nids VarsSet{..} = do
     wait = void (expect :: Process ProcessMonitorNotification)
 
 parser :: Opt.Parser Options
-parser = Opt.subparser $ mconcat
-  [ Opt.cmd "get" (pure VarsGet) "Load variables"
-  , Opt.cmd "set" inner "Set variables"
+parser = Opt.hsubparser $ mconcat
+  [ command' "get" (pure VarsGet) "Load variables"
+  , command' "set" inner "Set variables"
   ]
    where
      inner :: Opt.Parser Options

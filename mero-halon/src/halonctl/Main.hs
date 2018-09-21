@@ -32,7 +32,7 @@ import           Network.Transport.TCP
   , defaultTCPParameters
   )
 import qualified Options.Applicative as O
-import           Options.Applicative.Extras (withDesc, withFullDesc)
+import           Options.Applicative.Extras (command', withFullDesc)
 import           System.Directory (doesFileExist)
 import           System.Environment (getProgName)
 import           System.IO
@@ -96,10 +96,10 @@ getOpts = do
                         <> O.long "listen"
                         <> O.value (listenAddr $ maybe hostname fst mhp)
                         <> O.help "Address halonctl binds to.")
-        <*> (O.subparser $ (O.command "halon" $
-                            Halon <$> withDesc Halon.parser "Halon commands.")
-                        <> (O.command "mero" $
-                            Mero <$> withDesc Mero.parser "Mero commands."))
+        <*> (O.hsubparser $ (command' "halon" (Halon <$> Halon.parser)
+                             "Halon commands.")
+                         <> (command' "mero" (Mero <$> Mero.parser)
+                             "Mero commands."))
 
     listenAddr :: String -> String
     listenAddr = (++ ":0") . filter (\c -> isAlphaNum c || isPunctuation c)

@@ -35,7 +35,7 @@ import qualified HA.Resources.Mero.Note as M0 (showFid)
 import qualified Handler.Mero.Helpers as Helpers
 import           Options.Applicative ((<|>))
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 import           System.Exit (exitFailure)
 import           System.IO (hPutStrLn, stderr)
 
@@ -56,20 +56,19 @@ data SNSOpts = SNSOpts {
 } deriving (Eq, Show)
 
 parser :: Opt.Parser Options
-parser =
-  ( RepReb <$> Opt.subparser ( Opt.command "repreb"
-    ( Opt.withDesc parseRepRebCommands "Control repair/rebalance.")))
+parser = RepReb <$> Opt.hsubparser ( command' "repreb" parseRepRebCommands
+                                     "Control repair/rebalance." )
 
 parseRepRebCommands :: Opt.Parser RepRebCommands
 parseRepRebCommands =
-      ( Abort <$> Opt.subparser ( Opt.command "abort"
-        ( Opt.withDesc parseSNSOpts "Abort in-progress repair/rebalance.")))
-  <|> ( Quiesce <$> Opt.subparser ( Opt.command "quiesce"
-        ( Opt.withDesc parseSNSOpts "Quiesce in-progress repair/rebalance.")))
-  <|> ( Restart <$> Opt.subparser ( Opt.command "restart"
-        ( Opt.withDesc parseSNSOpts "Restart in-progress repair/rebalance.")))
-  <|> ( Resume <$> Opt.subparser ( Opt.command "resume"
-        ( Opt.withDesc parseSNSOpts "Resume in-progress repair/rebalance.")))
+      ( Abort <$> Opt.hsubparser ( command' "abort" parseSNSOpts
+                                   "Abort in-progress repair/rebalance." ))
+  <|> ( Quiesce <$> Opt.hsubparser ( command' "quiesce" parseSNSOpts
+                                     "Quiesce in-progress repair/rebalance." ))
+  <|> ( Restart <$> Opt.hsubparser ( command' "restart" parseSNSOpts
+                                     "Restart in-progress repair/rebalance." ))
+  <|> ( Resume <$> Opt.hsubparser ( command' "resume" parseSNSOpts
+                                    "Resume in-progress repair/rebalance." ))
 
 parsePool :: Opt.Parser Pool
 parsePool = Pool <$> Helpers.fidOpt

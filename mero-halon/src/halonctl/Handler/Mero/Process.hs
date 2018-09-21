@@ -17,7 +17,7 @@ import qualified Handler.Mero.Process.Remove as Remove
 import qualified Handler.Mero.Process.Start as Start
 import qualified Handler.Mero.Process.Stop as Stop
 import           Options.Applicative
-import           Options.Applicative.Extras
+import           Options.Applicative.Extras (command')
 
 data Options =
   Add !Add.Options
@@ -28,13 +28,13 @@ data Options =
   deriving (Show, Eq)
 
 parser :: Parser Options
-parser = subparser $ mconcat
-  [ cmd "add" (Add <$> Add.parser) "Add process"
-  , cmd "configuration" (Configuration <$> Configuration.parser)
+parser = hsubparser $ mconcat
+  [ command' "add" (Add <$> Add.parser) "Add process"
+  , command' "configuration" (Configuration <$> Configuration.parser)
       "Show configuration for process."
-  , cmd "remove" (Remove <$> Remove.parser) "Remove process"
-  , cmd "start" (Start <$> Start.parser) "Start process"
-  , cmd "stop" (Stop <$> Stop.parser) "Stop process"
+  , command' "remove" (Remove <$> Remove.parser) "Remove process"
+  , command' "start" (Start <$> Start.parser) "Start process"
+  , command' "stop" (Stop <$> Stop.parser) "Stop process"
   ]
 
 run :: [NodeId] -> Options -> Process ()

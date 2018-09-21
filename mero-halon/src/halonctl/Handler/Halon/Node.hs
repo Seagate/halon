@@ -23,7 +23,7 @@ import           HA.Logger
 import qualified Handler.Halon.Node.Add as Add
 import qualified Handler.Halon.Node.Remove as Remove
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 import           System.Exit (exitFailure)
 import           System.IO (hPutStrLn, stderr)
 import           Text.Printf (printf)
@@ -40,11 +40,11 @@ data Options
 
 -- | Parser for 'NodeCmd'.
 parser :: Opt.Parser Options
-parser = Opt.subparser $ mconcat
-    [ Opt.cmd "disable-traces" silence "Disable trace logs for subsystem."
-    , Opt.cmd "enable-traces"  verbose "Enable trace logs for subsystem."
-    , Opt.cmd "add" (Add <$> Add.parser) "Add node to system."
-    , Opt.cmd "remove" (Remove <$> Remove.parser) "Remove node from system."
+parser = Opt.hsubparser $ mconcat
+    [ command' "disable-traces" silence "Disable trace logs for subsystem."
+    , command' "enable-traces"  verbose "Enable trace logs for subsystem."
+    , command' "add" (Add <$> Add.parser) "Add node to system."
+    , command' "remove" (Remove <$> Remove.parser) "Remove node from system."
     ]
   where
    subsystem = Opt.strOption $ mconcat

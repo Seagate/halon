@@ -16,7 +16,7 @@ import qualified Handler.Halon.Node as Node
 import qualified Handler.Halon.Service as Service
 import qualified Handler.Halon.Station as Station
 import           Options.Applicative
-import qualified Options.Applicative.Extras as Opt
+import           Options.Applicative.Extras (command')
 
 data Options =
   Info Info.Options
@@ -26,11 +26,11 @@ data Options =
   deriving (Show, Eq)
 
 parser :: Parser Options
-parser = subparser $ mconcat
-  [ Opt.cmd "info" (Info <$> Info.parser) "Halon information."
-  , Opt.cmd "node" (Node <$> Node.parser) "Node commands."
-  , Opt.cmd "service" (Service <$> Service.parser) "Service commands."
-  , Opt.cmd "station" (Station <$> Station.parser) "Tracking station commands."
+parser = hsubparser $ mconcat
+  [ command' "info" (Info <$> Info.parser) "Halon information."
+  , command' "node" (Node <$> Node.parser) "Node commands."
+  , command' "service" (Service <$> Service.parser) "Service commands."
+  , command' "station" (Station <$> Station.parser) "Tracking station commands."
   ]
 
 halon :: [NodeId] -> Options -> Process ()

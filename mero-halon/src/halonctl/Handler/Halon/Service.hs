@@ -52,7 +52,7 @@ import qualified HA.Services.SSPLHL as SSPLHL
 import           Lookup
 import           Options.Applicative ((<$>), (<*>))
 import qualified Options.Applicative as O
-import qualified Options.Applicative.Extras as O
+import           Options.Applicative.Extras (command')
 import           Options.Schema.Applicative (mkParser)
 import           Prelude hiding ((<$>), (<*>))
 
@@ -133,66 +133,61 @@ mkStandardServiceCmd svc = let
                   <> O.value 1000000
                   <> O.help ("Time to wait from a reply from the EQT when" ++
                               " querying the location of an EQ.")
-    startCmd = O.command "start" $ StartCmd <$>
-                (O.withDesc
-                  (StartCmdOptions
-                    <$> eqtTimeout
-                    <*> tsNodes
-                    <*> mkParser schema)
-                  "Start the service on a node.")
-    reconfCmd = O.command "reconfigure" $ ReconfCmd <$>
-                (O.withDesc
-                  (ReconfCmdOptions
-                    <$> eqtTimeout
-                    <*> tsNodes
-                    <*> mkParser schema)
-                  "Reconfigure the service on a node.")
-    stopCmd = O.command "stop" $ StopCmd <$>
-              (O.withDesc
-                (StopCmdOptions
-                    <$> eqtTimeout
-                    <*> tsNodes)
-                "Stop the service on a node.")
-    statusCmd = O.command "status" $ StatusCmd <$>
-              (O.withDesc
-                (StatusCmdOptions
-                    <$> eqtTimeout
-                    <*> tsNodes)
-                "Query the status of a service on a node.")
-  in O.command (serviceName $ svc) (O.withDesc
-      ( O.subparser
-      $  startCmd
+    startCmd = command' "start"
+                  (StartCmd <$> (StartCmdOptions
+                                 <$> eqtTimeout
+                                 <*> tsNodes
+                                 <*> mkParser schema))
+                  "Start the service on a node."
+    reconfCmd = command' "reconfigure"
+                  (ReconfCmd <$> (ReconfCmdOptions
+                                  <$> eqtTimeout
+                                  <*> tsNodes
+                                  <*> mkParser schema))
+                  "Reconfigure the service on a node."
+    stopCmd = command' "stop"
+                  (StopCmd <$> (StopCmdOptions
+                                <$> eqtTimeout
+                                <*> tsNodes))
+                  "Stop the service on a node."
+    statusCmd = command' "status"
+                  (StatusCmd <$> (StatusCmdOptions
+                                  <$> eqtTimeout
+                                  <*> tsNodes))
+                  "Query the status of a service on a node."
+  in command' (serviceName svc)
+       ( O.hsubparser
+       $ startCmd
       <> reconfCmd
       <> stopCmd
-      <> statusCmd
-      )
-      ("Control the " ++ (serviceName $ svc) ++ " service."))
+      <> statusCmd )
+       ("Control the " ++ (serviceName svc) ++ " service.")
 
 -- | Parse the options for the "service" command.
 parser :: O.Parser Options
 parser =
-    (DummyServiceCmd <$> (O.subparser $
+    (DummyServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd Dummy.dummy)
     ) <|>
-    (NoisyServiceCmd <$> (O.subparser $
+    (NoisyServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd Noisy.noisy)
     ) <|>
-    (PingServiceCmd <$> (O.subparser $
+    (PingServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd Ping.ping)
     ) <|>
-    (SSPLServiceCmd <$> (O.subparser $
+    (SSPLServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd SSPL.sspl)
     ) <|>
-    (SSPLHLServiceCmd <$> (O.subparser $
+    (SSPLHLServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd SSPLHL.sspl)
     ) <|>
-    (DLogServiceCmd <$> (O.subparser $
+    (DLogServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd DLog.decisionLog)
     ) <|>
-    (EkgServiceCmd <$> (O.subparser $
+    (EkgServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd Ekg.ekg)
     ) <|>
-    (MeroServiceCmd <$> (O.subparser $
+    (MeroServiceCmd <$> (O.hsubparser $
          mkStandardServiceCmd Mero.m0d_real)
     )
 
