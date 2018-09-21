@@ -92,20 +92,20 @@ data RuntimeInfoQuery a where
     RuntimeInfoTotal :: RuntimeInfoQuery RuntimeInfo
 
 data MemoryInfo = MemoryInfo
-     { minfoTotalSize :: Int
-     , minfoSMSize :: Int
-     , minfoStateSize :: Int
-     } deriving (Show, Generic, Typeable)
+    { minfoTotalSize :: Int
+    , minfoSMSize :: Int
+    , minfoStateSize :: Int
+    } deriving (Show, Generic, Typeable)
 
 instance Binary MemoryInfo
 
 data RuntimeInfo = RuntimeInfo
-     { infoTotalSM :: Int
-     , infoRunningSM :: Int
-     , infoSuspendedSM :: Int
-     , infoMemory :: Maybe MemoryInfo
-     , infoSMs :: M.Map String Int
-     } deriving (Show, Generic, Typeable)
+    { infoTotalSM :: Int
+    , infoRunningSM :: Int
+    , infoSuspendedSM :: Int
+    , infoMemory :: Maybe MemoryInfo
+    , infoSMs :: M.Map String Int
+    } deriving (Show, Generic, Typeable)
 
 instance Binary RuntimeInfo
 
