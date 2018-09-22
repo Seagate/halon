@@ -17,7 +17,7 @@ module Handler.Halon.Info
 import           Control.Applicative ((<|>))
 import           Control.Distributed.Process hiding (die)
 import qualified Control.Distributed.Process.Internal.Primitives as P
-import           Control.Monad (void, when)
+import           Control.Monad (void)
 import           Control.Monad.Fix (fix)
 import qualified Data.ByteString as B
 import           Data.Foldable (for_)
@@ -64,22 +64,19 @@ info nids dbgo = case dbgo of
   NodeStats x -> nodeStats nids x
   GraphInfo x -> graphInfo nids x
 
--- | 'EqStatsOptions' @eqTimeout@ @requestCepStats@ @requestMemoryStats@.
-data EQStatsOptions = EQStatsOptions Int Bool Bool
+-- | 'EqStatsOptions' @eqTimeout@
+data EQStatsOptions = EQStatsOptions Int
   deriving (Eq, Show)
 
 -- | Print Event Queue statistics.
 eqStats :: [NodeId] -> EQStatsOptions -> Process ()
-eqStats nids (EQStatsOptions t c _) = do
+eqStats nids (EQStatsOptions t) = do
     eqs <- findEQFromNodes t nids
     for_ eqs $ \eq -> do
       requestEQStats eq
       expect >>= liftIO . display
-      when c $ do
-        runtimeInfoRequest eq
-        expect >>= displayCepReply
   where
-    display (EQStatResp{..}) = do
+    display EQStatResp{..} = do
       putStrLn $ printf "EQ size: %d" eqs_queue_size
       putStrLn $ printf "Worker pool max threads: %d" $ poolProcessBound eqs_pool_stats
       putStrLn $ printf "Worker pool current threads: %d" $ poolProcessCount eqs_pool_stats
@@ -98,16 +95,6 @@ parseEQStatsOptions = EQStatsOptions
         <> O.help ("Time to wait from a reply from the EQT when" ++
                   " querying the location of an EQ.")
       )
-  <*> O.switch
-        ( O.long "cep"
-        <> O.short 'c'
-        <> O.help "Show cep stats."
-        )
-  <*> O.switch
-        ( O.long "memory"
-       <> O.short 'm'
-       <> O.help "Show memory allocation; this operation may be slow. Require -c"
-        )
 
  -- | 'RCStartsOptions' @eqTimeout@.
 newtype RCStatsOptions = RCStatsOptions Int
@@ -121,7 +108,7 @@ rcStats nids (RCStatsOptions t) = do
     promulgateEQ_ eqs $ DebugRequest sp
     receiveChan rp >>= liftIO . display
   where
-    display (DebugResponse{..}) = do
+    display DebugResponse{..} = do
       putStrLn $ printf "EQ nodes: %s" (show dr_eq_nodes)
       putStrLn $ printf (unlines
                           [ "Resource Graph:"
@@ -171,7 +158,7 @@ cepStats nids (CEPStatsOptions t m) = do
     labelRecoveryCoordinator = "mero-halon.RC"
 
 displayCepReply :: RuntimeInfo -> Process ()
-displayCepReply (RuntimeInfo{..}) = liftIO $ do
+displayCepReply RuntimeInfo{..} = liftIO $ do
   putStrLn $ printf (unlines
                       [ "Total SMs: %d"
                       , "Running SMs: %d"
@@ -213,7 +200,6 @@ displayCepReply (RuntimeInfo{..}) = liftIO $ do
                   ++ "|"
                   ++ (space padding)
                   ++ (show c)
-
 
 parseCEPStatsOptions :: O.Parser CEPStatsOptions
 parseCEPStatsOptions = CEPStatsOptions

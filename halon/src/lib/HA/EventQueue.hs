@@ -36,13 +36,12 @@ module HA.EventQueue
   , EQStatResp(..)
   , PoolStats(..)
   , requestEQStats
-  , runtimeInfoRequest
   ) where
 
 import Control.Distributed.Process
   ( NodeId
-  , getSelfPid
   , Process
+  , getSelfPid
   , nsendRemote
   )
 import HA.EventQueue.Producer
@@ -52,12 +51,5 @@ import HA.EventQueue.Types
 -- after it was called 'EQStatResp' will be send to the process's mailbox.
 requestEQStats :: NodeId -> Process ()
 requestEQStats eq = do
-  self <- getSelfPid
-  nsendRemote eq eventQueueLabel $ EQStatReq self
-
--- | Request EventQueue statistics. This method is asynchronous,
--- after it was called 'EQStatResp' will be send to the process's mailbox.
-runtimeInfoRequest :: NodeId -> Process ()
-runtimeInfoRequest eq = do
   self <- getSelfPid
   nsendRemote eq eventQueueLabel $ EQStatReq self
