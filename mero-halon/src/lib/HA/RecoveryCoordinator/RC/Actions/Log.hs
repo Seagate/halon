@@ -30,8 +30,8 @@ module HA.RecoveryCoordinator.RC.Actions.Log
 import HA.RecoveryCoordinator.RC.Application
 import HA.RecoveryCoordinator.Log
 
-import qualified HA.Resources as Res (Node(..))
-import qualified HA.Resources.Castor as Res (StorageDevice(..))
+import qualified HA.Resources as R (Node(..))
+import qualified HA.Resources.Castor as Cas (StorageDevice(..))
 
 import qualified HA.Resources.Mero.Note as M0 (ShowFidObj(..))
 
@@ -227,14 +227,14 @@ instance Taggable [(String, String)] where
 instance Taggable UUID where
   toTagContent uuid = TagScope [Thread uuid]
 
-instance Taggable Res.Node where
+instance Taggable R.Node where
   toTagContent node = TagScope [Node node]
 
 instance Taggable NodeId where
-  toTagContent nid = TagScope [Node (Res.Node nid)]
+  toTagContent nid = TagScope [Node (R.Node nid)]
 
-instance Taggable Res.StorageDevice where
-  toTagContent (Res.StorageDevice serial) = TagScope [StorageDevice serial]
+instance Taggable Cas.StorageDevice where
+  toTagContent (Cas.StorageDevice serial) = TagScope [StorageDevice serial]
 
 -- | Note that it's safe to overlap here because we know that none of our
 --   other instances can have `M0.ShowFidObj` instances. `Taggable` isn't
