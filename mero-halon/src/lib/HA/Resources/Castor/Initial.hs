@@ -636,6 +636,7 @@ validateInitialData InitialData{..} = do
       $ all (unique . map enc_idx) enclsPerRack
     check "Enclosure without enc_id" $ all (not . null) enclIds
     check "Enclosure with non-unique enc_id" $ unique enclIds
+    check "Non-unique m0d_wwn" $ unique $ map m0d_wwn devices
     check "Pool with non-unique pool_id" $ unique $ map pool_id id_pools
     check "Pool without device_refs"
       $ all (not . null . pool_device_refs) id_pools
@@ -663,6 +664,9 @@ validateInitialData InitialData{..} = do
                    , rack <- site_racks site
                    ]
     enclIds = enc_id <$> concat enclsPerRack
+
+    devices :: [M0Device]
+    devices = concatMap m0h_devices id_m0_servers
 
     isValidDeviceRef (M0DeviceRef Nothing Nothing Nothing) = False
     isValidDeviceRef _ = True
