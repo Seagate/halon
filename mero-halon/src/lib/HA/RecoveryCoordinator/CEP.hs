@@ -40,6 +40,7 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as RCLog
 import qualified HA.RecoveryCoordinator.RC.Actions.Update as Update
 import           HA.RecoveryCoordinator.RC.Events.Cluster
 import qualified HA.RecoveryCoordinator.RC.Rules (rules, initialRule)
+import           HA.RecoveryCoordinator.RC.Rules.Debug (debugRules)
 import qualified HA.RecoveryCoordinator.RC.Rules.Info as Info (rules)
 import qualified HA.RecoveryCoordinator.Service.Rules
 import qualified HA.ResourceGraph as G
@@ -125,6 +126,7 @@ rcRules argv additionalRules = do
               , rulePidRequest
               ]
     HA.RecoveryCoordinator.Service.Rules.rules
+    debugRules
     Info.rules argv
     HA.Services.SSPL.LL.CEP.ssplRules
     castorRules

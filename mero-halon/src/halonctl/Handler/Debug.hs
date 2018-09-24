@@ -45,7 +45,8 @@ run :: [NodeId] -> Options -> Process ()
 run nids (OQuery (QDrive select QDriveState)) =
     clusterCommand nids Nothing (QueryDriveStateReq select) $ \case
         QueryDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
-        QueryDriveStateError -> liftIO $ die "XXX QueryDriveStateError"
+        QueryDriveStateNoStorageDeviceError ->
+            liftIO $ die "No such storage device"
 run _ x = error $ "XXX IMPLEMENTME: " ++ show x
 
 command :: String -> O.Parser a -> String -> O.Mod O.CommandFields a

@@ -14,7 +14,6 @@ module HA.RecoveryCoordinator.RC.Events.Debug
 import Control.Distributed.Process (SendPort)
 import Data.Binary (Binary)
 import Data.Text (Text)
-import Data.Word (Word8)
 import GHC.Generics (Generic)
 
 import HA.SafeCopy (base, deriveSafeCopy)
@@ -26,15 +25,15 @@ data QueryDriveStateReq = QueryDriveStateReq
 
 data QueryDriveStateResp
   = QueryDriveState Text
-  | QueryDriveStateError
+  | QueryDriveStateNoStorageDeviceError
   deriving (Generic, Show)
 
 instance Binary QueryDriveStateResp
 
 data SelectDrive = SelectDrive
-  { sdEnclosure :: Text
-  , sdSlot :: Word8
-  , sdDrive :: DriveId
+  { sdEnclosure :: Text  -- XXX DELETEME? This field is only set but never used.
+  , sdSlot :: Int  -- XXX DELETEME? This field is only set but never used.
+  , sdDriveId :: DriveId
   } deriving Show
 
 -- | Drive identifier.
