@@ -1,0 +1,751 @@
+* halonctl CLI
+** halon
+#+BEGIN_SRC
+Usage: halonctl halon COMMAND
+  Halon commands.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  info                     Halon information.
+  node                     Node commands.
+  service                  Service commands.
+  station                  Tracking station commands.
+#+END_SRC
+*** info
+#+BEGIN_SRC
+Usage: halonctl halon info (COMMAND | COMMAND | COMMAND | COMMAND | COMMAND)
+  Halon information.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  eq                       Print EQ statistics.
+  rc                       Print RC statistics.
+  cep                      Print CEP statistics.
+  node                     Print Node statistics.
+  graph                    Print graph data in some format
+#+END_SRC
+**** eq
+#+BEGIN_SRC
+Usage: halonctl halon info eq [--eqt-timeout TIMEOUT (μs)]
+  Print EQ statistics.
+
+Available options:
+  --eqt-timeout TIMEOUT (μs)
+                           Time to wait from a reply from the EQT when querying
+                           the location of an EQ.
+  -h,--help                Show this help text
+#+END_SRC
+**** rc
+#+BEGIN_SRC
+Usage: halonctl halon info rc [--eqt-timeout TIMEOUT (μs)]
+  Print RC statistics.
+
+Available options:
+  --eqt-timeout TIMEOUT (μs)
+                           Time to wait from a reply from the EQT when querying
+                           the location of an EQ.
+  -h,--help                Show this help text
+#+END_SRC
+**** cep
+#+BEGIN_SRC
+Usage: halonctl halon info cep [--rc-timeout TIMEOUT (μs)] [-m|--memory]
+  Print CEP statistics.
+
+Available options:
+  --rc-timeout TIMEOUT (μs)
+                           Time to wait for the location of an RC on the given
+                           nodes.
+  -m,--memory              Show memory allocation; this operation may be slow.
+  -h,--help                Show this help text
+#+END_SRC
+**** node
+#+BEGIN_SRC
+Usage: halonctl halon info node [--rc-timeout TIMEOUT (μs)]
+  Print Node statistics.
+
+Available options:
+  --rc-timeout TIMEOUT (μs)
+                           Time to wait for the location of an RC on the given
+                           nodes.
+  -h,--help                Show this help text
+#+END_SRC
+**** graph
+#+BEGIN_SRC
+Usage: halonctl halon info graph (COMMAND | COMMAND | COMMAND)
+  Print graph data in some format
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  json                     Output graph as Json
+  dot                      Output graph as Dot
+  kv                       Output graph as KeyValues
+#+END_SRC
+***** json
+#+BEGIN_SRC
+Usage: halonctl halon info graph json
+  Output graph as Json
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+***** dot
+#+BEGIN_SRC
+Usage: halonctl halon info graph dot
+  Output graph as Dot
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+***** kv
+#+BEGIN_SRC
+Usage: halonctl halon info graph kv
+  Output graph as KeyValues
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+*** node
+#+BEGIN_SRC
+Usage: halonctl halon node COMMAND
+  Node commands.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  disable-traces           Disable trace logs for subsystem.
+  enable-traces            Enable trace logs for subsystem.
+  add                      Add node to system.
+  remove                   Remove node from system.
+#+END_SRC
+**** disable-traces
+#+BEGIN_SRC
+Usage: halonctl halon node disable-traces (-s|--subsystem SUBSYTEM)
+  Disable trace logs for subsystem.
+
+Available options:
+  -s,--subsystem SUBSYTEM  Subsystem name
+  -h,--help                Show this help text
+#+END_SRC
+**** enable-traces
+#+BEGIN_SRC
+Usage: halonctl halon node enable-traces (-s|--subsystem SUBSYTEM)
+  Enable trace logs for subsystem.
+
+Available options:
+  -s,--subsystem SUBSYTEM  Subsystem name
+  -h,--help                Show this help text
+#+END_SRC
+**** add
+#+BEGIN_SRC
+Usage: halonctl halon node add [-t|--trackers ADDRESSES]
+  Add node to system.
+
+Available options:
+  -t,--trackers ADDRESSES  Addresses of tracking station nodes.
+  -h,--help                Show this help text
+#+END_SRC
+**** remove
+#+BEGIN_SRC
+Usage: halonctl halon node remove
+  Remove node from system.
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+*** service
+#+BEGIN_SRC
+Usage: halonctl halon service (COMMAND | COMMAND | COMMAND | COMMAND | COMMAND |
+                              COMMAND | COMMAND | COMMAND)
+  Service commands.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  dummy                    Control the dummy service.
+  noisy                    Control the noisy service.
+  ping                     Control the ping service.
+  sspl                     Control the sspl service.
+  sspl-hl                  Control the sspl-hl service.
+  decision-log             Control the decision-log service.
+  ekg                      Control the ekg service.
+  m0d                      Control the m0d service.
+#+END_SRC
+**** dummy
+#+BEGIN_SRC
+Usage: halonctl halon service dummy COMMAND
+  Control the dummy service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** noisy
+#+BEGIN_SRC
+Usage: halonctl halon service noisy COMMAND
+  Control the noisy service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** ping
+#+BEGIN_SRC
+Usage: halonctl halon service ping COMMAND
+  Control the ping service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** sspl
+#+BEGIN_SRC
+Usage: halonctl halon service sspl COMMAND
+  Control the sspl service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** sspl-hl
+#+BEGIN_SRC
+Usage: halonctl halon service sspl-hl COMMAND
+  Control the sspl-hl service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** decision-log
+#+BEGIN_SRC
+Usage: halonctl halon service decision-log COMMAND
+  Control the decision-log service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** ekg
+#+BEGIN_SRC
+Usage: halonctl halon service ekg COMMAND
+  Control the ekg service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+**** m0d
+#+BEGIN_SRC
+Usage: halonctl halon service m0d COMMAND
+  Control the m0d service.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start the service on a node.
+  reconfigure              Reconfigure the service on a node.
+  stop                     Stop the service on a node.
+  status                   Query the status of a service on a node.
+#+END_SRC
+*** station
+#+BEGIN_SRC
+Usage: halonctl halon station [-u|--update]
+                              [-n|--snapshot-threshold|--snapshots-threshold INTEGER]
+                              [-t|--snapshot-timeout|--snapshots-timeout INTEGER]
+                              [-r|--rs-lease ARG]
+  Tracking station commands.
+
+Available options:
+  -u,--update              Update something.
+  -n,--snapshot-threshold,--snapshots-threshold INTEGER
+                           Tells the amount of updates which are allowed between
+                           snapshots of the distributed state.
+  -t,--snapshot-timeout,--snapshots-timeout INTEGER
+                           Tells the amount of microseconds to wait before
+                           giving up in transferring a snapshot of the
+                           distributed state between nodes.
+  -r,--rs-lease ARG        The amount of microseconds that takes the system to
+                           detect a failure in the recovery coordinator, or more
+                           precisely, the lease of the recovery supervisor.
+  -h,--help                Show this help text
+#+END_SRC
+** mero
+#+BEGIN_SRC
+Usage: halonctl mero COMMAND
+  Mero commands.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  bootstrap                Bootstrap cluster.
+  drive                    Commands to drive
+  dump                     Dump embedded confd database to file.
+  load                     Load initial data into the system.
+  mkfs-done                Mark all processes as finished mkfs.
+  node                     Node actions
+  pool                     Pool commands
+  process                  Process not implemented.
+  reset                    Reset Halon's cluster knowledge to ground state.
+  start                    Start mero cluster
+  status                   Query mero-cluster status
+  stop                     Stop mero cluster
+  sync                     Force synchronisation of RG to confd servers.
+  update                   Force update state of the mero objects
+  vars                     Control variable parameters of the halon.
+#+END_SRC
+*** bootstrap
+#+BEGIN_SRC
+Usage: halonctl mero bootstrap [-f|--facts FILEPATH] [-r|--roles FILEPATH]
+                               [-s|--halonroles FILEPATH] [-n|--dry-run]
+                               [-v|--verbose] [--mkfs-done]
+  Bootstrap cluster.
+
+Available options:
+  -f,--facts FILEPATH      Halon facts file
+  -r,--roles FILEPATH      Mero roles file used by Halon
+  -s,--halonroles FILEPATH Halon-specific roles file
+  -n,--dry-run             Do not actually start cluster, just log actions
+  -v,--verbose             Verbose output
+  --mkfs-done              Do not run mkfs on a cluster
+  -h,--help                Show this help text
+#+END_SRC
+*** drive
+#+BEGIN_SRC
+Usage: halonctl mero drive (COMMAND | COMMAND | COMMAND)
+  Commands to drive
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  update-presence          Update information about drive presence
+  update-status            Update drive status
+  new-drive                create new drive
+#+END_SRC
+**** update-presence
+#+BEGIN_SRC
+Usage: halonctl mero drive update-presence (-s|--serial SERIAL)
+                                           --slot-enclosure NAME
+                                           --slot-index INT [--is-installed]
+                                           [--is-powered]
+  Update information about drive presence
+
+Available options:
+  -s,--serial SERIAL       Drive serial number
+  --slot-enclosure NAME    identifier of the drive's enclosure (`enc_id' in
+                           facts.yaml)
+  --slot-index INT         index of the drive's slot (`m0d_slot' in facts.yaml)
+  --is-installed           Mark drive as installed
+  --is-powered             Mark drive as powered
+  -h,--help                Show this help text
+#+END_SRC
+**** update-status
+#+BEGIN_SRC
+Usage: halonctl mero drive update-status (-s|--serial SERIAL)
+                                         --slot-enclosure NAME --slot-index INT
+                                         --status [EMPTY|OK]
+  Update drive status
+
+Available options:
+  -s,--serial SERIAL       Drive serial number
+  --slot-enclosure NAME    identifier of the drive's enclosure (`enc_id' in
+                           facts.yaml)
+  --slot-index INT         index of the drive's slot (`m0d_slot' in facts.yaml)
+  --status [EMPTY|OK]      Set drive status
+  -h,--help                Show this help text
+#+END_SRC
+**** new-drive
+#+BEGIN_SRC
+Usage: halonctl mero drive new-drive (-s|--serial SERIAL) (-p|--path PATH)
+  create new drive
+
+Available options:
+  -s,--serial SERIAL       Drive serial number
+  -p,--path PATH           Drive path
+  -h,--help                Show this help text
+#+END_SRC
+*** dump
+#+BEGIN_SRC
+Usage: halonctl mero dump (-f|--filename FILENAME)
+  Dump embedded confd database to file.
+
+Available options:
+  -f,--filename FILENAME   File to dump confd database to.
+  -h,--help                Show this help text
+#+END_SRC
+*** load
+#+BEGIN_SRC
+Usage: halonctl mero load (-f|--conffile FILEPATH) [-r|--rolesfile FILEPATH]
+                          [-s|--halonrolesfile FILEPATH] [-v|--verify]
+                          [--timeout TIMEOUT(s)]
+  Load initial data into the system.
+
+Available options:
+  -f,--conffile FILEPATH   File containing JSON-encoded configuration.
+  -r,--rolesfile FILEPATH  File containing template file with Mero role
+                           mappings. (default: /etc/halon/mero_role_mappings)
+  -s,--halonrolesfile FILEPATH
+                           File containing template file with Halon role
+                           mappings. (default: /etc/halon/halon_role_mappings)
+  -v,--verify              Verify config file without reconfiguring cluster.
+  --timeout TIMEOUT(s)     How many seconds to wait for initial data to load
+                           before failing. (default: 10)
+  -h,--help                Show this help text
+#+END_SRC
+*** mkfs-done
+#+BEGIN_SRC
+Usage: halonctl mero mkfs-done [--confirm]
+  Mark all processes as finished mkfs.
+
+Available options:
+  --confirm                Confirm that the cluster fits all requirements for
+                           running this call.
+  -h,--help                Show this help text
+#+END_SRC
+*** node
+#+BEGIN_SRC
+Usage: halonctl mero node COMMAND
+  Node actions
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  start                    Start node
+  stop                     Stop node
+  remove                   Remove node
+#+END_SRC
+**** start
+#+BEGIN_SRC
+Usage: halonctl mero node start
+  Start node
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+**** stop
+#+BEGIN_SRC
+Usage: halonctl mero node stop [-f|--force] --node NODE [-s|--sync]
+                               [--reason REASON]
+  Stop node
+
+Available options:
+  -f,--force               force stop, even if it reduces liveness.
+  --node NODE              Node to shutdown
+  -s,--sync                exit when operation finished.
+  --reason REASON          Reason for stopping the node
+  -h,--help                Show this help text
+#+END_SRC
+**** remove
+#+BEGIN_SRC
+Usage: halonctl mero node remove [-f|--force] --node NODE [-s|--sync]
+                                 [--reason REASON]
+  Remove node
+
+Available options:
+  -f,--force               force stop, even if it reduces liveness.
+  --node NODE              Node to shutdown
+  -s,--sync                exit when operation finished.
+  --reason REASON          Reason for stopping the node
+  -h,--help                Show this help text
+#+END_SRC
+*** pool
+#+BEGIN_SRC
+Usage: halonctl mero pool COMMAND
+  Pool commands
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  repreb                   Control repair/rebalance.
+#+END_SRC
+**** repreb
+#+BEGIN_SRC
+Usage: halonctl mero pool repreb (COMMAND | COMMAND | COMMAND | COMMAND)
+  Control repair/rebalance.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  abort                    Abort in-progress repair/rebalance.
+  quiesce                  Quiesce in-progress repair/rebalance.
+  restart                  Restart in-progress repair/rebalance.
+  resume                   Resume in-progress repair/rebalance.
+#+END_SRC
+***** abort
+#+BEGIN_SRC
+Usage: halonctl mero pool repreb abort (-p|--pool POOLFID) (-u|--uuid UUID)
+                                       (-t|--timeout TIMEOUT (s))
+  Abort in-progress repair/rebalance.
+
+Available options:
+  -p,--pool POOLFID        Fid of the pool to control operations on.
+  -u,--uuid UUID           UUID of the pool operation. Shown in `hctl cluster
+                           status`
+  -t,--timeout TIMEOUT (s) Time to wait for SNS operation to return in seconds.
+  -h,--help                Show this help text
+#+END_SRC
+***** quiesce
+#+BEGIN_SRC
+Usage: halonctl mero pool repreb quiesce (-p|--pool POOLFID) (-u|--uuid UUID)
+                                         (-t|--timeout TIMEOUT (s))
+  Quiesce in-progress repair/rebalance.
+
+Available options:
+  -p,--pool POOLFID        Fid of the pool to control operations on.
+  -u,--uuid UUID           UUID of the pool operation. Shown in `hctl cluster
+                           status`
+  -t,--timeout TIMEOUT (s) Time to wait for SNS operation to return in seconds.
+  -h,--help                Show this help text
+#+END_SRC
+***** restart
+#+BEGIN_SRC
+Usage: halonctl mero pool repreb restart (-p|--pool POOLFID) (-u|--uuid UUID)
+                                         (-t|--timeout TIMEOUT (s))
+  Restart in-progress repair/rebalance.
+
+Available options:
+  -p,--pool POOLFID        Fid of the pool to control operations on.
+  -u,--uuid UUID           UUID of the pool operation. Shown in `hctl cluster
+                           status`
+  -t,--timeout TIMEOUT (s) Time to wait for SNS operation to return in seconds.
+  -h,--help                Show this help text
+#+END_SRC
+***** resume
+#+BEGIN_SRC
+Usage: halonctl mero pool repreb resume (-p|--pool POOLFID) (-u|--uuid UUID)
+                                        (-t|--timeout TIMEOUT (s))
+  Resume in-progress repair/rebalance.
+
+Available options:
+  -p,--pool POOLFID        Fid of the pool to control operations on.
+  -u,--uuid UUID           UUID of the pool operation. Shown in `hctl cluster
+                           status`
+  -t,--timeout TIMEOUT (s) Time to wait for SNS operation to return in seconds.
+  -h,--help                Show this help text
+#+END_SRC
+*** process
+#+BEGIN_SRC
+Usage: halonctl mero process COMMAND
+  Process not implemented.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  add                      Add process
+  configuration            Show configuration for process.
+  remove                   Remove process
+  start                    Start process
+  stop                     Stop process
+#+END_SRC
+**** add
+#+BEGIN_SRC
+Usage: halonctl mero process add
+  Add process
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+**** configuration
+#+BEGIN_SRC
+Usage: halonctl mero process configuration
+  Show configuration for process.
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+**** remove
+#+BEGIN_SRC
+Usage: halonctl mero process remove
+  Remove process
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+**** start
+#+BEGIN_SRC
+Usage: halonctl mero process start [--async]
+                                   (--Fid of the process to start.|--fid FID)
+  Start process
+
+Available options:
+  --async                  Do not wait for the process start result.
+  -h,--help                Show this help text
+#+END_SRC
+**** stop
+#+BEGIN_SRC
+Usage: halonctl mero process stop [--async] --fid FID [--force]
+  Stop process
+
+Available options:
+  --async                  Do not wait for the process stop result.
+  --fid FID                Fid of the process to stop.
+  --force                  Try to stop process, skipping cluster liveness check
+  -h,--help                Show this help text
+#+END_SRC
+*** reset
+#+BEGIN_SRC
+Usage: halonctl mero reset [--hard] [--unstick]
+  Reset Halon's cluster knowledge to ground state.
+
+Available options:
+  --hard                   Perform a hard reset. This clears the EQ and forces
+                           an RC restart.
+  --unstick                Clear the EQ and reset the RC remotely, in case of a
+                           stuck RC.
+  -h,--help                Show this help text
+#+END_SRC
+*** start
+#+BEGIN_SRC
+Usage: halonctl mero start [-a|--async]
+  Start mero cluster
+
+Available options:
+  -a,--async               Do not wait for cluster start.
+  -h,--help                Show this help text
+#+END_SRC
+*** status
+#+BEGIN_SRC
+Usage: halonctl mero status [--json] [-d|--show-devices] [--timeout TIMEOUT(s)]
+  Query mero-cluster status
+
+Available options:
+  --json                   Output in json format.
+  -d,--show-devices        Also show failed devices and their status. Devices
+                           are always shown in the JSON format.
+  --timeout TIMEOUT(s)     How long to wait for status, in seconds (default: 10)
+  -h,--help                Show this help text
+#+END_SRC
+*** stop
+#+BEGIN_SRC
+Usage: halonctl mero stop [--silent] [--async] [--timeout TIMEOUT(µs)]
+                          [--reason REASON]
+  Stop mero cluster
+
+Available options:
+  --silent                 Do not print any output
+  --async                  Don't wait for stop to happen.
+  --timeout TIMEOUT(µs)    How long to wait for successful cluster stop before
+                           halonctl gives up on waiting. (default: 600000000)
+  --reason REASON          Reason for stopping the cluster
+  -h,--help                Show this help text
+#+END_SRC
+*** sync
+#+BEGIN_SRC
+Usage: halonctl mero sync [--force]
+  Force synchronisation of RG to confd servers.
+
+Available options:
+  --force                  Force transaction sync even if configuration tree
+                           didn't change
+  -h,--help                Show this help text
+#+END_SRC
+*** update
+#+BEGIN_SRC
+Usage: halonctl mero update [--set NOTE]
+  Force update state of the mero objects
+
+Available options:
+  --set NOTE               List of updates to send to halon. Format: <fid>@<conf
+                           state>
+  -h,--help                Show this help text
+#+END_SRC
+*** vars
+#+BEGIN_SRC
+Usage: halonctl mero vars COMMAND
+  Control variable parameters of the halon.
+
+Available options:
+  -h,--help                Show this help text
+
+Available commands:
+  get                      Load variables
+  set                      Set variables
+#+END_SRC
+**** get
+#+BEGIN_SRC
+Usage: halonctl mero vars get
+  Load variables
+
+Available options:
+  -h,--help                Show this help text
+#+END_SRC
+**** set
+#+BEGIN_SRC
+Usage: halonctl mero vars set [--recovery-expiry [SECONDS]]
+                              [--recovery-retry [SECONDS]]
+                              [--keepalive-frequency [SECONDS]]
+                              [--keepalive-timeout [SECONDS]]
+                              [--drive-reset-max-retries [NUMBER]]
+                              [--disable-smart-check [True|False]]
+                              [--disable-notification-failure [True|False]]
+  Set variables
+
+Available options:
+  --recovery-expiry [SECONDS]
+                           How long we want node recovery to last overall (sec).
+  --recovery-retry [SECONDS]
+                           Number of tries to try recovery, negative for
+                           infinite.
+  --keepalive-frequency [SECONDS]
+                           How ofter should we try to send keepalive messages.
+                           Seconds.
+  --keepalive-timeout [SECONDS]
+                           How long to allow process to run without replying to
+                           keepalive.
+  --drive-reset-max-retries [NUMBER]
+                           Number of times we could try to reset drive.
+  --disable-smart-check [True|False]
+                           Disable smart check by sspl.
+  --disable-notification-failure [True|False]
+                           Disable failing a process when notification sending
+                           to it fails.
+  -h,--help                Show this help text
+#+END_SRC
