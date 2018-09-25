@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE TupleSections            #-}
 -- |
--- Copyright : (C) 2018 Xyratex Technology Limited.
+-- Copyright : (C) 2015-2018 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 -- Mero identifier type. Mero uses FIDs to uniquely identity most objects

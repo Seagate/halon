@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2018 Xyratex Technology Limited.
+-- Copyright : (C) 2013-2018 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
 module Mero.ConfC
