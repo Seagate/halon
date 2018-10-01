@@ -17,11 +17,22 @@ warn() { echo "*WARNING* $@" >&2; }
 
 H0_SRC_DIR="$(readlink -f $0)"
 H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+DEFAULT_M0_SRC_DIR=${H0_SRC_DIR%/*}/mero
+
+## By default, optimizations are turned off (-O0) to reduce compilation time.
+## Users can enable optimizations by setting GHC_OPTS environment variable
+## explicitly, e.g.,
+##
+##     GHC_OPTS='-g -j2' ./scripts/h0 rebuild
+##
+## NB: `stack build --fast` is equivalent to `stack build --ghc-options=-O0`.
+DEFAULT_GHC_OPTS='-g -j2 -O0'
 
 ## -------------------------------------------------------------------
 ## Configurable section
 
-export M0_SRC_DIR=${M0_SRC_DIR:-${H0_SRC_DIR%/*}/mero}
+export M0_SRC_DIR=${M0_SRC_DIR:-$DEFAULT_M0_SRC_DIR}
+GHC_OPTS=${GHC_OPTS:-$DEFAULT_GHC_OPTS}
 ## -------------------------------------------------------------------
 
 PROG="${0##*/}"
@@ -57,7 +68,7 @@ _stack_build() {
             --extra-include-dirs="$M0_SRC_DIR" \
             --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
             build \
-                --ghc-options="${GHC_OPTS:--g -j2}" \
+                --ghc-options="$GHC_OPTS" \
                 "$@"
 }
 
@@ -194,7 +205,9 @@ Options:
     Stack.  Type \`stack <command> --help' for documentation.
 
 Environment variables:
-    M0_SRC_DIR    Path to Mero sources directory; defaults to '$M0_SRC_DIR'.
+    M0_SRC_DIR  Path to Mero sources directory; defaults to
+                '$DEFAULT_M0_SRC_DIR'.
+    GHC_OPTS    Extra options for ghc; defaults to '$DEFAULT_GHC_OPTS'.
 
 Examples:
 

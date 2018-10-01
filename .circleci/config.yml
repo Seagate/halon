@@ -49,8 +49,7 @@ templates:
               done
       - run:
           name: Installing latest Mero master rpms
-          command: |
-              yum install -y ~/rpmbuild/RPMS/x86_64/mero-*.rpm
+          command: yum install -y ~/rpmbuild/RPMS/x86_64/mero-*.rpm
       - run:
           name: Building Halon rpms
           working_directory: ~/halon
@@ -161,7 +160,9 @@ jobs:
           #   Logs have been written to: /root/halon/.stack-work/logs/regex-tdfa-1.2.2.log
           #
           # TODO: investigate the root cause and implement a proper solution
-          command: ./scripts/h0 make || ./scripts/h0 make
+          command: |
+            export GHC_OPTS='-g -j2'
+            ./scripts/h0 make || ./scripts/h0 make
 
       - persist_to_workspace:
           root: /root
@@ -178,7 +179,7 @@ jobs:
           name: Running Halon unit tests
           working_directory: ~/halon
           no_output_timeout: 30m
-          command: ./scripts/h0 test
+          command: GHC_OPTS='-g -j2' ./scripts/h0 test
 
   rpmbuild:
     <<: *docker-image-latest
