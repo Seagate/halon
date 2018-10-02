@@ -222,6 +222,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
      modifyGraph . execState $ do
        for_ (M0.getM0Processes rg) $ \proc ->
          State.modify (G.connect proc R.Is M0.ProcessBootstrapped)
+     modifyGraph $ G.connect (M0.getM0Root rg) Has M0.DIXInitialised
      registerSyncGraph $ do
        sendChan ch ()
 
