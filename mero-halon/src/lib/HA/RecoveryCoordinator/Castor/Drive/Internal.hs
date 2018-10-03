@@ -54,13 +54,13 @@ updateDiskFailure df f disk rg = foldl' apply rg (nonMDPools `intersect` pools) 
   nonMDPools = Pool.getNonMD rg
   pools = nub
     [ pool
-    | Just (ctrl :: M0.Controller) <- [G.connectedFrom M0.IsParentOf disk rg]
-    , Just (encl :: M0.Enclosure)  <- [G.connectedFrom M0.IsParentOf ctrl rg]
-    , Just (rack :: M0.Rack)       <- [G.connectedFrom M0.IsParentOf encl rg]
-    , Just (site :: M0.Site)       <- [G.connectedFrom M0.IsParentOf rack rg]
-    , sitev :: M0.SiteV            <- G.connectedTo site M0.IsRealOf rg
-    , Just (pver :: M0.PVer)       <- [G.connectedFrom M0.IsParentOf sitev rg]
-    , Just (pool :: M0.Pool)       <- [G.connectedFrom M0.IsParentOf pver rg]
+    | diskv :: M0.DiskV              <- G.connectedTo disk M0.IsRealOf rg
+    , Just (ctrlv :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf diskv rg]
+    , Just (enclv :: M0.EnclosureV)  <- [G.connectedFrom M0.IsParentOf ctrlv rg]
+    , Just (rackv :: M0.RackV)       <- [G.connectedFrom M0.IsParentOf enclv rg]
+    , Just (sitev :: M0.SiteV)       <- [G.connectedFrom M0.IsParentOf rackv rg]
+    , Just (pver :: M0.PVer)         <- [G.connectedFrom M0.IsParentOf sitev rg]
+    , Just (pool :: M0.Pool)         <- [G.connectedFrom M0.IsParentOf pver rg]
     ]
   apply rg' pool =
     case G.connectedTo pool Has rg' of

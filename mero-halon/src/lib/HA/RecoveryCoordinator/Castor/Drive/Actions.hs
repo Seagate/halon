@@ -251,11 +251,11 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
              pvers = nub
                [ pver
                | disk :: M0.Disk <- connectedToList sdev M0.IsOnHardware rg
-               , ctrl :: M0.Controller <- connectedFromList M0.IsParentOf disk rg
-               , encl :: M0.Enclosure <- connectedFromList M0.IsParentOf ctrl rg
-               , rack :: M0.Rack <- connectedFromList M0.IsParentOf encl rg
-               , site :: M0.Site <- connectedFromList M0.IsParentOf rack  rg
-               , sitev :: M0.SiteV <- G.connectedTo site M0.IsRealOf rg
+               , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
+               , ctrlv :: M0.ControllerV <- connectedFromList M0.IsParentOf diskv rg
+               , enclv :: M0.EnclosureV <- connectedFromList M0.IsParentOf ctrlv rg
+               , rackv :: M0.RackV <- connectedFromList M0.IsParentOf enclv rg
+               , sitev :: M0.SiteV <- connectedFromList M0.IsParentOf rackv  rg
                , pver :: M0.PVer <- connectedFromList M0.IsParentOf sitev rg
                , pool :: M0.Pool <- connectedFromList M0.IsParentOf pver rg
                , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
