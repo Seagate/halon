@@ -36,12 +36,12 @@ debugRules = sequence_
 -- | Handles `hctl debug print drive` request.
 ruleQueryDriveState :: Definitions RC ()
 ruleQueryDriveState = defineSimpleTask "debug-query-drive-state" $
-    \(QueryDriveStateReq select@SelectDrive{..} sp) -> do
-        Log.rcLog' Log.DEBUG (show select)
+    \(QueryDriveStateReq (SelectDrive driveId) sp) -> do
+        Log.rcLog' Log.DEBUG (show driveId)
         rg <- getGraph
         let resp = maybe QueryDriveStateNoStorageDeviceError
                          (driveStateResp rg)
-                         (findStorageDevice rg sdDriveId)
+                         (findStorageDevice rg driveId)
         liftProcess (sendChan sp resp)
 
 -- XXX Compare with HA.RecoveryCoordinator.Mero.Actions.Initial.dereference.

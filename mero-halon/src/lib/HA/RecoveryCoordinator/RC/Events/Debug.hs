@@ -30,11 +30,8 @@ data QueryDriveStateResp
 
 instance Binary QueryDriveStateResp
 
-data SelectDrive = SelectDrive
-  { sdEnclosure :: Text  -- XXX DELETEME? This field is only set but never used.
-  , sdSlot :: Int  -- XXX DELETEME? This field is only set but never used.
-  , sdDriveId :: DriveId
-  } deriving Show
+newtype SelectDrive = SelectDrive DriveId
+  deriving Show
 
 -- | Drive identifier.
 data DriveId

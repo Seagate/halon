@@ -93,18 +93,7 @@ parseQDrive :: O.Parser Query
 parseQDrive = QDrive <$> parseSelectDrive <*> parseQueryDrive
 
 parseSelectDrive :: O.Parser SelectDrive
-parseSelectDrive = SelectDrive
-  <$> strOption
-          ( O.short 'e'
-         <> O.long "enclosure"
-         <> O.metavar "STR"
-         <> O.help "Enclosure identifier (`enc_id' in facts.yaml)" )
-  <*> O.option O.auto
-          ( O.short 's'
-         <> O.long "slot"
-         <> O.metavar "INT"
-         <> O.help "Slot within the enclosure (`m0d_slot' in facts.yaml)" )
-  <*> parseDriveId
+parseSelectDrive = SelectDrive <$> parseDriveId
 
 parseDriveId :: O.Parser DriveId
 parseDriveId = serial <|> wwn
