@@ -217,7 +217,7 @@ meroRules = do
     rg <- getGraph
     let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
            <$> G.connectedTo (M0.Pool pool) Has rg
-    Log.rcLog' Log.DEBUG $ "FailureVector=" ++ show mv
+    Log.rcLog' Log.DEBUG $ "pool=" ++ show pool ++ " failvec=" ++ show mv
     liftProcess $ sendChan port mv
 
   ruleGetEntryPoint
