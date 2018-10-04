@@ -271,7 +271,7 @@ checkDiskFailureWithinTolerance sdev st rg = case mk of
                            ]
          in case mapMaybe getK pvers of
               [] -> Nothing
-              xs -> Just (fromIntegral $ maximum xs, length failedDisks)
+              xs -> Just (fromIntegral $ minimum xs, length failedDisks)
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
