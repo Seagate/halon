@@ -1100,7 +1100,7 @@ $(mkResRel
   , (''SDev, Unbounded, ''Cas.Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded, ''Cas.Is, AtMostOne, ''NodeState)
   , (''Controller, Unbounded, ''Cas.Is, AtMostOne, ''ControllerState)
-  , (''Disk, AtMostOne, ''Cas.Is, AtMostOne, ''Replaced)
+  , (''Disk, Unbounded, ''Cas.Is, AtMostOne, ''Replaced)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
