@@ -12,6 +12,9 @@ export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 ### Type `h0 help' for usage.
 ### ------------------------------------------------------------------
 
+umask 0002
+ulimit -c unlimited
+
 die() { echo "$@" >&2; exit 1; }
 warn() { echo "*WARNING* $@" >&2; }
 
@@ -35,8 +38,10 @@ export M0_SRC_DIR=${M0_SRC_DIR:-$DEFAULT_M0_SRC_DIR}
 GHC_OPTS=${GHC_OPTS:-$DEFAULT_GHC_OPTS}
 ## -------------------------------------------------------------------
 
+## Set `SUDO` unless it is set already.
+SUDO="${SUDO-sudo -E}"  # the absence of ':' is important
+
 PROG="${0##*/}"
-SUDO='sudo -E'
 
 assert_mero() {
     [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
@@ -90,6 +95,39 @@ cmd_rebuild() {
     # One possible solution is to reimplement this script as a Makefile.
     stack clean rpclite
     cmd_make "$@"
+}
+
+_time() {
+    if [ -x /usr/bin/time ]; then
+        /usr/bin/time "$@"
+    else
+        time "$@"
+    fi
+}
+
+cmd_run_st() {
+    local list_p=0
+    local pattern
+    local f
+
+    if [ "${1:-}" = '-l' ]; then
+        list_p=1
+        shift
+    fi
+
+    export H0_SRC_DIR SUDO  # export variables used by system tests
+    for pattern in ${@:-t_*}; do
+        find "$H0_SRC_DIR/st/" -maxdepth 1 \! -type d -name $pattern \
+             -perm +a=x -print | sort |
+            while read f; do
+                if [ $list_p -eq 1 ]; then
+                    echo ${f##*/}
+                else
+                    echo "<< ${f##*/} >>" >&2
+                    _time $f || return $?
+                fi
+            done
+    done
 }
 
 cmd_clean() {
@@ -185,9 +223,13 @@ Commands:
     setup                Get the appropriate GHC to build Halon.
                          (Rarely needed.)
     make [OPTION]...     Build Halon.
-                         (Use \`$PROG rebuild' if Mero was updated.)
+                         (Use \`rebuild' command if Mero was updated.)
     rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
     test [OPTION]...     Run unit tests.  See 'Examples' below.
+    run-st [-l] [PATTERN]...
+                         Run system tests or list ('-l') their names.
+                         Optional arguments specify which tests to run
+                         (PATTERN is a glob pattern).
     clean [OPTION]...    Clean local packages.
     start                Start cluster.
     stop [-u]            Stop cluster. \`stop -u' is equivalent to
@@ -226,8 +268,8 @@ CMD=
 OPTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|path|clean|help) ;& # fall through
-        install|uninstall|start|stop)
+        setup|make|rebuild|test|run-st|clean|start|stop) ;& # fall through
+        install|uninstall|path|help)
             [[ -z $CMD ]] || {
                 if [[ ${#OPTS[@]} == 0 ]]; then
                     _exec $CMD
