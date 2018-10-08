@@ -21,46 +21,44 @@ import           Data.Text (Text)
 import qualified Options.Applicative as O
 import           System.Exit (die)
 
-import           HA.RecoveryCoordinator.RC.Events.Debug
-  ( DriveId(..)
-  , QueryDriveStateReq(..)
-  , QueryDriveStateResp(..)
-  , SelectDrive(..)
-  )
-import           Handler.Mero.Helpers (clusterCommand) -- XXX s/Mero\.//
+import qualified HA.RecoveryCoordinator.RC.Events.Debug as RC
+import           Handler.Mero.Helpers (clusterCommand) -- XXX TODO: s/Mero\.//
+import           Options.Applicative.Extras (command')
 
 data Options = OQuery Query | OModify Modify deriving Show
 
 data Query
-  = QDrive SelectDrive QueryDrive
+  = QDrive RC.SelectDrive QueryDrive
   | QPool SelectPool QueryPool
   deriving Show
 
 data Modify
-  = MDrive SelectDrive ModifyDrive
+  = MDrive RC.SelectDrive ModifyDrive
   | MPool SelectPool ModifyPool
   deriving Show
 
 run :: [NodeId] -> Options -> Process ()
 run nids (OQuery (QDrive select QDriveState)) =
-    clusterCommand nids Nothing (QueryDriveStateReq select) $ \case
-        QueryDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
-        QueryDriveStateNoStorageDeviceError ->
+    clusterCommand nids Nothing (RC.QueryDriveStateReq select) $ \case
+        RC.QueryDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
+        RC.QueryDriveStateNoStorageDeviceError ->
+            liftIO $ die "No such storage device"
+run nids (OModify (MDrive select (ModifyDrive newState))) =
+    clusterCommand nids Nothing (RC.ModifyDriveStateReq select newState) $ \case
+        RC.ModifyDriveStateOK -> liftIO . putStrLn $ "XXX OK"
+        RC.ModifyDriveStateNoStorageDeviceError ->
             liftIO $ die "No such storage device"
 run _ x = error $ "XXX IMPLEMENTME: " ++ show x
 
-command :: String -> O.Parser a -> String -> O.Mod O.CommandFields a
-command name p = O.command name . O.info p . O.progDesc
-
 parser :: O.Parser Options
 parser = O.hsubparser
-  $ command "print" (OQuery <$> parseQuery) "Query resource(s)"
- <> command "set" (OModify <$> parseModify) "Modify resource(s)"
+  $ command' "print" (OQuery <$> parseQuery) "Query resource(s)"
+ <> command' "set" (OModify <$> parseModify) "Modify resource(s)"
   where
    parseQuery = O.hsubparser $ foldMap cmdQuery targets
    parseModify = O.hsubparser $ foldMap cmdModify targets
-   cmdQuery (name, pQuery, _) = command name pQuery ("Query " ++ name)
-   cmdModify (name, _, pModify) = command name pModify ("Modify " ++ name)
+   cmdQuery (name, pQuery, _) = command' name pQuery ("Query " ++ name)
+   cmdModify (name, _, pModify) = command' name pModify ("Modify " ++ name)
    targets = [ ("drive", parseQDrive, parseMDrive)
              , ("pool", parseQPool, parseMPool) ]
 
@@ -84,26 +82,25 @@ strOption = fmap fromString . O.strOption
 
 data QueryDrive = QDriveState | QDriveRelations deriving Show
 
-newtype ModifyDrive = ModifyDrive StateOfDrive
+newtype ModifyDrive = ModifyDrive RC.StateOfDrive
   deriving Show
-
-data StateOfDrive = DriveOnline | DriveFailed | DriveBlank deriving Show
 
 parseQDrive :: O.Parser Query
 parseQDrive = QDrive <$> parseSelectDrive <*> parseQueryDrive
 
-parseSelectDrive :: O.Parser SelectDrive
-parseSelectDrive = SelectDrive <$> parseDriveId
+parseSelectDrive :: O.Parser RC.SelectDrive
+parseSelectDrive = RC.SelectDrive <$> parseDriveId
 
-parseDriveId :: O.Parser DriveId
+parseDriveId :: O.Parser RC.DriveId
 parseDriveId = serial <|> wwn
   where
-    serial = DriveSerial <$> strOption ( O.long "serial"
-                                      <> O.metavar "STR"
-                                      <> O.help "Serial number of the drive" )
-    wwn = DriveWwn <$> strOption ( O.long "wwn"
-                                <> O.metavar "STR"
-                                <> O.help "World Wide Name of the drive" )
+    serial = RC.DriveSerial <$>
+        strOption ( O.long "serial"
+                 <> O.metavar "STR"
+                 <> O.help "Serial number of the drive" )
+    wwn = RC.DriveWwn <$> strOption ( O.long "wwn"
+                                   <> O.metavar "STR"
+                                   <> O.help "World Wide Name of the drive" )
 
 parseQueryDrive :: O.Parser QueryDrive
 parseQueryDrive = O.argument (reader supported)
@@ -120,14 +117,14 @@ parseMDrive = MDrive <$> parseSelectDrive <*> parseModifyDrive
 parseModifyDrive :: O.Parser ModifyDrive
 parseModifyDrive = ModifyDrive <$> parseStateOfDrive
 
-parseStateOfDrive :: O.Parser StateOfDrive
+parseStateOfDrive :: O.Parser RC.StateOfDrive
 parseStateOfDrive = O.argument (reader supported)
   ( O.metavar "STATE"
  <> O.help ("Supported values: " ++ quoted supported) )
   where
-    supported = [ ("ONLINE", DriveOnline)
-                , ("FAILED", DriveFailed)
-                , ("BLANK",  DriveBlank) ]
+    supported = [ ("ONLINE", RC.DriveOnline)
+                , ("FAILED", RC.DriveFailed)
+                , ("BLANK",  RC.DriveBlank) ]
 
 ----------------------------------------------------------------------
 -- Pool
@@ -178,9 +175,9 @@ parseMPool = MPool <$> parseSelectPool <*> parseModifyPool
 
 parseModifyPool :: O.Parser ModifyPool
 parseModifyPool = O.hsubparser
-  $ command "state" (MPoolState <$> parseState) "Change pool state"
- <> command "repair" (MPoolRepReb <$> parseRepair) "Pool repair control"
- <> command "rebalance" (MPoolRepReb <$> parseRebalance)
+  $ command' "state" (MPoolState <$> parseState) "Change pool state"
+ <> command' "repair" (MPoolRepReb <$> parseRepair) "Pool repair control"
+ <> command' "rebalance" (MPoolRepReb <$> parseRebalance)
         "Pool rebalance control"
  where
    supportedStates = [ ("OFFLINE", PoolOffline)
