@@ -21,32 +21,34 @@ import           Data.Text (Text)
 import qualified Options.Applicative as O
 import           System.Exit (die)
 
-import qualified HA.RecoveryCoordinator.RC.Events.Debug as RC
+import qualified HA.RecoveryCoordinator.RC.Events.Debug as D
 import           Handler.Mero.Helpers (clusterCommand) -- XXX TODO: s/Mero\.//
 import           Options.Applicative.Extras (command')
 
 data Options = OQuery Query | OModify Modify deriving Show
 
 data Query
-  = QDrive RC.SelectDrive QueryDrive
+  = QDrive D.SelectDrive QueryDrive
   | QPool SelectPool QueryPool
   deriving Show
 
 data Modify
-  = MDrive RC.SelectDrive ModifyDrive
+  = MDrive D.SelectDrive ModifyDrive
   | MPool SelectPool ModifyPool
   deriving Show
 
 run :: [NodeId] -> Options -> Process ()
 run nids (OQuery (QDrive select QDriveState)) =
-    clusterCommand nids Nothing (RC.QueryDriveStateReq select) $ \case
-        RC.QueryDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
-        RC.QueryDriveStateNoStorageDeviceError ->
+    let mkReq = D.QueryDriveState . D.QueryDriveStateReq select
+    in clusterCommand nids Nothing mkReq $ \case
+        D.QDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
+        D.QDriveStateNoStorageDeviceError ->
             liftIO $ die "No such storage device"
 run nids (OModify (MDrive select (ModifyDrive newState))) =
-    clusterCommand nids Nothing (RC.ModifyDriveStateReq select newState) $ \case
-        RC.ModifyDriveStateOK -> liftIO . putStrLn $ "XXX OK"
-        RC.ModifyDriveStateNoStorageDeviceError ->
+    let mkReq = D.ModifyDriveState . D.ModifyDriveStateReq select newState
+    in clusterCommand nids Nothing mkReq $ \case
+        D.MDriveStateOK -> liftIO . putStrLn $ "XXX OK"
+        D.MDriveStateNoStorageDeviceError ->
             liftIO $ die "No such storage device"
 run _ x = error $ "XXX IMPLEMENTME: " ++ show x
 
@@ -82,25 +84,25 @@ strOption = fmap fromString . O.strOption
 
 data QueryDrive = QDriveState | QDriveRelations deriving Show
 
-newtype ModifyDrive = ModifyDrive RC.StateOfDrive
+newtype ModifyDrive = ModifyDrive D.StateOfDrive
   deriving Show
 
 parseQDrive :: O.Parser Query
 parseQDrive = QDrive <$> parseSelectDrive <*> parseQueryDrive
 
-parseSelectDrive :: O.Parser RC.SelectDrive
-parseSelectDrive = RC.SelectDrive <$> parseDriveId
+parseSelectDrive :: O.Parser D.SelectDrive
+parseSelectDrive = D.SelectDrive <$> parseDriveId
 
-parseDriveId :: O.Parser RC.DriveId
+parseDriveId :: O.Parser D.DriveId
 parseDriveId = serial <|> wwn
   where
-    serial = RC.DriveSerial <$>
+    serial = D.DriveSerial <$>
         strOption ( O.long "serial"
                  <> O.metavar "STR"
                  <> O.help "Serial number of the drive" )
-    wwn = RC.DriveWwn <$> strOption ( O.long "wwn"
-                                   <> O.metavar "STR"
-                                   <> O.help "World Wide Name of the drive" )
+    wwn = D.DriveWwn <$> strOption ( O.long "wwn"
+                                  <> O.metavar "STR"
+                                  <> O.help "World Wide Name of the drive" )
 
 parseQueryDrive :: O.Parser QueryDrive
 parseQueryDrive = O.argument (reader supported)
@@ -117,14 +119,14 @@ parseMDrive = MDrive <$> parseSelectDrive <*> parseModifyDrive
 parseModifyDrive :: O.Parser ModifyDrive
 parseModifyDrive = ModifyDrive <$> parseStateOfDrive
 
-parseStateOfDrive :: O.Parser RC.StateOfDrive
+parseStateOfDrive :: O.Parser D.StateOfDrive
 parseStateOfDrive = O.argument (reader supported)
   ( O.metavar "STATE"
  <> O.help ("Supported values: " ++ quoted supported) )
   where
-    supported = [ ("ONLINE", RC.DriveOnline)
-                , ("FAILED", RC.DriveFailed)
-                , ("BLANK",  RC.DriveBlank) ]
+    supported = [ ("ONLINE", D.DriveOnline)
+                , ("FAILED", D.DriveFailed)
+                , ("BLANK",  D.DriveBlank) ]
 
 ----------------------------------------------------------------------
 -- Pool

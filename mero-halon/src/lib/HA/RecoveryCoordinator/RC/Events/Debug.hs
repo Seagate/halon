@@ -5,7 +5,9 @@
 -- License   : All rights reserved.
 
 module HA.RecoveryCoordinator.RC.Events.Debug
-  ( DriveId(..)
+  ( DebugModify(..)
+  , DebugQuery(..)
+  , DriveId(..)
   , ModifyDriveStateReq(..)
   , ModifyDriveStateResp(..)
   , QueryDriveStateReq(..)
@@ -21,14 +23,29 @@ import GHC.Generics (Generic)
 
 import HA.SafeCopy (base, deriveSafeCopy)
 
+data DebugQuery
+  = QueryDriveState QueryDriveStateReq
+  -- | QueryDriveRelations
+  -- | QuerySdevState QuerySdevState
+  -- | QueryPoolState
+  deriving Show
+
+data DebugModify
+  = ModifyDriveState ModifyDriveStateReq
+  -- | ModifySdevState ModifySdevStateReq
+  -- | ModifyPoolState
+  -- | ModifyPoolRepair
+  -- | ModifyPoolRebalance
+  deriving Show
+
 data QueryDriveStateReq = QueryDriveStateReq
   { qdsSelect :: SelectDrive
   , qdsReplyTo :: SendPort QueryDriveStateResp
   } deriving Show
 
 data QueryDriveStateResp
-  = QueryDriveState Text
-  | QueryDriveStateNoStorageDeviceError
+  = QDriveState Text
+  | QDriveStateNoStorageDeviceError
   deriving (Generic, Show)
 
 instance Binary QueryDriveStateResp
@@ -40,8 +57,8 @@ data ModifyDriveStateReq = ModifyDriveStateReq
   } deriving Show
 
 data ModifyDriveStateResp
-  = ModifyDriveStateOK
-  | ModifyDriveStateNoStorageDeviceError
+  = MDriveStateOK
+  | MDriveStateNoStorageDeviceError
   deriving (Generic, Show)
 
 instance Binary ModifyDriveStateResp
@@ -60,6 +77,8 @@ data DriveId
 data StateOfDrive = DriveOnline | DriveFailed | DriveBlank
   deriving Show
 
+deriveSafeCopy 0 'base ''DebugModify
+deriveSafeCopy 0 'base ''DebugQuery
 deriveSafeCopy 0 'base ''DriveId
 deriveSafeCopy 0 'base ''ModifyDriveStateReq
 deriveSafeCopy 0 'base ''QueryDriveStateReq
