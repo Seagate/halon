@@ -18,9 +18,12 @@ import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import           HA.RecoveryCoordinator.RC.Application (RC)
 import           HA.RecoveryCoordinator.RC.Events.Debug
   ( DriveId(DriveSerial,DriveWwn)
+  , ModifyDriveStateReq(..)
+  , ModifyDriveStateResp(..)
   , QueryDriveStateReq(..)
   , QueryDriveStateResp(..)
   , SelectDrive(..)
+  , StateOfDrive(DriveOnline)
   )
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
@@ -30,7 +33,8 @@ import           Network.CEP (Definitions, liftProcess)
 
 debugRules :: Definitions RC ()
 debugRules = sequence_
-  [ ruleQueryDriveState
+  [ ruleModifyDriveState
+  , ruleQueryDriveState
   ]
 
 -- | Handles `hctl debug print drive` request.
@@ -42,6 +46,16 @@ ruleQueryDriveState = defineSimpleTask "debug-query-drive-state" $
         let resp = maybe QueryDriveStateNoStorageDeviceError
                          (driveStateResp rg)
                          (findStorageDevice rg driveId)
+        liftProcess (sendChan sp resp)
+
+-- | Handles `hctl debug set drive` request.
+ruleModifyDriveState :: Definitions RC ()
+ruleModifyDriveState = defineSimpleTask "debug-modify-drive-state" $
+    \(ModifyDriveStateReq (SelectDrive driveId) newState sp) -> do
+        Log.rcLog' Log.DEBUG $ show driveId ++ " -> " ++ show newState
+        let resp = case newState of -- XXX IMPLEMENTME
+                DriveOnline -> ModifyDriveStateOK
+                _           -> ModifyDriveStateNoStorageDeviceError
         liftProcess (sendChan sp resp)
 
 -- XXX Compare with HA.RecoveryCoordinator.Mero.Actions.Initial.dereference.

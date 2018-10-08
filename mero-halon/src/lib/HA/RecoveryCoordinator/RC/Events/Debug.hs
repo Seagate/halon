@@ -6,9 +6,12 @@
 
 module HA.RecoveryCoordinator.RC.Events.Debug
   ( DriveId(..)
+  , ModifyDriveStateReq(..)
+  , ModifyDriveStateResp(..)
   , QueryDriveStateReq(..)
   , QueryDriveStateResp(..)
   , SelectDrive(..)
+  , StateOfDrive(..)
   ) where
 
 import Control.Distributed.Process (SendPort)
@@ -30,6 +33,19 @@ data QueryDriveStateResp
 
 instance Binary QueryDriveStateResp
 
+data ModifyDriveStateReq = ModifyDriveStateReq
+  { mdsSelect :: SelectDrive
+  , mdsNewState :: StateOfDrive
+  , mdsReplyTo :: SendPort ModifyDriveStateResp
+  } deriving Show
+
+data ModifyDriveStateResp
+  = ModifyDriveStateOK
+  | ModifyDriveStateNoStorageDeviceError
+  deriving (Generic, Show)
+
+instance Binary ModifyDriveStateResp
+
 newtype SelectDrive = SelectDrive DriveId
   deriving Show
 
@@ -39,6 +55,13 @@ data DriveId
   | DriveWwn Text     -- ^ World Wide Name of the drive.
   deriving Show
 
+-- | Desired state of drive.
+-- See also HA.Resources.Mero.SDevState.
+data StateOfDrive = DriveOnline | DriveFailed | DriveBlank
+  deriving Show
+
 deriveSafeCopy 0 'base ''DriveId
+deriveSafeCopy 0 'base ''ModifyDriveStateReq
 deriveSafeCopy 0 'base ''QueryDriveStateReq
 deriveSafeCopy 0 'base ''SelectDrive
+deriveSafeCopy 0 'base ''StateOfDrive
