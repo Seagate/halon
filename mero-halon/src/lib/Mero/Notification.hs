@@ -623,13 +623,15 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
       let mkCallback l = Callback (ok l) (fail' l)
           ok l = do r <- readIORef (_ni_info ref)
                     for_ (Map.lookup l r) $ \fid -> do
-                      log $ "Notification acknowledged on link "
-                          ++ show l ++ " from " ++ show fid
+                      log $ "Notification for epoch " ++ show epoch
+                          ++ " acknowledged on link " ++ show l
+                          ++ " from " ++ show fid
                       onOk fid
           fail' l = do r <- readIORef (_ni_info ref)
                        for_ (Map.lookup l r) $ \fid -> do
-                         log $ "Notification cancelled on link "
-                             ++ show l ++ " for " ++ show fid
+                         log $ "Notification for epoch " ++ show epoch
+                             ++ " failed on link " ++ show l
+                             ++ " for " ++ show fid
                          onFail fid
       tags <- ifor links $ \l _ ->
         Map.singleton <$> HA.notify l 0 nvec ha_pfid ha_sfid epoch
@@ -640,7 +642,8 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
       return ( Map.unionWith (Map.unionWith (<>)) links tags
              , Set.fromList $ Map.elems info)
    for_ (filter (`Set.notMember` known) fids) $ \fid -> do
-    log $ "Notification failed due to no link for " ++ show fid
+    log $ "Notification for epoch " ++ show epoch
+        ++ " failed due to no link for " ++ show fid
     onFail fid
 
 -- | Send a ping on every known 'HA.HALink': we should have at least one
