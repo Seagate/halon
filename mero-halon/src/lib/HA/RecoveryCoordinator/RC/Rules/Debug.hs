@@ -43,9 +43,9 @@ queryDriveState :: D.QueryDriveStateReq -> PhaseM RC l ()
 queryDriveState (D.QueryDriveStateReq (D.SelectDrive driveId) sp) = do
     Log.rcLog' Log.DEBUG (show driveId)
     rg <- getGraph
-    let resp = maybe D.QDriveStateNoStorageDeviceError
-                     (driveStateResp rg)
-                     (findStorageDevice rg driveId)
+    let resp = either D.QDriveStateNoStorageDeviceError
+                      (driveStateResp rg)
+                      (findStorageDevice rg driveId)
     liftProcess (sendChan sp resp)
 
 ----------------------------------------------------------------------
@@ -61,29 +61,44 @@ modifyDriveState :: D.ModifyDriveStateReq -> PhaseM RC l ()
 modifyDriveState (D.ModifyDriveStateReq (D.SelectDrive driveId) newState sp) =
   do
     Log.rcLog' Log.DEBUG $ show driveId ++ " -> " ++ show newState
-    let resp = case newState of -- XXX IMPLEMENTME
-            D.DriveOnline -> D.MDriveStateOK
-            _             -> D.MDriveStateNoStorageDeviceError
+    let resp = D.MDriveStateNoStorageDeviceError "XXX IMPLEMENTME"
     liftProcess (sendChan sp resp)
 
 ----------------------------------------------------------------------
 -- Misc.
 
 -- XXX Compare with HA.RecoveryCoordinator.Mero.Actions.Initial.dereference.
-findStorageDevice :: G.Graph -> D.DriveId -> Maybe Cas.StorageDevice
+findStorageDevice :: G.Graph -> D.DriveId -> Either String Cas.StorageDevice
 findStorageDevice rg (D.DriveSerial serial) =
     let sd = Cas.StorageDevice (T.unpack serial)
     in if G.isConnected Cluster Has sd rg
-       then Just sd
-       else Nothing
+       then Right sd
+       else Left $ printf "No StorageDevice with serial number %s found" serial
 findStorageDevice rg (D.DriveWwn wwn) =
     case [ sd
          | sd :: Cas.StorageDevice <- G.connectedTo Cluster Has rg
          , let ids = G.connectedTo sd Has rg :: [Cas.DeviceIdentifier]
          , Cas.DIWWN (T.unpack wwn) `elem` ids
          ] of
-        [sd] -> Just sd
-        _   -> Nothing
+        [sd] -> Right sd
+        _    -> Left $ printf "No StorageDevice with WWN %s found" wwn
+findStorageDevice rg (D.DriveEnclSlot enclId slotIdx) =
+    case [ encl
+         | site :: Cas.Site <- G.connectedTo Cluster Has rg
+         , rack :: Cas.Rack <- G.connectedTo site Has rg
+         , encl@(Cas.Enclosure eid) <- G.connectedTo rack Has rg
+         , eid == T.unpack enclId
+         ] of
+        [encl] -> let slot = Cas.Slot encl slotIdx
+                  in if G.isConnected encl Has slot rg
+                     then case G.connectedFrom Has slot rg of
+                        Just sd -> Right sd
+                        Nothing -> Left "Slot is not linked to a StorageDevice"
+                     else Left $ printf "Enclosure %s doesn't have slot %d"
+                                 enclId slotIdx
+        [] -> Left $ T.unpack enclId ++ ": No such enclosure"
+        _  -> Left $ "Impossible happened! Several enclosures have id "
+                  ++ show enclId
 
 driveStateResp :: G.Graph -> Cas.StorageDevice -> D.QueryDriveStateResp
 driveStateResp rg sd =

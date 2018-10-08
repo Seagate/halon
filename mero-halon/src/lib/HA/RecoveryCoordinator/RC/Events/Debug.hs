@@ -45,7 +45,7 @@ data QueryDriveStateReq = QueryDriveStateReq
 
 data QueryDriveStateResp
   = QDriveState Text
-  | QDriveStateNoStorageDeviceError
+  | QDriveStateNoStorageDeviceError String
   deriving (Generic, Show)
 
 instance Binary QueryDriveStateResp
@@ -58,7 +58,7 @@ data ModifyDriveStateReq = ModifyDriveStateReq
 
 data ModifyDriveStateResp
   = MDriveStateOK
-  | MDriveStateNoStorageDeviceError
+  | MDriveStateNoStorageDeviceError String
   deriving (Generic, Show)
 
 instance Binary ModifyDriveStateResp
@@ -67,9 +67,14 @@ newtype SelectDrive = SelectDrive DriveId
   deriving Show
 
 -- | Drive identifier.
+--
+-- See also 'M0Device'.
 data DriveId
-  = DriveSerial Text  -- ^ Serial number of the drive.
-  | DriveWwn Text     -- ^ World Wide Name of the drive.
+  = DriveSerial Text  -- ^ Serial number.
+  | DriveWwn Text     -- ^ World Wide Name.
+  | DriveEnclSlot Text Int  -- ^ Enclosure id and index of slot within
+                            -- this enclosure.
+  --XXX | DriveFid Fid
   deriving Show
 
 -- | Desired state of drive.

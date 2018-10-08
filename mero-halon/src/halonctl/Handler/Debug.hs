@@ -42,14 +42,12 @@ run nids (OQuery (QDrive select QDriveState)) =
     let mkReq = D.QueryDriveState . D.QueryDriveStateReq select
     in clusterCommand nids Nothing mkReq $ \case
         D.QDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
-        D.QDriveStateNoStorageDeviceError ->
-            liftIO $ die "No such storage device"
+        D.QDriveStateNoStorageDeviceError err -> liftIO (die err)
 run nids (OModify (MDrive select (ModifyDrive newState))) =
     let mkReq = D.ModifyDriveState . D.ModifyDriveStateReq select newState
     in clusterCommand nids Nothing mkReq $ \case
-        D.MDriveStateOK -> liftIO . putStrLn $ "XXX OK"
-        D.MDriveStateNoStorageDeviceError ->
-            liftIO $ die "No such storage device"
+        D.MDriveStateOK -> pure ()
+        D.MDriveStateNoStorageDeviceError err -> liftIO (die err)
 run _ x = error $ "XXX IMPLEMENTME: " ++ show x
 
 parser :: O.Parser Options
@@ -94,15 +92,26 @@ parseSelectDrive :: O.Parser D.SelectDrive
 parseSelectDrive = D.SelectDrive <$> parseDriveId
 
 parseDriveId :: O.Parser D.DriveId
-parseDriveId = serial <|> wwn
+parseDriveId = serial <|> wwn <|> enclSlot
   where
-    serial = D.DriveSerial <$>
-        strOption ( O.long "serial"
-                 <> O.metavar "STR"
-                 <> O.help "Serial number of the drive" )
-    wwn = D.DriveWwn <$> strOption ( O.long "wwn"
-                                  <> O.metavar "STR"
-                                  <> O.help "World Wide Name of the drive" )
+    mkHelp desc factsField = O.help $
+        desc ++ " (`" ++ factsField ++ "' in facts.yaml)"
+    serial = D.DriveSerial
+        <$> strOption ( O.long "serial"
+                     <> O.metavar "STR"
+                     <> mkHelp "Serial number" "m0d_serial" )
+    wwn = D.DriveWwn
+        <$> strOption ( O.long "wwn"
+                     <> O.metavar "STR"
+                     <> mkHelp "World Wide Name" "m0d_wwn" )
+    enclSlot = D.DriveEnclSlot
+        <$> strOption ( O.long "enclosure"
+                     <> O.metavar "STR"
+                     <> mkHelp "Enclosure identifier" "enc_id" )
+        <*> O.option O.auto
+                ( O.long "slot"
+               <> O.metavar "INT"
+               <> mkHelp "Slot within the enclosure" "m0d_slot" )
 
 parseQueryDrive :: O.Parser QueryDrive
 parseQueryDrive = O.argument (reader supported)
