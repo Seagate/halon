@@ -32,12 +32,19 @@ import           Data.Monoid ((<>))
 import           Data.Proxy (Proxy(..))
 import qualified Data.Text as T
 import           Data.Vinyl
+
 import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Castor.Drive.Actions
+  ( lookupStorageDevice
+  , sdevFailureWouldBeDUDly
+  )
 import           HA.RecoveryCoordinator.Castor.Drive.Events
 import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as StorageDevice
 import           HA.RecoveryCoordinator.Mero.Notifications
 import           HA.RecoveryCoordinator.Mero.State
+import           HA.RecoveryCoordinator.Mero.Transitions (sdevFailTransient)
+import           HA.RecoveryCoordinator.Mero.Transitions.Internal
+  ( constTransition )
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
@@ -47,11 +54,11 @@ import           HA.Resources.HalonVars
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import           HA.Services.SSPL
+import           HA.Services.SSPL.IEM (logFailureOverK)
 import           HA.Services.SSPL.LL.CEP
   ( sendInterestingEvent
   , updateDriveManagerWithFailure
   )
-import           HA.Services.SSPL.IEM (logFailureOverK)
 import           Mero.ConfC (fidToStr)
 import           Network.CEP
 
@@ -67,7 +74,6 @@ iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
 iemFailureOverTolerance sdev =
   sendInterestingEvent . InterestingEventMessage . logFailureOverK $ T.pack
       (" {'failedDevice':" <> fidToStr (M0.fid sdev) <> "}")
-
 
 ruleTransientTimeout :: Definitions RC ()
 ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
@@ -203,28 +209,28 @@ ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do
                , timeout expanderResetTimeout reset_drive]
       else continue permanent_failure
 
-      -- Attempt to move the drive to a permanent failure.
-      -- Whether we actually move to a permanent failure is affected by
-      -- whether we have more than K failures in a given pool.
-      --
-      -- In the case of more than K failures, we have no real choice; we send
-      -- an IEM to alert to the situation, but otherwise must simply wait for
-      -- a transient drive to magically "start working" again.
+    -- Attempt to move the drive to a permanent failure.
+    -- Whether we actually move to a permanent failure is affected by
+    -- whether we have more than K failures in a given pool.
+    --
+    -- In the case of more than K failures, we have no real choice; we send
+    -- an IEM to alert to the situation, but otherwise must simply wait for
+    -- a transient drive to magically "start working" again.
     directly permanent_failure $ do
       Just (m0sdev, sdev) <- gets Local (^. rlens fldHardware . rfield)
-      sdevTransition <- checkDiskFailureWithinTolerance m0sdev M0.SDSFailed
-                        <$> getGraph
-      either
-        (\failedTransition -> do
-          Log.rcLog' Log.WARN $ "Want to fail drive, but doing so would bring"
-                              <> " the cluster to an unusable state!"
+      dudly <- sdevFailureWouldBeDUDly m0sdev <$> getGraph
+      transition <-
+        if dudly
+        then do
+          Log.rcLog' Log.WARN $ "Want to fail drive, but doing so would"
+                             <> " bring SNS pool to unusable (DUD) state!"
           iemFailureOverTolerance m0sdev
-          void $ applyStateChanges [ failedTransition ])
-        (\okTransition -> do
+          pure sdevFailTransient
+        else do
           updateDriveManagerWithFailure sdev "HALON-FAILED"
             (Just "MERO-Timeout")
-          void $ applyStateChanges [ okTransition ])
-        sdevTransition
+          pure (constTransition M0.SDSFailed)
+      void $ applyStateChanges [stateSet m0sdev transition]
       continue finish
 
     -- If we see an expander reset and drives do not return within

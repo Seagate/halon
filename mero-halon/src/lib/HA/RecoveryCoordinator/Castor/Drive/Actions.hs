@@ -18,7 +18,7 @@ module  HA.RecoveryCoordinator.Castor.Drive.Actions
   , SpielDeviceAttached(..)
   , SpielDeviceDetached(..)
   -- * SDev state transitions
-  , checkDiskFailureWithinTolerance
+  , sdevFailureWouldBeDUDly
   , updateStorageDevicePresence
   , updateStorageDeviceStatus
   ) where
@@ -28,7 +28,6 @@ import           Data.Char (toUpper)
 import           Data.Function (fix)
 import           Data.Functor (void)
 import           Data.List (nub)
-import           Data.Maybe (mapMaybe)
 import           Data.Typeable
 import           Data.UUID (UUID)
 import           Data.Word (Word32)
@@ -40,9 +39,6 @@ import qualified HA.RecoveryCoordinator.Hardware.StorageDevice.Actions as Storag
 import           HA.RecoveryCoordinator.Mero.Actions.Conf (theProfile)
 import           HA.RecoveryCoordinator.Mero.Actions.Core
 import           HA.RecoveryCoordinator.Mero.Actions.Spiel
-import           HA.RecoveryCoordinator.Mero.Events
-import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
-import qualified HA.RecoveryCoordinator.Mero.Transitions.Internal as TrI
 import           HA.RecoveryCoordinator.RC.Actions.Core
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
@@ -206,72 +202,70 @@ isRemovedFromRAID = fmap (not . null) . StorageDevice.findAttrs go
     go SDRemovedFromRAID = True
     go _ = False
 
--- | Produce an 'SDevTransition' which, when unpacked into
--- 'AnyStateSet' (with 'sdevStateSet'), will either set the drive into
--- the desired state or will set the drive transient. Either succeeds
--- ('Right') or fails and becomes transient ('Left').
+-- | Will failing the @sdev@ render any of its pools DUD?
+--
+-- (A pool is DUD iff there exists a failure domain level L such that
+-- the number of failed devices at L exceeds tolerance of L.)
 --
 -- TODO: Think about this a bit more. If we're updating a lot of
 -- drives at once, it's highly inefficient to run all this on every
 -- update.
-checkDiskFailureWithinTolerance :: M0.SDev -> M0.SDevState -> G.Graph
-                                -> Either AnyStateSet AnyStateSet
-checkDiskFailureWithinTolerance sdev st rg = case mk of
-  Just (k, fs)
-    -- We can't tolerate more failures so keep/set device transient.
-    -- @newFailure@ ensures that transient doesn't wrap a state into
-    -- what's considered a failed state.
-    | newFailure && k <= fs -> Left $ stateSet sdev Tr.sdevFailTransient
-    | otherwise -> Right $ stateSet sdev (TrI.constTransition st)
-  -- Couldn't find K for some reason, just blindly change state
-  Nothing -> Right $ stateSet sdev (TrI.constTransition st)
-  where
-    getK :: M0.PVer -> Maybe Word32
-    getK = either (const Nothing) (Just . _pa_K . M0.va_attrs) . M0.v_data
-
-    failingState :: M0.SDev -> M0.SDevState -> Bool
-    failingState d s = M0.toConfObjState d s `elem` [ M0.M0_NC_FAILED
-                                                    , M0.M0_NC_REPAIR
-                                                    , M0.M0_NC_REPAIRED
-                                                    , M0.M0_NC_REBALANCE
-                                                    ]
-
+sdevFailureWouldBeDUDly :: M0.SDev -> G.Graph -> Bool
+sdevFailureWouldBeDUDly sdev rg =
     -- It's only a new failure if we're not in a failed state already.
-    -- For example we may be moving from REPAIRED to REBALANCING which
-    -- doesn't change number of failures.
-    newFailure :: Bool
-    newFailure = not (failingState sdev $ M0.getState sdev rg) && failingState sdev st
+    -- For example we may be moving from REPAIRING to FAILED which
+    -- doesn't change the number of failures.
+    isUsable sdev &&
+        any (\pv -> length (unusableDrives pv) >= fromIntegral (getK pv))
+            actualSnsPvers
+  where
+    isUsable :: M0.SDev -> Bool
+    isUsable d = let st = M0.getState d rg
+                 in M0.toConfObjState d st `elem` [ M0.M0_NC_UNKNOWN
+                                                  , M0.M0_NC_ONLINE
+                                                  , M0.M0_NC_TRANSIENT
+                                                  ]
 
-    -- Find maximum number of allowed failures and number of current failures.
-    mk :: Maybe (Int, Int)
-    mk = let connectedToList a b c = G.asUnbounded $ G.connectedTo a b c
-             connectedFromList a b c = G.asUnbounded $ G.connectedFrom a b c
-             root = M0.getM0Root rg
-             -- XXX-MULTIPOOLS: Shouldn't we distinguish pvers of different pools?
-             pvers = nub
-               [ pver
-               | disk :: M0.Disk <- connectedToList sdev M0.IsOnHardware rg
-               , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
-               , ctrlv :: M0.ControllerV <- connectedFromList M0.IsParentOf diskv rg
-               , enclv :: M0.EnclosureV <- connectedFromList M0.IsParentOf ctrlv rg
-               , rackv :: M0.RackV <- connectedFromList M0.IsParentOf enclv rg
-               , sitev :: M0.SiteV <- connectedFromList M0.IsParentOf rackv  rg
-               , pver :: M0.PVer <- connectedFromList M0.IsParentOf sitev rg
-               , pool :: M0.Pool <- connectedFromList M0.IsParentOf pver rg
-               , M0.fid pool /= M0.rt_mdpool root -- exclude metadata pool
-               ]
-             failedDisks = [ d
-                           | site :: M0.Site <- G.connectedTo root M0.IsParentOf rg
-                           , rack :: M0.Rack <- G.connectedTo site M0.IsParentOf rg
-                           , encl :: M0.Enclosure <- G.connectedTo rack M0.IsParentOf rg
-                           , ctrl :: M0.Controller <- G.connectedTo encl M0.IsParentOf rg
-                           , disk :: M0.Disk <- G.connectedTo ctrl M0.IsParentOf rg
-                           , d :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
-                           , failingState d (M0.getState d rg)
-                           ]
-         in case mapMaybe getK pvers of
-              [] -> Nothing
-              xs -> Just (fromIntegral $ maximum xs, length failedDisks)
+    connectedToList a r g = G.asUnbounded $ G.connectedTo a r g
+    connectedFromList r b g = G.asUnbounded $ G.connectedFrom r b g
+
+    -- Actual pool versions of the SNS pools which 'sdev' belongs to.
+    --
+    -- An SNS pool is guaranteed to have one and only one actual
+    -- (aka base) pool version; see createSNSPool.
+    actualSnsPvers :: [M0.PVer]
+    actualSnsPvers = nub
+      [ pver
+      | disk :: M0.Disk <- connectedToList sdev M0.IsOnHardware rg
+      , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
+      , ctrlv :: M0.ControllerV <- connectedFromList M0.IsParentOf diskv rg
+      , enclv :: M0.EnclosureV <- connectedFromList M0.IsParentOf ctrlv rg
+      , rackv :: M0.RackV <- connectedFromList M0.IsParentOf enclv rg
+      , sitev :: M0.SiteV <- connectedFromList M0.IsParentOf rackv rg
+      , pver :: M0.PVer <- connectedFromList M0.IsParentOf sitev rg
+      , pool :: M0.Pool <- connectedFromList M0.IsParentOf pver rg
+      , let root = M0.getM0Root rg
+      , M0.fid pool /= M0.rt_mdpool root  -- XXX-MULTIPOOLS QnD
+      , not (G.isConnected pver Cas.Is M0.MetadataPVer rg)  -- exclude MD pver
+      , M0.v_fid pver /= M0.rt_imeta_pver root              -- exclude DIX pver
+      ]
+
+    getK :: M0.PVer -> Word32
+    getK pver = let Right pva = M0.v_data pver  -- pver is known to be actual
+                in _pa_K (M0.va_attrs pva)
+
+    unusableDrives :: M0.PVer -> [M0.Disk]
+    unusableDrives pver = nub
+        [ disk
+        | sitev :: M0.SiteV <- G.connectedTo pver M0.IsParentOf rg
+        , rackv :: M0.RackV <- G.connectedTo sitev M0.IsParentOf rg
+        , enclv :: M0.EnclosureV <- G.connectedTo rackv M0.IsParentOf rg
+        , ctrlv :: M0.ControllerV <- G.connectedTo enclv M0.IsParentOf rg
+        , diskv :: M0.DiskV <- G.connectedTo ctrlv M0.IsParentOf rg
+        , disk :: M0.Disk <- connectedFromList M0.IsRealOf diskv rg
+        , d :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
+        , not (isUsable d)
+        ]
 
 -- | Install storage device into the slot.
 updateStorageDevicePresence :: UUID          -- ^ Thread id.
