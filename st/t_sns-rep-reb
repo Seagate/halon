@@ -18,6 +18,8 @@ expect_state() (
             break
         fi
     done
+    set -x
+    hctl mero status -d
 )
 
 $H0 start
