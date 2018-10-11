@@ -160,7 +160,7 @@ install_files()
     run "sed -i -r s/^#(HALOND_LISTEN=).*(:[[:digit:]]+)$/\1${ip_addr}\2/ $dir/halond"
 
     dir='/etc/ld.so.conf.d'
-    $dry_run || echo "$(h0_path mero-libs)" > "$dir/halon.conf"
+    $dry_run || echo "$(h0_path mero-libs)" > "$dir/mero.conf"
 
     dir='/etc/halon'
     [[ -d $dir ]] || run "mkdir -vp $dir"
@@ -202,7 +202,7 @@ install_files()
 uninstall_files()
 {
     local files='
-                 /etc/ld.so.conf.d/halon.conf
+                 /etc/ld.so.conf.d/mero.conf
                  /etc/sysconfig/halon-satellite
                  /etc/sysconfig/halond
                  /usr/bin/halonctl
