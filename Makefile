@@ -50,11 +50,16 @@ setup:
 .PHONY: dist
 dist:
 	echo "module Version where \
+	      gitDescribe :: String; \
 	      gitDescribe = \"$(shell git describe --long --always || echo UNKNOWN)\"; \
+	      gitCommitHash :: String; \
 	      gitCommitHash = \"$(shell git rev-parse HEAD || echo UNKNOWN)\"; \
+	      gitCommitDate :: String; \
 	      gitCommitDate = \"$(shell git log -1 --format='%cd' || echo UNKNOWN)\";" \
 	      > mero-halon/src/lib/Version.hs
-	git archive --format=tar.gz --prefix=halon/ HEAD -o $(DIST_FILE)
+	git archive --prefix=halon/ HEAD -o $(DIST_FILE:.gz=)
+	tar -rf $(DIST_FILE:.gz=) --transform 's#^#halon/#' mero-halon/src/lib/Version.hs
+	gzip $(DIST_FILE:.gz=)
 	git checkout mero-halon/src/lib/Version.hs
 
 .PHONY: __rpm_pre
