@@ -1088,7 +1088,7 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, Unbounded, ''R.Has, AtMostOne, ''DiskFailureVector)
-  , (''PVer, AtMostOne, ''Cas.Is, AtMostOne, ''MetadataPVer)
+  , (''PVer, Unbounded, ''Cas.Is, AtMostOne, ''MetadataPVer)
   , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)
   , (''Process, Unbounded, ''R.Has, AtMostOne, ''CI.ProcessType)
