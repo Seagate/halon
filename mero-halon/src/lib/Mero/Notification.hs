@@ -485,7 +485,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
         modifyMVar_ (_ni_links ni) $ \links -> do
           atomicModifyIORef' (_ni_info ni) $ \x -> (Map.insert hl fid x, ())
           log $ "ha_connected: link=" ++ show hl ++ " fid=" ++ show fid
-          return $ Map.insert hl Map.empty links
+          return $ Map.insertWith Map.union hl Map.empty links
 
     ha_reused :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
     ha_reused ni ri hl = do
