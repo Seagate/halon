@@ -80,7 +80,7 @@ import           Control.Distributed.Process.Internal.Types
   , processNode
   )
 import qualified Control.Distributed.Process.Node as CH (forkProcess)
-import           Control.Lens
+import           Control.Lens (ifor, at, _Just, (<<.~), (&))
 import           Control.Monad (void, when)
 import           Control.Monad.Catch (MonadCatch, SomeException)
 import qualified Control.Monad.Catch as Catch
@@ -316,7 +316,7 @@ data NIRef = NIRef
 notifyNi :: NIRef -> HA.HALink -> Word64 -> HA.NVec -> Fid -> Fid -> Process ()
 notifyNi ref hl w v ha_pfid ha_sfid =
     liftIO . atomically . writeTChan (_ni_worker ref) . void $
-    HA.notify hl w v ha_pfid ha_sfid dummy_epoch
+      HA.notify hl w v ha_pfid ha_sfid dummy_epoch
   where
     dummy_epoch = 0
 
@@ -413,12 +413,14 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
       when  (HA._chp_event pe == HA.TAG_M0_CONF_HA_PROCESS_STOPPED) $ do
-        mv <- modifyMVar (_ni_links ni) $ \links -> do
+        mv :: Maybe (Map Word64 Callback) <- modifyMVar (_ni_links ni) $ \links -> do
           _ <- atomicModifyIORef' (_ni_info ni) $
             swap . Map.updateLookupWithKey (const $ const Nothing) hlink
           _ <- atomicModifyIORef' (_ni_last_seen ni) $
             swap . Map.updateLookupWithKey (const $ const Nothing) hlink
           return $ swap $ Map.updateLookupWithKey (const $ const Nothing) hlink links
+        log $ "ha_process_event_set: link=" ++ show hlink
+            ++ " tags=" ++ show (Map.keys <$> mv)
         for_ mv $ traverse_ onDelivered . Map.elems
       void . CH.forkProcess lnode $ do
         promulgateWait $ HA.HAMsg pe meta
@@ -482,6 +484,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
         atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
         modifyMVar_ (_ni_links ni) $ \links -> do
           atomicModifyIORef' (_ni_info ni) $ \x -> (Map.insert hl fid x, ())
+          log $ "ha_connected: link=" ++ show hl ++ " fid=" ++ show fid
           return $ Map.insert hl Map.empty links
 
     ha_reused :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
@@ -510,6 +513,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
       modifyMVar_ (_ni_links ni) $ \links -> do
         atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
         HA.disconnect hl
+        log $ "ha_disconnecting: link=" ++ show hl
         return $ Map.delete hl links
 
     ha_disconnected :: NIRef -> HA.HALink -> IO ()
@@ -517,20 +521,26 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
       modifyMVar_ (_ni_links ni) $ \links -> do
         atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.delete hl x, ())
         atomicModifyIORef' (_ni_info ni)      $ \x -> (Map.delete hl x, ())
+        log $ "ha_disconnected: link=" ++ show hl
         return $ Map.delete hl links
 
     ha_delivered :: NIRef -> HA.HALink -> Word64 -> IO ()
     ha_delivered ni hlink tag = do
       currentTime <- getTime Monotonic
-      atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
+      atomicModifyIORef' (_ni_last_seen ni) $ \x ->
+        (Map.insert hlink currentTime x, ())
       mv <- modifyMVar (_ni_links ni) $ \links ->
         return $ swap $ links & at hlink . _Just . at tag <<.~ Nothing
+      log $ "ha_delivered: link=" ++ show hlink
+          ++ " tag=" ++ show tag ++ " has_cb=" ++ show (not $ null mv)
       for_ mv onDelivered
 
     ha_cancelled :: NIRef -> HA.HALink -> Word64 -> IO ()
     ha_cancelled ni hlink tag = do
-      mv <- modifyMVar (_ni_links ni) $ \mp ->
-              return $ swap $ mp & at hlink . _Just . at tag <<.~ Nothing
+      mv <- modifyMVar (_ni_links ni) $ \links ->
+        return $ swap $ links & at hlink . _Just . at tag <<.~ Nothing
+      log $ "ha_cancelled: link=" ++ show hlink
+          ++ " tag=" ++ show tag ++ " has_cb=" ++ show (not $ null mv)
       for_ mv onCancelled
 
     -- Update the last seen time for the link the keepalive reply is coming on
@@ -539,7 +549,8 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
                        -> Word64 -- ^ kap_counter (should increment)
                        -> IO ()
     ha_keepalive_reply ni hlink kap_id kap_counter = do
-      log $ "ha_keepalive_reply: kap_id=" ++ show kap_id
+      log $ "ha_keepalive_reply: link=" ++ show hlink
+          ++ " kap_id=" ++ show kap_id
           ++ " kap_counter=" ++ show kap_counter
       currentTime <- getTime Monotonic
       atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hlink currentTime x, ())
@@ -633,9 +644,11 @@ notifyMero ref fids (Set nvec _) ha_pfid ha_sfid epoch onOk onFail = liftIO $ do
                              ++ " failed on link " ++ show l
                              ++ " for " ++ show fid
                          onFail fid
-      tags <- ifor links $ \l _ ->
+      tags :: Map HA.HALink (Map Word64 Callback) <- ifor links $ \l _ ->
         Map.singleton <$> HA.notify l 0 nvec ha_pfid ha_sfid epoch
                       <*> pure (mkCallback l)
+      log $ "notifyMero: epoch=" ++ show epoch ++ " [(link, tag)]="
+          ++ show (fmap (head . Map.keys) <$> Map.toAscList tags)
       -- send failed notification for all processes that have no connection
       -- to the interface.
       info <- readIORef (_ni_info ref)
