@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.RC.Events.Debug
   ( DebugDriveInfo(..)
   , DebugH0Sdev(..)
   , DebugM0Drive(..)
+  , DebugM0Sdev(..)
   , DebugModify(..)
   , DebugQuery(..)
   , DriveId(..)
@@ -63,7 +64,7 @@ instance Binary QueryDriveInfoResp
 data DebugDriveInfo = DebugDriveInfo
   { dsiH0Sdev :: Maybe DebugH0Sdev
   , dsiM0Drive :: Maybe DebugM0Drive
-  -- , dsiM0Sdev :: Maybe DebugM0Sdev
+  , dsiM0Sdev :: Maybe DebugM0Sdev
   } deriving (Generic, Show)
 
 instance Binary DebugDriveInfo
@@ -74,6 +75,7 @@ data DebugH0Sdev = DebugH0Sdev
   , dhsIds :: [Cas.DeviceIdentifier]
   , dhsStatus :: Maybe Cas.StorageDeviceStatus
   , dhsAttrs :: [Cas.StorageDeviceAttr]
+  , dhsSlot :: Maybe Cas.Slot
   } deriving (Generic, Show)
 
 instance Binary DebugH0Sdev
@@ -85,6 +87,15 @@ data DebugM0Drive = DebugM0Drive
   } deriving (Generic, Show)
 
 instance Binary DebugM0Drive
+
+-- M0.SDev info.
+data DebugM0Sdev = DebugM0Sdev
+  { dmsSdev :: M0.SDev
+  , dmsState :: Maybe M0.SDevState
+  , dmsSlot :: Maybe Cas.Slot
+  } deriving (Generic, Show)
+
+instance Binary DebugM0Sdev
 
 newtype SelectDrive = SelectDrive DriveId
   deriving Show

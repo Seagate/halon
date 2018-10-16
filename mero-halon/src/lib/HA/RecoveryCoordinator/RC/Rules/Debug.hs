@@ -55,14 +55,25 @@ getDebugDriveInfo rg sd =
                                , D.dhsIds    = G.connectedTo sd Has rg
                                , D.dhsStatus = G.connectedTo sd Cas.Is rg
                                , D.dhsAttrs  = G.connectedTo sd Has rg
+                               , D.dhsSlot   = G.connectedTo sd Has rg
                                }
-        mm0drive = G.connectedFrom M0.At sd rg <&> \(d :: M0.Disk) ->
-            D.DebugM0Drive
-              { D.dmdDrive = d
-              , D.dmdIsReplaced = G.isConnected d Cas.Is M0.Replaced rg
-              }
+        (mm0drive, mm0sdev) = case G.connectedFrom M0.At sd rg of
+            Nothing -> (Nothing, Nothing)
+            Just disk ->
+              ( Just $ D.DebugM0Drive
+                  { D.dmdDrive = disk
+                  , D.dmdIsReplaced = G.isConnected disk Cas.Is M0.Replaced rg
+                  }
+              , G.connectedFrom M0.IsOnHardware disk rg <&> \sdev ->
+                    D.DebugM0Sdev
+                      { D.dmsSdev = sdev
+                      , D.dmsState = G.connectedTo sdev Cas.Is rg
+                      , D.dmsSlot = G.connectedTo sdev M0.At rg
+                      }
+              )
     in D.DebugDriveInfo { D.dsiH0Sdev = Just h0sdev
                         , D.dsiM0Drive = mm0drive
+                        , D.dsiM0Sdev = mm0sdev
                         }
 
 ----------------------------------------------------------------------
