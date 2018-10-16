@@ -21,13 +21,13 @@ import           HA.RecoveryCoordinator.RC.Events.Debug as D
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas
-import qualified HA.Resources.Mero as M0
+-- import qualified HA.Resources.Mero as M0
 import           Network.CEP (Definitions, PhaseM, liftProcess)
 
 debugRules :: Definitions RC ()
 debugRules = sequence_
-  [ ruleDebugModify
-  , ruleDebugQuery
+  [ ruleDebugQuery
+  , ruleDebugModify
   ]
 
 ----------------------------------------------------------------------
@@ -36,17 +36,25 @@ debugRules = sequence_
 -- | Dispatches `hctl debug print` requests.
 ruleDebugQuery :: Definitions RC ()
 ruleDebugQuery = defineSimpleTask "debug-query" $ \case
-    D.QueryDriveState req -> queryDriveState req
+    D.DebugQueryDriveInfo req -> queryDriveInfo req
 
 -- | Handles `hctl debug print drive` requests.
-queryDriveState :: D.QueryDriveStateReq -> PhaseM RC l ()
-queryDriveState (D.QueryDriveStateReq (D.SelectDrive driveId) sp) = do
+queryDriveInfo :: D.QueryDriveInfoReq -> PhaseM RC l ()
+queryDriveInfo (D.QueryDriveInfoReq (D.SelectDrive driveId) sp) = do
     Log.rcLog' Log.DEBUG (show driveId)
     rg <- getGraph
-    let resp = either D.QDriveStateNoStorageDeviceError
-                      (driveStateResp rg)
-                      (findStorageDevice rg driveId)
+    let resp = either D.QueryDriveInfoError D.QueryDriveInfo
+          $ findStorageDevice rg driveId >>= pure . getDebugDriveInfo rg
     liftProcess (sendChan sp resp)
+
+getDebugDriveInfo :: G.Graph -> Cas.StorageDevice -> D.DebugDriveInfo
+getDebugDriveInfo rg sd =
+    D.DebugDriveInfo . Just $ D.DebugH0Sdev
+      { D.dhsSdev   = sd
+      , D.dhsIds    = G.connectedTo sd Has rg
+      , D.dhsStatus = G.connectedTo sd Cas.Is rg
+      , D.dhsAttrs  = G.connectedTo sd Has rg
+      }
 
 ----------------------------------------------------------------------
 -- Modification requests
@@ -54,14 +62,23 @@ queryDriveState (D.QueryDriveStateReq (D.SelectDrive driveId) sp) = do
 -- | Dispatches `hctl debug set` requests.
 ruleDebugModify :: Definitions RC ()
 ruleDebugModify = defineSimpleTask "debug-modify" $ \case
-    D.ModifyDriveState req -> modifyDriveState req
+    D.DebugModifyDriveState req -> modifyDriveState req
+    D.DebugModifySdevState req -> modifySdevState req
 
 -- | Handles `hctl debug set drive` requests.
 modifyDriveState :: D.ModifyDriveStateReq -> PhaseM RC l ()
 modifyDriveState (D.ModifyDriveStateReq (D.SelectDrive driveId) newState sp) =
   do
     Log.rcLog' Log.DEBUG $ show driveId ++ " -> " ++ show newState
-    let resp = D.MDriveStateNoStorageDeviceError "XXX IMPLEMENTME"
+    let resp = D.ModifyDriveStateError "XXX IMPLEMENTME"
+    liftProcess (sendChan sp resp)
+
+-- | Handles `hctl debug set sdev` requests.
+modifySdevState :: D.ModifySdevStateReq -> PhaseM RC l ()
+modifySdevState (D.ModifySdevStateReq (D.SelectSdev sdevId) newState sp) =
+  do
+    Log.rcLog' Log.DEBUG $ show sdevId ++ " -> " ++ show newState
+    let resp = D.ModifySdevStateError "XXX IMPLEMENTME"
     liftProcess (sendChan sp resp)
 
 ----------------------------------------------------------------------
@@ -99,19 +116,3 @@ findStorageDevice rg (D.DriveEnclSlot enclId slotIdx) =
         [] -> Left $ T.unpack enclId ++ ": No such enclosure"
         _  -> Left $ "Impossible happened! Several enclosures have id "
                   ++ show enclId
-
-driveStateResp :: G.Graph -> Cas.StorageDevice -> D.QueryDriveStateResp
-driveStateResp rg sd =
-    let ids = G.connectedTo sd Has rg :: [Cas.DeviceIdentifier]
-        attrs = G.connectedTo sd Has rg :: [Cas.StorageDeviceAttr]
-        -- See also
-        -- HA.RecoveryCoordinator.Hardware.StorageDevice.Actions.status
-        mstatus = G.connectedTo sd Cas.Is rg :: Maybe Cas.StorageDeviceStatus
-        mslot = G.connectedTo sd Has rg :: Maybe Cas.Slot
-        mdr = do
-            drive <- G.connectedFrom M0.At sd rg :: Maybe M0.Disk
-            let mreplaced = G.connectedTo drive Cas.Is rg :: Maybe M0.Replaced
-            pure (drive, mreplaced)
-    in D.QDriveState . T.pack $
-        printf "XXX sd=(%s) ids=%s mstatus=(%s) attrs=%s mslot=(%s) mdr=(%s)"
-            (show sd) (show ids) (show mstatus) (show attrs) (show mslot) (show mdr)

@@ -34,21 +34,30 @@ data Query
 
 data Modify
   = MDrive D.SelectDrive ModifyDrive
+  | MSdev D.SelectSdev ModifySdev
   | MPool SelectPool ModifyPool
   deriving Show
 
 run :: [NodeId] -> Options -> Process ()
-run nids (OQuery (QDrive select QDriveState)) =
-    let mkReq = D.QueryDriveState . D.QueryDriveStateReq select
+-- query
+run nids (OQuery (QDrive select QDriveInfo)) =
+    let mkReq = D.DebugQueryDriveInfo . D.QueryDriveInfoReq select
     in clusterCommand nids Nothing mkReq $ \case
-        D.QDriveState st -> liftIO . putStrLn $ "XXX " ++ show st
-        D.QDriveStateNoStorageDeviceError err -> liftIO (die err)
+        D.QueryDriveInfo info -> liftIO . putStrLn $ "XXX " ++ show info
+        D.QueryDriveInfoError err -> liftIO (die err)
+run _ (OQuery (QPool _ _)) = error "XXX IMPLEMENTME"
+-- modify
 run nids (OModify (MDrive select (ModifyDrive newState))) =
-    let mkReq = D.ModifyDriveState . D.ModifyDriveStateReq select newState
+    let mkReq = D.DebugModifyDriveState . D.ModifyDriveStateReq select newState
     in clusterCommand nids Nothing mkReq $ \case
-        D.MDriveStateOK -> pure ()
-        D.MDriveStateNoStorageDeviceError err -> liftIO (die err)
-run _ x = error $ "XXX IMPLEMENTME: " ++ show x
+        D.ModifyDriveStateOK -> pure ()
+        D.ModifyDriveStateError err -> liftIO (die err)
+run nids (OModify (MSdev select (ModifySdev newState))) =
+    let mkReq = D.DebugModifySdevState . D.ModifySdevStateReq select newState
+    in clusterCommand nids Nothing mkReq $ \case
+        D.ModifySdevStateOK -> pure ()
+        D.ModifySdevStateError err -> liftIO (die err)
+run _ (OModify (MPool _ _)) = error "XXX IMPLEMENTME"
 
 parser :: O.Parser Options
 parser = O.hsubparser
@@ -57,10 +66,13 @@ parser = O.hsubparser
   where
    parseQuery = O.hsubparser $ foldMap cmdQuery targets
    parseModify = O.hsubparser $ foldMap cmdModify targets
-   cmdQuery (name, pQuery, _) = command' name pQuery ("Query " ++ name)
-   cmdModify (name, _, pModify) = command' name pModify ("Modify " ++ name)
-   targets = [ ("drive", parseQDrive, parseMDrive)
-             , ("pool", parseQPool, parseMPool) ]
+   cmdQuery (name, Just p, _) = command' name p ("Query " ++ name)
+   cmdQuery _ = mempty
+   cmdModify (name, _, Just p) = command' name p ("Modify " ++ name)
+   cmdModify _ = mempty
+   targets = [ ("drive", Just parseQDrive, Just parseMDrive)
+             , ("sdev", Nothing, Just parseMSdev)
+             , ("pool", Just parseQPool, Just parseMPool) ]
 
 type Supported a = [(String, a)]
 
@@ -80,13 +92,12 @@ strOption = fmap fromString . O.strOption
 ----------------------------------------------------------------------
 -- Drive
 
-data QueryDrive = QDriveState | QDriveRelations deriving Show
+data QueryDrive = QDriveInfo deriving Show
 
-newtype ModifyDrive = ModifyDrive D.StateOfDrive
-  deriving Show
+newtype ModifyDrive = ModifyDrive D.StateOfDrive deriving Show
 
 parseQDrive :: O.Parser Query
-parseQDrive = QDrive <$> parseSelectDrive <*> parseQueryDrive
+parseQDrive = QDrive <$> parseSelectDrive <*> pure QDriveInfo
 
 parseSelectDrive :: O.Parser D.SelectDrive
 parseSelectDrive = D.SelectDrive <$> parseDriveId
@@ -113,15 +124,6 @@ parseDriveId = serial <|> wwn <|> enclSlot
                <> O.metavar "INT"
                <> mkHelp "Slot within the enclosure" "m0d_slot" )
 
-parseQueryDrive :: O.Parser QueryDrive
-parseQueryDrive = O.argument (reader supported)
-  ( O.metavar "QUERY"
- <> O.value QDriveState
- <> O.help ("Supported queries: " ++ quoted supported) )
-  where
-    supported = [ ("state",     QDriveState)
-                , ("relations", QDriveRelations) ]
-
 parseMDrive :: O.Parser Modify
 parseMDrive = MDrive <$> parseSelectDrive <*> parseModifyDrive
 
@@ -138,11 +140,34 @@ parseStateOfDrive = O.argument (reader supported)
                 , ("BLANK",  D.DriveBlank) ]
 
 ----------------------------------------------------------------------
+-- Sdev (storage device)
+
+newtype ModifySdev = ModifySdev D.StateOfSdev deriving Show
+
+parseSelectSdev :: O.Parser D.SelectSdev
+parseSelectSdev = D.SelectSdev <$> parseDriveId  -- XXX s/Drive/Sdev/ ?
+
+parseMSdev :: O.Parser Modify
+parseMSdev = MSdev <$> parseSelectSdev <*> parseModifySdev
+
+parseModifySdev :: O.Parser ModifySdev
+parseModifySdev = ModifySdev <$> parseStateOfSdev
+
+parseStateOfSdev :: O.Parser D.StateOfSdev
+parseStateOfSdev = O.argument (reader supported)
+  ( O.metavar "STATE"
+ <> O.help ("Supported values: " ++ quoted supported) )
+  where
+    supported = [ ("ONLINE",   D.SdevOnline)
+                , ("FAILED",   D.SdevFailed)
+                , ("REPAIRED", D.SdevRepaired) ]
+
+----------------------------------------------------------------------
 -- Pool
 
 data SelectPool = SelectPool { _spFid :: Text } deriving Show
 
-data QueryPool = QPoolState deriving Show
+data QueryPool = QPoolInfo deriving Show
 
 data ModifyPool
   = MPoolState StateOfPool
@@ -164,22 +189,12 @@ data PoolRepReb
   deriving Show
 
 parseQPool :: O.Parser Query
-parseQPool = QPool <$> parseSelectPool <*> parseQueryPool
+parseQPool = QPool <$> parseSelectPool <*> pure QPoolInfo
 
 parseSelectPool :: O.Parser SelectPool
-parseSelectPool = SelectPool
-  <$> strOption
-          ( O.long "fid"
-         <> O.metavar "STR"
-         <> O.help "Pool fid" )
-
-parseQueryPool :: O.Parser QueryPool
-parseQueryPool = O.argument (reader supported)
-  ( O.metavar "QUERY"
- <> O.value QPoolState
- <> O.help ("Supported queries: " ++ quoted supported) )
-  where
-    supported = [("state", QPoolState)]
+parseSelectPool = SelectPool <$> strOption ( O.long "fid"
+                                          <> O.metavar "STR"
+                                          <> O.help "Pool fid" )
 
 parseMPool :: O.Parser Modify
 parseMPool = MPool <$> parseSelectPool <*> parseModifyPool
