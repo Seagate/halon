@@ -357,7 +357,7 @@ initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
       wmsgcallback <- wrapGenericCallback
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
-      #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wconnected
+      #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wreused
       #{poke ha_state_callbacks_t, ha_state_link_disconnecting} pcbs
          wdisconnecting
       #{poke ha_state_callbacks_t, ha_state_link_disconnected} pcbs

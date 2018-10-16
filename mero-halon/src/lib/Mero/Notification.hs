@@ -478,7 +478,8 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
 
     ha_connected :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
     ha_connected ni req hl = do
-      mfid <- atomicModifyIORef' (_ni_requests ni) $ \x -> (Map.delete req x, Map.lookup req x)
+      mfid <- atomicModifyIORef' (_ni_requests ni) $
+        \x -> (Map.delete req x, Map.lookup req x)
       for_ mfid $ \fid -> do
         currentTime <- getTime Monotonic
         atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
@@ -490,8 +491,9 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
     ha_reused :: NIRef -> HA.ReqId -> HA.HALink -> IO ()
     ha_reused ni ri hl = do
        mfid <- atomicModifyIORef' (_ni_requests  ni) $
-         swap . Map.updateLookupWithKey (const $ const $ Nothing) ri
-       for_ mfid $ \_ -> do
+         swap . Map.updateLookupWithKey (const $ const Nothing) ri
+       for_ mfid $ \fid -> do
+         log $ "ha_reused: link=" ++ show hl ++ " fid=" ++ show fid
          currentTime <- getTime Monotonic
          atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
 
