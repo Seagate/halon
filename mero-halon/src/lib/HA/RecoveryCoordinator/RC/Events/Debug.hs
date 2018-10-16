@@ -76,6 +76,7 @@ data DebugH0Sdev = DebugH0Sdev
   , dhsStatus :: Maybe Cas.StorageDeviceStatus
   , dhsAttrs :: [Cas.StorageDeviceAttr]
   , dhsSlot :: Maybe Cas.Slot
+  , dhsReplacedBy :: Maybe Cas.StorageDevice
   } deriving (Generic, Show)
 
 instance Binary DebugH0Sdev

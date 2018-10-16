@@ -56,6 +56,8 @@ getDebugDriveInfo rg sd =
                                , D.dhsStatus = G.connectedTo sd Cas.Is rg
                                , D.dhsAttrs  = G.connectedTo sd Has rg
                                , D.dhsSlot   = G.connectedTo sd Has rg
+                               , D.dhsReplacedBy =
+                                     G.connectedTo sd Cas.ReplacedBy rg
                                }
         (mm0drive, mm0sdev) = case G.connectedFrom M0.At sd rg of
             Nothing -> (Nothing, Nothing)
