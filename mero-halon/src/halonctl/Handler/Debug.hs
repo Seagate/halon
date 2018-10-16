@@ -43,7 +43,7 @@ run :: [NodeId] -> Options -> Process ()
 run nids (OQuery (QDrive select QDriveInfo)) =
     let mkReq = D.DebugQueryDriveInfo . D.QueryDriveInfoReq select
     in clusterCommand nids Nothing mkReq $ \case
-        D.QueryDriveInfo info -> liftIO . putStrLn $ "XXX " ++ show info
+        D.QueryDriveInfo info -> liftIO $ print info  -- XXX-TODO: pretty print
         D.QueryDriveInfoError err -> liftIO (die err)
 run _ (OQuery (QPool _ _)) = error "XXX IMPLEMENTME"
 -- modify

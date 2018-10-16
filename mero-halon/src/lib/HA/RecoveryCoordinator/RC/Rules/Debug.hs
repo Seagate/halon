@@ -8,6 +8,7 @@ module HA.RecoveryCoordinator.RC.Rules.Debug
   ) where
 
 import           Control.Distributed.Process (sendChan)
+import           Control.Lens ((<&>))  -- XXX Data.Functor in lts-12.13
 import qualified Data.Text as T
 import           Text.Printf (printf)
 
@@ -21,7 +22,7 @@ import           HA.RecoveryCoordinator.RC.Events.Debug as D
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..))
 import qualified HA.Resources.Castor as Cas
--- import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero as M0
 import           Network.CEP (Definitions, PhaseM, liftProcess)
 
 debugRules :: Definitions RC ()
@@ -43,18 +44,26 @@ queryDriveInfo :: D.QueryDriveInfoReq -> PhaseM RC l ()
 queryDriveInfo (D.QueryDriveInfoReq (D.SelectDrive driveId) sp) = do
     Log.rcLog' Log.DEBUG (show driveId)
     rg <- getGraph
-    let resp = either D.QueryDriveInfoError D.QueryDriveInfo
-          $ findStorageDevice rg driveId >>= pure . getDebugDriveInfo rg
+    let resp = either D.QueryDriveInfoError
+                     (D.QueryDriveInfo . getDebugDriveInfo rg)
+                     (findStorageDevice rg driveId)
     liftProcess (sendChan sp resp)
 
 getDebugDriveInfo :: G.Graph -> Cas.StorageDevice -> D.DebugDriveInfo
 getDebugDriveInfo rg sd =
-    D.DebugDriveInfo . Just $ D.DebugH0Sdev
-      { D.dhsSdev   = sd
-      , D.dhsIds    = G.connectedTo sd Has rg
-      , D.dhsStatus = G.connectedTo sd Cas.Is rg
-      , D.dhsAttrs  = G.connectedTo sd Has rg
-      }
+    let h0sdev = D.DebugH0Sdev { D.dhsSdev   = sd
+                               , D.dhsIds    = G.connectedTo sd Has rg
+                               , D.dhsStatus = G.connectedTo sd Cas.Is rg
+                               , D.dhsAttrs  = G.connectedTo sd Has rg
+                               }
+        mm0drive = G.connectedFrom M0.At sd rg <&> \(d :: M0.Disk) ->
+            D.DebugM0Drive
+              { D.dmdDrive = d
+              , D.dmdIsReplaced = G.isConnected d Cas.Is M0.Replaced rg
+              }
+    in D.DebugDriveInfo { D.dsiH0Sdev = Just h0sdev
+                        , D.dsiM0Drive = mm0drive
+                        }
 
 ----------------------------------------------------------------------
 -- Modification requests

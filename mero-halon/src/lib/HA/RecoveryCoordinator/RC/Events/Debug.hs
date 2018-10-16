@@ -7,6 +7,7 @@
 module HA.RecoveryCoordinator.RC.Events.Debug
   ( DebugDriveInfo(..)
   , DebugH0Sdev(..)
+  , DebugM0Drive(..)
   , DebugModify(..)
   , DebugQuery(..)
   , DriveId(..)
@@ -28,7 +29,7 @@ import           Data.Text (Text)
 import           GHC.Generics (Generic)
 
 import qualified HA.Resources.Castor as Cas
--- import qualified HA.Resources.Mero as M0
+import qualified HA.Resources.Mero as M0
 import           HA.SafeCopy (base, deriveSafeCopy)
 
 data DebugQuery
@@ -61,8 +62,8 @@ instance Binary QueryDriveInfoResp
 -- | Various pieces of information about a storage device.
 data DebugDriveInfo = DebugDriveInfo
   { dsiH0Sdev :: Maybe DebugH0Sdev
-  --XXX , dsiM0Drive :: Maybe DebugM0Drive
-  --XXX , dsiM0Sdev :: Maybe DebugM0Sdev
+  , dsiM0Drive :: Maybe DebugM0Drive
+  -- , dsiM0Sdev :: Maybe DebugM0Sdev
   } deriving (Generic, Show)
 
 instance Binary DebugDriveInfo
@@ -76,6 +77,14 @@ data DebugH0Sdev = DebugH0Sdev
   } deriving (Generic, Show)
 
 instance Binary DebugH0Sdev
+
+-- M0.Disk info.
+data DebugM0Drive = DebugM0Drive
+  { dmdDrive :: M0.Disk
+  , dmdIsReplaced :: Bool
+  } deriving (Generic, Show)
+
+instance Binary DebugM0Drive
 
 newtype SelectDrive = SelectDrive DriveId
   deriving Show
