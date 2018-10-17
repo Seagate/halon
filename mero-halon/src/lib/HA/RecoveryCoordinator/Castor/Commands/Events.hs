@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2018 Seagate Technology Limited.
+-- Copyright : (C) 2017-2018 Seagate Technology Limited.
 -- License   : All rights reserved.
 --
 -- Events related to castor commands.
