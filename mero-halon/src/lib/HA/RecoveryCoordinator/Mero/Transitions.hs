@@ -36,9 +36,14 @@ processKeepaliveTimeout :: (?loc :: CallStack)
                         => M0.TimeSpec -- ^ Elapsed time
                         -> Transition M0.Process
 processKeepaliveTimeout ts = Transition $ \case
-  M0.PSOnline -> TransitionTo
-    . M0.PSFailed $ "Keepalive timed out after " ++ show ts
+  M0.PSOnline    -> toPSFailed
+  M0.PSStarting  -> toPSFailed
+  M0.PSQuiescing -> toPSFailed
+  M0.PSStopping  -> toPSFailed
   st -> transitionErr ?loc st
+  where
+    toPSFailed = TransitionTo . M0.PSFailed $
+                 "Keepalive timed out after " ++ show ts
 
 -- | Fail a process with the given reason.
 processFailed :: (?loc :: CallStack) => String -> Transition M0.Process
@@ -146,7 +151,7 @@ processCascadeService M0.PSInhibited{} = Transition $ \case
   M0.SSFailed -> NoTransition
   M0.SSInhibited{} -> NoTransition
   o -> TransitionTo $ M0.SSInhibited o
-processCascadeService M0.PSUnknown = Transition $ \_ -> NoTransition
+processCascadeService M0.PSUnknown = constTransition M0.SSUnknown
 
 -- * 'M0.Node'
 
