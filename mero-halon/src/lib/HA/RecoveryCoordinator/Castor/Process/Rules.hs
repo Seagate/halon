@@ -176,9 +176,9 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
               -- when notification gets ack'd. This job is the only
               -- place that can configure and attach this flag (modulo
               -- cluster reset).
-              onSuccess $ case G.isConnected p Is M0.ProcessBootstrapped rg of
-                False -> configure
-                True -> start_process
+              onSuccess $ if G.isConnected p Is M0.ProcessBootstrapped rg
+                          then start_process
+                          else configure
 
               notifications <- applyStateChanges [stateSet p Tr.processStarting]
               setExpectedNotifications notifications
@@ -219,19 +219,10 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       switch finisher
     ConfigureSuccess uid -> do
       ProcessStartRequest p <- getRequest
-      Just procType <- getField . rget fldProcessType <$> get Local
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
       messageProcessed uid
       Log.rcLog' Log.DEBUG $ "Configuration successful for " ++ showFid p
-      case procType of
-        CI.PLClovis _ CI.Independent -> do
-          Log.rcLog' Log.DEBUG
-                      "Independent CLOVIS process; only writing configuration."
-          modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
-          -- Put the process in unknown state again.
-          _ <- applyStateChanges [ stateSet p Tr.processUnknown ]
-          continue finish
-        _ -> continue start_process
+      continue start_process
 
   directly configure_timeout $ do
     finisher <- fail_start "Configuration timed out"
@@ -243,12 +234,21 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
     Just sender <- getField . rget fldSender <$> get Local
     Just (toType -> runType) <- getField . rget fldProcessType <$> get Local
     ProcessStartRequest p <- getRequest
-    let msg :: String
-        msg = printf "Requesting start of %s (%s)" (showFid p) (show runType)
-    Log.rcLog' Log.DEBUG msg
-    liftProcess . sender . ProcessMsg $! StartProcess runType p
-    t <- _hv_process_start_cmd_timeout <$> getHalonVars
-    switch [start_process_cmd_result, timeout t start_process_timeout]
+    Just procType <- getField . rget fldProcessType <$> get Local
+    case procType of
+      CI.PLClovis _ CI.Independent -> do
+        Log.rcLog' Log.DEBUG
+          "Independent Clovis process, we don't manage it."
+        modify Local $ rlens fldRep . rfield .~ Just (ProcessConfiguredOnly p)
+        -- Put the process in unknown state again.
+        _ <- applyStateChanges [ stateSet p Tr.processUnknown ]
+        continue finish
+      _ -> do
+        Log.rcLog' Log.DEBUG (printf "Requesting start of %s (%s)"
+                              (showFid p) (show runType) :: String)
+        liftProcess . sender . ProcessMsg $! StartProcess runType p
+        t <- _hv_process_start_cmd_timeout <$> getHalonVars
+        switch [start_process_cmd_result, timeout t start_process_timeout]
 
   setPhaseIf start_process_cmd_result startCmdResult $ \(uid, r) -> do
     messageProcessed uid
