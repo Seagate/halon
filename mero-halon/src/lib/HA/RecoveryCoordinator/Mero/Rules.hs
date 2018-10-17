@@ -213,12 +213,20 @@ meroRules = do
       GetReply . map (uncurry Note) . lookupConfObjectStates fids
 
   -- Reply to the Failure vector request.
-  defineSimpleTask "mero::failure-vector-reply" $ \(GetFailureVector pool port) -> do
-    rg <- getGraph
-    let mv = (\(M0.DiskFailureVector v) -> (\w -> Note (M0.fid w) (toConfObjState w (getState w rg))) <$> v)
-           <$> G.connectedTo (M0.Pool pool) Has rg
-    Log.rcLog' Log.DEBUG $ "pool=" ++ show pool ++ " failvec=" ++ show mv
-    liftProcess $ sendChan port mv
+  defineSimpleTask "mero::failure-vector-reply"
+    $ \(GetFailureVector pool sp) -> do
+        rg <- getGraph
+        let mnotes :: Maybe [Note]
+            mnotes = failVecToNotes <$> G.connectedTo (M0.Pool pool) Has rg
+
+            failVecToNotes :: M0.DiskFailureVector -> [Note]
+            failVecToNotes (M0.DiskFailureVector disks) =
+                [ Note (M0.fid d) (toConfObjState d $ getState d rg)
+                | d <- disks
+                ]
+        Log.rcLog' Log.DEBUG $ "pool=" ++ show pool
+                            ++ " failvec=" ++ show mnotes
+        liftProcess $ sendChan sp mnotes
 
   ruleGetEntryPoint
   ruleDixInit
