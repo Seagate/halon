@@ -226,7 +226,9 @@ data RestartSNSOperationResult =
 instance Binary RestartSNSOperationResult
 
 -- | Failure vector request.
-data GetFailureVector = GetFailureVector Fid (SendPort (Maybe [Note]))
+data GetFailureVector = GetFailureVector
+    Fid  -- ^ pool fid
+    (SendPort (Maybe [Note]))
   deriving (Eq, Show, Typeable, Generic)
 
 data DixInitRequest = DixInitRequest

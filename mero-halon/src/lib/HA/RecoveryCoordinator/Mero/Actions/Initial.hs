@@ -302,7 +302,8 @@ createSNSPool (CI.M0Pool{..}, metadata_p_XXX) = do
 
     Just root <- getRoot
     pool <- M0.Pool <$> newFidRC (Proxy :: Proxy M0.Pool)
-    modifyGraph $ G.connect root M0.IsParentOf pool
+    modifyGraph $ G.connect pool Has (M0.PoolId pool_id)
+              >>> G.connect root M0.IsParentOf pool
 
     disks <- getGraph >>=
         either throw' pure . disksFromRefs pool_device_refs

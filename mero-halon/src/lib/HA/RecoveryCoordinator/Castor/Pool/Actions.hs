@@ -24,7 +24,7 @@ import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 
 -- | Find all 'M0.Pool's in the RG that aren't metadata pools. See
--- also 'getPool'.
+-- also 'getPools'.
 --
 -- XXX-MULTIPOOLS: DELETEME
 getNonMD :: G.Graph -> [M0.Pool]

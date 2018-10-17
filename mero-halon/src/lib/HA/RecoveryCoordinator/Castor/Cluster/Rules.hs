@@ -61,7 +61,7 @@ import           Data.Foldable
 import           Data.List (sort)
 import qualified Data.Map.Strict as M
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
-                            , isJust, isNothing )
+                            , isJust, isNothing, fromJust )
 import           Data.Ratio
 import qualified Data.Set as Set
 import           Data.Traversable (forM, for)
@@ -173,8 +173,8 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                        let ptyp = getType mpl services
                        services' <- forM services $ \service -> do
                           sdevs  <- sort <$> getChildren service
-                          sdevs' <- forM sdevs $ \sdev -> do
-                            let msd   = do disk :: M0.Disk <- G.connectedTo (sdev::M0.SDev) M0.IsOnHardware rg
+                          sdevs' <- forM sdevs $ \(sdev :: M0.SDev) -> do
+                            let msd   = do disk :: M0.Disk <- G.connectedTo sdev M0.IsOnHardware rg
                                            sd :: R.StorageDevice <- G.connectedTo disk M0.At rg
                                            return sd
                                 slot  = G.connectedTo sdev M0.At rg :: Maybe R.Slot
@@ -187,7 +187,11 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus   = getClusterStatus rg
-        , csrSnsPools = sns
+        , csrSnsPools = sns <&> \pool ->
+                ( pool
+                -- createSNSPool guarantees that every SNS pool has
+                -- M0.PoolId attached.  'Nothing' is not possible.
+                , fromJust $ G.connectedTo pool Has rg )
         , csrDixPool  = mdix
         , csrProfile  = mprof
         , csrSNS      = sort repairs

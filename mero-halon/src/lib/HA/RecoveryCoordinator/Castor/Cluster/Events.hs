@@ -151,7 +151,7 @@ data ClusterResetRequest = ClusterResetRequest
 data ReportClusterState = ReportClusterState
       { csrStatus     :: Maybe M0.MeroClusterState
       -- ^ Current 'M0.MeroClusterState'.
-      , csrSnsPools   :: [M0.Pool]
+      , csrSnsPools   :: [(M0.Pool, M0.PoolId)]
       , csrDixPool    :: Maybe M0.Pool
       , csrProfile    :: Maybe M0.Profile
       , csrSNS        :: [(M0.Pool, M0.PoolRepairStatus)]

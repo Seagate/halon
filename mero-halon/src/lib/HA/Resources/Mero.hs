@@ -503,6 +503,14 @@ instance ConfObj Pool where
 storageIndex ''Pool "9e348e20-a996-47d2-b5d6-5ba04b952d35"
 deriveSafeCopy 0 'base ''Pool
 
+-- | 'pool_id' from the facts.yaml file.
+-- Only SNS pools have this attribute.
+newtype PoolId = PoolId T.Text
+  deriving (Eq, Show, Hashable, FromJSON, ToJSON)
+
+storageIndex ''PoolId "c320a02f-0068-4b46-ba70-aad26b048f43"
+deriveSafeCopy 0 'base ''PoolId
+
 data PVerActual = PVerActual
   { va_attrs :: PDClustAttr
   , va_tolerance :: [Word32]
@@ -953,7 +961,7 @@ deriveSafeCopy 0 'base ''Replaced
 --------------------------------------------------------------------------------
 
 $(mkDicts
-  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool, ''PoolId
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
@@ -1004,13 +1012,14 @@ $(mkDicts
   , (''SDev, ''At, ''Cas.Slot)
   , (''Node, ''IsOnHardware, ''Controller)
   , (''Profile, ''R.Has, ''Pool)
-    -- Other things!
+    -- Other things
   , (''R.Cluster, ''R.Has, ''FidSeq)
   , (''R.Cluster, ''R.Has, ''CI.M0Globals)
   , (''R.Cluster, ''RunLevel, ''BootLevel)
   , (''R.Cluster, ''StopLevel, ''BootLevel)
   , (''Pool, ''R.Has, ''PoolRepairStatus)
   , (''Pool, ''R.Has, ''DiskFailureVector)
+  , (''Pool, ''R.Has, ''PoolId)
   , (''PVer, ''Cas.Is, ''MetadataPVer)
   , (''Cas.Host, ''R.Has, ''LNid)
   , (''Cas.Host, ''R.Runs, ''Node)
@@ -1030,7 +1039,7 @@ $(mkDicts
   )
 
 $(mkResRel
-  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool
+  [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool, ''PoolId
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
   , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
@@ -1088,6 +1097,7 @@ $(mkResRel
   , (''R.Cluster, AtMostOne, ''StopLevel, AtMostOne, ''BootLevel)
   , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolRepairStatus)
   , (''Pool, Unbounded, ''R.Has, AtMostOne, ''DiskFailureVector)
+  , (''Pool, AtMostOne, ''R.Has, AtMostOne, ''PoolId)
   , (''PVer, Unbounded, ''Cas.Is, AtMostOne, ''MetadataPVer)
   , (''Cas.Host, AtMostOne, ''R.Has, Unbounded, ''LNid)
   , (''Cas.Host, AtMostOne, ''R.Runs, Unbounded, ''Node)

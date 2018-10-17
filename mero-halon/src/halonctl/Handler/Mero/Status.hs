@@ -69,9 +69,8 @@ prettyReport showDevices ReportClusterState{..} = do
     Nothing -> putStrLn "Cluster information is not available, load initial data first."
     Just prof -> do
       putStrLn   "  cluster info:"
-      forM_ csrSnsPools $ \pool ->
-        -- XXX TODO: Also show the value of `pool_id` from the facts file.
-        putStrLn $ "    SNS pool:   " ++ fidStr pool
+      forM_ csrSnsPools $ \(pool, M0.PoolId poolId) ->
+        putStrLn $ printf "    SNS pool:   %s \"%s\"" (fidStr pool) poolId
       forM_ csrDixPool $ \pool ->
         putStrLn $ "    DIX pool:   " ++ fidStr pool
       putStrLn $ "    profile:    " ++ fidStr prof
@@ -99,7 +98,7 @@ prettyReport showDevices ReportClusterState{..} = do
       putStrLn "\nHosts:"
       forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
-         printf node_pattern nst (showNodeFid mnode) qfdn
+         printf node_pattern nst (maybe "" fidStr mnode) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs) -> do
@@ -126,8 +125,6 @@ prettyReport showDevices ReportClusterState{..} = do
    where
      fidStr :: M0.ConfObj a => a -> String
      fidStr = fidToStr . M0.fid
-
-     showNodeFid = maybe "" fidStr
 
      -- E.g. showGrouped 1234567 ==> "1,234,567"
      showGrouped = reverse . intercalate "," . chunksOf 3 . reverse . show
