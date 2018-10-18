@@ -58,7 +58,7 @@ import           Control.Monad (join, unless, void, when)
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.Foldable
-import           Data.List (sort)
+import           Data.List (sort, sortOn)
 import qualified Data.Map.Strict as M
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
                             , isJust, isNothing, fromJust )
@@ -187,7 +187,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus   = getClusterStatus rg
-        , csrSnsPools = sns <&> \pool ->
+        , csrSnsPools = sortOn fst $ sns <&> \pool ->
                 ( pool
                 -- createSNSPool guarantees that every SNS pool has
                 -- M0.PoolId attached.  'Nothing' is not possible.
