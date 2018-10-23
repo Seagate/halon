@@ -191,7 +191,7 @@ name := halon*
 tag  := *
 docker-push:
 	@for img in $$(docker images --filter=reference='$(NAMESPACE)/$(name):$(tag)' \
-				    --format '{{.Repository}}:{{.Tag}}') ; \
+				    --format '{{.Repository}}:{{.Tag}}' | grep -v none) ; \
 	do \
 		echo "---> $$img" ; \
 		$(DOCKER) push $$img ; \
