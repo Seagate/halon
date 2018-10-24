@@ -60,8 +60,7 @@ getPools rg = let (dix, sns) = partition isDixPool (getNonMD rg)
 -- details.
 getSDevs :: M0.Pool -> G.Graph -> [M0.SDev]
 getSDevs pool rg =
-  -- Find SDevs for every single pool version belonging to the disk.
-  let sdevs =
+    S.toList . S.fromList $
         [ sd
         | pv <- G.connectedTo pool M0.IsParentOf rg :: [M0.PVer]
         , sv <- G.connectedTo pv M0.IsParentOf rg :: [M0.SiteV]
@@ -72,16 +71,12 @@ getSDevs pool rg =
         , Just d <- [G.connectedFrom M0.IsRealOf dv rg :: Maybe M0.Disk]
         , Just sd <- [G.connectedFrom M0.IsOnHardware d rg :: Maybe M0.SDev]
         ]
-  -- Find the largest sdev set, that is the set holding all disks.
-  in S.toList . S.fromList $ sdevs
 
 -- | Get all 'M0.SDev's in the given 'M0.Pool' with the given
 -- 'M0.ConfObjState'.
-getSDevsWithState :: M0.Pool
-                  -> M0.ConfObjectState
-                  -> G.Graph
-                  -> [M0.SDev]
+getSDevsWithState :: M0.Pool -> M0.ConfObjectState -> G.Graph -> [M0.SDev]
 getSDevsWithState pool st rg =
-  let devs = getSDevs pool rg
-      sts = (\d -> (M0.getConfObjState d rg, d)) <$> devs
-  in map snd . filter ((== st) . fst) $ sts
+  [ sdev
+  | sdev <- getSDevs pool rg
+  , st == M0.getConfObjState sdev rg
+  ]
