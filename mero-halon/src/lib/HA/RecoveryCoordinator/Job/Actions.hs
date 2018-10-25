@@ -82,12 +82,10 @@ mkJobRule :: forall input output l s .
    => Job input output  -- ^ Process name.
    -> s
    -> (JobHandle s input -> RuleM RC s (input -> PhaseM RC s (Either String (output, [Jump PhaseHandle]))))
-   -- ^ Rule body, takes final handle as paramter, returns an action  used to
+   -- ^ Rule body, takes final handle as parameter, returns an action used to
    -- decide how to process rule
    -> Definitions RC ()
-mkJobRule (Job name)
-              args
-              body = define name $ do
+mkJobRule (Job name) args body = define name $ do
     request         <- phaseHandle $ name ++ " -> request"
     indexed_request <- phaseHandle $ name ++ " -> indexed request"
     finish          <- phaseHandle $ name ++ " -> finish"

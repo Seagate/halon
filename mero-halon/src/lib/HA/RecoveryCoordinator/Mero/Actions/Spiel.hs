@@ -232,7 +232,7 @@ mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
 
 -- | Helper for implementation call to generic spiel operation.
 mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable k, KnownSymbol k)
-  => Proxy# k                                               -- ^ Rule name
+  => Proxy# k                                        -- ^ Rule name
   -> (String -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Error result converter.
   -> (c      -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Success result onverter.
   -> (M0.Pool -> (Either a b) -> PhaseM RC l ())     -- ^ Handler

@@ -105,9 +105,11 @@ import           Control.Distributed.Process hiding (bracket_)
 import           Control.Distributed.Process.Internal.Types
 import           Control.Distributed.Process.Serializable
 import           Control.Monad.Operational
-import qualified Data.MultiMap   as MM
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import qualified Data.Set        as Set
+import qualified Data.MultiMap as MM
+import           Data.Set (Set)
+import qualified Data.Set as Set
 
 import Network.CEP.Buffer
 import Network.CEP.Engine
@@ -139,7 +141,7 @@ fillMachineTypeMap st@Machine{..} =
 
 -- | Fills a type tracking map with every type of messages needed by the init
 --   rule.
-initRuleTypeMap :: RuleData s -> M.Map Fingerprint TypeInfo
+initRuleTypeMap :: RuleData s -> Map Fingerprint TypeInfo
 initRuleTypeMap rd = foldr go M.empty $ _ruleTypes rd
   where
     go i@(TypeInfo fprt _) = M.insert fprt i
@@ -438,14 +440,14 @@ feedEngine msgs = go msgs []
 
 -- | Builds a list of 'TypeInfo' types needed by 'PhaseStep' data
 --   contructor.
-buildSeqList :: Seq -> Set.Set TypeInfo
+buildSeqList :: Seq -> Set TypeInfo
 buildSeqList Nil = Set.empty
 buildSeqList (Cons (prx :: Proxy a) rest) =
     let i = TypeInfo (fingerprint (undefined :: a)) prx
     in Set.insert i $ buildSeqList rest
 
 --  | Builds a list of 'TypeInfo' out types need by 'Phase's.
-buildTypeList :: Foldable f => f (Jump (Phase g l)) -> Set.Set TypeInfo
+buildTypeList :: Foldable f => f (Jump (Phase g l)) -> Set TypeInfo
 buildTypeList = foldr (go . jumpPhaseCall) Set.empty
   where
     go (ContCall (typ :: PhaseType g l a b) _) is =
@@ -463,7 +465,7 @@ buildRuleData :: Application app
               => String
               -> ( Jump (Phase app l)
                 -> String
-                -> M.Map String (Jump (Phase app l))
+                -> Map String (Jump (Phase app l))
                 -> Buffer
                 -> l
                 -> Maybe (SMLogger app l)
