@@ -1,0 +1,48 @@
+# -*- sh -*-
+###
+### Common code used by st/t_* scripts.
+###
+
+set -eu -o pipefail
+set -x
+export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
+
+H0=$H0_SRC_DIR/scripts/h0
+
+die() { echo "$@" >&2; exit 1; }
+
+report_and_exit() {
+    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
+    local name=$1
+    local rc=$2
+
+    if [ $rc -eq 0 ]; then
+        ## This message is used by Jenkins as a test success criteria;
+        ## it must appear on stdout.
+        echo "$name: test status: SUCCESS"
+    else
+        echo "$name: FAILURE $rc" >&2
+    fi
+    exit $rc
+}
+
+check_state() {
+    local state=$1
+    local serial=$2
+
+    # XXX Use `hctl debug print drive --serial $serial`.
+    hctl mero status -d | grep -q "${state}.*StorageDevice.*${serial}" ||
+        return $?
+}
+
+wait_for_state() {
+    set +x  # don't let `while true` loop be chatty
+    local state=$1
+    local serial=$2
+
+    while ! check_state "$@"; do
+        sleep 1
+    done
+    set -x
+    hctl mero status -d
+}

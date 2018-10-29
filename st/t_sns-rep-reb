@@ -1,41 +1,22 @@
 #!/usr/bin/env bash
-set -eu -o pipefail
-set -x
-export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
+. $H0_SRC_DIR/st/common
 
-H0=$H0_SRC_DIR/scripts/h0
 SERIAL='STOBAD001'
 DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 1"
 
-expect_state() (
-    set +x  # don't let `while true` loop be chatty
-    local state=$1
-    local serial=$2
-
-    while true; do
-        if hctl mero status -d | grep -q "${state}.*StorageDevice.*${serial}"
-        then
-            break
-        fi
-    done
-    set -x
-    hctl mero status -d
-)
-
 $H0 start
 
+# XXX Use c0cp instead of dd (i.e., clovis instead of m0t1fs).
 $SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
 
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
-expect_state 'Repaired' $SERIAL
+wait_for_state 'Repaired' $SERIAL
 
 hctl mero vars set --disable-smart-check True
 hctl mero drive update-presence $DRIVE_SELECT_OPTS --is-powered --is-installed
 hctl mero drive update-status $DRIVE_SELECT_OPTS --status OK
-expect_state 'Online' $SERIAL
+wait_for_state 'Online' $SERIAL
 
 $H0 stop -u
 
-## This message is used by Jenkins CI as a test success criteria;
-## it must appear on stdout.
-echo "${0##*/}: test status: SUCCESS"
+report_and_exit ${0##*/} $?
