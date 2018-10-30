@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+. $H0_SRC_DIR/st/common
+
+SERIAL='STOBAD002'
+DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
+
+$H0 start
+
+# XXX Use c0cp instead of dd (i.e., clovis instead of m0t1fs).
+$SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
+
+hctl mero drive update-presence $DRIVE_SELECT_OPTS
+wait_for_state 'Repairing' $SERIAL
+
+hctl mero stop
+
+check_state 'Failed' $SERIAL
+
+$H0 stop -u
+
+report_and_exit ${0##*/} $?
