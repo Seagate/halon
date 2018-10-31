@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Copyright : (C) 2018 Seagate Technology Limited.
@@ -15,11 +16,13 @@ import           Control.Distributed.Process (NodeId, Process)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Foldable (find)
 import           Data.List (intercalate)
+import           Data.Maybe (catMaybes)
 import           Data.Semigroup ((<>))
 import           Data.String (IsString, fromString)
 import           Data.Text (Text)
 import qualified Options.Applicative as O
 import           System.Exit (die)
+import           Text.Printf (printf)
 
 import qualified HA.RecoveryCoordinator.RC.Events.Debug as D
 import           Handler.Mero.Helpers (clusterCommand) -- XXX TODO: s/Mero\.//
@@ -38,12 +41,40 @@ data Modify
   | MPool SelectPool ModifyPool
   deriving Show
 
+-- XXX Move to Pretty module? <<<<<<<
+pfield :: Show a => String -> a -> String
+pfield name val = printf "  %s: %s\n" name (show val)
+
+plist :: Show a => String -> [a] -> String
+plist name xs = if null xs then "" else pfield name xs
+
+pmaybe :: Show a => String -> Maybe a -> String
+pmaybe name mval = maybe "" (pfield name) mval
+-- XXX >>>>>>>
+
 run :: [NodeId] -> Options -> Process ()
 -- query
 run nids (OQuery (QDrive select QDriveInfo)) =
     let mkReq = D.DebugQueryDriveInfo . D.QueryDriveInfoReq select
+        prettyH0Sdev D.DebugH0Sdev{..} =
+            show dhsSdev ++ "\n"
+             ++ plist "ids" dhsIds
+             ++ pmaybe "status" dhsStatus
+             ++ plist "attrs" dhsAttrs
+             ++ pmaybe "slot" dhsSlot
+             ++ pmaybe "replaced-by" dhsReplacedBy
+        prettyM0Drive D.DebugM0Drive{..} =
+            show dmdDrive ++ "\n"
+             ++ pfield "is-replaced" dmdIsReplaced
+        prettyM0Sdev D.DebugM0Sdev{..} =
+            show dmsSdev ++ "\n"
+             ++ pmaybe "state" dmsState
+             ++ pmaybe "slot" dmsSlot
     in clusterCommand nids Nothing mkReq $ \case
-        D.QueryDriveInfo info -> liftIO $ print info  -- XXX-TODO: pretty print
+        D.QueryDriveInfo info -> liftIO . mapM_ putStr $ catMaybes
+          [ prettyH0Sdev <$> D.dsiH0Sdev info
+          , prettyM0Drive <$> D.dsiM0Drive info
+          , prettyM0Sdev <$> D.dsiM0Sdev info ]
         D.QueryDriveInfoError err -> liftIO (die err)
 run _ (OQuery (QPool _ _)) = error "XXX IMPLEMENTME"
 -- modify
