@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
-SERIAL='STOBAD001'
-DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 1"
+SERIAL='STOBAD002'
+DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 
 $H0 start
 
@@ -10,12 +10,12 @@ $H0 start
 $SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
 
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
-wait_for_state 'Repaired' $SERIAL
+wait_for_state 'SDSRepaired' $SERIAL
 
 hctl mero vars set --disable-smart-check True
 hctl mero drive update-presence $DRIVE_SELECT_OPTS --is-powered --is-installed
 hctl mero drive update-status $DRIVE_SELECT_OPTS --status OK
-wait_for_state 'Online' $SERIAL
+wait_for_state 'SDSOnline' $SERIAL
 
 $H0 stop -u
 

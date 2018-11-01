@@ -27,21 +27,23 @@ report_and_exit() {
 }
 
 check_state() {
-    local state=$1
-    local serial=$2
+    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
+    local expected="$1"
+    local serial="$2"
+    local actual
 
-    # XXX Use `hctl debug print drive --serial $serial`.
-    hctl mero status -d | grep -q "${state}.*StorageDevice.*${serial}" ||
-        return $?
+    actual=$(hctl debug print drive --serial $serial | sed -n 's/^  state: //p')
+    [ "$actual" = "$expected" ]
 }
 
 wait_for_state() {
-    set +x  # don't let `while true` loop be chatty
-    local state=$1
-    local serial=$2
+    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
+    local state="$1"
+    local serial="$2"
 
-    while ! check_state "$@"; do
-        sleep 1
+    set +x  # silence the loop
+    until check_state "$@"; do
+        :
     done
     set -x
     hctl mero status -d

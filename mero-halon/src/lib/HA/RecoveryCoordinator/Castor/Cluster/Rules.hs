@@ -377,6 +377,7 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
               return $ Left finish)
         (getField . rget fldJobs <$> get Local >>= \case
             [] -> do
+              revertSdevStates
               modify Local $ rlens fldRep . rfield .~ Just ClusterStopOk
               return $ Just [finish]
             _ -> return Nothing)
@@ -408,6 +409,35 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
     args = fldReq =: Nothing
        <+> fldRep =: Nothing
        <+> fldJobs =: []
+
+-- | Revert "ing" states of SDevs.
+-- When the cluster is stopped, no SNS operation is actually happen-ing.
+-- No Repair-ing, no Rebalanc-ing, nothing.
+revertSdevStates :: PhaseM RC l ()
+revertSdevStates = do
+    rg <- getGraph
+    for_ [ (sdev, state, newState)
+         | sd :: R.StorageDevice <- G.connectedTo Cluster Has rg
+         , disk :: M0.Disk <- connectedFromList M0.At sd rg
+         , sdev :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
+         , state :: M0.SDevState <- connectedToList sdev R.Is rg
+         , let newState = checkpoint state
+         , newState /= state
+         ] $ \(sdev, state, newState) -> do
+        let msg :: String
+            msg = printf "Reverting state of SDev %s: %s -> %s"
+                    (show $ M0.fid sdev) (show state) (show newState)
+        Log.rcLog' Log.DEBUG msg
+        modifyGraph $ G.connect sdev R.Is newState
+  where
+    connectedFromList r b g = G.asUnbounded $ G.connectedFrom r b g
+    connectedToList a r g = G.asUnbounded $ G.connectedTo a r g
+
+    checkpoint M0.SDSRepairing = M0.SDSFailed
+    checkpoint M0.SDSRebalancing = M0.SDSRepaired
+    checkpoint (M0.SDSInhibited st) = M0.SDSInhibited $! checkpoint st
+    checkpoint (M0.SDSTransient st) = checkpoint st
+    checkpoint st = st
 
 -- | Reset the (mero) cluster. This should be used when something
 --   has gone wrong and we cannot restore the cluster to ground

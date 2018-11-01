@@ -7,14 +7,21 @@ DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 $H0 start
 
 # XXX Use c0cp instead of dd (i.e., clovis instead of m0t1fs).
-$SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
+FID='fedcba98:76543210'
+$SUDO touch /mnt/m0t1fs/$FID
+# Set unit size to 1M in order for `dd` to complete sooner.
+# See m0_lid_to_unit_map[] for supported `lid` values.
+$SUDO setfattr -n lid -v 9 /mnt/m0t1fs/$FID
+# Big enough file will still be under repair when SNS_REP is terminated.
+$SUDO dd if=/dev/zero of=/mnt/m0t1fs/$FID bs=8M count=200
 
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
-wait_for_state 'Repairing' $SERIAL
+wait_for_state 'SDSRepairing' $SERIAL
 
 hctl mero stop
 
-check_state 'Failed' $SERIAL
+# SDSRepairing -> SDSInhibited SDSRepairing -> SDSInhibited SDSFailed
+check_state 'SDSInhibited SDSFailed' $SERIAL
 
 $H0 stop -u
 
