@@ -30,7 +30,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note.TH
 import           HA.Resources.TH
 import           HA.SafeCopy
-import           Mero.ConfC (Fid(..), fidToStr)
+import           Mero.ConfC (Fid(..))
 import           Mero.Lnet
 
 import           Control.Distributed.Static (Static, staticPtr)
@@ -133,10 +133,11 @@ class ShowFidObj a where
 
 -- | Generic pretty-printer for objects with 'Fid's.
 genShowFid :: (M0.ConfObj a, Generic a, GShowType (Rep a)) => a -> String
-genShowFid x = showType (Generics.from x) ++ "{" ++ fidToStr (M0.fid x) ++ "}" where
+genShowFid x = showType (Generics.from x) ++ "{" ++ show (M0.fid x) ++ "}"
 
 -- | Generics helper class for type name retrieval.
-class GShowType a where showType :: a b -> String
+class GShowType a where
+  showType :: a b -> String
 
 instance (Generics.Datatype d) => GShowType (M1 D d a) where
   showType x = Generics.datatypeName x

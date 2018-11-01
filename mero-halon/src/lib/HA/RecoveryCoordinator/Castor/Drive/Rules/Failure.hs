@@ -59,7 +59,6 @@ import           HA.Services.SSPL.LL.CEP
   ( sendInterestingEvent
   , updateDriveManagerWithFailure
   )
-import           Mero.ConfC (fidToStr)
 import           Network.CEP
 
 -- | Set of all rules related to the disk livetime. It's reexport to be
@@ -73,7 +72,7 @@ rules = sequence_
 iemFailureOverTolerance :: M0.SDev -> PhaseM RC l ()
 iemFailureOverTolerance sdev =
   sendInterestingEvent . InterestingEventMessage . logFailureOverK $ T.pack
-      (" {'failedDevice':" <> fidToStr (M0.fid sdev) <> "}")
+      (" {'failedDevice':" <> show (M0.fid sdev) <> "}")
 
 ruleTransientTimeout :: Definitions RC ()
 ruleTransientTimeout = define "castor::drive::failure::transient-timeout" $ do

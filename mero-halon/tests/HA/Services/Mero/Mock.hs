@@ -80,7 +80,7 @@ import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero (confXCPath, InternalStarted(..), unitString)
 import           HA.Services.Mero.Types
-import           Mero.ConfC (Fid(..), fidToStr, m0_fid0, ServiceType(..))
+import           Mero.ConfC (Fid(..), m0_fid0, ServiceType(..))
 import           Mero.Lnet (encodeEndpoint)
 import           Mero.Notification.HAState
   ( HAMsg(..)
@@ -399,11 +399,11 @@ controlProcess conf master pcChan = do
                                    ; M0D -> "m0d"
                                    ; CLOVIS s -> s
                                    }
-          fileName = prefix ++ "-" ++ fidToStr pfid
+          fileName = prefix ++ "-" ++ show pfid
       _ <- mockRunSysconfig fileName $
         [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
         , ("MERO_HA_EP", mcHAAddress conf)
-        , ("MERO_PROFILE_FID", fidToStr $ mcProfile conf)
+        , ("MERO_PROFILE_FID", show (mcProfile conf))
         ] ++ maybe [] (\p -> [("MERO_CONF_XC", p)]) confdPath
       return ()
 
@@ -421,7 +421,7 @@ controlProcess conf master pcChan = do
                      (T.unpack . encodeEndpoint $ M0.r_endpoint p)
                      confxc
       if needsMkfs
-      then mockRunCmd "start" ("mero-mkfs@" ++ fidToStr (M0.fid p)) Nothing <&> \case
+      then mockRunCmd "start" ("mero-mkfs@" ++ show (M0.fid p)) Nothing <&> \case
         Right{} -> Right p
         Left rc -> Left (p, "Unit failed to start with exit code " ++ show rc)
       else return $! Right p

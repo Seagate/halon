@@ -15,7 +15,6 @@
 --
 module Mero.Conf.Fid
   ( Fid(..)
-  , fidToStr
   , strToFid
   , m0_fid0
   ) where

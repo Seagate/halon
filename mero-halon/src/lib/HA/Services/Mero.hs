@@ -53,7 +53,7 @@ import qualified HA.Resources.Mero as M0
 import           HA.Service
 import           HA.Service.Interface
 import           HA.Services.Mero.Types
-import           Mero.ConfC (Fid, fidToStr)
+import           Mero.ConfC (Fid)
 import           Mero.Lnet
 import qualified Mero.Notification
 import           Mero.Notification (NIRef)
@@ -230,7 +230,7 @@ configureProcess mc run conf env needsMkfs = do
                             confXC (toEnv <$> env)
   if needsMkfs
   then do
-    ec <- SystemD.startService $ "mero-mkfs@" ++ fidToStr procFid
+    ec <- SystemD.startService $ "mero-mkfs@" ++ show procFid
     return $ case ec of
       Right _ -> Right p
       Left x -> Left (p, "Unit failed to start with exit code " ++ show x)
@@ -262,7 +262,7 @@ startProcess run p = do
        -- dead/inexistent service: try to start it and just report the
        -- issue from there.
        _ -> do
-         putStrLn $ "m0d: startProcess: " ++ fidToStr (M0.fid p) ++ " with type(s) " ++ show run
+         putStrLn $ "m0d: startProcess: " ++ show (M0.fid p) ++ " with type(s) " ++ show run
          -- Now that we check service status, use
          -- 'SystemD.startService' and not restart: this way we'll
          -- know sooner if we have some bugs with stop still instead
@@ -317,9 +317,9 @@ dixInit mc imeta = do
     args =
       [ "-l", localEP
       , "-H", mcHAAddress mc
-      , "-I", fidToStr imeta
-      , "-d", fidToStr imeta
-      , "-p", fidToStr (mcProfile mc)
+      , "-I", show imeta
+      , "-d", show imeta
+      , "-p", show (mcProfile mc)
       , "-a", "create"
       ]
     localEP = takeWhile (/= ':') (mcHAAddress mc) ++ dixEP
@@ -330,7 +330,7 @@ dixInit mc imeta = do
 unitString :: ProcessRunType -- ^ Type of the process.
            -> M0.Process     -- ^ Process.
            -> String
-unitString t p = name ++ "@" ++ fidToStr (M0.fid p) ++ ".service"
+unitString t p = name ++ "@" ++ show (M0.fid p) ++ ".service"
   where
     name = case t of
         M0D      -> "m0d"
@@ -363,13 +363,13 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
     _ <- SystemD.sysctlFile fileName $
       [ ("MERO_" ++ fmap toUpper prefix ++ "_EP", m0addr)
       , ("MERO_HA_EP", mcHAAddress)
-      , ("MERO_PROFILE_FID", fidToStr mcProfile)
-      , ("MERO_PROCESS_FID", fidToStr procFid)
+      , ("MERO_PROFILE_FID", show mcProfile)
+      , ("MERO_PROCESS_FID", show procFid)
       ] ++ maybeToList (("MERO_CONF_XC",) <$> confdPath)
         ++ additionalEnv
     return unit
   where
-    fileName = prefix ++ "-" ++ fidToStr procFid
+    fileName = prefix ++ "-" ++ show procFid
     (prefix, unit) = case run of
       M0T1FS -> ("m0t1fs", "m0t1fs@")
       M0D -> ("m0d", "m0d@")

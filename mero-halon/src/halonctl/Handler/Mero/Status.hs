@@ -23,7 +23,6 @@ import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import qualified HA.Resources.Castor as Castor
 import qualified HA.Resources.Mero as M0
 import           Handler.Mero.Helpers
-import           Mero.ConfC (fidToStr)
 import           Mero.Lnet (encodeEndpoint)
 import           Mero.Spiel (FSStats(..))
 import qualified Options.Applicative as Opt
@@ -94,7 +93,7 @@ prettyReport showDevices ReportClusterState{..} = do
            forM_ (M0.prsPri prs) $ \i -> do
              putStrLn $ "      time of start: " ++ show (M0.priTimeOfSnsStart i)
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
-               putStrLn $ "          " ++ fidToStr sdev_fid ++ " -> " ++ sdev_path
+               putStrLn $ "          " ++ show sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
       forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st ps) -> do
          let (nst,extSt) = M0.displayNodeState st
@@ -104,7 +103,7 @@ prettyReport showDevices ReportClusterState{..} = do
                      , ReportClusterProcess ptype proc_st srvs) -> do
            let (pst,proc_extSt) = M0.displayProcessState proc_st
            printf proc_pattern pst
-                               (fidToStr rfid)
+                               (show rfid)
                                (T.unpack . encodeEndpoint $ endpoint)
                                ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
@@ -117,14 +116,14 @@ prettyReport showDevices ReportClusterState{..} = do
                forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, mslot, msdev) -> do
                  let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
                  printf sdev_pattern sd_st
-                                     (fidToStr sdev_fid)
+                                     (show sdev_fid)
                                      (maybe "No StorageDevice" show msdev)
                                      (sdev_path)
                  for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
                  for_ mslot $ printf sdev_patterni (""::String) . show
    where
      fidStr :: M0.ConfObj a => a -> String
-     fidStr = fidToStr . M0.fid
+     fidStr = show . M0.fid
 
      -- E.g. showGrouped 1234567 ==> "1,234,567"
      showGrouped = reverse . intercalate "," . chunksOf 3 . reverse . show
