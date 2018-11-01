@@ -43,7 +43,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
-import qualified HA.Resources.Castor as R
+import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
@@ -175,9 +175,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                           sdevs  <- sort <$> getChildren service
                           sdevs' <- forM sdevs $ \(sdev :: M0.SDev) -> do
                             let msd   = do disk :: M0.Disk <- G.connectedTo sdev M0.IsOnHardware rg
-                                           sd :: R.StorageDevice <- G.connectedTo disk M0.At rg
+                                           sd :: Cas.StorageDevice <- G.connectedTo disk M0.At rg
                                            return sd
-                                slot  = G.connectedTo sdev M0.At rg :: Maybe R.Slot
+                                slot  = G.connectedTo sdev M0.At rg :: Maybe Cas.Slot
                                 state = M0.getState sdev rg
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')
@@ -225,7 +225,7 @@ ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-proce
      rg <- getGraph
      modifyGraph . execState $ do
        for_ (M0.getM0Processes rg) $ \proc ->
-         State.modify (G.connect proc R.Is M0.ProcessBootstrapped)
+         State.modify (G.connect proc Cas.Is M0.ProcessBootstrapped)
      modifyGraph $ G.connect (M0.getM0Root rg) Has M0.DIXInitialised
      registerSyncGraph $ do
        sendChan ch ()
@@ -247,7 +247,7 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
     let getMeroHostsNodes p = do
          rg <- getGraph
          return [ (host, node)
-                | host <- G.connectedTo Cluster Has rg  :: [R.Host]
+                | host <- G.connectedTo Cluster Has rg  :: [Cas.Host]
                 , node <- G.connectedTo host Runs rg :: [M0.Node]
                 , p host node rg
                 ]
@@ -279,9 +279,9 @@ ruleClusterStart = mkJobRule jobClusterStart args $ \(JobHandle _ finish) -> do
           Log.rcLog' Log.DEBUG "cluster.disposition=ONLINE"
           modifyGraph $ G.connect Cluster Has M0.ONLINE
           servers <- fmap (map snd) $ getMeroHostsNodes
-            $ \(host :: R.Host) (node::M0.Node) rg' ->
-                   ( G.isConnected host Has R.HA_M0SERVER rg'
-                  || G.isConnected host Has R.HA_M0CLIENT rg'
+            $ \(host :: Cas.Host) (node::M0.Node) rg' ->
+                   ( G.isConnected host Has Cas.HA_M0SERVER rg'
+                  || G.isConnected host Has Cas.HA_M0CLIENT rg'
                    )
                 && M0.getState node rg' /= M0.NSFailed
                 && M0.getState node rg' /= M0.NSFailedUnrecoverable
@@ -393,7 +393,7 @@ requestClusterStop = mkJobRule jobClusterStop args $ \(JobHandle _ finish) -> do
         else do
           modifyGraph $ G.connect Cluster Has M0.OFFLINE
           let nodes = [ node
-                      | host :: R.Host <- G.connectedTo Cluster Has rg
+                      | host :: Cas.Host <- G.connectedTo Cluster Has rg
                       , node <- G.connectedTo host Runs rg
                       ]
           jobs <- for nodes $ startJob . StopProcessesOnNodeRequest
@@ -417,10 +417,10 @@ revertSdevStates :: PhaseM RC l ()
 revertSdevStates = do
     rg <- getGraph
     for_ [ (sdev, state, newState)
-         | sd :: R.StorageDevice <- G.connectedTo Cluster Has rg
+         | sd :: Cas.StorageDevice <- G.connectedTo Cluster Has rg
          , disk :: M0.Disk <- connectedFromList M0.At sd rg
          , sdev :: M0.SDev <- connectedFromList M0.IsOnHardware disk rg
-         , state :: M0.SDevState <- connectedToList sdev R.Is rg
+         , state :: M0.SDevState <- connectedToList sdev Cas.Is rg
          , let newState = checkpoint state
          , newState /= state
          ] $ \(sdev, state, newState) -> do
@@ -428,7 +428,7 @@ revertSdevStates = do
             msg = printf "Reverting state of SDev %s: %s -> %s"
                     (show $ M0.fid sdev) (show state) (show newState)
         Log.rcLog' Log.DEBUG msg
-        modifyGraph $ G.connect sdev R.Is newState
+        modifyGraph $ G.connect sdev Cas.Is newState
   where
     connectedFromList r b g = G.asUnbounded $ G.connectedFrom r b g
     connectedToList a r g = G.asUnbounded $ G.connectedTo a r g
@@ -455,7 +455,7 @@ requestClusterReset = defineSimple "castor::cluster::reset"
     Log.rcLog' Log.DEBUG "Cluster reset requested."
     -- Mark all nodes, processes and services as unknown.
     nodes <- getGraph <&> \rg -> [ node
-              | host <- G.connectedTo Cluster Has rg :: [R.Host]
+              | host <- G.connectedTo Cluster Has rg :: [Cas.Host]
               , node <- take 1 (G.connectedTo host Runs rg) :: [M0.Node]
               ]
     procs <- getGraph <&> M0.getM0Processes
