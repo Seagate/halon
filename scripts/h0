@@ -166,8 +166,9 @@ cmd_start() {
     halonctl mero bootstrap --verbose
 
     # Display bootstrap progress, usually it completes under a minute.
-    { sleep 70; pkill -x watch; } &
-    watch halonctl mero status
+    watch halonctl mero status &
+    sleep 70
+    kill %watch
 
     local rc=0
     # Possible failure of m0t1fs has no impact on exit code of
