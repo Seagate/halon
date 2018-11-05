@@ -25,6 +25,11 @@ templates:
           - image: seagate/halon-devel:7.3
             auth: *auth-ssg
 
+    - sage: &docker-image-sage
+        docker:
+          - image: seagate/halon-devel:sage
+            auth: *auth-ssg
+
     - ut: &docker-image-ut
         docker:
           - image: seagate/halon-devel:latest
@@ -193,6 +198,10 @@ jobs:
     <<: *docker-image-73
     steps: *rpmbuild
 
+  rpmbuild_sage:
+    <<: *docker-image-sage
+    steps: *rpmbuild
+
   artifacts:
     docker:
       - image: centos
@@ -240,6 +249,15 @@ jobs:
       - run:
           name: Add GitHub release for CentOS 7.3
           command: ./scripts/circleci/github-release --verbose --update 73
+
+  github_release_sage:
+    <<: *docker-image-sage
+    working_directory: ~/mero
+    steps:
+      - checkout
+      - run:
+          name: Add GitHub release for CentOS SAGE
+          command: ./scripts/circleci/github-release --verbose --update sage
 
 # CircleCI workflows
 workflows:
@@ -302,6 +320,19 @@ workflows:
           filters: *filter-only-master
           requires: [ rpmbuild_73 ]
 
+  master_sage:
+    jobs:
+      - checkout:
+          context: ssg-auth
+          filters: *filter-only-master
+      - rpmbuild_sage:
+          context: ssg-auth
+          filters: *filter-only-master
+          requires: [ checkout ]
+      - artifacts:
+          filters: *filter-only-master
+          requires: [ rpmbuild_sage ]
+
   github_release:
     jobs:
       - create_github_release:
@@ -319,3 +350,7 @@ workflows:
           context: ssg-auth
           filters: *filter-release-tags
           requires: [ github_release_74 ]
+      - github_release_sage:
+          context: ssg-auth
+          filters: *filter-release-tags
+          requires: [ github_release_73 ]

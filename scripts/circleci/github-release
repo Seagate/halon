@@ -140,9 +140,12 @@ update_release()
 {
     local os_release
     local lustre_version
+    local special_release
     case $os_version in
-        73) os_release='7.3.1611'
+        73|sage)
+            os_release='7.3.1611'
             lustre_version='2.9.0' ;;
+            special_release=' SAGE'
         74) os_release='7.4.1708'
             lustre_version='2.10.3' ;;
         75|latest)
@@ -164,7 +167,7 @@ update_release()
     body+=$(cat <<END_BODY
 
 
-### Centos $os_release
+### Centos $os_release$special_release
 [${kmod_url##*/}]($kmod_url)
 [${lustre_client_url##*/}]($lustre_client_url)
 END_BODY
