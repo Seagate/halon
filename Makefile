@@ -154,6 +154,10 @@ docker-images-7.3: CENTOS_RELEASE := 7.3.1611
 docker-images-7.3: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-images-7.3: docker-images
 
+docker-images-sage: CENTOS_RELEASE := sage
+docker-images-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-sage: docker-images
+
 
 .PHONY: halon-src-container
 halon-src-container:
