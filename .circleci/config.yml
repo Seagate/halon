@@ -47,6 +47,7 @@ templates:
               cd ~/rpmbuild/RPMS/x86_64
               os_release=$(grep -Po '\d\.\d(?=\.\d{4})' /etc/redhat-release | tr -d .)
               if [[ $os_release == 75 ]] ; then os_release=latest ; fi
+              if grep -q SAGE /etc/redhat-release ; then os_release=sage ; fi
               for url in $(~/halon/scripts/circleci/latest-artifacts mero master $os_release)
               do
                   echo "$url"
