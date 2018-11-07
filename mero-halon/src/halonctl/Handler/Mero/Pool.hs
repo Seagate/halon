@@ -84,7 +84,7 @@ parseSNSOpts = SNSOpts
   <*> Opt.option (Opt.maybeReader UUID.fromString)
       ( Opt.long "uuid"
       <> Opt.short 'u'
-      <> Opt.help "UUID of the pool operation. Shown in `hctl cluster status`"
+      <> Opt.help "UUID of the pool operation. Shown in `hctl mero status`."
       <> Opt.metavar "UUID"
       )
   <*> Opt.option Opt.auto
