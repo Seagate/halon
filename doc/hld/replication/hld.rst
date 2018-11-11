@@ -237,7 +237,7 @@ A client is normally aware of several of the replicas. In this way, if
 sending a request to one replica is deemed by the client to have failed
 (due e.g. to not getting a reply before timeout), then the client can
 resend this request to another replica. It is up to the client of the
-replicatedlog layer to uniquely identify each request if the effect of
+replicated log layer to uniquely identify each request if the effect of
 each request is not idempotent.
 
 Failure model
@@ -245,7 +245,7 @@ Failure model
 
 We assume a non-Byzantine failure model. Replicas are either correct or
 do not interact with the other replicas and with clients. Replicas may
-fail at any moment. We assume a failrecover model: any replica that has
+fail at any moment. We assume a fail-recover model: any replica that has
 crashed can potentially be restarted and, possibly after an
 initialization phase, recover. Messages between processes can be lost,
 duplicated or reordered.

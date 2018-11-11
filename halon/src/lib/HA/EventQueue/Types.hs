@@ -63,7 +63,6 @@ data DoneClearEQ = DoneClearEQ deriving (Typeable, Generic)
 
 instance Binary DoneClearEQ
 
-
 -- | Request for EQ statistics
 data EQStatReq = EQStatReq ProcessId
   deriving (Generic, Typeable)

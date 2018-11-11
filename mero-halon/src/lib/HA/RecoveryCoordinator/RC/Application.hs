@@ -33,5 +33,5 @@ data LoopState = LoopState {
   , lsEQPid    :: ProcessId -- ^ EQ pid
   , lsRefCount :: Map.Map UUID Int
     -- ^ A reference count of replicated events that we're handling.
-  , lsStorage :: !Storage.Storage -- ^ Global ephimeral storage.
+  , lsStorage :: !Storage.Storage -- ^ Global ephemeral storage.
 }

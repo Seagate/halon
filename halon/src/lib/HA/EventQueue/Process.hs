@@ -272,7 +272,7 @@ eqRules rg pool groupMonitor = do
     -- thread pool.
     defineSimple "clearing" $ \(DoClearEQ pid) -> do
       (mapM_ spawnWorker =<<) $ liftProcess $ submitTask pool $ do
-        -- Insist here in a loop until it works.
+        -- Sit here in a loop until it works.
         fix $ \loop -> do
           -- Ensure we have a pid to monitor the rgroup.
           -- See Note [RGroup monitor].

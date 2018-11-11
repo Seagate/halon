@@ -144,8 +144,7 @@ instance Binary ClusterStateChange
 data ClusterResetRequest = ClusterResetRequest
   { _crr_deep_reset :: !Bool
   -- ^ Request a deeper reset which will purge the EQ and restart RC.
-  }
-  deriving (Eq, Show, Typeable, Generic)
+  } deriving (Eq, Show, Typeable, Generic)
 
 -- | Structure containing information about the cluster state.
 data ReportClusterState = ReportClusterState

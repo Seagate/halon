@@ -6,7 +6,7 @@
 -- Copyright : (C) 2014 Xyratex Technology Limited.
 -- License   : All rights reserved.
 --
--- Implementation of the EQ Tracker process. 
+-- Implementation of the EQ Tracker process.
 -- For user facing documentation, please refer to "HA.EQTracker".
 module HA.EQTracker.Process
   ( -- * Public API.
@@ -76,7 +76,7 @@ eqTrackerProcess nodes = go $ ReplicaLocation Nothing nodes
                 , eqsPreferredReplica = preferred
                 }
           , match $ \prs@(PreferReplica rnid) -> do
-              traceTracker $ "Got PreferReplicas: " ++ show prs
+              traceTracker $ "Got " ++ show prs
               if eqsPreferredReplica eqs == Just rnid
               then return eqs
               else return $ handleEQResponse eqs rnid
@@ -104,8 +104,8 @@ startEQTracker eqs = do
     return eqt
 
 -- | Lookup replica from the given node. After sending this request
--- Process will receive 'ReplicaReply' in it's mailbox.
+-- Process will receive 'ReplicaReply' in its mailbox.
 lookupReplicas :: NodeId -> Process ()
 lookupReplicas n = do
-  self  <- getSelfPid
+  self <- getSelfPid
   nsendRemote n name $ ReplicaRequest self

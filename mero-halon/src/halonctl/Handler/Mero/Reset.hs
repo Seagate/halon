@@ -14,7 +14,7 @@ import           Control.Monad
 import           Control.Monad.Fix (fix)
 import           Data.Foldable
 import           Data.Monoid ((<>))
-import           HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..) )
+import           HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..))
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
 import           HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
@@ -36,11 +36,8 @@ parser = Options
     <> Opt.help "Clear the EQ and reset the RC remotely, in case of a stuck RC."
     )
 
-run :: [NodeId]
-             -> Options
-             -> Process ()
-run eqnids (Options hard unstick) = if unstick
-  then do
+run :: [NodeId] -> Options -> Process ()
+run eqnids (Options _ _unstick@True) = do
     self <- getSelfPid
     eqs <- findEQFromNodes 1000000 eqnids
     case eqs of
@@ -61,11 +58,11 @@ run eqnids (Options hard unstick) = if unstick
              Nothing -> loop
              Just p -> do
                liftIO $ putStrLn "Killing recovery coordinator."
-               kill p "User requested `cluster reset --unstick`"
+               kill p "User requested `hctl mero reset --unstick`"
                liftIO exitSuccess
-        , match $ \() -> liftIO $ die "Cannot determine the location of the RC."
+        , match $ \() -> liftIO $ die "Cannot determine location of the RC."
         ]
-  else do
-      promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
-    where
-      wait = void (expect :: Process ProcessMonitorNotification)
+run eqnids (Options hard _) =
+    promulgateEQ eqnids (ClusterResetRequest hard) >>= flip withMonitor wait
+  where
+    wait = void (expect :: Process ProcessMonitorNotification)

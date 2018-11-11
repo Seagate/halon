@@ -28,11 +28,11 @@ import           HA.Multimap
 import           HA.ResourceGraph hiding (null)
 
 -- | Serialize multimap data
-mmKeyValues :: Maybe ([(Key, [Value])]) -> ByteString
+mmKeyValues :: Maybe [(Key, [Value])] -> ByteString
 mmKeyValues = runPut . mmKeyValuesPut
 
 -- | Multimap data serialiser
-mmKeyValuesPut :: Maybe ([(Key, [Value])]) -> Put
+mmKeyValuesPut :: Maybe [(Key, [Value])] -> Put
 mmKeyValuesPut = traverse_ (traverse_ go)
   where
     go (key, vals) = do
