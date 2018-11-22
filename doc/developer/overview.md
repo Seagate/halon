@@ -19,8 +19,8 @@ state is shared with other processes which are able to take over from the
 recovery coordinator in the event of its failure.
 
 Further reading:
-[Paxos (Wikipedia)](https://en.wikipedia.org/wiki/Paxos_(computer_science))
-[Replication HLD](../hld/replication/hld.rst)
+- [Paxos (Wikipedia)](https://en.wikipedia.org/wiki/Paxos_(computer_science))
+- [Replication HLD](../hld/replication/hld.rst)
 
 ### Cloud Haskell
 
@@ -40,20 +40,20 @@ For this reason, we shall use the term 'Process' to refer to a C-H process,
 and append the term 'System' when we wish to refer to a Unix level process.
 
 Further reading:
-[Erlang OTP](http://learnyousomeerlang.com/what-is-otp)
-[Actor model (Wikipedia)](https://en.wikipedia.org/wiki/Actor_model)
-[Cloud Haskell](http://haskell-distributed.github.io/)
+- [Erlang OTP](http://learnyousomeerlang.com/what-is-otp)
+- [Actor model (Wikipedia)](https://en.wikipedia.org/wiki/Actor_model)
+- [Cloud Haskell](http://haskell-distributed.github.io/)
 
 ## Layer View
 
 We may (loosely) think of Halon as operating on a number of layers:
 
-Services
-Recovery
-Event queue
-Replicator
-Paxos
-Cloud Haskell
+- Services
+- Recovery
+- Event queue
+- Replicator
+- Paxos
+- Cloud Haskell
 
 We describe these layers in inverse order, starting with the bottom layer:
 
@@ -72,15 +72,15 @@ on one or more nodes.
 Code pointers:
 
 To begin understanding the structure of C-H code:
-[Cloud Haskell](http://haskell-distributed.github.io/)
-[distributed-process documentation](http://hackage.haskell.org/package/distributed-process-0.5.5.1)
+- [Cloud Haskell](http://haskell-distributed.github.io/)
+- [distributed-process documentation](http://hackage.haskell.org/package/distributed-process-0.5.5.1)
 
 There is little of this layer implemented within Halon itself, but you may
 consider `halond`, which is the executable which starts a C-H system-level
 process on a node. A network of `halond` instances, whilst doing nothing
 themselves, will come to host all of Halon's functionality.
 
- - `mero-halon/src/halond`
+- `mero-halon/src/halond`
 
 ### Paxos
 
@@ -102,7 +102,7 @@ The code implementing the Paxos layer lives in three packages:
   of such decrees.
 
 Further reading:
-[Replication HLD](../replication/hld.rst)
+- [Replication HLD](../replication/hld.rst)
 
 ### Replicator
 
@@ -138,7 +138,7 @@ Code pointers:
   the EQ.
 
 Further reading:
-[Event Queue component](components/event-queue.rst)
+- [Event Queue component](components/event-queue.rst)
 
 ### Recovery
 
