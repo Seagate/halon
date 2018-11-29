@@ -107,7 +107,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
           -- stale offline ACKs would come and spoil everything. This situation
           -- was observed on the "Process stop then start" UT and may as well
           -- happen on a real cluster configuration.
-          continue finish
+          done eid
         else do
           setExpectedNotifications notifications
           onTimeout 30 timed_out
@@ -124,7 +124,9 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
       --
       -- - we don't want to fight with PROCESS_STOPPED for no reason
       --   and be subject to poor ordering
-      _ -> Log.rcLog' Log.WARN "Ignoring mero notification about a halon:m0d process service."
+      _ -> do
+        Log.rcLog' Log.WARN "Ignoring mero notification about a halon:m0d process service."
+        done eid
 
   directly service_notified $ do
     Just srv <- getField . rget fldService <$> get Local
