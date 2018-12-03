@@ -95,7 +95,8 @@ data MemoryInfo = MemoryInfo
     { minfoTotalSize :: Int
     , minfoSMSize :: Int
     , minfoStateSize :: Int
-    } deriving (Show, Generic, Typeable)
+    }
+  deriving (Show, Generic, Typeable)
 
 instance Binary MemoryInfo
 
@@ -105,7 +106,8 @@ data RuntimeInfo = RuntimeInfo
     , infoSuspendedSM :: Int
     , infoMemory :: Maybe MemoryInfo
     , infoSMs :: M.Map String Int
-    } deriving (Show, Generic, Typeable)
+    }
+  deriving (Show, Generic, Typeable)
 
 instance Binary RuntimeInfo
 
