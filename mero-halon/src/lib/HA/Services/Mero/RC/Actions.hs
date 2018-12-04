@@ -26,7 +26,7 @@ import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.Foldable (for_)
 import           Data.Function (on)
-import           Data.List (sortBy)
+import           Data.List (sortBy, unfoldr)
 import           Data.Maybe (catMaybes)
 import           Data.Proxy (Proxy (..))
 import           Data.Traversable (for)
@@ -97,27 +97,40 @@ mkStateDiff f msg onCommit = do
   modifyGraph $ G.connect idx Cas.Is diff >>> G.connect rc Has diff >>> f
   return diff
 
--- | Find 'StateDiff' by it's index. This function can find not yet garbage
--- collected diff.
+-- | Find 'StateDiff'. This function can find not yet garbage
+--   collected diff.
 getStateDiffByEpoch :: Word64 -> PhaseM RC l (Maybe StateDiff)
-getStateDiffByEpoch idx = G.connectedTo epoch Cas.Is <$> getGraph
-  where
-    epoch = StateDiffIndex idx
+getStateDiffByEpoch e = G.connectedTo (StateDiffIndex e) Cas.Is <$> getGraph
 
--- | Mark that notification was delivered to process.
+-- | Find all available StateDiffs up to the given epoch.
+getStateDiffsByEpoch :: Word64 -> PhaseM RC l [StateDiff]
+getStateDiffsByEpoch epoch = do
+  rg <- getGraph
+  let step e = (\d -> (d, e-1)) <$> G.connectedTo (StateDiffIndex e) Cas.Is rg
+  return (unfoldr step epoch)
+
+-- | Mark that all StateDiff notifications up to the given one were delivered
+-- to the given process.
+--
+-- Indeed, as we aggregate several epoch notifications on sending (on SATs,
+-- see HA/Services/Mero.hs::statusProcess), we may receive delivery ACKs
+-- only for the latest epoch in such an aggregated notification. So all
+-- the earlier epochs should be processed as delivered here as well.
 markNotificationDelivered :: StateDiff -> M0.Process -> PhaseM RC l ()
-markNotificationDelivered diff process = do
-  Log.actLog "markNotificationDelivered"
-    [("epoch", show $ stateEpoch diff), ("process", M0.showFid process)]
-  isDelivered <- G.isConnected diff DeliveredTo process <$> getGraph
-  isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getGraph
-  unless (isDelivered) $ do
-    modifyGraph $
-      G.disconnect diff ShouldDeliverTo process >>>
-      G.disconnect diff DeliveryFailedTo process -- success after failure - counts.
-       >>>
-      G.connect diff DeliveredTo process
-    when isNotSent $ tryCompleteStateDiff diff
+markNotificationDelivered sdiff process = do
+  diffs <- getStateDiffsByEpoch $ stateEpoch sdiff
+  for_ diffs $ \diff -> do
+    Log.actLog "markNotificationDelivered"
+      [("epoch", show $ stateEpoch diff), ("process", M0.showFid process)]
+    isDelivered <- G.isConnected diff DeliveredTo process <$> getGraph
+    isNotSent <- G.isConnected diff ShouldDeliverTo process <$> getGraph
+    unless isDelivered $ do
+      modifyGraph $
+        G.disconnect diff ShouldDeliverTo process >>>
+        G.disconnect diff DeliveryFailedTo process -- success after failure - counts.
+         >>>
+        G.connect diff DeliveredTo process
+      when isNotSent $ tryCompleteStateDiff diff
 
 -- | Mark any notifications that weren't already delivered and haven't
 -- already failed, as failed.

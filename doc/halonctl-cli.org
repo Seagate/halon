@@ -723,6 +723,7 @@ Usage: halonctl mero vars set [--recovery-expiry [SECONDS]]
                               [--recovery-retry [SECONDS]]
                               [--keepalive-frequency [SECONDS]]
                               [--keepalive-timeout [SECONDS]]
+                              [--notification-aggr-delay [MILLISECONDS]]
                               [--drive-reset-max-retries [NUMBER]]
                               [--disable-smart-check [True|False]]
                               [--disable-notification-failure [True|False]]
@@ -740,6 +741,9 @@ Available options:
   --keepalive-timeout [SECONDS]
                            How long to allow process to run without replying to
                            keepalive.
+  --notification-aggr-delay [MILLISECONDS]
+                           How long to aggrerate notifications before sending
+                           (in ms).
   --drive-reset-max-retries [NUMBER]
                            Number of times we could try to reset drive.
   --disable-smart-check [True|False]

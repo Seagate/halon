@@ -31,8 +31,9 @@ module HA.Services.Mero
     ) where
 
 import           Control.Distributed.Process
-import           Control.Distributed.Process.Closure ( remotableDecl, mkStatic, mkStaticClosure )
+import           Control.Distributed.Process.Closure (remotableDecl, mkStatic, mkStaticClosure)
 import qualified Control.Distributed.Process.Internal.Types as DI
+import           Control.Distributed.Process.Extras.Time (TimeUnit(Millis), after)
 import           Control.Distributed.Static (staticApply)
 import           Control.Exception (SomeException, IOException)
 import           Control.Monad (forever, unless, void, when)
@@ -43,6 +44,7 @@ import           Data.Binary
 import qualified Data.ByteString as BS
 import           Data.Char (toUpper)
 import           Data.Maybe (maybeToList)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.UUID as UUID
 import           HA.Debug
@@ -66,6 +68,7 @@ import qualified System.Posix.Process as Posix
 import           System.Process
 import qualified System.SystemD.API as SystemD
 import qualified System.Timeout as ST
+import           System.Clock (Clock(Monotonic), TimeSpec, getTime, toNanoSecs)
 
 __resourcesTable :: RemoteTable -> RemoteTable
 __resourcesTable = HA.Services.Mero.Types.myResourcesTable
@@ -74,40 +77,72 @@ __resourcesTable = HA.Services.Mero.Types.myResourcesTable
 traceM0d :: String -> Process ()
 traceM0d = mkHalonTracer "halon:m0d"
 
--- | Process handling object status updates: it dispatches
--- notifications ('NotificationMessage') to local mero processes.
+-- | Process handling object status updates: it dispatches notifications
+-- ('NotificationMessage') to local mero processes.
+--
+-- The function aggregates notifications for some time then sends them
+-- in a single message.  This reduces the number of notification Ack
+-- messages from O(N^2) to O(N), where N is the number of processes in
+-- the cluster.
 statusProcess :: NIRef
               -> Fid -- ^ HA process 'Fid'
               -> Fid -- ^ HA service 'Fid'
               -> ProcessId
+              -> Int -- ^ aggregation delay
               -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess niRef ha_pfid ha_sfid pid rp = do
+statusProcess niRef ha_pfid ha_sfid pid adelay rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
-    forever $ do
-      msg@(NotificationMessage epoch set ps) <- receiveChan rp
-      traceM0d $ "statusProcess: notification msg received: " ++ show msg
-      -- We recreate process, this is highly unsafe and it's not allowed
-      -- to do receive read calls. also this thread will not be killed when
-      -- status process is killed.
-      lproc <- DI.Process ask
-      Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid epoch
-            (\fid -> DI.runLocalProcess lproc $ do
-              traceM0d $ "Sending notification ack for fid " ++ show fid
-                      ++ " in epoch " ++ show epoch
-              sendRC interface $ NotificationAck epoch fid
-              traceM0d $ "Sent notification ack for fid " ++ show fid
-                      ++ " in epoch " ++ show epoch
-            )
-            (\fid -> DI.runLocalProcess lproc $ do
-              traceM0d $ "Sending notification failure for fid " ++ show fid
-                      ++ " in epoch " ++ show epoch
-              sendRC interface $ NotificationFailure epoch fid)
+    loop
    `catchExit` (\_ reason -> traceM0d $ "statusProcess exiting: " ++ reason)
    `Catch.catch` \(e :: SomeException) -> do
-      traceM0d $ "statusProcess terminated: " ++ show (pid, e)
-      Catch.throwM e
+        traceM0d $ "statusProcess terminated: " ++ show (pid, e)
+        Catch.throwM e
+  where
+    loop :: Process ()
+    loop = do
+        msg <- receiveChan rp
+        start <- liftIO $ getTime Monotonic
+        aggregate start msg
+
+    aggregate :: TimeSpec -> NotificationMessage -> Process ()
+    aggregate start acc = do
+        now <- liftIO $ getTime Monotonic
+        let elapsed = toNanoSecs (now - start) `div` 1000000 -- milliseconds
+            remaining = adelay - fromIntegral elapsed
+        mmsg <- if remaining > 0
+                then receiveChanTimeout (after remaining Millis) rp
+                else pure Nothing
+        case mmsg of
+            Just msg ->
+                -- Notification received. Put it into the accumulator
+                -- and continue aggregation.
+                aggregate start (acc <> msg)
+            Nothing -> do
+                -- Time's up! Dispatch the aggregated notification(s)
+                -- to local Mero processes.
+                send acc
+                loop
+
+    send :: NotificationMessage -> Process ()
+    send msg@(NotificationMessage epoch set ps) = do
+        traceM0d $ "statusProcess: notification message(s) received: "
+                ++ show msg
+        -- We recreate process, this is highly unsafe and it's not
+        -- allowed to do receive read calls. Also this thread will not
+        -- be killed when status process is killed.
+        lproc <- DI.Process ask
+        let trace prefix fid = traceM0d $ prefix ++ " for fid " ++ show fid
+                                       ++ " in epoch " ++ show epoch
+        Mero.Notification.notifyMero niRef ps set ha_pfid ha_sfid epoch
+            (\fid -> DI.runLocalProcess lproc $ do
+                trace "Sending notification ack" fid
+                sendRC interface $ NotificationAck epoch fid
+                trace "Sent notification ack" fid )
+            (\fid -> DI.runLocalProcess lproc $ do
+                trace "Sending notification failure" fid
+                sendRC interface $ NotificationFailure epoch fid )
 
 -- | Run keep-alive when channel receives a message to do so
 keepaliveProcess :: Int -- ^ Keepalive frequency (seconds)
@@ -377,8 +412,7 @@ writeSysconfig MeroConf{..} run procFid m0addr confdPath additionalEnv = do
 
 -- | The @halon:m0d@ service has started.
 newtype InternalStarted =
-  InternalStarted (SendPort NotificationMessage,SendPort ProcessControlMsg)
-  -- ^ @Started (notificationHandlerChan, processControlChan)@
+    InternalStarted (SendPort NotificationMessage, SendPort ProcessControlMsg)
   deriving (Eq, Show, Binary)
 
 m0dProcess :: ProcessId -> MeroConf -> Process ()
@@ -394,9 +428,10 @@ m0dProcess parent conf = do
           _ <- spawnLocal $ keepaliveProcess (mcKeepaliveFrequency conf)
                                              (mcKeepaliveTimeout conf)
                                              processFid haFid ep self
-          c <- spawnChannelLocal $ statusProcess ep processFid haFid self
-          cc <- spawnChannelLocal $ controlProcess conf self
-          usend parent (InternalStarted (c,cc))
+          ntfyChan <- spawnChannelLocal $ statusProcess ep processFid haFid self
+                                                        (mcNotifAggrDelay conf)
+          ctrlChan <- spawnChannelLocal $ controlProcess conf self
+          usend parent $ InternalStarted (ntfyChan, ctrlChan)
           traceM0d "Started service m0d on mero client"
           -- Block forever, keeping the endpoint open.
           receiveWait []
@@ -437,6 +472,7 @@ remotableDecl [ [d|
 
   m0dFunctions :: ServiceFunctions MeroConf
   m0dFunctions = ServiceFunctions bootstrap mainloop teardown confirm where
+
     bootstrap conf = do
       self <- getSelfPid
       sendRC interface $! CheckCleanup (processNodeId self)
@@ -470,10 +506,10 @@ remotableDecl [ [d|
                 $ \_ -> do
           sendRC interface . MeroKernelFailed (processNodeId self) $ "process exited."
           return (Left "failure during start")
-        , match $ \(InternalStarted (c,cc)) -> do
-          return (Right (pid,c,cc))
+        , match $ \(InternalStarted (ntfyChan, ctrlChan)) -> return (Right (pid, ntfyChan, ctrlChan))
         ]
-    mainloop conf s@(pid,c,cc) = do
+
+    mainloop conf s@(pid, ntfyChan, ctrlChan) = do
       self <- getSelfPid
       return [ matchIf (\(ProcessMonitorNotification _ p _) -> pid == p)
                    $ \_ -> do
@@ -481,10 +517,10 @@ remotableDecl [ [d|
                  return (Failure, s)
              , receiveSvc interface $ \case
                  PerformNotification nm -> do
-                   sendChan c nm
+                   sendChan ntfyChan nm
                    return (Continue, s)
                  ProcessMsg pm -> do
-                   sendChan cc pm
+                   sendChan ctrlChan pm
                    return (Continue, s)
                  AnnounceYourself -> do
                    traceM0d $ "Announcing STARTED, likely due to node recovery."
@@ -506,6 +542,7 @@ remotableDecl [ [d|
              , match $ \(InternalServiceReconnectReply c' cc') -> do
                  return (Continue, (pid, c', cc'))
              ]
+
     teardown _ (pid,_,_) = do
       mref <- monitor pid
       exit pid "teardown"
@@ -513,6 +550,7 @@ remotableDecl [ [d|
         [ matchIf (\(ProcessMonitorNotification m _ _) -> mref == m)
                   $ \_ -> return ()
         ]
+
     confirm  _ _ = return ()
     |] ]
 

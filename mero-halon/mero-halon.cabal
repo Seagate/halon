@@ -201,6 +201,7 @@ Library
                    containers,
                    directory,
                    distributed-process-scheduler,
+                   distributed-process-extras,
                    distributed-static,
                    ede,
                    lens,

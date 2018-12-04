@@ -122,6 +122,9 @@ newtype Set_v0 = Set_v0 HA.NVec
 data Set = Set HA.NVec (Maybe HA.HAMsgMeta)
   deriving (Generic, Typeable, Show, Eq)
 instance Hashable Set
+instance Monoid Set where
+  mempty = Set mempty mempty
+  mappend (Set v1 mm1) (Set v2 mm2) = Set (v1 <> v2) (mm1 <> mm2)
 
 instance Migrate Set where
      type MigrateFrom Set = Set_v0

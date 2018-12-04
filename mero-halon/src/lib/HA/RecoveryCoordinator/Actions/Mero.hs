@@ -328,6 +328,7 @@ startMeroService host node = do
   mprof <- theProfile
   kaFreq <- getHalonVar _hv_keepalive_frequency
   kaTimeout <- getHalonVar _hv_keepalive_timeout
+  naDelay <- getHalonVar _hv_notification_aggr_delay
   mHaAddr <- lookupHostHAAddress host >>= \case
     Just addr -> return $ Just addr
     -- if there is no HA service running to give us an endpoint, pass
@@ -357,6 +358,7 @@ startMeroService host node = do
                           (M0.fid srvRM)
                           kaFreq
                           kaTimeout
+                          naDelay
                           (MeroKernelConf uuid)
       in (encodeP $ ServiceStartRequest Start node (lookupM0d rg) conf [], proc)
   for_ minfo $ \(msg, proc) -> do

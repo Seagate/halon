@@ -55,7 +55,7 @@ import HA.Resources.Mero.Note
 import HA.SafeCopy
 import HA.Aeson (ToJSON)
 
-import Mero.ConfC (Cookie, Fid, Word128, ServiceType)
+import Mero.ConfC (Cookie, Fid, m0_fid0, Word128, ServiceType)
 import Network.RPC.RPCLite (RPCAddress(..), RPCMachine(..), RPCMachineV)
 
 import Control.Exception (Exception, throwIO, SomeException, evaluate)
@@ -104,6 +104,9 @@ data HAMsgMeta = HAMsgMeta
 
 instance Hashable HAMsgMeta
 instance ToJSON HAMsgMeta
+instance Monoid HAMsgMeta where
+  mempty = HAMsgMeta m0_fid0 m0_fid0 m0_fid0 0 0
+  mappend = max
 deriveSafeCopy 0 'base ''HAMsgMeta
 
 -- | Represents @m0_ha_msg@.

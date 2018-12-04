@@ -34,6 +34,7 @@ module HA.Services.Mero.Types
 
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
+import           Data.List (union)
 import           Data.Binary (Binary)
 import           Data.ByteString (ByteString)
 import           Data.Hashable (Hashable)
@@ -77,13 +78,15 @@ data MeroConf = MeroConf
   -- ^ Frequency of keepalive requests in seconds.
   , mcKeepaliveTimeout :: Int
   -- ^ Number of seconds after keepalive request until the
-  -- process is considered dead.
+  --   process is considered dead.
+  , mcNotifAggrDelay :: Int
+  -- ^ Notifications aggregation delay (in ms).
   , mcKernelConfig :: MeroKernelConf -- ^ Kernel configuration.
   } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile process ha rm kaf kat kernel) =
+  toJSON (MeroConf haAddress profile process ha rm kaf kat nad kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
            , "process"          .= process
@@ -91,6 +94,7 @@ instance ToJSON MeroConf where
            , "rm"               .= rm
            , "keepalive_frequency" .= kaf
            , "keepalive_timeout" .= kat
+           , "notification_aggr_delay" .= nad
            , "kernel_config"    .= kernel
            ]
 
@@ -162,6 +166,10 @@ data NotificationMessage = NotificationMessage
   -- ^ 'Fid's of the recepient mero processes.
   } deriving (Eq, Typeable, Generic, Show)
 instance Hashable NotificationMessage
+instance Monoid NotificationMessage where
+  mempty = NotificationMessage 0 mempty []
+  mappend (NotificationMessage e1 s1 rs1) (NotificationMessage e2 s2 rs2) =
+    NotificationMessage (max e1 e2) (s1 <> s2) (union rs1 rs2)
 
 -- | Request reconnect to the service
 --
@@ -241,7 +249,8 @@ instance ToJSON MeroServiceInstance
 
 -- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf
-meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
+meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat
+                      <*> nad <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -280,6 +289,12 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat <*> ker
           <> metavar "SECONDS"
           <> summary "keepalive request timeout (seconds)"
           <> value (_hv_keepalive_timeout defaultHalonVars)
+    nad = intOption
+          $ long "notifications_aggregation_delay"
+          <> short 'd'
+          <> metavar "MILLISECONDS"
+          <> summary "notifications aggregation delay (milliseconds)"
+          <> value (_hv_notification_aggr_delay defaultHalonVars)
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
 
 -- | 'Schema' for kernel configuration used by @halon:m0d@ service.

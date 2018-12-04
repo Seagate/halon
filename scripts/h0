@@ -167,7 +167,7 @@ cmd_start() {
 
     # Display bootstrap progress, usually it completes under a minute.
     watch halonctl mero status &
-    sleep 70
+    sleep 90
     kill %watch
 
     local rc=0

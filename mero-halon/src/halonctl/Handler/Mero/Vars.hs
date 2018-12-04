@@ -30,6 +30,7 @@ data Options
           , recoveryMaxRetries    :: Maybe Int
           , keepaliveFrequency    :: Maybe Int
           , keepaliveTimeout      :: Maybe Int
+          , notifAggrDelay        :: Maybe Int
           , driveResetMaxRetries  :: Maybe Int
           , disableSmartCheck     :: Maybe Bool
           , disableNotificationFailure :: Maybe Bool
@@ -50,6 +51,7 @@ run nids VarsSet{..} = do
                  , maybe id (\s -> \x -> x{Castor._hv_recovery_max_retries = s}) recoveryMaxRetries
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_frequency = s}) keepaliveFrequency
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_timeout = s}) keepaliveTimeout
+                 , maybe id (\s -> \x -> x{Castor._hv_notification_aggr_delay = s}) notifAggrDelay
                  , maybe id (\s -> \x -> x{Castor._hv_drive_reset_max_retries = s}) driveResetMaxRetries
                  , maybe id (\s -> \x -> x{Castor._hv_disable_smart_checks = s}) disableSmartCheck
                  , maybe id (\s -> \x -> x{Castor._hv_failed_notification_fails_process = not s}) disableNotificationFailure
@@ -69,6 +71,7 @@ parser = Opt.hsubparser $ mconcat
                      <*> recoveryRetry
                      <*> keepaliveFreq
                      <*> keepaliveTimeout
+                     <*> notifAggrDelay
                      <*> driveResetMax
                      <*> disableSmartCheck
                      <*> disableNotificationFailure
@@ -88,6 +91,10 @@ parser = Opt.hsubparser $ mconcat
        ( Opt.long "keepalive-timeout"
        <> Opt.metavar "[SECONDS]"
        <> Opt.help "How long to allow process to run without replying to keepalive.")
+     notifAggrDelay = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "notification-aggr-delay"
+       <> Opt.metavar "[MILLISECONDS]"
+       <> Opt.help "How long to aggrerate notifications before sending (in ms).")
      driveResetMax = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "drive-reset-max-retries"
        <> Opt.metavar "[NUMBER]"
