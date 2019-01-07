@@ -21,6 +21,7 @@ module HA.RecoveryCoordinator.Mero.Transitions
   ) where
 
 import           GHC.Stack
+import           Text.Printf
 import           HA.RecoveryCoordinator.Mero.Transitions.Internal
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
@@ -42,8 +43,9 @@ processKeepaliveTimeout ts = Transition $ \case
   M0.PSStopping  -> toPSFailed
   st -> transitionErr ?loc st
   where
-    toPSFailed = TransitionTo . M0.PSFailed $
-                 "Keepalive timed out after " ++ show ts
+    (s, ms) = divMod (M0.timeSpecToNanoSecs ts `quot` 10^(6 :: Int)) 1000
+    toPSFailed = TransitionTo . M0.PSFailed $ printf
+                 "Keepalive timed out after %d.%d seconds" s ms
 
 -- | Fail a process with the given reason.
 processFailed :: (?loc :: CallStack) => String -> Transition M0.Process

@@ -651,14 +651,18 @@ instance FromJSON TimeSpec where
         return $ TimeSpec $ C.TimeSpec secs nsecs
       else typeMismatch "TimeSpec" (Array a)
 
--- | Extract the seconds value from a 'TimeSpec'
+instance Hashable TimeSpec where
+  hashWithSalt s (TimeSpec (C.TimeSpec sec nsec)) = hashWithSalt s (sec, nsec)
+
+-- | Extract the seconds value from a 'TimeSpec'.
 --
 -- Warning: casts from 'Int64' to 'Int'.
 timeSpecToSeconds :: TimeSpec -> Int
 timeSpecToSeconds (TimeSpec (C.TimeSpec sec _)) = fromIntegral sec
 
-instance Hashable TimeSpec where
-  hashWithSalt s (TimeSpec (C.TimeSpec sec nsec)) = hashWithSalt s (sec, nsec)
+-- | Convert 'TimeSpec' to nanoseconds.
+timeSpecToNanoSecs :: TimeSpec -> Integer
+timeSpecToNanoSecs (TimeSpec ts) = C.toNanoSecs ts
 
 -- | Get current time using a 'C.Monotonic' 'C.Clock'.
 getTime :: IO TimeSpec
