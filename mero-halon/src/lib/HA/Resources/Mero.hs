@@ -658,11 +658,11 @@ instance Hashable TimeSpec where
 --
 -- Warning: casts from 'Int64' to 'Int'.
 timeSpecToSeconds :: TimeSpec -> Int
-timeSpecToSeconds (TimeSpec (C.TimeSpec sec _)) = fromIntegral sec
+timeSpecToSeconds = fromIntegral . C.sec . _unTimeSpec
 
 -- | Convert 'TimeSpec' to nanoseconds.
 timeSpecToNanoSecs :: TimeSpec -> Integer
-timeSpecToNanoSecs (TimeSpec ts) = C.toNanoSecs ts
+timeSpecToNanoSecs = C.toNanoSecs . _unTimeSpec
 
 -- | Get current time using a 'C.Monotonic' 'C.Clock'.
 getTime :: IO TimeSpec
