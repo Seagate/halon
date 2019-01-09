@@ -5,6 +5,7 @@ SERIAL='STOBAD002'
 DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 
 $H0 start
+wait_for_m0t1fs
 
 FID='fedcba98:76543210'
 $SUDO touch /mnt/m0t1fs/$FID

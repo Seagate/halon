@@ -48,3 +48,17 @@ wait_for_state() {
     set -x
     hctl mero status -d
 }
+
+## Wait for m0t1fs to mount.
+wait_for_m0t1fs() {
+    local steps_left=30
+    set +x  # silence the loop
+    echo -n 'Waiting for m0t1fs to mount...'
+    while ! mount | grep -q m0t1fs; do
+        sleep 2
+        echo -n '.'
+        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
+    done
+    echo ' done'
+    set -x
+}
