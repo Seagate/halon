@@ -15,6 +15,7 @@ GPATH
 GRTAGS
 GSYMS
 GTAGS
+ID
 
 # backup files
 *.orig
