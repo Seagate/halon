@@ -86,9 +86,16 @@ cmd_scankeys()
         die "a list of hosts required for '${FUNCNAME[0]#cmd_}' command"
 
     local hosts="$@"
+    local tmp=$(mktemp)
+    trap "rm $tmp" 0
+    ssh-keyscan -t rsa ${hosts//,/ } > $tmp
 
-    ssh-keyscan -t rsa ${hosts//,/ } >> ~/.ssh/known_hosts
-    sudo bash -c "ssh-keyscan -t rsa ${hosts//,/ } >> /root/.ssh/known_hosts"
+    cat $tmp >> ~/.ssh/known_hosts
+    chmod 0600 ~/.ssh/known_hosts
+
+    # XXX Is this really needed? Do we expect to run pdsh as root?
+    sudo bash -c "cat $tmp >> ~root/.ssh/known_hosts"
+    sudo chmod 0600 ~root/.ssh/known_hosts
 }
 
 cmd_genfacts()
