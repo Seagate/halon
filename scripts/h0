@@ -52,10 +52,6 @@ assert_mero() {
     fi
 }
 
-cmd_setup() {
-    stack setup
-}
-
 ## We could have exported `h0 build` command, but don't do so
 ## for the following reasons:
 ##   1. The difference between `h0 make` and `h0 build` would be hard to
@@ -199,7 +195,7 @@ cmd_path() {
     assert_mero libs
 
     [ -d ~/.stack ] ||
-        die "Stack environment is not configured. Run \`$PROG setup' first."
+        die "Stack environment is not configured. Run \`stack setup' first."
     echo "halon-bin: $(stack path --local-install-root)/bin"
     echo "mero-libs: $M0_SRC_DIR/mero/.libs"
 }
@@ -221,8 +217,6 @@ usage() {
 Usage: $PROG {COMMAND [OPTION]...}...
 
 Commands:
-    setup                Get the appropriate GHC to build Halon.
-                         (Rarely needed.)
     make [OPTION]...     Build Halon.
                          (Use \`rebuild' command if Mero was updated.)
     rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
@@ -269,7 +263,7 @@ CMD=
 OPTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        setup|make|rebuild|test|run-st|clean|start|stop) ;& # fall through
+        make|rebuild|test|run-st|clean|start|stop) ;& # fall through
         install|uninstall|path|help)
             [[ -z $CMD ]] || {
                 if [[ ${#OPTS[@]} == 0 ]]; then
