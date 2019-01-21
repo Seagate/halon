@@ -74,6 +74,24 @@ wait_for_drive_state() {
     hctl mero status -d
 }
 
+wait_for_fid_state() {
+    local fid="$1"
+    local expected="$2"
+    local steps_left=75
+
+    set +x  # silence the loop
+    echo -n "Waiting for $fid to become $expected ..."
+    local state=$(hctl mero status | grep $fid | awk '{print $2}' | head -c-2)
+    while [[ $state != $expected ]]; do
+        sleep 3
+        echo -n '.'
+        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
+        state=$(hctl mero status | grep $fid | awk '{print $2}' | head -c-2)
+    done
+    echo ' done'
+    set -x
+}
+
 # ----------------------------------------------------------------------
 # Auxiliary functions
 # (system tests are not supposed to use them directly)

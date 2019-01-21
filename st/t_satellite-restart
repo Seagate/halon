@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+. $H0_SRC_DIR/st/common
+
+SAT='ssu1'
+
+init_fids() {
+{
+        read FID_NODE_SAT FID_PROC_SAT FID_PROC_M0D
+}<<<$(hctl mero status | awk -v HOST=$SAT '
+function print_or_die(s) {
+    if (!s) {
+        print "Parsing error" > "/dev/stderr"
+        exit 1
+    }
+    print s
+}
+
+$3 ~ /^0x6e/ {
+    collect_p = ($4 == HOST);
+    if (collect_p)
+        node = $3
+}
+
+collect_p && $3 ~ /^0x72/ {
+    if ($5 == "halon")
+        proc_halond = $3
+    else if ($5 == "ioservice")
+        proc_m0d = $3
+}
+
+END {
+    print_or_die(node)
+    print_or_die(proc_halond)
+    print_or_die(proc_m0d)
+}')
+}
+
+abort() {
+    [[ $# == 0 ]] || {
+        echo "$@" >&2
+        echo 'Aborting...' >&2
+    }
+    hctl mero stop
+    $H0 fini
+    exit 1
+}
+
+M0_CLUSTER=$(mktemp)
+trap "rm $M0_CLUSTER" 0
+
+cat >$M0_CLUSTER <<'EOF'
+confds: [ cmu.local ]
+ssus:
+  - host:  ssu1.local
+    disks: /dev/sd[b-e]
+  - host:  ssu2.local
+    disks: /dev/sd[b-e]
+clovis-apps: [ client1.local ]
+EOF
+
+export M0_CLUSTER
+$H0 init
+### FIXME
+### Currently fact file generaed for 8 + 2 configuration. But it is
+### not working with 2 SSU with 4 drive each because of (P >= N + 2K).
+###
+sudo sed -i 's/data_units: 8/data_units: 4/' /etc/halon/halon_facts.yaml
+
+cluster_bootstrap
+rc=$?
+
+(( $? == 0 )) ||  report_and_exit ${0##*/} 1
+
+nr_nodes=$(hctl mero status | grep -c halon)
+if (( nr_nodes < 2 )); then
+    abort
+fi
+
+init_fids
+
+wait_for_fid_state $FID_NODE_SAT 'online'
+
+sat_pid=$(ssh $SAT.local pgrep halond)
+m0d_pid=$(ssh $SAT.local pgrep m0d)
+
+ssh $SAT.local sudo kill -9 $sat_pid
+wait_for_fid_state $FID_PROC_SAT 'online'
+wait_for_fid_state $FID_PROC_M0D 'online'
+
+new_m0d_pid=$(ssh $SAT.local pgrep m0d)
+if [[ $new_m0d_pid = $m0d_pid ]]; then
+    abort
+fi
+
+hctl mero stop
+$H0 fini
+report_and_exit ${0##*/} 0
