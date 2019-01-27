@@ -35,10 +35,6 @@ Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
 USAGE_END
 }
 
-#
-# Parse CLI options
-#
-
 parse_cli_options()
 {
     # Note that we use `"$@"' to let each command-line parameter expand to a
@@ -86,7 +82,8 @@ run()
     $dry_run || $cmd
 }
 
-home_of () {
+home_of()
+{
     eval echo ~${1:-$USER}
 }
 
@@ -238,7 +235,7 @@ uninstall_files()
 # Main
 #
 
-# exit immediately if one the commands exits with a non-zero status
+# exit immediately if any command exits with non-zero status
 set -eE -o pipefail
 
 parse_cli_options $@
