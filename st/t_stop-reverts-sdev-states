@@ -19,12 +19,12 @@ $SUDO dd if=/dev/zero of=/mnt/m0t1fs/$FID bs=8M count=300
 
 # "Fail" a drive.
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
-wait_for_state 'SDSRepairing' $SERIAL
+wait_for_drive_state 'SDSRepairing' $SERIAL
 
 hctl mero stop
 
 # SDSRepairing -> SDSInhibited SDSRepairing -> SDSInhibited SDSFailed
-check_state 'SDSInhibited SDSFailed' $SERIAL
+check_drive_state 'SDSInhibited SDSFailed' $SERIAL
 
 $H0 fini
 

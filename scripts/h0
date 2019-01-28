@@ -269,13 +269,13 @@ check_ssh_accessibility() {
 
     local host=
     for host in ${M0_CLUSTER_HOSTS//,/ }; do
-        pdsh -S -w $host true &>/dev/null || {
+        pdsh -w $host true &>/dev/null || {
             # Remove all keys belonging to $host to avoid duplicates.
             ssh-keygen -f $kh -R $host >/dev/null
             rm -f $kh.old
             ssh-keyscan -t rsa $host >>$kh
         }
-        pdsh -S -w $host true >/dev/null || die "$host is not accessible"
+        pdsh -w $host true >/dev/null || die "$host is not accessible"
     done
 }
 

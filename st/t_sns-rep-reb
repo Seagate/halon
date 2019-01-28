@@ -13,13 +13,13 @@ $SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
 
 # "Fail" a drive.
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
-wait_for_state 'SDSRepaired' $SERIAL
+wait_for_drive_state 'SDSRepaired' $SERIAL
 
 hctl mero vars set --disable-smart-check True
 # "Replace" the drive.
 hctl mero drive update-presence $DRIVE_SELECT_OPTS --is-powered --is-installed
 hctl mero drive update-status $DRIVE_SELECT_OPTS --status OK
-wait_for_state 'SDSOnline' $SERIAL
+wait_for_drive_state 'SDSOnline' $SERIAL
 
 hctl mero stop
 $H0 fini

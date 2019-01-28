@@ -62,7 +62,7 @@ _wait_for_m0t1fs() {
     set -x
 }
 
-check_state() {
+check_drive_state() {
     [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
     local serial="$2"
@@ -72,13 +72,13 @@ check_state() {
     [ "$actual" = "$expected" ]
 }
 
-wait_for_state() {
+wait_for_drive_state() {
     [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
     local state="$1"
     local serial="$2"
 
     set +x  # silence the loop
-    until check_state "$@"; do
+    until check_drive_state "$@"; do
         :
     done
     set -x
