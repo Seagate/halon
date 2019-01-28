@@ -15,90 +15,105 @@ export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 umask 0002
 ulimit -c unlimited
 
-die() { echo "$@" >&2; exit 1; }
-warn() { echo "*WARNING* $@" >&2; }
+usage() {
+    cat <<EOF
+Usage: $PROG {COMMAND [OPTION]...}...
 
-H0_SRC_DIR="$(readlink -f $0)"
-H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
-DEFAULT_M0_SRC_DIR=${H0_SRC_DIR%/*}/mero
+Info commands:
+    path    Show paths to Halon executables and Mero libraries.
+    status  Show status of halond, LNet and mero-kernel.
+    help    Show this help and exit.
 
-## By default, optimizations are turned off (-O0) to reduce compilation time.
-## Users can enable optimizations by setting GHC_OPTS environment variable
-## explicitly, e.g.,
-##
-##     GHC_OPTS='-g -j2' ./scripts/h0 rebuild
-##
-## NB: `stack build --fast` is equivalent to `stack build --ghc-options=-O0`.
-DEFAULT_GHC_OPTS='-g -j2 -O0'
+Development commands:
+    make [OPTION]...     Build Halon. If Mero was updated, use \`rebuild'
+                         command.
+    rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
+    test [OPTION]...     Run Halon unit tests (see 'Examples').
+    run-st [-l] [PATTERN]...
+                         Run or list ('-l') system tests. Optional arguments
+                         (glob PATTERNs) specify which tests to run.
+    clean [OPTION]...    Clean local packages.
+
+Cluster commands:
+    init     Install Mero and Halon systemd services; start halond(s);
+             generate facts file.
+    fini     Stop halond(s); unload Mero kernel modules; erase cluster data,
+             metadata and configuration files; uninstall Mero and Halon
+             systemd services.
+
+Options:
+    'make', 'rebuild', 'test', and 'clean' commands support options of the
+    Haskell Tool Stack.  Type \`stack build --help' or
+    \`stack clean --help' for documentation.
+
+Environment variables:
+    M0_SRC_DIR  Path to Mero sources directory; defaults to
+                '$DEFAULT_M0_SRC_DIR'.
+    M0_CLUSTER  Path to YAML file with initial cluster configuration;
+                defaults to '$DEFAULT_M0_CLUSTER'.
+                Leave unset or empty for single-node configuration.
+                See '$M0_SRC_DIR/utils/m0genfacts -h' for the
+                description of configuration file format.
+    GHC_OPTS    Extra options for ghc; defaults to '$DEFAULT_GHC_OPTS'.
+
+Examples:
+
+    # Run 'RC*' tests of 'mero-halon' package.
+    $PROG test mero-halon --ta '-p RC'
+
+    $PROG test --help
+
+    $PROG make --no-test --dry-run
+EOF
+}
 
 ## -------------------------------------------------------------------
-## Configurable section
+## Info commands
 
-export M0_SRC_DIR=${M0_SRC_DIR:-$DEFAULT_M0_SRC_DIR}
-GHC_OPTS=${GHC_OPTS:-$DEFAULT_GHC_OPTS}
+cmd_path() {
+    assert_mero libs
+    [ -d ~/.stack ] ||
+        die "Stack environment is not configured. Run \`stack setup' first."
+    echo "halon-bin: $(stack path --local-install-root)/bin"
+    echo "mero-libs: $M0_SRC_DIR/mero/.libs"
+}
+
+cmd_status() {
+    check_ssh_accessibility
+
+    mpdsh sudo systemctl status halond
+    mpdsh sudo systemctl lctl list_nids
+    mpdsh sudo systemctl status mero-kernel
+}
+
+cmd_help() {
+    local ret=${1:-0}
+
+    [[ $ret == 0 ]] && usage || usage >&2
+    exit $ret
+}
+
 ## -------------------------------------------------------------------
-
-## Set `SUDO` unless it is set already.
-SUDO="${SUDO-sudo -E}"  # the absence of ':' is important
-
-PROG="${0##*/}"
-
-assert_mero() {
-    [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
-    [[ -d $M0_SRC_DIR/mero ]] || die "$M0_SRC_DIR: No Mero sources found"
-    if [[ $# -gt 0 ]]; then
-        [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] ||
-            die "$M0_SRC_DIR: Mero is not built"
-    fi
-}
-
-## We could have exported `h0 build` command, but don't do so
-## for the following reasons:
-##   1. The difference between `h0 make` and `h0 build` would be hard to
-##      explain. The users would be confused if both commands were present
-##      in the CLI.
-##   2. `h0 make` is used by CircleCI and Jenkins CI.
-##   3. `h0 make` is symmetrical to `m0 make`.
-##
-## Still, if we ever need this function to be exported, we better export
-## `h0 stack` instead.
-_stack_build() {
-    assert_mero libs
-    PKG_CONFIG_PATH=$M0_SRC_DIR \
-        stack \
-            --extra-include-dirs="$M0_SRC_DIR" \
-            --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
-            build \
-                --ghc-options="$GHC_OPTS" \
-                "$@"
-}
-
-cmd_test() {
-    assert_mero libs
-    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        _stack_build --test "$@"
-    # Here we are using the fact that `stack test` is a shortcut for
-    # `stack build --test`.
-}
+## Development commands
 
 cmd_make() {
-    _stack_build --test --no-run-tests "$@"
+    stack_build --test --no-run-tests "$@"
 }
 
 cmd_rebuild() {
-    # XXX TODO: The script should be able to determine automatically
+    # XXX The script should be able to determine automatically
     # whether Mero has been updated since last Halon compilation.
     # One possible solution is to reimplement this script as a Makefile.
     stack clean rpclite
     cmd_make "$@"
 }
 
-_time() {
-    if [ -x /usr/bin/time ]; then
-        /usr/bin/time "$@"
-    else
-        time "$@"
-    fi
+cmd_test() {
+    assert_mero libs
+    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
+        stack_build --test "$@"
+    # Here we are using the fact that `stack test` is a shortcut for
+    # `stack build --test`.
 }
 
 cmd_run_st() {
@@ -106,7 +121,7 @@ cmd_run_st() {
     local pattern
     local f
 
-    if [ "${1:-}" = '-l' ]; then
+    if [[ ${1:-} == '-l' ]]; then
         list_p=1
         shift
     fi
@@ -130,141 +145,207 @@ cmd_clean() {
     stack clean "$@"
 }
 
-cmd_install() {
-    $SUDO $H0_SRC_DIR/scripts/install-halon-services -l
-    assert_mero
-    $SUDO $M0_SRC_DIR/scripts/install-mero-service -l
-}
+## -------------------------------------------------------------------
+## Cluster commands
 
-cmd_uninstall() {
-    assert_mero
+cmd_init() {
+    check_ssh_accessibility
+    prelink_executables
 
-    case ${1:-pass} in
-        -c|--clean)
-            $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-            $SUDO systemctl start halon-cleanup
-            $SUDO systemctl start mero-cleanup;;
-        pass) ;;
-        *) warn "[uninstall] Unknown option: $1";;
-    esac
+    # Install systemd services.
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link
 
-    $SUDO $M0_SRC_DIR/scripts/install-mero-service -u
-    $SUDO $H0_SRC_DIR/scripts/install-halon-services -u
-}
+    erase_cluster_data
 
-cmd_start() {
-    cmd_uninstall
-    cmd_install
-    $SUDO systemctl start halon-cleanup
-    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --cleanup
-    $SUDO $M0_SRC_DIR/utils/m0setup --halon-facts --clovis-apps
-    $SUDO systemctl start halond
-    halonctl mero bootstrap --verbose
+    mpdsh sudo systemctl start halond
 
-    # Display bootstrap progress, usually it completes under a minute.
-    watch halonctl mero status &
-    sleep 90
-    kill %watch
-
-    local rc=0
-    # Possible failure of m0t1fs has no impact on exit code of
-    # `halonctl mero bootstrap` command above.
-    if halonctl mero status | grep -q failed; then
-        rc=1
+    # Generate facts file.
+    if [[ -n $M0_CLUSTER ]]; then
+        [[ -d /etc/halon ]] || sudo mkdir /etc/halon
+        sudo $M0_SRC_DIR/utils/m0genfacts --verbose --config $M0_CLUSTER \
+             -o /etc/halon/halon_facts.yaml \
+             --netif eth1  # XXX Can we get rid of hard-coded `eth1'?
+    else
+        sudo $M0_SRC_DIR/utils/m0setup --halon-facts --clovis-apps
     fi
-
-    # Show final status (`watch` clears it's output after exit).
-    halonctl mero status
-    return $rc
 }
 
-cmd_stop() {
-    halonctl mero stop
-    halonctl mero status
-    $SUDO systemctl stop halond
-    $SUDO systemctl stop mero-kernel
+cmd_fini() {
+    check_ssh_accessibility || true
 
-    case ${1:-pass} in
-        -u|--uninstall) cmd_uninstall --clean;;
-        pass) ;;
-        *) warn "[stop] Unknown option: $1";;
-    esac
+    mpdsh sudo systemctl stop halond || true
+    # Unload Mero kernel modules.
+    mpdsh sudo systemctl stop mero-kernel || true
+    erase_cluster_data
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall
 }
 
-cmd_path() {
-    assert_mero libs
+## -------------------------------------------------------------------
+## Utility functions
 
-    [ -d ~/.stack ] ||
-        die "Stack environment is not configured. Run \`stack setup' first."
-    echo "halon-bin: $(stack path --local-install-root)/bin"
-    echo "mero-libs: $M0_SRC_DIR/mero/.libs"
-}
+die() { echo "$@" >&2; exit 1; }
+warn() { echo "*WARNING* $@" >&2; }
 
-cmd_help() {
-    local RET=${1:-0}
-
-    [ $RET -eq 0 ] && usage || usage >&2
-    exit $RET
+_time() {
+    if [[ -x /usr/bin/time ]]; then
+        /usr/bin/time "$@"
+    else
+        time "$@"
+    fi
 }
 
 _exec() {
-    [[ $1 =~ ^cmd_(path|help)$ ]] || echo "----- ${@#cmd_} -----" >&2
+    [[ $1 =~ ^cmd_(path|status)$ ]] || echo "----- ${@#cmd_} -----" >&2
     "$@"
 }
 
-usage() {
-    cat <<EOF
-Usage: $PROG {COMMAND [OPTION]...}...
-
-Commands:
-    make [OPTION]...     Build Halon.
-                         (Use \`rebuild' command if Mero was updated.)
-    rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
-    test [OPTION]...     Run unit tests.  See 'Examples' below.
-    run-st [-l] [PATTERN]...
-                         Run system tests or list ('-l') their names.
-                         Optional arguments specify which tests to run
-                         (PATTERN is a glob pattern).
-    clean [OPTION]...    Clean local packages.
-    start                Start cluster.
-    stop [-u]            Stop cluster. \`stop -u' is equivalent to
-                         \`stop uninstall -c'.
-    install              Install Mero/Halon services and binaries.
-    uninstall [-c]       Uninstall Mero/Halon services and binaries.
-                         If \`-c' option is provided, clean Mero/Halon
-                         metadata and configuration files before
-                         uninstalling services.
-    path                 Print out handy path information.
-    help                 Show this help and exit.
-
-Options:
-    'make', 'test', and 'clean' commands support options of the Haskell Tool
-    Stack.  Type \`stack <command> --help' for documentation.
-
-Environment variables:
-    M0_SRC_DIR  Path to Mero sources directory; defaults to
-                '$DEFAULT_M0_SRC_DIR'.
-    GHC_OPTS    Extra options for ghc; defaults to '$DEFAULT_GHC_OPTS'.
-
-Examples:
-
-    # Run 'RC*' tests of 'mero-halon' package.
-    $PROG test mero-halon --ta '-p RC'
-
-    $PROG make --no-test --dry-run
-
-    $PROG test --help
-EOF
+## We could have exported `h0 build` command, but don't do so
+## for the following reasons:
+##   1. The difference between `h0 make` and `h0 build` would be hard to
+##      explain. The users would be confused if both commands were present
+##      in the CLI.
+##   2. `h0 make` is used by CI.
+##   3. `h0 make` is symmetrical to `m0 make`.
+##
+## Still, if we ever need this function to be exported, we better export
+## `h0 stack` instead.
+stack_build() {
+    assert_mero libs
+    PKG_CONFIG_PATH=$M0_SRC_DIR \
+        stack \
+            --extra-include-dirs="$M0_SRC_DIR" \
+            --extra-lib-dirs="$M0_SRC_DIR/mero/.libs" \
+            build \
+                --ghc-options="$GHC_OPTS" \
+                "$@"
 }
+
+## Maybe pdsh.
+mpdsh() {
+    if [[ -n $M0_CLUSTER ]]; then
+        pdsh -S -f1 -w $M0_CLUSTER_HOSTS "$@"
+    else
+        "$@"
+    fi
+}
+
+## Outputs comma-separated list of cluster hosts iff $M0_CLUSTER is set.
+cluster_hosts() {
+    if [[ -n $M0_CLUSTER ]]; then
+        cat $M0_CLUSTER | python -c '
+from __future__ import print_function
+import sys
+import yaml
+
+cfg = yaml.safe_load(sys.stdin)
+hosts = set()
+hosts.update(cfg.get("confds", []))
+hosts.update(cfg.get("clients", []))
+hosts.update(cfg.get("clovis-apps", []))
+hosts.update(cfg.get("s3servers", []))
+hosts.update(x["host"] for x in cfg.get("ssus", []))
+print(",".join(hosts))
+'
+    fi
+}
+
+assert_mero() {
+    [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
+    [[ -d $M0_SRC_DIR/mero ]] || die "$M0_SRC_DIR: No Mero sources found"
+    if [[ $# > 0 ]]; then
+        [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] ||
+            die "$M0_SRC_DIR: Mero is not built"
+    fi
+}
+
+check_ssh_accessibility() {
+    [[ -n $M0_CLUSTER ]] || return 0
+
+    local kh=~/.ssh/known_hosts
+    touch $kh
+    chmod 0600 $kh
+
+    local host=
+    for host in ${M0_CLUSTER_HOSTS//,/ }; do
+        pdsh -S -w $host true &>/dev/null || {
+            # Remove all keys belonging to $host to avoid duplicates.
+            ssh-keygen -f $kh -R $host >/dev/null
+            rm -f $kh.old
+            ssh-keyscan -t rsa $host >>$kh
+        }
+        pdsh -S -w $host true >/dev/null || die "$host is not accessible"
+    done
+}
+
+prelink_executables() {
+    [[ -n $M0_CLUSTER ]] || return 0
+
+    # Libtool-based executables are linked on the first run.
+    # In m0vg setup only `cmu` host can do the linking.
+    # If `m0dixinit` is started first on other host, it will fail.
+    $M0_SRC_DIR/utils/m0dixinit &>/dev/null || true
+}
+
+erase_cluster_data() {
+    mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
+    mpdsh sudo systemctl start halon-cleanup || true
+    mpdsh sudo systemctl start mero-cleanup || true
+    mpdsh sudo rm -rvf /var/mero/
+}
+
+init_vars() {
+    PROG="${0##*/}"
+    SUDO="${SUDO-sudo -E}"  # the absence of ':' is important
+    H0_SRC_DIR="$(readlink -f $0)"
+    H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+
+    DEFAULT_M0_SRC_DIR=${H0_SRC_DIR%/*}/mero
+    export M0_SRC_DIR=${M0_SRC_DIR:-$DEFAULT_M0_SRC_DIR}
+
+    ## Optimizations are turned off (-O0) by default for faster compilation.
+    ## To enable optimizations, the user should set GHC_OPTS explicitly,
+    ## e.g.,
+    ##
+    ##     GHC_OPTS='-g -j2' ./scripts/h0 rebuild
+    ##
+    ## NB: `stack build --fast` is equivalent to
+    ##     `stack build --ghc-options=-O0`.
+    DEFAULT_GHC_OPTS='-g -j2 -O0'
+    GHC_OPTS=${GHC_OPTS:-$DEFAULT_GHC_OPTS}
+
+    DEFAULT_M0_CLUSTER=~/.m0-cluster.yaml
+    M0_CLUSTER="${M0_CLUSTER-$DEFAULT_M0_CLUSTER}"  # note the absence of ':'
+    if [[ -n $M0_CLUSTER ]]; then
+        if [[ ! -r $M0_CLUSTER ]]; then
+            M0_CLUSTER=
+        elif [[ -z $(sed -r -e 's/#.*$//' -e 's/^ +//' $M0_CLUSTER |
+                         tr -d \\n) ]]; then
+            ## No data.
+            M0_CLUSTER=
+        fi
+    fi
+    M0_CLUSTER_HOSTS="$(cluster_hosts)"
+}
+
+## -------------------------------------------------------------------
+## main
+
+init_vars
+
+case "${1:-}" in
+    help|-h|--help) cmd_help 0;;
+    '') cmd_help 1;;
+esac
 
 cd "$H0_SRC_DIR"
 
 CMD=
 OPTS=()
-while [[ $# -gt 0 ]]; do
+while [[ $# > 0 ]]; do
     case "$1" in
-        make|rebuild|test|run-st|clean|start|stop) ;& # fall through
-        install|uninstall|path|help)
+        path|status|help|make|rebuild|test|run-st|clean|init|fini)
             [[ -z $CMD ]] || {
                 if [[ ${#OPTS[@]} == 0 ]]; then
                     _exec $CMD
@@ -283,7 +364,7 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
-[[ -n $CMD ]] || cmd_help 1  # exits
+
 if [[ ${#OPTS[@]} == 0 ]]; then
     _exec $CMD
 else

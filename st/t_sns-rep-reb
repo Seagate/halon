@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
+M0_CLUSTER=  # single-node
 SERIAL='STOBAD002'
 DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 
-$H0 start
-wait_for_m0t1fs
+$H0 init
+cluster_bootstrap
 
 # XXX Use c0cp instead of dd (i.e., clovis instead of m0t1fs).
 $SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
@@ -20,6 +21,7 @@ hctl mero drive update-presence $DRIVE_SELECT_OPTS --is-powered --is-installed
 hctl mero drive update-status $DRIVE_SELECT_OPTS --status OK
 wait_for_state 'SDSOnline' $SERIAL
 
-$H0 stop -u
+hctl mero stop
+$H0 fini
 
 report_and_exit ${0##*/} $?

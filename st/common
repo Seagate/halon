@@ -26,6 +26,42 @@ report_and_exit() {
     exit $rc
 }
 
+cluster_bootstrap() {
+    hctl mero bootstrap --verbose
+
+    # Display bootstrap progress, usually it completes under a minute.
+    watch hctl mero status &
+    sleep 90
+    kill %watch
+    reset  # `kill %watch` might have left the terminal broken
+
+    local rc=0
+    # Possible failure of m0t1fs has no impact on exit code of
+    # `hctl mero bootstrap` command above.
+    if hctl mero status | grep -q failed; then
+        rc=1
+    else
+        _wait_for_m0t1fs
+    fi
+
+    hctl mero status
+    return $rc
+}
+
+## Wait for m0t1fs to mount.
+_wait_for_m0t1fs() {
+    local steps_left=30
+    set +x  # silence the loop
+    echo -n 'Waiting for m0t1fs to mount...'
+    while ! mount | grep -q m0t1fs; do
+        sleep 2
+        echo -n '.'
+        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
+    done
+    echo ' done'
+    set -x
+}
+
 check_state() {
     [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
@@ -47,18 +83,4 @@ wait_for_state() {
     done
     set -x
     hctl mero status -d
-}
-
-## Wait for m0t1fs to mount.
-wait_for_m0t1fs() {
-    local steps_left=30
-    set +x  # silence the loop
-    echo -n 'Waiting for m0t1fs to mount...'
-    while ! mount | grep -q m0t1fs; do
-        sleep 2
-        echo -n '.'
-        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
-    done
-    echo ' done'
-    set -x
 }

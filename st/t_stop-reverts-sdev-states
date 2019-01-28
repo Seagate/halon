@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
+M0_CLUSTER=  # single-node
 SERIAL='STOBAD002'
 DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 
-$H0 start
-wait_for_m0t1fs
+$H0 init
+cluster_bootstrap
 
 FID='fedcba98:76543210'
 $SUDO touch /mnt/m0t1fs/$FID
@@ -25,6 +26,6 @@ hctl mero stop
 # SDSRepairing -> SDSInhibited SDSRepairing -> SDSInhibited SDSFailed
 check_state 'SDSInhibited SDSFailed' $SERIAL
 
-$H0 stop -u
+$H0 fini
 
 report_and_exit ${0##*/} $?
