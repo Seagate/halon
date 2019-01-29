@@ -82,7 +82,7 @@ cmd_status() {
     check_ssh_accessibility
 
     mpdsh sudo systemctl status halond
-    mpdsh sudo systemctl lctl list_nids
+    mpdsh sudo lctl list_nids
     mpdsh sudo systemctl status mero-kernel
 }
 
