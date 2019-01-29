@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
-M0_CLUSTER=  # single-node
 SERIAL='STOBAD002'
 DRIVE_SELECT_OPTS="--slot-enclosure ENC#0 --serial $SERIAL --slot-index 2"
 
+export M0_CLUSTER=  # single-node
 $H0 init
 cluster_bootstrap
 
