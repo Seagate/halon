@@ -292,7 +292,12 @@ erase_cluster_data() {
     mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
     mpdsh sudo systemctl start halon-cleanup || true
     mpdsh sudo systemctl start mero-cleanup || true
-    mpdsh sudo rm -rvf /var/mero/
+
+    # `/var/mero` directory cannot be deleted on Jenkins CI nodes,
+    # because it is a mountpoint there. You'll get this error message:
+    #
+    #   rm: cannot remove ‘/var/mero/’: Device or resource busy
+    mpdsh sudo rm -rvf /var/mero/ || true
 }
 
 init_vars() {
