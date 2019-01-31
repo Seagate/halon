@@ -41,25 +41,11 @@ cluster_bootstrap() {
     if hctl mero status | grep -q failed; then
         rc=1
     else
-        _wait_for_m0t1fs
+        _wait_for_m0t1fs $(_m0t1fs_hosts)
     fi
 
     hctl mero status
     return $rc
-}
-
-## Wait for m0t1fs to mount.
-_wait_for_m0t1fs() {
-    local steps_left=30
-    set +x  # silence the loop
-    echo -n 'Waiting for m0t1fs to mount...'
-    while ! mount | grep -q m0t1fs; do
-        sleep 2
-        echo -n '.'
-        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
-    done
-    echo ' done'
-    set -x
 }
 
 check_drive_state() {
@@ -83,4 +69,47 @@ wait_for_drive_state() {
     done
     set -x
     hctl mero status -d
+}
+
+# ----------------------------------------------------------------------
+# Auxiliary functions
+# (system tests are not supposed to use them directly)
+
+## Outputs comma-separated list of hosts with m0t1fs mountpoints.
+_m0t1fs_hosts() {
+    if [[ -n $M0_CLUSTER ]]; then
+        cat $M0_CLUSTER | python -c '
+from __future__ import print_function
+import sys
+import yaml
+
+cfg = yaml.safe_load(sys.stdin)
+hosts = set(cfg.get("clients", []))
+if hosts:
+    print(",".join(hosts))
+'
+    else
+        hostname
+    fi
+}
+
+## Waits for m0t1fs to mount.
+_wait_for_m0t1fs() {
+    [[ $# > 0 ]] || return 0  # no m0t1fs clients
+
+    local _sh="pdsh -S -w $*"
+    if [[ $* == $(hostname) ]]; then
+        _sh='bash -c'  # single-node
+    fi
+    local steps_left=30
+
+    set +x  # silence the loop
+    echo -n 'Waiting for m0t1fs to mount...'
+    while ! $_sh 'mount | grep -q m0t1fs'; do
+        sleep 2
+        echo -n '.'
+        ((--steps_left > 0)) || die 'Unable to mount m0t1fs'
+    done
+    echo ' done'
+    set -x
 }

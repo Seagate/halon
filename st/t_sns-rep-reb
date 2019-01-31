@@ -8,7 +8,7 @@ export M0_CLUSTER=  # single-node
 $H0 init
 cluster_bootstrap
 
-# XXX Use c0cp instead of dd (i.e., clovis instead of m0t1fs).
+# XXX Use s3server instead of dd (i.e., clovis instead of m0t1fs).
 $SUDO dd if=/dev/zero of=/mnt/m0t1fs/fedcba98:76543210 bs=32k count=100
 
 # "Fail" a drive.
