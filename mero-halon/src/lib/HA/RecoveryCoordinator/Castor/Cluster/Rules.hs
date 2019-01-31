@@ -140,8 +140,10 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
                          Just Refl -> Just a
                          Nothing   -> Nothing) chs
     mrm <- getPrincipalRM
+    Log.rcLog' Log.DEBUG $ "principal RM: " ++ show mrm
     unless (isJust mrm) $ do
       changed_processes :: [M0.Process] <- findChanges
+      Log.rcLog' Log.DEBUG $ "changed processes: " ++ show changed_processes
       unless (null changed_processes) $ void pickPrincipalRM
 
 -------------------------------------------------------------------------------

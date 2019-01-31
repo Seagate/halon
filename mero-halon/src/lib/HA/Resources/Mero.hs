@@ -1170,3 +1170,7 @@ nodeToM0Node :: R.Node -> G.Graph -> Maybe Node
 nodeToM0Node node rg = listToMaybe
   [ m0n | Just (h :: Cas.Host) <- [G.connectedFrom R.Runs node rg]
         , m0n <- G.connectedTo h R.Runs rg ]
+
+-- | Get the cluster's current Boot/Run level value
+getM0BootLevelValue :: G.Graph -> Maybe Int
+getM0BootLevelValue g = unBootLevel <$> G.connectedTo R.Cluster RunLevel g

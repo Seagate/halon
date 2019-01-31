@@ -53,6 +53,7 @@ import           Mero.M0Worker
 
 import           HA.EventQueue (promulgateWait)
 import           HA.Logger (mkHalonTracerIO)
+import           HA.RecoveryCoordinator.Mero.Actions.Conf (getPrincipalRM')
 import           HA.RecoveryCoordinator.Mero.Events
   ( GetSpielAddress(..)
   , GetFailureVector(..)
@@ -675,7 +676,7 @@ runPing ni ha_pfid ha_sfid  = actionOnNi ni $ do
       HA.pingProcess (Word128 4 2) l fid' ha_pfid ha_sfid
 
 -- | Load an entry point for spiel transaction.
-getSpielAddress :: Bool -- Allow returning dead services
+getSpielAddress :: Bool -- Allow returning dead confd services
                 -> G.Graph
                 -> Maybe SpielAddress
 getSpielAddress b g =
@@ -689,10 +690,12 @@ getSpielAddress b g =
                     , b || getState svc g == M0.SSOnline ]
       (rmFids, rmEps) = unzip
         [ (fd, eps) | svc@(Service { s_fid = fd, s_type = CST_RMS, s_endpoints = eps }) <- svs
-                    , G.isConnected svc Is PrincipalRM g]
+                    , not (rmsHaveStarted g) || Just svc == getPrincipalRM' g
+                    , G.isConnected svc Is PrincipalRM g ]
       mrmFid = listToMaybe $ nub rmFids
       mrmEp  = fmap ep2s . listToMaybe . nub $ concat rmEps
       quorum = ceiling $ fromIntegral qsize / (2::Double)
+      rmsHaveStarted = maybe False (> 0) . M0.getM0BootLevelValue
   in (SpielAddress confdsFid (ep2s <$> confdsEps)) <$> mrmFid
                                                    <*> mrmEp
                                                    <*> pure quorum

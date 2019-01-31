@@ -23,6 +23,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , lookupHostHAAddress
     -- ** Other things
   , getPrincipalRM
+  , getPrincipalRM'
   , isPrincipalRM
   , setPrincipalRMIfUnset
   , pickPrincipalRM
@@ -144,12 +145,16 @@ isPrincipalRM :: M0.Service
 isPrincipalRM svc = getGraph >>=
   return . G.isConnected svc Is M0.PrincipalRM
 
+-- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'
+--   from the specified Resource Graph. (Non-PhaseM version.)
+getPrincipalRM' :: G.Graph -> Maybe M0.Service
+getPrincipalRM' rg = case G.connectedFrom Is M0.PrincipalRM rg of
+  Just svc | M0.getState svc rg == M0.SSOnline -> Just svc
+  _ -> Nothing
+
 -- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'.
 getPrincipalRM :: PhaseM RC l (Maybe M0.Service)
-getPrincipalRM = getGraph >>= \rg ->
-  return . listToMaybe
-    . filter (\x -> M0.getState x rg == M0.SSOnline)
-    $ G.connectedFrom Is M0.PrincipalRM rg
+getPrincipalRM = getPrincipalRM' <$> getGraph
 
 -- | Set the given 'M0.Service' to be the 'M0.PrincipalRM' if one is
 -- not yet set. Returns the principal RM which becomes current: old
@@ -159,13 +164,15 @@ setPrincipalRMIfUnset :: M0.Service
 setPrincipalRMIfUnset svc = getPrincipalRM >>= \case
   Just rm -> return rm
   Nothing -> do
+    Log.rcLog' Log.DEBUG $ "new principal RM: " ++ show svc
     modifyGraph $ G.connect Cluster Has M0.PrincipalRM
               >>> G.connect svc Is M0.PrincipalRM
     return svc
 
 -- | Pick a Principal RM out of the available RM services.
 pickPrincipalRM :: PhaseM RC l (Maybe M0.Service)
-pickPrincipalRM = getGraph >>= \rg ->
+pickPrincipalRM = do
+  rg <- getGraph
   let rms = [ svc
             | proc <- M0.getM0Processes rg
             , G.isConnected proc Is M0.PSOnline rg
@@ -174,7 +181,8 @@ pickPrincipalRM = getGraph >>= \rg ->
             , svc :: M0.Service <- G.connectedTo proc M0.IsParentOf rg
             , M0.s_type svc == CST_RMS
             ]
-  in traverse setPrincipalRMIfUnset $ listToMaybe rms
+  Log.rcLog' Log.DEBUG $ "available RM services: " ++ show rms
+  traverse setPrincipalRMIfUnset $ listToMaybe rms
 
 -- | Lookup enclosure corresponding to Mero enclosure.
 m0encToEnc :: M0.Enclosure -> G.Graph -> Maybe R.Enclosure
