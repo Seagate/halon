@@ -178,7 +178,7 @@ getGraph = lsGraph <$> get Global
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.
 liftGraph :: (a -> G.Graph -> b) -> a -> PhaseM RC l b
-liftGraph op = \a -> op a <$> getGraph
+liftGraph op a = op a <$> getGraph
 
 -- | Take a pure operation requiring a graph as its last argument and lift
 --   it into a phase operation which gets the graph from local state.

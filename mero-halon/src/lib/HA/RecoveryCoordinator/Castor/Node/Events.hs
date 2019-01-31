@@ -23,6 +23,8 @@ module HA.RecoveryCoordinator.Castor.Node.Events
   , StopNodeUserReply(..)
   , MaintenanceStopNode(..)
   , MaintenanceStopNodeResult(..)
+  , NodeDiRebReq(..)
+  , NodeDiRebRes(..)
   ) where
 
 import           Control.Distributed.Process (SendPort)
@@ -137,6 +139,16 @@ data MaintenanceStopNodeResult
   -- ^ Node failed to stop for some reason.
   deriving (Eq, Show, Generic)
 
+-- Request to trigger direct rebalance on a node.
+data NodeDiRebReq = NodeDiRebReq M0.Node
+  deriving (Eq, Show, Ord, Generic)
+
+-- Response for direct rebalance request.
+data NodeDiRebRes
+  = NodeDiRebReqSucccess M0.Node
+  | NodeDiRebReqFailed M0.Node String
+  deriving (Eq, Show, Ord, Typeable, Generic)
+
 deriveSafeCopy 0 'base ''KernelStartFailure
 deriveSafeCopy 0 'base ''MaintenanceStopNode
 deriveSafeCopy 0 'base ''MaintenanceStopNodeResult
@@ -149,3 +161,5 @@ deriveSafeCopy 0 'base ''StopMeroClientRequest
 deriveSafeCopy 0 'base ''StopNodeUserReply
 deriveSafeCopy 0 'base ''StopNodeUserRequest
 deriveSafeCopy 0 'base ''StopProcessesOnNodeRequest
+deriveSafeCopy 0 'base ''NodeDiRebReq
+deriveSafeCopy 0 'base ''NodeDiRebRes

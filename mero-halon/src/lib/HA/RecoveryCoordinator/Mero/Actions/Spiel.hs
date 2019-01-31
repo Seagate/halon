@@ -31,6 +31,7 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
   , mkRebalanceQuiesceOperation
   , mkRebalanceAbortOperation
   , mkRebalanceStatusRequestOperation
+  , mkDirectRebalanceStartOperation
   , SNSOperationRetryState(..)
   , FldSNSOperationRetryState
   , fldSNSOperationRetryState
@@ -45,12 +46,15 @@ module HA.RecoveryCoordinator.Mero.Actions.Spiel
     -- * Pool repair information
   , getPoolRepairInformation
   , getPoolRepairStatus
+  , getNodeDiRebInformation
+  , setNodeDiRebStatus
   , getTimeUntilHourlyQuery
   , modifyPoolRepairInformation
   , setPoolRepairInformation
   , setPoolRepairStatus
   , unsetPoolRepairStatus
   , unsetPoolRepairStatusWithUUID
+  , unsetNodeDiRebStatus
   , updatePoolRepairQueryTime
   , updateSnsStartTime
   ) where
@@ -194,6 +198,10 @@ data GenericSNSOperationResult (k::Symbol) a = GenericSNSOperationResult M0.Pool
   deriving (Generic, Typeable)
 instance Binary a => Binary (GenericSNSOperationResult k a)
 
+data GenericNodeOperationResult (k::Symbol) a = GenericNodeOperationResult M0.Node (Either String a)
+  deriving (Generic, Typeable)
+instance Binary a => Binary (GenericNodeOperationResult k a)
+
 -- | Helper for implementation call to generic spiel operation. This
 -- call is done asynchronously.
 mkGenericSNSOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
@@ -220,6 +228,32 @@ mkGenericSNSOperation operation_name operation_reply operation_action pool = do
     Right () -> return ()
     Left e -> liftProcess $ next $ Left e
 
+-- | Helper for implementation call to generic spiel operation for node. This
+-- call is done asynchronously.
+mkGenericNodeOperation :: (Typeable a, Binary a, KnownSymbol k, Typeable k)
+  => Proxy# k -- ^ Operation name
+  -> (M0.Node -> Either SomeException a -> GenericNodeOperationResult k a)
+  -- ^ Handler
+  -> (M0.Node -> IO a)
+  -- ^ Node action
+  -> M0.Node
+  -- ^ Node of interest
+  -> PhaseM RC l ()
+mkGenericNodeOperation operation_name operation_reply operation_action node = do
+  Log.tagContext Log.SM [ ("spiel", symbolVal' operation_name)
+                        , ("node.fid", show (M0.fid node))
+                        ] Nothing
+  unlift <- mkUnliftProcess
+  next <- liftProcess $ do
+    rc <- DP.getSelfPid
+    return $ DP.usend rc . operation_reply node
+  mprof <- theProfile -- XXX-MULTIPOOLS: What about other profiles?
+  er <- withSpielIO $
+          withRConfIO mprof $ try (operation_action node) >>= unlift . next
+  case er of
+    Right () -> return ()
+    Left e -> liftProcess $ next $ Left e
+
 -- | 'mkGenericSpielOperation' specialized for the most common case.
 mkGenericSNSOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
   => Proxy# k
@@ -229,6 +263,15 @@ mkGenericSNSOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
 mkGenericSNSOperationSimple n f = mkGenericSNSOperation n
   (\pool eresult -> GenericSNSOperationResult pool (first show eresult))
   (\pool -> f (M0.fid pool))
+
+mkGenericNodeOperationSimple :: (Binary a, Typeable a, Typeable k, KnownSymbol k)
+  => Proxy# k
+  -> (Fid -> IO a)
+  -> M0.Node
+  -> PhaseM RC l ()
+mkGenericNodeOperationSimple n f = mkGenericNodeOperation n
+  (\node eresult -> GenericNodeOperationResult node (first show eresult))
+  (\node -> f (M0.fid node))
 
 -- | Helper for implementation call to generic spiel operation.
 mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable k, KnownSymbol k)
@@ -247,6 +290,25 @@ mkGenericSNSReplyHandler n onError onSuccess action = do
       Right x -> do Log.rcLog' Log.DEBUG (show x)
                     onSuccess x pool
     action pool result
+  return ph
+
+-- Helper for implementation call to generic node spiel operation
+mkGenericNodeReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable k, KnownSymbol k)
+  => Proxy# k                                        -- ^ Rule name
+  -> (String -> M0.Node -> PhaseM RC l (Either a b)) -- ^ Error result converter.
+  -> (c      -> M0.Node -> PhaseM RC l (Either a b)) -- ^ Success result onverter.
+  -> (M0.Node -> (Either a b) -> PhaseM RC l ())     -- ^ Handler
+  -> RuleM RC l (Jump PhaseHandle)
+mkGenericNodeReplyHandler n onError onSuccess action = do
+  ph <- phaseHandle $ symbolVal' n ++ " reply"
+  setPhase ph $ \(GenericNodeOperationResult node er :: GenericNodeOperationResult k c) -> do
+    Log.tagContext Log.SM [ ("node.fid", show (M0.fid node)) ] Nothing
+    result <- case er of
+      Left s -> do Log.rcLog' Log.ERROR s
+                   onError s node
+      Right x -> do Log.rcLog' Log.DEBUG (show x)
+                    onSuccess x node
+    action node result
   return ph
 
 -- | 'mkGenericSpielReplyHandler' specialized for the most common case.
@@ -399,6 +461,28 @@ mkRebalanceStartOperation handler = do
          setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Rebalance uuid Nothing
          return (Right uuid))
 
+-- | Start the direct rebalance operation for the given node asynchronously.
+mkDirectRebalanceStartOperation ::
+  (M0.Node -> Either String UUID -> PhaseM RC l ()) -- ^ Result handler.
+  -> RuleM RC l (Jump PhaseHandle, M0.Node -> PhaseM RC l ())
+mkDirectRebalanceStartOperation handler = do
+  operation_started <- mkDirectRebalanceOperationStarted handler
+  return ( operation_started
+         , mkGenericNodeOperationSimple p Spiel.nodeDirectRebalanceStart
+         )
+  where
+    p :: Proxy# "Direct rebalance start"
+    p = proxy#
+    -- | Create a phase to handle direct rebalance operation start result.
+    mkDirectRebalanceOperationStarted ::
+           (M0.Node -> Either String UUID -> PhaseM RC l ())
+        -> RuleM RC l (Jump PhaseHandle)
+    mkDirectRebalanceOperationStarted = mkGenericNodeReplyHandler p
+      (const . return . Left)
+      (\() node -> do
+         uuid <- DP.liftIO nextRandom
+         setNodeDiRebStatus node $ M0.NodeDiRebStatus uuid Nothing
+         return (Right uuid))
 
 -- | Create a phase to handle pool repair operation start result.
 mkRepairStatusRequestOperation ::
@@ -876,11 +960,28 @@ getPoolRepairStatus :: M0.Pool
                     -> PhaseM RC l (Maybe M0.PoolRepairStatus)
 getPoolRepairStatus pool = G.connectedTo pool Has <$> getGraph
 
+-- | Return the 'M0.PoolRepairStatus' structure. If one is not in
+-- the graph, it means no repairs are going on
+--getNodeDiRebStatus :: M0.Node
+  --                  -> PhaseM RC l (Maybe M0.NodeDiRebStatus)
+--getNodeDiRebStatus node = G.connectedTo node Has <$> getGraph
+
 -- | Set the given 'M0.PoolRepairStatus' in the graph. Any
 -- previously connected @PRI@s are disconnected.
 setPoolRepairStatus :: M0.Pool -> M0.PoolRepairStatus -> PhaseM RC l ()
 setPoolRepairStatus pool prs =
   modifyGraphM $ return . G.connect pool Has prs
+
+-- | Set the given 'M0.NodeDiRebStatus' in the graph. Any
+-- previously connected @PRI@s are disconnected.
+setNodeDiRebStatus :: M0.Node -> M0.NodeDiRebStatus -> PhaseM RC l ()
+setNodeDiRebStatus node nrs =
+  modifyGraphM $ return . G.connect node Has nrs
+
+unsetNodeDiRebStatus :: M0.Node -> PhaseM RC l ()
+unsetNodeDiRebStatus node = do
+  Log.rcLog' Log.DEBUG $ "Unsetting NRS from " ++ show node
+  modifyGraphM $ return . G.disconnectAllFrom node Has (Proxy :: Proxy M0.NodeDiRebStatus)
 
 -- | Remove all 'M0.PoolRepairStatus' connection to the given 'M0.Pool'.
 unsetPoolRepairStatus :: M0.Pool -> PhaseM RC l ()
@@ -903,6 +1004,14 @@ getPoolRepairInformation :: M0.Pool
                          -> PhaseM RC l (Maybe M0.PoolRepairInformation)
 getPoolRepairInformation pool =
     join . fmap M0.prsPri . G.connectedTo pool Has <$>
+    getGraph
+
+-- | Return the 'M0.NodeDiRebInformation' structure. If one is not in
+-- the graph, it means no node rebalance is in progress.
+getNodeDiRebInformation :: M0.Node
+                         -> PhaseM RC l (Maybe M0.NodeDiRebInformation)
+getNodeDiRebInformation node =
+    join . fmap M0.nrsNri . G.connectedTo node Has <$>
     getGraph
 
 -- | Set the given 'M0.PoolRepairInformation' in the graph. Any

@@ -288,6 +288,7 @@ instance HasConfObjectState M0.Node where
   toConfObjState _ M0.NSFailedUnrecoverable = M0_NC_FAILED
   toConfObjState _ M0.NSOffline = M0_NC_FAILED
   toConfObjState _ M0.NSOnline  = M0_NC_ONLINE
+  toConfObjState _ M0.NSRebalance  = M0_NC_REBALANCE
 instance HasConfObjectState M0.Process where
   type StateCarrier M0.Process = M0.ProcessState
   getState x rg = fromMaybe M0.PSUnknown $ G.connectedTo x Is rg

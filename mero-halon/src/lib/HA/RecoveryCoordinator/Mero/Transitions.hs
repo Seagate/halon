@@ -169,6 +169,9 @@ nodeOnline = constTransition M0.NSOnline
 nodeFailed :: Transition M0.Node
 nodeFailed = constTransition M0.NSFailed
 
+nodeRebalance :: (?loc :: CallStack) => Transition M0.Node
+nodeRebalance = constTransition M0.NSRebalance
+
 -- * 'M0.Enclosure'
 
 -- | Unconditionally transition 'M0.Enclosure' to 'M0_NC_TRANSIENT'.
@@ -225,6 +228,14 @@ diskOnline = constTransition M0.SDSOnline
 diskRebalance :: (?loc :: CallStack) => Transition M0.Disk
 diskRebalance = Transition $ \case
   st | toConfObjState (undefined :: M0.SDev) st == M0_NC_REPAIRED ->
+         TransitionTo M0.SDSRebalancing
+     | otherwise -> transitionErr ?loc st
+
+-- | Transition 'M0.Disk's directly to a rebalancing state, after repair has
+-- finished.
+diskDiReb :: (?loc :: CallStack) => Transition M0.Disk
+diskDiReb = Transition $ \case
+  st | toConfObjState (undefined :: M0.SDev) st == M0_NC_ONLINE ->
          TransitionTo M0.SDSRebalancing
      | otherwise -> transitionErr ?loc st
 

@@ -247,6 +247,7 @@ data NodeState
   | NSOffline             -- ^ Node is stopped, gracefully.
   | NSFailedUnrecoverable -- ^ Node is failed
   | NSFailed              -- ^ Node is failed, possibly can be recovered.
+  | NSRebalance           -- ^ Node is replaced, rebalance it.
   | NSOnline              -- ^ Node is online.
   deriving (Eq, Ord, Read, Show, Generic, Typeable)
 
@@ -263,6 +264,7 @@ prettyNodeState NSOffline = "offline"
 prettyNodeState NSFailed  = "failed(recoverable)"
 prettyNodeState NSFailedUnrecoverable  = "failed(unrecoverable)"
 prettyNodeState NSOnline = "online"
+prettyNodeState NSRebalance = "rebalancing"
 
 displayNodeState :: NodeState -> (String, Maybe String)
 displayNodeState xs@NSFailed = ("failed", Just $ prettyNodeState xs)
@@ -747,6 +749,35 @@ instance FromJSON PoolRepairStatus
 storageIndex ''PoolRepairStatus "a238bffa-4a36-457d-95e8-2947ed8f45e5"
 deriveSafeCopy 0 'base ''PoolRepairStatus
 
+data NodeDiRebInformation = NodeDiRebInformation
+  { nriTimeOfSnsStart :: !TimeSpec
+  , nriTimeLastHourlyRan :: !TimeSpec
+  , nriStateUpdates :: ![(SDev, Int)]
+  } deriving (Eq, Show, Generic, Typeable, Ord)
+
+instance Hashable NodeDiRebInformation
+instance ToJSON NodeDiRebInformation
+instance FromJSON NodeDiRebInformation
+
+storageIndex ''NodeDiRebInformation "633abe43-8be5-4b8d-9ab8-e84482c91a56"
+deriveSafeCopy 0 'base ''NodeDiRebInformation
+
+-- | Status of SNS node direct rebalance.
+data NodeDiRebStatus = NodeDiRebStatus
+  { nrsRebalanceUUID :: UUID
+  -- ^ UUID used to distinguish SNS operations from different runs on
+  -- the same pool.
+  , nrsNri :: !(Maybe NodeDiRebInformation)
+  -- ^ Information about the actual node rebalance operation.
+  } deriving (Eq, Show, Generic, Typeable, Ord)
+
+instance Hashable NodeDiRebStatus
+instance ToJSON NodeDiRebStatus
+instance FromJSON NodeDiRebStatus
+
+storageIndex ''NodeDiRebStatus "11b9a921-4cd9-438e-b069-71da1d4ef6fa"
+deriveSafeCopy 0 'base ''NodeDiRebStatus
+
 -- | Vector of failed devices. We keep the order of failures because
 -- halon should always send information about that to mero in the same
 -- order.
@@ -968,10 +999,11 @@ $(mkDicts
   [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool, ''PoolId
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
-  , ''LNid, ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
-  , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
-  , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
+  , ''NodeDiRebStatus, ''MetadataPVer, ''LNid, ''HostHardwareInfo
+  , ''CI.ProcessType, ''ConfUpdateVersion, ''Disposition
+  , ''ProcessBootstrapped, ''ProcessEnv, ''ProcessState
+  , ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
@@ -1034,6 +1066,7 @@ $(mkDicts
   , (''Process, ''Cas.Is, ''ProcessState)
   , (''Service, ''Cas.Is, ''ServiceState)
   , (''SDev, ''Cas.Is, ''SDevState)
+  , (''Node, ''R.Has, ''NodeDiRebStatus)
   , (''Node, ''Cas.Is, ''NodeState)
   , (''Controller, ''Cas.Is, ''ControllerState)
   , (''Disk, ''Cas.Is, ''Replaced)
@@ -1046,10 +1079,11 @@ $(mkResRel
   [ ''FidSeq, ''Profile, ''Node, ''Site, ''Rack, ''Pool, ''PoolId
   , ''Process, ''Service, ''SDev, ''Enclosure, ''Controller
   , ''Disk, ''PVer, ''SiteV, ''RackV, ''EnclosureV, ''ControllerV
-  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus, ''MetadataPVer
-  , ''LNid, ''HostHardwareInfo, ''CI.ProcessType, ''ConfUpdateVersion
-  , ''Disposition, ''ProcessBootstrapped, ''ProcessEnv
-  , ''ProcessState, ''DiskFailureVector, ''ServiceState, ''PID
+  , ''DiskV, ''CI.M0Globals, ''Root, ''PoolRepairStatus
+  , ''NodeDiRebStatus, ''MetadataPVer, ''LNid, ''HostHardwareInfo
+  , ''CI.ProcessType, ''ConfUpdateVersion, ''Disposition
+  , ''ProcessBootstrapped, ''ProcessEnv, ''ProcessState
+  , ''DiskFailureVector, ''ServiceState, ''PID
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
@@ -1113,6 +1147,7 @@ $(mkResRel
   , (''Service, Unbounded, ''Cas.Is, AtMostOne, ''ServiceState)
   , (''SDev, Unbounded, ''Cas.Is, AtMostOne, ''SDevState)
   , (''Node, Unbounded, ''Cas.Is, AtMostOne, ''NodeState)
+  , (''Node, Unbounded, ''R.Has, AtMostOne, ''NodeDiRebStatus)
   , (''Controller, Unbounded, ''Cas.Is, AtMostOne, ''ControllerState)
   , (''Disk, Unbounded, ''Cas.Is, AtMostOne, ''Replaced)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)

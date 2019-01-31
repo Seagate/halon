@@ -53,6 +53,7 @@ module Mero.Spiel
   , poolRebalanceQuiesce
   , poolRebalanceStatus
   , poolRebalanceAbort
+  , nodeDirectRebalanceStart
   , rconfStart
   , rconfStop
   , setCmdProfile
@@ -421,6 +422,9 @@ deviceDetach = command "detach device" c_spiel_device_detach
 
 poolRepairStart :: Fid -> IO ()
 poolRepairStart = command "start pool repair" c_spiel_pool_repair_start
+
+nodeDirectRebalanceStart :: Fid -> IO ()
+nodeDirectRebalanceStart = command "start node direct rebalance" c_spiel_node_direct_rebalance_start
 
 poolRepairContinue :: Fid -> IO ()
 poolRepairContinue = command "continue pool repair" c_spiel_pool_repair_continue

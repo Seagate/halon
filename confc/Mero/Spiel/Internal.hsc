@@ -58,6 +58,7 @@ module Mero.Spiel.Internal
   , c_spiel_pool_rebalance_quiesce
   , c_spiel_pool_rebalance_status
   , c_spiel_pool_rebalance_abort
+  , c_spiel_node_direct_rebalance_start
   , c_spiel_tx_close
   , c_spiel_tx_commit_forced
   , c_spiel_tx_open
@@ -374,6 +375,11 @@ foreign import capi "spiel/spiel.h m0_spiel_pool_rebalance_abort"
   c_spiel_pool_rebalance_abort :: Ptr SpielContextV
                                -> Ptr Fid
                                -> IO CInt
+
+foreign import capi "spiel/spiel.h m0_spiel_node_direct_rebalance_start"
+  c_spiel_node_direct_rebalance_start :: Ptr SpielContextV
+                                      -> Ptr Fid
+                                      -> IO CInt
 
 foreign import capi "confc_helpers.h halon_interface_spiel"
   c_spiel :: IO (Ptr SpielContextV)

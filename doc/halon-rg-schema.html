@@ -111,6 +111,7 @@ digraph ResourceGraphSchema {
     "M0.Pool" -> "M0.PoolRepairStatus" [label="R.Has"]
     "M0.Pool" -> "M0.PoolId" [label="R.Has"]
     "M0.Pool" -> "M0.DiskFailureVector" [label="R.Has", arrowtail=oinv, dir=both]
+    "M0.Node" -> "M0.NodeDiRebStatus" [label="R.Has", arrowtail=oinv, dir=both]
     "Cas.Host" -> "M0.LNid" [label="R.Has", arrowhead=onormal]
     "R.Cluster" -> "M0.Root" [label="R.Has"]
     "R.Cluster" -> "M0.PVerCounter" [label="R.Has"]

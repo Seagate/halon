@@ -6,10 +6,10 @@
 module HA.RecoveryCoordinator.Castor.Process.Actions
   ( getAll
   , getAllHostingService
+  , getHA
   , getType
   , getTyped
   , getTypedP
-  , getHA
   ) where
 
 import           Data.Maybe (listToMaybe)

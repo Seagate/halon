@@ -271,6 +271,7 @@ Executable halonctl
                       Handler.Mero.Node.Remove
                       Handler.Mero.Node.Start
                       Handler.Mero.Node.Stop
+                      Handler.Mero.Node.DiReb
                       Handler.Mero.Pool
                       Handler.Mero.Process
                       Handler.Mero.Process.Add

@@ -90,7 +90,7 @@ import           Control.Lens
 import           Control.Monad (void, guard, when)
 import           Control.Monad.Trans.Maybe
 import           Data.Foldable (for_)
-import           Data.Maybe (isNothing, isJust, maybeToList)
+import           Data.Maybe (catMaybes, isNothing, isJust, maybeToList)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
@@ -105,6 +105,7 @@ import           HA.RecoveryCoordinator.Actions.Hardware
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Castor.Cluster.Actions
 import           HA.RecoveryCoordinator.Castor.Cluster.Events
+import qualified HA.RecoveryCoordinator.Castor.Drive.Actions as Drive
 import           HA.RecoveryCoordinator.Castor.Node.Actions as Node
 import           HA.RecoveryCoordinator.Castor.Node.Events
 import qualified HA.RecoveryCoordinator.Castor.Node.Events as Event
@@ -153,6 +154,7 @@ rules = sequence_
   , ruleStopProcessesOnNode
   , ruleFailNodeIfProcessCantRestart
   , ruleMaintenanceStopNode
+  , ruleDiRebStart
   , requestUserStopsNode
   , requestStartHalonM0d
   , requestStopHalonM0d
@@ -1156,3 +1158,92 @@ requestUserStopsNode = defineSimpleTask "castor::node::stop_user_request" go whe
       initiateStop node = do
         promulgateRC (Event.MaintenanceStopNode node)
         liftProcess $ sendChan reply_to (StopInitiated m0fid node)
+
+-- | 'Job' used by 'ruleDiRebStart'
+jobNodeDiRebStart :: Job NodeDiRebReq NodeDiRebRes
+jobNodeDiRebStart = Job "direct-rebalance-start"
+
+-- Start direct rebalance on a node
+ruleDiRebStart :: Definitions RC ()
+ruleDiRebStart = mkJobRule jobNodeDiRebStart args $ \(JobHandle _ finish) -> do
+  node_disks_notified <- phaseHandle "node_disks_notified"
+  notify_failed <- phaseHandle "notify_failed"
+  notify_timeout <- phaseHandle "notify_timeout"
+  dispatcher <- mkDispatcher
+  notifier <- mkNotifierSimpleAct dispatcher waitClear
+
+  let init_rule (NodeDiRebReq node) = getNodeDiRebInformation node >>= \case
+        Nothing -> do
+          rg <- getGraph
+          let sdevs = Node.getAttachedSDevs node rg
+          if not (null sdevs)
+          then do
+              Log.rcLog' Log.DEBUG "starting direct rebalance"
+              disks <- catMaybes <$> mapM Drive.lookupSDevDisk sdevs
+              let msgs = stateSet node nodeRebalance : map (`stateSet` diskDiReb) disks
+              modify Local $ rlens fldNodeDisks . rfield .~ Just (node, disks)
+              notifications <- applyStateChanges msgs
+              setExpectedNotifications notifications
+              waitFor notifier
+              waitFor notify_failed
+              onSuccess node_disks_notified
+              onTimeout 10 notify_timeout
+              return $ Right (NodeDiRebReqFailed node "failed to start Direct rebalance", [dispatcher])
+          else
+              return $ Left "Not starting direct rebalance, have no devices"
+        Just _ -> do
+          return $ Left "Seems node is already rebalancing"
+
+  (directRebalanceStarted, startDirectRebalanceOperation) <- mkDirectRebalanceStartOperation $ \node er -> do
+    case er of
+      Left s -> do
+        modify Local $ rlens fldRep . rfield .~ Just (NodeDiRebReqFailed node s)
+        abortDirectRebalanceStart
+        continue finish
+      Right _ -> do
+        Log.rcLog' Log.DEBUG "NodeDirectRebalanceStartSuccess"
+        modify Local $ rlens fldRep . rfield .~ Just (NodeDiRebReqSucccess node)
+        continue finish
+
+  directly node_disks_notified $ do
+    Just (node, _) <- getField . rget fldNodeDisks <$> get Local
+    startDirectRebalanceOperation node
+    continue directRebalanceStarted
+
+  setPhase notify_failed $ \(HAEvent uuid (M0.NotifyFailureEndpoints eps)) -> do
+    todo uuid
+    when (not $ null eps) $ do
+      Log.rcLog' Log.WARN $ "Failed to notify " ++ show eps ++ ", not starting rebalance"
+      abortDirectRebalanceStart
+    done uuid
+    continue finish
+
+  directly notify_timeout $ do
+    Log.rcLog' Log.WARN $ "Unable to notify Mero; cannot start rebalance"
+    abortDirectRebalanceStart
+    continue finish
+
+  return init_rule
+  where
+    abortDirectRebalanceStart = getField . rget fldNodeDisks <$> get Local >>= \case
+      Nothing -> Log.rcLog' Log.ERROR "No node info in local state"
+      Just (node, _) -> do
+        rdevs <- liftGraph Node.getAttachedSDevs node
+        rdisks <- catMaybes <$> mapM Drive.lookupSDevDisk rdevs
+        _ <- applyStateChanges $ stateSet node nodeOnline : map (`stateSet` diskOnline) rdisks
+        unsetNodeDiRebStatus node
+
+    -- XXX Handle additional device failures during direct rebalance.
+
+    fldReq = Proxy :: Proxy '("request", Maybe NodeDiRebReq)
+    fldRep = Proxy :: Proxy '("reply", Maybe NodeDiRebRes)
+    fldN = Proxy :: Proxy '("pool", Maybe M0.Node)
+    fldNodeDisks = Proxy :: Proxy '("node disks", Maybe (M0.Node, [M0.Disk]))
+
+    args = fldUUID          =: Nothing
+       <+> fldReq           =: Nothing
+       <+> fldRep           =: Nothing
+       <+> fldN             =: Nothing
+       <+> fldNodeDisks     =: Nothing
+       <+> fldNotifications =: []
+       <+> fldDispatch      =: Dispatch [] (error "ruleDirectRebalanceStart dispatcher") Nothing

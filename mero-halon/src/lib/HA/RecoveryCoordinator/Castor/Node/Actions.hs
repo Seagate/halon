@@ -5,13 +5,15 @@
 --
 -- Actions on 'M0.Node's.
 module HA.RecoveryCoordinator.Castor.Node.Actions
-  ( getTypedProcesses
-  , getTypedProcessesP
+  ( getAttachedSDevs
   , getProcesses
+  , getTypedProcesses
+  , getTypedProcessesP
   , getUnstartedProcesses
   , startProcesses
   ) where
 
+import qualified Data.Set as S
 import           Control.Monad (unless)
 import           Data.Foldable (for_)
 import           HA.RecoveryCoordinator.Castor.Process.Events
@@ -30,6 +32,7 @@ import           HA.Resources.Castor.Initial (ProcessType)
 import qualified HA.Resources.Mero as M0
 import qualified HA.Resources.Mero.Note as M0
 import qualified HA.Resources.Castor.Initial as CI
+import           Mero.ConfC (ServiceType(CST_IOS))
 import           Network.CEP
 
 -- | Get all 'M0.Processes' associated to the given 'R.Node' with
@@ -98,3 +101,12 @@ startProcesses host procTypeP = do
     Log.rcLog' Log.DEBUG ("processes", show (M0.showFid <$> procs))
     for_ procs $ promulgateRC . ProcessStartRequest
   return procs
+
+getAttachedSDevs :: M0.Node -> G.Graph -> [M0.SDev]
+getAttachedSDevs node rg = S.toList $ S.fromList
+  [ sdev
+  | proc :: M0.Process <- G.connectedTo node M0.IsParentOf rg
+  , svc <- G.connectedTo proc M0.IsParentOf rg
+  , M0.s_type svc == CST_IOS
+  , sdev <- G.connectedTo svc M0.IsParentOf rg
+  ]
