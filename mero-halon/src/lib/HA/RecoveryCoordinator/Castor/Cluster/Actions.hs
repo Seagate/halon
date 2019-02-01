@@ -82,7 +82,7 @@ calculateClusterLiveness rg = withTemporaryGraph $ do
             ( length fs > q
             , fromMaybe False $ listToMaybe
                [ M0.SSOnline == M0.getState srv rg
-               | srv :: M0.Service <- G.connectedFrom Is M0.PrincipalRM rg
+               | Just srv <- [G.connectedFrom Is M0.PrincipalRM rg :: Maybe M0.Service]
                ]
             )
         pools = Pool.getNonMD rg

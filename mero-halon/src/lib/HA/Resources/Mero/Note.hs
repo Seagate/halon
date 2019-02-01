@@ -463,7 +463,7 @@ $(mkResRel
   , (''M0.Rack, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Enclosure, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.Controller, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
-  , (''M0.Service, Unbounded, ''Is, AtMostOne, ''PrincipalRM)
+  , (''M0.Service, AtMostOne, ''Is, AtMostOne, ''PrincipalRM)
   , (''M0.Pool, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   , (''M0.PVer, Unbounded, ''Is, AtMostOne, ''ConfObjectState)
   ]
