@@ -51,6 +51,30 @@ cluster_bootstrap() {
     return $rc
 }
 
+fid_state() {
+    (($# == 1)) || die "${FUNCNAME[0]}: Invalid usage"
+    _assert_is_fid $1
+    hctl mero status | awk -v FID=$1 '$3 == FID {print $2}' | sed 's/]$//'
+}
+
+wait_for_fid_state() {
+    (($# == 2)) || die "${FUNCNAME[0]}: Invalid usage"
+    local state=$1
+    _assert_is_fid $2
+    local fid=$2
+    local steps_left=12
+
+    set +x  # silence the loop
+    echo -n "Waiting for $fid to become '$state'..."
+    until [[ $(fid_state $fid) == $state ]]; do
+        sleep 5
+        echo -n '.'
+        ((--steps_left > 0)) || die 'Giving up'
+    done
+    echo ' done'
+    set -x
+}
+
 check_drive_state() {
     [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
@@ -72,24 +96,6 @@ wait_for_drive_state() {
     done
     set -x
     hctl mero status -d
-}
-
-wait_for_fid_state() {
-    local fid="$1"
-    local expected="$2"
-    local steps_left=75
-
-    set +x  # silence the loop
-    echo -n "Waiting for $fid to become $expected ..."
-    local state=$(hctl mero status | grep $fid | awk '{print $2}' | head -c-2)
-    while [[ $state != $expected ]]; do
-        sleep 3
-        echo -n '.'
-        ((--steps_left > 0)) || report_and_exit ${0##*/} 1
-        state=$(hctl mero status | grep $fid | awk '{print $2}' | head -c-2)
-    done
-    echo ' done'
-    set -x
 }
 
 # ----------------------------------------------------------------------
@@ -126,11 +132,17 @@ _wait_for_m0t1fs() {
 
     set +x  # silence the loop
     echo -n 'Waiting for m0t1fs to mount...'
-    while ! $_sh 'mount | grep -q m0t1fs'; do
+    until $_sh 'mount | grep -q m0t1fs'; do
         sleep 2
         echo -n '.'
         ((--steps_left > 0)) || die 'Unable to mount m0t1fs'
     done
     echo ' done'
     set -x
+}
+
+_assert_is_fid() {
+    (($# == 1)) || die "${FUNCNAME[0]}: Invalid usage"
+    echo $1 | grep -qE '^0x[0-9a-f]{16}:0x[0-9a-f]{,16}$' ||
+        die "${FUNCNAME[0]}: Fid expected, got '$1'"
 }

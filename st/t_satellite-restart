@@ -3,20 +3,38 @@
 
 SAT='ssu1'
 
-init_fids() {
-{
-        read FID_NODE_SAT FID_PROC_SAT FID_PROC_M0D
-}<<<$(hctl mero status | awk -v HOST=$SAT '
-function print_or_die(s) {
-    if (!s) {
+prepare_cluster_conf() {
+    export M0_CLUSTER=$(mktemp)
+    trap "rm $M0_CLUSTER" 0
+
+    cat >$M0_CLUSTER <<EOF
+confds: [ cmu.local ]
+ssus:
+  - host:  $SAT.local
+    disks: /dev/sd[b-g]
+  - host:  ssu2.local
+    disks: /dev/sd[b-g]
+clovis-apps: [ client1.local ]
+EOF
+}
+
+## Initialises FID_NODE_SAT, FID_PROC_SAT and FID_PROC_M0D environment
+## variables, getting them from `hctl mero status` output.
+##
+## Fails unless all three fids are online.
+init_fid_vars() {
+    (($# == 1)) || die "${FUNCNAME[0]}: Invalid usage"
+    . <(hctl mero status | awk -v HOST=$1 '
+function check(v) {
+    if (!v) {
         print "Parsing error" > "/dev/stderr"
-        exit 1
+        exit(1)
     }
-    print s
+    return v
 }
 
 $3 ~ /^0x6e/ {
-    collect_p = ($4 == HOST);
+    collect_p = ($4 == HOST)
     if (collect_p)
         node = $3
 }
@@ -29,69 +47,42 @@ collect_p && $3 ~ /^0x72/ {
 }
 
 END {
-    print_or_die(node)
-    print_or_die(proc_halond)
-    print_or_die(proc_m0d)
-}')
+    print "FID_NODE_SAT=" check(node)
+    print "FID_PROC_SAT=" check(proc_halond)
+    print "FID_PROC_M0D=" check(proc_m0d)
+}
+')
 }
 
-abort() {
-    [[ $# == 0 ]] || {
-        echo "$@" >&2
-        echo 'Aborting...' >&2
-    }
-    hctl mero stop
-    $H0 fini
-    exit 1
-}
+prepare_cluster_conf
+pdsh -S -w $(cluster_hosts) true  # fail unless all hosts are accessible
 
-M0_CLUSTER=$(mktemp)
-trap "rm $M0_CLUSTER" 0
-
-cat >$M0_CLUSTER <<'EOF'
-confds: [ cmu.local ]
-ssus:
-  - host:  ssu1.local
-    disks: /dev/sd[b-e]
-  - host:  ssu2.local
-    disks: /dev/sd[b-e]
-clovis-apps: [ client1.local ]
-EOF
-
-export M0_CLUSTER
 $H0 init
-### FIXME
-### Currently fact file generaed for 8 + 2 configuration. But it is
-### not working with 2 SSU with 4 drive each because of (P >= N + 2K).
-###
-sudo sed -i 's/data_units: 8/data_units: 4/' /etc/halon/halon_facts.yaml
-
 cluster_bootstrap
-rc=$?
+init_fid_vars $SAT
 
-(( $? == 0 )) ||  report_and_exit ${0##*/} 1
+for fid in $FID_NODE_SAT $FID_PROC_SAT $FID_PROC_M0D; do
+    [[ $(fid_state $fid) = 'online' ]] || die "$fid is not online"
+done
+m0d_old=$(ssh $SAT.local pgrep m0d)
 
-nr_nodes=$(hctl mero status | grep -c halon)
-if (( nr_nodes < 2 )); then
-    abort
-fi
+ssh $SAT.local sudo pkill -KILL halond  # kill SAT halond
+sleep 2  # give RC some time to realise what has just happened
 
-init_fids
+[[ $(fid_state $FID_PROC_M0D) != 'online' ]] ||
+    die 'm0d is still marked as "online"'
 
-wait_for_fid_state $FID_NODE_SAT 'online'
+wait_for_fid_state 'online' $FID_PROC_M0D
 
-sat_pid=$(ssh $SAT.local pgrep halond)
-m0d_pid=$(ssh $SAT.local pgrep m0d)
+# We know that RC restarts halond before m0d, but it doesn't hurt to
+# check halond's state as well.
+[[ $(fid_state $FID_PROC_SAT) == 'online' ]] || die 'SAT is not online'
 
-ssh $SAT.local sudo kill -9 $sat_pid
-wait_for_fid_state $FID_PROC_SAT 'online'
-wait_for_fid_state $FID_PROC_M0D 'online'
-
-new_m0d_pid=$(ssh $SAT.local pgrep m0d)
-if [[ $new_m0d_pid = $m0d_pid ]]; then
-    abort
-fi
+m0d_new=$(ssh $SAT.local pgrep m0d)
+[[ -n $m0d_new ]] || die 'm0d is not running'
+[[ $m0d_new != $m0d_old ]] || die 'm0d has not been restarted'
 
 hctl mero stop
 $H0 fini
-report_and_exit ${0##*/} 0
+
+report_and_exit ${0##*/} $?
