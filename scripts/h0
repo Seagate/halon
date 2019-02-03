@@ -185,9 +185,6 @@ cmd_fini() {
 ## -------------------------------------------------------------------
 ## Utility functions
 
-die() { echo "$@" >&2; exit 1; }
-warn() { echo "*WARNING* $@" >&2; }
-
 _time() {
     if [[ -x /usr/bin/time ]]; then
         /usr/bin/time "$@"
@@ -231,26 +228,6 @@ mpdsh() {
     fi
 }
 
-## Outputs comma-separated list of cluster hosts iff $M0_CLUSTER is set.
-cluster_hosts() {
-    if [[ -n $M0_CLUSTER ]]; then
-        cat $M0_CLUSTER | python -c '
-from __future__ import print_function
-import sys
-import yaml
-
-cfg = yaml.safe_load(sys.stdin)
-hosts = set()
-hosts.update(cfg.get("confds", []))
-hosts.update(cfg.get("clients", []))
-hosts.update(cfg.get("clovis-apps", []))
-hosts.update(cfg.get("s3servers", []))
-hosts.update(x["host"] for x in cfg.get("ssus", []))
-print(",".join(hosts))
-'
-    fi
-}
-
 assert_mero() {
     [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
     [[ -d $M0_SRC_DIR/mero ]] || die "$M0_SRC_DIR: No Mero sources found"
@@ -275,7 +252,7 @@ check_ssh_accessibility() {
             rm -f $kh.old
             ssh-keyscan -t rsa $host >>$kh
         }
-        pdsh -S -w $host true >/dev/null || die "$host is not accessible"
+        pdsh -S -w $host true || die "$host is not accessible"
     done
 }
 
@@ -305,6 +282,7 @@ init_vars() {
     SUDO="${SUDO-sudo -E}"  # the absence of ':' is important
     H0_SRC_DIR="$(readlink -f $0)"
     H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+    . $H0_SRC_DIR/scripts/functions
 
     DEFAULT_M0_SRC_DIR=${H0_SRC_DIR%/*}/mero
     export M0_SRC_DIR=${M0_SRC_DIR:-$DEFAULT_M0_SRC_DIR}
