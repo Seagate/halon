@@ -36,7 +36,7 @@ debugRules = sequence_
 
 -- | Dispatches `hctl debug print` requests.
 ruleDebugQuery :: Definitions RC ()
-ruleDebugQuery = defineSimpleTask "debug-query" $ \case
+ruleDebugQuery = defineSimpleTask "hctl-debug-query" $ \case
     D.DebugQueryDriveInfo req -> queryDriveInfo req
 
 -- | Handles `hctl debug print drive` requests.
@@ -83,7 +83,7 @@ getDebugDriveInfo rg sd =
 
 -- | Dispatches `hctl debug set` requests.
 ruleDebugModify :: Definitions RC ()
-ruleDebugModify = defineSimpleTask "debug-modify" $ \case
+ruleDebugModify = defineSimpleTask "hctl-debug-modify" $ \case
     D.DebugModifyDriveState req -> modifyDriveState req
     D.DebugModifySdevState req -> modifySdevState req
 

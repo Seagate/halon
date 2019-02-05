@@ -711,7 +711,7 @@ deriveSafeCopy 0 'base ''PoolRepairInformation_v0
 data PoolRepairInformation = PoolRepairInformation
   { priTimeOfSnsStart :: !TimeSpec
   , priTimeLastHourlyRan :: !TimeSpec
-  , priStateUpdates :: ![(SDev, Int)]
+  , priStateUpdates :: ![(SDev, Int)]  -- XXX TODO: Replace Int with a meaningful type.
   } deriving (Eq, Show, Generic, Typeable, Ord)
 
 instance Hashable PoolRepairInformation
