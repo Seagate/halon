@@ -145,14 +145,14 @@ isPrincipalRM :: M0.Service
 isPrincipalRM svc = getGraph >>=
   return . G.isConnected svc Is M0.PrincipalRM
 
--- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'
---   from the specified Resource Graph. (Non-PhaseM version.)
+-- | Return 'M0.PrincipalRM' service. Return 'Nothing' if this service
+--   is not 'M0.SSOnline'.
 getPrincipalRM' :: G.Graph -> Maybe M0.Service
 getPrincipalRM' rg = case G.connectedFrom Is M0.PrincipalRM rg of
   Just svc | M0.getState svc rg == M0.SSOnline -> Just svc
   _ -> Nothing
 
--- | Get the 'M0.Service' that's serving as the current 'M0.PrincipalRM'.
+-- | Monadic version of 'getPrincipalRM''.
 getPrincipalRM :: PhaseM RC l (Maybe M0.Service)
 getPrincipalRM = getPrincipalRM' <$> getGraph
 
