@@ -139,11 +139,9 @@ getParents :: forall a b l. G.Relation M0.IsParentOf a b
 getParents obj = G.asUnbounded
                . G.connectedFrom M0.IsParentOf obj <$> getGraph
 
--- | Test if a service is the principal RM service
-isPrincipalRM :: M0.Service
-              -> PhaseM RC l Bool
-isPrincipalRM svc = getGraph >>=
-  return . G.isConnected svc Is M0.PrincipalRM
+-- | Test if a service is the principal RM service.
+isPrincipalRM :: M0.Service -> PhaseM RC l Bool
+isPrincipalRM svc = G.isConnected svc Is M0.PrincipalRM <$> getGraph
 
 -- | Return 'M0.PrincipalRM' service. Return 'Nothing' if this service
 --   is not 'M0.SSOnline'.
