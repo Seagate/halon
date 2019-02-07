@@ -55,7 +55,7 @@ END {
 }
 
 prepare_cluster_conf
-pdsh -S -w $(cluster_hosts) true  # fail unless all hosts are accessible
+pdsh -S -w $($H0 hosts) true  # fail unless all hosts are accessible
 
 $H0 init
 cluster_bootstrap

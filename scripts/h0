@@ -22,6 +22,8 @@ Usage: $PROG {COMMAND [OPTION]...}...
 Info commands:
     path    Show paths to Halon executables and Mero libraries.
     status  Show status of halond, LNet and mero-kernel.
+    hosts   Show comma-separated list of cluster nodes (multi-node
+            configuration only; see M0_CLUSTER below).
     help    Show this help and exit.
 
 Development commands:
@@ -64,6 +66,8 @@ Examples:
     $PROG test --help
 
     $PROG make --no-test --dry-run
+
+    pdsh -w \$(M0_CLUSTER=cluster.yaml $PROG hosts) pgrep m0d
 EOF
 }
 
@@ -84,6 +88,10 @@ cmd_status() {
     mpdsh sudo systemctl status halond
     mpdsh sudo lctl list_nids
     mpdsh sudo systemctl status mero-kernel
+}
+
+cmd_hosts() {
+    [[ -z $M0_CLUSTER_HOSTS ]] || echo $M0_CLUSTER_HOSTS
 }
 
 cmd_help() {
@@ -194,7 +202,7 @@ _time() {
 }
 
 _exec() {
-    [[ $1 =~ ^cmd_(path|status)$ ]] || echo "----- ${@#cmd_} -----" >&2
+    [[ $1 =~ ^cmd_(path|status|hosts)$ ]] || echo "----- ${@#cmd_} -----" >&2
     "$@"
 }
 
@@ -277,6 +285,27 @@ erase_cluster_data() {
     mpdsh sudo rm -rvf /var/mero/ || true
 }
 
+## Outputs comma-separated list of cluster hosts iff $M0_CLUSTER is set
+## and its value is a path to readable file.
+cluster_hosts() {
+    if [[ -n ${M0_CLUSTER:-} && -r $M0_CLUSTER ]]; then
+        cat $M0_CLUSTER | python -c '
+from __future__ import print_function
+import sys
+import yaml
+
+cfg = yaml.safe_load(sys.stdin)
+hosts = set()
+hosts.update(cfg.get("confds", []))
+hosts.update(cfg.get("clients", []))
+hosts.update(cfg.get("clovis-apps", []))
+hosts.update(cfg.get("s3servers", []))
+hosts.update(x["host"] for x in cfg.get("ssus", []))
+print(",".join(hosts))
+'
+    fi
+}
+
 init_vars() {
     PROG="${0##*/}"
     SUDO="${SUDO-sudo -E}"  # the absence of ':' is important
@@ -328,7 +357,7 @@ CMD=
 OPTS=()
 while [[ $# > 0 ]]; do
     case "$1" in
-        path|status|help|make|rebuild|test|run-st|clean|init|fini)
+        path|status|hosts|help|make|rebuild|test|run-st|clean|init|fini)
             [[ -z $CMD ]] || {
                 if [[ ${#OPTS[@]} == 0 ]]; then
                     _exec $CMD
