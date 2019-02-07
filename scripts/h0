@@ -269,8 +269,16 @@ prelink_executables() {
 
     # Libtool-based executables are linked on the first run.
     # In m0vg setup only `cmu` host can do the linking.
-    # If `m0dixinit` is started first on other host, it will fail.
-    $M0_SRC_DIR/utils/m0dixinit &>/dev/null || true
+    # If any of these executables is started on other (non-cmu)
+    # host first, it will fail.
+    local exe
+    for exe in dix/utils/m0dixinit \
+               mero/m0d \
+               utils/mkfs/m0mkfs \
+               utils/trace/m0traced \
+               utils/trace/m0tracedump; do
+        $M0_SRC_DIR/$exe -h &>/dev/null || true
+    done
 }
 
 erase_cluster_data() {
