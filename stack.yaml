@@ -29,10 +29,6 @@ packages:
     git: https://github.com/seagate-ssg/gitrev.git
     commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
   extra-dep: true
-- location:
-    git: https://github.com/seagate-ssg/aeson-schema.git
-    commit: 93eb73f6584b17ab8f0e7745c447eb7664e34067
-  extra-dep: true
 
 extra-deps:
 - distributed-static-0.3.8
@@ -40,6 +36,7 @@ extra-deps:
 - distributed-process-extras-0.3.5
 - ghc-datasize-0.1.2
 - containers-0.5.10.2
+- aeson-schema-0.4.1.3
 
 ghc-options:
   # XXX `CEP.regression.fork-remove-messages` UT will fail unless
