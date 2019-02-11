@@ -74,16 +74,39 @@ dumpGraph graph = let
 data Named a = Named { name :: !T.Text
                      , val :: !a }
 
+-- | 'IntJS' values get serialized to JSON as strings.
+--
+-- JavaScript runtimes (JS engines of web browsers, `jq` utility) cannot
+-- handle integer values larger than 2^53.
+-- See https://tc39.github.io/ecma262/#sec-ecmascript-language-types-number-type
+--
+-- E.g., `jq` "rounds" 9007199254740993 (2^53 + 1) to 9007199254740992:
+--
+--     $ python -c 'print(repr([2**53, 2**53 + 1]))'
+--     [9007199254740992, 9007199254740993]
+--     $ python -c 'print(repr([2**53, 2**53 + 1]))' | jq .
+--     [
+--       9007199254740992,
+--       9007199254740992
+--     ]
+--
+-- We use 'IntJS' as a workaround for this limitation.
+newtype IntJS = IntJS Int
+  deriving (Eq, Ord, Show)
+
+instance A.ToJSON IntJS where
+  toJSON (IntJS n) = A.String . T.pack $ show n
+
 data Connection = Connection
-  { conn_relation_id :: !Int
-  , conn_target_resource :: !Int
+  { conn_relation_id :: !IntJS
+  , conn_target_resource :: !IntJS
   } deriving (Eq, Show, Generic)
 instance A.ToJSON Connection
 
 data ResourceJson = ResourceJson
   { resource_type :: !T.Text
   , resource_value :: !A.Value
-  , resource_id :: !Int
+  , resource_id :: !IntJS
   , relations_out :: ![Connection]
   , relations_in :: ![Connection]
   } deriving (Eq, Show, Generic)
@@ -91,7 +114,7 @@ instance A.ToJSON ResourceJson
 
 data RelationJson = RelationJson
   { relation_type :: !T.Text
-  , relation_id :: !Int
+  , relation_id :: !IntJS
   } deriving (Eq, Show, Generic)
 instance A.ToJSON RelationJson
 
@@ -103,7 +126,7 @@ instance A.ToJSON a => A.ToJSON (JsonGraph a)
 
 -- | We only need to store one relation that we see for so fold into
 -- the map.
-type RelMap = M.Map Int T.Text
+type RelMap = M.Map IntJS T.Text
 
 -- | Output resource graph as JSON. All relations are contained within
 -- the resources.
@@ -114,22 +137,24 @@ dumpToJSON graph = A.encode jsonGraph
     jsonGraph = flattenRelations <$>
       foldl' resToJson (JsonGraph [] M.empty) graph
 
-    flattenRelations :: M.Map Int T.Text -> [RelationJson]
+    flattenRelations :: RelMap -> [RelationJson]
     flattenRelations = map (uncurry mkRel) . M.toList
       where
-        mkRel i t = RelationJson { relation_type = t
-                                 , relation_id = i }
+        mkRel i t = RelationJson { relation_type = t, relation_id = i }
 
     toConnection :: Rel -> Either (Named Connection) (Named Connection)
     toConnection (InRel r a _) = Left $! mkConnection r a
     toConnection (OutRel r _ b) = Right $! mkConnection r b
 
+    toId :: (Hashable a, Typeable a) => a -> IntJS
+    toId x = IntJS $ hash (typeOf x, x)
+
     mkConnection :: (Typeable a, Hashable a, Typeable b, Hashable b)
                  => a -> b -> Named Connection
     mkConnection rel res = Named
-      { val = Connection
-        { conn_relation_id = hash (typeOf rel, rel)
-        , conn_target_resource = hash (typeOf res, res) }
+      { val = Connection { conn_relation_id = toId rel
+                         , conn_target_resource = toId res
+                         }
       , name = T.pack . show $ typeOf rel
       }
 
@@ -140,13 +165,15 @@ dumpToJSON graph = A.encode jsonGraph
           !resJson = ResourceJson
             { resource_type = T.pack . show $ typeOf x
             , resource_value = A.toJSON x
-            , resource_id = hash (typeOf x, x)
+            , resource_id = toId x
             , relations_out = val <$> outs
             , relations_in = val <$> ins
             }
       in jgraph { resources = resJson : resources jgraph
                 , relations = M.unions [ relations jgraph
-                                       , nToMap ins, nToMap outs]
+                                       , nToMap ins
+                                       , nToMap outs
+                                       ]
                 }
 
 renderNode :: Res -> String
