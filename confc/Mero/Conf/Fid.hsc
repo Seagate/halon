@@ -22,7 +22,7 @@ module Mero.Conf.Fid
 #include "fid/fid.h"
 
 import           Control.Monad (liftM2)
-import           Data.Aeson (FromJSON, ToJSON)
+import qualified Data.Aeson as A
 import           Data.Binary (Binary)
 import           Data.Data (Data)
 import           Data.Hashable (Hashable)
@@ -62,9 +62,8 @@ strToFid mfid = case readMaybe <$> breakFid mfid of
 
 instance Binary Fid
 instance Hashable Fid
-instance FromJSON Fid
-instance ToJSON Fid
 instance Serialize Fid
+
 instance SafeCopy Fid where
   kind = primitive
 
@@ -76,6 +75,16 @@ instance Storable Fid where
                             (#{peek struct m0_fid, f_key} p)
   poke      p (Fid c k) = do #{poke struct m0_fid, f_container} p c
                              #{poke struct m0_fid, f_key} p k
+
+instance A.ToJSON Fid where
+  toJSON = A.String . T.pack . fidToStr
+
+instance A.FromJSON Fid where
+  parseJSON = A.withText "Fid" $ \s -> case strToFid (T.unpack s) of
+    Just fid -> pure fid
+    Nothing -> fail $ "Fid parsing error. \"container:key\" expected, got "
+                   ++ show s
+
 -- | @fid/fid.h M0_FID0@
 m0_fid0 :: Fid
 m0_fid0 = Fid 0 0
