@@ -96,7 +96,7 @@ import           Data.Foldable (traverse_, for_)
 import           Data.Hashable (hash)
 import           Data.IORef (writeIORef)
 import           Data.List (sortOn, (\\))
-import           Data.Maybe (catMaybes, listToMaybe)
+import           Data.Maybe (catMaybes, listToMaybe, fromJust)
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Typeable
@@ -428,8 +428,10 @@ mkRepairStartOperation handler = do
     mkRepairOperationStarted = mkGenericSNSReplyHandler p
       (const . return . Left)
       (\() pool -> do
-         uuid <- DP.liftIO nextRandom
-         setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Repair uuid Nothing
+         prs <- getPoolRepairStatus pool
+         let prs' = fromJust prs
+         setPoolRepairStatus pool prs'
+         let uuid = M0.prsRepairUUID prs'
          return (Right uuid))
 
 -- | Start the rebalance operation on the given 'M0.Pool' asynchronously.

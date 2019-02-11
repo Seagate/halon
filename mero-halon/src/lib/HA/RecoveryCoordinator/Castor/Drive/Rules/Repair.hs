@@ -27,6 +27,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , querySpiel
   , querySpielHourly
   , rules
+  , abortRepairFromProc
     -- * Individual rules exported for test purposes
   , ruleRebalanceStart
   , ruleRepairStart
@@ -52,13 +53,15 @@ import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe, listToMaybe)
 import           Data.Proxy
 import           Data.Traversable (for)
+import qualified Control.Distributed.Process as DP
 import           Data.Monoid ((<>))
 import           Data.Typeable (Typeable, (:~:)(..), eqT)
 import           Data.Vinyl hiding ((:~:))
 import           Data.UUID (UUID)
+import           Data.UUID.V4 (nextRandom)
 import           GHC.Generics (Generic)
 
 import           HA.Encode
@@ -550,6 +553,10 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
                            : map (`stateSet` Tr.sdevRepairStart) fa
                 modify Local $ rlens fldPool . rfield .~ Just pool
                 notifications <- applyStateChanges msgs
+                -- Update resource graph with repair status
+                uuid <- DP.liftIO nextRandom
+                setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Repair uuid Nothing
+                --
                 setExpectedNotifications notifications
                 waitFor notifier
                 waitFor notify_failed
@@ -790,6 +797,22 @@ ruleSNSOperationDelayedAbort = mkJobRule jobDelayedAbort args $ \(JobHandle getR
     args =  fldReq  =: Nothing
         <+> fldRep  =: Nothing
 
+abortRepairFromProc :: M0.Process -> PhaseM RC l ()
+abortRepairFromProc proc = do
+  getSDevFromProcWithState proc M0_NC_REPAIR <$> getGraph >>= \case
+    Nothing -> Log.rcLog' Log.DEBUG $ "Repair not running."
+    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
+      Nothing -> Log.rcLog' Log.DEBUG $ "No repair on-going on " ++ showFid pool
+      Just prs -> do
+        promulgateRC . AbortSNSOperation pool $ M0.prsRepairUUID prs
+  where
+    getSDevFromProcWithState p st rg =
+      listToMaybe [sd
+        | sv :: M0.Service  <- G.connectedTo p M0.IsParentOf rg :: [M0.Service]
+        , M0.s_type sv == CST_IOS
+        , sd <- G.connectedTo sv M0.IsParentOf rg :: [M0.SDev]
+        , st == getConfObjState sd rg
+        ]
 
 -- | Abort current SNS operation. Rule requesting SNS operation abort
 -- and waiting for all IOs to be finalized.
