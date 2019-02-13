@@ -59,13 +59,14 @@ mkdir -p %{buildroot}/usr/libexec/halon
 mkdir -p %{buildroot}%{_tmpfilesdir}
 mkdir -p %{buildroot}%{_sharedstatedir}/halon
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
+cp mero-halon/scripts/hctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
+cp scripts/halon-rg-view %{buildroot}/usr/bin
 cp mero-halon/scripts/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
 cp systemd/sysconfig/halond.example %{buildroot}/etc/sysconfig
 cp mero-halon/scripts/logrotate %{buildroot}/etc/logrotate.d/halon
-cp mero-halon/scripts/hctl %{buildroot}/usr/bin/hctl
 cp mero-halon/scripts/mero_clovis_role_mappings.ede \
    %{buildroot}/etc/halon/role_maps/clovis.ede
 cp mero-halon/scripts/mero_provisioner_role_mappings.ede \

@@ -1,0 +1,266 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+from errno import EPIPE
+import argparse
+import json
+import sys
+
+
+__version__ = '0.1'
+__author__ = 'Valery V. Vorotyntsev <valery.vorotyntsev@seagate.com>'
+__doc__ = """Resource Graph viewer.
+
+Generates HTML code of Resource Graph visualization.
+"""
+
+_page_header = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Resource Graph viewer</title>
+""" + '<!-- version {} -->'.format(__version__) + r"""
+<style>
+
+.link {
+    stroke: #999;
+    stroke-opacity: .6;
+    marker-end: url(#arrow);
+}
+
+marker#arrow {
+    fill: gray;
+}
+
+.node {
+    cursor: pointer;
+}
+
+.node circle {
+    stroke: #fff;
+    stroke-width: .5px;
+}
+
+.node text {
+    font: 10px sans-serif;
+}
+
+.link.pale,
+.node.pale circle,
+.node.pale text {
+    opacity: .2;
+}
+</style>
+</head>
+<body>
+<script src="https://d3js.org/d3.v5.min.js"></script>
+<script>
+function main(json_data) {
+    const data = {
+        nodes: json_data.resources.map(res => ({
+            id: res.resource_id,
+            type: res.resource_type,
+            value: res.resource_value,
+        })),
+
+        links: json_data.resources.reduce(
+            (z, res) => z.concat(res.relations_out.map(_mk_conn_to_link(res))),
+            [])
+    };
+
+    function _relation_type(relation_id) {
+        return json_data.relations.find(rel => rel.relation_id == relation_id)
+            .relation_type;
+    }
+
+    function _mk_conn_to_link(res) {
+        return conn => ({
+            source: res.resource_id,
+            target: conn.conn_target_resource,
+            relation: _relation_type(conn.conn_relation_id)
+        });
+    }
+
+    const g_width = window.screen.availWidth;
+    const g_height = window.screen.availHeight;
+
+    const simulation = d3.forceSimulation(data.nodes)
+        .force('link', d3.forceLink(data.links).id(d => d.id))
+        .force('charge', d3.forceManyBody().strength(-70))
+        .force('center', d3.forceCenter(g_width/2, g_height/2));
+
+    const svg = d3.select('body').append('svg')
+        .attr('width', g_width)
+        .attr('height', g_height)
+        .call(d3.zoom()
+            .on('zoom',
+                () => zoom_g.attr('transform', d3.event.transform)));
+
+    svg.append('defs')
+      .selectAll('marker')
+      .data(['arrow'])
+      .enter().append('marker')
+        .attr('id', String)
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 18)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+      .append('path')
+        .attr('d', 'M0,-4 L10,0 L0,4');
+
+    // Put everything into "g" element in order for zooming to work.
+    zoom_g = svg.append('g');
+
+    const graph = {};
+
+    graph.link = zoom_g.append('g')
+      .selectAll('.link')
+      .data(data.links)
+      .enter().append('g')
+        .classed('link', true);
+
+    graph.link.append('title')
+        .text(d => d.relation);
+
+    graph.link_line = graph.link.append('line');
+
+    graph.node = zoom_g.append('g')
+      .selectAll('.node')
+      .data(data.nodes)
+      .enter().append('g')
+        .classed('node', true)
+        .call(drag(simulation));
+
+    graph.node.append('title')
+        .text(d => JSON.stringify(d.value, null, 4));
+
+    const g_scale = d3.scaleOrdinal(d3.schemeCategory10);
+    graph.node_circle = graph.node.append('circle')
+        .on('mouseover', highlight_node)
+        .on('mouseout', () => highlight_node(null))
+        .on('click', d => console.log(d))  // XXX
+        .attr('fill', /*color*/ d => g_scale(d.type))
+        .attr('r', 5);
+
+    graph.node_text = graph.node.append('text')
+        .attr('dx', '.7em')
+        .attr('dy', '.35em')
+        .text(d => d.type);
+
+    simulation.on('tick', () => {
+        graph.link_line
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+
+        graph.node_circle
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y);
+
+        graph.node_text
+            .attr('x', d => d.x)
+            .attr('y', d => d.y);
+    });
+
+    function drag(simulation) {
+        function dragstarted(d) {
+            if (!d3.event.active)
+                simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(d) {
+            d.fx = d3.event.x;
+            d.fy = d3.event.y;
+        }
+
+        function dragended(d) {
+            if (!d3.event.active)
+                simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        return d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended);
+    }
+
+    function highlight_node(node) {
+        if (node === null) {
+            if (graph.highlighted_node) {
+                graph.node.classed('pale', false);
+                graph.link.classed('pale', false);
+            }
+        } else if (node !== graph.highlighted_node) {
+            const neighbours = data.links.reduce((z, link) => {
+                if (link.target.id === node.id)
+                    z.push(link.source.id);
+                else if (link.source.id == node.id)
+                    z.push(link.target.id);
+                return z;
+            }, [node.id]);
+            graph.node.classed('pale', d => !neighbours.includes(d.id));
+            graph.link.classed('pale',
+                               d => node !== d.source && node !== d.target);
+        }
+        graph.highlighted_node = node;
+    }
+}
+"""
+
+_page_footer = r"""
+</script>
+</body>
+</html>
+"""
+
+
+def pretty_rg_json(infile):
+    with infile:
+        obj = json.load(infile)
+    if type(obj) is dict and set(obj.keys()) == {"relations", "resources"}:
+        return json.dumps(obj, indent=4)
+    print('Bad input. Resource graph JSON expected', file=sys.stderr)
+
+
+def main():
+    p = argparse.ArgumentParser(
+        usage='%(prog)s [OPTION] [FILE]',
+        description='Generate HTML code of Resource Graph visualization.',
+        epilog="""Current RG snapshot:
+'hctl halon info graph json | %(prog)s > /data/rg.html'""")
+    p._optionals.title = 'Options'
+    p.add_argument('-o', '--output', dest='outfile', metavar='FILE', nargs='?',
+                   type=argparse.FileType('w'), default=sys.stdout,
+                   help='output file (defaults to stdout)')
+    p.add_argument('-V', '--version', action='version',
+                   version='%(prog)s ' + __version__)
+    g = p.add_argument_group('Positional argument')
+    g.add_argument('infile', metavar='FILE', nargs='?',
+                   type=argparse.FileType(), default=sys.stdin,
+                   help="""Input file generated by 'hctl halon info graph json'
+command (to be run separately). With no FILE read standard input.""")
+    args = p.parse_args()
+
+    _data = pretty_rg_json(args.infile)
+    if _data is None:
+        return 1
+
+    try:
+        print(_page_header + 'main({});'.format(_data) + _page_footer,
+              file=args.outfile, end='')
+    except IOError as e:
+        if e.errno == EPIPE:
+            return e.errno
+        raise
+
+
+if __name__ == '__main__':
+    sys.exit(main())
