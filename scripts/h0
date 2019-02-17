@@ -161,8 +161,10 @@ cmd_init() {
     prelink_executables
 
     # Install systemd services.
-    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link
+    local quiet=--quiet
+    [[ -v M0_VERBOSE ]] && quiet=''
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet
 
     erase_cluster_data
 
@@ -171,11 +173,12 @@ cmd_init() {
     # Generate facts file.
     if [[ -n $M0_CLUSTER ]]; then
         [[ -d /etc/halon ]] || sudo mkdir /etc/halon
-        sudo $M0_SRC_DIR/utils/m0genfacts --verbose --config $M0_CLUSTER \
-             -o /etc/halon/halon_facts.yaml \
+        sudo $M0_SRC_DIR/utils/m0genfacts ${M0_VERBOSE:+--verbose} \
+             --config $M0_CLUSTER -o /etc/halon/halon_facts.yaml \
              --netif eth1  # XXX Can we get rid of hard-coded `eth1'?
     else
-        sudo $M0_SRC_DIR/utils/m0setup --halon-facts --clovis-apps
+        sudo $M0_SRC_DIR/utils/m0setup --halon-facts --clovis-apps \
+             ${M0_VERBOSE:+--verbose}
     fi
 }
 
@@ -186,8 +189,11 @@ cmd_fini() {
     # Unload Mero kernel modules.
     mpdsh sudo systemctl stop mero-kernel || true
     erase_cluster_data
-    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall
+
+    local quiet=--quiet
+    [[ -v M0_VERBOSE ]] && quiet=''
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall $quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall $quiet
 }
 
 ## -------------------------------------------------------------------
