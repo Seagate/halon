@@ -30,13 +30,18 @@ report_and_exit() {
 }
 
 cluster_bootstrap() {
-    hctl mero bootstrap
+    hctl mero bootstrap ${M0_VERBOSE:+--verbose}
 
     # Display bootstrap progress, usually it completes under a minute.
-    watch hctl mero status &
-    sleep 90
-    kill %watch
-    reset  # `kill %watch` might have left the terminal broken
+    if [[ -t /dev/stdout ]] ; then
+        watch hctl mero status &
+        sleep 90
+        kill %watch
+        reset  # `kill %watch` might have left the terminal broken
+    else
+        hctl mero status
+        sleep 90
+    fi
 
     local rc=0
     # Possible failure of m0t1fs has no impact on exit code of

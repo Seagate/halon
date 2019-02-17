@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
-SAT='ssu1'
+# TODO: find a better solution?
+SAT=${SAT:-ssu1}
 
 prepare_cluster_conf() {
+    [[ -z $M0_CLUSTER ]] || return 0
     export M0_CLUSTER=$(mktemp)
     trap "rm $M0_CLUSTER" 0
 
@@ -55,7 +57,9 @@ END {
 }
 
 prepare_cluster_conf
-pdsh -S -w $($H0 hosts) true  # fail unless all hosts are accessible
+# FIXME: this check fails because ssh keys haven't been scanned yet at this
+#        point (the scan is performed later during `$H0 init`)
+#pdsh -S -w $($H0 hosts) true  # fail unless all hosts are accessible
 
 $H0 init
 cluster_bootstrap
