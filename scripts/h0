@@ -225,6 +225,9 @@ stack_build() {
             build \
                 --ghc-options="$GHC_OPTS" \
                 "$@"
+    $H0_SRC_DIR/mero-halon/scripts/visualize-schema/genhtml \
+        >$H0_SRC_DIR/doc/halon-rg-schema.html
+
 }
 
 ## Maybe pdsh.
