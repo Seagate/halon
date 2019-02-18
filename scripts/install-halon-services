@@ -11,6 +11,7 @@ H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
 dry_run=false
 link_files=false
 action='install'
+verbose=true
 
 help()
 {
@@ -27,6 +28,8 @@ Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
     -n|--dry-run    Don't perform any action, just show what would be
                     installed/uninstalled.
 
+    -q|--quiet      Suppress detailed output.
+
     -l|--link       Symlink files instread of copying them.
 
     -u|--uninstall  Remove files and directories witch were installed by this script
@@ -40,7 +43,7 @@ parse_cli_options()
     # Note that we use `"$@"' to let each command-line parameter expand to a
     # separate word. The quotes around `$@' are essential!
     # We need TEMP as the `eval set --' would nuke the return value of getopt.
-    TEMP=$( getopt -o hnlu --long help,dry-run,link,uninstall -n "$PROG_NAME" -- "$@" )
+    TEMP=$( getopt -o hnqlu --long help,dry-run,quiet,link,uninstall -n "$PROG_NAME" -- "$@" )
 
     [[ $? != 0 ]] && help
 
@@ -51,6 +54,7 @@ parse_cli_options()
         case "$1" in
             -h|--help)          help stdout ;;
             -n|--dry-run)       dry_run=true; shift ;;
+            -q|--quiet)         verbose=false; shift ;;
             -l|--link)          link_files=true; shift ;;
             -u|--uninstall)     action=uninstall; shift ;;
             --)                 shift; break ;;
@@ -131,10 +135,12 @@ h0_path()
 
 install_files()
 {
+    local v='-v'
+    $verbose || v=''
 
-    local cmd='cp -vf'
+    local cmd="cp -f ${v}"
     if $link_files ; then
-        cmd='ln -sfv'
+        cmd="ln -sf ${v}"
     fi
 
     local file
@@ -148,8 +154,8 @@ install_files()
 
     dir='/etc/sysconfig'
     # always copy configs
-    run "cp -vf $H0_SRC_DIR/systemd/sysconfig/halond.example $dir/halond"
-    run "cp -vf $H0_SRC_DIR/systemd/sysconfig/halon-satellite $dir"
+    run "cp ${v} -f $H0_SRC_DIR/systemd/sysconfig/halond.example $dir/halond"
+    run "cp ${v} -f $H0_SRC_DIR/systemd/sysconfig/halon-satellite $dir"
     # example output of `ip address` command that is parsed below
     #   3: eth1    inet 172.28.128.94/24 brd 172.28.128.255 scope global dynamic eth1...
     local ip_addr=$(ip -oneline -4 address show scope global up | grep -v docker | tail -n 1 |
@@ -160,12 +166,12 @@ install_files()
     $dry_run || echo "$(h0_path mero-libs)" > "$dir/mero.conf"
 
     dir='/etc/halon'
-    [[ -d $dir ]] || run "mkdir -vp $dir"
+    [[ -d $dir ]] || run "mkdir ${v} -p $dir"
     run "$cmd $H0_SRC_DIR/mero-halon/scripts/halon_roles.yaml $dir/halon_role_mappings"
     run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_clovis_role_mappings.ede $dir/mero_role_mappings"
 
     dir='/etc/halon/role_maps'
-    [[ -d $dir ]] || run "mkdir -vp $dir"
+    [[ -d $dir ]] || run "mkdir ${v} -p $dir"
     run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_provisioner_role_mappings.ede $dir/prov.ede"
     run "$cmd $H0_SRC_DIR/mero-halon/scripts/mero_clovis_role_mappings.ede $dir/clovis.ede"
 
@@ -181,14 +187,14 @@ install_files()
     done
 
     dir='/usr/libexec/halon'
-    [[ -d $dir ]] || run "mkdir -vp $dir"
+    [[ -d $dir ]] || run "mkdir ${v} -p $dir"
     file="$halon_bin_dir/halon-cleanup"
     [[ -s $file ]] &&
         run "$cmd $file $dir" ||
         warn "skipping non-existing file '$file'"
 
     dir='/var/lib/halon'
-    [[ -d $dir ]] || run "mkdir -vp $dir"
+    [[ -d $dir ]] || run "mkdir ${v} -p $dir"
 
     $dry_run || {
         systemctl daemon-reload
@@ -198,6 +204,9 @@ install_files()
 
 uninstall_files()
 {
+    local v='-v'
+    $verbose || v=''
+
     local files='
                  /etc/ld.so.conf.d/mero.conf
                  /etc/sysconfig/halon-satellite
@@ -212,7 +221,7 @@ uninstall_files()
                 '
     local file
     for file in $files ; do
-        run "rm -vf $file"
+        run "rm ${v} -f $file"
     done
 
     local dirs='
@@ -222,7 +231,7 @@ uninstall_files()
                '
     local dir
     for dir in $dirs ; do
-        [[ ! -d $dir  ]] || run "rm -rvf $dir"
+        [[ ! -d $dir  ]] || run "rm ${v} -rf $dir"
     done
 
     $dry_run || {
