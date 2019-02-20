@@ -134,7 +134,7 @@ cmd_run_st() {
         shift
     fi
 
-    export H0_SRC_DIR SUDO  # export variables used by system tests
+    export H0_SRC_DIR SUDO M0_CLUSTER  # export variables used by system tests
     for pattern in ${@:-t_*}; do
         find "$H0_SRC_DIR/st/" -maxdepth 1 \! -type d -name $pattern \
              -perm +a=x -print | sort |
