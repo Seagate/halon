@@ -1,5 +1,5 @@
 ARG  CENTOS_RELEASE=latest
-FROM seagate/mero-devel:${CENTOS_RELEASE}
+FROM registry.gitlab.mero.colo.seagate.com/mero-devel:${CENTOS_RELEASE}
 
 COPY stack.repo /etc/yum.repos.d/
 

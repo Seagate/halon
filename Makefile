@@ -39,10 +39,6 @@ tests:
 setup:
 	stack setup
 
-.PHONY: clean
-setup:
-	stack clean
-
 #
 # RPMs -------------------------------------------------------------------- {{{1
 #
@@ -131,7 +127,7 @@ srpm:
 #
 
 CENTOS_RELEASE  := latest
-NAMESPACE       := seagate
+NAMESPACE       := registry.gitlab.mero.colo.seagate.com
 DOCKER          := docker
 
 INAME = $(@:%-image=%)
@@ -140,19 +136,9 @@ CNAME = $(@:%-container=%)
 .PHONY: docker-images
 docker-images: halon-devel-image
 
-# .PHONY: docker-images
-# docker-images: halon-src-container \
-#                halon-base-image \
-#                halon-deps-cache \
-#                halon-devel-image
-
-docker-images-7.4: CENTOS_RELEASE := 7.4.1708
-docker-images-7.4: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-images-7.4: docker-images
-
-docker-images-7.3: CENTOS_RELEASE := 7.3.1611
-docker-images-7.3: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-images-7.3: docker-images
+docker-images-7.5: CENTOS_RELEASE := 7.5.1804
+docker-images-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-7.5: docker-images
 
 docker-images-sage: CENTOS_RELEASE := sage
 docker-images-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
@@ -187,6 +173,7 @@ halon-devel-image: halon-deps-cache
 			-f Dockerfile.$(INAME) \
 			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
 			-t $(NAMESPACE)/$(INAME):$(basename $(CENTOS_RELEASE)) \
+			-t $(NAMESPACE)/halon/halon:$(basename $(CENTOS_RELEASE)) \
 			$(DOCKER_OPTS)
 	rm -rf docker/{stack,stack-work}
 	$(DOCKER) rmi $(NAMESPACE)/halon-base:$(CENTOS_RELEASE)
@@ -195,6 +182,8 @@ name := halon*
 tag  := *
 docker-push:
 	@for img in $$(docker images --filter=reference='$(NAMESPACE)/$(name):$(tag)' \
+				    --format '{{.Repository}}:{{.Tag}}' | grep -v none) \
+		    $$(docker images --filter=reference='$(NAMESPACE)/mero/$(name):$(tag)' \
 				    --format '{{.Repository}}:{{.Tag}}' | grep -v none) ; \
 	do \
 		echo "---> $$img" ; \
@@ -203,6 +192,8 @@ docker-push:
 
 docker-clean:
 	@for img in $$(docker images --filter=reference='$(NAMESPACE)/$(name):$(tag)' \
+				    --format '{{.Repository}}:{{.Tag}}') \
+		    $$(docker images --filter=reference='$(NAMESPACE)/mero/$(name):$(tag)' \
 				    --format '{{.Repository}}:{{.Tag}}') ; \
 	do \
 		echo "---> $$img" ; \
