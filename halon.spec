@@ -87,6 +87,7 @@ rm -rf %{buildroot}
 /usr/bin/halond
 /usr/bin/halonctl
 /usr/bin/hctl
+/usr/bin/halon-rg-view
 /usr/libexec/halon/halon-cleanup
 /usr/libexec/halon/setup-rabbitmq-perms.sh
 /usr/lib/systemd/system/halond.service
