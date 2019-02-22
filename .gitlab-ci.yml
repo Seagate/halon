@@ -8,32 +8,30 @@ variables:
 
   before_script:
     - cd ..
-    - rm -rf m0vg mero .vagrant*
-    - git clone --depth 1 --shallow-submodules --branch dev/gitlab http://gitlab.mero.colo.seagate.com/mero/mero.git m0vg
-    # TODO: revert back to 'master' branch when install-mero-service patch is landed
-    - git clone --recursive --depth 1 --shallow-submodules --branch dev/gitlab http://gitlab.mero.colo.seagate.com/mero/mero.git
-    - ./m0vg/scripts/m0vg env add M0_VM_BOX=centos75/dev
-    - ./m0vg/scripts/m0vg env add M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev'
-    - ./m0vg/scripts/m0vg env add M0_VM_CMU_MEM_MB=8192
-    - ./m0vg/scripts/m0vg env add M0_VM_NAME_PREFIX=${CI_PROJECT_NAME}${CI_JOB_ID}
-    - ./m0vg/scripts/m0vg env add M0_VM_HOSTNAME_PREFIX=${CI_PROJECT_NAME}${CI_JOB_ID}
-    - ./m0vg/scripts/m0vg up cmu /ssu/ /client/
-    - ./m0vg/scripts/m0vg reload cmu /ssu/ /client/
+    - rm -rf mero .vagrant*
+    - git clone --recursive --depth 1 --shallow-submodules http://gitlab.mero.colo.seagate.com/mero/mero.git
+    - ./mero/scripts/m0vg env add M0_VM_BOX=centos75/dev
+    - ./mero/scripts/m0vg env add M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev'
+    - ./mero/scripts/m0vg env add M0_VM_CMU_MEM_MB=8192
+    - ./mero/scripts/m0vg env add M0_VM_NAME_PREFIX=${CI_PROJECT_NAME}${CI_JOB_ID}
+    - ./mero/scripts/m0vg env add M0_VM_HOSTNAME_PREFIX=${CI_PROJECT_NAME}${CI_JOB_ID}
+    - ./mero/scripts/m0vg up cmu /ssu/ /client/
+    - ./mero/scripts/m0vg reload cmu /ssu/ /client/
     - 'echo "{ confds: [${CI_PROJECT_NAME}${CI_JOB_ID}-cmu.local], ssus: [{host: ${CI_PROJECT_NAME}${CI_JOB_ID}-ssu1.local, disks: \"/dev/vd[b-g]\"}, {host: ${CI_PROJECT_NAME}${CI_JOB_ID}-ssu2.local, disks: \"/dev/vd[b-g]\"}], clients: [${CI_PROJECT_NAME}${CI_JOB_ID}-client1.local], clovis-apps: [${CI_PROJECT_NAME}${CI_JOB_ID}-client1.local]}" > m0-cluster.yaml'
     - cat m0-cluster.yaml
 
   script:
     # build
-    - ./m0vg/scripts/m0vg run "'cd /data/mero && ./autogen.sh && ./configure'"
-    - ./m0vg/scripts/m0vg run "'cd /data/mero && make -j\$(nproc)'"
-    - ./m0vg/scripts/m0vg run "'/data/halon/scripts/h0 make -j\$(nproc)'"
+    - ./mero/scripts/m0vg run "'cd /data/mero && ./autogen.sh && ./configure'"
+    - ./mero/scripts/m0vg run "'cd /data/mero && make -j\$(nproc)'"
+    - ./mero/scripts/m0vg run "'/data/halon/scripts/h0 make -j\$(nproc)'"
     # unit tests
-    - ./m0vg/scripts/m0vg run /data/halon/scripts/h0 test
+    - ./mero/scripts/m0vg run /data/halon/scripts/h0 test
     # single-node system tests
-    - ./m0vg/scripts/m0vg run "${M0_VERBOSE:+M0_VERBOSE=1} /data/halon/scripts/h0 run-st"
+    - ./mero/scripts/m0vg run "${M0_VERBOSE:+M0_VERBOSE=1} /data/halon/scripts/h0 run-st"
     # multi-node system tests
-    - ./m0vg/scripts/m0vg run "${M0_VERBOSE:+M0_VERBOSE=1} M0_CLUSTER=/data/m0-cluster.yaml SAT=${CI_PROJECT_NAME}${CI_JOB_ID}-ssu1 /data/halon/scripts/h0 run-st 'multinode.t_*'"
+    - ./mero/scripts/m0vg run "${M0_VERBOSE:+M0_VERBOSE=1} M0_CLUSTER=/data/m0-cluster.yaml SAT=${CI_PROJECT_NAME}${CI_JOB_ID}-ssu1 /data/halon/scripts/h0 run-st 'multinode.t_*'"
 
   after_script:
     - cd ..
-    - ./m0vg/scripts/m0vg destroy -f
+    - ./mero/scripts/m0vg destroy -f
