@@ -130,14 +130,17 @@ mkCheckAndHandleDriveReady smartLens next = do
             next m0sdev
           SDSRepaired -> do
             -- Start rebalance
-            pool <- getSDevPool m0sdev
-            getPoolRepairStatus pool >>= \case
-              Nothing -> do
-                promulgateRC $ PoolRebalanceRequest pool
+            poolFromSdevM m0sdev >>= \case
+              Left err   -> do
+                Log.rcLog' Log.ERROR (show err)
                 next m0sdev
-              Just prs -> do
-                promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
-                continue abort_result
+              Right pool -> getPoolRepairStatus pool >>= \case
+                Nothing -> do
+                  promulgateRC $ PoolRebalanceRequest pool
+                  next m0sdev
+                Just prs -> do
+                  promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+                  continue abort_result
           SDSTransient _ -> do
             -- Transient failure - recover
             _ <- applyStateChanges [stateSet m0sdev Tr.sdevRecoverTransient]

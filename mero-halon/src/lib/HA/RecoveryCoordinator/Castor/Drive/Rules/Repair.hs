@@ -53,7 +53,7 @@ import           Data.Foldable
 import qualified Data.HashSet as S
 import qualified Data.Map as M
 import qualified Data.Set as Set
-import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe, listToMaybe)
+import           Data.Maybe (catMaybes, isJust, fromMaybe, mapMaybe)
 import           Data.Proxy
 import           Data.Traversable (for)
 import qualified Control.Distributed.Process as DP
@@ -799,20 +799,21 @@ ruleSNSOperationDelayedAbort = mkJobRule jobDelayedAbort args $ \(JobHandle getR
 
 abortRepairFromProc :: M0.Process -> PhaseM RC l ()
 abortRepairFromProc proc = do
-  getSDevFromProcWithState proc M0_NC_REPAIR <$> getGraph >>= \case
-    Nothing -> Log.rcLog' Log.DEBUG $ "Repair not running."
-    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
-      Nothing -> Log.rcLog' Log.DEBUG $ "No repair on-going on " ++ showFid pool
-      Just prs -> do
-        promulgateRC . AbortSNSOperation pool $ M0.prsRepairUUID prs
-  where
-    getSDevFromProcWithState p st rg =
-      listToMaybe [sd
-        | sv :: M0.Service  <- G.connectedTo p M0.IsParentOf rg :: [M0.Service]
-        , M0.s_type sv == CST_IOS
-        , sd <- G.connectedTo sv M0.IsParentOf rg :: [M0.SDev]
-        , st == getConfObjState sd rg
-        ]
+  rg <- getGraph
+  let (errs, pools) = partitionEithers . Set.toList $ Set.fromList
+                        [ poolFromSdev sdev rg
+                        | svc <- G.connectedTo proc M0.IsParentOf rg
+                        , M0.s_type svc == CST_IOS
+                        , sdev <- G.connectedTo svc M0.IsParentOf rg
+                        , getConfObjState sdev rg == M0_NC_REPAIR
+                        ]
+  for_ errs (Log.rcLog' Log.ERROR . show)
+  when (null pools) (Log.rcLog' Log.DEBUG "Repair not running")
+  for_ pools $ \pool ->
+    getPoolRepairStatus pool >>= \case
+      Nothing -> Log.rcLog' Log.WARN $ "PoolRepairStatus is missing for pool "
+                                    ++ showFid pool
+      Just prs -> promulgateRC . AbortSNSOperation pool $ M0.prsRepairUUID prs
 
 -- | Abort current SNS operation. Rule requesting SNS operation abort
 -- and waiting for all IOs to be finalized.
@@ -1057,12 +1058,11 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \(JobHandle _ 
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
 ruleOnSnsOperationQuiesceFailure :: Definitions RC ()
 ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
-   case result of
-    (QuiesceSNSOperationFailure pool _) -> do
-       mprs <- getPoolRepairStatus pool
-       case mprs of
-         Nothing -> return ()
-         Just prs  -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+  case result of
+    (QuiesceSNSOperationFailure pool _) ->
+       getPoolRepairStatus pool >>= \case
+         Nothing  -> return ()
+         Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
     _ -> return ()
 
 -- | Log 'StobIoqError' and abort repair if it's on-going.
@@ -1072,15 +1072,19 @@ ruleStobIoqError = defineSimpleTask "stob_ioq_error" $ \(HAMsg stob meta) -> do
                               , ("stob", show stob) ]
   rg <- getGraph
   case M0.lookupConfObjByFid (_sie_conf_sdev stob) rg of
-    Nothing -> Log.rcLog' Log.WARN $ "SDev for " ++ show (_sie_conf_sdev stob) ++ " not found."
-    Just sdev -> getSDevPool sdev >>= \pool -> getPoolRepairStatus pool >>= \case
-      Nothing -> Log.rcLog' Log.DEBUG $ "No repair on-going on " ++ showFid pool
-      Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+    Nothing -> Log.rcLog' Log.WARN $ "SDev for " ++ show (_sie_conf_sdev stob)
+                                  ++ " not found"
+    Just sdev -> do
+      case poolFromSdev sdev rg of
+        Left err   -> Log.rcLog' Log.ERROR (show err)
+        Right pool -> getPoolRepairStatus pool >>= \case
+          Nothing -> Log.rcLog' Log.DEBUG $ "No ongoing SNS operation for pool "
+                                         ++ showFid pool
+          Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
 
 --------------------------------------------------------------------------------
 -- Actions                                                                    --
 --------------------------------------------------------------------------------
-
 
 -- | Continue a previously-quiesced SNS operation.
 continueSNS :: M0.Pool  -- ^ Pool under SNS operation
@@ -1095,14 +1099,14 @@ continueSNS pool prt = do
   case mprs of
     Nothing -> Log.rcLog' Log.WARN $
       "continue repair was called, when no SNS operation were registered\
-       \- ignoring"
+       \ - ignoring"
     Just prs ->
       if prsType prs == prt
       then promulgateRC $ ContinueSNS (prsRepairUUID prs) pool prt
       else Log.rcLog' Log.WARN $
              "Continue for " ++ show prt
-                             ++ "was requested, but "
-                             ++ show (prsType prs) ++ "is registered."
+                             ++ " was requested, but "
+                             ++ show (prsType prs) ++ " is registered"
 
 -- | Quiesce the repair on the given pool if the repair is on-going.
 quiesceSNS :: M0.Pool -> PhaseM RC l ()
@@ -1416,14 +1420,16 @@ newtype DevicesOnly = DevicesOnly [(M0.Pool, SDevStateMap)] deriving (Show)
 processDevices :: (StateCarrier SDev -> StateCarrier SDev -> Bool) -- ^ Predicate
                 -> [AnyStateChange]
                 -> PhaseM RC l (Maybe DevicesOnly)
-processDevices p changes = do
+processDevices p changes =
     for msdevs $ \sdevs -> do
-      pdevs <- for sdevs $ \x@(sdev,_) -> (,x) <$> getSDevPool sdev
-      return . DevicesOnly . M.toList
-             . M.map (SDevStateMap . M.fromListWith (<>))
-             . M.fromListWith (<>)
-             . map (\(pool, (sdev,st)) -> (pool, [(st, S.singleton sdev)]))
-             $ pdevs
+        (errs, pools) <- fmap partitionEithers . for sdevs $ \x@(sdev, _) ->
+            return . fmap (, x) =<< poolFromSdevM sdev
+        for_ errs (Log.rcLog' Log.ERROR . show)
+        return . DevicesOnly . M.toList
+               . M.map (SDevStateMap . M.fromListWith (<>))
+               . M.fromListWith (<>)
+               . map (\(pool, (sdev, st)) -> (pool, [(st, S.singleton sdev)]))
+               $ pools
   where
     go :: AnyStateChange -> Maybe (Maybe (SDev, ConfObjectState))
     go (AnyStateChange (a::x) o n _) = case eqT :: Maybe (x :~: M0.Process) of
@@ -1431,6 +1437,7 @@ processDevices p changes = do
         Just Refl | p o n -> Just (Just (a,toConfObjState a n))
         _ -> Nothing
       Just _  -> Just (Nothing)
+
     msdevs :: Maybe [(SDev, ConfObjectState)]
     msdevs = sequence (mapMaybe go changes)
 

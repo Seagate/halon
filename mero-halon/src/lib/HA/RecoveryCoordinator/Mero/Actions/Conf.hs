@@ -13,7 +13,6 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
     getRoot
   , getProfiles
   , theProfile
-  , getSDevPool
   , getM0ServicesRC
   , getChildren
   , getParents
@@ -21,6 +20,8 @@ module HA.RecoveryCoordinator.Mero.Actions.Conf
   , lookupConfObjByFid
   , lookupM0Enclosure
   , lookupHostHAAddress
+  , poolFromSdev
+  , poolFromSdevM
     -- ** Other things
   , getPrincipalRM
   , getPrincipalRM'
@@ -82,32 +83,39 @@ theProfile = listToMaybe <$> getProfiles
 getM0ServicesRC :: PhaseM RC l [M0.Service]
 getM0ServicesRC = M0.getM0Services <$> getGraph
 
--- | Find a pool the given 'M0.SDev' belongs to.
+-- | Type of errors returned by 'poolFromSdev'.
+data PoolFromSdevError
+  = NoPool M0.SDev
+  | ManyPools M0.SDev
+  deriving (Eq, Ord)
+
+instance Show PoolFromSdevError where
+  show (NoPool sdev) = "SDev " ++ M0.showFid sdev ++ " doesn't belong any pool"
+  show (ManyPools sdev) = "SDev " ++ M0.showFid sdev ++ " belongs several pools"
+
+-- | Find the pool which given 'M0.SDev' belongs to.
 --
--- Fails if multiple pools are found. Metadata pool are ignored.
-getSDevPool :: M0.SDev -> PhaseM RC l M0.Pool
-getSDevPool sdev = do
-    rg <- getGraph
-    let pools =
-          [ pool
-          | Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
-          , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
-          , Just (ctrlv :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf diskv rg]
-          , Just (enclv :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ctrlv rg]
-          , Just (rackv :: M0.RackV) <- [G.connectedFrom M0.IsParentOf enclv rg]
-          , Just (sitev :: M0.SiteV) <- [G.connectedFrom M0.IsParentOf rackv rg]
-          , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf sitev rg]
-          , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
-          , M0.fid pool /= M0.rt_mdpool (M0.getM0Root rg)
-          ]
-    case pools of
-      -- TODO throw a better exception
-      [] -> error "getSDevPool: No pool found for sdev"
-      [x] -> return x
-      x:_ -> do
-        -- XXX-MULTIPOOLS: This shouldn't be an error.
-        Log.rcLog' Log.ERROR ("Multiple pools found for sdev!" :: String)
-        return x
+-- Metadata pool is ignored.
+poolFromSdev :: M0.SDev -> G.Graph -> Either PoolFromSdevError M0.Pool
+poolFromSdev sdev rg =
+  case [ pool
+       | Just (disk :: M0.Disk) <- [G.connectedTo sdev M0.IsOnHardware rg]
+       , diskv :: M0.DiskV <- G.connectedTo disk M0.IsRealOf rg
+       , Just (ctrlv :: M0.ControllerV) <- [G.connectedFrom M0.IsParentOf diskv rg]
+       , Just (enclv :: M0.EnclosureV) <- [G.connectedFrom M0.IsParentOf ctrlv rg]
+       , Just (rackv :: M0.RackV) <- [G.connectedFrom M0.IsParentOf enclv rg]
+       , Just (sitev :: M0.SiteV) <- [G.connectedFrom M0.IsParentOf rackv rg]
+       , Just (pver :: M0.PVer) <- [G.connectedFrom M0.IsParentOf sitev rg]
+       , Just (pool :: M0.Pool) <- [G.connectedFrom M0.IsParentOf pver rg]
+       , M0.fid pool /= M0.rt_mdpool (M0.getM0Root rg)
+       ] of
+    [pool] -> Right pool
+    []     -> Left (NoPool sdev)
+    _      -> Left (ManyPools sdev)
+
+-- | Monadic version of 'poolFromSdev'.
+poolFromSdevM :: M0.SDev -> PhaseM RC l (Either PoolFromSdevError M0.Pool)
+poolFromSdevM sdev = poolFromSdev sdev <$> getGraph
 
 -- | Find 'M0.Enclosure' object associated with 'Enclosure'.
 lookupM0Enclosure :: Enclosure -> PhaseM RC l (Maybe M0.Enclosure)

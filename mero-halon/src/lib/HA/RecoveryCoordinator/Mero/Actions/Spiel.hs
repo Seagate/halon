@@ -958,8 +958,7 @@ withResourceGraphCache action = do
 
 -- | Return the 'M0.PoolRepairStatus' structure. If one is not in
 -- the graph, it means no repairs are going on
-getPoolRepairStatus :: M0.Pool
-                    -> PhaseM RC l (Maybe M0.PoolRepairStatus)
+getPoolRepairStatus :: M0.Pool -> PhaseM RC l (Maybe M0.PoolRepairStatus)
 getPoolRepairStatus pool = G.connectedTo pool Has <$> getGraph
 
 -- | Return the 'M0.PoolRepairStatus' structure. If one is not in
