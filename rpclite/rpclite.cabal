@@ -3,16 +3,18 @@ version:             0.1.0.0
 license:             AllRightsReserved
 copyright:           (C) 2013 Xyratex Technology Limited
 category:            Network
-build-type:          Custom
-cabal-version:       >=1.10
+cabal-version:       >= 1.10
 data-files:          rpclite/rpclite.h
+
+custom-setup
+  setup-depends: base, Cabal
 
 library
   exposed-modules:     Mero
                        Mero.Concurrent
                        Mero.Lnet
                        Network.RPC.RPCLite
-  build-depends:       base >=4.7
+  build-depends:       base >= 4.7
                      , aeson
                      , attoparsec
                      , binary >= 0.6

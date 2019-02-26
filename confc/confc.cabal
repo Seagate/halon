@@ -6,7 +6,7 @@ Description:   The Mero configuration client library allows programs
 License:       AllRightsReserved
 Copyright:     (C) 2013-2018 Xyratex Technology Limited
 Category:      Network
-Build-Type:    Custom
+Build-Type:    Simple
 Cabal-Version: >= 1.10
 
 Library
