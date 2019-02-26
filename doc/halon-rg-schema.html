@@ -103,7 +103,6 @@ digraph ResourceGraphSchema {
     "M0.Disk" -> "M0.Replaced" [label="Cas.Is", arrowtail=oinv, dir=both]
     "M0.Controller" -> "M0.ControllerState" [label="Cas.Is", arrowtail=oinv, dir=both]
     "M0.Root" -> "M0.FilesystemStats" [label="R.Has"]
-    "M0.Root" -> "M0.DIXInitialised" [label="R.Has"]
     "M0.Profile" -> "M0.Pool" [label="R.Has", arrowhead=onormal]
     "M0.Process" -> "Cas.Initial.ProcessType" [label="R.Has", arrowtail=oinv, dir=both]
     "M0.Process" -> "M0.ProcessEnv" [label="R.Has", arrowhead=onormal, arrowtail=oinv, dir=both]

@@ -391,8 +391,6 @@ controlProcess conf master pcChan = do
       sendRC interface . ProcessControlResultMsg
     StopProcess runType p -> stopProcess runType p >>=
       sendRC interface . ProcessControlResultStopMsg nid
-    DixInit _ ->
-      sendRC interface $ DixInitialised (Right ())
   where
     writeSysconfig runType pfid m0addr confdPath = do
       let prefix = case runType of { M0T1FS -> "m0t1fs"
@@ -406,7 +404,6 @@ controlProcess conf master pcChan = do
         , ("MERO_PROFILE_FID", show (mcProfile conf))
         ] ++ maybe [] (\p -> [("MERO_CONF_XC", p)]) confdPath
       return ()
-
 
     configureProcess :: ProcessRunType -> ProcessConfig -> Bool
                      -> Process (Either (M0.Process, String) M0.Process)

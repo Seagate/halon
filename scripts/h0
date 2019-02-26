@@ -281,8 +281,7 @@ prelink_executables() {
     # If any of these executables is started on other (non-cmu)
     # host first, it will fail.
     local exe
-    for exe in dix/utils/m0dixinit \
-               mero/m0d \
+    for exe in mero/m0d \
                utils/mkfs/m0mkfs \
                utils/trace/m0traced \
                utils/trace/m0tracedump; do

@@ -220,17 +220,6 @@ instance ConfObj Profile where
 storageIndex ''Profile "5c1bed0a-414a-4567-ba32-4263ab4b52b7"
 deriveSafeCopy 0 'base ''Profile
 
--- | Marker to indicate the DIX subsystem has been initialised.
-data DIXInitialised = DIXInitialised
-  deriving (Eq, Show, Generic, Typeable)
-
-instance Hashable DIXInitialised
-instance ToJSON DIXInitialised
-instance FromJSON DIXInitialised
-
-storageIndex ''DIXInitialised "e36d8c47-62d8-466c-88d7-bd1255776be0"
-deriveSafeCopy 0 'base ''DIXInitialised
-
 newtype Node = Node Fid
   deriving (Eq, Show, Generic, Hashable, Typeable, Ord, FromJSON, ToJSON)
 
@@ -1007,7 +996,6 @@ $(mkDicts
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
-  , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, ''R.Has, ''Root)
@@ -1071,7 +1059,6 @@ $(mkDicts
   , (''Controller, ''Cas.Is, ''ControllerState)
   , (''Disk, ''Cas.Is, ''Replaced)
   , (''Root, ''R.Has, ''FilesystemStats)
-  , (''Root, ''R.Has, ''DIXInitialised)
   ]
   )
 
@@ -1087,7 +1074,6 @@ $(mkResRel
   , ''SDevState, ''PVerCounter, ''NodeState, ''ControllerState
   , ''BootLevel, ''RunLevel, ''StopLevel, ''FilesystemStats
   , ''Replaced, ''At, ''IsParentOf, ''IsRealOf, ''IsOnHardware
-  , ''DIXInitialised
   ]
   [ -- Relationships connecting conf with other resources
     (''R.Cluster, AtMostOne, ''R.Has, AtMostOne, ''Root)
@@ -1151,7 +1137,6 @@ $(mkResRel
   , (''Controller, Unbounded, ''Cas.Is, AtMostOne, ''ControllerState)
   , (''Disk, Unbounded, ''Cas.Is, AtMostOne, ''Replaced)
   , (''Root, AtMostOne, ''R.Has, AtMostOne, ''FilesystemStats)
-  , (''Root, AtMostOne, ''R.Has, AtMostOne, ''DIXInitialised)
   ]
   []
   )

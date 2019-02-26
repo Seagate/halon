@@ -279,9 +279,6 @@ data HalonVars = HalonVars
   , _hv_service_stop_timeout :: !Int
   -- ^ How long to wait for a service to stop (perform teardown and
   -- exit) before the calling rule decides to stop waiting for result.
-  , _hv_m0dixinit_timeout :: !Int
-  -- ^ How long to wait for m0dixinit to complete before the calling
-  --   rule decides that it has failed.
   , _hv_expander_reset_threshold :: !Int
   -- ^ Minimum number of drives we would expect to see failing in the case of
   --   an expander reset.

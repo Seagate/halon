@@ -65,7 +65,6 @@ import           System.Directory
 import           System.Exit
 import           System.FilePath
 import qualified System.Posix.Process as Posix
-import           System.Process
 import qualified System.SystemD.API as SystemD
 import qualified System.Timeout as ST
 import           System.Clock (Clock(Monotonic), TimeSpec, getTime, toNanoSecs)
@@ -233,10 +232,6 @@ controlProcess mc pid rp = do
               StopProcess runType p -> forkIOInProcess
                 (stopProcess runType p)
                 (sendRC interface . ProcessControlResultStopMsg nid)
-              DixInit imeta -> forkIOInProcess
-                (dixInit mc imeta)
-                (sendRC interface . DixInitialised)
-
         ]
   loop BM.empty
 
@@ -338,27 +333,6 @@ stopProcess run p = flip Catch.catch handler $ do
     handler e = return $ Left (p, show (e :: Catch.SomeException))
     ptimeoutSec = 60
     ptimeout = ptimeoutSec * 1000000
-
--- | Call `m0dixinit` to initialise KVS system on the cluster.
-dixInit :: MeroConf
-        -> Fid -- ^ imeta_pver
-        -> IO (Either String ())
-dixInit mc imeta = do
-    (ec, _, err) <- readProcessWithExitCode "m0dixinit" args ""
-    case ec of
-      ExitSuccess -> return $ Right ()
-      ExitFailure _ -> return $ Left err
-  where
-    args =
-      [ "-l", localEP
-      , "-H", mcHAAddress mc
-      , "-I", show imeta
-      , "-d", show imeta
-      , "-p", show (mcProfile mc)
-      , "-a", "create"
-      ]
-    localEP = takeWhile (/= ':') (mcHAAddress mc) ++ dixEP
-    dixEP = ":12345:34:102"
 
 -- | Convert a process run type and 'Fid' to the corresponding systemd
 -- service string.

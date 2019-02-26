@@ -51,7 +51,6 @@ defaultHalonVars = HalonVars
   , _hv_mero_workers_allowed = True
   , _hv_disable_smart_checks = False
   , _hv_service_stop_timeout = 30
-  , _hv_m0dixinit_timeout = 30
   , _hv_expander_reset_threshold = 8
   , _hv_expander_reset_reset_timeout = 300
   , _hv_notification_timeout = 115

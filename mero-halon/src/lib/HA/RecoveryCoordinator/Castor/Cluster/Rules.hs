@@ -225,12 +225,10 @@ ruleMarkProcessesBootstrapped :: Definitions RC ()
 ruleMarkProcessesBootstrapped = defineSimpleTask "castor::server::mark-all-process-bootstrapped" $
   \(MarkProcessesBootstrapped ch) -> do
      rg <- getGraph
-     modifyGraph . execState $ do
+     modifyGraph . execState $
        for_ (M0.getM0Processes rg) $ \proc ->
          State.modify (G.connect proc Cas.Is M0.ProcessBootstrapped)
-     modifyGraph $ G.connect (M0.getM0Root rg) Has M0.DIXInitialised
-     registerSyncGraph $ do
-       sendChan ch ()
+     registerSyncGraph $ sendChan ch ()
 
 -- | Statup a node in cluster.
 --

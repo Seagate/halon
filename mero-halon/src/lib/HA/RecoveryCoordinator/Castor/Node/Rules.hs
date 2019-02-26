@@ -622,9 +622,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     boot_level_0      <- phaseHandle "boot_level_0"
     boot_level_1      <- phaseHandle "boot_level_1"
     boot_level_2      <- phaseHandle "boot_level_2"
-    boot_level_3_dixinit <- phaseHandle "boot_level_3_dixinit"
     boot_level_3      <- phaseHandle "boot_level_3"
-    dix_failure       <- phaseHandle "dix_failure"
     kernel_timeout    <- phaseHandle "kernel_timeout"
     dispatch          <- mkDispatcher
     notifier          <- mkNotifierAct dispatch waitClear
@@ -759,40 +757,29 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
         Log.rcLog' Log.DEBUG $ "Starting these m0tifs processes: "
                             ++ show (M0.showFid <$> ps)
         modify Local $ rlens fldWaitingProcs . rfield .~ ps
-        casProcs <- getGraph <&> Process.getAllHostingService CST_CAS
+        casProcs <- Process.getAllHostingService CST_CAS <$> getGraph
         if null casProcs
         then do
           modify Local $ rlens fldRep .rfield .~
             (Just $ NodeProcessesStarted m0node)
           continue clients_result
-        else continue boot_level_3_dixinit
+        else continue boot_level_3
 
-    directly boot_level_3_dixinit $ do
+    directly boot_level_3 $ do
       (M0.BootLevel n) <- calculateRunLevel
-      if n >= 3 then do
-        promulgateRC DixInitRequest
-        switch [boot_level_3, dix_failure]
-      else do
+      if n < 3 then do
         StartProcessesOnNodeRequest m0node <- getRequest
         void $ nodeFailedWith NodeProcessesStartFailure m0node
         continue finish
-
-    setPhaseIf boot_level_3 dixInitSuccess $ \() -> do
-      StartProcessesOnNodeRequest m0node <- getRequest
-      Just host <- getField . rget fldHost <$> get Local
-      Log.rcLog' Log.DEBUG ("Starting clovis processes." :: String)
-      modify Local $ rlens fldRep .~
-        Field (Just $ NodeProcessesStarted m0node)
-      ps <- startProcesses host clovisProcess
-      modify Local $ rlens fldWaitingProcs . rfield %~ (ps ++)
-      continue clients_result
-
-    setPhaseIf dix_failure dixInitFailure $ \() -> do
-      StartProcessesOnNodeRequest m0node <- getRequest
-      Log.rcLog' Log.ERROR
-        ("DIX failed to initialise, cannot start clovis procs." :: String)
-      void $ nodeFailedWith NodeProcessesStartFailure m0node
-      continue finish
+      else do
+        StartProcessesOnNodeRequest m0node <- getRequest
+        Just host <- getField . rget fldHost <$> get Local
+        Log.rcLog' Log.DEBUG ("Starting clovis processes." :: String)
+        modify Local $ rlens fldRep .~
+          Field (Just $ NodeProcessesStarted m0node)
+        ps <- startProcesses host clovisProcess
+        modify Local $ rlens fldWaitingProcs . rfield %~ (ps ++)
+        continue clients_result
 
     return route
   where
@@ -814,12 +801,6 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     clovisProcess (CI.PLClovis _ CI.Managed) = True
     clovisProcess _ = False
-
-    dixInitSuccess DixInitSuccess _ _ = return $ Just ()
-    dixInitSuccess _ _ _ = return Nothing
-
-    dixInitFailure (DixInitFailure _ ) _ _ = return $ Just ()
-    dixInitFailure _ _ _ = return Nothing
 
     nodeFailedWith state m0node = do
       rg <- getGraph
