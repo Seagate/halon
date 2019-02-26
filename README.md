@@ -99,3 +99,4 @@ OS requrements: geneneric linux distribution
 Memory requirements:
    0.5Gb - singlenode setup.
    2Gb   - 6 nodes cluster.
+
