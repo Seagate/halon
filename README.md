@@ -13,9 +13,6 @@ sudo yum install leveldb-devel libgenders-devel
 
 # Install the Haskell Tool Stack
 curl -sSL https://get.haskellstack.org/ | sh
-
-# Get GHC
-scripts/h0 setup
 ```
 
 Build Mero first
@@ -58,10 +55,18 @@ stack exec make latexpdf
 stack exec make man
 ```
 
-# Unit tests
+# Running tests
+
+Unit tests:
 
 ```shell
 scripts/h0 test
+```
+
+System tests:
+
+```shell
+scripts/h0 run-st
 ```
 
 # Starting/stopping the cluster
@@ -69,14 +74,61 @@ scripts/h0 test
 Single-node cluster:
 
 ```shell
-scripts/h0 start
-scripts/h0 stop
+# Install Mero and Halon systemd services; start halond-s;
+# generate facts file.
+scripts/h0 init
+
+# Bootstrap the cluster.
+hctl mero bootstrap
+
+# Wait for all cluster processes to come online.
+hctl mero status
+sleep 90  # Zzz...
+hctl mero status
+
+# Stop the cluster.
+hctl mero stop
+
+# Stop halond-s; erase cluster data, metadata and generated configuration;
+# uninstall systemd services.
+scripts/h0 fini
 ```
 
-There is also an example script in `mero-halon/scripts/simplecluster.sh`
-which runs a small two node cluster on the localhost. This script
-relies on `HALON_ROOT` being set to a directory containing the
-`halond` and `halonctl` binaries.
+Multi-node cluster:
+
+```shell
+# Prepare cluster configuration file.
+cat >/data/cluster.yaml <<EOF
+confds: [ cmu.local ]
+ssus:
+  - host:  ssu1.local
+    disks: /dev/sd[b-g]
+  - host:  ssu2.local
+    disks: /dev/sd[b-g]
+clovis-apps: [ client1.local ]
+EOF
+
+# Install Mero and Halon systemd services; start halond-s;
+# generate facts file.
+M0_CLUSTER=/data/cluster.yaml scripts/h0 init
+
+# Bootstrap the cluster.
+hctl mero bootstrap
+
+# Wait for all cluster processes to come online.
+hctl mero status
+sleep 90  # Zzz...
+hctl mero status
+
+# Stop the cluster.
+hctl mero stop
+
+# Stop halond-s; erase cluster data, metadata and generated configuration;
+# uninstall systemd services.
+M0_CLUSTER=/data/cluster.yaml scripts/h0 fini
+```
+
+# Caveats
 
 By default, `halonctl` attempts to listen on the local hostname. This
 will fail if there is not an entry for the FQDN in `/etc/hosts`. In
