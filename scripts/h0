@@ -43,6 +43,17 @@ Cluster commands:
              metadata and configuration files; uninstall Mero and Halon
              systemd services.
 
+"Plumbing" commands (rarely need to be called directly):
+    check-access    Check SSH accessibility of cluster nodes.
+    prelink         Ensure that Mero executables are linked.
+    genfacts        Generate facts and roles files.
+    install         Install Mero and Halon systemd services.
+    uninstall       Uninstall Mero and Halon systemd services.
+    erase-data      Delete cluster data, facts and roles files.
+    start-halond    Start halond on cluster nodes.
+    stop-halond     Stop halond on cluster nodes.
+    stop-kernel     Unload Mero kernel modules.
+
 Options:
     'make', 'rebuild', 'test', and 'clean' commands support options of the
     Haskell Tool Stack.  Type \`stack build --help' or
@@ -83,7 +94,7 @@ cmd_path() {
 }
 
 cmd_status() {
-    check_ssh_accessibility
+    cmd_check_access
 
     mpdsh sudo systemctl status halond
     mpdsh sudo lctl list_nids
@@ -157,21 +168,61 @@ cmd_clean() {
 ## Cluster commands
 
 cmd_init() {
-    check_ssh_accessibility
-    prelink_executables
+    cmd_check_access
+    cmd_prelink
+    cmd_install
+    cmd_erase_data
+    cmd_start_halond
+    cmd_genfacts
+}
 
-    # Install systemd services.
-    local quiet=--quiet
-    [[ -v M0_VERBOSE ]] && quiet=''
-    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet \
-                                            ${M0_CLUSTER:+"--iface eth1"}
+cmd_fini() {
+    cmd_check_access || true
+    cmd_stop_halond || true
+    cmd_stop_kernel || true
+    cmd_erase_data
+    cmd_uninstall
+}
 
-    erase_cluster_data
+## -------------------------------------------------------------------
+## "Plumbing" commands
 
-    mpdsh sudo systemctl start halond
+cmd_check_access() {
+    [[ -n $M0_CLUSTER ]] || return 0
 
-    # Generate facts file.
+    local kh=~/.ssh/known_hosts
+    touch $kh
+    chmod 0600 $kh
+
+    local host=
+    for host in ${M0_CLUSTER_HOSTS//,/ }; do
+        pdsh -S -w $host true &>/dev/null || {
+            # Remove all keys belonging to $host to avoid duplicates.
+            ssh-keygen -f $kh -R $host >/dev/null
+            rm -f $kh.old
+            ssh-keyscan -t rsa $host >>$kh
+        }
+        pdsh -S -w $host true || die "$host is not accessible"
+    done
+}
+
+cmd_prelink() {
+    [[ -n $M0_CLUSTER ]] || return 0
+
+    # Libtool-based executables are linked on the first run.
+    # In m0vg setup only `cmu` host can do the linking.
+    # If any of these executables is started on other (non-cmu)
+    # host first, it will fail.
+    local exe
+    for exe in mero/m0d \
+               utils/mkfs/m0mkfs \
+               utils/trace/m0traced \
+               utils/trace/m0tracedump; do
+        $M0_SRC_DIR/$exe -h &>/dev/null || true
+    done
+}
+
+cmd_genfacts() {
     if [[ -n $M0_CLUSTER ]]; then
         [[ -d /etc/halon ]] || sudo mkdir /etc/halon
         sudo $M0_SRC_DIR/utils/m0genfacts ${M0_VERBOSE:+--verbose} \
@@ -183,18 +234,43 @@ cmd_init() {
     fi
 }
 
-cmd_fini() {
-    check_ssh_accessibility || true
+cmd_install() {
+    local quiet=--quiet
+    [[ -v M0_VERBOSE ]] && quiet=''
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet \
+          ${M0_CLUSTER:+'--iface eth1'}
+}
 
-    mpdsh sudo systemctl stop halond || true
-    # Unload Mero kernel modules.
-    mpdsh sudo systemctl stop mero-kernel || true
-    erase_cluster_data
-
+cmd_uninstall() {
     local quiet=--quiet
     [[ -v M0_VERBOSE ]] && quiet=''
     mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall $quiet
     mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall $quiet
+}
+
+cmd_erase_data() {
+    mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
+    mpdsh sudo systemctl start halon-cleanup || true
+    mpdsh sudo systemctl start mero-cleanup || true
+
+    # `/var/mero` directory cannot be deleted on Jenkins CI nodes,
+    # because it is a mountpoint there. You'll get this error message:
+    #
+    #   rm: cannot remove ‘/var/mero/’: Device or resource busy
+    mpdsh sudo rm -rvf /var/mero/ || true
+}
+
+cmd_start_halond() {
+    mpdsh sudo systemctl start halond
+}
+
+cmd_stop_halond() {
+    mpdsh sudo systemctl stop halond
+}
+
+cmd_stop_kernel() {
+    mpdsh sudo systemctl stop mero-kernel
 }
 
 ## -------------------------------------------------------------------
@@ -255,53 +331,6 @@ assert_mero() {
     fi
 }
 
-check_ssh_accessibility() {
-    [[ -n $M0_CLUSTER ]] || return 0
-
-    local kh=~/.ssh/known_hosts
-    touch $kh
-    chmod 0600 $kh
-
-    local host=
-    for host in ${M0_CLUSTER_HOSTS//,/ }; do
-        pdsh -S -w $host true &>/dev/null || {
-            # Remove all keys belonging to $host to avoid duplicates.
-            ssh-keygen -f $kh -R $host >/dev/null
-            rm -f $kh.old
-            ssh-keyscan -t rsa $host >>$kh
-        }
-        pdsh -S -w $host true || die "$host is not accessible"
-    done
-}
-
-prelink_executables() {
-    [[ -n $M0_CLUSTER ]] || return 0
-
-    # Libtool-based executables are linked on the first run.
-    # In m0vg setup only `cmu` host can do the linking.
-    # If any of these executables is started on other (non-cmu)
-    # host first, it will fail.
-    local exe
-    for exe in mero/m0d \
-               utils/mkfs/m0mkfs \
-               utils/trace/m0traced \
-               utils/trace/m0tracedump; do
-        $M0_SRC_DIR/$exe -h &>/dev/null || true
-    done
-}
-
-erase_cluster_data() {
-    mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
-    mpdsh sudo systemctl start halon-cleanup || true
-    mpdsh sudo systemctl start mero-cleanup || true
-
-    # `/var/mero` directory cannot be deleted on Jenkins CI nodes,
-    # because it is a mountpoint there. You'll get this error message:
-    #
-    #   rm: cannot remove ‘/var/mero/’: Device or resource busy
-    mpdsh sudo rm -rvf /var/mero/ || true
-}
-
 ## Outputs comma-separated list of cluster hosts iff $M0_CLUSTER is set
 ## and its value is a path to readable file.
 cluster_hosts() {
@@ -356,6 +385,8 @@ init_vars() {
         fi
     fi
     M0_CLUSTER_HOSTS="$(cluster_hosts)"
+    CMD_PAT=$(sed -n 's/^cmd_//p' $0 | cut -d\( -f1 | tr '_' '-' |
+                  paste -s -d\|)
 }
 
 ## -------------------------------------------------------------------
@@ -373,24 +404,23 @@ cd "$H0_SRC_DIR"
 CMD=
 OPTS=()
 while [[ $# > 0 ]]; do
-    case "$1" in
-        path|status|hosts|help|make|rebuild|test|run-st|clean|init|fini)
-            [[ -z $CMD ]] || {
-                if [[ ${#OPTS[@]} == 0 ]]; then
-                    _exec $CMD
-                else
-                    _exec $CMD "${OPTS[@]}"
-                fi
-            }
-            CMD=cmd_${1//-/_}
-            OPTS=();;
-        *)
-            [[ -n $CMD ]] || {
-                echo "Invalid command: $1" >&2
-                die "Type \`$PROG help' for usage."
-            }
-            OPTS+=("$1");;
-    esac
+    NEW_CMD=$(bash -c "case $1 in $CMD_PAT) echo cmd_${1//-/_};; esac")
+    if [[ -n $NEW_CMD ]]; then
+        if [[ -n $CMD ]]; then
+            if [[ ${#OPTS[@]} == 0 ]]; then
+                _exec $CMD
+            else
+                _exec $CMD "${OPTS[@]}"
+            fi
+        fi
+        CMD=$NEW_CMD
+        OPTS=()
+    elif [[ -z $CMD ]]; then
+        echo "Invalid command: $1" >&2
+        die "Type \`$PROG help' for usage."
+    else
+        OPTS+=("$1")
+    fi
     shift
 done
 
