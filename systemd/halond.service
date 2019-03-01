@@ -1,6 +1,6 @@
 [Unit]
 Description=Halon Daemon
-Documentation=https://github.com/tweag/halon
+Documentation=https://github.com/seagate-ssg/halon
 Wants=rabbitmq-server.service 
 After=network.target rabbitmq-server.service
 
