@@ -164,7 +164,8 @@ cmd_init() {
     local quiet=--quiet
     [[ -v M0_VERBOSE ]] && quiet=''
     mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet \
+                                            ${M0_CLUSTER:+"--iface eth1"}
 
     erase_cluster_data
 

@@ -12,6 +12,7 @@ dry_run=false
 link_files=false
 action='install'
 verbose=true
+iface=
 
 help()
 {
@@ -22,8 +23,10 @@ help()
 usage()
 {
     cat <<USAGE_END
+
 Install systemd scripts for development or testing use.
-Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
+
+Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-i|--iface name] [-u|--uninstall]
 
     -n|--dry-run    Don't perform any action, just show what would be
                     installed/uninstalled.
@@ -32,7 +35,10 @@ Usage: $BASE_NAME [-h|--help] [-n|--dry-run] [-u|--uninstall]
 
     -l|--link       Symlink files instread of copying them.
 
-    -u|--uninstall  Remove files and directories witch were installed by this script
+    -i|--iface      Interface for the IP address at HALOND_LISTEN parameter.
+                    (The last one from \`ip a' result is taken by default.)
+
+    -u|--uninstall  Remove files and directories installed by this script.
 
     -h|--help       Print this help.
 USAGE_END
@@ -43,7 +49,8 @@ parse_cli_options()
     # Note that we use `"$@"' to let each command-line parameter expand to a
     # separate word. The quotes around `$@' are essential!
     # We need TEMP as the `eval set --' would nuke the return value of getopt.
-    TEMP=$( getopt -o hnqlu --long help,dry-run,quiet,link,uninstall -n "$PROG_NAME" -- "$@" )
+    TEMP=$( getopt -o hnqli:u --long help,dry-run,quiet,link,iface:,uninstall \
+                   -n "$PROG_NAME" -- "$@" )
 
     [[ $? != 0 ]] && help
 
@@ -56,6 +63,7 @@ parse_cli_options()
             -n|--dry-run)       dry_run=true; shift ;;
             -q|--quiet)         verbose=false; shift ;;
             -l|--link)          link_files=true; shift ;;
+            -i|--iface)         shift; iface="$1"; shift ;;
             -u|--uninstall)     action=uninstall; shift ;;
             --)                 shift; break ;;
             *)                  echo 'getopt: internal error...'; exit 1 ;;
@@ -158,7 +166,7 @@ install_files()
     run "cp ${v} -f $H0_SRC_DIR/systemd/sysconfig/halon-satellite $dir"
     # example output of `ip address` command that is parsed below
     #   3: eth1    inet 172.28.128.94/24 brd 172.28.128.255 scope global dynamic eth1...
-    local ip_addr=$(ip -oneline -4 address show eth1 |
+    local ip_addr=$(ip -oneline -4 address show $iface | tail -1 |
                     awk '{print $4}' | cut -d/ -f1)
     run "sed -i -r s/^#(HALOND_LISTEN=).*(:[[:digit:]]+)$/\1${ip_addr}\2/ $dir/halond"
 
