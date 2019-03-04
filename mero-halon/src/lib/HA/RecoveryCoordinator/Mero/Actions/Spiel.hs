@@ -75,6 +75,7 @@ import qualified HA.Resources.Castor.Initial as CI
 import           HA.Resources.HalonVars
 import           HA.Resources.Mero (SyncToConfd(..))
 import qualified HA.Resources.Mero as M0
+import           HA.Resources.Mero.Note (showFid)
 
 import           Mero.ConfC (Fid, PDClustAttr(..), confPVerLvlDrives)
 import           Mero.Lnet
@@ -96,7 +97,7 @@ import           Data.Foldable (traverse_, for_)
 import           Data.Hashable (hash)
 import           Data.IORef (writeIORef)
 import           Data.List (sortOn, (\\))
-import           Data.Maybe (catMaybes, listToMaybe, fromJust)
+import           Data.Maybe (catMaybes, listToMaybe)
 import qualified Data.Text as T
 import           Data.Traversable (for)
 import           Data.Typeable
@@ -277,7 +278,7 @@ mkGenericNodeOperationSimple n f = mkGenericNodeOperation n
 mkGenericSNSReplyHandler :: forall a b c k l . (Show c, Binary c, Typeable c, Typeable k, KnownSymbol k)
   => Proxy# k                                        -- ^ Rule name
   -> (String -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Error result converter.
-  -> (c      -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Success result onverter.
+  -> (c      -> M0.Pool -> PhaseM RC l (Either a b)) -- ^ Success result converter.
   -> (M0.Pool -> (Either a b) -> PhaseM RC l ())     -- ^ Handler
   -> RuleM RC l (Jump PhaseHandle)
 mkGenericSNSReplyHandler n onError onSuccess action = do
@@ -421,18 +422,19 @@ mkRepairStartOperation handler = do
   where
     p :: Proxy# "Repair start"
     p = proxy#
+
     -- | Create a phase to handle pool repair operation start result.
     mkRepairOperationStarted ::
            (M0.Pool -> Either String UUID -> PhaseM RC l ())
         -> RuleM RC l (Jump PhaseHandle)
     mkRepairOperationStarted = mkGenericSNSReplyHandler p
       (const . return . Left)
-      (\() pool -> do
-         prs <- getPoolRepairStatus pool
-         let prs' = fromJust prs
-         setPoolRepairStatus pool prs'
-         let uuid = M0.prsRepairUUID prs'
-         return (Right uuid))
+      (\() pool -> getPoolRepairStatus pool >>= \case
+        Nothing -> do
+          let err = "PoolRepairStatus is missing for pool " ++ showFid pool
+          Log.rcLog' Log.ERROR err
+          return $ Left err
+        Just prs -> return . Right $ M0.prsRepairUUID prs)
 
 -- | Start the rebalance operation on the given 'M0.Pool' asynchronously.
 mkRebalanceStartOperation ::
