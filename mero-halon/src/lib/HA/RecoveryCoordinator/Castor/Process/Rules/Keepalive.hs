@@ -17,7 +17,7 @@ import           Control.Monad (unless, void)
 import           Data.Foldable (traverse_)
 import           HA.EventQueue.Types (HAEvent(..))
 import           HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
-  ( abortRepairFromProc )
+  ( abortSnsOperations )
 import           HA.RecoveryCoordinator.Mero.State
 import qualified HA.RecoveryCoordinator.Mero.Transitions as Tr
 import           HA.RecoveryCoordinator.RC.Actions
@@ -32,7 +32,7 @@ ruleProcessKeepaliveReply :: Definitions RC ()
 ruleProcessKeepaliveReply = defineSimpleIf "process-keepalive-reply" g $ \(uid, fids) -> do
   todo uid
   ps <- getProcs fids <$> getGraph
-  traverse_ (abortRepairFromProc . fst) ps
+  traverse_ (abortSnsOperations . fst) ps
   unless (null ps) $ do
     ct <- liftIO M0.getTime
     void . applyStateChanges $ map (\(p, t) -> stateSet p $ mkTr ct t) ps

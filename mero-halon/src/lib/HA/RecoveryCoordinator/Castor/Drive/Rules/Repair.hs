@@ -27,7 +27,7 @@ module HA.RecoveryCoordinator.Castor.Drive.Rules.Repair
   , querySpiel
   , querySpielHourly
   , rules
-  , abortRepairFromProc
+  , abortSnsOperations
     -- * Individual rules exported for test purposes
   , ruleRebalanceStart
   , ruleRepairStart
@@ -797,23 +797,27 @@ ruleSNSOperationDelayedAbort = mkJobRule jobDelayedAbort args $ \(JobHandle getR
     args =  fldReq  =: Nothing
         <+> fldRep  =: Nothing
 
-abortRepairFromProc :: M0.Process -> PhaseM RC l ()
-abortRepairFromProc proc = do
-  rg <- getGraph
-  let (errs, pools) = partitionEithers . Set.toList $ Set.fromList
-                        [ poolFromSdev sdev rg
-                        | svc <- G.connectedTo proc M0.IsParentOf rg
-                        , M0.s_type svc == CST_IOS
-                        , sdev <- G.connectedTo svc M0.IsParentOf rg
-                        , getConfObjState sdev rg == M0_NC_REPAIR
-                        ]
-  for_ errs (Log.rcLog' Log.ERROR . show)
-  when (null pools) (Log.rcLog' Log.DEBUG "Repair not running")
-  for_ pools $ \pool ->
-    getPoolRepairStatus pool >>= \case
-      Nothing -> Log.rcLog' Log.WARN $ "PoolRepairStatus is missing for pool "
-                                    ++ showFid pool
-      Just prs -> promulgateRC . AbortSNSOperation pool $ M0.prsRepairUUID prs
+-- | Abort SNS operations ongoing on IO storage devices of this process.
+abortSnsOperations :: M0.Process -> PhaseM RC l ()
+abortSnsOperations proc = do
+    rg <- getGraph
+    case [ sdev
+         | svc <- G.connectedTo proc M0.IsParentOf rg
+         , M0.s_type svc == CST_IOS
+         , sdev <- G.connectedTo svc M0.IsParentOf rg
+         , getConfObjState sdev rg `elem` [M0_NC_REPAIR, M0_NC_REBALANCE]
+         ] of
+        []    -> pure ()
+        sdevs -> do
+            let uniq = Set.toList . Set.fromList
+                epools = uniq $ map (flip poolFromSdev rg) sdevs
+            for_ epools $ \case
+                Left err   -> Log.rcLog' Log.ERROR (show err)
+                Right pool -> getPoolRepairStatus pool >>= \case
+                    Nothing  -> Log.rcLog' Log.WARN
+                      $ "PoolRepairStatus is missing for pool " ++ showFid pool
+                    Just prs -> promulgateRC . AbortSNSOperation pool
+                      $ M0.prsRepairUUID prs
 
 -- | Abort current SNS operation. Rule requesting SNS operation abort
 -- and waiting for all IOs to be finalized.
