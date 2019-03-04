@@ -553,10 +553,10 @@ ruleRepairStart = mkJobRule jobRepairStart args $ \(JobHandle getRequest finish)
                            : map (`stateSet` Tr.sdevRepairStart) fa
                 modify Local $ rlens fldPool . rfield .~ Just pool
                 notifications <- applyStateChanges msgs
-                -- Update resource graph with repair status
+
                 uuid <- DP.liftIO nextRandom
                 setPoolRepairStatus pool $ M0.PoolRepairStatus M0.Repair uuid Nothing
-                --
+
                 setExpectedNotifications notifications
                 waitFor notifier
                 waitFor notify_failed
@@ -1061,13 +1061,12 @@ ruleSNSOperationRestart = mkJobRule jobSNSOperationRestart args $ \(JobHandle _ 
 
 -- | If Quiesce operation on pool failed - we need to abort SNS operation.
 ruleOnSnsOperationQuiesceFailure :: Definitions RC ()
-ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \result ->
-  case result of
-    (QuiesceSNSOperationFailure pool _) ->
-       getPoolRepairStatus pool >>= \case
-         Nothing  -> return ()
-         Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
-    _ -> return ()
+ruleOnSnsOperationQuiesceFailure = defineSimple "castor::sns::abort-on-quiesce-error" $ \case
+  QuiesceSNSOperationFailure pool _ ->
+    getPoolRepairStatus pool >>= \case
+      Nothing  -> return ()
+      Just prs -> promulgateRC . AbortSNSOperation pool $ prsRepairUUID prs
+  _ -> return ()
 
 -- | Log 'StobIoqError' and abort repair if it's on-going.
 ruleStobIoqError :: Definitions RC ()
