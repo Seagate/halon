@@ -33,8 +33,8 @@ cluster_bootstrap() {
     hctl mero bootstrap ${M0_VERBOSE:+--verbose}
 
     # Display bootstrap progress, usually it completes under a minute.
-    if [[ -t /dev/stdout ]] ; then
-        watch hctl mero status &
+    if [[ -t /dev/stdout ]]; then
+        watch -d hctl mero status &
         sleep 90
         kill %watch
         reset  # `kill %watch` might have left the terminal broken
@@ -81,26 +81,48 @@ wait_for_fid_state() {
 }
 
 check_drive_state() {
-    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
+    [[ $# -eq 2 ]] || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
     local serial="$2"
-    local actual
 
-    actual=$(hctl debug print drive --serial $serial | sed -n 's/^  state: //p')
-    [ "$actual" = "$expected" ]
+    local out=$(hctl debug print drive --serial $serial)
+    echo "$out"
+    local actual=$(echo "$out" | sed -n 's/^  state: //p')
+    [[ $actual == $expected ]]
 }
 
 wait_for_drive_state() {
-    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
-    local state="$1"
+    [[ $# -eq 2 ]] || die "${FUNCNAME[0]}: Invalid usage"
+    local expected="$1"
     local serial="$2"
+    local steps_left=90
+    local sav=
+    local out
+    local actual
 
     set +x  # silence the loop
-    until check_drive_state "$@"; do
-        :
+    while true; do
+        out=$(hctl debug print drive --serial $serial)
+        if [[ "$out" != "$sav" ]]; then
+            echo
+            echo -n @; date +%s  # UNIX Epoch time
+            if [[ -z $sav ]]; then
+                echo "$out"
+            else
+                echo "$out" | diff -u <(echo "$sav") - \
+                                   --label old --label new || true
+            fi
+            sav="$out"
+            actual=$(echo "$out" | sed -n 's/^  state: //p')
+            [[ $actual == $expected ]] && break
+        fi
+        sleep 2
+        ((--steps_left > 0)) || {
+            hctl mero status -d
+            die 'Giving up'
+        }
     done
     set -x
-    hctl mero status -d
 }
 
 # ----------------------------------------------------------------------
