@@ -33,7 +33,7 @@ cluster_bootstrap() {
     hctl mero bootstrap ${M0_VERBOSE:+--verbose}
 
     # Display bootstrap progress, usually it completes under a minute.
-    if [[ -t /dev/stdout ]]; then
+    if [[ -t 1 ]]; then
         watch -d hctl mero status &
         sleep 90
         kill %watch
