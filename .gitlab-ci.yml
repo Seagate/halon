@@ -36,7 +36,7 @@ build:
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
     - export PREFIX="${WORKSPACE_NAME}"
 
-    - rm -rf ${WORKSPACE_DIR}
+    - sudo rm -rf ${WORKSPACE_DIR}
     - mkdir -p ${WORKSPACE_DIR}
     - cp -a ../${CI_PROJECT_NAME} ${WORKSPACE_DIR}
     - cd ${WORKSPACE_DIR}
@@ -71,6 +71,7 @@ UT:
   except: [ master, tags ]
 
   before_script:
+    # can't be defined in the 'variables:' section because it supports only
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
     - export PREFIX="${WORKSPACE_NAME}ut"
 
