@@ -101,7 +101,7 @@ prettyReport showDevices ReportClusterState{..} = do
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs) -> do
-           let (pst,proc_extSt) = M0.displayProcessState proc_st
+           let (pst, proc_extSt) = M0.displayProcessState proc_st
            printf proc_pattern pst
                                (show rfid)
                                (T.unpack . encodeEndpoint $ endpoint)
@@ -133,7 +133,7 @@ prettyReport showDevices ReportClusterState{..} = do
      node_pattern  = "  [%9s] %-24s  %s\n"
      node_pattern_ext  = "  %13s Extended state: %s\n"
 
-     proc_pattern  = "  [%9s] %-24s    %s %s\n"
+     proc_pattern  = "  [%9s] %-24s    %s%s\n"
      proc_pattern_ext  = "  %13s Extended state: %s\n"
 
      serv_pattern  = "  [%9s] %-24s      %s%s\n"

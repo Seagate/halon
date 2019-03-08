@@ -202,15 +202,14 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
         , csrPrincipalRM = getPrincipalRM' rg
         }
   where
-    getType (Just CI.PLM0t1fs) _ = "m0t1fs"
-    getType (Just (CI.PLClovis s _)) _ = s
-    getType (Just CI.PLHalon) _ = "halon"
-    getType _ srvs = inferType srvs
-    inferType srvs
-      | any (\(M0.Service _ t _) -> t == CST_IOS) srvs = "ioservice"
-      | any (\(M0.Service _ t _) -> t == CST_MDS) srvs = "mdservice"
-      | any (\(M0.Service _ t _) -> t == CST_CONFD) srvs = "confd    "
-      | otherwise                                        = "m0d      "
+    getType (Just CI.PLHalon)           _ = " halon"
+    getType (Just CI.PLM0t1fs)          _ = " m0t1fs"
+    getType (Just (CI.PLClovis name _)) _ = ' ':name
+    getType _ srvs
+      | any (\(M0.Service _ t _) -> t == CST_IOS) srvs   = " ioservice"
+      | any (\(M0.Service _ t _) -> t == CST_MDS) srvs   = " mdservice"
+      | any (\(M0.Service _ t _) -> t == CST_CONFD) srvs = " confd"
+      | otherwise                                        = " m0d"
 
 jobClusterStart :: Job ClusterStartRequest ClusterStartResult
 jobClusterStart = Job "castor::cluster::start"
