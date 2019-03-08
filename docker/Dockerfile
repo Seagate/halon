@@ -11,10 +11,11 @@ RUN cp halon/docker/stack.repo /etc/yum.repos.d/
 
 RUN yum -y install \
            binutils-devel \
-           libgenders-devel \
            gmp-devel \
            leveldb-devel \
+           libgenders-devel \
            libyaml-devel \
+           ncurses-devel \
            pcre-devel \
            stack
 
@@ -37,9 +38,10 @@ COPY --from=halon-deps-builder /root/.stack .stack/
 
 RUN yum -y install \
            binutils-devel \
-           libgenders-devel \
            gmp-devel \
            leveldb-devel \
+           libgenders-devel \
            libyaml-devel \
+           ncurses-devel \
            pcre-devel \
            stack

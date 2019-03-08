@@ -20,13 +20,14 @@ Group: System Environment/Daemons
 Source: %{name}-%{h_version}.tar.gz
 
 BuildRequires: binutils-devel
-BuildRequires: libgenders-devel
 BuildRequires: git
 BuildRequires: gmp-devel
 BuildRequires: leveldb-devel
+BuildRequires: libgenders-devel
 BuildRequires: libyaml-devel
 BuildRequires: mero
 BuildRequires: mero-devel
+BuildRequires: ncurses-devel
 BuildRequires: pcre-devel
 BuildRequires: stack
 
