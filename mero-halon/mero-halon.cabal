@@ -242,8 +242,7 @@ Library
                    wl-pprint,
                    network-transport-tcp >= 0.3
 
-  c-sources:       src/lib/Version/Read.c
-                   hastate/hastate.c
+  c-sources:       hastate/hastate.c
   include-dirs:    hastate
                    ../rpclite/rpclite
   pkgconfig-depends: mero >= 0.1.0
