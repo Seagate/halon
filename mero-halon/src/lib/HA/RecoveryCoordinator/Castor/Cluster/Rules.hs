@@ -199,6 +199,7 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
         , csrSNS      = sort repairs
         , csrStats    = G.connectedTo root Has rg
         , csrHosts    = hosts
+        , csrPrincipalRM = getPrincipalRM' rg
         }
   where
     getType (Just CI.PLM0t1fs) _ = "m0t1fs"

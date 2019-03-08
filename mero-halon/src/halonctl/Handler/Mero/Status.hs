@@ -108,8 +108,10 @@ prettyReport showDevices ReportClusterState{..} = do
                                ptype
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(ReportClusterService sst svc sdevs) -> do
-             let (serv_st,serv_extSt) = M0.displayServiceState sst
-             printf serv_pattern serv_st (fidStr svc) (show $ M0.s_type svc)
+             let (serv_st, serv_extSt) = M0.displayServiceState sst
+                 rmTag | Just svc == csrPrincipalRM = " (principal)"
+                       | otherwise                  = "" :: String
+             printf serv_pattern serv_st (fidStr svc) (show $ M0.s_type svc) rmTag
              for_ serv_extSt $ printf serv_pattern_ext (""::String)
              when (showDevices && (not . null) sdevs) $ do
                putStrLn "    Devices:"
@@ -134,7 +136,7 @@ prettyReport showDevices ReportClusterState{..} = do
      proc_pattern  = "  [%9s] %-24s    %s %s\n"
      proc_pattern_ext  = "  %13s Extended state: %s\n"
 
-     serv_pattern  = "  [%9s] %-24s      %s\n"
+     serv_pattern  = "  [%9s] %-24s      %s%s\n"
      serv_pattern_ext  = "  %13s Extended state: %s\n"
 
      sdev_pattern  = "  [%9s] %-24s        %s %s\n"

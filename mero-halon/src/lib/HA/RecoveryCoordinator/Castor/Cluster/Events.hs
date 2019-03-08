@@ -159,6 +159,8 @@ data ReportClusterState = ReportClusterState
       , csrHosts      :: [(Castor.Host, ReportClusterHost)]
       -- ^ Information about every 'Castor.Host';
       -- see 'ReportClusterHost' for details.
+      , csrPrincipalRM :: Maybe M0.Service
+      -- ^ Current principal resource management service.
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
