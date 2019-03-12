@@ -15,11 +15,11 @@ H0=$H0_SRC_DIR/scripts/h0
 # in advance that the exit code will be non-zero. Use `die` or `exit`
 # in such cases.
 report_and_exit() {
-    [ $# -eq 2 ] || die "${FUNCNAME[0]}: Invalid usage"
+    (($# == 2)) || die "${FUNCNAME[0]}: Invalid usage"
     local name=$1
     local rc=$2
 
-    if [ $rc -eq 0 ]; then
+    if ((rc == 0)); then
         # This message is used by Jenkins CI as test success criteria;
         # it must appear on stdout.
         echo "$name: test status: SUCCESS"
@@ -81,7 +81,7 @@ wait_for_fid_state() {
 }
 
 check_drive_state() {
-    [[ $# -eq 2 ]] || die "${FUNCNAME[0]}: Invalid usage"
+    (($# == 2)) || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
     local serial="$2"
 
@@ -92,7 +92,7 @@ check_drive_state() {
 }
 
 wait_for_drive_state() {
-    [[ $# -eq 2 ]] || die "${FUNCNAME[0]}: Invalid usage"
+    (($# == 2)) || die "${FUNCNAME[0]}: Invalid usage"
     local expected="$1"
     local serial="$2"
     local steps_left=90
@@ -149,7 +149,7 @@ if hosts:
 
 ## Waits for m0t1fs to mount.
 _wait_for_m0t1fs() {
-    [[ $# > 0 ]] || return 0  # no m0t1fs clients
+    (($# > 0)) || return 0  # no m0t1fs clients
 
     local _sh="pdsh -S -w $*"
     if [[ $* == $(hostname) ]]; then
