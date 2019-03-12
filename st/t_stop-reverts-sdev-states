@@ -9,13 +9,15 @@ $H0 init
 cluster_bootstrap
 
 FID='fedcba98:76543210'
-$SUDO touch /mnt/m0t1fs/$FID
+$SUDO touch /mnt/m0t1fs/${FID}{0,1}
 # Set unit size to 1M in order for `dd` to complete sooner.
 # See m0_lid_to_unit_map[] for supported `lid` values.
-$SUDO setfattr -n lid -v 9 /mnt/m0t1fs/$FID
+$SUDO setfattr -n lid -v 9 /mnt/m0t1fs/${FID}{0,1}
 # Big enough file will still be under repair when SNS_REP is terminated.
 # XXX Use s3server instead of dd (i.e., clovis instead of m0t1fs).
-$SUDO dd if=/dev/zero of=/mnt/m0t1fs/$FID bs=8M count=300
+$SUDO dd if=/dev/zero of=/mnt/m0t1fs/${FID}0 bs=8M count=300 &
+$SUDO dd if=/dev/zero of=/mnt/m0t1fs/${FID}1 bs=8M count=300 &
+wait
 
 # "Fail" a drive.
 hctl mero drive update-presence $DRIVE_SELECT_OPTS
