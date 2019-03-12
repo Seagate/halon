@@ -153,7 +153,8 @@ cmd_run_st() {
                 if [ $list_p -eq 1 ]; then
                     echo ${f##*/}
                 else
-                    echo "<< ${f##*/} >>" >&2
+                    echo "~~~~~~~~~~~~~~~~~~~~ ${f##*/} ~~~~~~~~~~~~~~~~~~~~" \
+                         >&2
                     _time $f || return $?
                 fi
             done
