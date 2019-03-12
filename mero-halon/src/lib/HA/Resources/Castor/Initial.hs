@@ -343,7 +343,7 @@ instance Hashable Failures
 -- | Convert failure tolerance vector to a straight list of Words for
 --   passing to Mero.
 failuresToList :: Failures -> [Word32]
-failuresToList f = [f_site f, f_rack f, f_encl f, f_ctrl f, f_disk f]
+failuresToList Failures{..} = [f_site, f_rack, f_encl, f_ctrl, f_disk]
 
 data M0Pool = M0Pool
   { pool_id :: T.Text
