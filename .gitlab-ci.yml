@@ -144,6 +144,18 @@ ST singlenode:
     - time ./m0vg-single/scripts/m0vg run "${M0_VERBOSE:+M0_VERBOSE=1}
                                            /data/halon/scripts/h0 run-st"
 
+  after_script:
+    - date -u -Isec
+    - cd ${WORKSPACE_DIR}
+    - |
+      ./m0vg-single/scripts/m0vg scp cmu:/var/log/halon.decision.log \
+                halon-st-single.decision.log
+
+  artifacts:
+    name: logs
+    paths:
+      - halon-st-single.decision.log
+
 
 # System Tests (multinode) ------------------------------------------------ {{{1
 #
@@ -202,8 +214,20 @@ ST multinode:
                                           SAT=${PREFIX}-ssu1
             /data/halon/scripts/h0 run-st 'multinode.t_*'"
 
+  after_script:
+    - date -u -Isec
+    - cd ${WORKSPACE_DIR}
+    - |
+      ./m0vg-multi/scripts/m0vg scp cmu:/var/log/halon.decision.log \
+                halon-st-multi.decision.log
 
-# Clenaup ----------------------------------------------------------------- {{{1
+  artifacts:
+    name: logs
+    paths:
+      - halon-st-multi.decision.log
+
+
+# Cleanup ----------------------------------------------------------------- {{{1
 #
 
 cleanup:
