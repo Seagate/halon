@@ -68,13 +68,14 @@ wait_for_fid_state() {
     _assert_is_fid $2
     local fid=$2
     local steps_left=12
+    local started=$(_epoch_time)
 
     set +x  # silence the loop
     echo -n "Waiting for $fid to become '$state'..."
     until [[ $(fid_state $fid) == $state ]]; do
         sleep 5
         echo -n '.'
-        ((--steps_left > 0)) || die 'Giving up'
+        ((--steps_left > 0)) || die "Giving up after $(_elapsed $started)"
     done
     echo ' done'
     set -x
@@ -96,6 +97,7 @@ wait_for_drive_state() {
     local expected="$1"
     local serial="$2"
     local steps_left=90
+    local started=$(_epoch_time)
     local sav=
     local out
     local actual
@@ -105,7 +107,7 @@ wait_for_drive_state() {
         out=$(hctl debug print drive --serial $serial)
         if [[ "$out" != "$sav" ]]; then
             echo
-            echo -n @; date +%s  # UNIX Epoch time
+            echo "@$(_epoch_time)"
             if [[ -z $sav ]]; then
                 echo "$out"
             else
@@ -118,8 +120,9 @@ wait_for_drive_state() {
         fi
         sleep 2
         ((--steps_left > 0)) || {
+            local elapsed=$(_elapsed $started)
             hctl mero status -d
-            die 'Giving up'
+            die "Giving up after $elapsed"
         }
     done
     set -x
@@ -156,13 +159,15 @@ _wait_for_m0t1fs() {
         _sh='bash -c'  # single-node
     fi
     local steps_left=30
+    local started=$(_epoch_time)
 
     set +x  # silence the loop
     echo -n 'Waiting for m0t1fs to mount...'
     until $_sh 'mount | grep -q m0t1fs'; do
         sleep 2
         echo -n '.'
-        ((--steps_left > 0)) || die 'Unable to mount m0t1fs'
+        ((--steps_left > 0)) ||
+            die "Unable to mount m0t1fs. Giving up after $(_elapsed $started)"
     done
     echo ' done'
     set -x
@@ -172,4 +177,16 @@ _assert_is_fid() {
     (($# == 1)) || die "${FUNCNAME[0]}: Invalid usage"
     echo $1 | grep -qE '^0x[0-9a-f]{16}:0x[0-9a-f]{,16}$' ||
         die "${FUNCNAME[0]}: Fid expected, got '$1'"
+}
+
+_epoch_time() {
+    date -u +%s
+}
+
+_elapsed() {
+    (($# == 1)) || die "${FUNCNAME[0]}: Invalid usage"
+    local started=$1  # the output of `_epoch_time`
+    local elapsed=$(($(_epoch_time) - $started))
+
+    echo "$elapsed seconds ($(date -d @$elapsed +%M:%S))"
 }
