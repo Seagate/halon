@@ -48,8 +48,9 @@ Cluster commands:
     prelink         Ensure that Mero executables are linked.
     genfacts        Generate facts and roles files.
     install         Install Mero and Halon systemd services.
-    uninstall       Uninstall Mero and Halon systemd services.
-    erase-data      Delete cluster data, facts and roles files.
+    uninstall       Uninstall Mero and Halon systemd services; delete
+                    facts file.
+    erase-data      Delete cluster data: /var/mero, halon-persistence, etc.
     start-halond    Start halond on cluster nodes.
     stop-halond     Stop halond on cluster nodes.
     stop-kernel     Unload Mero kernel modules.
@@ -248,10 +249,10 @@ cmd_uninstall() {
     [[ -v M0_VERBOSE ]] && quiet=''
     mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall $quiet
     mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall $quiet
+    mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
 }
 
 cmd_erase_data() {
-    mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
     mpdsh sudo systemctl start halon-cleanup || true
     mpdsh sudo systemctl start mero-cleanup || true
 
