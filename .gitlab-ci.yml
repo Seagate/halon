@@ -147,14 +147,24 @@ ST singlenode:
   after_script:
     - date -u -Isec
     - cd ${WORKSPACE_DIR}
-    - |
-      ./m0vg-single/scripts/m0vg scp cmu:/var/log/halon.decision.log \
-                halon-st-single.decision.log
+
+    # fetch syslog
+    - ./m0vg-single/scripts/m0vg run
+            sudo journalctl --no-pager --full --utc --boot
+                            --output short-precise
+                            > $CI_PROJECT_DIR/st-single_syslog.log
+
+    # fetch halon.decision.log
+    - ./m0vg-single/scripts/m0vg scp
+            cmu:/var/log/halon.decision.log
+            $CI_PROJECT_DIR/st-single_halon.decision.log
 
   artifacts:
-    name: logs
+    name: "$CI_PROJECT_NAME job $CI_JOB_ID ($CI_JOB_NAME) logs"
+    when: always  # whenever the job has failed or succeeded
     paths:
-      - halon-st-single.decision.log
+      - st-single_syslog.log
+      - st-single_halon.decision.log
 
 
 # System Tests (multinode) ------------------------------------------------ {{{1
@@ -217,14 +227,24 @@ ST multinode:
   after_script:
     - date -u -Isec
     - cd ${WORKSPACE_DIR}
-    - |
-      ./m0vg-multi/scripts/m0vg scp cmu:/var/log/halon.decision.log \
-                halon-st-multi.decision.log
+
+    # fetch syslog
+    - ./m0vg-multi/scripts/m0vg run
+            sudo journalctl --no-pager --full --utc --boot
+                            --output short-precise
+                            > $CI_PROJECT_DIR/st-multi_syslog.log
+
+    # fetch halon.decision.log
+    - ./m0vg-multi/scripts/m0vg scp
+            cmu:/var/log/halon.decision.log
+            $CI_PROJECT_DIR/st-multi_halon.decision.log
 
   artifacts:
-    name: logs
+    name: "$CI_PROJECT_NAME job $CI_JOB_ID ($CI_JOB_NAME) logs"
+    when: always  # whenever the job has failed or succeeded
     paths:
-      - halon-st-multi.decision.log
+      - st-multi_syslog.log
+      - st-multi_halon.decision.log
 
 
 # Cleanup ----------------------------------------------------------------- {{{1
@@ -235,6 +255,14 @@ cleanup:
   tags: [ m0vg ]
   except: [ master, tags ]
   when: always
+
+  variables:
+    # If a branch is updated while CI tests for the older commit are still
+    # being run, the checkout phase of 'cleanup' job will fail (thus cleanup
+    # script will not run) unless GIT_DEPTH is deep enough to include the older
+    # commit. Cloning 30 latest commits seems to be good enough - it's quite
+    # rare for people to push more than 30 new commits in one go.
+    GIT_DEPTH: 30
 
   script:
     - cd ${WORKSPACE_DIR}
