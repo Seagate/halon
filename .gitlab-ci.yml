@@ -255,6 +255,7 @@ cleanup:
   tags: [ m0vg ]
   except: [ master, tags ]
   when: always
+  dependencies: []  # empty deps list prevents unneeded artifacts downloading
 
   variables:
     # If a branch is updated while CI tests for the older commit are still
