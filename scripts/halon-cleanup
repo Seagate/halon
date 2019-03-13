@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+# set -x
+
+(($(id -u) == 0)) || {
+    echo 'Must be run by superuser' >&2
+    exit 1
+}
+
+pids=$(pidof halond)
+
+killall -v -KILL halonctl
+systemctl status halond.service &>/dev/null &&
+    systemctl stop halond.service ||
+        killall -v -KILL halond
+
+for pid in pids; do
+    rm -fv {,/var/lib/halon/}m0trace.$pid
+done
+
+rm -rfv /var/lib/halon/halon-persistence/
+
+rm -fv /var/log/halon.{decision,trace}.log

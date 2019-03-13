@@ -196,7 +196,7 @@ install_files()
 
     dir='/usr/libexec/halon'
     [[ -d $dir ]] || run "mkdir ${v} -p $dir"
-    file="$halon_bin_dir/halon-cleanup"
+    file="$H0_SRC_DIR/scripts/halon-cleanup"
     [[ -s $file ]] &&
         run "$cmd $file $dir" ||
         warn "skipping non-existing file '$file'"

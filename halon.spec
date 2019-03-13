@@ -61,8 +61,8 @@ mkdir -p %{buildroot}%{_sharedstatedir}/halon
 cp $(%{stack} path --local-install-root)/bin/halonctl %{buildroot}/usr/bin
 cp mero-halon/scripts/hctl %{buildroot}/usr/bin
 cp $(%{stack} path --local-install-root)/bin/halond %{buildroot}/usr/bin
-cp $(%{stack} path --local-install-root)/bin/halon-cleanup %{buildroot}/usr/libexec/halon
-cp scripts/halon-rg-view %{buildroot}/usr/bin
+cp scripts/halon-cleanup %{buildroot}/usr/libexec/halon
+cp scripts/halon-rg-view %{buildroot}/usr/libexec/halon
 cp mero-halon/scripts/setup-rabbitmq-perms.sh %{buildroot}/usr/libexec/halon
 cp systemd/*.service %{buildroot}/usr/lib/systemd/system
 cp systemd/sysconfig/halond.example %{buildroot}/etc/sysconfig
@@ -87,8 +87,8 @@ rm -rf %{buildroot}
 /usr/bin/halond
 /usr/bin/halonctl
 /usr/bin/hctl
-/usr/bin/halon-rg-view
 /usr/libexec/halon/halon-cleanup
+/usr/libexec/halon/halon-rg-view
 /usr/libexec/halon/setup-rabbitmq-perms.sh
 /usr/lib/systemd/system/halond.service
 /usr/lib/systemd/system/halon-satellite.service
