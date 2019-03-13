@@ -253,7 +253,7 @@ cmd_uninstall() {
 }
 
 cmd_erase_data() {
-    mpdsh sudo systemctl start halon-cleanup || true
+    mpdsh sudo $H0_SRC_DIR/scripts/halon-cleanup --keep-logs || true
     mpdsh sudo systemctl start mero-cleanup || true
 
     # `/var/mero` directory cannot be deleted on Jenkins CI nodes,
