@@ -99,7 +99,7 @@ prettyReport showDevices nids ReportClusterState{..} = do
                         , ReportClusterHost mnode st nid ps ) -> do
          let (nst, extSt) = M0.displayNodeState st
          printf node_pattern nst (maybe "" fidStr mnode) qfdn
-         for_ extSt $ printf node_pattern_ext (""::String)
+         for_ extSt $ printf pattern_ext
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs ) -> do
            let (pst, proc_extSt) = M0.displayProcessState proc_st
@@ -110,23 +110,26 @@ prettyReport showDevices nids ReportClusterState{..} = do
                                (T.unpack . encodeEndpoint $ endpoint)
                                ptype
                                tsTag
-           for_ proc_extSt $ printf proc_pattern_ext (""::String)
+           for_ proc_extSt $ printf pattern_ext
            for_ srvs $ \(ReportClusterService sst svc sdevs) -> do
              let (serv_st, serv_extSt) = M0.displayServiceState sst
                  rmTag | Just svc == csrPrincipalRM = " (principal)"
                        | otherwise                  = "" :: String
              printf serv_pattern serv_st (fidStr svc) (show $ M0.s_type svc) rmTag
-             for_ serv_extSt $ printf serv_pattern_ext (""::String)
+             for_ serv_extSt $ printf pattern_ext
              when (showDevices && (not . null) sdevs) $ do
                putStrLn "    Devices:"
-               forM_ sdevs $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path}, sdev_st, mslot, msdev) -> do
-                 let (sd_st,sdev_extSt) = M0.displaySDevState sdev_st
+               forM_ sdevs $ \( M0.SDev { d_fid = sdev_fid, d_path = sdev_path }
+                              , sdev_st
+                              , mslot
+                              , msdev ) -> do
+                 let (sd_st, sdev_extSt) = M0.displaySDevState sdev_st
                  printf sdev_pattern sd_st
                                      (show sdev_fid)
                                      (maybe "No StorageDevice" show msdev)
-                                     (sdev_path)
-                 for_ sdev_extSt $ printf sdev_pattern_ext (""::String)
-                 for_ mslot $ printf sdev_patterni (""::String) . show
+                                     sdev_path
+                 for_ sdev_extSt $ printf pattern_ext
+                 for_ mslot $ printf sdev_patterni . show
    where
      fidStr :: M0.ConfObj a => a -> String
      fidStr = show . M0.fid
@@ -134,15 +137,10 @@ prettyReport showDevices nids ReportClusterState{..} = do
      -- E.g. showGrouped 1234567 ==> "1,234,567"
      showGrouped = reverse . intercalate "," . chunksOf 3 . reverse . show
 
+     indentation = replicate 16 ' '
+     pattern_ext = indentation ++ "Extended state: %s\n"
      node_pattern  = "  [%9s] %-24s  %s\n"
-     node_pattern_ext  = "  %13s Extended state: %s\n"
-
      proc_pattern  = "  [%9s] %-24s    %s%s%s\n"
-     proc_pattern_ext  = "  %13s Extended state: %s\n"
-
      serv_pattern  = "  [%9s] %-24s      %s%s\n"
-     serv_pattern_ext  = "  %13s Extended state: %s\n"
-
      sdev_pattern  = "  [%9s] %-24s        %s %s\n"
-     sdev_pattern_ext  = "  %13s Extended state: %s\n"
-     sdev_patterni = "  %13s %s\n"
+     sdev_patterni = indentation ++ "%s\n"
