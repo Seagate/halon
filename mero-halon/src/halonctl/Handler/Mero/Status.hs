@@ -95,15 +95,16 @@ prettyReport showDevices nids ReportClusterState{..} = do
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ show sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
-      forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st nodeid ps) -> do
-         let (nst,extSt) = M0.displayNodeState st
+      forM_ csrHosts $ \( Castor.Host qfdn
+                        , ReportClusterHost mnode st nid ps ) -> do
+         let (nst, extSt) = M0.displayNodeState st
          printf node_pattern nst (maybe "" fidStr mnode) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
-                     , ReportClusterProcess ptype proc_st srvs) -> do
+                     , ReportClusterProcess ptype proc_st srvs ) -> do
            let (pst, proc_extSt) = M0.displayProcessState proc_st
-               tsTag | ptype == " halon" && nodeid `elem` nids = "(TS)"
-                     | otherwise          = "" :: String
+               tsTag | ptype == " halon" && nid `elem` nids = " (TS)"
+                     | otherwise = "" :: String
            printf proc_pattern pst
                                (show rfid)
                                (T.unpack . encodeEndpoint $ endpoint)
@@ -136,7 +137,7 @@ prettyReport showDevices nids ReportClusterState{..} = do
      node_pattern  = "  [%9s] %-24s  %s\n"
      node_pattern_ext  = "  %13s Extended state: %s\n"
 
-     proc_pattern  = "  [%9s] %-24s    %s%s %s\n"
+     proc_pattern  = "  [%9s] %-24s    %s%s%s\n"
      proc_pattern_ext  = "  %13s Extended state: %s\n"
 
      serv_pattern  = "  [%9s] %-24s      %s%s\n"
