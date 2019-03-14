@@ -107,7 +107,7 @@ wait_for_drive_state() {
         out=$(hctl debug print drive --serial $serial)
         if [[ "$out" != "$sav" ]]; then
             echo
-            echo "@$(_epoch_time)"
+            echo "@$(_epoch_time) ($(date '+%F %T'))"
             if [[ -z $sav ]]; then
                 echo "$out"
             else
