@@ -56,13 +56,13 @@ run nids (Options m d t) = clusterCommand nids (Just t) ClusterStatusRequest out
   where
     out = liftIO . case m of
       True -> jsonReport
-      False -> prettyReport d
+      False -> prettyReport d nids
 
 jsonReport :: ReportClusterState -> IO ()
 jsonReport = BSL.putStrLn . HA.Aeson.encode
 
-prettyReport :: Bool -> ReportClusterState -> IO ()
-prettyReport showDevices ReportClusterState{..} = do
+prettyReport :: Bool -> [NodeId] -> ReportClusterState -> IO ()
+prettyReport showDevices nids ReportClusterState{..} = do
   putStrLn $ "Cluster disposition: " ++ maybe "N/A" (show . M0._mcs_disposition) csrStatus
   case csrProfile of
     Nothing -> putStrLn "Cluster information is not available, load initial data first."
@@ -95,17 +95,20 @@ prettyReport showDevices ReportClusterState{..} = do
              forM_ (M0.priStateUpdates i) $ \(M0.SDev{d_fid=sdev_fid,d_path=sdev_path},_) -> do
                putStrLn $ "          " ++ show sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
-      forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st ps) -> do
+      forM_ csrHosts $ \(Castor.Host qfdn, ReportClusterHost mnode st nodeid ps) -> do
          let (nst,extSt) = M0.displayNodeState st
          printf node_pattern nst (maybe "" fidStr mnode) qfdn
          for_ extSt $ printf node_pattern_ext (""::String)
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs) -> do
            let (pst, proc_extSt) = M0.displayProcessState proc_st
+               tsTag | ptype == " halon" && nodeid `elem` nids = "(TS)"
+                     | otherwise          = "" :: String
            printf proc_pattern pst
                                (show rfid)
                                (T.unpack . encodeEndpoint $ endpoint)
                                ptype
+                               tsTag
            for_ proc_extSt $ printf proc_pattern_ext (""::String)
            for_ srvs $ \(ReportClusterService sst svc sdevs) -> do
              let (serv_st, serv_extSt) = M0.displayServiceState sst
@@ -133,7 +136,7 @@ prettyReport showDevices ReportClusterState{..} = do
      node_pattern  = "  [%9s] %-24s  %s\n"
      node_pattern_ext  = "  %13s Extended state: %s\n"
 
-     proc_pattern  = "  [%9s] %-24s    %s%s\n"
+     proc_pattern  = "  [%9s] %-24s    %s%s %s\n"
      proc_pattern_ext  = "  %13s Extended state: %s\n"
 
      serv_pattern  = "  [%9s] %-24s      %s%s\n"

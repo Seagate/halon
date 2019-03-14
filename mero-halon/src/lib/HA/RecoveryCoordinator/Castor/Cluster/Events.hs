@@ -173,6 +173,7 @@ data ReportClusterHost = ReportClusterHost
       -- ^ Associated 'M0.Node'.
       , crnNodeStatus :: M0.StateCarrier M0.Node
       -- ^ Halon state of 'crnNodeFid'.
+      , crnNID        :: NodeId
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       -- ^ Information about processes on the cluster. See
       -- 'ReportClusterProcess' for details.

@@ -43,6 +43,7 @@ import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
 import qualified HA.ResourceGraph as G
 import           HA.Resources (Cluster(..), Has(..), Runs(..))
+import qualified HA.Resources as R (Node(..))
 import qualified HA.Resources.Castor as Cas
 import qualified HA.Resources.Castor.Initial as CI
 import qualified HA.Resources.Mero as M0
@@ -184,7 +185,9 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')
                        return (process, ReportClusterProcess ptyp st services')
-            return (host, ReportClusterHost (listToMaybe nodes) node_st (sort $ join prs))
+            let node' = fromJust $ listToMaybe nodes
+            let R.Node nid = fromJust (M0.m0nodeToNode node' rg)
+            return (host, ReportClusterHost (listToMaybe nodes) node_st nid (sort $ join prs))
       Just root <- getRoot
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
