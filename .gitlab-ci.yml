@@ -159,12 +159,21 @@ ST singlenode:
             cmu:/var/log/halon.decision.log
             $CI_PROJECT_DIR/st-single_halon.decision.log
 
+    # fetch m0trace
+    - ./m0vg-single/scripts/m0vg run
+            '"sudo /data/mero/utils/trace/m0trace -w0
+                       -i \$(ls -t /var/lib/halon/m0trace.* | head -1)
+                  | sort -n | xz
+              > /data/st-single_halond.m0trace.txt.xz"'
+    - mv st-single_halond.m0trace.txt.xz $CI_PROJECT_DIR/
+
   artifacts:
     name: "$CI_PROJECT_NAME job $CI_JOB_ID ($CI_JOB_NAME) logs"
     when: always  # whenever the job has failed or succeeded
     paths:
       - st-single_syslog.log
       - st-single_halon.decision.log
+      - st-single_halond.m0trace.txt.xz
 
 
 # System Tests (multinode) ------------------------------------------------ {{{1
