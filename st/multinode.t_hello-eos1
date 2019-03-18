@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+. $H0_SRC_DIR/st/common
+
+readonly NODE_0=ssu1
+readonly NODE_1=ssu2
+
+prepare_cluster_conf() {
+    [[ -z $M0_CLUSTER ]] || return 0
+    export M0_CLUSTER=$(mktemp)
+    trap "rm $M0_CLUSTER" 0
+
+    # ST scripts call `hctl`, which is only installed on the hosts mentioned
+    # in $M0_CLUSTER file.  Since ST scripts are being executed at `cmu` host,
+    # it is necessary to mention `cmu` in $M0_CLUSTER.
+    cat >$M0_CLUSTER <<EOF
+confds: [cmu.local, $NODE_0.local]
+ssus:
+  - host:  $NODE_0.local
+    disks: /dev/sdb  # single drive
+  - host:  $NODE_1.local
+    disks: /dev/sdb  # single drive
+clovis-apps: [client1.local]
+EOF
+}
+
+prepare_cluster_conf
+
+$H0 init
+cp $M0_CLUSTER /tmp/cluster.yaml_${0##*/}  # XXX DELETEME
+cluster_bootstrap
+
+echo 'XXX IMPLEMENTME =================================================' >&2
+
+hctl mero stop
+$H0 fini
+
+report_and_exit ${0##*/} $?
