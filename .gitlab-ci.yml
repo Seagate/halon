@@ -167,6 +167,12 @@ ST singlenode:
               > /data/st-single_halond.m0trace.txt.xz"'
     - mv st-single_halond.m0trace.txt.xz $CI_PROJECT_DIR/
 
+    # collect m0reportbug archives
+    - ./m0vg-single/scripts/m0vg run
+            '"cd /data/ && sudo /data/mero/utils/m0reportbug"'
+    - tar -xJf m0reportbug-data.tar.xz -C $CI_PROJECT_DIR/
+    - tar -xJf m0reportbug-traces.tar.xz -C $CI_PROJECT_DIR/
+
   artifacts:
     name: "$CI_PROJECT_NAME job $CI_JOB_ID ($CI_JOB_NAME) logs"
     when: always  # whenever the job has failed or succeeded
@@ -174,6 +180,8 @@ ST singlenode:
       - st-single_syslog.log
       - st-single_halon.decision.log
       - st-single_halond.m0trace.txt.xz
+      - m0reportbug-data/
+      - m0reportbug-traces/
 
 
 # System Tests (multinode) ------------------------------------------------ {{{1
