@@ -42,4 +42,4 @@ for pid in $pids; do
     rm -fv {,/var/lib/halon/}m0trace.$pid
 done
 
-((CLEAN_LOGS == 1)) && rm -fv /var/log/halon.{decision,trace}.log
+((CLEAN_LOGS == 0)) || rm -fv /var/log/halon.{decision,trace}.log
