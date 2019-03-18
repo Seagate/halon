@@ -176,10 +176,11 @@ ST singlenode:
     - mv st-single_halond.m0trace.txt.xz $CI_PROJECT_DIR/
 
     # collect m0reportbug archives
-    - ./m0vg-single/scripts/m0vg run sudo /data/mero/utils/m0reportbug
-    - ./m0vg-single/scripts/m0vg run '"mv m0reportbug-*.tar.xz /data/"'
-    - tar -xJf m0reportbug-data.tar.xz -C $CI_PROJECT_DIR/
-    - tar -xJf m0reportbug-traces.tar.xz -C $CI_PROJECT_DIR/
+    - ./m0vg-single/scripts/m0vg run sudo /data/mero/utils/m0reportbug && {
+         ./m0vg-single/scripts/m0vg run '"mv m0reportbug-*.tar.xz /data/"'
+         && tar -xJf m0reportbug-data.tar.xz -C $CI_PROJECT_DIR/
+         && tar -xJf m0reportbug-traces.tar.xz -C $CI_PROJECT_DIR/
+      ;} || true
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
     #           when global 'cleanup' stage is not performed)
