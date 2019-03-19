@@ -26,3 +26,7 @@
 
 # Enable halon tracing of halon:m0d by default
 #HALON_TRACING="halon:m0d m0:notification"
+
+# `halonctl halon station' cmd options (see hctl halon station -h).
+#HALOND_STATION_OPTIONS="--rs-lease 4000000"
+HALOND_STATION_OPTIONS="--rs-lease 30000000"

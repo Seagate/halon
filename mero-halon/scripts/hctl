@@ -28,4 +28,7 @@ IP=${ADDR[0]}
 [ -n "$IP" ] || die "Cannot determine IP ($IP) from $HALOND_LISTEN"
 HALONCTL_LISTEN="$IP:0"
 
+[ -n "$HALOND_STATION_OPTIONS" ] &&
+    export HALOND_STATION_OPTIONS
+
 exec halonctl -l "$HALONCTL_LISTEN" -a "$HALOND_LISTEN" "$@"

@@ -71,6 +71,7 @@ parser = let
                          ++ "or more precisely, the lease of the recovery "
                          ++ "supervisor."
                         )
+            <> Opt.metavar "INTEGER"
   in Options <$> upd <*> snapshotThreshold <*> snapshotTimeout <*> rsLease
 
 self :: String
