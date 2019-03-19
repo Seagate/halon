@@ -38,6 +38,7 @@ import           HA.RecoveryCoordinator.Castor.Pool.Actions (getPools)
 import           HA.RecoveryCoordinator.Castor.Process.Events
 import           HA.RecoveryCoordinator.Job.Actions
 import           HA.RecoveryCoordinator.Job.Events (JobFinished(..))
+import           HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import           HA.RecoveryCoordinator.Mero.Events
 import           HA.RecoveryCoordinator.RC.Actions
 import qualified HA.RecoveryCoordinator.RC.Actions.Log as Log
@@ -158,15 +159,12 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 -- | Query mero cluster status.
 --
 -- Nilpotent request.
-isRCNode :: NodeId -> Process (Bool)
+isRCNode :: NodeId -> Process Bool
 isRCNode nid = do
     self <- getSelfPid
     whereisRemoteAsync nid labelRecoveryCoordinator
-    void . spawnLocal $ receiveTimeout (1000000) [] >> usend self ()
-    receiveWait
-      [ match (\(WhereIsReply _ mp) -> (if isNothing mp then return False else return True))]
-    where
-      labelRecoveryCoordinator = "mero-halon.RC"
+    void . spawnLocal $ receiveTimeout 1000000 [] >> usend self ()
+    receiveWait [ match $ \(WhereIsReply _ mp) -> return (isJust mp) ]
 
 requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
