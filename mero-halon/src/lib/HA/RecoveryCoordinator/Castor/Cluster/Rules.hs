@@ -158,6 +158,16 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 -- | Query mero cluster status.
 --
 -- Nilpotent request.
+isRCNode :: NodeId -> Process (Bool)
+isRCNode nid = do
+    self <- getSelfPid
+    whereisRemoteAsync nid labelRecoveryCoordinator
+    void . spawnLocal $ receiveTimeout (1000000) [] >> usend self ()
+    receiveWait
+      [ match (\(WhereIsReply _ mp) -> (if isNothing mp then return False else return True))]
+    where
+      labelRecoveryCoordinator = "mero-halon.RC"
+
 requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
@@ -187,7 +197,8 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                        return (process, ReportClusterProcess ptyp st services')
             let node' = fromJust $ listToMaybe nodes
             let R.Node nid = fromJust (M0.m0nodeToNode node' rg)
-            return (host, ReportClusterHost (listToMaybe nodes) node_st nid (sort $ join prs))
+            isRC <- liftProcess (isRCNode nid)
+            return (host, ReportClusterHost (listToMaybe nodes) node_st nid isRC (sort $ join prs))
       Just root <- getRoot
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState

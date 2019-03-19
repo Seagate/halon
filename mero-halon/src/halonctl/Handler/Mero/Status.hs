@@ -96,14 +96,15 @@ prettyReport showDevices nids ReportClusterState{..} = do
                putStrLn $ "          " ++ show sdev_fid ++ " -> " ++ sdev_path
       putStrLn "\nHosts:"
       forM_ csrHosts $ \( Castor.Host qfdn
-                        , ReportClusterHost mnode st nid ps ) -> do
+                        , ReportClusterHost mnode st nid isRC ps ) -> do
          let (nst, extSt) = M0.displayNodeState st
          printf node_pattern nst (maybe "" fidStr mnode) qfdn
          for_ extSt $ printf pattern_ext
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs ) -> do
            let (pst, proc_extSt) = M0.displayProcessState proc_st
-               tsTag | ptype == " halon" && nid `elem` nids = " (TS)"
+               tsTag | ptype == " halon" && isRC = " (RC)"
+                     | ptype == " halon" && nid `elem` nids = " (TS)"
                      | otherwise = "" :: String
            printf proc_pattern pst
                                (show rfid)

@@ -161,6 +161,7 @@ data ReportClusterState = ReportClusterState
       -- see 'ReportClusterHost' for details.
       , csrPrincipalRM :: Maybe M0.Service
       -- ^ Current principal resource management service.
+      -- ^ Resource coordinator
       } deriving (Eq, Show, Typeable, Generic)
 
 instance Binary ReportClusterState
@@ -174,6 +175,9 @@ data ReportClusterHost = ReportClusterHost
       , crnNodeStatus :: M0.StateCarrier M0.Node
       -- ^ Halon state of 'crnNodeFid'.
       , crnNID        :: NodeId
+      -- ^ Node nid
+      , isRC          :: Bool
+      -- Is this host running RC
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       -- ^ Information about processes on the cluster. See
       -- 'ReportClusterProcess' for details.
