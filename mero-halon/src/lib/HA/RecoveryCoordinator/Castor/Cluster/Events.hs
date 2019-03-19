@@ -173,14 +173,15 @@ data ReportClusterHost = ReportClusterHost
       -- ^ Associated 'M0.Node'.
       , crnNodeStatus :: M0.StateCarrier M0.Node
       -- ^ Halon state of 'crnNodeFid'.
-      , crnNID        :: NodeId
-      -- ^ Node nid.   XXX DOCUMENTME Which node?
-      , isRC          :: Bool
+      , crnNodeId     :: Maybe NodeId
+      -- ^ NodeId of the associated 'HA.Resources.Node'.
+      , crnIsRC       :: Bool
       -- ^ Is this host running RC?
       , crnProcesses  :: [(M0.Process, ReportClusterProcess)]
       -- ^ Information about processes on the cluster. See
       -- 'ReportClusterProcess' for details.
       } deriving (Eq, Show, Typeable, Generic, Ord)
+
 instance Binary ReportClusterHost
 instance ToJSON ReportClusterHost
 instance FromJSON ReportClusterHost

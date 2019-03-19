@@ -60,7 +60,7 @@ import           Control.Monad (join, unless, void, when)
 import           Control.Monad.Trans.State (execState)
 import qualified Control.Monad.Trans.State as State
 import           Data.Foldable
-import           Data.List (sort, sortOn)
+import           Data.List (sort)
 import qualified Data.Map.Strict as M
 import           Data.Maybe ( catMaybes, listToMaybe, maybeToList, mapMaybe
                             , isJust, isNothing, fromJust )
@@ -170,11 +170,10 @@ requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
   $ \(ClusterStatusRequest ch) -> do
       rg <- getGraph
-      let (sns, mdix) = getPools rg
-      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) sns
+      let (snsPools, mdixPool) = getPools rg
+      repairs <- fmap catMaybes $ traverse (\p -> fmap (p,) <$> getPoolRepairStatus p) snsPools
       hosts <- forM (sort $ G.connectedTo Cluster Has rg) $ \host -> do
             let nodes = sort $ G.connectedTo host Runs rg :: [M0.Node]
-                node_st = maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
             prs <- forM nodes $ \node -> do
                      processes <- getChildren node
                      forM processes $ \process -> do
@@ -193,20 +192,30 @@ requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
                             return (sdev, state, slot, msd)
                           return (ReportClusterService (M0.getState service rg) service sdevs')
                        return (process, ReportClusterProcess ptyp st services')
-            let node' = fromJust $ listToMaybe nodes
-            let R.Node nid = fromJust (M0.m0nodeToNode node' rg)
-            isRC <- liftProcess (isRCNode nid)
-            return (host, ReportClusterHost (listToMaybe nodes) node_st nid isRC (sort $ join prs))
+            let mnid = case nodes of
+                    -- XXX What's so special about the first element of `nodes`?
+                    -- Why do we always ignore the remaining elements?
+                    -- Is we are certain that this list may not contain
+                    -- several elements, why do we use `Unbounded` cardinality
+                    -- for Cas.Host-[R.Runs]->M0.Node relation then?
+                    (node:_) -> M0.m0nodeToNode node rg <&> \(R.Node nid) -> nid
+                    [] -> Nothing
+            isRC <- maybe (return False) (liftProcess . isRCNode) mnid
+            let node_st =
+                  maybe M0.NSUnknown (flip M0.getState rg) $ listToMaybe nodes
+            return ( host
+                   , ReportClusterHost (listToMaybe nodes) node_st mnid isRC (sort $ join prs)
+                   )
       Just root <- getRoot
       mprof <- theProfile
       liftProcess . sendChan ch $ ReportClusterState
         { csrStatus   = getClusterStatus rg
-        , csrSnsPools = sortOn fst $ sns <&> \pool ->
+        , csrSnsPools = sort snsPools <&> \pool ->
                 ( pool
                 -- createSNSPool guarantees that every SNS pool has
                 -- M0.PoolId attached.  'Nothing' is not possible.
                 , fromJust $ G.connectedTo pool Has rg )
-        , csrDixPool  = mdix
+        , csrDixPool  = mdixPool
         , csrProfile  = mprof
         , csrSNS      = sort repairs
         , csrStats    = G.connectedTo root Has rg

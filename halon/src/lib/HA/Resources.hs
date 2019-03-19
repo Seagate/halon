@@ -46,6 +46,9 @@ deriveSafeCopy 0 'base ''Cluster
 -- | A resource graph representation for nodes.
 --
 -- XXX Move to HA.Resources.Castor?
+--
+-- This corresponds to "R.Node" in the Resouce Graph schema
+-- visualization [doc/halon-rg-schema.html].
 newtype Node = Node NodeId
   deriving (Eq, Generic, Hashable, Ord, Show, Typeable, FromJSON, ToJSON)
 
