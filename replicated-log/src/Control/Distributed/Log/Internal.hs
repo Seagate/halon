@@ -847,30 +847,39 @@ replica Dict
                      result <- runPropose'
                                  (prl_propose (sendAcceptor logId) αs d v) s
                      ok <- liftIO $ tryPutMVar mv result
+                     nlogTrace logId $ "proposal passed? - " ++ show ok
                      when ok $ usend self ()
             let -- After this call the mailbox is guaranteed to be free of @()@
-                -- notifications from the worker.
+                -- notification from the worker.
                 --
-                -- Returns true if the worker was blocked.
+                -- Returns true if the worker's result was blocked.
                 clearNotifications = do
-                  -- block proposal
+                  nlogTrace logId $ "proposer: try to abort the proposal"
+                  -- try to block the worker's result
                   blocked <- liftIO $ tryPutMVar mv undefined
-                  -- consume the final () if not blocked
-                  when (not blocked) expect
+                  when (not blocked) $ do
+                    -- consume the stale @()@ notification from the worker
+                    nlogTrace logId $ "proposer: consume stale notification"
+                    expect
                   return blocked
             (αs', w', blocked) <- fix $ \loop -> receiveWait
                       [ match $ \() -> {-# SCC "p-finished" #-}
                           return (αs, w, False)
                       , match $ \αs' -> {-# SCC "reconf-a" #-}
+                         do
+                          nlogTrace logId $ "proposer: reconf-a"
                           -- reconfiguration of the proposer
                           (,,) αs' w <$> clearNotifications
                       , match $ \w' -> {-# SCC "reconf-w" #-}
+                         do
+                          nlogTrace logId $ "proposer: reconf-w"
                           if w' <= d then loop
                           else -- the watermark increased beyond the proposed
                                -- decree
                             (,,) αs w' <$> clearNotifications
                       ]
-            nlogTrace logId $ "proposer: proposal stopped " ++ show (d, blocked)
+            nlogTrace logId $ "proposer: proposal passed? "
+                                            ++ show (d, not blocked)
             if blocked then do
               exit pid "proposer reconfiguration"
               -- If the leader loses the lease, resending the request will cause

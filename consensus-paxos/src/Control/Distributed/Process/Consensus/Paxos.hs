@@ -172,14 +172,14 @@ acceptor sendA _ startDecree0 config name =
     where
       loop :: DecreeId -> Lifted BallotId -> Process b
       loop sd b = do
-          paxosTrace "Acceptor waiting"
+          paxosTrace $ "Acceptor waiting... " ++ show sd
           receiveWait
               [ match $ \(Msg.Prepare d b' λ) ->
                   -- Don't reply if the value was trimmed.
                   -- The upper layers will have to figure out how
                   -- to get the trimmed values otherwise.
                   if (d < sd) then do
-                    paxosTrace $ "Prepare: Trimmed " ++ show (d, b', λ)
+                    paxosTrace $ "Prepare: Trimmed " ++ show (sd, d, b', λ)
                     loop sd b
                   else if b <= Value b'
                   then do
@@ -200,10 +200,13 @@ acceptor sendA _ startDecree0 config name =
                   -- Don't reply if the value was trimmed.
                   -- The upper layers will have to figure out how
                   -- to get the trimmed values otherwise.
-                  if (d < sd) then loop sd b
+                  if (d < sd) then do
+                    paxosTrace $ "Syn: Trimmed " ++ show (sd, d, b', λ)
+                    loop sd b
                   else if b <= Value b'
                   then do
                     (if b < Value b' then storePut $ encode b' else id) $ do
+                      paxosTrace $ "Syn: Store... " ++ show (d, b', λ)
                       storeInsert [(d, encode (b', x :: a))] $ do
                         paxosTrace $ "Syn: Ack " ++ show (d, b', λ)
                         usendAsync λ $ Msg.Ack d b' x
