@@ -144,6 +144,10 @@ docker-images-sage: CENTOS_RELEASE := sage
 docker-images-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-images-sage: docker-images
 
+docker-images-sage-vm: CENTOS_RELEASE := sage-vm
+docker-images-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-sage-vm: docker-images
+
 
 .PHONY: halon-src-container
 halon-src-container:
@@ -173,7 +177,7 @@ halon-devel-image: halon-deps-cache
 			-f Dockerfile.$(INAME) \
 			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
 			-t $(NAMESPACE)/$(INAME):$(basename $(CENTOS_RELEASE)) \
-			-t $(NAMESPACE)/halon/halon:$(basename $(CENTOS_RELEASE)) \
+			-t $(NAMESPACE)/mero/halon:$(basename $(CENTOS_RELEASE)) \
 			$(DOCKER_OPTS)
 	rm -rf docker/{stack,stack-work}
 	$(DOCKER) rmi $(NAMESPACE)/halon-base:$(CENTOS_RELEASE)
