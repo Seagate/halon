@@ -178,11 +178,11 @@ ST singlenode:
     - mv st-single_halond.m0trace.txt.xz $CI_PROJECT_DIR/
 
     # collect m0reportbug archives
-    - $M0VG run sudo /data/mero/utils/m0reportbug && {
-         $M0VG run '"mv m0reportbug-*.tar.xz /data/"'
-         && tar -xJf m0reportbug-data.tar.xz -C $CI_PROJECT_DIR/
-         && tar -xJf m0reportbug-traces.tar.xz -C $CI_PROJECT_DIR/
-      ;} || true
+    - |
+      $M0VG run sudo /data/mero/utils/m0reportbug
+      $M0VG scp cmu:m0reportbug-\*.tar.xz $CI_PROJECT_DIR/
+      ( cd $CI_PROJECT_DIR/
+        for f in m0reportbug-*.tar.xz; do mv {,st-single_}$f; done )
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
     #           when global 'cleanup' stage is not performed)
@@ -195,8 +195,9 @@ ST singlenode:
       - st-single_syslog.log
       - st-single_halon.decision.log
       - st-single_halond.m0trace.txt.xz
-      - m0reportbug-data/
-      - m0reportbug-traces/
+      - st-single_m0reportbug-data.tar.xz
+      - st-single_m0reportbug-traces.tar.xz
+      # st-single_m0reportbug-cores.tar.xz  # NB cores are not being fetched
 
 
 # System Tests (multinode) ------------------------------------------------ {{{1
