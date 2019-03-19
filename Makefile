@@ -144,6 +144,10 @@ docker-images-sage: CENTOS_RELEASE := sage
 docker-images-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-images-sage: docker-images
 
+docker-images-sage-vm: CENTOS_RELEASE := sage-vm
+docker-images-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-images-sage-vm: docker-images
+
 
 .PHONY: halon-src-container
 halon-src-container:
