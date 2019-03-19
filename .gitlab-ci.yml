@@ -172,10 +172,16 @@ ST singlenode:
                     $CI_PROJECT_DIR/st-single_halon.decision.log
 
     # fetch m0trace
-    - $M0VG run '"sudo /data/mero/utils/trace/m0trace -w0
-                           -i \$(ls -t /var/lib/halon/m0trace.* | head -1)
-                       | sort -n | xz > /data/st-single_halond.m0trace.txt.xz"'
-    - mv st-single_halond.m0trace.txt.xz $CI_PROJECT_DIR/
+    - |
+      set -x  # XXX DELETEME after verifying this code
+      out=st-single_halond.m0trace.txt.xz
+      cmd='trace=$(ls -t /var/lib/halon/m0trace.* 2> /dev/null | head -1);'
+      cmd+=' if [[ -n $trace ]]; then'
+      cmd+=' sudo /data/mero/utils/trace/m0trace -w0 -i $trace'
+      cmd+=" | sort -n | xz > /data/$out;"
+      cmd+=' fi'
+      $M0VG run "'$cmd'"
+      [[ -f $out ]] && mv $out $CI_PROJECT_DIR/
 
     # collect m0reportbug archives
     - |
