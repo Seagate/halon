@@ -34,7 +34,7 @@ build:
   script:
     # can't be defined in the 'variables:' section because it supports only
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
-    - export PREFIX="${WORKSPACE_NAME}"
+    - export JOB_NAME="${WORKSPACE_NAME}-build"
 
     - sudo rm -rf ${WORKSPACE_DIR}
     - mkdir -p ${WORKSPACE_DIR}
@@ -45,7 +45,7 @@ build:
     - git clone --recursive --depth 1 --shallow-submodules http://gitlab.mero.colo.seagate.com/mero/mero.git
 
     # build Mero
-    - time docker run --rm --name ${PREFIX}-build
+    - time docker run --rm --name ${JOB_NAME}
                       -v ~+:/data -w /data/mero
                   registry.gitlab.mero.colo.seagate.com/mero/mero:7.5
                       bash -c "KERNEL=/lib/modules/\$(yum list installed kernel | tail -n1 | awk '{ print \$2 }').x86_64/build ;
@@ -54,7 +54,7 @@ build:
                                make -j10"
 
     # build Halon
-    - time docker run --rm --name ${PREFIX}-build
+    - time docker run --rm --name ${JOB_NAME}
                       -v ~+:/data -w /data/${CI_PROJECT_NAME}
                   registry.gitlab.mero.colo.seagate.com/mero/halon:7.5
                       ./scripts/h0 make -j10
@@ -76,7 +76,7 @@ UT:
   before_script:
     # can't be defined in the 'variables:' section because it supports only
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
-    - export PREFIX="${WORKSPACE_NAME}ut"
+    - export JOB_NAME="${WORKSPACE_NAME}-ut"
 
     - date -u -Isec
     - git log -1 --pretty=fuller
@@ -95,8 +95,8 @@ UT:
       M0_VM_BOX=centos75/dev-halon
       M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev-halon'
       M0_VM_CMU_MEM_MB=4096
-      M0_VM_NAME_PREFIX=${PREFIX}
-      M0_VM_HOSTNAME_PREFIX=${PREFIX}
+      M0_VM_NAME_PREFIX=${JOB_NAME}
+      M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
     - time $M0VG up cmu
     - time $M0VG reload cmu
@@ -128,7 +128,7 @@ ST singlenode:
   before_script:
     # can't be defined in the 'variables:' section because it supports only
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
-    - export PREFIX="${WORKSPACE_NAME}s"
+    - export JOB_NAME="${WORKSPACE_NAME}-s"
 
     - date -u -Isec
     - git log -1 --pretty=fuller
@@ -147,8 +147,8 @@ ST singlenode:
       M0_VM_BOX=centos75/dev-halon
       M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev-halon'
       M0_VM_CMU_MEM_MB=4096
-      M0_VM_NAME_PREFIX=${PREFIX}
-      M0_VM_HOSTNAME_PREFIX=${PREFIX}
+      M0_VM_NAME_PREFIX=${JOB_NAME}
+      M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
     - time $M0VG up cmu
     - time $M0VG reload cmu
@@ -220,7 +220,7 @@ ST multinode:
   before_script:
     # can't be defined in the 'variables:' section because it supports only
     # sinle level of variable expansion, e.g. A=$VAR; B=$A won't work for B
-    - export PREFIX="${WORKSPACE_NAME}m"
+    - export JOB_NAME="${WORKSPACE_NAME}-m"
 
     - date -u -Isec
     - git log -1 --pretty=fuller
@@ -239,8 +239,8 @@ ST multinode:
       M0_VM_BOX=centos75/dev-halon
       M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev-halon'
       M0_VM_CMU_MEM_MB=4096
-      M0_VM_NAME_PREFIX=${PREFIX}
-      M0_VM_HOSTNAME_PREFIX=${PREFIX}
+      M0_VM_NAME_PREFIX=${JOB_NAME}
+      M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
     - time $M0VG up cmu /ssu/ /client/
     - time $M0VG reload cmu /ssu/ /client/
@@ -248,14 +248,14 @@ ST multinode:
     # generate m0genfacts cluster config
     - |
       cat <<EOF > m0-cluster.yaml
-          confds: [ ${PREFIX}-cmu.local ]
+          confds: [ ${JOB_NAME}-cmu.local ]
           ssus:
-            - host: ${PREFIX}-ssu1.local
+            - host: ${JOB_NAME}-ssu1.local
               disks: /dev/vd[b-g]
-            - host: ${PREFIX}-ssu2.local
+            - host: ${JOB_NAME}-ssu2.local
               disks: /dev/vd[b-g]
-          clients: [ ${PREFIX}-client1.local ]
-          clovis-apps: [ ${PREFIX}-client1.local ]
+          clients: [ ${JOB_NAME}-client1.local ]
+          clovis-apps: [ ${JOB_NAME}-client1.local ]
       EOF
     - cat m0-cluster.yaml
 
@@ -263,7 +263,7 @@ ST multinode:
     - date -u -Isec
     - time $M0VG run "${M0_VERBOSE:+M0_VERBOSE=1}
                       M0_CLUSTER=/data/m0-cluster.yaml
-                      SAT=${PREFIX}-ssu1
+                      SAT=${JOB_NAME}-ssu1
             /data/halon/scripts/h0 run-st 'multinode.t_*'"
 
   after_script:
