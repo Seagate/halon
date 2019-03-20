@@ -50,9 +50,9 @@ promulgateEQ :: (SafeCopy a, Typeable a)
              -> Process ProcessId -- ^ PID of the spawned process. This can
                                   --   be used to verify receipt.
 promulgateEQ eqnids x = spawnLocal $ do
-    m <- newPersistMessage x
-    producerTrace $ "promulgateEQ: " ++ show (typeOf x, persistMessageId m)
-    go m
+    msg <- newPersistMessage x
+    producerTrace $ "promulgateEQ: " ++ show (typeOf x, persistMessageId msg)
+    go msg
   where
     go evt = do
       res <- promulgateHAEvent eqnids evt
