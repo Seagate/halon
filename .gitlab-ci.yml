@@ -159,21 +159,22 @@ ST singlenode:
                      /data/halon/scripts/h0 run-st"
 
   after_script:
+    - PREFIX='st-single_'
     - date -u -Isec
     - cd ${WORKSPACE_DIR}
 
     # fetch syslog
     - $M0VG run sudo journalctl --no-pager --full --utc --boot
                                 --output short-precise
-                                > $CI_PROJECT_DIR/st-single_syslog.log
+                                > $CI_PROJECT_DIR/${PREFIX}syslog.log
 
     # fetch halon.decision.log
     - $M0VG scp cmu:/var/log/halon.decision.log
-                    $CI_PROJECT_DIR/st-single_halon.decision.log
+                    $CI_PROJECT_DIR/${PREFIX}halon.decision.log
 
     # fetch m0trace
     - |
-      out=st-single_halond.m0trace.txt.xz
+      out=${PREFIX}halond.m0trace.txt.xz
       $M0VG run -f <<EOF
       trace=\$(ls -t /var/lib/halon/m0trace.* 2>/dev/null | head -1)
       if [[ -n \$trace ]]; then
@@ -188,7 +189,7 @@ ST singlenode:
       $M0VG run sudo /data/mero/utils/m0reportbug
       $M0VG scp cmu:m0reportbug-\*.tar.xz $CI_PROJECT_DIR/
       ( cd $CI_PROJECT_DIR/
-        for f in m0reportbug-*.tar.xz; do mv {,st-single_}$f; done )
+        for f in m0reportbug-*.tar.xz; do mv {,$PREFIX}$f; done )
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
     #           when global 'cleanup' stage is not performed)
@@ -267,17 +268,18 @@ ST multinode:
             /data/halon/scripts/h0 run-st 'multinode.t_*'"
 
   after_script:
+    - PREFIX='st-multi_'
     - date -u -Isec
     - cd ${WORKSPACE_DIR}
 
     # fetch syslog
     - $M0VG run sudo journalctl --no-pager --full --utc --boot
                                 --output short-precise
-                                > $CI_PROJECT_DIR/st-multi_syslog.log
+                                > $CI_PROJECT_DIR/${PREFIX}syslog.log
 
     # fetch halon.decision.log
     - $M0VG scp cmu:/var/log/halon.decision.log
-                    $CI_PROJECT_DIR/st-multi_halon.decision.log
+                    $CI_PROJECT_DIR/${PREFIX}halon.decision.log
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
     #           when global 'cleanup' stage is not performed)
