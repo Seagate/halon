@@ -182,14 +182,14 @@ ST singlenode:
               xz > /data/$out
       fi
       EOF
-      [[ -f $out ]] && mv $out $CI_PROJECT_DIR/
+      [[ -f $out ]] && mv -v $out $CI_PROJECT_DIR/
 
     # collect m0reportbug archives
     - |
       $M0VG run sudo /data/mero/utils/m0reportbug
       $M0VG scp cmu:m0reportbug-\*.tar.xz $CI_PROJECT_DIR/
       ( cd $CI_PROJECT_DIR/
-        for f in m0reportbug-*.tar.xz; do mv {,$PREFIX}$f; done )
+        for f in m0reportbug-*.tar.xz; do mv -v {,$PREFIX}$f; done )
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
     #           when global 'cleanup' stage is not performed)
