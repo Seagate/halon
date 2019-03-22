@@ -1259,7 +1259,7 @@ checkRepairOnClusterStart = defineSimpleIf "check-repair-on-start" clusterOnBoot
 
 -- | We have received information about a pool state change (as well
 -- as some devices) so handle this here. Such a notification is likely
--- to have come from IOS indicating thigns like finished
+-- to have come from IOS indicating things like finished
 -- repair/rebalance.
 processPoolInfo :: M0.Pool
                 -- ^ Pool to work on
@@ -1302,20 +1302,26 @@ processPoolInfo pool M0_NC_REPAIR _ = getPoolRepairStatus pool >>= \case
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Repair -> do
-        Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
-        promulgateRC $ DelayedAbort pool
-  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is rebalancing now."
+        getClusterStatus <$> getGraph >>= \case
+          Just (M0.MeroClusterState M0.ONLINE _ _) -> do
+            Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
+            promulgateRC $ DelayedAbort pool
+          _ -> return ()
+  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIR but pool is rebalancing now."
 
 -- Partial repair or problem during repair on a pool, if one of IOS
 -- experienced problem - we abort repair.
 processPoolInfo pool M0_NC_REBALANCE _ = getPoolRepairStatus pool >>= \case
-  Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REPAIR for a pool but "
+  Nothing -> Log.rcLog' Log.WARN $ "Got M0_NC_REBALANCE for a pool but "
                                ++ "no pool repair status was found."
   Just (M0.PoolRepairStatus prt _ _)
     | prt == M0.Rebalance -> do
-        Log.rcLog' Log.DEBUG $ "Got partial repair -- aborting."
-        promulgateRC $ DelayedAbort pool
-  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REPAIRED but pool is repairing now."
+        getClusterStatus <$> getGraph >>= \case
+          Just (M0.MeroClusterState M0.ONLINE _ _) -> do
+            Log.rcLog' Log.DEBUG $ "Got partial rebalance -- aborting."
+            promulgateRC $ DelayedAbort pool
+          _ -> return ()
+  _ -> Log.rcLog' Log.DEBUG $ "Got M0_NC_REBALANCE but pool is repairing now."
 
 -- We got some pool state info but we don't care about what it is as
 -- it seems some devices belonging to the pool failed, abort repair.
