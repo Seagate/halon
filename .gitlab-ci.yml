@@ -29,7 +29,7 @@ after_script:
 build:
   stage: build
   tags: [ m0vg ]
-  except: [ master, tags ]
+  except: [ tags ]
 
   script:
     # can't be defined in the 'variables:' section because it supports only
@@ -68,7 +68,7 @@ build:
 UT:
   stage: test
   tags: [ m0vg ]
-  except: [ master, tags ]
+  except: [ tags ]
 
   variables:
     M0VG: ./m0vg-ut/scripts/m0vg
@@ -120,7 +120,7 @@ UT:
 ST singlenode:
   stage: test
   tags: [ m0vg ]
-  except: [ master, tags ]
+  except: [ tags ]
 
   variables:
     M0VG: ./m0vg-single/scripts/m0vg
@@ -213,7 +213,7 @@ ST singlenode:
 ST multinode:
   stage: test
   tags: [ m0vg ]
-  except: [ master, tags ]
+  except: [ tags ]
 
   variables:
     M0VG: ./m0vg-multi/scripts/m0vg
@@ -299,7 +299,7 @@ ST multinode:
 cleanup:
   stage: cleanup
   tags: [ m0vg ]
-  except: [ master, tags ]
+  except: [ tags ]
   when: always
   dependencies: []  # empty deps list prevents unneeded artifacts downloading
 
