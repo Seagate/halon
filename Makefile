@@ -3,7 +3,7 @@
 
 GITREV          := git$(shell git rev-parse --short HEAD)
 # assume the first part of `git describe` is a tag in format 'n.m'
-VERSION         := $(shell git describe | cut -f1 -d-)
+VERSION         := $(or $(shell git describe | cut -f1 -d-), UNKNOWN)
 GHC_OPTIONS     := -g -j4
 DIST_FILE       := halon-$(VERSION).tar.gz
 M0_SRC_DIR      := /usr/include/mero
