@@ -1,5 +1,0 @@
-ARG  CENTOS_RELEASE=latest
-FROM registry.gitlab.mero.colo.seagate.com/halon-base:${CENTOS_RELEASE}
-
-COPY stack .stack
-COPY stack-work .stack-work

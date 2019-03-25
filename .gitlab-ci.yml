@@ -63,6 +63,7 @@ build:
     # containers run commands as 'root' user, seize ownershipt back
     - sudo chown -R $(id -u):$(id -g) .
 
+
 # rpmbuild check ---------------------------------------------------------- {{{1
 #
 
@@ -332,5 +333,44 @@ cleanup:
     - ./m0vg-ut/scripts/m0vg destroy -f || true
     - ./m0vg-single/scripts/m0vg destroy -f || true
     - ./m0vg-multi/scripts/m0vg destroy -f || true
+
+
+# Docker images ----------------------------------------------------------- {{{1
+#
+
+docker:rebuild-images:
+  stage: build
+  tags: [ docker-image-build ]
+  when: manual
+  only:
+    refs:
+      - merge_requests
+    changes:
+      - docker/*
+
+  variables:
+    DOCKER_IMAGE_TAG: latest
+
+  script:
+    - make docker-image-${DOCKER_IMAGE_TAG}
+    - make docker-push tag="${DOCKER_IMAGE_TAG}*"
+
+
+docker:rebuild-images:75:
+  extends: docker:rebuild-images
+  variables:
+    DOCKER_IMAGE_TAG: '7.5'
+
+
+docker:rebuild-images:sage:
+  extends: docker:rebuild-images
+  variables:
+    DOCKER_IMAGE_TAG: sage
+
+
+docker:rebuild-images:sage-vm:
+  extends: docker:rebuild-images
+  variables:
+    DOCKER_IMAGE_TAG: sage-vm
 
 # vim: foldmethod=marker shiftwidth=2 tabstop=2 expandtab

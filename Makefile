@@ -45,6 +45,7 @@ setup:
 
 .PHONY: dist
 dist:
+	rm -f $(DIST_FILE)
 	echo "module Version where \
 	      gitDescribe :: String; \
 	      gitDescribe = \"$(shell git describe --long --always || echo UNKNOWN)\"; \
@@ -57,6 +58,7 @@ dist:
 	tar -rf $(DIST_FILE:.gz=) --transform 's#^#halon/#' mero-halon/src/lib/Version.hs
 	gzip $(DIST_FILE:.gz=)
 	git checkout mero-halon/src/lib/Version.hs
+	ln -sf ../$(DIST_FILE) docker/halon-dist.tar.gz
 
 .PHONY: __rpm_pre
 __rpm_pre:
@@ -134,53 +136,38 @@ INAME = $(@:%-image=%)
 CNAME = $(@:%-container=%)
 
 .PHONY: docker-images
-docker-images: halon-devel-image
+docker-images: docker-image-latest \
+               docker-image-7.5 \
+               docker-image-sage \
+               docker-image-sage-vm
 
-docker-images-7.5: CENTOS_RELEASE := 7.5.1804
-docker-images-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-images-7.5: docker-images
+.PHONY: docker-image-latest
+docker-image-latest: halon-devel-image
 
-docker-images-sage: CENTOS_RELEASE := sage
-docker-images-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-images-sage: docker-images
+.PHONY: docker-image-7.5
+docker-image-7.5: CENTOS_RELEASE := 7.5
+docker-image-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-7.5: docker-images
 
-docker-images-sage-vm: CENTOS_RELEASE := sage-vm
-docker-images-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-images-sage-vm: docker-images
+.PHONY: docker-image-sage
+docker-image-sage: CENTOS_RELEASE := sage
+docker-image-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-sage: docker-images
 
+.PHONY: docker-image-sage-vm
+docker-image-sage-vm: CENTOS_RELEASE := sage-vm
+docker-image-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-sage-vm: docker-images
 
-.PHONY: halon-src-container
-halon-src-container:
-	if $(DOCKER) container inspect -f '{{.Id}}' $(CNAME) >/dev/null 2>&1 ; then \
-		$(DOCKER) rm $(CNAME) ; \
-	fi
-	$(DOCKER) create --name $(CNAME) -v $(PWD):/root/halon centos
-
-.PHONY: halon-base-image
-halon-base-image:
-	cd docker \
-	&& $(DOCKER) build . \
-			-f Dockerfile.$(INAME) \
-			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
-			$(DOCKER_OPTS)
-
-.PHONY: halon-deps-cache
-halon-deps-cache: halon-src-container halon-base-image
-	$(DOCKER) run --rm --volumes-from halon-src \
-		$(NAMESPACE)/halon-base:$(CENTOS_RELEASE) \
-		/root/halon/docker/build-halon-deps.sh
 
 .PHONY: halon-devel-image
-halon-devel-image: halon-deps-cache
+halon-devel-image: dist
 	cd docker \
-	&& $(DOCKER) build . \
-			-f Dockerfile.$(INAME) \
+	&& tar -ch . \
+	   | $(DOCKER) build \
 			-t $(NAMESPACE)/$(INAME):$(CENTOS_RELEASE) \
-			-t $(NAMESPACE)/$(INAME):$(basename $(CENTOS_RELEASE)) \
-			-t $(NAMESPACE)/mero/halon:$(basename $(CENTOS_RELEASE)) \
-			$(DOCKER_OPTS)
-	rm -rf docker/{stack,stack-work}
-	$(DOCKER) rmi $(NAMESPACE)/halon-base:$(CENTOS_RELEASE)
+			-t $(NAMESPACE)/mero/halon:$(CENTOS_RELEASE) \
+			$(DOCKER_OPTS) -
 
 name := halon*
 tag  := *
