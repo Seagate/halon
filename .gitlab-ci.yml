@@ -347,8 +347,6 @@ docker:rebuild-images:
   tags: [ docker-image-build ]
   when: manual
   only:
-    refs:
-      - merge_requests
     changes:
       - docker/*
 
