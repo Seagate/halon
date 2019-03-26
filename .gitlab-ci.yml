@@ -45,6 +45,10 @@ build:
     # get fresh Mero copy
     - git clone --recursive --depth 1 --shallow-submodules http://gitlab.mero.colo.seagate.com/mero/mero.git
 
+    # make sure that build images are up to date
+    - docker pull registry.gitlab.mero.colo.seagate.com/mero/mero:$CENTOS_RELEASE
+    - docker pull registry.gitlab.mero.colo.seagate.com/mero/halon:$CENTOS_RELEASE
+
     # build Mero
     - time docker run --rm --name ${JOB_NAME}
                       -v ~+:/data -w /data/mero
