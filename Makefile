@@ -147,17 +147,17 @@ docker-image-latest: halon-devel-image
 .PHONY: docker-image-7.5
 docker-image-7.5: CENTOS_RELEASE := 7.5
 docker-image-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-image-7.5: docker-images
+docker-image-7.5: halon-devel-image
 
 .PHONY: docker-image-sage
 docker-image-sage: CENTOS_RELEASE := sage
 docker-image-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-image-sage: docker-images
+docker-image-sage: halon-devel-image
 
 .PHONY: docker-image-sage-vm
 docker-image-sage-vm: CENTOS_RELEASE := sage-vm
 docker-image-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
-docker-image-sage-vm: docker-images
+docker-image-sage-vm: halon-devel-image
 
 
 .PHONY: halon-devel-image

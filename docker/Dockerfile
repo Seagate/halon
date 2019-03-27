@@ -1,9 +1,5 @@
-#
-# Builder image
-#
-
 ARG  CENTOS_RELEASE=latest
-FROM registry.gitlab.mero.colo.seagate.com/mero/mero:${CENTOS_RELEASE} as halon-deps-builder
+FROM registry.gitlab.mero.colo.seagate.com/mero/mero:${CENTOS_RELEASE}
 
 ADD halon-dist.tar.gz .
 
@@ -19,29 +15,11 @@ RUN yum -y install \
            pcre-devel \
            stack
 
+# ghc-options should match the defaults from `h0` script
 RUN cd halon \
-    && stack setup \
-    && stack build --only-dependencies
+    && stack build --only-dependencies --ghc-options='-g -j2 -O0' \
+    && cd .. \
+    && rm -rf halon
 
 # fix read permissions for some files that created with user-only access
 RUN find ~/.stack \! -perm -o=r -exec chmod a+r '{}' \; -print
-
-#
-# Final image
-#
-
-ARG  CENTOS_RELEASE=latest
-FROM registry.gitlab.mero.colo.seagate.com/mero/mero:${CENTOS_RELEASE}
-
-COPY --from=halon-deps-builder /etc/yum.repos.d/stack.repo /etc/yum.repos.d/
-COPY --from=halon-deps-builder /root/.stack .stack/
-
-RUN yum -y install \
-           binutils-devel \
-           gmp-devel \
-           leveldb-devel \
-           libgenders-devel \
-           libyaml-devel \
-           ncurses-devel \
-           pcre-devel \
-           stack
