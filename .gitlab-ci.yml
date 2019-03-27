@@ -392,6 +392,7 @@ vagrant:rebuild-box:
     M0VG: ./m0vg/scripts/m0vg
 
   script:
+    - export JOB_NAME="${WORKSPACE_NAME}-box"
     - mkdir -p ${WORKSPACE_DIR}
     - cd ${WORKSPACE_DIR}
     - |
@@ -404,17 +405,19 @@ vagrant:rebuild-box:
       M0_VM_BOX_BUILDER_MODE=yes
       M0_VM_BOX=centos75/dev
       M0_VM_BOX_URL='http://ci-storage.mero.colo.seagate.com/vagrant/centos75/dev'
-      M0_VM_NAME_PREFIX=${WORKSPACE_NAME}
-      M0_VM_HOSTNAME_PREFIX=devbox
+      M0_VM_NAME_PREFIX=${JOB_NAME}
+      M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
 
-    # copy Halon build deps from Docker build image
-    - docker pull $DOCKER_REGISTRY/mero/halon:$CENTOS_RELEASE
-    - docker create --name halon-build-deps $DOCKER_REGISTRY/mero/halon:$CENTOS_RELEASE
-    - docker cp halon-build-deps:/root/.stack stack
     - $M0VG box update
     - $M0VG up --no-provision devbox
-    - $M0VG scp $PWD/stack devbox:.stack
+    # TODO: use `h0 make --only-dependencies` instead of raw `stack build`
+    #       (requires that `h0` could skip 'assert_mero')
+    - |
+      $M0VG run --vm devbox -f <<EOF
+      cd /data/halon
+      stack build --only-dependencies --ghc-options='-g -j2 -O0'
+      EOF
     - $M0VG halt devbox
 
     # package a box
