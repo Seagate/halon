@@ -1938,7 +1938,11 @@ ambassador SerializableDict Config{logId, leaseTimeout} omchan replicas =
        (sp, rp) <- newChan
        timerPid <- spawnLocal $ link self >> timer sp
        forM_ replicas $ flip whereisRemoteAsync (batcherLabel logId)
-       usend timerPid leaseTimeout
+       -- Set it to 1 sec initially, so that the cluster bootstrap does not
+       -- depend on the leaseTimeout. Otherwise, the RC startup may be delayed
+       -- on a big leaseTimeouts and the satellites won't be able to start
+       -- during the bootstrap process. Especially, on multi-node-TS configs.
+       usend timerPid (1000000 :: Int)
        go AmbassadorState
          { asTimerPid = timerPid
          , asTimerRP  = rp
