@@ -59,9 +59,7 @@ ruleNotificationHandler = define "castor::service::notification-handler" $ do
             _ -> Nothing
 
       servicePidMatches (HAMsg (ServiceEvent _ _ spid) m) ls
-        | spid == -1 = True  -- XXX The value comes from getpid().
-                             -- How can it ever be -1?
-        | otherwise  = fromMaybe False $ do
+        = fromMaybe False $ do
             let rg = lsGraph ls
             svc :: M0.Service <- M0.lookupConfObjByFid (_hm_fid m) rg
             proc :: M0.Process <- G.connectedFrom M0.IsParentOf svc rg
