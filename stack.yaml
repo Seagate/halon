@@ -13,6 +13,7 @@ packages:
 - halon-instances
 - mero-halon
 - mero-integration
+- network-transport
 - network-transport-controlled
 - replicated-log
 - rpclite
