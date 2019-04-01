@@ -238,10 +238,11 @@ cmd_genfacts() {
 
 cmd_install() {
     local quiet=--quiet
+    local eth1_is_present=$(ls /sys/class/net/ | grep eth1)
     [[ -v M0_VERBOSE ]] && quiet=''
     mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
     mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet \
-          ${M0_CLUSTER:+'--iface eth1'}
+          ${eth1_is_present:+'--iface eth1'}
 }
 
 cmd_uninstall() {
