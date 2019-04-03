@@ -237,19 +237,22 @@ cmd_genfacts() {
 }
 
 cmd_install() {
-    local quiet=--quiet
-    local eth1_is_present=$(ls /sys/class/net/ | grep eth1)
-    [[ -v M0_VERBOSE ]] && quiet=''
-    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $quiet
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $quiet \
-          ${eth1_is_present:+'--iface eth1'}
+    local opt_quiet=
+    [[ -v M0_VERBOSE ]] || opt_quiet='--quiet'
+    local opt_iface='--iface eth1'
+    [[ -e /sys/class/net/eth1 ]] || opt_iface=''
+
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --link $opt_quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --link $opt_quiet \
+          $opt_iface
 }
 
 cmd_uninstall() {
-    local quiet=--quiet
-    [[ -v M0_VERBOSE ]] && quiet=''
-    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall $quiet
-    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall $quiet
+    local opt_quiet=
+    [[ -v M0_VERBOSE ]] || opt_quiet='--quiet'
+
+    mpdsh sudo $M0_SRC_DIR/scripts/install-mero-service --uninstall $opt_quiet
+    mpdsh sudo $H0_SRC_DIR/scripts/install-halon-services --uninstall $opt_quiet
     mpdsh sudo $M0_SRC_DIR/utils/m0setup --cleanup --halon-facts
 }
 
