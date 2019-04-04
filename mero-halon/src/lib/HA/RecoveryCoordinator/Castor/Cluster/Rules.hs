@@ -161,10 +161,8 @@ eventUpdatePrincipalRM = defineSimpleTask "castor::cluster::event::update-princi
 -- Nilpotent request.
 isRCNode :: NodeId -> Process Bool
 isRCNode nid = do
-    self <- getSelfPid
     whereisRemoteAsync nid labelRecoveryCoordinator
-    void . spawnLocal $ receiveTimeout 1000000 [] >> usend self ()
-    receiveWait [ match $ \(WhereIsReply _ mp) -> return (isJust mp) ]
+    isJust . join <$> receiveTimeout 1000000 [ match $ \(WhereIsReply _ mp) -> return mp ]
 
 requestClusterStatus :: Definitions RC ()
 requestClusterStatus = defineSimpleTask "castor::cluster::request::status"
