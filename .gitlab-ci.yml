@@ -120,7 +120,7 @@ UT:
       M0_VM_NAME_PREFIX=${JOB_NAME}
       M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
-    - time $M0VG up cmu
+    - time $M0VG up --no-provision cmu
     - time $M0VG reload cmu
 
   script:
@@ -172,7 +172,7 @@ ST singlenode:
       M0_VM_NAME_PREFIX=${JOB_NAME}
       M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
-    - time $M0VG up cmu
+    - time $M0VG up --no-provision cmu
     - time $M0VG reload cmu
 
   script:
@@ -265,7 +265,7 @@ ST multinode:
       M0_VM_NAME_PREFIX=${JOB_NAME}
       M0_VM_HOSTNAME_PREFIX=${JOB_NAME}
       EOF
-    - time $M0VG up cmu /ssu/ /client/
+    - time $M0VG up --no-provision cmu /ssu/ /client/
     - time $M0VG reload cmu /ssu/ /client/
 
     # generate m0genfacts cluster config
