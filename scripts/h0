@@ -257,6 +257,9 @@ cmd_uninstall() {
 }
 
 cmd_erase_data() {
+    # We cannot use `systemctl start halon-cleanup` here, because there is
+    # no convenient way to pass optional argument (`--keep-logs`)
+    # to a systemd service.
     mpdsh sudo $H0_SRC_DIR/scripts/halon-cleanup --keep-logs || true
     mpdsh sudo systemctl start mero-cleanup || true
 
