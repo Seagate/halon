@@ -149,6 +149,11 @@ docker-image-7.5: CENTOS_RELEASE := 7.5
 docker-image-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-image-7.5: halon-devel-image
 
+.PHONY: docker-image-eos
+docker-image-eos: CENTOS_RELEASE := eos
+docker-image-eos: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-eos: halon-devel-image
+
 .PHONY: docker-image-sage
 docker-image-sage: CENTOS_RELEASE := sage
 docker-image-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)

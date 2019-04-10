@@ -377,6 +377,12 @@ docker:rebuild-images:sage-vm:
     DOCKER_IMAGE_TAG: sage-vm
 
 
+docker:rebuild-images:eos:
+  extends: docker:rebuild-images
+  variables:
+    DOCKER_IMAGE_TAG: eos
+
+
 # Vagrant boxes ----------------------------------------------------------- {{{1
 #
 
