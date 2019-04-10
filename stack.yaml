@@ -6,6 +6,7 @@ packages:
 - consensus
 - consensus-paxos
 - distributed-commands
+- distributed-process
 - distributed-process-scheduler
 - distributed-process-test
 - distributed-process-trans
