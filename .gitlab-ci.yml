@@ -76,7 +76,11 @@ rpmbuild:
   stage: test
   tags: [ docker-build ]
   except: [ tags ]
-  image: $DOCKER_REGISTRY/mero/halon:$CENTOS_RELEASE
+  # TODO: revert back to $CENTOS_RELEASE when we have new binary complete OS
+  #       image, temporary use special EOS docker image that matches the old
+  #       Jenkins base VM, untill we have the new OS image
+  image: $DOCKER_REGISTRY/mero/halon:eos
+  #image: $DOCKER_REGISTRY/mero/halon:$CENTOS_RELEASE
 
   script:
     - export RELEASE_DIR="$(ls -td /releases/master/B* | head -n1)"
