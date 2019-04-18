@@ -15,6 +15,7 @@ packages:
 - mero-halon
 - mero-integration
 - network-transport
+- network-transport-tcp
 - network-transport-controlled
 - replicated-log
 - rpclite
