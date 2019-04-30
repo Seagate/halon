@@ -40,6 +40,8 @@ module Network.Socket.ByteString
     , recvFrom
     ) where
 
+import Debug.Trace (traceIO)
+
 import Control.Exception as E (catch, throwIO)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
@@ -160,7 +162,11 @@ sendMany :: Socket        -- ^ Connected socket
 #if !defined(mingw32_HOST_OS)
 sendMany sock@(MkSocket fd _ _ _ _) cs = do
     sent <- sendManyInner
-    when (sent < totalLength cs) $ sendMany sock (remainingChunks sent cs)
+    let total = totalLength cs
+    when (sent < total) $ do
+      traceIO $ "Network.Socket.ByteString.sendMany: total="
+            ++ show total ++ " sent=" ++ show sent
+      sendMany sock (remainingChunks sent cs)
   where
     sendManyInner =
       liftM fromIntegral . withIOVec cs $ \(iovsPtr, iovsLen) ->
