@@ -47,12 +47,10 @@ import Data.ByteString.Internal (createAndTrim)
 import Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import Foreign.Marshal.Alloc (allocaBytes)
 import Foreign.Ptr (castPtr)
-import Foreign.ForeignPtr (touchForeignPtr)
 import Network.Socket (sendBuf, sendBufTo, recvBuf, recvBufFrom)
 import System.IO.Error (isEOFError)
 
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Internal as BI
 
 import Network.Socket.ByteString.Internal
 import Network.Socket.Internal
@@ -271,16 +269,11 @@ withIOVec :: [ByteString] -> ((Ptr IOVec, Int) -> IO a) -> IO a
 withIOVec cs f =
     allocaArray csLen $ \aPtr -> do
         zipWithM_ pokeIov (ptrs aPtr) cs
-        rc <- f (aPtr, csLen)
-        mapM_ touchByteString cs
-        return rc
+        f (aPtr, csLen)
   where
     csLen = length cs
     ptrs = iterate (`plusPtr` sizeOf (undefined :: IOVec))
     pokeIov ptr s =
         unsafeUseAsCStringLen s $ \(sPtr, sLen) ->
         poke ptr $ IOVec sPtr (fromIntegral sLen)
-
-    touchByteString :: ByteString -> IO ()
-    touchByteString (BI.PS fptr _ _) = touchForeignPtr fptr
 #endif
