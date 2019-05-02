@@ -13,12 +13,12 @@ by architects and peer designers for the presence of any defects.
 
    This document forms a part of the Halon architecture documentation.
    This documentation follows a standard format published by the SEI,
-   that of the “Views and Beyond” methodology [1]_.
+   that of the “Views and Beyond” methodology [#f1]_.
 
 About this document
 -------------------
 
-Following the "Views and Beyond" methodology [1]_, this documentation
+Following the "Views and Beyond" methodology [#f1]_, this documentation
 is structured as a set of :term:`views`, each documenting the software
 architecture from a different :term:`viewpoint`.
 
@@ -123,7 +123,7 @@ Disk failures
 
 Current disk drives have a mean time to failure (MTTF) rating
 of :math:`10^6` to :math:`1.5 \times 10^6` hours, though Schroeder and
-Gibson [2]_ report that in high-performance computing sites and
+Gibson [#f2]_ report that in high-performance computing sites and
 internet services sites, typical disk replacement rates exceed the
 vendor supplied rating by 13%, with 2 to 5 times the rating being
 common and that up to one order of magnitude higher replacement rates
@@ -160,11 +160,11 @@ as network switches, power distribution units, cables and other components
 that make up the cluster infrastructure. Any internal component can cause a
 node failure, while infrastructure failure can bring down many nodes at once.
 
-Anecdotal evidence [3]_, data reported by Schroeder and Gibson as well as
-data found in another publication by Schroeder and Gibson [4]_ suggest that
+Anecdotal evidence [#f3]_, data reported by Schroeder and Gibson as well as
+data found in another publication by Schroeder and Gibson [#f4]_ suggest that
 hard disk failures are the most common failures in a cluster, but not the
 majority cause. Ultimately, whichever hardware component failure is the root
-cause, anecdotal evidence by Google [5]_ suggests that the number of individual
+cause, anecdotal evidence by Google [#f5]_ suggests that the number of individual
 node failures can be expected to be half as high as the number of nodes in the
 cluster. This estimate by Google is roughly consistent with the large-scale of
 many different HPC systems conducted by Schroeder and Gibson, who observe that
@@ -184,7 +184,7 @@ i.e. 2 failures/minute.
 Cluster infrastructure failures
 """""""""""""""""""""""""""""""
 
-Google gives a few numbers [5]_ about cluster wide failures:
+Google gives a few numbers [#f5]_ about cluster wide failures:
 
 	“one power distribution unit will fail, bringing down 500 to 1,000
 	machines for about 6 hours; 20 racks will fail, each time causing 40 to
@@ -520,25 +520,25 @@ Acronym list
 References
 ~~~~~~~~~~
 
-.. [1] Clements, Paul, et al. *Documenting software architectures: views
-       and beyond.* Addison-Wesley Professional, 2010.
+.. [#f1] Clements, Paul, et al. *Documenting software architectures:
+         views and beyond.* Addison-Wesley Professional, 2010.
 
-.. [2] Schroeder, Bianca, and Garth A. Gibson. "Disk failures in the
-       real world: What does an MTTF of 1,000,000 hours mean to you."
-       *Proceedings of the 5th USENIX Conference on File and Storage
-       Technologies (FAST)*. 2007.
+.. [#f2] Schroeder, Bianca, and Garth A. Gibson. "Disk failures in the
+         real world: What does an MTTF of 1,000,000 hours mean to you."
+         *Proceedings of the 5th USENIX Conference on File and Storage
+         Technologies (FAST)*. 2007.
 
-.. [3] Alex Gorbatchev. `Hardware Components Failures — Survey Results`_.
-       May 10, 2012.
+.. [#f3] Alex Gorbatchev. `Hardware Components Failures — Survey Results`_.
+         May 10, 2012.
 
-.. [4] Schroeder, Bianca, and Garth A. Gibson. "A large-scale study of
-       failures in high-performance computing systems." *Dependable
-       and Secure Computing, IEEE Transactions on* 7.4 (2010):
-       337-350.
+.. [#f4] Schroeder, Bianca, and Garth A. Gibson. "A large-scale study of
+         failures in high-performance computing systems." *Dependable
+         and Secure Computing, IEEE Transactions on* 7.4 (2010):
+         337-350.
 
-.. [5] Steven Shankland. `Google spotlights data center inner workings`_.
-       May 30, 2008.
+.. [#f5] Steven Shankland. `Google spotlights data center inner workings`_.
+         May 30, 2008.
 
 .. _Hardware Components Failures — Survey Results: http://www.pythian.com/blog/hardware-components-failures-survey-results/
 
-.. _Google spotlights data center inner workings: http://news.cnet.com/8301-10784_3-9955184-7.html?part=rss&tag=feed&subj=NewsBlog
+.. _Google spotlights data center inner workings: https://web.archive.org/web/20080907220842/http://news.cnet.com/8301-10784_3-9955184-7.html

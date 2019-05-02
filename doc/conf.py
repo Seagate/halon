@@ -28,6 +28,8 @@ source_parsers = {
     '.md': 'recommonmark.parser.CommonMarkParser',
 }
 
+master_doc = 'contents'
+
 # If true, '()' will be appended to :func: etc. cross-reference text.
 add_function_parentheses = False
 

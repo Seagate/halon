@@ -8,11 +8,16 @@ Table of Contents
 
 .. toctree::
 
-   index.rst
-   overview.md
-   concepts/logging.rst
-   components/event-queue.rst
-   components/resource-graph.rst
-   components/replicator.rst
+   overview
+   concepts/decision-log
+   concepts/jobs
+   concepts/logging
+   concepts/services
+   components/event-queue
+   components/recovery-coordinator
+   components/recovery-supervisor
+   components/replicator
+   components/resource-graph
+   interfaces/sspl
 
 

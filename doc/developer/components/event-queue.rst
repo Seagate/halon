@@ -9,15 +9,15 @@ to the recovery coordinator.
 Context
 -------
 
-The EQ sits atop the :ref:`replicator`, as one of the two components replicated
+The EQ sits atop the :doc:`replicator`, as one of the two components replicated
 using an `RGroup`. Any Halon node may send messages to the EQ. Once receipt is
 acknowledged, messages are replicated across the tracking station nodes. The EQ
-forwards messages to the :ref:`recovery-coordinator`, which is responsible for
-'ack'-ing the messages, allowing them to be removed from the EQ. The :ref:`eq-
-tracker` is responsible for tracking the location of active EQ nodes, and runs
+forwards messages to the :doc:`recovery-coordinator`, which is responsible for
+'ack'-ing the messages, allowing them to be removed from the EQ. The EQ
+*tracker* is responsible for tracking the location of active EQ nodes, and runs
 on all nodes connected to the Halon cluster.
 
-The event queue _worker_ is structured using CEP.
+The event queue *worker* is structured using CEP.
 
 Detail
 ------
@@ -39,5 +39,5 @@ following types of events:
 
 - Notifications about the replicator availability.
 
-- `HAEvent`s. These are the events sent by various components to be included in
-  the persistent queue.
+- `HAEvent`\s. These are the events sent by various components to be
+  included in the persistent queue.

@@ -1,15 +1,15 @@
 Concepts: Jobs
 ==============
 
-Jobs provide a way to generate a specific type of rule, automating some 
+Jobs provide a way to generate a specific type of rule, automating some
 boilerplate. In particular, jobs are often useful in writing what would
 otherwise be an asynchronous action.
 
 Motivation
 ----------
 
-Actions (see :ref:`../components/decision-log.rst`) are re-usable functions
-which can be called from within rules. However, they must complete within the 
+Actions (see :doc:`Decision Log <decision-log>`) are re-usable functions
+which can be called from within rules. However, they must complete within the
 scope of a phase, and so cannot perform operations requiring multiple steps or
 which must wait for replies from some other part of the system.
 
@@ -28,7 +28,7 @@ Definition
 ----------
 
 Each job has an input and output type. The job is triggered through receipt of
-an event of the input type, and will emit the output type when it finishes. 
+an event of the input type, and will emit the output type when it finishes.
 Input types must be instances of `Eq` - if the same input event is sent multiple
 times, only one instance of the job will run.
 
@@ -37,15 +37,15 @@ provide type checking guarantees on the input and output types to the job.
 
 Thus, a typical job declaration might look like:
 
-```Haskell
--- | Job handle for @ruleProcessAdd@
-jobProcessAdd :: Job ProcessAddRequest ProcessAddResult
-jobProcessAdd = Job "castor::process::add"
+.. code-block:: haskell
 
--- | Add a process to a running system.
-ruleProcessAdd :: Definitions RC ()
-ruleProcessAdd = mkJobRule jobProcessAdd args $ \(JobHandle getRequest finish) -> do
-```
+   -- | Job handle for @ruleProcessAdd@
+   jobProcessAdd :: Job ProcessAddRequest ProcessAddResult
+   jobProcessAdd = Job "castor::process::add"
+
+   -- | Add a process to a running system.
+   ruleProcessAdd :: Definitions RC ()
+   ruleProcessAdd = mkJobRule jobProcessAdd args $ \(JobHandle getRequest finish) -> do
 
 The `JobHandle` argument which gets passed to the body of the rule can be used
 to retrieve the request in the scope of the job.

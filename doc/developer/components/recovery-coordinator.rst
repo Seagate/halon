@@ -1,10 +1,10 @@
-Component: Recovery Coordinator
-===============================
+Recovery Coordinator
+====================
 
 The :abbr:`RC (recovery coordinator)` is the "brain" of halon. It handles all
 the incoming events from various sensors around the cluster and sent to the
-:ref:`event-queue`, integrates that information with known cluster state in the
-:ref :`resource-graph`, and takes actions through the various interfaces
+:doc:`event-queue`, integrates that information with known cluster state in the
+:doc:`resource-graph`, and takes actions through the various interfaces
 available.
 
 Overview
@@ -49,18 +49,18 @@ A rule consists of multiple phases. At any given time, a rule will be either:
 
 Input may consist of events (either persisted events from the EQ or events
 sent directly to the RC), events predicated upon some condition, or timer
-expiry.[1]_
+expiry. [#f1]_
 
 Due to a limitation of the engine, phases must be declared (which creates a
 `PhaseHandle`) and this handle must then be bound to a phase action (something
 of type `PhaseM ...`). In code, this looks like the following:
 
-```Haskell
-example_handle <- phaseHandle "example_handle"
+.. code-block:: haskell
 
-directly example_handle $ do
-  Log.rcLog' Log.DEBUG "Now in phase example_handle"
-```
+   example_handle <- phaseHandle "example_handle"
+
+   directly example_handle $ do
+     Log.rcLog' Log.DEBUG "Now in phase example_handle"
 
 CEP (and Halon atop it) provides multiple ways to bind a `PhaseM` block to a
 handle, corresponding to the "guard" to enter that phase:
@@ -117,18 +117,21 @@ have a couple of options:
 
 - Leave a universally quantified local state `l`, but require an additional
   argument providing a `Lens` from `l` to the required state:
-  ```Haskell
-  mkSyncAction :: Lens' l ConfSyncState
-               -> Jump PhaseHandle
-               -> RuleM RC l (SyncToConfd -> PhaseM RC l ())
-  ```
+
+.. code-block:: haskell
+
+   mkSyncAction :: Lens' l ConfSyncState
+                -> Jump PhaseHandle
+                -> RuleM RC l (SyncToConfd -> PhaseM RC l ())
+
 - Use `vinyl` records, which provide subtyping, and add a constraint on
   field membership:
-  ```Haskell
-  onSuccess :: forall a l. (Application a, FldDispatch ∈ l)
-            => Jump PhaseHandle
-            -> PhaseM a (FieldRec l) ()
-  ```
+
+.. code-block:: haskell
+
+   onSuccess :: forall a l. (Application a, FldDispatch ∈ l)
+             => Jump PhaseHandle
+             -> PhaseM a (FieldRec l) ()
 
 Both of these forms are used in Halon code, but the `vinyl` approach is used
 more widely and should probably be preferred. Multiple examples are available in
@@ -163,5 +166,5 @@ For the design philosophy behind CEP, see
 For details on logging to the decision log within the RC, see
 :ref:`../../../rfc/018-logging-redux.md`
 
-.. [1] More complex inputs are theoretically possible (and were one of the
+.. [#f1] More complex inputs are theoretically possible (and were one of the
    original design intentions), but almost never used inside Halon.

@@ -1,4 +1,4 @@
 .. toctree::
 
-   architecture/index.rst
-   developer/index.rst
+   architecture/index
+   developer/index

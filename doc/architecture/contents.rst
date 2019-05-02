@@ -3,10 +3,10 @@ Architecture Overview: Full Table of Contents
 
 .. toctree::
 
-   index.rst
-   communicating-processes/index.rst
-   data-model/index.rst
-   layered-abstract-structures/index.rst
-   scalable-tree-communication-deployment/index.rst
-   subsystems-uses/index.rst
-   tracking-station-deployment/index.rst
+   index
+   communicating-processes/index
+   data-model/index
+   layered-abstract-structures/index
+   scalable-tree-communication-deployment/index
+   subsystems-uses/index
+   tracking-station-deployment/index

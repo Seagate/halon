@@ -1,5 +1,5 @@
-Component: Resource Graph
-=========================
+Resource Graph
+==============
 
 Overview
 --------
@@ -10,11 +10,11 @@ and one of the major components used when writing rules.
 Context
 -------
 
-The :abbr:`RG (resource graph)` is the core database used by the :ref:`recovery-
-coordinator` when deciding upon actions to be taken. The :ref:`recovery-
-coordinator` both reads and writes to the resource graph,  reading current
-system information and updating it to reflect changes of state or condition. It
-is one of the two components replicated by the :ref:`replicator`.
+The :abbr:`RG (resource graph)` is the core database used by the
+:doc:`recovery-coordinator` when deciding upon actions to be taken. The
+:doc:`recovery-coordinator` both reads and writes to the resource graph, reading
+current system information and updating it to reflect changes of state or
+condition. It is one of the two components replicated by the :doc:`replicator`.
 
 Detail
 ------
@@ -76,10 +76,10 @@ Dictionaries
 
 Resource has a slightly curious signature:
 
-```Haskell
-class StorageResource a => Resource a where
-  resourceDict :: Static (Dict (Resource a))
-```
+.. code-block:: haskell
+
+   class StorageResource a => Resource a where
+     resourceDict :: Static (Dict (Resource a))
 
 The `Static (Dict (Resource a))` provides a way to reify (and serialise)
 evidence of the typeclass instance. Conversely, by pattern matching on the
@@ -97,20 +97,20 @@ instances (and static functions) for you.
 Due to template haskell staging restrictions, two calls are required (both must
 be present):
 
-```Haskell
-$(mkDicts
-  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, ''Has, ''Node)
-  , (''Cluster, ''Has, ''EpochId)
-  ])
-$(mkResRel
-  [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
-  [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
-  , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
-  ]
-  []
-  )
-```
+.. code-block:: haskell
+
+   $(mkDicts
+     [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
+     [ (''Cluster, ''Has, ''Node)
+     , (''Cluster, ''Has, ''EpochId)
+     ])
+   $(mkResRel
+     [''Cluster, ''Node, ''EpochId, ''Has, ''Runs]
+     [ (''Cluster, AtMostOne, ''Has, Unbounded, ''Node)
+     , (''Cluster, AtMostOne, ''Has, AtMostOne, ''EpochId)
+     ]
+     []
+     )
 
 The first argument to either of these functions is a list of types we wish to
 make instances of `Resource`. The second argument is a list of tuples
@@ -127,7 +127,8 @@ For access and modification, see principally the functions defined in
 `HA.ResourceGraph.GraphLike`, along with the functions defined in
 `HA.ResourceGraph`:
 
-```Haskell
+.. code-block:: haskell
+
     -- * Querying the graph
   , null
   , memberResource
@@ -148,7 +149,6 @@ For access and modification, see principally the functions defined in
   , connectUniqueFrom
   , connectUniqueTo
   , connectUnbounded
-```
 
 Garbage Collection
 ~~~~~~~~~~~~~~~~~~

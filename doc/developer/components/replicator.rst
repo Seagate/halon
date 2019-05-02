@@ -17,9 +17,9 @@ Replicated State
 Halon has two instances of the replicator, each controlling one aspect of the
 replicated state:
 
-- The EQ replicator is responsible for the :ref:`event-queue`. 
-- The MM replicator is responsible for replicating the multimap (and hence the 
-  :ref:`resource-graph`).
+- The EQ replicator is responsible for the :doc:`event-queue`.
+- The MM replicator is responsible for replicating the multimap (and hence the
+  :doc:`resource-graph`).
 
 See the module `HA.Startup` for the configuration of these replicators.
 

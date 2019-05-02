@@ -1,5 +1,5 @@
-Component: Recovery Supervisor
-==============================
+Recovery Supervisor
+===================
 
 The recovery supervisor runs on every tracking station node. At any given time,
 one of the recovery supervisors takes on the role of "leader" - this role co-

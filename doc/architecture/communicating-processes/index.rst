@@ -31,7 +31,7 @@ following responsibilities:
 
 A service instance may have any number of *parameters*, which are
 themselves resources, attached to them. These parameters are typically
-configuration files that may be different for each instance of a 
+configuration files that may be different for each instance of a
 service. A start command always includes all parameters for a service.
 A service should not depend on system specific state [1]_.
 
@@ -45,7 +45,7 @@ Tracking Station
 
 **Functionality**: The recovery coordinator is the “brain” of Halon.
 It sits in the tracking station, which is a set of nodes whose stateful
-services are all replicated, so as to tolerate one or more node and 
+services are all replicated, so as to tolerate one or more node and
 communication failures.
 
 It is essential that the state upon which the recovery coordinator depends
@@ -225,6 +225,8 @@ TODO: service dependencies?
 
 Architecture background
 -----------------------
+
+.. _architecture-rationale:
 
 Rationale
 ~~~~~~~~~

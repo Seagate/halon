@@ -10,11 +10,11 @@ separate purposes:
 - SSPL-HL runs on the CMU and acts as the public interface to castor management.
   It pulls some of its information from Halon.
 
-There are two Halon :ref:`services<../concepts/services.rst>` which are
+There are two Halon :doc:`services <../concepts/services>` which are
 responsible for communication with these components. We refer to these as
 `halon:sspl` and `halon:sspl-hl` respectively.
 
-The interface to both of these components is over RabbitMQ message exchange. 
+The interface to both of these components is over RabbitMQ message exchange.
 
 RabbitMQ connections
 --------------------
@@ -44,7 +44,7 @@ generated.
 Code Pointers
 -------------
 
-- The shared code for handling RabbitMQ connections is defined in 
+- The shared code for handling RabbitMQ connections is defined in
   `/mero-halon/src/lib/HA/Services/SSPL/Rabbit.hs`.
 - Schemata are defined in `/sspl/app/SSPL/Schemata/`.
 - The bindings generator is defined in `/sspl/app/mkBindings.hs`.

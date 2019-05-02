@@ -394,16 +394,16 @@ consensus
 
 .. code:: haskell
 
-    type DecreeId
+   type DecreeId
 
-    type Propose s a
+   type Propose s a
 
-    signature Protocol (type a) =
-        type s
+   signature Protocol (type a) =
+       type s
 
-        acceptor :: Process ()
-        propose :: DecreeId → a → Propose s a
-    end Protocol
+       acceptor :: Process ()
+       propose :: DecreeId → a → Propose s a
+   end Protocol
 
 A consensus protocol is characterized by two essential elements:
 
@@ -424,32 +424,32 @@ replicated-log
 
 .. code:: haskell
 
-    signature Log
-        initialize :: Action s
-        nextState :: s → a → Action s
-    end Log
+   signature Log
+       initialize :: Action s
+       nextState :: s → a → Action s
+   end Log
 
-    signature replicated-log (P : Protocol) (L : Log)
-        type Hint = None | Idempotent | Nullipotent
+   signature replicated-log (P : Protocol) (L : Log)
+       type Hint = None | Idempotent | Nullipotent
 
-        type Handle
+       type Handle
 
-        type NominationPolicy
+       type NominationPolicy
 
-        new :: [NodeId] → Action Handle
+       new :: [NodeId] → Action Handle
 
-        finalize :: Handle → Action ()
+       finalize :: Handle → Action ()
 
-        colonize :: NodeId → Handle → Action ()
-        reconfigure :: NominationPolicy → Handle → Action ()
+       colonize :: NodeId → Handle → Action ()
+       reconfigure :: NominationPolicy → Handle → Action ()
 
-        append :: Handle → Hint → a → Action ()
+       append :: Handle → Hint → a → Action ()
 
-        type RemoteHandle
+       type RemoteHandle
 
-        remoteHandle :: Handle → RemoteHandle
-        dup :: RemoteHandle → Handle
-    end replicated-log
+       remoteHandle :: Handle → RemoteHandle
+       dup :: RemoteHandle → Handle
+   end replicated-log
 
 A structure implementing the ``Log`` interface provides callbacks for
 each of:
@@ -509,12 +509,12 @@ replicated-state
 
 .. code:: haskell
 
-    type CommandPort s
+   type CommandPort s
 
-    connect :: Handle → Action (CommandPort s)
+   connect :: Handle → Action (CommandPort s)
 
-    select :: CommandPort s → (s → Action a) → Action a
-    update :: CommandPort s → (s → Action s) → Action ()
+   select :: CommandPort s → (s → Action a) → Action a
+   update :: CommandPort s → (s → Action s) → Action ()
 
 In general most clients send commands that are not necessarily
 idempotent. What’s more, clients manipulate replicated state much in the
