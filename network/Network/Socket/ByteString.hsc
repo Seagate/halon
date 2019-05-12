@@ -40,10 +40,11 @@ module Network.Socket.ByteString
     , recvFrom
     ) where
 
-import Debug.Trace (traceIO)
+import Debug.Trace (traceEventIO)
 
 import Control.Exception as E (catch, throwIO)
 import Control.Monad (when)
+import Data.Maybe (fromMaybe)
 import Data.ByteString (ByteString)
 import Data.ByteString.Internal (createAndTrim)
 import Data.ByteString.Unsafe (unsafeUseAsCStringLen)
@@ -57,6 +58,7 @@ import qualified Data.ByteString as B
 import Network.Socket.ByteString.Internal
 import Network.Socket.Internal
 import Network.Socket.Types
+import Network.Socket (getPeerName, getNameInfo)
 
 #if !defined(mingw32_HOST_OS)
 import Control.Monad (liftM, zipWithM_)
@@ -164,8 +166,11 @@ sendMany sock@(MkSocket fd _ _ _ _) cs = do
     sent <- sendManyInner
     let total = totalLength cs
     when (sent < total) $ do
-      traceIO $ "Network.Socket.ByteString.sendMany: total="
-            ++ show total ++ " sent=" ++ show sent
+      (mto, _) <- getPeerName sock >>= getNameInfo [] True False
+      let to = fromMaybe "unknown" mto
+      traceEventIO $ "Network.Socket.ByteString.sendMany: to=" ++ show to
+            ++ " sock=" ++ show fd ++ " total=" ++ show total
+                                   ++ " sent=" ++ show sent
       sendMany sock (remainingChunks sent cs)
   where
     sendManyInner =
