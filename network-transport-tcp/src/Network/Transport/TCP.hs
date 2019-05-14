@@ -149,7 +149,6 @@ import Control.Exception
 import Data.IORef (IORef, newIORef, writeIORef, readIORef, writeIORef)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (concat)
-import qualified Data.ByteString.Lazy as BSL (fromChunks, toChunks, length, toStrict, splitAt, take)
 import qualified Data.ByteString.Char8 as BSC (pack, unpack)
 import Data.Bits (shiftL, (.|.))
 import Data.Maybe (isJust)
@@ -172,8 +171,6 @@ import qualified Data.Accessor.Container as DAC (mapMaybe)
 import Data.Foldable (forM_, mapM_)
 import qualified System.Timeout (timeout)
 import qualified Data.ByteString as BS (length)
-
-import Crypto.Hash.SHA1 (hashlazy)
 
 -- $design
 --
@@ -796,11 +793,6 @@ apiClose (ourEndPoint, theirEndPoint) connId connAlive =
           return st)
     (closeIfUnused (ourEndPoint, theirEndPoint))
 
-calcSha1 :: [ByteString] -> ByteString
-calcSha1 = hashlazy . BSL.fromChunks
-
-prependSha1 :: [ByteString] -> [ByteString]
-prependSha1 bs = calcSha1 bs : bs
 
 -- | Send data across a connection
 apiSend :: EndPointPair             -- ^ Local and remote endpoint
@@ -820,7 +812,7 @@ apiSend (ourEndPoint, theirEndPoint) connId connAlive payload =
           alive <- readIORef connAlive
           if alive
             then sched theirEndPoint $
-              sendOn vst (encodeWord32 connId : (prependLength . prependSha1 $ payload))
+              sendOn vst (encodeWord32 connId : prependLength payload)
             else throwIO $ TransportError SendClosed "Connection closed"
         RemoteEndPointClosing _ _ -> do
           alive <- readIORef connAlive
@@ -1329,14 +1321,9 @@ handleIncomingMessages params (ourEndPoint, theirEndPoint) =
     -- should verify that the connection ID is valid, but this is unnecessary
     -- overhead
     readMessage :: N.Socket -> LightweightConnectionId -> IO ()
-    readMessage sock lcid = do
-      bss <- recvWithLength recvLimit sock
-      let (sha1, payload) = BSL.splitAt 20 $ BSL.fromChunks bss
-      if (hashlazy payload /= BSL.toStrict sha1) then
-        error $ "readMessage: sha1 mismatch, payload_len=" ++ (show $ BSL.length payload)
-               ++ " payload=" ++ show (BSL.take 500 payload)
-      else
-        qdiscEnqueue' ourQueue theirAddr . Received (connId lcid) $ BSL.toChunks payload
+    readMessage sock lcid =
+      recvWithLength recvLimit sock >>=
+        qdiscEnqueue' ourQueue theirAddr . Received (connId lcid)
 
     -- Stop probing a connection as a result of receiving a probe ack.
     stopProbing :: IO ()
