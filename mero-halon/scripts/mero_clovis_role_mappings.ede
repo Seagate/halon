@@ -78,6 +78,7 @@
       m0p_mem_rss: {{ host_mem_rss }}
       m0p_mem_stack: {{ host_mem_stack }}
       m0p_mem_memlock: {{ host_mem_memlock }}
+      m0p_multiplicity: 4
       m0p_cores:
 {% for core in host_cores %}
        - {{ core.value }}

@@ -21,6 +21,7 @@ import           Data.List.Split (splitOn)
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Word (Word8, Word32)
+import           Data.Maybe
 import qualified HA.Resources.Castor.Initial as CI
 import           Helper.Environment (testListenName)
 import           Mero.ConfC (ServiceType(..), Word128(..))
@@ -28,6 +29,8 @@ import           Mero.Lnet
 import           Network.BSD (getHostName)
 import           Text.Printf
 import           Text.Read
+import qualified Net.IPv4 as NI
+--import qualified HA.Resources.Mero as M0
 
 -- | Configuration used in creation of 'CI.InitialData'. See 'initialData'.
 data InitialDataSettings = InitialDataSettings
@@ -95,11 +98,52 @@ mkEP ip proc port tmid = Endpoint {
   , transfer_machine_id = tmid
   }
 
+{-
+initDataSettings :: Int
+initDataSettings = do
+                     let ids = defaultInitialDataSettings
+                     _id_drives ids
+-}
+
+lnid2ip :: LNid -> T.Text
+lnid2ip Loopback     = error "Invalid ip"
+lnid2ip (IPNet "" _) = error "Invalid ip"
+lnid2ip (IPNet ip _) = ip
+
+ep2last:: (Word8, Word8, Word8, Word8) -> Word8
+ep2last (_,_,_,w) = w
+
+lastOctet :: Endpoint -> Word8
+lastOctet ep = do
+                let epip = NI.decode $ lnid2ip $ network_id ep
+                ep2last $ NI.toOctets $ (fromJust epip)
+
 mkSvc :: Endpoint -> ServiceType -> CI.M0Service
 mkSvc endpoint stype = CI.M0Service
   { CI.m0s_type       = stype
   , CI.m0s_endpoints  = [endpoint]
   , CI.m0s_pathfilter = Nothing
+  , CI.m0s_devices = case stype of CST_IOS -> fmap
+                                      (\j -> CI.M0Device
+                                                 { CI.m0d_wwn = "wwn" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum $ stype) + j)
+                                                 , CI.m0d_serial = "serial" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum $ stype) + j)
+                                                 , CI.m0d_bsize = 4
+                                                 , CI.m0d_size = 64000
+                                                 , CI.m0d_path = "/dev/loop" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum $ stype) + j)
+                                                 , CI.m0d_slot = (fromEnum $ stype) + j
+                                                 })
+                                      [(1 :: Int) .. (12 :: Int)]
+                                   CST_ADDB2 -> fmap
+                                      (\j -> CI.M0Device
+                                                 { CI.m0d_wwn = "wwn" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum CST_ADDB2) + j)
+                                                 , CI.m0d_serial = "serial" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum CST_ADDB2) + j)
+                                                 , CI.m0d_bsize = 4
+                                                 , CI.m0d_size = 64000
+                                                 , CI.m0d_path = "/dev/loop" ++ show (lastOctet endpoint) ++ "_" ++ show ((fromEnum CST_ADDB2) + j)
+                                                 , CI.m0d_slot = (fromEnum CST_ADDB2) + j
+                                                 })
+                                      [(1 :: Int) .. (1 :: Int)]
+                                   _ -> []
   }
 
 initialData :: InitialDataSettings -> IO CI.InitialData
@@ -165,7 +209,7 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
             CI.m0h_fqdn = host
           , CI.m0h_processes = map ($ ifaddr)
               [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
-          , CI.m0h_devices = fmap
+          {-, CI.m0h_devices = fmap
               (\j -> CI.M0Device
                        { CI.m0d_wwn = "wwn" ++ show w ++ "_" ++ show j
                        , CI.m0d_serial = "serial" ++ show w ++ "_" ++ show j
@@ -174,15 +218,24 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
                        , CI.m0d_path = "/dev/loop" ++ show w ++ "_" ++ show j
                        , CI.m0d_slot = j
                        })
-              [(1 :: Int) .. _id_drives]
+          -}
+              --[(1 :: Int) .. _id_drives]
           })
       serverAddrs
+
+    hosts2Devs :: [CI.M0Host] -> [CI.M0Device]
+    hosts2Devs hs = concat [ CI.m0s_devices svc
+                           | h <- hs
+                           , proc <- CI.m0h_processes h
+                           , svc <- CI.m0p_services proc
+                           , CI.m0s_type svc == CST_IOS
+                           ]
 
     deviceRefs = map (\CI.M0Device{..} -> CI.M0DeviceRef
             { CI.dr_wwn    = Just (T.pack m0d_wwn)
             , CI.dr_serial = Just (T.pack m0d_serial)
             , CI.dr_path   = Just (T.pack m0d_path)
-            }) (concatMap CI.m0h_devices hosts)
+            }) (hosts2Devs hosts)--(concatMap CI.m0h_processes hosts)
     pool_0 = CI.M0Pool "pool-0" attrs _id_allowed_failures deviceRefs
     attrs = CI.PDClustAttrs0 { CI.pa0_data_units   = _id_data_units
                              , CI.pa0_parity_units = _id_parity_units

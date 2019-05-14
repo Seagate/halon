@@ -46,6 +46,7 @@ import qualified Options.Applicative.Types as Opt
 import           System.Environment (lookupEnv)
 import           System.Exit (die)
 import           System.IO (hPutStrLn, stderr)
+import           Debug.Trace
 
 data Options = Options
   { optFacts :: Defaultable FilePath
@@ -203,9 +204,9 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
         bootstrapStation vcTsConfig stationHosts
         bootstrapSatellites vcSatConfig stationHosts satelliteHosts
 
-        out "# Starting services"
+        out $ "# Starting services stations" ++ show stationHosts ++ show satelliteHosts
         for_ vcHosts $ \Host{..} -> do
-            unless (null hSvcs) . out $ "# Services for " ++ show hFqdn
+            unless (null hSvcs) . out $ "# Services for " ++ show hFqdn ++ "hIp " ++ show hIp
             for_ hSvcs $ \svc -> startService hIp svc stationHosts
 
         loadInitialData stationHosts
@@ -250,7 +251,7 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
     bootstrapStation :: (String, Station.Options) -> [String] -> Process ()
     bootstrapStation (str, _) stations | dry = do
         out "# Starting stations"
-        out $ hctl stations ++ " halon station " ++ str
+        out $ trace ("stations =" ++ show stations) $ hctl stations ++ " halon station " ++ str
     bootstrapStation (_, conf) stations = do
         verbose $ "Starting stations: " ++ show stations
         Station.start (nids stations) conf
@@ -264,7 +265,7 @@ bootstrap initialData ValidatedConfig{..} Options{..} = do
         out $ hctl satellites
             ++ " halon node add" ++ preintercalate " -t " stations
     bootstrapSatellites (_, conf) stations satellites = do
-        verbose $ "Starting satellites: " ++ show satellites
+        verbose $ trace ("satellites =" ++ show satellites) $ "Starting satellites: " ++ show satellites
         let conf' = conf { NodeAdd.configTrackers = Configured stations }
         NodeAdd.run (nids satellites) conf' >>= \case
             [] -> return ()

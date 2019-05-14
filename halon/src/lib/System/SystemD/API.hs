@@ -20,7 +20,7 @@ import Debug.Trace
 
 -- | Helper for service runners
 runCtl :: [String] -> IO (ExitCode, String, String)
-runCtl args = readProcessWithExitCode "systemctl" args ""
+runCtl args = trace ("args: " ++ show args) $ readProcessWithExitCode "systemctl" args ""
 
 doService :: String -> String -> IO ExitCode
 doService a n = do

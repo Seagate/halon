@@ -55,6 +55,7 @@ import           Mero.Lnet
 import           Network.CEP
 import           Text.Printf (printf)
 import           Text.Regex.TDFA ((=~))
+import           Debug.Trace
 
 -- | Initialise a reflection of the Mero configuration in the resource graph.
 initialiseConfInRG :: PhaseM RC l ()
@@ -116,6 +117,13 @@ initialiseConfInRG = do
            >>> G.connect m0rack M0.IsParentOf m0encl
          return m0encl
 
+
+host2devs :: CI.M0Host -> [CI.M0Device]
+host2devs host = concat [ CI.m0s_devices svc
+                        | proc <- CI.m0h_processes host
+                        , svc <- CI.m0p_services proc
+                        ]
+
 -- | Load Mero servers (e.g. Nodes, Processes, Services, Drives) into conf
 --   tree.
 --   For each 'CI.M0Host', we add the following:
@@ -131,20 +139,21 @@ initialiseConfInRG = do
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: [CI.M0Host] -> PhaseM RC l ()
 loadMeroServers = mapM_ goHost . offsetHosts where
-  offsetHosts hosts = zip hosts
-    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
+  offsetHosts hosts = trace ("hosts: " ++ show hosts) $ zip hosts
+    (scanl' (\acc h -> acc + (length $ host2devs h)) (0 :: Int) hosts)
 
   goHost :: (CI.M0Host, Int) -> PhaseM RC l ()
   goHost (CI.M0Host{..}, hostIdx) = do
     let host = Cas.Host $! T.unpack m0h_fqdn
-    Log.rcLog' Log.DEBUG $ "Adding host " ++ show host
+    Log.rcLog' Log.TRACE $ "Adding host " ++ show host
     node <- M0.Node <$> newFidRC (Proxy :: Proxy M0.Node)
     Just root <- getRoot
     modifyGraph $ G.connect Cluster Has host
               >>> G.connect host Has Cas.HA_M0SERVER
               >>> G.connect root M0.IsParentOf node
               >>> G.connect host Runs node
-    if null m0h_devices
+    let devices = host2devs (CI.M0Host m0h_fqdn m0h_processes)
+    if null devices
     then
       mapM_ (addProcess node []) m0h_processes
     else do
@@ -154,7 +163,7 @@ loadMeroServers = mapM_ goHost . offsetHosts where
             e <- G.connectedFrom Has host rg :: Maybe Cas.Enclosure
             m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
             return (m0e, e)
-      devs <- mapM (goDev enc ctrl) (zip m0h_devices [hostIdx..])
+      devs <- mapM (goDev enc ctrl) (zip devices [hostIdx..])
       mapM_ (addProcess node devs) m0h_processes
       modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                 >>> G.connect ctrl M0.At host

@@ -910,10 +910,10 @@ txPopulate lift (TxConfData CI.M0Globals{..} (M0.Profile pfid)) t = do
 validateTransactionCache :: PhaseM RC l (Either SomeException (Maybe String))
 validateTransactionCache = loadConfData >>= \case
   Nothing -> do
-    Log.rcLog' Log.DEBUG "validateTransactionCache: loadConfData failed"
+    Log.rcLog' Log.TRACE "validateTransactionCache: loadConfData failed"
     return $! Right Nothing
   Just x -> do
-    Log.rcLog' Log.DEBUG "validateTransactionCache: validating context"
+    Log.rcLog' Log.TRACE "validateTransactionCache: validating context"
     getHalonVar _hv_mero_workers_allowed >>= \case
       True -> do
         -- We can use withSpielRC because SpielRC require ha_interface

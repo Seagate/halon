@@ -199,7 +199,7 @@ data M0Host = M0Host
   -- ^ Fully qualified domain name of host this server is running on
   , m0h_processes :: ![M0Process]
   -- ^ Processes that should run on the host.
-  , m0h_devices :: ![M0Device]
+  --, m0h_devices :: ![M0Device]
   -- ^ Information about devices attached to the host.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -273,6 +273,7 @@ data M0Service = M0Service
   { m0s_type :: ServiceType        -- ^ E.g. ioservice, haservice.
   , m0s_endpoints :: [Endpoint]    -- ^ Listen endpoints for the service itself.
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN.
+  , m0s_devices :: ![M0Device] -- ^ Information about devices attached to the service.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Service
@@ -516,7 +517,7 @@ instance ToJSON InitialWithRoles where
 data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn :: !T.Text
   , _uhost_m0h_roles :: ![RoleSpec]
-  , _uhost_m0h_devices :: ![M0Device]
+  --, _uhost_m0h_devices :: ![M0Device]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.
@@ -562,7 +563,7 @@ resolveMeroRoles InitialWithRoles{..} template =
             ([], procs) ->
                 Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
                                , m0h_processes = concat procs
-                               , m0h_devices = _uhost_m0h_devices uhost
+                               --, m0h_devices = _uhost_m0h_devices uhost
                                }
             (errs, _) -> Left errs
 
@@ -665,8 +666,15 @@ validateInitialData InitialData{..} = do
                    ]
     enclIds = enc_id <$> concat enclsPerRack
 
+    hosts2devs :: [M0Host] -> [[M0Device]]
+    hosts2devs hosts = [ m0s_devices svc
+                       | host <- hosts
+                       , proc <- m0h_processes host
+                       , svc <- m0p_services proc
+                       ]
+
     devices :: [M0Device]
-    devices = concatMap m0h_devices id_m0_servers
+    devices = concat $ hosts2devs id_m0_servers
 
     isValidDeviceRef (M0DeviceRef Nothing Nothing Nothing) = False
     isValidDeviceRef _ = True
