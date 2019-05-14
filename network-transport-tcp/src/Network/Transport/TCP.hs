@@ -127,6 +127,7 @@ import Control.Concurrent.MVar
   , newEmptyMVar
   , withMVar
   )
+import Control.Concurrent.Async (async, wait)
 import Control.Category ((>>>))
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, join, mplus, (<=<))
@@ -144,6 +145,7 @@ import Control.Exception
   , finally
   , catch
   , bracket
+  , mask
   , mask_
   )
 import Data.IORef (IORef, newIORef, writeIORef, readIORef, writeIORef)
@@ -444,7 +446,7 @@ data ValidRemoteEndPointState = ValidRemoteEndPointState
      -- | When the connection is being probed, yields an IO action that can be
      -- used to release any resources dedicated to the probing.
   ,  remoteProbing       :: Maybe (IO ())
-  ,  remoteSendLock      :: !(MVar ())
+  ,  remoteSendLock      :: !(MVar Bool)
      -- | An IO which returns when the socket (remoteSocket) has been closed.
      --   The program/thread which created the socket is always responsible
      --   for closing it, but sometimes other threads need to know when this
@@ -1017,7 +1019,7 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
               [encodeWord32 (encodeConnectionRequestResponse ConnectionRequestCrossed)]
             probeIfValid theirEndPoint
           else do
-            sendLock <- newMVar ()
+            sendLock <- newMVar True
             let vst = ValidRemoteEndPointState
                         {  remoteSocket        = sock
                         ,  remoteSocketClosed  = socketClosed
@@ -1500,7 +1502,7 @@ setupRemoteEndPoint params (ourEndPoint, theirEndPoint) connTimeout = do
       -- (readMVar socketClosedVar), and we'll take care of closing it up
       -- once handleIncomingMessages has finished.
       Right (socketClosedVar, sock, ConnectionRequestAccepted) -> do
-        sendLock <- newMVar ()
+        sendLock <- newMVar True
         let vst = ValidRemoteEndPointState
                     {  remoteSocket        = sock
                     ,  remoteSocketClosed  = readMVar socketClosedVar
@@ -1863,10 +1865,18 @@ findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = go
       bracket (forkIO $ timer >> throwTo tid connectTimedout) killThread $
         const $ readMVar mv
 
--- | Send a payload over a heavyweight connection (thread safe)
+-- | Send a payload over a heavyweight connection (thread safe).
+-- Note: async shields non-atomic sendMany call from outer non-IOExceptions
+-- (like ProcessLinkException). And socket is not used after an IOException.
 sendOn :: ValidRemoteEndPointState -> [ByteString] -> IO ()
-sendOn vst bs = withMVar (remoteSendLock vst) $ \() ->
-  sendMany (remoteSocket vst) bs
+sendOn vst bs = wait =<< async
+  (mask $ \restore -> do
+    is_good <- takeMVar (remoteSendLock vst)
+    when (is_good) $ do
+      restore (sendMany (remoteSocket vst) bs) `catch` \ex -> do
+        putMVar (remoteSendLock vst) False
+        throwIO (ex :: IOException)
+    putMVar (remoteSendLock vst) is_good)
 
 --------------------------------------------------------------------------------
 -- Scheduling actions                                                         --
