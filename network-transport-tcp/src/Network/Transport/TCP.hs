@@ -147,7 +147,6 @@ import Control.Exception
   , finally
   , catch
   , bracket
-  , mask
   , mask_
   )
 import Data.IORef (IORef, newIORef, writeIORef, readIORef, writeIORef)
@@ -459,7 +458,7 @@ data ValidRemoteEndPointState = ValidRemoteEndPointState
      -- | When the connection is being probed, yields an IO action that can be
      -- used to release any resources dedicated to the probing.
   ,  remoteProbing       :: Maybe (IO ())
-  ,  remoteSendLock      :: !(MVar Bool)
+  ,  remoteSendLock      :: !(MVar ())
      -- | An IO which returns when the socket (remoteSocket) has been closed.
      --   The program/thread which created the socket is always responsible
      --   for closing it, but sometimes other threads need to know when this
@@ -1040,7 +1039,7 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
               [encodeWord32 (encodeConnectionRequestResponse ConnectionRequestCrossed)]
             probeIfValid theirEndPoint
           else do
-            sendLock <- newMVar True
+            sendLock <- newMVar ()
             let vst = ValidRemoteEndPointState
                         {  remoteSocket        = sock
                         ,  remoteSocketClosed  = socketClosed
@@ -1559,7 +1558,7 @@ setupRemoteEndPoint params (ourEndPoint, theirEndPoint) connTimeout = do
       -- (readMVar socketClosedVar), and we'll take care of closing it up
       -- once handleIncomingMessages has finished.
       Right (socketClosedVar, sock, ConnectionRequestAccepted) -> do
-        sendLock <- newMVar True
+        sendLock <- newMVar ()
         let vst = ValidRemoteEndPointState
                     {  remoteSocket        = sock
                     ,  remoteSocketClosed  = readMVar socketClosedVar
@@ -1935,17 +1934,8 @@ findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = do
 
 -- | Send a payload over a heavyweight connection (thread safe)
 sendOn :: ValidRemoteEndPointState -> [ByteString] -> IO ()
-sendOn vst bs =
-  mask $ \restore -> do
-    is_good <- takeMVar (remoteSendLock vst)
-    when (is_good) $ do
-      restore (sendMany (remoteSocket vst) bs) `catch` \ex -> do
-        putMVar (remoteSendLock vst) False
-        throwIO (ex :: IOException)
-    putMVar (remoteSendLock vst) is_good
-    when (not is_good) $
-      traceIO $ "Network.Transport.TCP.sendOn: WARNING! sock="
-           ++ show (remoteSocket vst) ++ " use after IOException!"
+sendOn vst bs = withMVar (remoteSendLock vst) $ \() ->
+  sendMany (remoteSocket vst) bs
 
 --------------------------------------------------------------------------------
 -- Scheduling actions                                                         --
