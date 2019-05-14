@@ -45,8 +45,6 @@ import Prelude hiding
 #endif
   )
 
-import Debug.Trace (traceIO)
-
 import Network.Transport
 import Network.Transport.TCP.Internal
   ( ControlHeader(..)
@@ -1057,8 +1055,8 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
                 let params = transportParams transport
                 void $ tryIO $ System.Timeout.timeout
                     (maybe (-1) id $ transportConnectTimeout params) $ do
-                  traceIO $ "ProbeSocket: " ++ show (remoteAddress theirEndPoint)
-                  sendOn vst [encodeWord32 (encodeControlHeader ProbeSocket)]
+                  sendMany (remoteSocket vst)
+                    [encodeWord32 (encodeControlHeader ProbeSocket)]
                   threadDelay maxBound
                 -- Discard the connection if this thread is not killed (i.e. the
                 -- probe ack does not arrive on time).
@@ -1165,11 +1163,7 @@ handleIncomingMessages params (ourEndPoint, theirEndPoint) =
                   return RemoteEndPointClosed
                 _                           -> return s
             Just ProbeSocket -> do
-              withMVar theirState $ \s -> case s of
-                RemoteEndPointValid vst -> do
-                  traceIO $ "ProbeSocketAck: " ++ show (remoteAddress theirEndPoint)
-                  forkIO $ sendOn vst [encodeWord32 (encodeControlHeader ProbeSocketAck)]
-                _ -> error "impossible"
+              forkIO $ sendMany sock [encodeWord32 (encodeControlHeader ProbeSocketAck)]
               go sock
             Just ProbeSocketAck -> do
               stopProbing
