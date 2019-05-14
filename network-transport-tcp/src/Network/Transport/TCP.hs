@@ -45,8 +45,7 @@ import Prelude hiding
 #endif
   )
 
-import Debug.Trace (traceEventIO)
--- import GHC.Stack (currentCallStack)
+import Debug.Trace (traceIO)
 
 import Network.Transport
 import Network.Transport.TCP.Internal
@@ -435,14 +434,6 @@ data RemoteState =
     -- | The remote endpoint has failed, or has been forcefully shutdown
     -- using a closeTransport or closeEndPoint API call
   | RemoteEndPointFailed !IOException
-
-instance Show RemoteState where
-  show (RemoteEndPointInvalid _) = "RemoteEndPointInvalid"
-  show (RemoteEndPointInit _ _ by) = "RemoteEndPointInit(" ++ show by ++ ")"
-  show (RemoteEndPointValid _) = "RemoteEndPointValid"
-  show (RemoteEndPointClosing _ _) = "RemoteEndPointClosing"
-  show (RemoteEndPointClosed) = "RemoteEndPointClosed"
-  show (RemoteEndPointFailed ex) = "RemoteEndPointFailed(" ++ show ex ++ ")"
 
 -- TODO: we might want to replace Set (here and elsewhere) by faster
 -- containers
@@ -878,8 +869,7 @@ apiCloseEndPoint transport evs ourEndPoint =
       -- We make an attempt to close the connection nicely
       -- (by sending a CloseSocket first)
       let closed = RemoteEndPointFailed . userError $ "apiCloseEndPoint"
-      modifyMVar_ (remoteState theirEndPoint) $ \st -> do
-        traceEventIO $ "Network.Transport.TCP.apiCloseEndPoint: " ++ show st
+      modifyMVar_ (remoteState theirEndPoint) $ \st ->
         case st of
           RemoteEndPointInvalid _ ->
             return st
@@ -1033,8 +1023,6 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
 
         if not isNew
           then do
-            traceEventIO $ "Network.Transport.TCP.handleConnectionRequest.go: ConnectionRequestCrossed: "
-                         ++ show sockAddr
             void $ tryIO $ sendMany sock
               [encodeWord32 (encodeConnectionRequestResponse ConnectionRequestCrossed)]
             probeIfValid theirEndPoint
@@ -1050,8 +1038,6 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
                         , _remoteLastIncoming  = 0
                         , _remoteNextConnOutId = firstNonReservedLightweightConnectionId
                         }
-            traceEventIO $ "Network.Transport.TCP.handleConnectionRequest.go: ConnectionRequestAccepted: "
-                         ++ show sockAddr
             sendMany sock [encodeWord32 (encodeConnectionRequestResponse ConnectionRequestAccepted)]
             -- resolveInit will update the shared state, and handleIncomingMessages
             -- will always ultimately clean up after it.
@@ -1069,10 +1055,9 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
               tid <- forkIO $ do
                 -- send probe
                 let params = transportParams transport
-                    tmo = maybe (-1) id $ transportConnectTimeout params
-                void $ tryIO $ System.Timeout.timeout tmo $ do
-                  traceEventIO $ "Network.Transport.TCP.handleConnectionRequest.probeIfValid: "
-                               ++ show (remoteAddress theirEndPoint) ++ " timeout=" ++ show tmo
+                void $ tryIO $ System.Timeout.timeout
+                    (maybe (-1) id $ transportConnectTimeout params) $ do
+                  traceIO $ "ProbeSocket: " ++ show (remoteAddress theirEndPoint)
                   sendOn vst [encodeWord32 (encodeControlHeader ProbeSocket)]
                   threadDelay maxBound
                 -- Discard the connection if this thread is not killed (i.e. the
@@ -1080,8 +1065,6 @@ handleConnectionRequest transport socketClosed (sock, sockAddr) = handle handleE
                 --
                 -- The thread handling incoming messages will detect the socket is
                 -- closed and will report the failure upwards.
-                traceEventIO $ "Network.Transport.TCP.handleConnectionRequest.probeIfValid: closing socket for "
-                             ++ show (remoteAddress theirEndPoint)
                 tryCloseSocket (remoteSocket vst)
                 -- Waiting the probe ack and closing the socket is only needed in
                 -- platforms where TCP_USER_TIMEOUT is not available or when the
@@ -1151,23 +1134,15 @@ handleIncomingMessages params (ourEndPoint, theirEndPoint) =
         else
           case decodeControlHeader lcid of
             Just CreatedNewConnection -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got CreatedNewConnection from "
-                           ++ show (remoteAddress theirEndPoint)
               recvWord32 sock >>= createdNewConnection
               go sock
             Just CloseConnection -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got CloseConnection from "
-                           ++ show (remoteAddress theirEndPoint)
               recvWord32 sock >>= closeConnection
               go sock
             Just CloseSocket -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got CloseSocket from "
-                           ++ show (remoteAddress theirEndPoint)
               didClose <- recvWord32 sock >>= closeSocket sock
               unless didClose $ go sock
             Just CloseEndPoint -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got CloseEndPoint from "
-                           ++ show (remoteAddress theirEndPoint)
               let closeRemoteEndPoint vst = do
                     forM_ (remoteProbing vst) id
                     -- close incoming connections
@@ -1190,22 +1165,16 @@ handleIncomingMessages params (ourEndPoint, theirEndPoint) =
                   return RemoteEndPointClosed
                 _                           -> return s
             Just ProbeSocket -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got ProbeSocket from "
-                           ++ show (remoteAddress theirEndPoint)
               withMVar theirState $ \s -> case s of
                 RemoteEndPointValid vst -> do
-                  traceEventIO $ "handleIncomingMessages: send ProbeSocketAck to " ++ show (remoteAddress theirEndPoint)
+                  traceIO $ "ProbeSocketAck: " ++ show (remoteAddress theirEndPoint)
                   forkIO $ sendOn vst [encodeWord32 (encodeControlHeader ProbeSocketAck)]
                 _ -> error "impossible"
               go sock
             Just ProbeSocketAck -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got ProbeSocketAck from "
-                           ++ show (remoteAddress theirEndPoint)
               stopProbing
               go sock
-            Nothing -> do
-              traceEventIO $ "Network.Transport.TCP.handleIncomingMessages: got invalid control request from "
-                           ++ show (remoteAddress theirEndPoint)
+            Nothing ->
               throwIO $ userError "Invalid control request"
 
     -- Create a new connection
@@ -1394,9 +1363,7 @@ handleIncomingMessages params (ourEndPoint, theirEndPoint) =
     -- Deal with a premature exit
     prematureExit :: IOException -> IO ()
     prematureExit err = do
-      modifyMVar_ theirState $ \st -> do
-        traceEventIO $ "Network.Transport.TCP.handleIncomingMessages.prematureExit: " ++ show theirAddr
-                    ++ " err=" ++ show err ++ " st=" ++ show st
+      modifyMVar_ theirState $ \st ->
         case st of
           RemoteEndPointInvalid _ ->
             relyViolation (ourEndPoint, theirEndPoint)
@@ -1479,8 +1446,6 @@ createConnectionTo params ourEndPoint theirAddress hints = do
     -- The second argument indicates the response obtained to the last
     -- connection request and the remote endpoint that was used.
     go timer mr = do
-      traceEventIO $ "Network.Transport.TCP.createConnectionTo.go: "
-               ++ show (localAddress ourEndPoint) ++ " -> " ++ show theirAddress
       (theirEndPoint, isNew) <- mapIOException connectFailed
         (findRemoteEndPoint ourEndPoint theirAddress RequestedByUs timer)
        `finally` case mr of
@@ -1489,8 +1454,6 @@ createConnectionTo params ourEndPoint theirAddress hints = do
              \rst -> case rst of
                RemoteEndPointInit resolved _ _ -> do
                  putMVar resolved ()
-                 traceEventIO $ "Network.Transport.TCP.createConnectionTo.go: "
-                             ++ "remove crossed " ++ show (remoteAddress theirEndPoint)
                  removeRemoteEndPoint (ourEndPoint, theirEndPoint)
                  return RemoteEndPointClosed
                _ -> return rst
@@ -1527,8 +1490,6 @@ createConnectionTo params ourEndPoint theirAddress hints = do
                 relyViolation (ourEndPoint, theirEndPoint) "createConnectionTo"
             -- TODO: deal with exception case?
             connId <- runScheduledAction (ourEndPoint, theirEndPoint) act
-            traceEventIO $ "Network.Transport.TCP.createConnectionTo.go: "
-                ++ show (remoteAddress theirEndPoint) ++ " connId=" ++ show connId
             return (theirEndPoint, connId)
 
 
@@ -1657,9 +1618,7 @@ resetIfBroken ourEndPoint theirAddress = do
     LocalEndPointClosed ->
       throwIO $ TransportError ConnectFailed "Endpoint closed"
   forM_ mTheirEndPoint $ \theirEndPoint ->
-    withMVar (remoteState theirEndPoint) $ \st -> do
-     traceEventIO $ "Network.Transport.TCP.resetIfBroken: " ++ show st
-     case st of
+    withMVar (remoteState theirEndPoint) $ \st -> case st of
       RemoteEndPointInvalid _ ->
         removeRemoteEndPoint (ourEndPoint, theirEndPoint)
       RemoteEndPointFailed _ ->
@@ -1718,9 +1677,6 @@ connectToSelf ourEndPoint = do
 resolveInit :: EndPointPair -> RemoteState -> IO ()
 resolveInit (ourEndPoint, theirEndPoint) newState =
   modifyMVar_ (remoteState theirEndPoint) $ \st -> do
-   traceEventIO $ "Network.Transport.TCP.resolveInit: "
-                ++ show (remoteAddress theirEndPoint)
-                ++ " " ++ show st ++ " => " ++ show newState
    case st of
     RemoteEndPointInit resolved crossed _ -> do
       putMVar resolved ()
@@ -1790,9 +1746,7 @@ createLocalEndPoint transport qdisc = do
 --
 -- If the local endpoint is closed, do nothing
 removeRemoteEndPoint :: EndPointPair -> IO ()
-removeRemoteEndPoint (ourEndPoint, theirEndPoint) = do
-    traceEventIO $ "Network.Transport.TCP.removeRemoteEndPoint: "
-                 ++ show (remoteAddress theirEndPoint)
+removeRemoteEndPoint (ourEndPoint, theirEndPoint) =
     modifyMVar_ ourState $ \st -> case st of
       LocalEndPointValid vst ->
         case vst ^. localConnectionTo theirAddress of
@@ -1835,11 +1789,7 @@ findRemoteEndPoint
   -> RequestedBy
   -> Maybe (IO ())           -- ^ an action which completes when the time is up
   -> IO (RemoteEndPoint, Bool)
-findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = do
-    res@(r, isNew) <- go
-    traceEventIO $ "Network.Transport.TCP.findRemoteEndPoint: (addr,new?,id)="
-                 ++ show (remoteAddress r, isNew, remoteId r)
-    return res
+findRemoteEndPoint ourEndPoint theirAddress findOrigin mtimer = go
   where
     go = do
       (theirEndPoint, isNew) <- modifyMVar ourState $ \st -> case st of
@@ -1969,19 +1919,11 @@ runScheduledAction (ourEndPoint, theirEndPoint) mvar = do
     case ma of
       Right a -> return a
       Left e -> do
---         stack <- currentCallStack
---         traceEventIO $ "Network.Transport.TCP.runScheduledAction: " ++ show e
---                     ++ " remote=" ++ show (remoteAddress theirEndPoint)
---                     ++ " stack=" ++ show (take 5 . reverse $ stack)
         forM_ (fromException e) $ \ioe ->
           modifyMVar_ (remoteState theirEndPoint) $ \st ->
---             new_st <- case st of
             case st of
               RemoteEndPointValid vst -> handleIOException ioe vst
               _ -> return (RemoteEndPointFailed ioe)
---             traceEventIO $ "Network.Transport.TCP.runScheduledAction: "
---                          ++ show st ++ " => " ++ show new_st
---             return new_st
         throwIO e
   where
     handleIOException :: IOException
@@ -2048,7 +1990,6 @@ socketToEndPoint (EndPointAddress ourAddress) theirAddress reuseAddr noDelay kee
         mapIOException invalidAddress $
           N.connect sock (N.addrAddress addr)
         mapIOException failed $ do
-          traceEventIO $ "Network.Transport.TCP.socketToEndPoint: " ++ show addr
           sendMany sock $
               -- The version.
               encodeWord32 currentProtocolVersion
