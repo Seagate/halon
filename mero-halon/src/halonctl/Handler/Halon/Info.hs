@@ -26,6 +26,7 @@ import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.RC.Events.Info
+import           HA.RecoveryCoordinator.Mero (labelRecoveryCoordinator)
 import           HA.Resources (Node(..))
 import           Lookup
 import           Network.CEP (RuntimeInfoRequest(..), RuntimeInfo(..), MemoryInfo(..))
@@ -141,7 +142,8 @@ data CEPStatsOptions = CEPStatsOptions
 cepStats :: [NodeId] -> CEPStatsOptions -> Process ()
 cepStats nids (CEPStatsOptions t m) = do
     self <- getSelfPid
-    for_ nids $ \nid -> whereisRemoteAsync nid labelRecoveryCoordinator
+    eqs <- findEQFromNodes t nids
+    for_ eqs $ \nid -> whereisRemoteAsync nid labelRecoveryCoordinator
     void . spawnLocal $ receiveTimeout t [] >> usend self ()
     fix $ \loop -> do
       void $ receiveWait
@@ -154,8 +156,6 @@ cepStats nids (CEPStatsOptions t m) = do
                expect >>= displayCepReply
         , match $ \() -> liftIO $ die "RuntimeInfo cannot be fetched."
         ]
-  where
-    labelRecoveryCoordinator = "mero-halon.RC"
 
 displayCepReply :: RuntimeInfo -> Process ()
 displayCepReply RuntimeInfo{..} = liftIO $ do

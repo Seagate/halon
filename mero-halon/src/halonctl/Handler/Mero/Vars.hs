@@ -94,7 +94,7 @@ parser = Opt.hsubparser $ mconcat
      notifAggrDelay = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "notification-aggr-delay"
        <> Opt.metavar "[MILLISECONDS]"
-       <> Opt.help "How long to aggrerate notifications before sending (in ms).")
+       <> Opt.help "How long to aggrerate notifications before sending (default 2000ms).")
      driveResetMax = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "drive-reset-max-retries"
        <> Opt.metavar "[NUMBER]"
