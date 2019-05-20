@@ -118,12 +118,28 @@ def gen_drive():
 
 
 def gen_encl_drives():
+    # XXX What is special about slots 28 and 70?
     slots = [x for x in range(3, 84) if x not in (28, 70)]
     random.shuffle(slots)
     gd = gen_drive()
     for slot in slots:
         wwn, serial = next(gd)
         yield Drive(wwn, serial, slot)
+
+
+# XXX REFACTORME: Merge gen_{encl,be,addb}_drives() together.
+def gen_be_drives():
+    gd = gen_drive()
+    for slot in [0, 1]:
+        wwn, serial = next(gd)
+        yield Drive(wwn, serial, slot)
+
+
+# XXX REFACTORME
+def gen_addb_drives():
+    gd = gen_drive()
+    wwn, serial = next(gd)
+    yield Drive(wwn, serial, 2)
 
 
 class Ctrl(Default, ToYaml):
@@ -218,18 +234,6 @@ class Site(ToYaml):
         return lines
 
 
-def gen_be_drives():
-    slots = [x for x in range(0, 1)]
-    gd = gen_drive()
-    for slot in slots:
-        wwn, serial = next(gd)
-        yield Drive(wwn, serial, slot)
-
-def gen_addb_drives():
-    gd = gen_drive()
-    wwn, serial = next(gd)
-    yield Drive(wwn, serial, 2)
-
 class Server(Default, ToYaml):
 
     def __init__(self, encl):
@@ -250,24 +254,22 @@ class Server(Default, ToYaml):
         lines.append(indent(depth+1) + 'm0h_roles:')
         for x in self.roles_mero:
             lines.append(indent(depth+2) + '- name: ' + x)
-	    #print("role name:" + x)
             if x == 'storage':
                 lines.append(indent(depth+3) + 'm0h_services:')
-                for s in ('ios', 'be', 'addb'):
-                    lines.append(indent(depth+4) + '- name: ' + s)
-                    lines.append(indent(depth+5) +
-                                 'm0h_devices:{}'.format('' if self.drives else ' []'))
-                    if s == 'ios':
-                       for x in self.drives:
-                           lines.extend(x.to_yaml(depth+6))
-                    if s == 'be':
-                       beDrives = list(gen_be_drives())
-                       for x in beDrives:
-                           lines.extend(x.to_yaml(depth+6))
-                    if s == 'addb':
-                       addbDrives = list(gen_addb_drives())
-                       for x in addbDrives:
-                           lines.extend(x.to_yaml(depth+6))
+                for svc in ('ios', 'be', 'addb'):
+                    lines.append(indent(depth+4) + '- name: ' + svc)
+                    lines.append(indent(depth+5) + 'm0h_devices:' +
+                                 ('' if self.drives else ' []'))  # XXX
+                    if svc == 'ios':
+                        for x in self.drives:  # XXX s/drives/io_drives/ ?
+                            lines.extend(x.to_yaml(depth+6))
+                    elif svc == 'be':  # XXX REFACTORME
+                        for x in gen_be_drives():
+                            lines.extend(x.to_yaml(depth+6))
+                    else:  # XXX REFACTORME
+                        assert(svc == 'addb')
+                        for x in gen_addb_drives():
+                            lines.extend(x.to_yaml(depth+6))
         return lines
 
 
