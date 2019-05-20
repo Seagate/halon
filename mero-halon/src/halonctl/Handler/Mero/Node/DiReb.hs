@@ -24,7 +24,7 @@ import           Control.Distributed.Process
   , liftIO
   )
 import           Control.Monad (unless, void)
-import           Control.Monad.Fix (fix)
+import           Data.Function (fix)
 import           Data.Monoid ((<>))
 import           Data.Proxy (Proxy(..))
 import           HA.EventQueue (promulgateEQ)

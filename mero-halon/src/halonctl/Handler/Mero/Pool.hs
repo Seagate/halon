@@ -21,7 +21,7 @@ import           Control.Distributed.Process
   , receiveTimeout
   )
 import           Control.Monad (unless, void)
-import           Control.Monad.Fix (fix)
+import           Data.Function (fix)
 import           Data.Monoid ((<>))
 import           Data.Proxy (Proxy(..))
 import           Data.UUID (UUID)

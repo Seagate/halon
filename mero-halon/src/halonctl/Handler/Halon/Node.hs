@@ -14,8 +14,8 @@ module Handler.Halon.Node
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Closure
 import           Control.Monad (unless)
-import           Control.Monad.Fix (fix)
 import           Data.Foldable (for_)
+import           Data.Function (fix)
 import           Data.List
 import           Data.Monoid (mconcat)
 import           Data.Traversable

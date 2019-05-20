@@ -51,10 +51,9 @@ import           Control.Distributed.Process.Closure
 import           Control.Distributed.Process.Internal.Types ( remoteTable, processNode )
 import           Control.Distributed.Static ( unstatic )
 import           Control.Monad.Catch ( try, mask, onException )
-import           Control.Monad.Fix (fix)
 import           Control.Monad.Reader ( asks )
 import           Data.Binary as Binary
-import           Data.Function (on)
+import           Data.Function (fix, on)
 import           Data.Functor (void)
 import           Data.Hashable (Hashable, hashWithSalt)
 import qualified Data.Serialize as Serialize

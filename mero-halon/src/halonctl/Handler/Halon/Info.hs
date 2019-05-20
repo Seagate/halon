@@ -18,9 +18,9 @@ import           Control.Applicative ((<|>))
 import           Control.Distributed.Process hiding (die)
 import qualified Control.Distributed.Process.Internal.Primitives as P
 import           Control.Monad (void)
-import           Control.Monad.Fix (fix)
 import qualified Data.ByteString as B
 import           Data.Foldable (for_)
+import           Data.Function (fix)
 import qualified Data.Map as M
 import           Data.Maybe (isNothing)
 import           Data.Monoid ((<>))

@@ -13,8 +13,8 @@ module Handler.Mero.Stop
 
 import           Control.Distributed.Process
 import           Control.Monad
-import           Control.Monad.Fix (fix)
 import           Data.Foldable
+import           Data.Function (fix)
 import           Data.Monoid ((<>))
 import           HA.EventQueue (promulgateEQ)
 import           HA.RecoveryCoordinator.Castor.Cluster.Events

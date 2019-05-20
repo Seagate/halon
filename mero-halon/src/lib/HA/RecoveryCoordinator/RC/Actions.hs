@@ -27,9 +27,9 @@ module HA.RecoveryCoordinator.RC.Actions
 import           Control.Distributed.Process hiding (try)
 import           Control.Distributed.Process.Closure (mkClosure)
 import           Control.Distributed.Process.Internal.Types (SpawnRef, nullProcessId)
-import           Control.Monad.Fix (fix)
 import           Data.Binary (Binary)
 import           Data.Foldable (for_, traverse_)
+import           Data.Function (fix)
 import           Data.Functor (void)
 import qualified Data.List as List
 import qualified Data.Map as Map

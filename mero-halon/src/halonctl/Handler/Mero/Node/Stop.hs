@@ -12,7 +12,7 @@ module Handler.Mero.Node.Stop
 import           Control.Distributed.Process hiding (bracket_, die)
 import           Control.Monad
 import           Control.Monad.Catch (bracket_)
-import           Control.Monad.Fix (fix)
+import           Data.Function (fix)
 import           Data.Monoid ((<>))
 import           Data.Proxy
 import           HA.EventQueue (promulgateEQ_)

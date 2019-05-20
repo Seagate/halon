@@ -11,8 +11,8 @@ module Handler.Mero.Reset
 
 import           Control.Distributed.Process hiding (bracket_, die)
 import           Control.Monad
-import           Control.Monad.Fix (fix)
 import           Data.Foldable
+import           Data.Function (fix)
 import           Data.Monoid ((<>))
 import           HA.EventQueue (eventQueueLabel, DoClearEQ(..), DoneClearEQ(..))
 import           HA.EventQueue (promulgateEQ)
