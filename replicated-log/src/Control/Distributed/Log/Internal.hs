@@ -386,9 +386,10 @@ trimTheLog :: PersistenceHandle a
            -> Int           -- ^ Log index
            -> IO ()
 trimTheLog (PersistenceHandle {..}) w0 = do
-    (toTrim, !rest) <- Map.split (pred w0) <$> readIORef persistentLogCache
+    let w0' = pred w0
+    (toTrim, !rest) <- Map.split w0' <$> readIORef persistentLogCache
     P.atomically persistentStore
-      [ P.Trim persistentLogMap (Map.keys toTrim ++ [w0]) ]
+      [ P.Trim persistentLogMap (Map.keys toTrim ++ [w0']) ]
     writeIORef persistentLogCache rest
 
 -- | Small view function for extracting a specialized 'Protocol'. Used in 'replica'.
