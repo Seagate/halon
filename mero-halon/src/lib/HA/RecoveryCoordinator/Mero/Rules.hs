@@ -12,8 +12,9 @@ module HA.RecoveryCoordinator.Mero.Rules where
 
 import           Control.Distributed.Process (usend, sendChan)
 import           Control.Lens
+import           Data.List (nub)
+import qualified Data.Text as T
 import qualified Data.UUID as UUID
-
 import           HA.EventQueue
 import           HA.RecoveryCoordinator.Actions.Mero
 import           HA.RecoveryCoordinator.Mero.Events
@@ -24,14 +25,25 @@ import qualified HA.ResourceGraph as G
 import           HA.Resources (Has(..))
 import qualified HA.Resources.Mero as M0
 import           HA.Resources.Mero.Note
+import           Mero.ConfC (Fid)
+import           Mero.Lnet (Endpoint, encodeEndpoint)
 import           Mero.Notification (Get(..), GetReply(..))
 import           Mero.Notification.HAState (Note(..))
 import           Network.CEP
 import           Prelude hiding (id)
 
--- | Timeout between entrypoint retry.
+-- | Time between entrypoint retries (seconds).
 entryPointTimeout :: Int
-entryPointTimeout = 1 -- 1s
+entryPointTimeout = 1
+
+-- | Given the fid of a 'M0.Process', return its endpoints.
+endpointsOfProcess :: G.Graph -> Fid -> [Endpoint]
+endpointsOfProcess rg fid =
+  nub [ ep
+      | Just (proc :: M0.Process) <- [M0.lookupConfObjByFid fid rg]
+      , svc <- G.connectedTo proc M0.IsParentOf rg :: [M0.Service]
+      , ep <- M0.s_endpoints svc
+      ]
 
 -- | Load information that is required to complete transaction from
 -- resource graph.
@@ -39,15 +51,19 @@ ruleGetEntryPoint :: Definitions RC ()
 ruleGetEntryPoint = define "castor::cluster::entry-point-request" $ do
   main <- phaseHandle "main"
   loop <- phaseHandle "loop"
-  setPhase main $ \(HAEvent uuid (GetSpielAddress fid profile pid)) -> do
-    Log.tagContext Log.SM [ ("requester.fid", show fid)
-                          , ("requester.profile", show profile)
+
+  setPhase main $ \(HAEvent uuid (GetSpielAddress proc prof pid)) -> do
+    rg <- getGraph
+    let eps = T.unpack . encodeEndpoint <$> endpointsOfProcess rg proc
+    Log.tagContext Log.SM [ ("requester.process", show proc)
+                          , ("requester.profile", show prof)
+                          , ("requester.endpoints", show eps)
                           ] Nothing
-    Log.rcLog' Log.DEBUG $ "Spiel Address requested."
+    Log.rcLog' Log.DEBUG $ "Spiel Address requested"
     ep <- getSpielAddressRC
     case ep of
       Nothing -> do
-        put Local $ Just (pid,0::Int)
+        put Local $ Just (pid, 0::Int)
         -- We process message here because in case of RC death,
         -- there will be timeout on the userside anyways.
         messageProcessed uuid
