@@ -24,7 +24,7 @@ Build Mero first
 then build Halon
 
 ```shell
-M0_SRC_DIR=/path/to/mero scripts/h0 rebuild
+M0_SRC_DIR=/path/to/mero scripts/h0 make
 ```
 
 # Building and installing rpm packages

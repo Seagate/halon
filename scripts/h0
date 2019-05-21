@@ -27,9 +27,7 @@ Info commands:
     help    Show this help and exit.
 
 Development commands:
-    make [OPTION]...     Build Halon. If Mero was updated, use \`rebuild'
-                         command.
-    rebuild [OPTION]...  Clean 'rpclite' module and build Halon.
+    make [OPTION]...     Build Halon.
     test [OPTION]...     Run Halon unit tests (see 'Examples').
     run-st [-l] [PATTERN]...
                          Run or list ('-l') system tests. Optional arguments
@@ -56,9 +54,9 @@ Cluster commands:
     stop-kernel     Unload Mero kernel modules.
 
 Options:
-    'make', 'rebuild', 'test', and 'clean' commands support options of the
-    Haskell Tool Stack.  Type \`stack build --help' or
-    \`stack clean --help' for documentation.
+    'make', 'test', and 'clean' commands support options of the Haskell Tool
+    Stack.  Type \`stack build --help' or \`stack clean --help' for
+    documentation.
 
 Environment variables:
     M0_SRC_DIR  Path to Mero sources directory; defaults to
@@ -117,15 +115,27 @@ cmd_help() {
 ## Development commands
 
 cmd_make() {
+    # XXX We should only clean `rpclite` if Mero library was updated
+    # since last Halon compilation --- unneeded recompilation and
+    # relinking is a waste time.
+    #
+    # h0 CLI used to have two distinct commands for building Halon:
+    # `h0 make` and `h0 rebuild`.  The former ran `stack_build`;
+    # the latter cleaned `rpclite` before proceeding with `stack_build`,
+    # thus ensuring that Halon was relinked with the latest Mero library.
+    #
+    # The need of choosing between `h0 make` and `h0 rebuild` inflicted
+    # cognitive load on users and was error-prone: users regularly
+    # stumbled on `hctl mero bootstrap` failure, caused by `halond`
+    # and `m0d` being linked against different versions of Mero library.
+    #
+    stack clean rpclite  # enforce relinking of halond with libmero
+
     stack_build --test --no-run-tests "$@"
 }
 
 cmd_rebuild() {
-    # XXX The script should be able to determine automatically
-    # whether Mero has been updated since last Halon compilation.
-    # One possible solution is to reimplement this script as a Makefile.
-    stack clean rpclite
-    cmd_make "$@"
+    die "\`$PROG rebuild' is gone. Use \`$PROG make'"
 }
 
 cmd_test() {
@@ -376,7 +386,7 @@ init_vars() {
     ## To enable optimizations, the user should set GHC_OPTS explicitly,
     ## e.g.,
     ##
-    ##     GHC_OPTS='-g -j2' ./scripts/h0 rebuild
+    ##     GHC_OPTS='-g -j2' ./scripts/h0 make
     ##
     ## NB: `stack build --fast` is equivalent to
     ##     `stack build --ghc-options=-O0`.
