@@ -132,8 +132,7 @@ cmd_rebuild() {
 
 cmd_test() {
     assert_mero
-    LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
-        stack_build --test "$@"
+    stack_build --test "$@"
     # Here we are using the fact that `stack test` is a shortcut for
     # `stack build --test`.
 }
@@ -319,9 +318,9 @@ stack_build() {
             build \
                 --ghc-options="$GHC_OPTS" \
                 "$@"
+
     $H0_SRC_DIR/mero-halon/scripts/visualize-schema/genhtml \
         >$H0_SRC_DIR/doc/halon-rg-schema.html
-
 }
 
 ## Maybe pdsh.
