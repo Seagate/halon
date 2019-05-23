@@ -85,7 +85,7 @@ EOF
 ## Info commands
 
 cmd_path() {
-    assert_mero libs
+    assert_mero
     [ -d ~/.stack ] ||
         die "Stack environment is not configured. Run \`stack setup' first."
     echo "halon-bin: $(stack path --local-install-root)/bin"
@@ -115,22 +115,14 @@ cmd_help() {
 ## Development commands
 
 cmd_make() {
-    # XXX We should only clean `rpclite` if Mero library was updated
-    # since last Halon compilation --- unneeded recompilation and
-    # relinking is a waste time.
-    #
-    # h0 CLI used to have two distinct commands for building Halon:
-    # `h0 make` and `h0 rebuild`.  The former ran `stack_build`;
-    # the latter cleaned `rpclite` before proceeding with `stack_build`,
-    # thus ensuring that Halon was relinked with the latest Mero library.
-    #
-    # The need of choosing between `h0 make` and `h0 rebuild` inflicted
-    # cognitive load on users and was error-prone: users regularly
-    # stumbled on `hctl mero bootstrap` failure, caused by `halond`
-    # and `m0d` being linked against different versions of Mero library.
-    #
-    stack clean rpclite  # enforce relinking of halond with libmero
-
+    assert_mero
+    local mero_rev=$(sed -nr "s/^GIT_REV_ID_FULL='([^']+)'$/\\1/p" \
+                         $M0_SRC_DIR/config.log)
+    grep -qr $mero_rev $H0_SRC_DIR/rpclite/.stack-work ||
+        # `rpclite` package has been compiled with wrong revision of
+        # Mero library or hasn't been compiled at all.  In any case we
+        # have to recompile it.
+        stack clean rpclite
     stack_build --test --no-run-tests "$@"
 }
 
@@ -139,7 +131,7 @@ cmd_rebuild() {
 }
 
 cmd_test() {
-    assert_mero libs
+    assert_mero
     LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         stack_build --test "$@"
     # Here we are using the fact that `stack test` is a shortcut for
@@ -319,7 +311,6 @@ _exec() {
 ## Still, if we ever need this function to be exported, we better export
 ## `h0 stack` instead.
 stack_build() {
-    assert_mero libs
     PKG_CONFIG_PATH=$M0_SRC_DIR \
     LD_LIBRARY_PATH=$M0_SRC_DIR/mero/.libs \
         stack \
@@ -345,10 +336,8 @@ mpdsh() {
 assert_mero() {
     [[ -d $M0_SRC_DIR ]]      || die "$M0_SRC_DIR: No such directory"
     [[ -d $M0_SRC_DIR/mero ]] || die "$M0_SRC_DIR: No Mero sources found"
-    if [[ $# > 0 ]]; then
-        [[ -x $M0_SRC_DIR/mero/.libs/m0d ]] ||
-            die "$M0_SRC_DIR: Mero is not built"
-    fi
+    [[ -r $M0_SRC_DIR/config.log && -x $M0_SRC_DIR/mero/.libs/m0d ]] ||
+        die "$M0_SRC_DIR: Mero is not built"
 }
 
 ## Outputs comma-separated list of cluster hosts iff $M0_CLUSTER is set
