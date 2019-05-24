@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
 # set -x
+export PS4='+ [${FUNCNAME[0]:+${FUNCNAME[0]}:}${LINENO}] '
 
 PROG=${0##*/}
-CLEAN_LOGS=1
 
 usage() {
     cat <<EOF
-Usage: $PROG [--keep-logs]
+Usage: $PROG [-h | --help]
 Stop Halon processes, delete persisted data, trace and log files.
 
-Options:
-    --keep-logs   Preserve /var/log/halon.decision.log and
-                  /var/log/halon.trace.log files.
+Option:
     -h, --help    Show this help and exit.
 EOF
 }
 
 die() { echo "$*" >&2; exit 1; }
+
 _kill() { killall -v -KILL "$@" 2>/dev/null || true; }
 
 case ${1:-} in
     -h|--help) usage; exit 0;;
-    --keep-logs) CLEAN_LOGS=0;;
     '') :;;
     *) die "Invalid argument. Type \`$PROG --help' for usage.";;
 esac
@@ -32,9 +30,7 @@ esac
 pids=$(pidof halond || true)
 
 _kill halonctl
-systemctl status halond &>/dev/null &&
-    systemctl stop halond ||
-        _kill halond
+systemctl status halond &>/dev/null && systemctl stop halond || _kill halond
 
 rm -rfv /var/lib/halon/halon-persistence/
 
@@ -42,4 +38,4 @@ for pid in $pids; do
     rm -fv {,/var/lib/halon/}m0trace.$pid
 done
 
-((CLEAN_LOGS == 0)) || rm -fv /var/log/halon.{decision,trace}.log
+rm -fv /var/log/halon.{decision,trace}.log

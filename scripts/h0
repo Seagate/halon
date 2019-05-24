@@ -183,7 +183,12 @@ cmd_fini() {
     cmd_check_access || true
     cmd_stop_halond || true
     cmd_stop_kernel || true
-    cmd_erase_data --keep-logs  # logs might be needed for debugging
+
+    for f in /var/log/halon.{decision,trace}.log; do
+        [[ -a $f ]] && sudo mv ${f}{,_preserved-for-debugging}
+    done
+    cmd_erase_data
+
     cmd_uninstall
 }
 
@@ -258,14 +263,7 @@ cmd_uninstall() {
 }
 
 cmd_erase_data() {
-    local arg="${1:-}"
-    [[ -z $arg ]] || [[ $arg == '--keep-logs' ]] ||
-        die "${FUNCNAME[0]}: Invalid usage"
-
-    # We cannot use `systemctl start halon-cleanup` here, because there is
-    # no convenient way to pass optional argument (`--keep-logs`)
-    # to a systemd service.
-    mpdsh sudo $H0_SRC_DIR/scripts/halon-cleanup $arg || true
+    mpdsh sudo systemctl start halon-cleanup || true
     mpdsh sudo systemctl start mero-cleanup || true
 
     # `/var/mero` directory cannot be deleted on Jenkins CI nodes,
