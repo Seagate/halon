@@ -58,7 +58,7 @@ main = do
            "consensus-paxos replicated-log EQ EQ.producer MM RS RG call startup"
         let (hostname, _:port) = break (== ':') $ localEndpoint config
         transport <- either (error . show) id <$>
-                     TCP.createTransport hostname port (hostname,) TCP.defaultTCPParameters
+                     TCP.createTransport (defaultTCPAddr hostname port) TCP.defaultTCPParameters
                        { tcpUserTimeout = Just 2000
                        , tcpNoDelay = True
                        , transportConnectTimeout = Just 2000000

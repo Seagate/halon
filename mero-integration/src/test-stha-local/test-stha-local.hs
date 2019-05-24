@@ -32,7 +32,8 @@ import Control.Applicative ((<$>))
 import Control.Monad (when)
 import Data.Maybe (catMaybes)
 import System.Exit
-import Network.Transport.TCP (createTransport, defaultTCPParameters)
+import Network.Transport.TCP (createTransport, defaultTCPAddr
+                                             , defaultTCPParameters)
 
 import qualified Control.Exception as E (bracket, catch, SomeException)
 import System.Directory (setCurrentDirectory, createDirectoryIfMissing)
@@ -76,7 +77,7 @@ main =
     putStrLn $ "Changed directory to: " ++ testDir
 
     let m0 = "0.0.0.0"
-    Right nt <- createTransport m0 "4000" (m0,) defaultTCPParameters
+    Right nt <- createTransport (defaultTCPAddr m0 "4000") defaultTCPParameters
     n0 <- newLocalNode nt (__remoteTable initRemoteTable)
     let killHalond = E.catch (readProcess "pkill" [ "halond" ] "" >> return ())
                              (\e -> const (return ()) (e :: E.SomeException))

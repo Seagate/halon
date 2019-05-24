@@ -24,8 +24,8 @@ data AbstractTransport = AbstractTransport
 
 mkTCPTransport :: IO AbstractTransport
 mkTCPTransport = do
-    let h = "127.0.0.1"
-    Right (transport, internals) <- TCP.createTransportExposeInternals h "0" (h,) TCP.defaultTCPParameters
+    Right (transport, internals) <- TCP.createTransportExposeInternals
+                   (TCP.defaultTCPAddr "127.0.0.1" "0") TCP.defaultTCPParameters
     let -- XXX: Could use enclosed-exceptions here. Note that the worker
         -- is not killed in case of an exception.
         ignoreSyncExceptions action = do

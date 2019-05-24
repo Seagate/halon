@@ -30,6 +30,7 @@ import           Network.Transport (closeTransport)
 import           Network.Transport.TCP
   ( TCPParameters(..)
   , createTransport
+  , defaultTCPAddr
   , defaultTCPParameters
   )
 import qualified Options.Applicative as O
@@ -117,7 +118,7 @@ run :: Options -> IO ()
 run Options{..} =
   let (hostname, port) = breakAt ':' optOurAddress in
   bracket (either (error . show) id <$>
-               createTransport hostname port (hostname,)
+               createTransport (defaultTCPAddr hostname port)
                defaultTCPParameters { tcpUserTimeout = Just 2000
                                     , tcpNoDelay = True
                                     , transportConnectTimeout = Just 2000000
