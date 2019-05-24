@@ -79,8 +79,7 @@ proposeWrapper αs d x = (x ==) <$>
 
 tests :: IO TestTree
 tests = do
-    let h = "127.0.0.1"
-    Right transport <- createTransport h "0" (h,) defaultTCPParameters
+    Right transport <- createTransport (defaultTCPAddr "127.0.0.1" "0") defaultTCPParameters
     return $ testGroup "consensus-paxos"
       [ testSuccess "single-decree" $ setup transport 1 $ \them -> do
             assert =<< proposeWrapper them (DecreeId 0 0) 42
