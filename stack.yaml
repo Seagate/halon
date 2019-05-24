@@ -19,6 +19,10 @@ packages:
 - sspl
 # vendor packages
 - location:
+    git: https://github.com/haskell-distributed/network-transport-tcp.git
+    commit: 6cc18cae0e310128496fe0d178bd4ca00ee0a7e5
+  extra-dep: true
+- location:
     git: https://github.com/seagate-ssg/options-schema.git
     commit: 9eaf45b3105358ef3c0b2a6169b68225f8f481d6
   extra-dep: true
