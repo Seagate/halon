@@ -19,9 +19,8 @@ import System.Timeout
 
 ut :: IO TestTree
 ut = do
-    t <- either throwIO return =<< do
-         let h = "127.0.0.1"
-         createTransport h "4000" (h,) defaultTCPParameters
+    t <- either throwIO return =<<
+         createTransport (defaultTCPAddr "127.0.0.1" "4000") defaultTCPParameters
 
     let launch action =
           (>>= maybe (error "Timeout") return) $ timeout 10000000 $
