@@ -15,7 +15,7 @@ RUN yum -y install \
            pcre-devel \
            stack
 
-# ghc-options should match the defaults from `h0` script
+# ghc-options should match the defaults from `h0` script (see DEFAULT_GHC_OPTS)
 RUN cd halon \
     && stack build --only-dependencies --ghc-options='-g -j2 -O0' \
     && cd .. \

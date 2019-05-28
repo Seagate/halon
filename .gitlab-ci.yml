@@ -446,8 +446,6 @@ vagrant:rebuild-box:
   after_script:
     - date -u -Isec
     - cd ${WORKSPACE_DIR}
-    - docker rm halon-build-deps || true
-    - rm -rf stack
     - $M0VG destroy -f || true
 
 # vim: foldmethod=marker shiftwidth=2 tabstop=2 expandtab
