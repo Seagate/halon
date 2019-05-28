@@ -88,9 +88,10 @@ statusProcess :: NIRef
               -> Fid -- ^ HA service 'Fid'
               -> ProcessId
               -> Int -- ^ aggregation delay
+              -> Int -- ^ max aggregation delay
               -> ReceivePort NotificationMessage
               -> Process ()
-statusProcess niRef ha_pfid ha_sfid pid adelay rp = do
+statusProcess niRef ha_pfid ha_sfid pid adelay adelay_max rp = do
     -- TODO: When mero can handle exceptions caught here, report them to the RC.
     link pid
     loop
@@ -109,7 +110,7 @@ statusProcess niRef ha_pfid ha_sfid pid adelay rp = do
     aggregate start acc = do
         now <- liftIO $ getTime Monotonic
         let elapsed = toNanoSecs (now - start) `div` 1000000 -- milliseconds
-            remaining = adelay - fromIntegral elapsed
+            remaining = min (adelay_max - fromIntegral elapsed) adelay
         mmsg <- if remaining > 0
                 then receiveChanTimeout (after remaining Millis) rp
                 else pure Nothing
@@ -404,6 +405,7 @@ m0dProcess parent conf = do
                                              processFid haFid ep self
           ntfyChan <- spawnChannelLocal $ statusProcess ep processFid haFid self
                                                         (mcNotifAggrDelay conf)
+                                                        (mcNotifMaxAggrDelay conf)
           ctrlChan <- spawnChannelLocal $ controlProcess conf self
           usend parent $ InternalStarted (ntfyChan, ctrlChan)
           traceM0d "Started service m0d on mero client"

@@ -81,12 +81,14 @@ data MeroConf = MeroConf
   --   process is considered dead.
   , mcNotifAggrDelay :: Int
   -- ^ Notifications aggregation delay (in ms).
+  , mcNotifMaxAggrDelay :: Int
+  -- ^ Notifications aggregation maximum delay (in ms).
   , mcKernelConfig :: MeroKernelConf -- ^ Kernel configuration.
   } deriving (Eq, Generic, Show, Typeable)
 instance Hashable MeroConf
 
 instance ToJSON MeroConf where
-  toJSON (MeroConf haAddress profile process ha rm kaf kat nad kernel) =
+  toJSON (MeroConf haAddress profile process ha rm kaf kat nad namd kernel) =
     object [ "endpoint_address" .= haAddress
            , "profile"          .= profile
            , "process"          .= process
@@ -95,6 +97,7 @@ instance ToJSON MeroConf where
            , "keepalive_frequency" .= kaf
            , "keepalive_timeout" .= kat
            , "notification_aggr_delay" .= nad
+           , "notification_aggr_max_delay" .= namd
            , "kernel_config"    .= kernel
            ]
 
@@ -248,7 +251,7 @@ instance ToJSON MeroServiceInstance
 -- | 'Schema' for the @halon:m0d@ service.
 meroSchema :: Schema MeroConf
 meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat
-                      <*> nad <*> ker
+                      <*> nad <*> namd <*> ker
   where
     ha = strOption
           $  long "listenAddr"
@@ -293,6 +296,12 @@ meroSchema = MeroConf <$> ha <*> pr <*> pc <*> hf <*> rm <*> kaf <*> kat
           <> metavar "MILLISECONDS"
           <> summary "notifications aggregation delay (milliseconds)"
           <> value (_hv_notification_aggr_delay defaultHalonVars)
+    namd = intOption
+          $ long "notifications_aggregation_max_delay"
+          <> short 'D'
+          <> metavar "MILLISECONDS"
+          <> summary "notifications aggregation max delay (milliseconds)"
+          <> value (_hv_notification_aggr_max_delay defaultHalonVars)
     ker = compositeOption kernelSchema $ long "kernel" <> summary "Kernel configuration"
 
 -- | 'Schema' for kernel configuration used by @halon:m0d@ service.

@@ -31,6 +31,7 @@ data Options
           , keepaliveFrequency    :: Maybe Int
           , keepaliveTimeout      :: Maybe Int
           , notifAggrDelay        :: Maybe Int
+          , notifAggrMaxDelay     :: Maybe Int
           , driveResetMaxRetries  :: Maybe Int
           , disableSmartCheck     :: Maybe Bool
           , disableNotificationFailure :: Maybe Bool
@@ -52,6 +53,7 @@ run nids VarsSet{..} = do
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_frequency = s}) keepaliveFrequency
                  , maybe id (\s -> \x -> x{Castor._hv_keepalive_timeout = s}) keepaliveTimeout
                  , maybe id (\s -> \x -> x{Castor._hv_notification_aggr_delay = s}) notifAggrDelay
+                 , maybe id (\s -> \x -> x{Castor._hv_notification_aggr_max_delay = s}) notifAggrMaxDelay
                  , maybe id (\s -> \x -> x{Castor._hv_drive_reset_max_retries = s}) driveResetMaxRetries
                  , maybe id (\s -> \x -> x{Castor._hv_disable_smart_checks = s}) disableSmartCheck
                  , maybe id (\s -> \x -> x{Castor._hv_failed_notification_fails_process = not s}) disableNotificationFailure
@@ -72,6 +74,7 @@ parser = Opt.hsubparser $ mconcat
                      <*> keepaliveFreq
                      <*> keepaliveTimeout
                      <*> notifAggrDelay
+                     <*> notifAggrMaxDelay
                      <*> driveResetMax
                      <*> disableSmartCheck
                      <*> disableNotificationFailure
@@ -94,7 +97,13 @@ parser = Opt.hsubparser $ mconcat
      notifAggrDelay = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "notification-aggr-delay"
        <> Opt.metavar "[MILLISECONDS]"
-       <> Opt.help "How long to aggrerate notifications before sending (default 2000ms).")
+       <> Opt.help ("How long to wait for a new notification to be added into an"
+                 ++ " open aggregation before closing and sending it (default 5000ms)."))
+     notifAggrMaxDelay = Opt.optional $ Opt.option Opt.auto
+       ( Opt.long "notification-aggr-max-delay"
+       <> Opt.metavar "[MILLISECONDS]"
+       <> Opt.help ("How maximum long to buildup the notifications aggreration"
+                 ++ " before closing and sending it (default 20000ms)."))
      driveResetMax = Opt.optional $ Opt.option Opt.auto
        ( Opt.long "drive-reset-max-retries"
        <> Opt.metavar "[NUMBER]"
