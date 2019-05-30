@@ -330,7 +330,8 @@ Executable halonctl
                       uuid,
                       network >= 2.4,
                       network-transport-tcp >= 0.3,
-                      rpclite
+                      rpclite,
+                      hslogger
 
 Executable haloninfo
   Hs-Source-Dirs:     src/haloninfo

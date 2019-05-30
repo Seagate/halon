@@ -36,21 +36,34 @@ import           Network.Transport.TCP
 import qualified Options.Applicative as O
 import           Options.Applicative.Extras (command', withFullDesc)
 import           System.Directory (doesFileExist)
-import           System.Environment (getProgName)
+import           System.Environment (getProgName, getArgs)
 import           System.IO
   ( BufferMode(LineBuffering)
   , hSetBuffering
   , stderr
   , stdout
   )
+import           System.Log.Handler.Syslog
+import           System.Log.Logger
 import           System.Process (readProcess)
 import           Version.Read (versionString)
 
 myRemoteTable :: RemoteTable
 myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
+initLogging :: String -> IO ()
+initLogging progName = do
+  s <- openlog progName [PID] USER DEBUG
+  updateGlobalLogger rootLoggerName (setLevel DEBUG . setHandlers [s])
+
 main :: IO ()
-main = getOpts >>= \case
+main = do
+  args <- getArgs
+  progName <- getProgName
+  initLogging progName
+  options <- getOpts
+  debugM "halonctl" ("halonctl has been invoked with CLI arguments: " ++ show args)
+  case options of
     Version  -> putStrLn "This is halonctl/TCP" >> versionString >>= putStrLn
     Run opts -> run opts
 
