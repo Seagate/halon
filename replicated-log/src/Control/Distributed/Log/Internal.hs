@@ -60,7 +60,7 @@ import Control.Distributed.Log.Policy as Policy
     , orpn__static
     )
 import Control.Distributed.Log.Trace
-import Control.Distributed.Process.Batcher
+import Control.Distributed.Process.Batcher (batcher)
 import Control.Distributed.Process.Consensus hiding (Value)
 import qualified Control.Distributed.Process.Pool.Bounded as Bounded
     ( submitTask
@@ -267,7 +267,7 @@ instance Binary a => Binary (Value a)
 
 isReconf :: Value a -> Bool
 isReconf (Reconf {}) = True
-isReconf _              = False
+isReconf _           = False
 
 -- | A type for internal requests.
 data Request a = Request
@@ -833,7 +833,7 @@ replica Dict
         [ match $ \r@(ProposerRequest d _ _
                                       (Request {requestValue = v :: Value a}))
                   -> {-# SCC "ProposerRequest" #-}
-           cond (d < w) (usend ρ r >> proposer ρ bpid w s αs) $ do
+          cond (d < w) (usend ρ r >> proposer ρ bpid w s αs) $ do
             self <- getSelfPid
             -- The MVar stores the result of the proposal.
             -- With an MVar we can ensure that:
