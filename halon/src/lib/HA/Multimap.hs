@@ -82,7 +82,13 @@ data StoreUpdate =
     -- | Sets the graph meta information, overwriting any old value
   | SetMetaInfo MetaInfo
 
- deriving (Generic,Typeable)
+ deriving (Generic, Typeable)
+
+instance Show StoreUpdate where
+  show (SetMetaInfo _) = "SetMetaInfo"
+  show (DeleteKeys ks) = "DeleteKeys[" ++ show (length ks) ++ "]"
+  show (DeleteValues vs) = "DeleteValues[" ++ show (length vs) ++ "]"
+  show (InsertMany kvs) = "InsertMany[" ++ show (length kvs) ++ "]"
 
 instance Binary StoreUpdate
 
@@ -106,7 +112,7 @@ data MetaInfo = MetaInfo
     -- | List of root nodes that should be considered by the GC. These
     -- are later deserialised to @Res@ in RG module.
   , _miRootNodes :: [ByteString]
-  } deriving (Generic, Typeable)
+  } deriving (Generic, Typeable, Show)
 
 instance Binary MetaInfo
 
