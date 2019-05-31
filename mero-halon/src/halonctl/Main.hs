@@ -43,8 +43,8 @@ import           System.IO
   , stderr
   , stdout
   )
-import           System.Log.Handler.Syslog
-import           System.Log.Logger
+import qualified System.Log.Handler.Syslog as L
+import qualified System.Log.Logger as L
 import           System.Process (readProcess)
 import           Version.Read (versionString)
 
@@ -53,16 +53,16 @@ myRemoteTable = haRemoteTable $ meroRemoteTable initRemoteTable
 
 initLogging :: String -> IO ()
 initLogging progName = do
-  s <- openlog progName [PID] USER DEBUG
-  updateGlobalLogger rootLoggerName (setLevel DEBUG . setHandlers [s])
+  s <- L.openlog progName [L.PID] L.USER L.INFO
+  L.updateGlobalLogger L.rootLoggerName (L.setLevel L.INFO . L.setHandlers [s])
 
 main :: IO ()
 main = do
+  prog <- getProgName
   args <- getArgs
-  progName <- getProgName
-  initLogging progName
+  initLogging prog
+  L.infoM prog $ "args=" ++ show args
   options <- getOpts
-  debugM "halonctl" ("halonctl has been invoked with CLI arguments: " ++ show args)
   case options of
     Version  -> putStrLn "This is halonctl/TCP" >> versionString >>= putStrLn
     Run opts -> run opts
