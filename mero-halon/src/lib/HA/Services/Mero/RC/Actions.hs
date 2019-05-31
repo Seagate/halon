@@ -127,8 +127,8 @@ markNotificationDelivered sdiff process = do
     unless isDelivered $ do
       modifyGraph $
         G.disconnect diff ShouldDeliverTo process >>>
-        G.disconnect diff DeliveryFailedTo process -- success after failure - counts.
-         >>>
+        G.disconnect diff DeliveryFailedTo process >>>
+          -- ^ success after failure - counts.
         G.connect diff DeliveredTo process
       when isNotSent $ tryCompleteStateDiff diff
 
