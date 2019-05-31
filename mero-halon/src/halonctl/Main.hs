@@ -14,9 +14,10 @@ import           Control.Distributed.Process.Node
   , closeLocalNode
   , runProcess
   )
+import           Control.Monad (unless)
 import           Control.Monad.Catch (bracket)
 import           Data.Char (isAlphaNum, isPunctuation)
-import           Data.List (isPrefixOf)
+import           Data.List (isInfixOf, isPrefixOf)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Last(..), (<>))
 import           Data.Traversable (forM)
@@ -56,15 +57,20 @@ initLogging progName = do
   s <- L.openlog progName [L.PID] L.USER L.INFO
   L.updateGlobalLogger L.rootLoggerName (L.setLevel L.INFO . L.setHandlers [s])
 
+logArgs :: String -> [String] -> IO ()
+logArgs progName args = do
+  -- `hctl mero status` command is called too often. It would flood the log.
+  let noisy = ["mero", "status"] `isInfixOf` args
+  unless noisy . L.infoM progName $ "args=" ++ show args
+
 main :: IO ()
 main = do
   prog <- getProgName
-  args <- getArgs
   initLogging prog
-  L.infoM prog $ "args=" ++ show args
+  getArgs >>= logArgs prog
   options <- getOpts
   case options of
-    Version  -> putStrLn "This is halonctl/TCP" >> versionString >>= putStrLn
+    Version  -> putStrLn ("This is " ++ prog) >> versionString >>= putStrLn
     Run opts -> run opts
 
 data Opts = Version | Run Options
