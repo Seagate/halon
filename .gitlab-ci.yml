@@ -195,7 +195,7 @@ ST singlenode:
                                 > $CI_PROJECT_DIR/${PREFIX}syslog.log
 
     # fetch halon.decision.log
-    - $M0VG scp cmu:/var/log/halon.decision.log
+    - $M0VG scp cmu:/var/log/halon.decision.log\*
                     $CI_PROJECT_DIR/${PREFIX}halon.decision.log
 
     # fetch m0trace
@@ -304,7 +304,7 @@ ST multinode:
                                 > $CI_PROJECT_DIR/${PREFIX}syslog.log
 
     # fetch halon.decision.log
-    - $M0VG scp cmu:/var/log/halon.decision.log
+    - $M0VG scp cmu:/var/log/halon.decision.log\*
                     $CI_PROJECT_DIR/${PREFIX}halon.decision.log
 
     # clean up (ensures that VMs are destroyed in case of a manual job restart,
