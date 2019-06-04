@@ -299,9 +299,12 @@ ST multinode:
     - cd ${WORKSPACE_DIR}
 
     # fetch syslog
-    - $M0VG run sudo journalctl --no-pager --full --utc --boot
-                                --output short-precise
-                                > $CI_PROJECT_DIR/${PREFIX}syslog.log
+    - for host in cmu ssu1 ssu2 client1; do
+          $M0VG run --vm $host
+              sudo journalctl --no-pager --full --utc --boot
+                              --output short-precise
+                              > $CI_PROJECT_DIR/${PREFIX}syslog.$host.log;
+      done
 
     # fetch halon.decision.log
     - $M0VG scp cmu:/var/log/halon.decision.log\*
@@ -315,7 +318,7 @@ ST multinode:
     name: "$CI_PROJECT_NAME job $CI_JOB_ID ($CI_JOB_NAME) logs"
     when: always  # whenever the job has failed or succeeded
     paths:
-      - st-multi_syslog.log
+      - st-multi_syslog.*.log
       - st-multi_halon.decision.log
 
 
