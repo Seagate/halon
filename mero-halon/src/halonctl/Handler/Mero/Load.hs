@@ -24,7 +24,6 @@ import           System.Exit (die)
 
 data Options = Options
     FilePath -- ^ Facts file
-    FilePath -- ^ Mero roles file
     FilePath -- ^ Halon roles file
     Bool -- ^ validate only
     Int -- ^ Timeout (seconds)
@@ -37,14 +36,6 @@ parser = Options
      <> Opt.short 'f'
      <> Opt.help "File containing JSON-encoded configuration."
      <> Opt.metavar "FILEPATH"
-      )
-  <*> Opt.strOption
-      ( Opt.long "rolesfile" -- XXX TODO: rename to "mero-roles"
-     <> Opt.short 'r'
-     <> Opt.help "File containing template file with Mero role mappings."
-     <> Opt.metavar "FILEPATH"
-     <> Opt.showDefaultWith id
-     <> Opt.value "/etc/halon/mero_role_mappings"
       )
   <*> Opt.strOption
       ( Opt.long "halonrolesfile" -- XXX TODO: rename to "halon-roles"
@@ -69,8 +60,8 @@ parser = Options
 run :: [NodeId] -- ^ EQ nodes to send data to
          -> Options
          -> Process ()
-run eqnids (Options cf maps halonMaps verify _t) = do
-  initData <- liftIO $ CI.parseInitialData cf maps halonMaps
+run eqnids (Options cf halonMaps verify _t) = do
+  initData <- liftIO $ CI.parseInitialData cf halonMaps
   case initData of
     Left err -> liftIO . die $ prettyPrintParseException err
     Right (datum, _) | verify -> liftIO $ do

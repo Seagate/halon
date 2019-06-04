@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE StrictData        #-}
+{-# LANGUAGE TupleSections     #-}
 -- |
 -- Module    : Helper.InitialData
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
@@ -34,7 +35,7 @@ data InitialDataSettings = InitialDataSettings
   { _id_hostname :: !T.Text
     -- ^ Hostname of the node. Can usually be obtained with @hostname@
     -- command. e.g. "devvm.seagate.com".
-  , _id_host_ip :: !(Word8, Word8, Word8, Word8)
+  , _id_host_ip :: !IP4
   -- ^ IP of the main host: the host running the tests and RC.
   -- e.g. "10.0.2.15" is provided as @(10,0,2,15)@.
   , _id_servers :: !Word8
@@ -58,6 +59,8 @@ data InitialDataSettings = InitialDataSettings
   -- ^ Value of 'pool_allowed_failures'.
   } deriving (Show, Eq)
 
+data IP4 = IP4 Word8 Word8 Word8 Word8 deriving (Show, Eq)
+
 -- | Defaults taken from
 -- <http://es-gerrit.xyus.xyratex.com:8080/#/c/10913/1/modules/stx_halon/manifests/facts.pp>
 defaultGlobals :: CI.M0Globals
@@ -79,11 +82,11 @@ defaultGlobals = CI.M0Globals
   }
 
 -- | Helper for IP addresses formatted as a quadruple of 'Word8's.
-showIP :: (Word8, Word8, Word8, Word8) -> String
-showIP (x,y,z,w) = printf "%d.%d.%d.%d" x y z w
+showIP :: IP4 -> String
+showIP (IP4 x y z w) = printf "%d.%d.%d.%d" x y z w
 
 -- | Helper to make Endpoints from an IP
-mkEP :: (Word8, Word8, Word8, Word8)
+mkEP :: IP4
      -> Int -- ^ Process
      -> Int -- ^ portal_number
      -> Int -- ^ transfer_machine_id
@@ -95,11 +98,20 @@ mkEP ip proc port tmid = Endpoint {
   , transfer_machine_id = tmid
   }
 
-mkSvc :: Endpoint -> ServiceType -> CI.M0Service
-mkSvc endpoint stype = CI.M0Service
+mkSvc :: IP4 -> Endpoint -> Int -> ServiceType -> CI.M0Service
+mkSvc (IP4 _ _ _ w) ep nr_drives stype = CI.M0Service
   { CI.m0s_type       = stype
-  , CI.m0s_endpoints  = [endpoint]
+  , CI.m0s_endpoints  = [ep]
   , CI.m0s_pathfilter = Nothing
+  , CI.m0s_devices = fmap (\j -> CI.M0Device
+                                   { CI.m0d_wwn = "wwn" ++ show w ++ "_" ++ show j
+                                   , CI.m0d_serial = "serial" ++ show w ++ "_" ++ show j
+                                   , CI.m0d_bsize = 4
+                                   , CI.m0d_size = 64000
+                                   , CI.m0d_path = "/dev/loop" ++ show w ++ "_" ++ show j
+                                   , CI.m0d_slot = j
+                                   })
+                          [(1 :: Int) .. nr_drives]
   }
 
 initialData :: InitialDataSettings -> IO CI.InitialData
@@ -121,11 +133,11 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
           CI.Rack {
             CI.rack_idx = 1
           , CI.rack_enclosures = fmap
-              (\ifaddr@(x,y,z,w) ->
+              (\ifaddr@(IP4 x y z w) ->
                 let host = if _id_servers > 1
                            then _id_hostname <> "_" <> T.pack (show w)
                            else _id_hostname
-                    ifaddrBMC = showIP (x, y, z + 10, w)
+                    ifaddrBMC = showIP (IP4 x y (z + 10) w)
                 in CI.Enclosure {
                       CI.enc_idx = fromIntegral w
                     , CI.enc_id = "enclosure_" ++ show w
@@ -150,39 +162,35 @@ initialData InitialDataSettings{..} = return $ CI.InitialData {
   , CI.id_profiles = [CI.M0Profile "prof-0" ["pool-0"]]
 }
   where
-    serverAddrs :: [(Word8, Word8, Word8, Word8)]
+    serverAddrs :: [IP4]
     serverAddrs = take (fromIntegral _id_servers)
                   -- Assign next IP to consecutive servers
-                  $ iterate (\(x,y,z,w) -> (x,y,z,w + 1)) _id_host_ip
+                  $ iterate (\(IP4 x y z w) -> (IP4 x y z (w + 1))) _id_host_ip
 
     hosts :: [CI.M0Host]
     hosts = fmap
-      (\ifaddr@(_,_,_,w) ->
+      (\ifaddr@(IP4 _ _ _ w) ->
         let host = if _id_servers > 1
                    then _id_hostname <> "_" <> T.pack (show w)
                    else _id_hostname
         in CI.M0Host {
             CI.m0h_fqdn = host
-          , CI.m0h_processes = map ($ ifaddr)
-              [haProcess, confdProcess, mdsProcess, iosProcess, m0t1fsProcess]
-          , CI.m0h_devices = fmap
-              (\j -> CI.M0Device
-                       { CI.m0d_wwn = "wwn" ++ show w ++ "_" ++ show j
-                       , CI.m0d_serial = "serial" ++ show w ++ "_" ++ show j
-                       , CI.m0d_bsize = 4
-                       , CI.m0d_size = 64000
-                       , CI.m0d_path = "/dev/loop" ++ show w ++ "_" ++ show j
-                       , CI.m0d_slot = j
-                       })
-              [(1 :: Int) .. _id_drives]
-          })
+          , CI.m0h_processes = [haProcess ifaddr $ map (0, ) [CST_HA, CST_RMS]
+                               , confdProcess ifaddr $ map (0, ) [CST_CONFD, CST_RMS]
+                               , mdsProcess ifaddr $ map (0, ) [CST_MDS, CST_RMS, CST_ADDB2]
+                               , m0t1fsProcess ifaddr [(0, CST_RMS)]
+                               , iosProcess ifaddr $ (_id_drives, CST_IOS) : map (0, ) [CST_RMS, CST_SNS_REP, CST_SNS_REB, CST_ADDB2, CST_ISCS]
+                               ]
+           }
+      )
       serverAddrs
 
     deviceRefs = map (\CI.M0Device{..} -> CI.M0DeviceRef
             { CI.dr_wwn    = Just (T.pack m0d_wwn)
             , CI.dr_serial = Just (T.pack m0d_serial)
             , CI.dr_path   = Just (T.pack m0d_path)
-            }) (concatMap CI.m0h_devices hosts)
+            }) (concat $ map CI.host2devs hosts)
+
     pool_0 = CI.M0Pool "pool-0" attrs _id_allowed_failures deviceRefs
     attrs = CI.PDClustAttrs0 { CI.pa0_data_units   = _id_data_units
                              , CI.pa0_parity_units = _id_parity_units
@@ -197,7 +205,7 @@ defaultInitialDataSettings = do
   traverse readMaybe . splitOn "." <$> testListenName >>= \case
     Just [x,y,z,w] -> return $ InitialDataSettings
       { _id_hostname = host
-      , _id_host_ip = (x,y,z,w)
+      , _id_host_ip = (IP4 x y z w)
       , _id_servers = 1
       , _id_drives = 12
       , _id_globals = defaultGlobals
@@ -217,17 +225,18 @@ defaultInitialData = defaultInitialDataSettings >>= initialData
 -- * Processes
 
 -- | Create halon 'CI.M0Process'.
-haProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-             -> CI.M0Process
-haProcess ifaddr = CI.M0Process
+haProcess :: IP4 -- ^ IP of the host
+             -> [(Int, ServiceType)] -> CI.M0Process
+haProcess ifaddr devs = CI.M0Process
   { CI.m0p_endpoint = ep
+  , CI.m0p_type = "ha"
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLHalon
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
   , CI.m0p_cores = [1]
-  , CI.m0p_services = mkSvc ep <$> [CST_HA, CST_RMS]
+  , CI.m0p_services = map (uncurry $ mkSvc ifaddr ep) devs
   , CI.m0p_environment = Nothing
   , CI.m0p_multiplicity = Nothing
   }
@@ -235,17 +244,18 @@ haProcess ifaddr = CI.M0Process
     ep = mkEP ifaddr 12345 34 101
 
 -- | Create a confd 'CI.M0Process'
-confdProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-             -> CI.M0Process
-confdProcess ifaddr = CI.M0Process
+confdProcess :: IP4 -- ^ IP of the host
+                -> [(Int, ServiceType)] -> CI.M0Process
+confdProcess ifaddr devs = CI.M0Process
   { CI.m0p_endpoint = ep
+  , CI.m0p_type = "confd"
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
   , CI.m0p_cores = [1]
-  , CI.m0p_services = mkSvc ep <$> [CST_CONFD, CST_RMS]
+  , CI.m0p_services = map (uncurry $ mkSvc ifaddr ep) devs
   , CI.m0p_environment = Nothing
   , CI.m0p_multiplicity = Nothing
   }
@@ -253,17 +263,18 @@ confdProcess ifaddr = CI.M0Process
     ep = mkEP ifaddr 12345 44 101
 
 -- | Create an mds 'CI.M0Process'
-mdsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-           -> CI.M0Process
-mdsProcess ifaddr = CI.M0Process
+mdsProcess :: IP4 -- ^ IP of the host
+              -> [(Int, ServiceType)] -> CI.M0Process
+mdsProcess ifaddr devs = CI.M0Process
   { CI.m0p_endpoint = ep
+  , CI.m0p_type = "mds"
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 0
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
   , CI.m0p_cores = [1]
-  , CI.m0p_services = mkSvc ep <$> [CST_RMS, CST_MDS, CST_ADDB2]
+  , CI.m0p_services = map (uncurry $ mkSvc ifaddr ep) devs
   , CI.m0p_environment = Nothing
   , CI.m0p_multiplicity = Nothing
   }
@@ -271,23 +282,18 @@ mdsProcess ifaddr = CI.M0Process
     ep = mkEP ifaddr 12345 41 201
 
 -- | Create an IOS 'CI.M0Process'
-iosProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-           -> CI.M0Process
-iosProcess ifaddr = CI.M0Process
+iosProcess :: IP4 -- ^ IP of the host
+              -> [(Int, ServiceType)] -> CI.M0Process
+iosProcess ifaddr devs = CI.M0Process
   { CI.m0p_endpoint = ep
+  , CI.m0p_type = "ios"
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0d 1
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
   , CI.m0p_cores = [1]
-  , CI.m0p_services = mkSvc ep <$> [ CST_RMS
-                                   , CST_IOS
-                                   , CST_SNS_REP
-                                   , CST_SNS_REB
-                                   , CST_ISCS
-                                   , CST_ADDB2
-                                   ]
+  , CI.m0p_services = map (uncurry $ mkSvc ifaddr ep) devs
   , CI.m0p_environment = Nothing
   , CI.m0p_multiplicity = Nothing
   }
@@ -295,17 +301,18 @@ iosProcess ifaddr = CI.M0Process
     ep = mkEP ifaddr 12345 41 401
 
 -- | Create an M0T1FS 'CI.M0Process'
-m0t1fsProcess :: (Word8, Word8, Word8, Word8) -- ^ IP of the host
-              -> CI.M0Process
-m0t1fsProcess ifaddr = CI.M0Process
+m0t1fsProcess :: IP4 -- ^ IP of the host
+                 -> [(Int, ServiceType)] -> CI.M0Process
+m0t1fsProcess ifaddr devs = CI.M0Process
   { CI.m0p_endpoint = ep
+  , CI.m0p_type = "m0t1fs"
   , CI.m0p_mem_as = 1
   , CI.m0p_boot_level = CI.PLM0t1fs
   , CI.m0p_mem_rss = 1
   , CI.m0p_mem_stack = 1
   , CI.m0p_mem_memlock = 1
   , CI.m0p_cores = [1]
-  , CI.m0p_services = [mkSvc ep CST_RMS]
+  , CI.m0p_services = map (uncurry $ mkSvc ifaddr ep) devs
   , CI.m0p_environment = Nothing
   , CI.m0p_multiplicity = Nothing
   }

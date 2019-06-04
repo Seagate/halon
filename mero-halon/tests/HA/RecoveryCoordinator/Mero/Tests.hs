@@ -79,7 +79,9 @@ testDriveManagerUpdate transport pg = do
     self <- getSelfPid
     let interestingSN = head [ CI.m0d_serial dev
                              | host <- CI.id_m0_servers iData
-                             , dev <- CI.m0h_devices host
+                             , proc <- CI.m0h_processes host
+                             , svc <- CI.m0p_services proc
+                             , dev <- CI.m0s_devices svc
                              ]
         enc = head [ CI.enc_id encl
                    | site <- CI.id_sites iData
