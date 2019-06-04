@@ -131,8 +131,10 @@ initialiseConfInRG = do
 --   an ioservice (and it should be!), we link the sdevs to the IOService.
 loadMeroServers :: [CI.M0Host] -> PhaseM RC l ()
 loadMeroServers = mapM_ goHost . offsetHosts where
-  offsetHosts hosts = zip hosts
-    (scanl' (\acc h -> acc + (length $ CI.m0h_devices h)) (0 :: Int) hosts)
+  offsetHosts :: [CI.M0Host] -> [(CI.M0Host, Int)]
+  offsetHosts hosts =
+    let offsets = scanl' (\acc h -> acc + length (CI.host2devs h)) 0 hosts
+    in zip hosts offsets
 
   goHost :: (CI.M0Host, Int) -> PhaseM RC l ()
   goHost (CI.M0Host{..}, hostIdx) = do
@@ -144,7 +146,9 @@ loadMeroServers = mapM_ goHost . offsetHosts where
               >>> G.connect host Has Cas.HA_M0SERVER
               >>> G.connect root M0.IsParentOf node
               >>> G.connect host Runs node
-    if null m0h_devices
+
+    let devices = CI.host2devs (CI.M0Host m0h_fqdn m0h_processes)
+    if null devices
     then
       mapM_ (addProcess node []) m0h_processes
     else do
@@ -154,7 +158,7 @@ loadMeroServers = mapM_ goHost . offsetHosts where
             e <- G.connectedFrom Has host rg :: Maybe Cas.Enclosure
             m0e <- G.connectedFrom M0.At e rg :: Maybe M0.Enclosure
             return (m0e, e)
-      devs <- mapM (goDev enc ctrl) (zip m0h_devices [hostIdx..])
+      devs <- mapM (goDev enc ctrl) (zip devices [hostIdx..])
       mapM_ (addProcess node devs) m0h_processes
       modifyGraph $ G.connect m0enc M0.IsParentOf ctrl
                 >>> G.connect ctrl M0.At host

@@ -92,10 +92,10 @@ testParseInitialData = do
     exe <- (</> "scripts" </> "h0fabricate") <$> getH0SrcDir
     withTmpDirectory $ do
         callProcess exe ["--out-dir", "."]
-        let files@(facts:meroRoles:halonRoles:[]) =
+        let files@(facts:halonRoles:[]) =
               ["h0fabricated-" ++ name ++ ".yaml"
-              | name <- ["facts", "roles_mero", "roles_halon"]]
-        ev <- first show <$> CI.parseInitialData facts meroRoles halonRoles
+              | name <- ["facts", "roles_halon"]]
+        ev <- first show <$> CI.parseInitialData facts halonRoles
         for_ files removeFile
         either Tasty.assertFailure pure (void . check =<< ev)
   where

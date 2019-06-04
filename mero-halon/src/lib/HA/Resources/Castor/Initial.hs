@@ -18,12 +18,12 @@ import           Control.Monad (forM)
 import           Control.Monad.Trans.Except (ExceptT(..), runExceptT)
 import           Data.Bifunctor (first)
 import           Data.Data
-import           Data.Either (partitionEithers)
 import qualified Data.HashMap.Lazy as M
 import qualified Data.HashMap.Strict as HM
 import           Data.Hashable (Hashable)
 import qualified Data.Hashable as H
-import           Data.List (find, intercalate, nub)
+import           Data.List (find, nub)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Lazy as T (toStrict)
@@ -185,7 +185,7 @@ data M0Device = M0Device
   , m0d_size :: Word64 -- ^ Size of disk (in MB)
   , m0d_path :: String -- ^ Path to the device (e.g. /dev/disk...)
   , m0d_slot :: Int -- ^ Slot within the enclosure the device is in
-  } deriving (Eq, Data, Generic, Show, Typeable)
+  } deriving (Eq, Data, Generic, Ord, Show, Typeable)
 
 instance Hashable M0Device
 instance FromJSON M0Device
@@ -199,8 +199,6 @@ data M0Host = M0Host
   -- ^ Fully qualified domain name of host this server is running on
   , m0h_processes :: ![M0Process]
   -- ^ Processes that should run on the host.
-  , m0h_devices :: ![M0Device]
-  -- ^ Information about devices attached to the host.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 instance Hashable M0Host
@@ -211,6 +209,7 @@ data ProcessOwnership
   = Managed      -- ^ Process is started/monitored/stopped by Halon.
   | Independent  -- ^ Process is not controlled by Halon.
   deriving (Eq, Data, Show, Generic)
+
 instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership
 instance ToJSON ProcessOwnership
@@ -247,6 +246,7 @@ instance ToJSON M0ProcessEnv
 data M0Process = M0Process
   { m0p_endpoint :: Endpoint
   -- ^ Endpoint the process should listen on
+  , m0p_type :: String
   , m0p_mem_as :: Word64
   , m0p_mem_rss :: Word64
   , m0p_mem_stack :: Word64
@@ -272,6 +272,7 @@ instance ToJSON M0Process
 data M0Service = M0Service
   { m0s_type :: ServiceType        -- ^ E.g. ioservice, haservice.
   , m0s_endpoints :: [Endpoint]    -- ^ Listen endpoints for the service itself.
+  , m0s_devices :: ![M0Device]     -- ^ Devices attached to this service.
   , m0s_pathfilter :: Maybe String -- ^ For IOS, filter on disk WWN.
   } deriving (Eq, Data, Generic, Show, Typeable)
 
@@ -515,8 +516,9 @@ instance ToJSON InitialWithRoles where
 -- the source here.
 data UnexpandedHost = UnexpandedHost
   { _uhost_m0h_fqdn :: !T.Text
-  , _uhost_m0h_roles :: ![RoleSpec]
-  , _uhost_m0h_devices :: ![M0Device]
+  --, _uhost_m0h_roles :: ![RoleSpec]
+  , _uhost_m0h_processes :: ![M0Process]
+  --, _uhost_m0h_devices :: ![M0Device]
   } deriving (Eq, Data, Generic, Show, Typeable)
 
 -- | Options for 'UnexpandedHost' JSON parser.
@@ -536,49 +538,26 @@ mkException funcName msg = Y.AesonException (funcName ++ ": " ++ msg)
 -- | Having parsed the facts file, expand the roles for each host to
 -- provide full 'InitialData'.
 resolveMeroRoles :: InitialWithRoles -- ^ Parsed contents of halon_facts.
-                 -> EDE.Template -- ^ Parsed Mero roles template.
                  -> Either Y.ParseException InitialData
-resolveMeroRoles InitialWithRoles{..} template =
-    case partitionEithers ehosts of
-        ([], hosts) ->
-            Right $ InitialData { id_sites = _rolesinit_id_sites
-                                , id_m0_servers = hosts
-                                , id_m0_globals = _rolesinit_id_m0_globals
-                                , id_pools = _rolesinit_id_pools
-                                , id_profiles = _rolesinit_id_profiles
-                                }
-        (errs, _) -> Left . mkException "resolveMeroRoles" . intercalate ", "
-            $ concat errs
-  where
-    ehosts :: [Either [String] M0Host]
-    ehosts = map (\(uhost, env) -> mkHost env uhost) _rolesinit_id_m0_servers
+resolveMeroRoles InitialWithRoles{..} =
+    case ehosts of
+          [] -> Left $  mkException "resolveMeroRoles" "No processes available"
+          hosts -> Right $ InitialData { id_sites = _rolesinit_id_sites
+                                       , id_m0_servers = hosts
+                                       , id_m0_globals = _rolesinit_id_m0_globals
+                                       , id_pools = _rolesinit_id_pools
+                                       , id_profiles = _rolesinit_id_profiles
+                                       }
 
-    -- | Expand a host.
-    mkHost :: Y.Object -> UnexpandedHost -> Either [String] M0Host
-    mkHost env uhost =
-        let eprocs :: [Either String [M0Process]]
-            eprocs = roleToProcesses env <$> _uhost_m0h_roles uhost
-        in case partitionEithers eprocs of
-            ([], procs) ->
-                Right $ M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
-                               , m0h_processes = concat procs
-                               , m0h_devices = _uhost_m0h_devices uhost
-                               }
-            (errs, _) -> Left errs
+    where
+      ehosts :: [M0Host]
+      ehosts = map (\(uhost, _) -> mkHost uhost) _rolesinit_id_m0_servers
 
-    -- | Find a list of processes corresponding to the given role.
-    roleToProcesses :: Y.Object -> RoleSpec -> Either String [M0Process]
-    roleToProcesses env role =
-        mkRole template env role (
-            (_role_content <$>) . findMeroRole (_rolespec_name role) )
-
-    findMeroRole :: RoleName -> [MeroRole] -> Either String MeroRole
-    findMeroRole name =
-        let err = "No such role in Mero mapping file: " ++ show name
-        in maybeToEither err . findRole name
-
-    findRole :: RoleName -> [MeroRole] -> Maybe MeroRole
-    findRole name = find ((name ==) . _role_name)
+      mkHost :: UnexpandedHost -> M0Host
+      mkHost uhost =
+                M0Host { m0h_fqdn = _uhost_m0h_fqdn uhost
+                       , m0h_processes = _uhost_m0h_processes uhost
+                       }
 
 -- | Expand all given 'RoleSpec's into 'HalonRole's.
 mkHalonRoles :: EDE.Template -- ^ Role template.
@@ -612,14 +591,12 @@ mkRole template env role pp = do
 
 -- | Entry point into 'InitialData' parsing.
 parseInitialData :: FilePath -- ^ Halon facts.
-                 -> FilePath -- ^ Mero role map file.
                  -> FilePath -- ^ Halon role map file.
                  -> IO (Either Y.ParseException (InitialData, EDE.Template))
-parseInitialData facts meroRoles halonRoles = runExceptT $ do
+parseInitialData facts halonRoles = runExceptT $ do
     initialWithRoles <- ExceptT (Y.decodeFileEither facts)
-    m0roles <- parseFile meroRoles
     h0roles <- parseFile halonRoles
-    initialData <- ExceptT . pure $ resolveMeroRoles initialWithRoles m0roles
+    initialData <- ExceptT . pure $ resolveMeroRoles initialWithRoles
     ExceptT . pure $ validateInitialData initialData
     pure (initialData, h0roles)
   where
@@ -666,10 +643,18 @@ validateInitialData InitialData{..} = do
     enclIds = enc_id <$> concat enclsPerRack
 
     devices :: [M0Device]
-    devices = concatMap m0h_devices id_m0_servers
+    devices = concatMap host2devs id_m0_servers
 
     isValidDeviceRef (M0DeviceRef Nothing Nothing Nothing) = False
     isValidDeviceRef _ = True
+
+-- | All devices which are being used (by services) at given host.
+host2devs :: M0Host -> [M0Device]
+host2devs host =
+    Set.toList . Set.fromList $ concat [ m0s_devices svc
+                                       | proc <- m0h_processes host
+                                       , svc <- m0p_services proc
+                                       ]
 
 -- | Given a 'Maybe', convert it to an 'Either', providing a suitable
 -- value for the 'Left' should the value be 'Nothing'.
