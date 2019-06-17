@@ -94,6 +94,7 @@ startProcesses host procTypeP = do
   let procs = [ proc
               | m0node :: M0.Node <- G.connectedTo host Runs rg
               , proc <- G.connectedTo m0node M0.IsParentOf rg
+              , M0.getState proc rg /= M0.PSOnline
               , Just (t :: ProcessType) <- [G.connectedTo proc Has rg]
               , procTypeP t
               ]
