@@ -17,23 +17,6 @@ packages:
 - replicated-log
 - rpclite
 - sspl
-# vendor packages
-- location:
-    git: https://github.com/haskell-distributed/network-transport-tcp.git
-    commit: 6cc18cae0e310128496fe0d178bd4ca00ee0a7e5
-  extra-dep: true
-- location:
-    git: https://github.com/seagate-ssg/options-schema.git
-    commit: 9eaf45b3105358ef3c0b2a6169b68225f8f481d6
-  extra-dep: true
-- location:
-    git: https://github.com/seagate-ssg/tasty-files.git
-    commit: bf71eb7d3717ee29dbb0632e9ace5d43aaf51ea8
-  extra-dep: true
-- location:
-    git: https://github.com/seagate-ssg/gitrev.git
-    commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
-  extra-dep: true
 
 extra-deps:
 - aeson-schema-0.4.1.3
@@ -41,6 +24,14 @@ extra-deps:
 - ede-0.2.9
 - ghc-datasize-0.1.2
 - ghc-heap-view-0.5.10
+- git: https://github.com/haskell-distributed/network-transport-tcp.git
+  commit: 6cc18cae0e310128496fe0d178bd4ca00ee0a7e5
+- git: https://github.com/seagate-ssg/options-schema.git
+  commit: 9eaf45b3105358ef3c0b2a6169b68225f8f481d6
+- git: https://github.com/seagate-ssg/tasty-files.git
+  commit: bf71eb7d3717ee29dbb0632e9ace5d43aaf51ea8
+- git: https://github.com/seagate-ssg/gitrev.git
+  commit: 52f4c1c96c776ca74bf9f9b01808b0c1d5e0ac94
 
 flags:
   ghc-heap-view:
