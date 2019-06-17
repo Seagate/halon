@@ -16,7 +16,7 @@ module HA.RecoveryCoordinator.Castor.Process.Rules
 
 import           Control.Distributed.Process (Process, sendChan)
 import           Control.Lens
-import           Control.Monad (unless, void)
+import           Control.Monad (when, unless, void)
 import           Data.Binary (Binary)
 import           Data.Foldable
 import           Data.List (nub)
@@ -695,7 +695,11 @@ ruleProcessStop = mkJobRule jobProcessStop args $ \(JobHandle getRequest finish)
 
   let quiesce (StopProcessRequest p) = do
         showContext
-        Log.rcLog' Log.DEBUG $ "Setting processes to quiesce."
+        rg <- getGraph
+        when (getState p rg == M0.PSOffline) $ do
+          Log.rcLog' Log.DEBUG "The Process is already Offline."
+          continue finish
+        Log.rcLog' Log.DEBUG "Setting processes to quiesce."
         waitFor notifier
         onTimeout 10 run_stopping
         onSuccess run_stopping
