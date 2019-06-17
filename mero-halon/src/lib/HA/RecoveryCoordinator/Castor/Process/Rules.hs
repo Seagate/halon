@@ -90,13 +90,13 @@ ruleProcessDispatchRestart = define "rule-process-dispatch-restart" $ do
                      , not $ any (\s -> M0.s_type s == CST_HA) srvs ]
 
     for_ procs' $ promulgateRC . ProcessStartRequest
+    Log.rcLog' Log.DEBUG $ "Restarting processes: " ++ show procs'
     done eid
 
   startFork rule_init ()
   where
     -- Don't restart after we leave inhibited, for example after node
-    -- recovery: other mechanisms should recover the processes
-    -- explicitly
+    -- recovery: other mechanisms should recover the processes explicitly
     isProcFailed (M0.PSInhibited _) (M0.PSFailed _) = False
     -- Don't restart if we change reason for failure
     isProcFailed (M0.PSFailed _) (M0.PSFailed _) = False
@@ -215,8 +215,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       switch [configure_result, timeout t configure_timeout]
     ConfigureFailure uid failMsg -> do
       messageProcessed uid
-      finisher <- fail_start $ "Configuration failed: " ++ failMsg
-      switch finisher
+      fail_start ("Configuration failed: " ++ failMsg) >>= switch
     ConfigureSuccess uid -> do
       ProcessStartRequest p <- getRequest
       modifyGraph $ G.connect p Is M0.ProcessBootstrapped
@@ -225,8 +224,7 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       continue start_process
 
   directly configure_timeout $ do
-    finisher <- fail_start "Configuration timed out"
-    switch finisher
+    fail_start "Configuration timed out" >>= switch
 
   -- XXX: Be more defensive; check invariants: ProcessBootstrapped,
   -- PSStarting, disposition still in ONLINE
@@ -298,9 +296,14 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
       continue start_process_retry
 
   -- Wait for the process to come online - sent out by `ruleProcessOnline`
-  setPhaseNotified start_process_complete (processState (== M0.PSOnline)) $ \_ -> do
-    ProcessStartRequest p <- getRequest
+  setPhaseNotified start_process_complete (processState (== M0.PSOnline)) $ \(p, _) -> do
     modify Local $ rlens fldRep . rfield .~ Just (ProcessStarted p)
+    continue finish
+
+  setPhaseNotified start_process_failure
+            (processState (== M0.PSFailed "node failure")) $ \(p, _) -> do
+    let ff = ProcessStartFailed p "Process start failed due to node failure."
+    modify Local $ rlens fldRep . rfield .~ Just ff
     continue finish
 
   setPhaseNotified start_process_failure (processState psFailed) $ \_ -> do
@@ -312,12 +315,10 @@ ruleProcessStart = mkJobRule jobProcessStart args $ \(JobHandle getRequest finis
         t <- _hv_process_restart_retry_interval <$> getHalonVars
         continue $ timeout t start_process_retry
       False -> do
-        finisher <- fail_start "Process failed while starting, exhausted retries"
-        switch finisher
+        fail_start "Process failed while starting, exhausted retries." >>= switch
 
-  directly start_process_timeout $ do
-    finisher <- fail_start "Timed out waiting for process to come online."
-    switch finisher
+  directly start_process_timeout $
+    fail_start "Timed out waiting for process to come online." >>= switch
 
   directly start_process_retry $ do
     req@(ProcessStartRequest p) <- getRequest

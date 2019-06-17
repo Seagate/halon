@@ -425,7 +425,8 @@ ruleNodeNew = mkJobRule processNodeNew args $ \(JobHandle getRequest finish) -> 
     case syncStat of
       Left err -> do Log.rcLog' Log.ERROR $ "Unable to sync new client to confd: " ++ show err
                      continue finish
-      Right () -> continue synchronized
+      Right () -> do Log.rcLog' Log.DEBUG "confd-synched"
+                     continue synchronized
 
   -- There are two scenarios: either halon:m0d is in graph or it is
   -- not. If it's not then we do nothing and have RC start the service
@@ -604,7 +605,7 @@ processStartProcessesOnNode = Job "castor::node::process::start"
 -- nodes. See the comment of 'notifyOnClusterTransition' for details.
 --
 -- * After all boot level 0 processes are started, we set the
--- principal RM for the cluster if present on the note and not yet set
+-- principal RM for the cluster if present on the node and not yet set
 -- for the cluster. If any processes come back as failed in any boot
 -- level, we put the cluster in a failed state.
 --
@@ -677,26 +678,37 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
     -- not have to wait for timeout to tick off if some process
     -- happens to fail to start.
     let mkProcessesAwait name next = mkLoop name (return [])
-          (\result l ->
+          (\result l -> do
+            let exclude p = Right $
+                  (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+            StartProcessesOnNodeRequest m0node <- getRequest
             case result of
-              ProcessStarted p -> return . Right
-                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
-              ProcessConfiguredOnly p -> return . Right
-                $ (rlens fldWaitingProcs %~ fieldMap (filter (/= p))) l
+              ProcessStarted p -> do
+                Log.rcLog' Log.DEBUG $ "ProcessStarted: " ++ show p
+                if p `elem` getField (rget fldWaitingProcs l)
+                then do
+                  ps@(failed, toStart) <- getProcsStatus m0node p
+                  Log.rcLog' Log.DEBUG $ "Procs status (failed, toStart): " ++ show ps
+                  -- If some previously started processes got failed,
+                  -- the node is probably failed, so finish immediately.
+                  -- The node recovery rule might start us again soon.
+                  if null toStart || (not . null) failed
+                    then return $ Left finish
+                    else return $ exclude p
+                else return $ Right l
+              ProcessConfiguredOnly p -> return $ exclude p
               ProcessStartFailed p _ -> do
                 --  Alternatively, instead of checking for the
                 --  process, we could check if it's our job that
                 --  we're receiving information about.
                 if p `elem` getField (rget fldWaitingProcs l)
                 then do
-                  StartProcessesOnNodeRequest m0node <- getRequest
                   _ <- nodeFailedWith NodeProcessesStartFailure m0node
                   return $ Left finish
                 else return $ Right l
               ProcessStartInvalid p _ -> do
                 if p `elem` getField (rget fldWaitingProcs l)
                 then do
-                  StartProcessesOnNodeRequest m0node <- getRequest
                   _ <- nodeFailedWith NodeProcessesStartFailure m0node
                   return $ Left finish
                 else return $ Right l
@@ -751,7 +763,6 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     setPhaseIf boot_level_2
       (barrierPass $ \mcs -> M0._mcs_runlevel mcs >= M0.BootLevel 2) $ \() -> do
-        StartProcessesOnNodeRequest m0node <- getRequest
         Just host <- getField . rget fldHost <$> get Local
         ps <- startProcesses host m0t1fsProcess
         Log.rcLog' Log.DEBUG $ "Starting these m0tifs processes: "
@@ -760,6 +771,7 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
         casProcs <- Process.getAllHostingService CST_CAS <$> getGraph
         if null casProcs
         then do
+          StartProcessesOnNodeRequest m0node <- getRequest
           modify Local $ rlens fldRep .rfield .~
             (Just $ NodeProcessesStarted m0node)
           continue clients_result
@@ -767,12 +779,11 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     directly boot_level_3 $ do
       (M0.BootLevel n) <- calculateRunLevel
+      StartProcessesOnNodeRequest m0node <- getRequest
       if n < 3 then do
-        StartProcessesOnNodeRequest m0node <- getRequest
         void $ nodeFailedWith NodeProcessesStartFailure m0node
         continue finish
       else do
-        StartProcessesOnNodeRequest m0node <- getRequest
         Just host <- getField . rget fldHost <$> get Local
         Log.rcLog' Log.DEBUG ("Starting clovis processes." :: String)
         modify Local $ rlens fldRep .~
@@ -804,9 +815,13 @@ ruleStartProcessesOnNode = mkJobRule processStartProcessesOnNode args $ \(JobHan
 
     nodeFailedWith state m0node = do
       rg <- getGraph
-      let ps = getUnstartedProcesses m0node rg
+      let ps = getUnstartedSrvProcesses m0node rg
       modify Local $ rlens fldRep .~ (Field . Just $ state m0node ps)
       return $ state m0node ps
+
+    getProcsStatus m0node p = do
+      rg <- getGraph
+      return $ getProcessesStatus m0node p rg
 
 processStopProcessesOnNode :: Job StopProcessesOnNodeRequest StopProcessesOnNodeResult
 processStopProcessesOnNode = Job "castor::node::stop-processes"

@@ -210,7 +210,7 @@ instance ToJSON M0Host
 data ProcessOwnership
   = Managed      -- ^ Process is started/monitored/stopped by Halon.
   | Independent  -- ^ Process is not controlled by Halon.
-  deriving (Eq, Data, Show, Generic)
+  deriving (Eq, Ord, Data, Show, Generic)
 instance Hashable ProcessOwnership
 instance FromJSON ProcessOwnership
 instance ToJSON ProcessOwnership
@@ -218,14 +218,15 @@ instance ToJSON ProcessOwnership
 -- XXX TODO:
 -- 1) s/PL/PT/
 -- 2) synchronize with Mero.Notification.HAState.ProcessType
+-- Ordered by bootstrap order.
 data ProcessType
-  = PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
-  | PLClovis String ProcessOwnership -- ^ Process lives as part of a
-                                     --   Clovis client, with given name.
+  = PLHalon  -- ^ Process lives inside Halon program space.
   | PLM0d Int  -- ^ Process runs in m0d at the given boot level.
                --   Currently 0 = confd, 1 = other.
-  | PLHalon  -- ^ Process lives inside Halon program space.
-  deriving (Eq, Data, Show, Typeable, Generic)
+  | PLM0t1fs -- ^ Process lives as part of m0t1fs in kernel space.
+  | PLClovis String ProcessOwnership -- ^ Process lives as part of a
+                                     --   Clovis client, with given name.
+  deriving (Eq, Ord, Data, Show, Typeable, Generic)
 instance Hashable ProcessType
 instance FromJSON ProcessType
 instance ToJSON ProcessType

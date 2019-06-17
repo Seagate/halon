@@ -105,6 +105,7 @@ meroRules = do
     synchronize <- mkSyncAction _2 reply
     setPhase initial $ \(HAEvent eid afterSync) -> do
       put Local (eid, defaultConfSyncState)
+      Log.rcLog' Log.DEBUG $ show eid
       synchronize afterSync
     directly reply $ do
       uuid <- fst <$> get Local
@@ -118,6 +119,7 @@ meroRules = do
     synchronize <- mkSyncAction _2 reply
     setPhase initial $ \(uuid, afterSync) -> do
       put Local (uuid, defaultConfSyncState)
+      Log.rcLog' Log.DEBUG $ show uuid
       synchronize afterSync
     directly reply $ do
       uuid <- fst <$> get Local

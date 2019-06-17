@@ -11,9 +11,10 @@
 -- have explicitly acknowledged to have handled them.
 --
 -- Upon receiving an event, the Recovery Coordinator must take recovery
--- measures and notify the Event Queue with a 'Trim' message that the recovery for a given event
--- or sequence of events is done. Upon receiving such notification, the Event
--- Queue component can delete the event from the replicated mailbox.
+-- measures and notify the Event Queue with a 'Trim' message that the recovery
+-- for a given event or sequence of events is done. Upon receiving such
+-- notification, the Event Queue component can delete the event from the
+-- replicated mailbox.
 --
 -- If a recovery procedure is interrupted due to a failure in the tracking
 -- station or in the RC, the Event Queue will send all unhandled events to

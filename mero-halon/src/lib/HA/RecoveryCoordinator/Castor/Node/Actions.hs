@@ -1,4 +1,5 @@
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE GADTs #-}
 -- |
 -- Copyright:  (C) 2016 Seagate Technology Limited.
 -- License   : All rights reserved.
@@ -9,7 +10,8 @@ module HA.RecoveryCoordinator.Castor.Node.Actions
   , getProcesses
   , getTypedProcesses
   , getTypedProcessesP
-  , getUnstartedProcesses
+  , getProcessesStatus
+  , getUnstartedSrvProcesses
   , startProcesses
   ) where
 
@@ -68,16 +70,31 @@ getProcesses node rg =
   , proc <- G.connectedTo m0node M0.IsParentOf rg
   ]
 
+-- | Get ([failed], [toStart]) processes on the given 'M0.Node'
+-- with respect to the boot lever order of the given 'M0.Process'.
+getProcessesStatus :: M0.Node -> M0.Process -> G.Graph
+                   -> ( [(M0.Process, M0.ProcessState)]
+                      , [(M0.Process, M0.ProcessState)] )
+getProcessesStatus node p rg = (ps (<=), ps (>))
+  where
+    ps f = [ (proc, M0.getState proc rg)
+           | proc <- G.connectedTo node M0.IsParentOf rg
+           , M0.getState proc rg /= M0.PSOnline
+           , Just (t1 :: ProcessType) <- [G.connectedTo proc Has rg]
+           , Just (t2 :: ProcessType) <- [G.connectedTo p Has rg]
+           , f t1 t2
+           ]
+
 -- | Find all processes on the given 'M0.Node' such that:
 --
 -- * The process is not properly started, i.e. not in 'M0.PSOnline' state.
 -- * The process is not a client process (like m0t1fs or clovis).
-getUnstartedProcesses :: M0.Node -> G.Graph -> [(M0.Process, M0.ProcessState)]
-getUnstartedProcesses node rg =
+getUnstartedSrvProcesses :: M0.Node -> G.Graph -> [(M0.Process, M0.ProcessState)]
+getUnstartedSrvProcesses node rg =
   [ (proc, M0.getState proc rg)
   | proc <- G.connectedTo node M0.IsParentOf rg
   , M0.getState proc rg /= M0.PSOnline
-  , Just (t :: CI.ProcessType) <- [G.connectedTo proc Has rg]
+  , Just (t :: ProcessType) <- [G.connectedTo proc Has rg]
   , isNotClient t
   ]
   where
