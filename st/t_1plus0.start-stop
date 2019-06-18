@@ -1,70 +1,77 @@
 #!/usr/bin/env bash
 . $H0_SRC_DIR/st/common
 
-NODE=$(hostname)
-prepare_cluster_1plus0_conf() {
+### This system test bootstraps a singlenode cluster that uses
+### "1+0" configuration (1 data unit, 0 parity units) and performs IO.
+
+prepare_cluster_conf() {
+    [[ -z $M0_CLUSTER ]] || return 0
     export M0_CLUSTER=$(mktemp)
     trap "rm $M0_CLUSTER" 0
 
+    #@ XXX Shouldn't EES cluster consist of 2 nodes?
+    local localhost=$(hostname)
     cat >$M0_CLUSTER <<EOF
-clovis-apps: [ $NODE ]
-confds:      [ $NODE ]
+confds: [ $localhost ]
 ssus:
-  - host:  $NODE
-    disks:   /dev/loop1
+  - host: $localhost
+    disks: /dev/loop1
+clovis-apps: [ $localhost ]
 pools:
-  - name: pool1
-    disks: [ { host: '$NODE', filter: '/dev/loop1' } ]
+  - name: pool-0
+    disks: [ { host: '$localhost', filter: '/dev/loop1' } ]
     data_units: 1
     parity_units: 0
 EOF
 }
 
-LOG_FILE="$(mktemp --suffix _log_file)"
-SRC_OBJ="$(mktemp --suffix _src_file)"
-DEST_OBJ="$(mktemp --suffix _dest_file)"
-
-check_io_return() {
-    rm -rf $LOG_FILE $SRC_OBJ $DEST_OBJ
-    return $1
-}
-
 check_io() {
-        CLUSTER_PROFILE=$(hctl mero status | awk '/profile:/ {print $2}')
-        HA_EP=$(hctl mero status | awk '/halon \(RC\)/ {print $4}')
-        IFS=' ' read -ra CLOVIS_APPS_FIDS <<< $(hctl mero status | awk '/clovis-app/ {print $3}')
-        IFS=' ' read -ra CLOVIS_APPS_EPS <<< $(hctl mero status | awk '/clovis-app/ {print $4}')
+    local m0status=$(mktemp)
+    local log=$(mktemp)
+    local src_obj=$(mktemp)
+    local dst_obj=$(mktemp)
 
-        OBJ_ID=1048580
-        BSIZE=4096
-        BCOUNT=1024
+    hctl mero status >$m0status
 
-        # XXX FIXME
-        # Immediate use of same clovis process endpoint for anther app failing.
-        # Using different endpoint for c0cp & c0cat
-        CLOVIS_PARAMS_CP="-l ${CLOVIS_APPS_EPS[0]} -H $HA_EP -p $CLUSTER_PROFILE \
-                       -P ${CLOVIS_APPS_FIDS[0]}"
-        CLOVIS_PARAMS_CAT="-l ${CLOVIS_APPS_EPS[1]} -H $HA_EP -p $CLUSTER_PROFILE \
-                       -P ${CLOVIS_APPS_FIDS[1]} -r"
+    local bsize=4096
+    local bcount=1024
+    local obj_id=1048580
 
-        dd if=/dev/urandom bs=$BSIZE count=$BCOUNT of=$SRC_OBJ 2> $LOG_FILE || return $?
+    local profile=$(awk '/profile:/ {print $2}' $m0status)
+    local ha_ep=$(awk '/halon \(RC\)/ {print $4}' $m0status)
 
-        sudo $M0_SRC_DIR/clovis/st/utils/c0cp $CLOVIS_PARAMS_CP -o $OBJ_ID \
-                                 -s $BSIZE -c $BCOUNT $SRC_OBJ || check_io_return $?
+    local -a clovis_fids clovis_eps
+    read -ra clovis_fids <<< $(awk '/clovis-app/ {print $3}' $m0status)
+    read -ra clovis_eps <<< $(awk '/clovis-app/ {print $4}' $m0status)
 
-        sudo $M0_SRC_DIR/clovis/st/utils/c0cat $CLOVIS_PARAMS_CAT -o $OBJ_ID -s $BSIZE \
-                                  -c $BCOUNT > $DEST_OBJ || check_io_return $?
+    dd if=/dev/urandom bs=$bsize count=$bcount of=$src_obj 2>$log
 
-        diff  $SRC_OBJ $DEST_OBJ || return $?
+    # Immediate use of the same endpoint for another process fails.
+    # Using different endpoints for c0cp & c0cat.
+    local c0cp_opts="--local ${clovis_eps[0]} --process ${clovis_fids[0]}"
+    local c0cat_opts="--local ${clovis_eps[1]} --process ${clovis_fids[1]}"
+    c0cat_opts+=" --read-verify"
 
-        check_io_return 0
+    local common_opts="--ha $ha_ep --profile $profile"
+    common_opts+=" --object $obj_id --block-size $bsize --block-count $bcount"
+
+    sudo $M0_SRC_DIR/clovis/st/utils/c0cp $common_opts $c0cp_opts $src_obj
+    sudo $M0_SRC_DIR/clovis/st/utils/c0cat $common_opts $c0cat_opts >$dst_obj
+
+    cmp $src_obj $dst_obj && rm -f $m0status $log $src_obj $dst_obj
 }
 
-sudo /data/mero/utils/m0setup -P 1 -N 1 -K 0 --no-cas
-prepare_cluster_1plus0_conf
+prepare_cluster_conf
+
+# Create a loop device for the pool.
+sudo $M0_SRC_DIR/utils/m0setup --pool-width 1 --data-units 1 --parity-units 0 \
+     --no-cas
+
 $H0 init
 cluster_bootstrap
+
 check_io
+
 hctl mero stop
 $H0 fini
 
