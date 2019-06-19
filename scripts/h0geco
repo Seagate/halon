@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+######################################################################
+# Halon configuration generator
+######################################################################
+
+# A hack for `readlink -f` on BSD systems.
+if [[ $(uname) == Darwin ]] && ! readlink -f / &> /dev/null ; then
+    if which greadlink &>/dev/null; then
+        readlink() { greadlink "$@"; }
+    else
+        echo "${0##*/}: \`readlink -f' doesn't work" >&2
+        echo 'Try installing GNU readlink (greadlink) with either of:' >&2
+        echo '  brew install coreutils' >&2
+        echo '  port install coreutils' >&2
+        exit 1
+    fi
+fi
+
+H0_SRC_DIR="$(readlink -f $0)"
+H0_SRC_DIR="${H0_SRC_DIR%/*/*}"
+
+. $H0_SRC_DIR/scripts/functions
+
+dhall-to-yaml <$H0_SRC_DIR/conf/facts.dhall
