@@ -20,6 +20,9 @@ let FailureVec =
   , ctrl : Natural
   , disk : Natural
   }
+
+-- [KN] Pool with 'name' field is needed in ClusterConfig only.
+-- id_pools requires a pool with 'id' field instead.
 let Pool =
   { name : Text
   , disks : List { host : HostName, filter : Optional Regexp }
@@ -36,6 +39,32 @@ let ClusterConfig =
   , confds : List HostName
   , ssus : List { host : HostName, disks : GlobPattern }
   , pools : Optional (List Pool)
+  }
+
+let IdPool =
+  { pool_id : Text
+  , pool_pdclust_attrs :
+    { data_units : Natural
+    , parity_units : Natural
+    , unit_size : Natural
+    , seed : List Natural
+    }
+  , pool_allowed_failures : List FailureVec
+  }
+
+-- XXX should be specified explicitly. Double check the expected type
+let m0_block_size : Natural = 1024
+
+-- XXX double check that this conversion is valid in general
+let toIdPool : Pool -> IdPool = \(p : Pool) ->
+  { pool_id = p.name
+  , pool_pdclust_attrs =
+    { data_units = p.data_units
+    , parity_units = p.parity_units
+    , unit_size = m0_block_size
+    , seed = [101, 102]
+    }
+  , pool_allowed_failures = [ p.allowed_failures ]
   }
 
 -- # types
@@ -144,6 +173,7 @@ let fakePool : Text -> Pool = \(name: Text) ->
   }
 
 let pools = [ fakePool "test-1", fakePool "test-2" ]
+let id_pools : List Pool -> List IdPool = \(p : List Pool) -> List/map Pool IdPool toIdPool p
 let id_profiles : List Profile = [ mkProfile pools ]
 
 in
@@ -151,6 +181,6 @@ in
   -- , id_m0_servers = [TODO Server]
   -- XXX COMPLETEME
   -- , id_m0_globals
-  -- , id_pools
+  , id_pools = id_pools pools
   , id_profiles = id_profiles
   }
