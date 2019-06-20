@@ -7,6 +7,7 @@
 -- \(TODO : forall (a : Type) -> a) ->
 
 -- # ClusterConfig et al.
+let List/map = https://raw.githubusercontent.com/dhall-lang/dhall-lang/master/Prelude/List/map
 
 let HostName = Text
 let GlobPattern = Text
@@ -107,13 +108,49 @@ let enclosures : List Enclosure =
   [ mkEnclosure 0
   ]
 
+let PoolName = Text
+
+let Profile =
+  { prof_id : Text
+  , prof_pools: List PoolName
+  }
+
+
+let mkProfile : List Pool -> Profile =
+  \(pools : List Pool) ->
+    let name : Pool -> PoolName = \(p : Pool) -> p.name
+    let names = List/map Pool PoolName name pools
+    in {
+      prof_id = "prof_id",
+      prof_pools = names
+    }
+
+
 let rack : Rack = { rack_idx = 0, rack_enclosures = enclosures }
 let site : Site = { site_idx = 0, site_racks = [rack] }
+
+let fakePool : Text -> Pool = \(name: Text) ->
+  { name = name
+  , disks = [{host = "localhost", filter = Some ".*" }]
+  , data_units = 1
+  , parity_units = 0
+  , allowed_failures =
+    { site = 1
+    , rack = 0
+    , encl = 0
+    , ctrl = 0
+    , disk = 0
+    }
+  }
+
+let pools = [ fakePool "test-1", fakePool "test-2" ]
+let id_profiles : List Profile = [ mkProfile pools ]
+
 in
   { id_sites = [site]
   -- , id_m0_servers = [TODO Server]
   -- XXX COMPLETEME
   -- , id_m0_globals
   -- , id_pools
-  -- , id_profiles
+  , id_profiles = id_profiles
   }
