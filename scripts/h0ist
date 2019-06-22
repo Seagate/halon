@@ -3,6 +3,8 @@ set -eu -o pipefail
 
 ######################################################################
 # Halon configuration generator
+#
+# 'h0ist' stands for Halon (h0) initial (i) state (st).
 ######################################################################
 
 # A hack for `readlink -f` on BSD systems.
