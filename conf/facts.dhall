@@ -47,11 +47,23 @@ let mkNic =
   , if_ipAddrs = [ ip ]
   } : Nic
 
-let URole = < Station | Ssu | Cmu | Dm >
+let UH0Role = < station | ssu | cmu | dm >
+let UH0Role/show : UH0Role -> Text =
+    \(x : UH0Role) ->
+    let conv = { station = "station", ssu = "ssu", cmu = "cmu", dm = "dm" }
+    in merge conv x
 
-let URole/show : URole -> Text =
-    \(x : URole) ->
-    let conv = { Station = "station", Ssu = "ssu", Cmu = "cmu", Dm = "dm" }
+let UM0Role = < clovis-app | confd | ha | m0t1fs | mds | s3server | storage >
+let UM0Role/show : UM0Role -> Text =
+    \(x : UM0Role) ->
+    let conv = { clovis-app = "clovis-app"
+               , confd = "confd"
+               , ha = "ha"
+               , m0t1fs = "m0t1fs"
+               , mds = "mds"
+               , s3server = "s3server"
+               , storage = "storage"
+               }
     in merge conv x
 
 let Name = { name : Text }
@@ -71,9 +83,9 @@ let mkHost
                   --%> iface=`facter interfaces | cut -d, -f1`
  -> \(mac : Text) --%> `facter macaddress_${iface}`
  -> \(ip : Text)  --%> `facter ipaddress_${iface}`
- -> \(roles : List URole)
+ -> \(roles : List UH0Role)
  ->
-    let roleToName = \(x : URole) -> { name = URole/show x } : Name
+    let roleToName = \(x : UH0Role) -> { name = UH0Role/show x } : Name
     in
   { h_fqdn = hostname
   , h_memsize = memsize_mb
@@ -82,7 +94,7 @@ let mkHost
                    , mkNic mac ip UNetKind.Data
                    ]
   , h_halon = { address = ip ++ ":9000"
-              , roles = List/map URole Name roleToName roles
+              , roles = List/map UH0Role Name roleToName roles
               }
   } : Host
 
@@ -118,6 +130,30 @@ let Site =
   , site_racks : List Rack
   }
 
+let Process =
+  { m0p_endpoint : Text
+  , m0p_mem_as : Natural
+  , m0p_mem_rss : Natural
+  , m0p_mem_stack : Natural
+  , m0p_mem_memlock : Natural
+  , m0p_cores : List Natural
+  -- XXX TODO
+  }
+
+let mkProcess
+  = \(role : UM0Role)
+ -> \(lnid : Text)
+ -> \(memsize_kb : Natural)
+ -> \(cpucount : Natural)
+ ->
+  { m0p_endpoint = "${lnid}:12345:44:101"
+  , m0p_mem_as = memsize_kb
+  , m0p_mem_rss = memsize_kb
+  , m0p_mem_stack = memsize_kb
+  , m0p_mem_memlock = memsize_kb
+  , m0p_cores = List/replicate cpucount Natural 1
+  } : Process
+
 let Server =
   { m0h_fqdn : Text
   , host_mem_as : Natural
@@ -126,6 +162,7 @@ let Server =
   , host_mem_memlock : Natural
   , host_cores : List Natural
   , lnid : Text
+  , m0h_processes : List Process
   -- XXX TODO
   }
 
@@ -136,15 +173,19 @@ let mkServer
  -> \(cpucount : Natural) --%> `facter --json processors | jq .processors.count`
  -> \(ip : Text)          --%> `facter ipaddress_${iface}`
  ->
-  { m0h_fqdn = hostname
-  , host_mem_as = be_segment_size
-  , host_mem_rss = memsize_kb
-  , host_mem_stack = memsize_kb
-  , host_mem_memlock = memsize_kb
-  , host_cores = List/replicate cpucount Natural 1
-  , lnid = "${ip}@${lnet_transport}"
-  -- XXX TODO
-  }
+    let lnid = "${ip}@${lnet_transport}"
+    let process_XXX = mkProcess UM0Role.confd lnid memsize_kb cpucount -- XXX FIXME
+    in
+      { m0h_fqdn = hostname
+      , host_mem_as = be_segment_size
+      , host_mem_rss = memsize_kb
+      , host_mem_stack = memsize_kb
+      , host_mem_memlock = memsize_kb
+      , host_cores = List/replicate cpucount Natural 1
+      , lnid = lnid
+      , m0h_processes = [ process_XXX ]
+      -- XXX TODO
+      } : Server
 
 let Facts =
   { id_sites : List Site
@@ -155,7 +196,7 @@ let Facts =
 
 let host =
     mkHost _XXX_hostname _XXX_memsize_mb _XXX_cpucount _XXX_mac _XXX_ip
-        [ URole.Station, URole.Ssu ]
+        [ UH0Role.station, UH0Role.ssu ]
 let server = mkServer _XXX_hostname _XXX_memsize_kb _XXX_cpucount _XXX_ip
 
 let enclosures = [ mkEnclosure 0 [ host ] ]
