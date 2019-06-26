@@ -163,7 +163,6 @@ mkValidatedConfig sites mkRoles stationOpts =
 run :: Options -> Process ()
 run opts@Options{..} = do
     einitData <- liftIO $ CI.parseInitialData (fromDefault optFacts)
-                                             -- (fromDefault optRolesMero)
                                               (fromDefault optRolesHalon)
     case einitData of
         Left err -> perrors ("Failed to load initial data:":[show err])
