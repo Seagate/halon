@@ -103,7 +103,7 @@ prettyReport showDevices nids ReportClusterState{..} = do
          forM_ ps $ \( M0.Process{r_fid=rfid, r_endpoint=endpoint}
                      , ReportClusterProcess ptype proc_st srvs ) -> do
            let (pst, proc_extSt) = M0.displayProcessState proc_st
-               tsTag | ptype /= " halon"         = "" :: String
+               tsTag | ptype /= "halon"          = "" :: String
                      | isRC                      = " (RC)"
                      | mnid `elem` map Just nids = " (TS)"
                      | otherwise                 = ""
@@ -142,7 +142,7 @@ prettyReport showDevices nids ReportClusterState{..} = do
      indentation = replicate 16 ' '
      pattern_ext = indentation ++ "Extended state: %s\n"
      node_pattern  = "  [%9s] %-24s  %s\n"
-     proc_pattern  = "  [%9s] %-24s    %s%s%s\n"
+     proc_pattern  = "  [%9s] %-24s    %s %s%s\n"
      serv_pattern  = "  [%9s] %-24s      %s%s\n"
      sdev_pattern  = "  [%9s] %-24s        %s %s\n"
      sdev_patterni = indentation ++ "%s\n"
