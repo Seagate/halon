@@ -67,7 +67,7 @@ wait_for_fid_state() {
     local state=$1
     _assert_is_fid $2
     local fid=$2
-    local steps_left=18
+    local steps_left=24
     local started=$(_epoch_time)
 
     set +x  # silence the loop
@@ -77,7 +77,7 @@ wait_for_fid_state() {
         echo -n '.'
         ((--steps_left > 0)) || die "Giving up after $(_elapsed $started)"
     done
-    echo ' done'
+    echo " done after $(_elapsed $started)"
     set -x
 }
 
