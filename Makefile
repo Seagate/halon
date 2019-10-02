@@ -146,22 +146,22 @@ docker-image-latest: halon-devel-image
 
 .PHONY: docker-image-7.5
 docker-image-7.5: CENTOS_RELEASE := 7.5
-docker-image-7.5: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-7.5: override DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-image-7.5: halon-devel-image
 
 .PHONY: docker-image-eos
 docker-image-eos: CENTOS_RELEASE := eos
-docker-image-eos: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-eos: override DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-image-eos: halon-devel-image
 
 .PHONY: docker-image-sage
 docker-image-sage: CENTOS_RELEASE := sage
-docker-image-sage: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-sage: override DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-image-sage: halon-devel-image
 
 .PHONY: docker-image-sage-vm
 docker-image-sage-vm: CENTOS_RELEASE := sage-vm
-docker-image-sage-vm: DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
+docker-image-sage-vm: override DOCKER_OPTS += --build-arg CENTOS_RELEASE=$(CENTOS_RELEASE)
 docker-image-sage-vm: halon-devel-image
 
 
