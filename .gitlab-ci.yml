@@ -366,6 +366,12 @@ docker:rebuild-images:
     - make docker-push tag="${DOCKER_IMAGE_TAG}*"
 
 
+docker:rebuild-images:76:
+  extends: docker:rebuild-images
+  variables:
+    DOCKER_IMAGE_TAG: '7.6'
+
+
 docker:rebuild-images:75:
   extends: docker:rebuild-images
   variables:
