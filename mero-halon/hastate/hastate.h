@@ -38,9 +38,9 @@ typedef struct ha_state_callbacks {
    *      entrypoint.
    *
    * For each incoming request it's guarantees that either
-   * ha_state_link_connected or ha_state_link_reused will be called, so
-   * request id is used for making a connection between those callbacks
-   * and entrypoint request.
+   * ha_state_link_connected, ha_state_link_reused or ha_state_link_ansent will
+   * be called, so request id is used for making a connection between those
+   * callbacks and entrypoint request.
    */
   void (*ha_state_entrypoint)( const struct m0_uint128 *req_id
                                    , const struct m0_fid *process_fid
@@ -61,6 +61,13 @@ typedef struct ha_state_callbacks {
    *   * hl     - created link.
    */
   void (*ha_state_link_reused)(const struct m0_uint128 *req_id, struct m0_ha_link *hl);
+
+  /**
+   * Called after a process that requested the link can't get it for some reason.
+   * Example: the process has been previously declared dead by Halon.
+   *   * req_id - id of the entrypoint request for this link.
+   */
+  void (*ha_state_link_absent)(const struct m0_uint128 *req_id);
 
   /**
    * The link is no longer needed by the remote peer.

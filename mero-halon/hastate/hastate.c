@@ -65,6 +65,12 @@ void link_reused_cb ( struct m0_halon_interface *hi
     ha_state_cbs.ha_state_link_reused(req_id, link);
 }
 
+void link_absent_cb ( struct m0_halon_interface *hi
+                    , const struct m0_uint128   *req_id
+                    ) {
+    ha_state_cbs.ha_state_link_absent(req_id);
+}
+
 void link_is_disconnecting_cb ( struct m0_halon_interface *hi
                               , struct m0_ha_link         *link
                               ) {
@@ -96,6 +102,7 @@ int ha_state_init( const char *local_rpc_endpoint
                                    , msg_is_not_delivered_cb
                                    , link_connected_cb
                                    , link_reused_cb
+                                   , link_absent_cb
                                    , link_is_disconnecting_cb
                                    , link_disconnected_cb
                                    );

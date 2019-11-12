@@ -367,6 +367,7 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
                             (ha_entrypoint niRef)
                             (ha_connected niRef)
                             (ha_reused niRef)
+                            (ha_absent niRef)
                             (ha_disconnecting niRef)
                             (ha_disconnected niRef)
                             (ha_delivered niRef)
@@ -500,6 +501,10 @@ initializeHAStateCallbacks lnode addr processFid haFid rmFid fbarrier fdone = do
          log $ "ha_reused: link=" ++ show hl ++ " fid=" ++ show fid
          currentTime <- getTime Monotonic
          atomicModifyIORef' (_ni_last_seen ni) $ \x -> (Map.insert hl currentTime x, ())
+
+    -- XXX we don't really care about this callback. Let's ignore it and fix the issue if it becomes a problem.
+    ha_absent :: NIRef -> HA.ReqId -> IO ()
+    ha_absent _ni _ri = pure ()
 
     ha_request_failure_vector :: NIRef -> HA.HAMsgPtr -> HA.HALink -> Cookie -> Fid -> IO ()
     ha_request_failure_vector ni p hl cookie pool = do

@@ -331,6 +331,9 @@ initHAState :: RPCAddress
             -> (ReqId -> HALink -> IO ())
                -- ^ Called when an old link is reconnected, may happen in case
                -- of RM service change.
+            -> (ReqId -> IO ())
+               -- ^ Called when it will be no link for the incoming entrypoint
+               -- request
             -> (HALink -> IO ())
                -- ^ The link is no longer needed by the remote peer.
                -- It is safe to call 'disconnect' when all 'notify' calls
@@ -344,7 +347,7 @@ initHAState :: RPCAddress
             -> IO ()
 initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
             ha_state_entrypoint_cb
-            ha_state_link_connected ha_state_link_reused
+            ha_state_link_connected ha_state_link_reused ha_state_link_absent
             ha_state_link_disconnecting ha_state_link_disconnected
             ha_state_is_delivered ha_state_is_cancelled =
     useAsCString rpcAddr $ \cRPCAddr ->
@@ -353,6 +356,7 @@ initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
       wentry <- wrapEntryCB
       wconnected <- wrapConnectedCB
       wreused    <- wrapReconnectedCB
+      wabsent    <- wrapAbsentCB
       wdisconnecting <- wrapDisconnectingCB
       wdisconnected <- wrapDisconnectedCB
       wisdelivered <- wrapIsDeliveredCB
@@ -361,6 +365,7 @@ initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
       #{poke ha_state_callbacks_t, ha_state_entrypoint} pcbs wentry
       #{poke ha_state_callbacks_t, ha_state_link_connected} pcbs wconnected
       #{poke ha_state_callbacks_t, ha_state_link_reused} pcbs wreused
+      #{poke ha_state_callbacks_t, ha_state_link_absent} pcbs wabsent
       #{poke ha_state_callbacks_t, ha_state_link_disconnecting} pcbs
          wdisconnecting
       #{poke ha_state_callbacks_t, ha_state_link_disconnected} pcbs
@@ -456,6 +461,11 @@ initHAState (RPCAddress rpcAddr) procFid haFid rmFid hsc
         catch (ha_state_link_reused (ReqId w128) (HALink hl)) $ \e ->
           hPutStrLn stderr $
             "initHAState.wrapReconnectedCB: " ++ show (e :: SomeException)
+    wrapAbsentCB = cwrapAbsentCB $ \wptr -> do
+        w128 <- peek wptr
+        catch (ha_state_link_absent (ReqId w128)) $ \e ->
+          hPutStrLn stderr $
+            "initHAState.wrapAbsentCB: " ++ show (e :: SomeException)
     wrapDisconnectingCB = cwrapDisconnectingCB $ \hl ->
         catch (ha_state_link_disconnecting (HALink hl)) $ \e ->
           hPutStrLn stderr $
@@ -495,6 +505,10 @@ foreign import ccall "wrapper" cwrapDisconnectingCB ::
 foreign import ccall "wrapper" cwrapConnectedCB ::
                   (Ptr Word128 -> Ptr HALink -> IO ())
     -> IO (FunPtr (Ptr Word128 -> Ptr HALink -> IO ()))
+
+foreign import ccall "wrapper" cwrapAbsentCB ::
+                  (Ptr Word128 -> IO ())
+    -> IO (FunPtr (Ptr Word128 -> IO ()))
 
 foreign import ccall "wrapper" cwrapIsDeliveredCB ::
     (Ptr HALink -> Word64 -> IO ()) -> IO (FunPtr (Ptr HALink -> Word64 -> IO ()))
