@@ -5,14 +5,11 @@
 
 - name: ssu
   h_bootstrap_station: False
-  h_services:
-    - "sspl start -u sspluser -p sspl4ever"
+  h_services: []
 
 - name: cmu
   h_bootstrap_station: False
-  h_services:
-    - "sspl-hl start -u sspluser -p sspl4ever"
-    - "sspl start -u sspluser -p sspl4ever"
+  h_services: []
 
 - name: dm
   h_bootstrap_station: False
