@@ -143,7 +143,7 @@ docker-images: docker-image-latest \
                docker-image-sage-vm
 
 .PHONY: docker-image-latest
-docker-image-latest: halon-devel-image
+docker-image-latest docker-image-7: halon-devel-image
 
 .PHONY: docker-image-7.6
 docker-image-7.6: CENTOS_RELEASE := 7.6
