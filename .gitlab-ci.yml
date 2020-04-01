@@ -5,7 +5,7 @@ variables:
   GIT_DEPTH: 1  # clone only the current commit
   GIT_STRATEGY: clone  # make a fresh `git clone` of the repo for every new CI job
   GIT_SUBMODULE_STRATEGY: normal  # init and check out submodules
-  CENTOS_RELEASE: '7.5'
+  CENTOS_RELEASE: 7
   DOCKER_REGISTRY: registry.gitlab.mero.colo.seagate.com
   M0_VG_NO_SYMLINKS: "true"
   WORKSPACE_NAME: "${CI_PROJECT_NAME}${CI_PIPELINE_ID}"
@@ -84,7 +84,7 @@ rpmbuild:
 
   script:
     - export RELEASE_DIR="$(ls -td /releases/master/B* | head -n1)"
-    - yum install -y $RELEASE_DIR/mero{,-devel}-[0-9]*.rpm
+    - yum install -y $RELEASE_DIR/eos-core{,-devel}-[0-9]*.rpm
     - time make rpms
 
 
