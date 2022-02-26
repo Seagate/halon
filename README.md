@@ -6,7 +6,7 @@ real-time as faults arise.
 
 # NOTE
 
-Please note that this code was originally developed for the CORTX project but it has been deprecated and is no longer currently used. However, we are having to make it publicly available for historical interest as well as any other reasons that someone might be interested. All interested parties are encouraged to try to use this software for whatever purpose that might be of benefit to them.
+Please note that this code was originally developed for the CORTX project but it has been deprecated and is no longer currently used. However, it is publicly available for historical interest as well as any other reasons that someone might be interested. All interested parties are encouraged to try to use this software for whatever purpose that might be of benefit to them.
 
 # Building from sources
 
