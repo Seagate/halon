@@ -4,7 +4,7 @@ import sys
 import os
 
 project = 'Halon'
-copyright = '2015, Seagate Technology Limited'
+copyright = '2015, Seagate Technology LLC and/or its Affiliates'
 author = 'Tweag I/O Limited'
 
 # The short X.Y version.

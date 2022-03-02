@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module    : HA.Castor.Story.Tests
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- General Castor story tests

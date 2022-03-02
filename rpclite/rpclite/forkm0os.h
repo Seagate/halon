@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2015 Seagate Technology Limited. Apache License, Version 2.0.
+// Copyright (C) 2015 Seagate Technology LLC and/or its Affiliates. Apache License, Version 2.0.
 //
 #pragma once
 

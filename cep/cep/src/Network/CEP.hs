@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Copyright : (C) 2014 Seagate Technology Limited.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
 --
 -- = Complex Event Processing API
 --

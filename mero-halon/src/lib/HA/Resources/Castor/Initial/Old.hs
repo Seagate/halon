@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell       #-}
 -- |
 -- Module    : HA.Resources.Castor.Initial
--- Copyright : (C) 2017 Seagate Technology Limited.
+-- Copyright : (C) 2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- No longer used "HA.Resources.Castor.Initial" resources. Used for migration.

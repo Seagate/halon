@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 -- |
 --  Module   : HA.Services.Mero.RC.Resources
--- Copyright : (C) 2016-2017 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Contains all resources for RC subsystem of the Recovery coordinator.

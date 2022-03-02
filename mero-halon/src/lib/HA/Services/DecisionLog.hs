@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module    : HA.Services.DecisionLog
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Service logging decisions taken by the RC.

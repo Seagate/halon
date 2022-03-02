@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Actions.Spiel
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 module HA.RecoveryCoordinator.Mero.Actions.Spiel
   ( haAddress

@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- |
--- Copyright : (C) 2014-2016 Seagate Technology Limited.
+-- Copyright : (C) 2014-2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- This module implements the Haskell bindings to the HA side of the

@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Internal
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Internal drive actions.

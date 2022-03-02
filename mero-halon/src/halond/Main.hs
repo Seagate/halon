@@ -6,7 +6,7 @@
 -- |
 -- Module    : Main
 -- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
---                 2015-2017 Seagate Technology Limited.
+--                 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Main entry point to halon.

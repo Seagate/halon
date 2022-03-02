@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 -- |
 -- Module    : HA.Test.ServiceInterface
--- Copyright : (C) 2017 Seagate Technology Limited.
+-- Copyright : (C) 2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Service interface communication tests.

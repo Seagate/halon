@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2014 Seagate Technology Limited.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- JSON Schema used to generate language bindings.

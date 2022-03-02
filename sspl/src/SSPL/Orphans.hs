@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module    : SSPL.Orphans
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Orphan instances for generated bindings.

@@ -1,6 +1,6 @@
 -- |
 -- Module: HA.Storage
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 -- Service that holds non-persistent key value storage,
 -- and provide simple API for working with it. This service is

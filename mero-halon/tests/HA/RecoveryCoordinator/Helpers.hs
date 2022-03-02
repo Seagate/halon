@@ -4,7 +4,7 @@
 
 -- |
 -- Module    : HA.RecoveryCoordinator.Helpers
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Collection of helper functions used by the HA.RecoveryCoordinator

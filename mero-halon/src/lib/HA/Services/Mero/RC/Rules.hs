@@ -1,6 +1,6 @@
 -- |
 -- Module    : HA.Services.Mero.RC.Rules
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Rule definitions for interacting with @halon:m0d@ service.

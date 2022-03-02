@@ -4,7 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 -- |
--- Copyright:  (C) 2015-2017 Seagate Technology Limited.
+-- Copyright:  (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 --
 -- Helpers that simplifies creation of the long running processes
 module HA.RecoveryCoordinator.Job.Actions

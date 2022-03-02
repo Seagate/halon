@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- This module implements a pool of processes with an upper bound for the amount

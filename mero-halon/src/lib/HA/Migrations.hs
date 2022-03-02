@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 -- |
 -- Module    : HA.Migrations
--- Copyright : (C) 2017 Seagate Technology Limited.
+-- Copyright : (C) 2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Collection of persisted-state migrations.

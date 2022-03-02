@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP           #-}
 {-# LANGUAGE TupleSections #-}
 -- |
--- Copyright: (C) 2015 Seagate Technology Limited.
+-- Copyright: (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 
 module Test.Transport

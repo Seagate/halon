@@ -1,6 +1,6 @@
 -- |
 -- Module Network.Transport.Controlled
--- Copyright: (C) 2015 Seagate Technology Limited.
+-- Copyright: (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 -- Network transport controlled is a transport wrapper that
 -- allow control connection properties between nodes. This

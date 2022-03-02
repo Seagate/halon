@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
 -- |
--- Copyright : (C) 2013-2018 Seagate Technology Limited.
+-- Copyright : (C) 2013-2018 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 module Main (main) where
 

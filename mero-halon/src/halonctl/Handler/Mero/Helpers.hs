@@ -2,7 +2,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 -- |
 -- Module    : Handler.Mero.Helpers
--- Copyright : (C) 2017 Seagate Technology Limited.
+-- Copyright : (C) 2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Helper module with utility functions used by various commands.

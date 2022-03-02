@@ -1,7 +1,7 @@
 {-# LANGUAGE StrictData #-}
 -- |
 -- Module    : Handler.Mero.Node.DiReb
--- Copyright : (C) 2018 Seagate Technology Limited.
+-- Copyright : (C) 2018 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Halon control command to trigger direct rebalance of a node. A node

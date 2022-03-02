@@ -4,7 +4,7 @@
 {-# LANGUAGE ViewPatterns    #-}
 -- |
 -- Module    : HA.Services.DecisionLog.Logger
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Various 'Logger' specifications used by the decision-log service.

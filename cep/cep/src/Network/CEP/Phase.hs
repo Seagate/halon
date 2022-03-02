@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wall -Werror #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 module Network.CEP.Phase
   ( runPhase

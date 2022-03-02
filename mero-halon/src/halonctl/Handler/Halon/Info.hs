@@ -3,7 +3,7 @@
 {-# LANGUAGE StrictData      #-}
 -- |
 -- Module    : Handler.Halon.Info
--- Copyright : (C) 2016-2017 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Querying Halon information.

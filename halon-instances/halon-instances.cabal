@@ -3,7 +3,7 @@ version:             0.1.0.0
 synopsis:            Instances, orphans &c needed by all halon packages
 -- description:
 license:             Apache-2.0
-copyright:           (C) 2016 Seagate Technology Limited.
+copyright:           (C) 2016 Seagate Technology LLC and/or its Affiliates.
 category:            Network
 build-type:          Simple
 -- extra-source-files:

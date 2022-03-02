@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright:  (C) 2016 Seagate Technology Limited.
+-- Copyright:  (C) 2016 Seagate Technology LLC and/or its Affiliates.
 --
 -- Helpers that simplifies creation of the long running processes
 module HA.RecoveryCoordinator.Job.Events

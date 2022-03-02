@@ -4,7 +4,7 @@
 {-# LANGUAGE StrictData        #-}
 -- |
 -- Module    : Helper.InitialData
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Module containing configurable 'CI.InitialData' used throughout

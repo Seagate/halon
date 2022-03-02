@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Cluster.Events
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Events pertaining to cluster as a whole.

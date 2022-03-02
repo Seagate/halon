@@ -2,7 +2,7 @@
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 -- Buffer data structure used to store CEP engine message
 module Network.CEP.Buffer

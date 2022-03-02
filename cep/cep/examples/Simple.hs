@@ -1,5 +1,5 @@
 -- |
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 -- A very simple example of using the callback interface to CEP.
 --

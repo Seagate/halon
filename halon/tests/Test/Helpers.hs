@@ -1,6 +1,6 @@
 -- |
 -- Module: Test.Helpers
--- Copyright : (C) 2015 Seagate Technology Limited.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
 --
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Helpers where

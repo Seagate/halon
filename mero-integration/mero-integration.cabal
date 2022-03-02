@@ -9,7 +9,7 @@ homepage:            http://github.com/tweag/halon
 license:             Apache-2.0
 author:              Alexander Vershilov
 maintainer:          support@tweag.io
-copyright:           (C) 2015 Seagate Technology Limited.
+copyright:           (C) 2015 Seagate Technology LLC and/or its Affiliates.
 category:            Testing
 build-type:          Simple
 -- extra-source-files:  

@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 -- |
--- Copyright : (C) 2014-2017 Seagate Technology Limited.
+-- Copyright : (C) 2014-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Service responsible for communication with a local SSPL instance on a node.

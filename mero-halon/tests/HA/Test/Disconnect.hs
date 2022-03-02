@@ -1,6 +1,6 @@
 -- |
 -- Module    : HA.Test.Disconnect
--- Copyright : (C) 2015-2017 Seagate Technology Limited.
+-- Copyright : (C) 2015-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Various tests exercising the node recovery rule. Note that these

@@ -5,7 +5,7 @@
 {-# LANGUAGE StrictData                 #-}
 -- |
 -- Module    : Handler.Halon.Service
--- Copyright : (C) 2014-2017 Seagate Technology Limited.
+-- Copyright : (C) 2014-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Handler for the 'service' command, used to start, stop and query

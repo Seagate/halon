@@ -4,7 +4,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 -- |
 -- Module    : Handler.Halon.Station
--- Copyright : (C) 2014-2017 Seagate Technology Limited.
+-- Copyright : (C) 2014-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Tracking station bootstrap module. This serves to start recovery supervisors

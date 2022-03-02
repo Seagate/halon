@@ -8,7 +8,7 @@
 {-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.State
--- Copyright : (C) 2016-2017 Seagate Technology Limited.
+-- Copyright : (C) 2016-2017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 module HA.RecoveryCoordinator.Mero.State
   ( DeferredStateChanges(..)

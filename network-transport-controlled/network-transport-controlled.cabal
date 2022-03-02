@@ -9,7 +9,7 @@ license:             Apache-2.0
 -- license-file:        LICENSE
 author:              Alexander Vershilov
 maintainer:          alexander.vershilov@tweag.io
-copyright:           (C) 2015 Seagate Technology Limited.
+copyright:           (C) 2015 Seagate Technology LLC and/or its Affiliates.
 category:            Network
 build-type:          Simple
 -- extra-source-files:

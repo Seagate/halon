@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
 -- |
--- Copyright : (C) 2015-)017 Seagate Technology Limited.
+-- Copyright : (C) 2015-)017 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Rules specific to Castor install of Mero.

@@ -6,7 +6,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 
 -- |
--- Copyright : (C) 2016 Seagate Technology Limited.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- stability: experimental
 --
 -- Module for manipulation of messages which remain intelligible as long

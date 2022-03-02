@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 -- |
 -- Module    : HA.Services.Ekg
--- Copryight : (C) 2016 Seagate Technology Limited.
+-- Copryight : (C) 2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- EKG service. "HA.Services.Ekg.RC" contains the main user interface.

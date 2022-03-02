@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 
 -- |
--- Copyright : (C) 2015-2016 Seagate Technology Limited.
+-- Copyright : (C) 2015-2016 Seagate Technology LLC and/or its Affiliates.
 -- License   : Apache License, Version 2.0.
 --
 -- Module dealing with pool repair and rebalance.
