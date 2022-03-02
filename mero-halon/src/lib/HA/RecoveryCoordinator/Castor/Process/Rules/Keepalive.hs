@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeOperators    #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Process handling.
 module HA.RecoveryCoordinator.Castor.Process.Rules.Keepalive

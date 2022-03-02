@@ -2,8 +2,8 @@ Name:           consensus
 Version:        0.1
 Stability:      experimental
 Synopsis:       Common interface for consensus algorithms.
-License:        AllRightsReserved
-Copyright:      © 2013 Xyratex Technology Limited
+License:        Apache-2.0
+Copyright:      © 2013 Seagate Technology LLC and/or its Affiliates
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10

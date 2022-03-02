@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Module rules for debugging and information retrieval.
 module HA.RecoveryCoordinator.RC.Rules.Info where

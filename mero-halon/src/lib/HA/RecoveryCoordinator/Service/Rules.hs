@@ -6,7 +6,7 @@
 {-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Rules pertaining to the management of Halon internal services.
 module HA.RecoveryCoordinator.Service.Rules

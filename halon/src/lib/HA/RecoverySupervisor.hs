@@ -1,6 +1,6 @@
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- This module provides the Recovery Supervisor. The Recovery Supervisor
 -- ensures that there is at most one Recovery Coordinator running in the cluster

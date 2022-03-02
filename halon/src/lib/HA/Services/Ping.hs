@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE ViewPatterns               #-}
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Should import qualified, used for testing service-related functionality.
 module HA.Services.Ping

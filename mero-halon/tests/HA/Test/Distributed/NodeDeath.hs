@@ -1,6 +1,6 @@
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Tests that the RC successfully restarts all running services on
 -- a killed node when it comes back up.

@@ -1,6 +1,6 @@
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Definitions common to all Paxos distributed algorithms, be they the basic
 -- one or any optimizations thereof.

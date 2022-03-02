@@ -6,7 +6,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Mero
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Mero actions.
 module HA.RecoveryCoordinator.Actions.Mero

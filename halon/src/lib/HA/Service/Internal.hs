@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 -- |
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Halon-internal service machinery.
 module HA.Service.Internal

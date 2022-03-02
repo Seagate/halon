@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Services are uniquely named on a given node by a string. For example
 -- "ioservice" may identify the IO service running on a node.

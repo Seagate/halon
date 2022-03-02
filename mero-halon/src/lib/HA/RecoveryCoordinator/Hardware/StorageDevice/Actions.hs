@@ -3,7 +3,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Hardware.StorageDevice.Actions
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Actions on 'StorageDevice's.
 module HA.RecoveryCoordinator.Hardware.StorageDevice.Actions

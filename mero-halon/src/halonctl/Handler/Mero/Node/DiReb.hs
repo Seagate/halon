@@ -2,7 +2,7 @@
 -- |
 -- Module    : Handler.Mero.Node.DiReb
 -- Copyright : (C) 2018 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Halon control command to trigger direct rebalance of a node. A node
 -- rebalance can be triggered when a failed node is replaced and has

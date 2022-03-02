@@ -4,8 +4,8 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Logic for adding new node to the halon cluster. When node can be
 -- added to cluster, one should issue 'nodeUp' call on the target node.

@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- decision-log trace facilities
 module HA.Services.DecisionLog.Trace

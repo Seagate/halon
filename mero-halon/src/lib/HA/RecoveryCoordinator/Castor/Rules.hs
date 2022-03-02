@@ -9,7 +9,7 @@
 {-# LANGUAGE TupleSections         #-}
 -- |
 -- Copyright : (C) 2015-)017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Rules specific to Castor install of Mero.
 

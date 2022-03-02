@@ -1,6 +1,6 @@
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- EventQueueTracker intended to to track the location of (a subset of) nodes
 -- that runs event queue. EQ tracker simplifies sending messages to the Recovery Coordinator,

@@ -5,7 +5,7 @@
 -- |
 -- Module    : Handler.Halon.Station
 -- Copyright : (C) 2014-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Tracking station bootstrap module. This serves to start recovery supervisors
 -- on a set of provided nodes.

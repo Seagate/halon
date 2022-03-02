@@ -6,8 +6,8 @@
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE TupleSections            #-}
 -- |
--- Copyright : (C) 2015-2018 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2015-2018 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Mero identifier type. Mero uses FIDs to uniquely identity most objects
 -- it deals with including items in the configuration database and files

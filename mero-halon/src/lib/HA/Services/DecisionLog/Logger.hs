@@ -5,7 +5,7 @@
 -- |
 -- Module    : HA.Services.DecisionLog.Logger
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Various 'Logger' specifications used by the decision-log service.
 module HA.Services.DecisionLog.Logger

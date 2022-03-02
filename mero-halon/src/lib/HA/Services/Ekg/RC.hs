@@ -1,7 +1,7 @@
 -- |
 -- Module    : HA.Services.Ekg.RC
 -- Copryight : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Collection of functions for interacting with EKG service from the
 -- RC.

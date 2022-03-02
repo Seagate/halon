@@ -3,8 +3,8 @@ Version:       0.1.1
 Synopsis:      Bindings for Mero configuration client library.
 Description:   The Mero configuration client library allows programs
                to contact the confd service.
-License:       AllRightsReserved
-Copyright:     (C) 2013-2018 Xyratex Technology Limited
+License:       Apache-2.0
+Copyright:     (C) 2013-2018 Seagate Technology LLC and/or its Affiliates
 Category:      Network
 Build-Type:    Simple
 Cabal-Version: >= 1.10

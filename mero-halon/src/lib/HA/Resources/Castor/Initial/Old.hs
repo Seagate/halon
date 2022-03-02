@@ -3,7 +3,7 @@
 -- |
 -- Module    : HA.Resources.Castor.Initial
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- No longer used "HA.Resources.Castor.Initial" resources. Used for migration.
 module HA.Resources.Castor.Initial.Old

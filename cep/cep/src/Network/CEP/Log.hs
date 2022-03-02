@@ -3,7 +3,7 @@
 -- |
 -- Module    : Network.CEP.Log
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Logging functionality for CEP.
 module Network.CEP.Log where

@@ -7,8 +7,8 @@ Description:    If the processes in a Cloud Haskell application communicate with
                 scheduler that can be used to sequentialize delivery and processing
                 of messages in repeatable fashion (i.e. so executions are reproducible).
 Homepage:       https://github.com/tweag/halon
-License:        AllRightsReserved
-Copyright:      (C) 2013 Xyratex Technology Limited
+License:        Apache-2.0
+Copyright:      (C) 2013 Seagate Technology LLC and/or its Affiliates
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10

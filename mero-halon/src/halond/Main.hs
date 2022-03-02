@@ -5,9 +5,9 @@
 {-# LANGUAGE ViewPatterns    #-}
 -- |
 -- Module    : Main
--- Copyright : (C) 2013 Xyratex Technology Limited.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
 --                 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Main entry point to halon.
 module Main (main) where

@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Internal structures and template haskell code.
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Internal

@@ -1,7 +1,7 @@
 -- |
 -- Module    : HA.Test.Disconnect
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Various tests exercising the node recovery rule. Note that these
 -- tests only check if node manages to rejoin the cluster under

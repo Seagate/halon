@@ -1,6 +1,6 @@
 -- |
--- Copyright: (C) 2016-2018 Xyratex Technology Limited
--- License:   All rights reserved
+-- Copyright: (C) 2016-2018 Seagate Technology LLC and/or its Affiliates
+-- License:   Apache License, Version 2.0
 --
 -- Debug functions that make use of eventlog subsystem.
 -- Eventlog provides a way to offline monitor program. And

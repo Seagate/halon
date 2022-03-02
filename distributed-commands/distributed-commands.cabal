@@ -3,8 +3,8 @@ Version:        0.1
 Stability:      experimental
 Synopsis:       Provides commands to execute in remote hosts.
 Homepage:       https://github.com/tweag/halon
-License:        AllRightsReserved
-Copyright:      (C) 2014 Xyratex Technology Limited
+License:        Apache-2.0
+Copyright:      (C) 2014 Seagate Technology LLC and/or its Affiliates
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10

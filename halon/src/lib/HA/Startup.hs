@@ -1,8 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module    : HA.Startup
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Core halon node bootstrap routines.
 module HA.Startup where

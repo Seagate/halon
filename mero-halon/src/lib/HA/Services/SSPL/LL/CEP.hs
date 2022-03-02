@@ -6,7 +6,7 @@
 -- |
 -- Module    : HA.Services.SSPL.LL.CEP.
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- @halon:sspl@ service rules
 module HA.Services.SSPL.LL.CEP

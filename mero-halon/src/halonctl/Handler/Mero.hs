@@ -2,7 +2,7 @@
 {-# LANGUAGE StrictData        #-}
 -- |
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Cluster-wide configuration.
 

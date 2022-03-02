@@ -9,7 +9,7 @@
 
 -- |
 -- Copyright : (C) 2014-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- This module implements the Haskell bindings to the HA side of the
 -- Notification interface. It contains the functions that pass messages between

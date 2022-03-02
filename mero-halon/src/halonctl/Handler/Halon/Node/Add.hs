@@ -4,7 +4,7 @@
 -- |
 -- Module    : Handler.Halon.Node.Add
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Satellite bootstrap module. When a satellite is started, it sends
 -- repeated 'NodeUp' messages to the RC, which is then responsible for

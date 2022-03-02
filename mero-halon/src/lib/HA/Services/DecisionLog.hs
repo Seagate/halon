@@ -4,7 +4,7 @@
 -- |
 -- Module    : HA.Services.DecisionLog
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Service logging decisions taken by the RC.
 module HA.Services.DecisionLog

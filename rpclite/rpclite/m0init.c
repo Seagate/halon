@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2015-2018 Xyratex Technology Limited. All rights reserved.
+// Copyright (C) 2015-2018 Seagate Technology LLC and/or its Affiliates. Apache License, Version 2.0.
 //
 
 #define M0_TRACE_SUBSYSTEM M0_TRACE_SUBSYS_HA

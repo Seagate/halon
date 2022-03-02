@@ -3,8 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
 -- |
--- Copyright : (C) 2014 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2014 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Implementation of the EQ Tracker process.
 -- For user facing documentation, please refer to "HA.EQTracker".

@@ -1,6 +1,6 @@
 -- |
 -- Copyright:  (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Actions on 'M0.Process's.
 module HA.RecoveryCoordinator.Castor.Process.Actions

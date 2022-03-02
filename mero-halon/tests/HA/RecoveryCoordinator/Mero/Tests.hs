@@ -2,8 +2,8 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Copyright : (C) 2013-2016 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013-2016 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- This module contains tests which exercise the RC with respect to
 -- mero or its components.

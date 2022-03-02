@@ -2,7 +2,7 @@
 -- |
 -- Module    : HA.Test.InternalStateChanges
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Exercise the internal state change mechanism
 module HA.Test.InternalStateChanges (mkTests) where

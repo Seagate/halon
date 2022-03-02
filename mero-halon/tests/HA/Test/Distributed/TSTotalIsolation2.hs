@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Tests that the tracking station recovers when all replicas are isolated and
 -- then a quorum is recovered.

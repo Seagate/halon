@@ -3,7 +3,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Central place dealing with LED control for drives.
 module HA.RecoveryCoordinator.Castor.Drive.Rules.LedControl (rules) where

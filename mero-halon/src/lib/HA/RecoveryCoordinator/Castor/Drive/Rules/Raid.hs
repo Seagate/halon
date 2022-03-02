@@ -8,7 +8,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.Raid
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Rules specific to drives in RAID arrays.
 module HA.RecoveryCoordinator.Castor.Drive.Rules.Raid

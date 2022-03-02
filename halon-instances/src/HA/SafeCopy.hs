@@ -7,7 +7,7 @@
 -- |
 -- Module    : HA.SafeCopy
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Halon wrapper around "Data.SafeCopy", providing an augmented
 -- 'deriveSafeCopy' that forces a proper 'B.Binary' instance on the

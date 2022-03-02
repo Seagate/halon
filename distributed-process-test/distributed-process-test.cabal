@@ -5,8 +5,8 @@ Synopsis:       Simple driver around the test framework shipped with Cabal.
 Description:    This driver behaves more appropriately with regards to test output
                 compared to the default test stubs in Cabal.
 Homepage:       https://github.com/tweag/halon
-License:        AllRightsReserved
-Copyright:      (C) 2013 Xyratex Technology Limited
+License:        Apache-2.0
+Copyright:      (C) 2013 Seagate Technology LLC and/or its Affiliates
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10

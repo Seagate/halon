@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 -- |
--- Copyright : (C) 2013,2014 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013,2014 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- * Recovery coordinator
 --

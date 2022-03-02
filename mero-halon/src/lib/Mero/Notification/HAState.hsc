@@ -10,8 +10,8 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- |
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Bindings to the hastate interface. This is the HA side of the notification
 -- interface.

@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs #-}
 -- |
 -- Copyright:  (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Actions on 'M0.Node's.
 module HA.RecoveryCoordinator.Castor.Node.Actions

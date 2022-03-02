@@ -6,8 +6,8 @@ Description:    The High Availability system is a library that can be used
                 together with deployment-specific components to ensure the
                 high availability of a distributed application.
 Homepage:       https://github.com/tweag/halon
-License:        AllRightsReserved
-Copyright:      (C) 2013-2018 Xyratex Technology Limited
+License:        Apache-2.0
+Copyright:      (C) 2013-2018 Seagate Technology LLC and/or its Affiliates
 Category:       Control
 Build-Type:     Simple
 Cabal-Version:  >=1.10

@@ -6,7 +6,7 @@ version:             0.1.0.0
 synopsis:            Set of system integration tests for mero-halon
 description:         Set of system integration tests for mero-halon package
 homepage:            http://github.com/tweag/halon
-license:             AllRightsReserved
+license:             Apache-2.0
 author:              Alexander Vershilov
 maintainer:          support@tweag.io
 copyright:           (C) 2015 Seagate Technology Limited.

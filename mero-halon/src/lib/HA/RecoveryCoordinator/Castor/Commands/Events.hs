@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2017-2018 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Events related to castor commands.
 module HA.RecoveryCoordinator.Castor.Commands.Events

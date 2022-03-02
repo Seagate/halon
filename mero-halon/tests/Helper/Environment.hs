@@ -4,7 +4,7 @@
 -- |
 -- Module    : Helper.Environment
 -- Copyright : (C) 2015-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Test helpers interacting with system environment.
 module Helper.Environment

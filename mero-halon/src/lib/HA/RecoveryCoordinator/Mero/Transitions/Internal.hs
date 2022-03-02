@@ -4,7 +4,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Transitions.Internal
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Internal-use types for 'Transition's. Users should not import this
 -- module.

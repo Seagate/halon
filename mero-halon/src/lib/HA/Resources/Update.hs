@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Resources to assist with updating the resource graph.
 module HA.Resources.Update where

@@ -1,7 +1,7 @@
 name:                rpclite
 version:             0.1.0.0
-license:             AllRightsReserved
-copyright:           (C) 2013 Xyratex Technology Limited
+license:             Apache-2.0
+copyright:           (C) 2013 Seagate Technology LLC and/or its Affiliates
 category:            Network
 cabal-version:       >= 1.10
 data-files:          rpclite/rpclite.h

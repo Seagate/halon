@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2014-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Control mero system lifetime by introducing singletons
 -- objects.

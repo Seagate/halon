@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Copyright : (C) 2018 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 
 module HA.RecoveryCoordinator.RC.Events.Debug
   ( DebugDriveInfo(..)

@@ -3,7 +3,7 @@
 -- |
 -- Module    : Handler.Mero.Pool
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Operations on pools.
 module Handler.Mero.Pool

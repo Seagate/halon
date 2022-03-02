@@ -7,7 +7,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Expander.Rules
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Module rules for expander card.
 module HA.RecoveryCoordinator.Castor.Expander.Rules (rules) where

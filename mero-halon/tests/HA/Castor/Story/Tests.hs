@@ -9,7 +9,7 @@
 -- |
 -- Module    : HA.Castor.Story.Tests
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- General Castor story tests
 module HA.Castor.Story.Tests (mkTests) where

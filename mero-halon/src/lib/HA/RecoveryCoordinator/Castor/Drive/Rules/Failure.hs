@@ -6,7 +6,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Drive.Rules.Failure
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Permanent failure rules for drives.
 --

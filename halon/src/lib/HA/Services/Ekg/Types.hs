@@ -8,7 +8,7 @@
 -- |
 -- Module    : HA.Services.Ekg.Types
 -- Copryight : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- EKG service types. In general you should not need to import this
 -- module: import "HA.Services.Ekg" or "HA.Services.Ekg.RC" instead.

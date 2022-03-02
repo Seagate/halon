@@ -5,7 +5,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.RC.Actions.Dispatch
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Generic phase dispatcher. This can be used to control the flow
 -- of execution in a multi-phase rule without introducing

@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2013-2018 Xyratex Technology Limited. All rights reserved.
+// Copyright (C) 2013-2018 Seagate Technology LLC and/or its Affiliates. Apache License, Version 2.0.
 //
 // See the accompanying COPYING file for license information.
 //

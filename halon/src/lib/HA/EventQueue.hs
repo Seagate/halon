@@ -1,7 +1,7 @@
 -- |
 -- Module    : HA.EventQueue
--- Copyright : (C) 2013 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- All events intended to be delivered the Recovery Coordinator should be
 -- sent via Event Queue. The Event Queue is a replicated mailbox

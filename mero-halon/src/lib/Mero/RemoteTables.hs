@@ -1,8 +1,8 @@
 -- |
 -- Module    : Mero.RemoteTables
--- Copyright : (C) 2013 Xyratex Technology Limited.
+-- Copyright : (C) 2013 Seagate Technology LLC and/or its Affiliates.
 --                 2015-2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Collection of 'RemoteTable's used for mero functionality.
 module Mero.RemoteTables (meroRemoteTable) where

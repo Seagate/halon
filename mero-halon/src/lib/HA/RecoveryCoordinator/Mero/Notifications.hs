@@ -9,7 +9,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Notifications
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Interaction with flying-by state change notifications. A simple
 -- use-case may look as follows:

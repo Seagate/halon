@@ -6,7 +6,7 @@
 -- |
 -- Module    : HA.Test.SSPL
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Tests creates a dummy instance of SSPL and allow to
 -- test different interations of the SSPL-LL and halon.

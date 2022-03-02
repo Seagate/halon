@@ -8,7 +8,7 @@
 -- |
 -- Module    : HA.Services.Mero.Mock
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- A mock @halon:m0d@ service used for testing without actually
 -- running mero components.

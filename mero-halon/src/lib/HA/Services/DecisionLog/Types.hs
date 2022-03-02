@@ -10,7 +10,7 @@
 -- |
 -- Module    : HA.Services.DecisionLog
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Types used throughout the decision log service.
 module HA.Services.DecisionLog.Types where

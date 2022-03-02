@@ -1,6 +1,6 @@
 --
 -- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- This test starts halon on a single node and runs a mero test that notifies
 -- of a state change.

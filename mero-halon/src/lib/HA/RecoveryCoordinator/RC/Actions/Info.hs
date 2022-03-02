@@ -5,7 +5,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.RC.Actions.Info
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All right reserved.
+-- License   : Apache License, Version 2.0.
 module HA.RecoveryCoordinator.RC.Actions.Info
   ( mmKeyValues
   , dumpGraph

@@ -2,7 +2,7 @@ Name:          network-transport-rpc
 Version:       0.0.1
 Synopsis:      Implementation of a transport backend for RPC
 Description:   The RPC backend provides an interface to Mero RPC library.
-Copyright:     (C) 2012 Xyratex Technology Limited
+Copyright:     (C) 2012 Seagate Technology LLC and/or its Affiliates
 Category:      Network
 Build-Type:    Custom
 Cabal-Version: >= 1.8

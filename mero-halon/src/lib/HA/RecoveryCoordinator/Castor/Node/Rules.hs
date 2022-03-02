@@ -7,7 +7,7 @@
 {-# LANGUAGE ViewPatterns     #-}
 -- |
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Collection of the rules for maintaining castor node.
 --

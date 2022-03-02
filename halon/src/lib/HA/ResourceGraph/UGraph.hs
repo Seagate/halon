@@ -5,7 +5,7 @@
 {-# LANGUAGE InstanceSigs #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Unrestricted graph interface.
 module HA.ResourceGraph.UGraph

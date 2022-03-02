@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 module HA.RecoveryCoordinator.Castor.Pool.Actions
   ( getNonMD
   , getPools

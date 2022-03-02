@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
--- Copyright : (C) 2013-2015 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2013-2015 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- This module contains a collection of tests that test the RC
 -- behaviour: for example service services.

@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Rules that are needed in order to support mero service on RC side.
 module HA.RecoveryCoordinator.RC.Rules

@@ -3,8 +3,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell            #-}
 -- |
--- Copyright : (C) 2016 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2016 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Dealing with configurable values throughout the halon rules.
 module HA.Resources.HalonVars

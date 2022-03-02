@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Manipulation of drive entities in the resource graph. Split out here
 -- to avoid a cycle.

@@ -7,7 +7,7 @@
 
 -- |
 -- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Goes through 'InitialData' load procedure and times garbage collect
 -- on the resulting graph.

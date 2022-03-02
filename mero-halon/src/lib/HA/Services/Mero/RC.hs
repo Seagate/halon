@@ -1,7 +1,7 @@
 -- |
 -- Module    : HA.Services.Mero.RC
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Re-exports functionality from "HA.Services.Mero.RC" family of modules.
 module HA.Services.Mero.RC

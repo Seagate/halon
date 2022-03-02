@@ -1,7 +1,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Actions.Test
 -- Copyright : (C) 2015-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Helper used for testing.
 module HA.RecoveryCoordinator.Actions.Test

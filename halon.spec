@@ -15,7 +15,7 @@ Summary: halon
 Name: halon
 Version: %{h_version}
 Release: %{h_build_num}_%{h_git_revision}_m0%{h_mero_git_rev}%{?dist}
-License: All rights reserved
+License: Apache License, Version 2.0
 Group: System Environment/Daemons
 Source: %{name}-%{h_version}.tar.gz
 

@@ -4,7 +4,7 @@
 
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 module HA.Services.Mero.RC.Actions
   ( -- * Notifications system
     mkStateDiff

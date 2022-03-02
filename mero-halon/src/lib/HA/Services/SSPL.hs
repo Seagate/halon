@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Copyright : (C) 2014-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Service responsible for communication with a local SSPL instance on a node.
 -- This service is used to collect low-level sensor data and to carry out

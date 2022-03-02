@@ -1,6 +1,6 @@
 --
 -- Copyright : (C) 2015 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- This a benchmakr which spawns twelve nodes which send events to the tracking
 -- station during some time. It then gathers space and time statistics.

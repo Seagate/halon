@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Copyright : (C) 2015 Xyratex Technology Limited.
--- License   : All rights reserved.
+-- Copyright : (C) 2015 Seagate Technology LLC and/or its Affiliates.
+-- License   : Apache License, Version 2.0.
 --
 -- Tests of the persistence backends.
 

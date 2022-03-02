@@ -1,6 +1,6 @@
 -- |
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Test the NVec notification sorting mechanism.
 module HA.Test.NotificationSort (tests) where

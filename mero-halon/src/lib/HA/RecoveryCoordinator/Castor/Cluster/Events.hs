@@ -6,7 +6,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Castor.Cluster.Events
 -- Copyright : (C) 2016 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Events pertaining to cluster as a whole.
 module HA.RecoveryCoordinator.Castor.Cluster.Events

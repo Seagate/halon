@@ -9,7 +9,7 @@
 -- |
 -- Module    : HA.RecoveryCoordinator.Mero.Events
 -- Copyright : (C) 2016-2017 Seagate Technology Limited.
--- License   : All rights reserved.
+-- License   : Apache License, Version 2.0.
 --
 -- Events for the mero RC.
 module HA.RecoveryCoordinator.Mero.Events

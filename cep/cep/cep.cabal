@@ -2,7 +2,7 @@ name:                cep
 version:             0.1.0.0
 synopsis:            A Complex Event Processing framework.
 -- description:
-license:             AllRightsReserved
+license:             Apache-2.0
 copyright:           (C) 2014 Seagate Technology Limited.
 category:            Network
 build-type:          Simple
