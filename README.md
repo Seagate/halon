@@ -1,3 +1,4 @@
+# Disclaimer: This project is not maintained anymore
 # Halon
 
 Halon is a fault tolerant, resilient system for maintaining a globally
